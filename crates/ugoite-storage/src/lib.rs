@@ -10,15 +10,644 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::fmt;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use thiserror::Error as ThisError;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex as AsyncMutex;
 use uuid::Uuid;
 
 pub use ugoite_domain as domain;
+pub use ugoite_domain::space_key::{SpaceKey, SpaceKeyError, SpaceUri};
+
+/// Opaque evidence for one exact object state.  Callers may carry this token
+/// back to [`PublicationStore::compare_and_swap`], but must not interpret it
+/// as an ETag, timestamp, digest, or monotonic counter.
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ObjectRevision(String);
+
+impl ObjectRevision {
+    fn from_backend(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    fn backend_value(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for ObjectRevision {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("ObjectRevision(<opaque>)")
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExactObject {
+    pub bytes: Vec<u8>,
+    pub revision: ObjectRevision,
+}
+
+#[derive(Debug, ThisError)]
+pub enum ReadError {
+    #[error("invalid publication key: {0}")]
+    InvalidKey(#[from] SpaceKeyError),
+    #[error("publication backend read failed: {0}")]
+    Backend(#[source] anyhow::Error),
+}
+
+#[derive(Debug, ThisError)]
+pub enum PublicationError {
+    #[error("invalid publication key: {0}")]
+    InvalidKey(#[from] SpaceKeyError),
+    #[error("publication backend operation failed: {0}")]
+    Backend(#[source] anyhow::Error),
+    #[error("publication outcome is unknown: {0}")]
+    OutcomeUnknown(#[source] anyhow::Error),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CreateOutcome {
+    Created,
+    AlreadyExists,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CasOutcome {
+    Replaced,
+    RevisionMismatch,
+}
+
+// OpenDAL's memory service does not expose a storage revision. Keep the
+// synthetic revision registry process-wide and keyed by the service identity,
+// so independently-created wrappers over the same operator still observe one
+// CAS coordinate.
+static MEMORY_PUBLICATION_REVISIONS: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+
+fn memory_publication_revisions() -> &'static Mutex<HashMap<String, u64>> {
+    MEMORY_PUBLICATION_REVISIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn classify_publication_write_error(error: opendal::Error) -> PublicationError {
+    if matches!(error.kind(), ErrorKind::Unexpected | ErrorKind::RateLimited) {
+        PublicationError::OutcomeUnknown(error.into())
+    } else {
+        PublicationError::Backend(error.into())
+    }
+}
+
+struct PublicationProbeCleanup {
+    operator: Option<Operator>,
+    path: String,
+}
+
+impl PublicationProbeCleanup {
+    fn new(operator: Operator, path: String) -> Self {
+        Self {
+            operator: Some(operator),
+            path,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.operator = None;
+    }
+}
+
+impl Drop for PublicationProbeCleanup {
+    fn drop(&mut self) {
+        let Some(operator) = self.operator.take() else {
+            return;
+        };
+        let path = self.path.clone();
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        handle.spawn(async move {
+            let _ = operator.delete(&path).await;
+        });
+    }
+}
+
+/// The minimal authoritative publication contract shared by all backends.
+/// Immutable object writes and listing remain ordinary OpenDAL operations;
+/// this trait is only for the single mutable visibility coordinate of a
+/// mutation.
+#[async_trait]
+pub trait PublicationStore: Send + Sync {
+    async fn load(&self, key: &SpaceKey) -> Result<Option<ExactObject>, ReadError>;
+
+    async fn create(
+        &self,
+        key: &SpaceKey,
+        bytes: Vec<u8>,
+    ) -> std::result::Result<CreateOutcome, PublicationError>;
+
+    async fn compare_and_swap(
+        &self,
+        key: &SpaceKey,
+        expected: &ObjectRevision,
+        bytes: Vec<u8>,
+    ) -> std::result::Result<CasOutcome, PublicationError>;
+}
+
+/// OpenDAL-backed implementation of the publication contract. The operator
+/// passed to this type is expected to be rooted at the bound Space, so the
+/// only path visible here is a validated [`SpaceKey`].
+#[derive(Clone)]
+pub struct OpendalPublicationStore {
+    operator: Operator,
+    prefix: String,
+    serializer: Arc<AsyncMutex<()>>,
+}
+
+impl std::fmt::Debug for OpendalPublicationStore {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("OpendalPublicationStore")
+            .field("scheme", &self.operator.info().scheme())
+            .field("root", &self.operator.info().root())
+            .field("prefix", &self.prefix)
+            .finish()
+    }
+}
+
+impl OpendalPublicationStore {
+    pub fn new(operator: Operator) -> Self {
+        Self::bound(operator, "").expect("empty publication prefix is canonical")
+    }
+
+    pub fn bound(
+        operator: Operator,
+        prefix: impl Into<String>,
+    ) -> std::result::Result<Self, SpaceKeyError> {
+        let prefix = prefix.into();
+        let prefix = if prefix.is_empty() {
+            prefix
+        } else {
+            SpaceKey::parse(&prefix)?.into_string()
+        };
+        let serializer =
+            catalog_serializer(&operator, &format!("_ugoite/publication-store/{prefix}"));
+        Ok(Self {
+            operator,
+            prefix,
+            serializer,
+        })
+    }
+
+    pub fn operator(&self) -> &Operator {
+        &self.operator
+    }
+
+    fn path(&self, key: &SpaceKey) -> String {
+        if self.prefix.is_empty() {
+            key.as_str().to_owned()
+        } else {
+            format!("{}/{}", self.prefix, key.as_str())
+        }
+    }
+
+    fn memory_revision(&self, path: &str, bytes: &[u8]) -> ObjectRevision {
+        let revisions = memory_publication_revisions()
+            .lock()
+            .expect("memory publication revision lock poisoned");
+        ObjectRevision::from_backend(format!(
+            "memory:{}:{}",
+            revisions
+                .get(&self.memory_revision_key(path))
+                .copied()
+                .unwrap_or_default(),
+            hex::encode(Sha256::digest(bytes))
+        ))
+    }
+
+    fn bump_memory_revision(&self, path: &str) {
+        let mut revisions = memory_publication_revisions()
+            .lock()
+            .expect("memory publication revision lock poisoned");
+        let key = self.memory_revision_key(path);
+        let next = revisions
+            .get(&key)
+            .copied()
+            .unwrap_or_default()
+            .saturating_add(1);
+        revisions.insert(key, next);
+    }
+
+    fn memory_revision_key(&self, path: &str) -> String {
+        format!("{:p}:{}", Arc::as_ptr(self.operator.service()), path)
+    }
+
+    /// Runs the minimal create/load/CAS/stale-CAS contract probe and removes
+    /// its temporary object before returning. The probe result is runtime
+    /// admission evidence; it is never written into the Space.
+    pub async fn verify_contract(&self) -> std::result::Result<(), PublicationError> {
+        let key = SpaceKey::parse(&format!(
+            "_ugoite/publication-probes/{}.json",
+            Uuid::now_v7()
+        ))?;
+        let first = b"{\"stage\":\"first\"}".to_vec();
+        let second = b"{\"stage\":\"second\"}".to_vec();
+        let stale = b"{\"stage\":\"stale\"}".to_vec();
+        let probe_path = self.path(&key);
+        let mut probe_cleanup =
+            PublicationProbeCleanup::new(self.operator.clone(), probe_path.clone());
+        let result = async {
+            if self.create(&key, first.clone()).await? != CreateOutcome::Created {
+                return Err(PublicationError::Backend(anyhow!(
+                    "publication probe create did not create a new object"
+                )));
+            }
+            if self.create(&key, first.clone()).await? != CreateOutcome::AlreadyExists {
+                return Err(PublicationError::Backend(anyhow!(
+                    "publication probe duplicate create was accepted"
+                )));
+            }
+            let observed = self
+                .load(&key)
+                .await
+                .map_err(|error| PublicationError::Backend(anyhow!(error)))?
+                .ok_or_else(|| {
+                    PublicationError::Backend(anyhow!("publication probe disappeared"))
+                })?;
+            if self
+                .compare_and_swap(&key, &observed.revision, second.clone())
+                .await?
+                != CasOutcome::Replaced
+            {
+                return Err(PublicationError::Backend(anyhow!(
+                    "publication probe CAS did not replace the object"
+                )));
+            }
+            if self
+                .compare_and_swap(&key, &observed.revision, stale)
+                .await?
+                != CasOutcome::RevisionMismatch
+            {
+                return Err(PublicationError::Backend(anyhow!(
+                    "publication probe accepted a stale revision"
+                )));
+            }
+            let final_object = self
+                .load(&key)
+                .await
+                .map_err(|error| PublicationError::Backend(anyhow!(error)))?
+                .ok_or_else(|| PublicationError::Backend(anyhow!("publication probe vanished")))?;
+            if final_object.bytes != second {
+                return Err(PublicationError::Backend(anyhow!(
+                    "publication probe returned unexpected final bytes"
+                )));
+            }
+            Ok(())
+        }
+        .await;
+
+        let cleanup = self.operator.delete(&probe_path).await;
+        if cleanup.is_ok()
+            || cleanup
+                .as_ref()
+                .is_err_and(|error| error.kind() == ErrorKind::NotFound)
+        {
+            probe_cleanup.disarm();
+        }
+        match (result, cleanup) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Ok(()), Err(error)) => Err(PublicationError::Backend(anyhow!(
+                "remove publication probe: {error}"
+            ))),
+            (Err(error), Ok(())) => Err(error),
+            (Err(error), Err(cleanup_error)) => Err(PublicationError::Backend(anyhow!(
+                "{error}; remove publication probe: {cleanup_error}"
+            ))),
+        }
+    }
+
+    fn is_local(&self) -> bool {
+        matches!(self.operator.info().scheme(), "fs" | "file")
+    }
+
+    fn local_target(
+        &self,
+        key: &SpaceKey,
+    ) -> std::result::Result<std::path::PathBuf, PublicationError> {
+        if !self.is_local() {
+            return Err(PublicationError::Backend(anyhow!(
+                "local publication target requested for a non-local backend"
+            )));
+        }
+        Ok(Path::new(self.operator.info().root().as_str()).join(self.path(key)))
+    }
+
+    async fn local_lock(
+        &self,
+        key: &SpaceKey,
+    ) -> std::result::Result<Option<std::fs::File>, PublicationError> {
+        if !self.is_local() {
+            return Ok(None);
+        }
+        let root = Path::new(self.operator.info().root().as_str()).to_owned();
+        let lock_name = hex::encode(Sha256::digest(self.path(key).as_bytes()));
+        let lock_path = root
+            .join(".ugoite-publication-locks")
+            .join(format!("{lock_name}.lock"));
+        let file = tokio::task::spawn_blocking(move || -> anyhow::Result<std::fs::File> {
+            use fs2::FileExt;
+            std::fs::create_dir_all(
+                lock_path
+                    .parent()
+                    .context("publication lock has no parent")?,
+            )?;
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .read(true)
+                .write(true)
+                .open(&lock_path)?;
+            file.lock_exclusive()?;
+            Ok(file)
+        })
+        .await
+        .map_err(|error| PublicationError::Backend(anyhow!(error)))?
+        .map_err(PublicationError::Backend)?;
+        Ok(Some(file))
+    }
+
+    async fn load_unlocked(
+        &self,
+        key: &SpaceKey,
+    ) -> std::result::Result<Option<ExactObject>, ReadError> {
+        let path = self.path(key);
+        let metadata = match self.operator.stat(&path).await {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(ReadError::Backend(error.into())),
+        };
+        let etag = metadata
+            .etag()
+            .filter(|etag| !etag.is_empty())
+            .map(str::to_owned);
+        let bytes = match etag.as_deref() {
+            Some(etag) => self
+                .operator
+                .read_options(
+                    &path,
+                    ReadOptions {
+                        if_match: Some(etag.to_owned()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map(|bytes| bytes.to_vec()),
+            None if self.is_local() || self.operator.info().scheme() == "memory" => {
+                self.operator.read(&path).await.map(|bytes| bytes.to_vec())
+            }
+            None => {
+                return Err(ReadError::Backend(anyhow!(
+                    "exact publication read requires an ETag: {}",
+                    path
+                )))
+            }
+        }
+        .map_err(|error| ReadError::Backend(error.into()))?;
+        let revision = if self.operator.info().scheme() == "memory" {
+            self.memory_revision(&path, &bytes)
+        } else if self.is_local() {
+            self.local_revision(&path, &bytes)
+                .map_err(ReadError::Backend)?
+        } else {
+            etag.map(ObjectRevision::from_backend).unwrap_or_else(|| {
+                ObjectRevision::from_backend(hex::encode(Sha256::digest(&bytes)))
+            })
+        };
+        Ok(Some(ExactObject { bytes, revision }))
+    }
+
+    fn local_revision(&self, path: &str, bytes: &[u8]) -> anyhow::Result<ObjectRevision> {
+        let target = Path::new(self.operator.info().root().as_str()).join(path);
+        let metadata = std::fs::metadata(&target)
+            .with_context(|| format!("read local publication metadata {}", target.display()))?;
+        let modified = metadata
+            .modified()?
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
+        let mut material = format!(
+            "{}:{}:{}:{}",
+            metadata.len(),
+            modified.as_secs(),
+            modified.subsec_nanos(),
+            hex::encode(Sha256::digest(bytes))
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            material.push_str(&format!(":{}:{}", metadata.dev(), metadata.ino()));
+        }
+        Ok(ObjectRevision::from_backend(format!(
+            "local:{}",
+            hex::encode(Sha256::digest(material.as_bytes()))
+        )))
+    }
+
+    async fn write_local_atomic(
+        &self,
+        key: &SpaceKey,
+        bytes: &[u8],
+        if_not_exists: bool,
+    ) -> std::result::Result<(), PublicationError> {
+        let target = self.local_target(key)?;
+        let parent = target
+            .parent()
+            .ok_or_else(|| PublicationError::Backend(anyhow!("publication key has no parent")))?
+            .to_owned();
+        tokio::fs::create_dir_all(&parent)
+            .await
+            .map_err(|error| PublicationError::Backend(error.into()))?;
+        let file_name = target
+            .file_name()
+            .ok_or_else(|| PublicationError::Backend(anyhow!("publication key has no filename")))?
+            .to_string_lossy();
+        let temporary = parent.join(format!(".{file_name}.{}.tmp", Uuid::now_v7()));
+        let mut published = false;
+        let result = async {
+            let mut options = tokio::fs::OpenOptions::new();
+            options.create_new(true).write(true).truncate(true);
+            #[cfg(unix)]
+            options.mode(0o600);
+            let mut file = options.open(&temporary).await?;
+            file.write_all(bytes).await?;
+            file.sync_all().await?;
+            drop(file);
+            if if_not_exists {
+                tokio::fs::hard_link(&temporary, &target).await?;
+            } else {
+                tokio::fs::rename(&temporary, &target).await?;
+            }
+            published = true;
+            tokio::fs::remove_file(&temporary).await.ok();
+            #[cfg(unix)]
+            tokio::fs::File::open(&parent).await?.sync_all().await?;
+            Ok::<(), std::io::Error>(())
+        }
+        .await;
+        if result.is_err() {
+            let _ = tokio::fs::remove_file(&temporary).await;
+        }
+        result.map_err(|error| {
+            if published {
+                PublicationError::OutcomeUnknown(error.into())
+            } else {
+                PublicationError::Backend(anyhow!(error))
+            }
+        })
+    }
+}
+
+#[async_trait]
+impl PublicationStore for OpendalPublicationStore {
+    async fn load(&self, key: &SpaceKey) -> std::result::Result<Option<ExactObject>, ReadError> {
+        let _serializer = self.serializer.lock().await;
+        let _lock = self
+            .local_lock(key)
+            .await
+            .map_err(|error| ReadError::Backend(anyhow!(error)))?;
+        self.load_unlocked(key).await
+    }
+
+    async fn create(
+        &self,
+        key: &SpaceKey,
+        bytes: Vec<u8>,
+    ) -> std::result::Result<CreateOutcome, PublicationError> {
+        let _serializer = self.serializer.lock().await;
+        let _lock = self.local_lock(key).await?;
+        if self.is_local() || self.operator.info().scheme() == "memory" {
+            if self.is_local() {
+                return match self.write_local_atomic(key, &bytes, true).await {
+                    Ok(()) => Ok(CreateOutcome::Created),
+                    Err(PublicationError::Backend(error))
+                        if error.downcast_ref::<std::io::Error>().is_some_and(|error| {
+                            error.kind() == std::io::ErrorKind::AlreadyExists
+                        }) =>
+                    {
+                        Ok(CreateOutcome::AlreadyExists)
+                    }
+                    Err(error) => Err(error),
+                };
+            }
+            let path = self.path(key);
+            if self
+                .operator
+                .exists(&path)
+                .await
+                .map_err(|error| PublicationError::Backend(error.into()))?
+            {
+                return Ok(CreateOutcome::AlreadyExists);
+            }
+            return self
+                .operator
+                .write(&path, bytes)
+                .await
+                .map(|_| {
+                    self.bump_memory_revision(&path);
+                    CreateOutcome::Created
+                })
+                .map_err(|error| PublicationError::Backend(error.into()));
+        }
+        if !self.operator.info().capability().write_with_if_not_exists {
+            return Err(PublicationError::Backend(anyhow!(
+                "publication backend does not support create-if-absent"
+            )));
+        }
+        match self
+            .operator
+            .write_options(
+                &self.path(key),
+                bytes,
+                WriteOptions {
+                    if_not_exists: true,
+                    ..Default::default()
+                },
+            )
+            .await
+        {
+            Ok(_) => Ok(CreateOutcome::Created),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    ErrorKind::AlreadyExists | ErrorKind::ConditionNotMatch
+                ) =>
+            {
+                Ok(CreateOutcome::AlreadyExists)
+            }
+            Err(error) => Err(classify_publication_write_error(error)),
+        }
+    }
+
+    async fn compare_and_swap(
+        &self,
+        key: &SpaceKey,
+        expected: &ObjectRevision,
+        bytes: Vec<u8>,
+    ) -> std::result::Result<CasOutcome, PublicationError> {
+        let _serializer = self.serializer.lock().await;
+        let _lock = self.local_lock(key).await?;
+        if self.is_local() || self.operator.info().scheme() == "memory" {
+            let Some(current) = self
+                .load_unlocked(key)
+                .await
+                .map_err(|error| PublicationError::Backend(anyhow!(error)))?
+            else {
+                return Ok(CasOutcome::RevisionMismatch);
+            };
+            if &current.revision != expected {
+                return Ok(CasOutcome::RevisionMismatch);
+            }
+            if self.is_local() {
+                self.write_local_atomic(key, &bytes, false).await?;
+            } else {
+                let path = self.path(key);
+                self.operator
+                    .write(&path, bytes)
+                    .await
+                    .map_err(|error| PublicationError::Backend(error.into()))?;
+                self.bump_memory_revision(&path);
+            }
+            return Ok(CasOutcome::Replaced);
+        }
+        if !self.operator.info().capability().write_with_if_match {
+            return Err(PublicationError::Backend(anyhow!(
+                "publication backend does not support compare-and-swap"
+            )));
+        }
+        match self
+            .operator
+            .write_options(
+                &self.path(key),
+                bytes,
+                WriteOptions {
+                    if_match: Some(expected.backend_value().to_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+        {
+            Ok(_) => Ok(CasOutcome::Replaced),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    ErrorKind::ConditionNotMatch | ErrorKind::NotFound
+                ) =>
+            {
+                Ok(CasOutcome::RevisionMismatch)
+            }
+            Err(error) => Err(classify_publication_write_error(error)),
+        }
+    }
+}
 
 /// Normalized backend information used by the Iceberg OpenDAL adapter.
 ///
@@ -3581,6 +4210,15 @@ impl SpaceCatalogStore {
         &self.storage
     }
 
+    /// Returns the backend-neutral publication primitive rooted at this Space
+    /// operator. The Catalog-specific methods below remain for the existing
+    /// publication record protocol; new mutable visibility points should use
+    /// this contract instead of inspecting backend revisions directly.
+    pub fn publication_store(&self) -> OpendalPublicationStore {
+        OpendalPublicationStore::bound(self.operator.clone(), self.space_root.clone())
+            .expect("SpaceCatalogStore validated its Space root")
+    }
+
     pub fn warehouse_uri(&self) -> String {
         if self.space_root.is_empty() {
             format!("{}/forms", self.storage.warehouse_uri)
@@ -4442,9 +5080,11 @@ impl StorageBackend for OpendalStorage {
 #[cfg(test)]
 mod tests {
     use super::{
-        canonical_head_bytes, operator_from_uri, operator_from_uri_with_endpoint,
-        DerivedRelationHead, DerivedRelationHeadStore, OpendalStorage, ServerTimeProbeCleanup,
-        SpaceCatalogStore, StorageBackend, MAX_DERIVED_TERMINAL_TOMBSTONES_PER_PASS,
+        canonical_head_bytes, classify_publication_write_error, operator_from_uri,
+        operator_from_uri_with_endpoint, CasOutcome, CreateOutcome, DerivedRelationHead,
+        DerivedRelationHeadStore, OpendalPublicationStore, OpendalStorage, PublicationError,
+        PublicationProbeCleanup, PublicationStore, ServerTimeProbeCleanup, SpaceCatalogStore,
+        SpaceKey, StorageBackend, MAX_DERIVED_TERMINAL_TOMBSTONES_PER_PASS,
     };
     use anyhow::Result;
     use futures::future::join_all;
@@ -4455,6 +5095,128 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use uuid::Uuid;
+
+    #[tokio::test]
+    async fn publication_store_memory_contract_is_backend_neutral() -> Result<()> {
+        let operator = Operator::new(Memory::default())?;
+        let store = OpendalPublicationStore::bound(operator.clone(), "spaces/demo")?;
+        let peer = OpendalPublicationStore::bound(operator, "spaces/demo")?;
+
+        store
+            .verify_contract()
+            .await
+            .map_err(|error| anyhow::anyhow!(error))?;
+        let key = SpaceKey::catalog_head();
+        assert_eq!(
+            store.create(&key, b"first".to_vec()).await?,
+            CreateOutcome::Created
+        );
+        let exact = store.load(&key).await?.expect("publication exists");
+        let peer_exact = peer.load(&key).await?.expect("peer sees publication");
+        assert_eq!(peer_exact, exact);
+        assert_eq!(
+            store
+                .compare_and_swap(&key, &exact.revision, b"second".to_vec())
+                .await?,
+            CasOutcome::Replaced
+        );
+        let replacement = store.load(&key).await?.expect("replacement exists");
+        assert_ne!(replacement.revision, exact.revision);
+        assert_eq!(
+            peer.compare_and_swap(&key, &exact.revision, b"stale".to_vec())
+                .await?,
+            CasOutcome::RevisionMismatch
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn publication_store_rejects_untrusted_prefixes() -> Result<()> {
+        let operator = Operator::new(Memory::default())?;
+        for prefix in [
+            "../outside",
+            "spaces/../outside",
+            "spaces//demo",
+            "spaces\\demo",
+            "/spaces/demo/",
+        ] {
+            assert!(OpendalPublicationStore::bound(operator.clone(), prefix).is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn publication_write_uncertainty_is_not_reported_as_backend_failure() {
+        let error = classify_publication_write_error(opendal::Error::new(
+            opendal::ErrorKind::Unexpected,
+            "request outcome is unknown",
+        ));
+        assert!(matches!(error, PublicationError::OutcomeUnknown(_)));
+    }
+
+    #[tokio::test]
+    async fn canceled_publication_probe_cleanup_reaps_written_probe() -> Result<()> {
+        let operator = Operator::new(Memory::default())?;
+        let path = "_ugoite/publication-probes/canceled.json";
+        operator.write(path, b"probe".to_vec()).await?;
+        {
+            let _cleanup = PublicationProbeCleanup::new(operator.clone(), path.to_string());
+        }
+        tokio::task::yield_now().await;
+        assert!(!operator.exists(path).await?);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn publication_store_filesystem_cas_has_no_revision_sidecar() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        let operator = Operator::new(
+            opendal::services::Fs::default().root(root.path().to_string_lossy().as_ref()),
+        )?;
+        let store = OpendalPublicationStore::bound(operator, "spaces/demo")?;
+        let peer_operator = Operator::new(
+            opendal::services::Fs::default().root(root.path().to_string_lossy().as_ref()),
+        )?;
+        let peer = OpendalPublicationStore::bound(peer_operator, "spaces/demo")?;
+        let key = SpaceKey::catalog_head();
+
+        assert_eq!(
+            store.create(&key, b"first".to_vec()).await?,
+            CreateOutcome::Created
+        );
+        let exact = store.load(&key).await?.expect("publication exists");
+        assert_eq!(
+            peer.load(&key).await?.expect("peer sees publication"),
+            exact
+        );
+        assert_eq!(
+            store
+                .compare_and_swap(&key, &exact.revision, b"second".to_vec())
+                .await?,
+            CasOutcome::Replaced
+        );
+        let replacement = store.load(&key).await?.expect("replacement exists");
+        assert_ne!(replacement.revision, exact.revision);
+        assert_eq!(
+            peer.compare_and_swap(&key, &exact.revision, b"stale".to_vec())
+                .await?,
+            CasOutcome::RevisionMismatch
+        );
+        assert!(!root
+            .path()
+            .join("spaces/demo/_ugoite/catalog/head.json.revision")
+            .exists());
+        assert!(!root
+            .path()
+            .join("spaces/demo/_ugoite/catalog/head.json.etag")
+            .exists());
+        assert!(!root
+            .path()
+            .join("spaces/demo/_ugoite/catalog/head.json.lock")
+            .exists());
+        Ok(())
+    }
 
     fn test_build_id() -> String {
         Uuid::now_v7().to_string()

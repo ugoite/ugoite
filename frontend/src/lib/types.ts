@@ -7,16 +7,19 @@
 export interface SpaceStorage {
   type?: string;
   root?: string;
-}
-
-/** Space metadata */
-export interface SpaceStorage {
-  type?: string;
-  root?: string;
+  uri?: string;
+  endpoint?: string;
+  [key: string]: unknown;
 }
 
 export interface StorageConnectionConfig {
   uri: string;
+  endpoint?: string;
+  [key: string]: unknown;
+}
+
+export interface SpaceStorageConfig extends SpaceStorage {
+  uri?: string;
   endpoint?: string;
   [key: string]: unknown;
 }
@@ -29,7 +32,7 @@ export interface Space {
   name: string;
   created_at: string;
   storage?: SpaceStorage;
-  storage_config?: StorageConnectionConfig;
+  storage_config?: SpaceStorageConfig;
   settings?: Record<string, unknown>;
 }
 

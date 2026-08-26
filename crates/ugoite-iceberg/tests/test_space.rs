@@ -39,7 +39,15 @@ async fn test_space_req_sto_002_create_space_scaffolding() -> anyhow::Result<()>
     assert_eq!(meta["id"], ws_id);
     assert_eq!(meta["name"], ws_id);
     assert!(meta.get("created_at").is_some());
-    assert!(meta.get("storage").is_some());
+    assert!(meta.get("storage").is_none());
+
+    let binding: Value = serde_json::from_slice(
+        &op.read("_ugoite/space-bindings/test-space.json")
+            .await?
+            .to_vec(),
+    )?;
+    assert_eq!(binding["type"], "local");
+    assert_eq!(binding["root"], "/tmp/ugoite");
 
     let settings_bytes = op.read(&settings_path).await?.to_vec();
     let settings: Value = serde_json::from_slice(&settings_bytes)?;
@@ -67,6 +75,8 @@ async fn test_space_req_sto_003_local_space_permissions() -> anyhow::Result<()> 
 
     space::create_space(&op, "private-space", dir.path().to_string_lossy().as_ref()).await?;
     space::validate_complete_bootstrap(&op, "private-space").await?;
+    let runtime_space = space::get_space_raw(&op, "private-space").await?;
+    assert_eq!(runtime_space["storage_config"]["type"], "local");
 
     let spaces_root = dir.path().join("spaces");
     let space_dir = spaces_root.join("private-space");
@@ -173,8 +183,17 @@ async fn local_space_validation_repairs_patch_journal_mode() -> anyhow::Result<(
 
     let journal = dir
         .path()
-        .join("spaces/private-journal/.ugoite-space-patch.json");
-    let journal_path = "spaces/private-journal/.ugoite-space-patch.json";
+        .join("_ugoite/space-patches/private-journal.json");
+    let journal_path = "_ugoite/space-patches/private-journal.json";
+    let control_dir = dir.path().join("_ugoite/space-patches");
+    assert_eq!(
+        std::fs::metadata(&control_dir)?.permissions().mode() & 0o777,
+        0o700
+    );
+    assert!(!dir
+        .path()
+        .join("spaces/private-journal/.ugoite-space-patch.json")
+        .exists());
     let mut pending: Value = serde_json::from_slice(&op.read(journal_path).await?.to_vec())?;
     pending["status"] = Value::String("pending".to_string());
     op.write(journal_path, serde_json::to_vec(&pending)?)
@@ -249,7 +268,7 @@ async fn incomplete_current_space_metadata_is_rejected() -> anyhow::Result<()> {
     space::create_space(&op, "incomplete-metadata", "/tmp").await?;
     let meta_path = "spaces/incomplete-metadata/meta.json";
     let mut meta: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
-    meta.as_object_mut().unwrap().remove("storage");
+    meta["storage"] = serde_json::json!({"type": "local", "root": "/tmp"});
     op.write(meta_path, serde_json::to_vec(&meta)?).await?;
 
     let error = space::get_space(&op, "incomplete-metadata")
@@ -341,6 +360,11 @@ async fn pending_space_patch_journal_recovers_both_authoritative_files() -> anyh
     space::create_space(&op, "patch-recovery", "memory:///").await?;
     let meta_path = "spaces/patch-recovery/meta.json";
     let settings_path = "spaces/patch-recovery/settings.json";
+    let binding: Value = serde_json::from_slice(
+        &op.read("_ugoite/space-bindings/patch-recovery.json")
+            .await?
+            .to_vec(),
+    )?;
     let old_meta: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
     let old_settings: Value = serde_json::from_slice(&op.read(settings_path).await?.to_vec())?;
     let mut new_meta = old_meta.clone();
@@ -348,12 +372,14 @@ async fn pending_space_patch_journal_recovers_both_authoritative_files() -> anyh
     let mut new_settings = old_settings.clone();
     new_settings["default_form"] = Value::String("Entry".to_string());
     op.write(
-        "spaces/patch-recovery/.ugoite-space-patch.json",
+        "_ugoite/space-patches/patch-recovery.json",
         serde_json::to_vec(&serde_json::json!({
             "old_metadata": old_meta,
             "new_metadata": new_meta,
             "old_settings": old_settings,
             "new_settings": new_settings,
+            "old_binding": binding.clone(),
+            "new_binding": binding,
         }))?,
     )
     .await?;
@@ -362,7 +388,7 @@ async fn pending_space_patch_journal_recovers_both_authoritative_files() -> anyh
     let recovered: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
     assert_eq!(recovered["name"], "recovered-name");
     let journal: Value = serde_json::from_slice(
-        &op.read("spaces/patch-recovery/.ugoite-space-patch.json")
+        &op.read("_ugoite/space-patches/patch-recovery.json")
             .await?
             .to_vec(),
     )?;
@@ -381,12 +407,14 @@ async fn stale_space_patch_journal_is_discarded_after_a_valid_winner() -> anyhow
     let mut new_meta = old_meta.clone();
     new_meta["name"] = Value::String("journal-winner".to_string());
     op.write(
-        "spaces/stale-patch/.ugoite-space-patch.json",
+        "_ugoite/space-patches/stale-patch.json",
         serde_json::to_vec(&serde_json::json!({
             "old_metadata": old_meta,
             "new_metadata": new_meta,
             "old_settings": old_settings.clone(),
             "new_settings": old_settings,
+            "old_binding": null,
+            "new_binding": null,
         }))?,
     )
     .await?;
@@ -399,7 +427,7 @@ async fn stale_space_patch_journal_is_discarded_after_a_valid_winner() -> anyhow
     let observed: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
     assert_eq!(observed["name"], "external-winner");
     let journal: Value = serde_json::from_slice(
-        &op.read("spaces/stale-patch/.ugoite-space-patch.json")
+        &op.read("_ugoite/space-patches/stale-patch.json")
             .await?
             .to_vec(),
     )?;
@@ -419,7 +447,7 @@ async fn completed_space_patch_journal_is_reused_with_version_fencing() -> anyho
         serde_json::from_slice(&op.read("spaces/patch-reuse/meta.json").await?.to_vec())?;
     assert_eq!(metadata["name"], "second");
     let journal: Value = serde_json::from_slice(
-        &op.read("spaces/patch-reuse/.ugoite-space-patch.json")
+        &op.read("_ugoite/space-patches/patch-reuse.json")
             .await?
             .to_vec(),
     )?;

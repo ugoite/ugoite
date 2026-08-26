@@ -1,6 +1,14 @@
 version: 3
-updated: 2026-08-13
+updated: 2026-08-26
 roots:
+- path: _ugoite/space-bindings
+  kind: directory
+  notes:
+  - Node-local Space locators; excluded from portable Space exports.
+- path: _ugoite/space-patches
+  kind: directory
+  notes:
+  - Node-local Space patch journals and locks; excluded from portable Space exports.
 - path: spaces
   kind: directory
   notes:

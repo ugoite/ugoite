@@ -21,7 +21,7 @@ use ugoite_domain::id::validate_space_id;
 pub use ugoite_domain::space::{storage_type_and_root, SpaceMeta, StorageConfig};
 use ugoite_storage::{operator_from_uri_with_endpoint, OpendalStorage, StorageBackend};
 
-pub(crate) const CURRENT_SPACE_SCHEMA_VERSION: u64 = 2;
+pub(crate) const CURRENT_SPACE_SCHEMA_VERSION: u64 = 3;
 const STORAGE_CONNECTION_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -38,6 +38,84 @@ async fn space_exists_with_storage<S: StorageBackend + ?Sized>(
     validate_space_path_segment(name)?;
     let ws_path = format!("spaces/{name}/meta.json");
     storage.exists(&ws_path).await
+}
+
+/// Node-local locator for a Space. It is deliberately outside `spaces/{id}`
+/// so copying a complete Space prefix cannot copy a physical backend binding
+/// with it.
+fn space_binding_path(space_id: &str) -> String {
+    format!("_ugoite/space-bindings/{space_id}.json")
+}
+
+fn space_binding_value(root_path: &str) -> serde_json::Value {
+    let (storage_type, storage_root, _) = storage_type_and_root(root_path);
+    serde_json::json!({
+        "type": storage_type,
+        "root": storage_root,
+    })
+}
+
+fn validate_space_binding(value: &serde_json::Value) -> Result<()> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| anyhow!("Node Space binding must be an object"))?;
+    if object.keys().any(|key| key != "type" && key != "root") {
+        bail!("Node Space binding contains unsupported fields");
+    }
+    if object
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .is_none_or(str::is_empty)
+    {
+        bail!("Node Space binding requires a non-empty type");
+    }
+    if object
+        .get("root")
+        .and_then(serde_json::Value::as_str)
+        .is_none()
+    {
+        bail!("Node Space binding requires a string root");
+    }
+    Ok(())
+}
+
+fn storage_binding_from_config(value: &serde_json::Value) -> Result<serde_json::Value> {
+    if let Some(uri) = value.get("uri").and_then(serde_json::Value::as_str) {
+        if uri.trim().is_empty() {
+            bail!("storage_config.uri is required");
+        }
+        return Ok(space_binding_value(uri));
+    }
+    let binding = serde_json::json!({
+        "type": value.get("type").cloned().unwrap_or_default(),
+        "root": value.get("root").cloned().unwrap_or_default(),
+    });
+    validate_space_binding(&binding)?;
+    Ok(binding)
+}
+
+fn storage_binding_response(value: &serde_json::Value) -> Result<serde_json::Value> {
+    validate_space_binding(value)?;
+    let storage_type = value["type"]
+        .as_str()
+        .context("Node Space binding type is not a string")?;
+    let root = value["root"]
+        .as_str()
+        .context("Node Space binding root is not a string")?;
+    let uri = if matches!(storage_type, "local" | "file" | "fs") {
+        if root.starts_with('/') {
+            format!("file://{root}")
+        } else {
+            root.to_string()
+        }
+    } else {
+        format!("{}://{}", storage_type, root.trim_start_matches('/'))
+    };
+    Ok(serde_json::json!({
+        "uri": uri,
+        "type": storage_type,
+        "root": root,
+    }))
 }
 
 pub async fn space_exists(op: &Operator, name: &str) -> Result<bool> {
@@ -109,8 +187,14 @@ fn apply_local_space_permissions(op: &Operator, space_id: &str) -> Result<()> {
     for dir in ["security", "forms", "assets", "sql_sessions"] {
         set_owner_only_mode(&space_dir.join(dir), 0o700)?;
     }
-    for file in ["meta.json", "settings.json", ".ugoite-space-patch.json"] {
+    for file in ["meta.json", "settings.json"] {
         set_owner_only_mode(&space_dir.join(file), 0o600)?;
+    }
+    if let Some(control_dir) = local_space_patch_control_dir(op) {
+        set_owner_only_mode(&control_dir, 0o700)?;
+        if let Some(journal) = local_space_patch_journal_fs_path(op, space_id) {
+            set_owner_only_mode(&journal, 0o600)?;
+        }
     }
     Ok(())
 }
@@ -166,7 +250,7 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
     directory_id: &str,
     space_uid: uuid::Uuid,
     slug: &str,
-    root_path: &str,
+    _root_path: &str,
 ) -> Result<()> {
     validate_space_path_segment(directory_id)?;
     validate_space_path_segment(slug)?;
@@ -186,7 +270,6 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
         storage.create_dir(&format!("{ws_path}/{dir}/")).await?;
     }
 
-    let (storage_type, storage_root, _scheme) = storage_type_and_root(root_path);
     let created_at = Utc::now().timestamp_millis() as f64 / 1000.0;
     let (hmac_key_id, hmac_key, last_rotation) = generate_hmac_material();
 
@@ -198,10 +281,6 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
         "id": directory_id,
         "name": slug,
         "created_at": created_at,
-        "storage": {
-            "type": storage_type,
-            "root": storage_root,
-        },
         "hmac_key_id": hmac_key_id,
         "hmac_key": hmac_key,
         "last_rotation": last_rotation,
@@ -216,6 +295,12 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
     storage
         .write_json(&format!("{ws_path}/settings.json"), &settings)
         .await?;
+    // The locator is Node-local control state, not portable Space metadata.
+    let binding_path = space_binding_path(directory_id);
+    storage
+        .write_json(&binding_path, &space_binding_value(_root_path))
+        .await?;
+    storage.set_private(&binding_path).await?;
 
     Ok(())
 }
@@ -353,6 +438,11 @@ async fn repair_space_scaffold(
             "unsupported Space layout: settings.json requires default_form"
         ));
     }
+    let binding_path = space_binding_path(directory_id);
+    storage
+        .write_json(&binding_path, &space_binding_value(_root_path))
+        .await?;
+    storage.set_private(&binding_path).await?;
     match form::get_form(op, &ws_path, "Entry").await {
         Ok(_) => {}
         Err(error)
@@ -496,6 +586,11 @@ async fn get_space_raw_with_storage<S: StorageBackend + ?Sized>(
         ));
     }
     meta["settings"] = settings;
+    let binding_path = space_binding_path(name);
+    if storage.exists(&binding_path).await? {
+        let binding: serde_json::Value = storage.read_json(&binding_path).await?;
+        meta["storage_config"] = storage_binding_response(&binding)?;
+    }
     Ok(meta)
 }
 
@@ -514,6 +609,7 @@ pub(crate) fn validate_current_space_metadata(
     meta: &serde_json::Value,
 ) -> Result<uuid::Uuid> {
     #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
     struct CurrentSpaceMetadata {
         schema_version: u64,
         space_id: String,
@@ -522,7 +618,6 @@ pub(crate) fn validate_current_space_metadata(
         id: String,
         name: String,
         created_at: f64,
-        storage: StorageConfig,
         hmac_key_id: String,
         hmac_key: String,
         last_rotation: String,
@@ -533,7 +628,7 @@ pub(crate) fn validate_current_space_metadata(
     })?;
     if metadata.schema_version != CURRENT_SPACE_SCHEMA_VERSION {
         return Err(anyhow!(
-            "unsupported Space layout: metadata schema_version must be 2"
+            "unsupported Space layout: metadata schema_version must be 3"
         ));
     }
     if metadata.space_id != expected_directory_id {
@@ -551,7 +646,6 @@ pub(crate) fn validate_current_space_metadata(
         ("slug", metadata.slug.as_str()),
         ("id", metadata.id.as_str()),
         ("name", metadata.name.as_str()),
-        ("storage.type", metadata.storage.storage_type.as_str()),
         ("hmac_key_id", metadata.hmac_key_id.as_str()),
         ("hmac_key", metadata.hmac_key.as_str()),
         ("last_rotation", metadata.last_rotation.as_str()),
@@ -597,6 +691,8 @@ struct SpacePatchJournal {
     new_metadata: serde_json::Value,
     old_settings: serde_json::Value,
     new_settings: serde_json::Value,
+    old_binding: Option<serde_json::Value>,
+    new_binding: Option<serde_json::Value>,
 }
 
 const SPACE_PATCH_PENDING: &str = "pending";
@@ -607,19 +703,25 @@ fn default_space_patch_journal_status() -> String {
 }
 
 fn space_patch_journal_path(space_id: &str) -> String {
-    format!("spaces/{space_id}/.ugoite-space-patch.json")
+    format!("_ugoite/space-patches/{space_id}.json")
+}
+
+fn local_space_patch_control_dir(op: &Operator) -> Option<PathBuf> {
+    if !matches!(op.info().scheme(), "fs" | "file") {
+        return None;
+    }
+    Some(Path::new(op.info().root().as_str()).join("_ugoite/space-patches"))
+}
+
+fn local_space_patch_journal_fs_path(op: &Operator, space_id: &str) -> Option<PathBuf> {
+    local_space_patch_control_dir(op).map(|path| path.join(format!("{space_id}.json")))
 }
 
 fn local_space_patch_lock_path(op: &Operator, space_id: &str) -> Option<PathBuf> {
     if !matches!(op.info().scheme(), "fs" | "file") {
         return None;
     }
-    Some(
-        Path::new(op.info().root().as_str())
-            .join("spaces")
-            .join(space_id)
-            .join(".ugoite-space-patch.lock"),
-    )
+    local_space_patch_control_dir(op).map(|path| path.join(format!("{space_id}.lock")))
 }
 
 async fn acquire_local_space_patch_lock(op: &Operator, space_id: &str) -> Result<Option<File>> {
@@ -627,6 +729,13 @@ async fn acquire_local_space_patch_lock(op: &Operator, space_id: &str) -> Result
         return Ok(None);
     };
     let file = tokio::task::spawn_blocking(move || -> Result<File> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("create Space patch control directory {}", parent.display())
+            })?;
+            #[cfg(unix)]
+            set_owner_only_mode(parent, 0o700)?;
+        }
         let file = OpenOptions::new()
             .create(true)
             .truncate(false)
@@ -634,6 +743,8 @@ async fn acquire_local_space_patch_lock(op: &Operator, space_id: &str) -> Result
             .write(true)
             .open(&path)
             .with_context(|| format!("open Space patch lock {}", path.display()))?;
+        #[cfg(unix)]
+        set_owner_only_mode(&path, 0o600)?;
         file.lock_exclusive()
             .with_context(|| format!("lock Space patch {}", path.display()))?;
         Ok(file)
@@ -741,6 +852,8 @@ async fn write_local_space_json_atomic(
         .parent()
         .ok_or_else(|| anyhow!("Space JSON path has no parent: {path}"))?;
     tokio::fs::create_dir_all(parent).await?;
+    #[cfg(unix)]
+    set_owner_only_mode(parent, 0o700)?;
     let file_name = target
         .file_name()
         .ok_or_else(|| anyhow!("Space JSON path has no file name: {path}"))?
@@ -960,17 +1073,27 @@ async fn recover_pending_space_patch(op: &Operator, space_id: &str) -> Result<()
     }
     let meta_path = format!("spaces/{space_id}/meta.json");
     let settings_path = format!("spaces/{space_id}/settings.json");
+    let binding_path = space_binding_path(space_id);
     let (current_meta, metadata_etag) = read_space_json_exact(op, &meta_path)
         .await?
         .context("Space metadata disappeared during patch recovery")?;
     let (current_settings, settings_etag) = read_space_json_exact(op, &settings_path)
         .await?
         .context("Space settings disappeared during patch recovery")?;
+    let (current_binding, binding_etag) = match read_space_json_exact(op, &binding_path).await? {
+        Some((binding, etag)) => {
+            validate_space_binding(&binding)?;
+            (Some(binding), etag)
+        }
+        None => (None, None),
+    };
     let metadata_is_expected =
         current_meta == journal.old_metadata || current_meta == journal.new_metadata;
     let settings_is_expected =
         current_settings == journal.old_settings || current_settings == journal.new_settings;
-    if !metadata_is_expected || !settings_is_expected {
+    let binding_is_expected =
+        current_binding == journal.old_binding || current_binding == journal.new_binding;
+    if !metadata_is_expected || !settings_is_expected || !binding_is_expected {
         // A different writer won the race after this journal was written. Do
         // not let a stale, incomplete transaction brick every future Space
         // read. The current values are still authoritative only after their
@@ -985,6 +1108,9 @@ async fn recover_pending_space_patch(op: &Operator, space_id: &str) -> Result<()
             return Err(anyhow!(
                 "current Space settings are invalid while recovering a stale patch journal"
             ));
+        }
+        if let Some(binding) = current_binding.as_ref() {
+            validate_space_binding(binding)?;
         }
         complete_space_patch_journal(op, &journal_path, &journal, journal_etag.as_deref()).await?;
         return Ok(());
@@ -1016,6 +1142,16 @@ async fn recover_pending_space_patch(op: &Operator, space_id: &str) -> Result<()
             settings_etag.as_deref(),
         )
         .await?;
+    }
+    if current_binding != journal.new_binding {
+        if current_binding != journal.old_binding {
+            return Err(anyhow!(
+                "pending Space patch journal does not match current Node binding"
+            ));
+        }
+        if let Some(binding) = journal.new_binding.as_ref() {
+            write_space_patch_value(op, &binding_path, binding, binding_etag.as_deref()).await?;
+        }
     }
     complete_space_patch_journal(op, &journal_path, &journal, journal_etag.as_deref()).await?;
     Ok(())
@@ -1075,8 +1211,11 @@ async fn validate_complete_bootstrap_locked(op: &Operator, space_id: &str) -> Re
 
 pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Value> {
     validate_space_path_segment(name)?;
-    if let Some(lock_path) = local_space_patch_lock_path(op, name) {
-        if !lock_path.parent().is_some_and(std::path::Path::is_dir) {
+    if matches!(op.info().scheme(), "fs" | "file") {
+        let space_dir = Path::new(op.info().root().as_str())
+            .join("spaces")
+            .join(name);
+        if !space_dir.is_dir() {
             return Err(AppError::not_found(
                 ErrorCode::SpaceNotFound,
                 format!("Space not found: {name}"),
@@ -1170,6 +1309,14 @@ async fn patch_space_with_operator(
             )
         })?;
     let old_settings = settings.clone();
+    let binding_path = space_binding_path(space_id);
+    let (old_binding, binding_etag) = match read_space_json_exact(op, &binding_path).await? {
+        Some((binding, etag)) => {
+            validate_space_binding(&binding)?;
+            (Some(binding), etag)
+        }
+        None => (None, None),
+    };
 
     if let Some(name) = patch.get("name") {
         meta["name"] = name.clone();
@@ -1178,9 +1325,10 @@ async fn patch_space_with_operator(
         validate_space_path_segment(slug)?;
         meta["slug"] = serde_json::Value::String(slug.to_string());
     }
-    if let Some(storage_config) = patch.get("storage_config") {
-        meta["storage_config"] = storage_config.clone();
-    }
+    let new_binding = match patch.get("storage_config") {
+        Some(config) => Some(storage_binding_from_config(config)?),
+        None => old_binding.clone(),
+    };
     if let Some(new_settings) = patch.get("settings").and_then(|value| value.as_object()) {
         if let Some(settings_obj) = settings.as_object_mut() {
             for (key, value) in new_settings {
@@ -1209,6 +1357,8 @@ async fn patch_space_with_operator(
         new_metadata: meta.clone(),
         old_settings,
         new_settings: settings.clone(),
+        old_binding: old_binding.clone(),
+        new_binding: new_binding.clone(),
     };
     let journal_etag = write_pending_space_patch(op, space_id, &journal_path, &journal).await?;
 
@@ -1244,6 +1394,11 @@ async fn patch_space_with_operator(
     };
     restore_local_space_json_permissions(op, &meta_path)?;
     write_space_patch_value(op, &settings_path, &settings, settings_etag.as_deref()).await?;
+    if old_binding != new_binding {
+        if let Some(binding) = new_binding.as_ref() {
+            write_space_patch_value(op, &binding_path, binding, binding_etag.as_deref()).await?;
+        }
+    }
     // Keep a completed journal as a version-fenced tombstone. A future patch
     // can replace it with its own pending transaction, but recovery must never
     // delete a newer journal after an exact read.
@@ -1251,6 +1406,9 @@ async fn patch_space_with_operator(
 
     let mut merged = meta;
     merged["settings"] = settings;
+    if let Some(binding) = new_binding.as_ref() {
+        merged["storage_config"] = storage_binding_response(binding)?;
+    }
     Ok(merged)
 }
 

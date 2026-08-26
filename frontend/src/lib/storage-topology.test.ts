@@ -70,6 +70,20 @@ describe("summarizeSpaceStorage", () => {
     });
   });
 
+  it("REQ-FE-060: reads the v3 Node-local binding from storage_config", () => {
+    expect(
+      summarizeSpaceStorage({
+        ...baseSpace,
+        storage_config: { type: "local", root: "/var/lib/ugoite/demo" },
+      }),
+    ).toEqual({
+      label: "Local filesystem",
+      description:
+        "This space currently writes through the backend deployment's local filesystem root.",
+      uri: "file:///var/lib/ugoite/demo",
+    });
+  });
+
   it("REQ-FE-060: falls back to backend API when no backend storage metadata is present", () => {
     expect(summarizeSpaceStorage(baseSpace)).toEqual({
       label: "Backend API",

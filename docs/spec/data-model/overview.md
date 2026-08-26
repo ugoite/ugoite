@@ -4,6 +4,10 @@ title: 'Data model overview'
 
 Ugoite treats operator-controlled files as the persistence boundary. A **Space** is a portable ownership boundary below the configured storage root and an Iceberg namespace. Apache Iceberg owns one append-only table per stable Form ID.
 
+Node-local Space locators are kept separately at
+`_ugoite/space-bindings/{space_id}.json`; they are not part of a portable
+Space export.
+
 ## Authority layers
 
 - **Authoring:** people and agents edit Markdown.
@@ -34,11 +38,13 @@ See [directory-structure.md](directory-structure.md) and [directory-layout.yaml]
 
 ## Spaces
 
-`meta.json` stores the Space identity, storage descriptor, and integrity key
-material. `settings.json` is created with `default_form: Entry`; portable
-membership, principal, policy, and authorization-audit state is stored in
-`security/principals.json`. Legacy membership-shaped settings are unsupported,
-and public Space patching cannot modify membership-managed keys.
+`meta.json` stores the Space identity and integrity key material; it does not
+store a physical storage descriptor. A Node-local binding, when configured,
+is kept outside the `spaces/{space_id}` prefix and is merged only into the
+runtime Space view. `settings.json` is created with `default_form: Entry`;
+portable membership, principal, policy, and authorization-audit state is
+stored in `security/principals.json`. Legacy membership-shaped settings are
+unsupported, and public Space patching cannot modify membership-managed keys.
 
 Creating a Space also creates an `Entry` Form with a Markdown `Body` field. On local Unix filesystems, the Space directories are set to owner-only mode and metadata files to owner read/write mode.
 

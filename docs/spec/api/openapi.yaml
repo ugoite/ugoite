@@ -11634,9 +11634,6 @@
               }
             ]
           },
-          "storage": {
-            "$ref": "#/components/schemas/PublicStorageSummary"
-          },
           "settings": {
             "$ref": "#/components/schemas/PublicSpaceSettings"
           },
@@ -11671,18 +11668,6 @@
             "$ref": "#/components/schemas/SpaceSummary"
           }
         ]
-      },
-      "PublicStorageSummary": {
-        "type": "object",
-        "additionalProperties": true,
-        "properties": {
-          "type": {
-            "type": "string"
-          },
-          "root": {
-            "type": "string"
-          }
-        }
       },
       "PublicSpaceSettings": {
         "type": "object",

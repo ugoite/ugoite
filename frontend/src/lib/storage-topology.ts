@@ -19,9 +19,12 @@ const readEffectiveStorage = (
   root: string | null;
   type: string | null;
 } => {
-  const storage = space.storage;
-  const type = normalizeStorageValue(storage?.type)?.toLowerCase() ?? null;
-  const root = normalizeStorageValue(storage?.root);
+  const storage = space.storage ?? space.storage_config;
+  const uri = normalizeStorageValue(storage?.uri);
+  const uriType = uri?.match(/^([a-z][a-z0-9+.-]*):\/\//i)?.[1] ?? null;
+  const type = normalizeStorageValue(storage?.type)?.toLowerCase() ??
+    (uriType === "file" || uriType === "fs" ? "local" : uriType);
+  const root = normalizeStorageValue(storage?.root) ?? uri;
   return { root, type };
 };
 
