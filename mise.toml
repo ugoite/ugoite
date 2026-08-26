@@ -5,13 +5,16 @@ CARGO_HOME = "{{env.HOME}}/.cargo"
 RUSTUP_HOME = "{{env.HOME}}/.rustup"
 CARGO_TARGET_DIR = "target/rust"
 RUST_BACKTRACE = "1"
-RUST_TEST_THREADS = "1"
 DENO_NO_UPDATE_CHECK = "1"
 
 [tools]
 deno = "2.8.3"
 helm = "3.19.0"
 rust = "1.94.0"
+
+[tools."github:nextest-rs/nextest"]
+version = "cargo-nextest-0.9.143"
+matching = "cargo-nextest"
 
 [tasks.setup]
 description = "Cache the minimal Rust and Deno development toolchain"
@@ -229,7 +232,11 @@ description = "Validate the v0.1 supported authentication contract and test trac
 run = "cargo run -p xtask -- supported-check"
 
 [tasks."test:rust"]
-run = "cargo test --workspace --locked"
+description = "Run workspace Rust tests with nextest and Cargo doctests"
+run = [
+  "cargo nextest run --workspace --locked",
+  "cargo test --workspace --doc --locked",
+]
 
 [tasks."test:tools"]
 run = "deno test -A tools/*_test.ts"
@@ -290,8 +297,10 @@ description = "Run the required Form-owned Asset acceptance E2E"
 run = "deno task e2e:asset-owned"
 
 [tasks."test:smoke"]
+description = "Run focused Rust smoke tests with nextest and Cargo doctests"
 run = [
-  "cargo test -p ugoite-domain -p ugoite-iceberg -p ugoite-core -p ugoite-server --locked",
+  "cargo nextest run -p ugoite-domain -p ugoite-iceberg -p ugoite-core -p ugoite-server --locked",
+  "cargo test --doc -p ugoite-domain -p ugoite-iceberg -p ugoite-core -p ugoite-server --locked",
   { task = "test:frontend" },
 ]
 

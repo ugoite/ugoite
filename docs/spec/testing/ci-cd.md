@@ -16,6 +16,8 @@ Root task composition:
 - `build:*`: deterministic compile/build steps with declared inputs and outputs;
 - `test:*`: authoritative assertions that may reuse `build:*` outputs but always execute when called; focused frontend/docsite tasks remain useful during development;
 - `test`: the canonical non-E2E suite, including Rust and tooling tests plus the frontend and docsite coverage gates;
+- `test:rust`: the canonical Rust test interface; cargo-nextest runs unit, integration, binary, and library tests, followed by `cargo test --workspace --doc --locked` for doctests;
+- `test:smoke`: the focused Rust smoke interface uses the same nextest-plus-doctest split before the frontend smoke task;
 - `test:frontend:coverage` and `test:docsite:coverage`: V8 coverage assertions with
   package-owned hard thresholds for authored frontend/docsite source;
 - `package:*`: staging under `target/artifacts/` only; packaging must fail if required build outputs are absent;
