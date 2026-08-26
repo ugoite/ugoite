@@ -68,22 +68,99 @@ function assertMainTrigger(source: string, trigger: string): void {
 }
 
 function assertAggregateWorkflow(workflow: string, mise: string): void {
-  const qualityJob = workflowJobBlock(workflow, "quality");
+  const rustCheckJob = workflowJobBlock(workflow, "rust-check");
+  const rustTestJob = workflowJobBlock(workflow, "rust-test");
+  const webJob = workflowJobBlock(workflow, "web");
   const artifactsJob = workflowJobBlock(workflow, "artifacts");
   const requiredJob = workflowJobBlock(workflow, "required");
-  const qualityCargoCache = workflowStepBlock(
-    qualityJob,
+  const rustCheckCargoCache = workflowStepBlock(
+    rustCheckJob,
+    "Restore Cargo dependency cache",
+  );
+  const rustTestCargoCache = workflowStepBlock(
+    rustTestJob,
+    "Restore Cargo dependency cache",
+  );
+  const webCargoCache = workflowStepBlock(
+    webJob,
     "Restore Cargo dependency cache",
   );
   const artifactsCargoCache = workflowStepBlock(
     artifactsJob,
     "Restore Cargo dependency cache",
   );
+  const canonicalCi = taskBlock(mise, "ci");
+  const rustLint = taskBlock(mise, "lint:rust");
+  const denoLint = taskBlock(mise, "lint:deno");
+  const canonicalLint = taskBlock(mise, "lint");
+  const rustCheck = taskBlock(mise, "check:rust");
+  const denoCheck = taskBlock(mise, "check:deno");
+  const repoCheck = taskBlock(mise, "check:repo");
+  const canonicalCheck = taskBlock(mise, "check");
   const canonicalTest = taskBlock(mise, "test");
+  const rustCheckLane = taskBlock(mise, "ci:lane:rust-check");
+  const rustTestLane = taskBlock(mise, "ci:lane:rust-test");
+  const webLane = taskBlock(mise, "ci:lane:web");
   const releaseBuild = taskBlock(mise, "build:rust:release");
   const artifactsTask = taskBlock(mise, "ci:artifacts");
   const mergeTask = taskBlock(mise, "ci:merge");
 
+  assertContainsAll(
+    canonicalCi,
+    [
+      '{ task = "fmt:check" }',
+      '{ task = "lint" }',
+      '{ task = "check" }',
+      '{ task = "test" }',
+    ],
+    "canonical CI task",
+  );
+  assertContainsAll(
+    rustLint,
+    ["cargo clippy --workspace --all-targets --all-features -- -D warnings"],
+    "Rust lint task",
+  );
+  assertContainsAll(
+    denoLint,
+    ["deno lint tools e2e frontend/src docsite/src"],
+    "Deno lint task",
+  );
+  assertContainsAll(
+    canonicalLint,
+    ['{ task = "lint:rust" }', '{ task = "lint:deno" }'],
+    "canonical lint task",
+  );
+  assertContainsAll(
+    rustCheck,
+    [
+      "cargo check --workspace --all-targets --all-features --locked",
+      "cargo check -p ugoite-domain --target wasm32-unknown-unknown --locked",
+      "cargo check -p ugoite-api-client --target wasm32-unknown-unknown --locked",
+      "cargo check -p ugoite-wasm --target wasm32-unknown-unknown --locked",
+    ],
+    "Rust check task",
+  );
+  assertContainsAll(denoCheck, ["deno task check"], "Deno check task");
+  assertContainsAll(
+    repoCheck,
+    [
+      "cargo run -p xtask -- openapi-check",
+      "cargo run -p xtask -- architecture-check",
+      "cargo run -p xtask -- docs-current-stack-check",
+      '{ task = "check:supported" }',
+      "cargo run -p xtask -- legacy-auth-check",
+    ],
+    "repository check task",
+  );
+  assertContainsAll(
+    canonicalCheck,
+    [
+      '{ task = "check:rust" }',
+      '{ task = "check:deno" }',
+      '{ task = "check:repo" }',
+    ],
+    "canonical check task",
+  );
   assertContainsAll(
     canonicalTest,
     [
@@ -131,10 +208,75 @@ function assertAggregateWorkflow(workflow: string, mise: string): void {
     "merge CI task",
   );
 
+  const hostedLaneExpectations: [string, string[]][] = [
+    ["rust-check", ["lint:rust", "check:rust", "check:repo"]],
+    ["rust-test", ["test:rust"]],
+    [
+      "web",
+      [
+        "fmt:check",
+        "lint:deno",
+        "check:deno",
+        "test:tools",
+        "test:frontend:coverage",
+        "test:docsite:coverage",
+      ],
+    ],
+  ];
+  for (const [lane, expectedTasks] of hostedLaneExpectations) {
+    const laneBlock = taskBlock(mise, `ci:lane:${lane}`);
+    assertContainsAll(
+      laneBlock,
+      expectedTasks.map((task) => `"${task}"`),
+      `hosted ${lane} lane`,
+    );
+  }
+  assertEquals(
+    rustCheckLane.includes("cargo ") || rustCheckLane.includes("deno ") ||
+      rustCheckLane.includes("rustup ") || rustCheckLane.includes("sccache "),
+    false,
+    "hosted rust-check lane must compose tasks instead of running commands",
+  );
+  assertEquals(
+    rustTestLane.includes("cargo ") || rustTestLane.includes("deno ") ||
+      rustTestLane.includes("rustup ") || rustTestLane.includes("sccache "),
+    false,
+    "hosted rust-test lane must compose tasks instead of running commands",
+  );
+  assertEquals(
+    webLane.includes("cargo ") || webLane.includes("deno ") ||
+      webLane.includes("rustup ") || webLane.includes("sccache "),
+    false,
+    "hosted web lane must compose tasks instead of running commands",
+  );
+
   assertContainsAll(
-    qualityJob,
-    ["name: quality", "scripts/measure-step.sh quality mise run ci"],
-    "quality CI lane",
+    rustCheckJob,
+    [
+      "name: ci-rust-check",
+      "scripts/measure-step.sh rust-check mise run ci:lane:rust-check",
+      "sccache --show-stats",
+    ],
+    "Rust check CI lane",
+  );
+  assertContainsAll(
+    rustTestJob,
+    [
+      "name: ci-rust-test",
+      "scripts/measure-step.sh rust-test mise run ci:lane:rust-test",
+      "sccache --show-stats",
+    ],
+    "Rust test CI lane",
+  );
+  assertContainsAll(
+    webJob,
+    [
+      "name: ci-web",
+      "scripts/measure-step.sh web mise run ci:lane:web",
+      "sccache --show-stats",
+      "- name: Save Deno cache",
+    ],
+    "web CI lane",
   );
   assertContainsAll(
     artifactsJob,
@@ -145,46 +287,65 @@ function assertAggregateWorkflow(workflow: string, mise: string): void {
     "artifact CI lane",
   );
   assertEquals(
-    qualityJob.includes("mise run test:frontend:coverage"),
+    workflow.includes("mise run ci\n"),
     false,
-    "quality lane must not know individual coverage tasks",
+    "CI must not invoke the canonical aggregate task directly",
   );
   assertEquals(
-    qualityJob.includes("mise run test:docsite:coverage"),
+    workflow.includes("MISE_JOBS"),
     false,
-    "quality lane must not know individual coverage tasks",
+    "CI must not impose workflow-global Mise parallelism",
   );
   assertEquals(
-    qualityJob.includes("Playwright"),
+    rustCheckJob.includes("Restore Deno cache"),
     false,
-    "quality lane must not install or configure Playwright",
+    "Rust check lane must not restore the Deno archive",
   );
   assertEquals(
-    qualityJob.includes("Buildx"),
+    rustTestJob.includes("Restore Deno cache"),
     false,
-    "quality lane must not configure Buildx",
+    "Rust test lane must not restore the Deno archive",
   );
   assertContainsAll(
-    qualityCargoCache,
+    rustCheckCargoCache,
     [
       "save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}",
     ],
-    "quality Cargo dependency cache",
+    "Rust check Cargo dependency cache writer",
+  );
+  for (
+    const [cache, subject] of [
+      [rustTestCargoCache, "Rust test Cargo dependency cache"],
+      [webCargoCache, "web Cargo dependency cache"],
+      [artifactsCargoCache, "artifact Cargo dependency cache"],
+    ]
+  ) {
+    assertContainsAll(cache, ['save-if: "false"'], subject);
+  }
+  assertContainsAll(
+    workflowStepBlock(webJob, "Restore Deno cache"),
+    ["actions/cache/restore", "path: ${{ runner.temp }}/deno-cache"],
+    "web Deno archive restore",
   );
   assertContainsAll(
-    artifactsCargoCache,
-    ['save-if: "false"'],
-    "artifact Cargo dependency cache",
-  );
-  assertEquals(
-    qualityJob.includes("- name: Save Deno cache"),
-    true,
-    "quality lane must own the Deno archive writer",
+    workflowStepBlock(artifactsJob, "Restore Deno cache"),
+    ["actions/cache/restore", "path: ${{ runner.temp }}/deno-cache"],
+    "artifact Deno archive restore",
   );
   assertEquals(
     artifactsJob.includes("- name: Save Deno cache"),
     false,
     "artifact lane must not write the Deno archive",
+  );
+  assertEquals(
+    workflow.match(/mise run [A-Za-z0-9:_-]+/g)?.sort().join("\n"),
+    [
+      "mise run ci:artifacts",
+      "mise run ci:lane:rust-check",
+      "mise run ci:lane:rust-test",
+      "mise run ci:lane:web",
+    ].sort().join("\n"),
+    "CI must invoke only Hosted lane and artifact Mise entrypoints",
   );
   assertEquals(
     workflow.includes("mise run test:frontend:coverage"),
@@ -202,10 +363,14 @@ function assertAggregateWorkflow(workflow: string, mise: string): void {
     [
       "name: ci-required",
       "if: ${{ always() }}",
-      "needs: [quality, artifacts]",
-      "QUALITY_RESULT: ${{ needs.quality.result }}",
+      "needs: [rust-check, rust-test, web, artifacts]",
+      "RUST_CHECK_RESULT: ${{ needs.rust-check.result }}",
+      "RUST_TEST_RESULT: ${{ needs.rust-test.result }}",
+      "WEB_RESULT: ${{ needs.web.result }}",
       "ARTIFACTS_RESULT: ${{ needs.artifacts.result }}",
-      'test "$QUALITY_RESULT" = success',
+      'test "$RUST_CHECK_RESULT" = success',
+      'test "$RUST_TEST_RESULT" = success',
+      'test "$WEB_RESULT" = success',
       'test "$ARTIFACTS_RESULT" = success',
     ],
     "required CI aggregator",
