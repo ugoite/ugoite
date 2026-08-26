@@ -185,6 +185,15 @@ async fn local_space_validation_repairs_patch_journal_mode() -> anyhow::Result<(
         .path()
         .join("_ugoite/space-patches/private-journal.json");
     let journal_path = "_ugoite/space-patches/private-journal.json";
+    let control_dir = dir.path().join("_ugoite/space-patches");
+    assert_eq!(
+        std::fs::metadata(&control_dir)?.permissions().mode() & 0o777,
+        0o700
+    );
+    assert!(!dir
+        .path()
+        .join("spaces/private-journal/.ugoite-space-patch.json")
+        .exists());
     let mut pending: Value = serde_json::from_slice(&op.read(journal_path).await?.to_vec())?;
     pending["status"] = Value::String("pending".to_string());
     op.write(journal_path, serde_json::to_vec(&pending)?)
