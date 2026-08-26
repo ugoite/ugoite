@@ -43,9 +43,11 @@ Passkey ceremony is completed. Until then, the setup session can access only
 credential-strengthening endpoints.
 
 The first account receives `node_admin`, owner bindings for existing supported
-operator-created Spaces (or a new `default` Space when none exist), and an
-opaque browser session. The setup secret cannot be reused. Visiting the server
-first never grants administrator access.
+operator-created Spaces (or a new `default` Space when none exist), a one-time
+recovery-code set for safekeeping, and an opaque browser session. The codes are
+bootstrap output only; v0.1 does not support using them or TOTP for account
+recovery or Passkey replacement. The setup secret cannot be reused. Visiting
+the server first never grants administrator access.
 
 ## Browser login and sessions
 

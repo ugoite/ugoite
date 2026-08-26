@@ -26,7 +26,8 @@ The following controls are future/reference design and are not v0.1 product
 promises:
 
 - OIDC authorization-code + PKCE identity linking keyed by issuer and subject.
-- Recovery codes, TOTP, and owner-approved credential replacement.
+- TOTP and owner-approved credential replacement. Bootstrap-only recovery-code
+  display does not make account recovery a supported v0.1 workflow.
 - Owner-approved recovery is separate from self-recovery: only an active human
   Space Owner with a recent Passkey can issue a 15-minute token for another
   active member. Its hash is authoritative; encrypted response material is

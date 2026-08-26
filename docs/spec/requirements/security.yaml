@@ -126,7 +126,7 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-005
   title: Initial Owner Bootstrap Controls
-  description: 'Initial setup MUST use an expiring one-time secret stored only as a hash, MUST reject reuse, MUST create the administrator account and required initial Passkey state, and MUST create an authenticated opaque browser session. Account recovery is specified separately as future scope.'
+  description: 'Initial setup MUST use an expiring one-time secret stored only as a hash, MUST reject reuse, MUST create the administrator account and required initial Passkey state, MUST emit bootstrap-only recovery-code material once, and MUST create an authenticated opaque browser session. Account recovery is specified separately as future scope.'
   related_spec:
   - security/overview.md
   - api/rest.md#authentication

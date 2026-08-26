@@ -39,6 +39,7 @@ apis:
       path: /setup
       file: frontend/src/routes/setup.tsx
       function: SetupRoute
+    note: Bootstrap-only recovery-code display is part of setup output; TOTP and recovery-code account recovery remain future scope.
   - id: auth.passkey
     method: POST|DELETE|GET
     status: supported

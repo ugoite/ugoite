@@ -35,9 +35,9 @@ the local CLI core workflow remains available without a server.
   query string, log, or audit event.
 
 Browser session cookies are opaque, server-side, and part of the supported v0.1
-contract. Device credentials, recovery material, and remote CLI credential
-provisioning remain future scope. This release does not provide a local
-authentication bypass.
+contract. Device credentials, TOTP/recovery workflows beyond the bootstrap-only
+code display, and remote CLI credential provisioning remain future scope. This
+release does not provide a local authentication bypass.
 
 ## Authorization surfaces
 
