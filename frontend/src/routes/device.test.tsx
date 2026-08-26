@@ -24,17 +24,30 @@ describe("/device", () => {
     vi.mocked(spaceApi.list).mockReset();
   });
 
-  it("keeps CLI device authorization outside the v0.1 UI", async () => {
+  it("approves a supported REST CLI request", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      json: async () => ({ resource: null }),
+      json: async () => ({
+        device_name: "CLI",
+        requested_actions: ["read", "create", "update"],
+        resource: null,
+      }),
     });
+    vi.mocked(spaceApi.list).mockResolvedValue([{ id: "space-1", name: "Docs" }]);
 
     render(() => <DeviceApprovalRoute />);
 
-    expect(await screen.findByText("CLI device authorization is not available"))
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Approve CLI access" }),
+    );
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/oauth/device/approve",
+        expect.objectContaining({ method: "POST" }),
+      )
+    );
+    expect(await screen.findByText("CLI access approved. Return to the CLI."))
       .toBeInTheDocument();
-    expect(spaceApi.list).not.toHaveBeenCalled();
   });
 
   it("approves a supported MCP-scoped request", async () => {

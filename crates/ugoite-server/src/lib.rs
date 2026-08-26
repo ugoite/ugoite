@@ -81,7 +81,7 @@ impl MakeRequestId for MakeRequestUuidV7 {
         Some(RequestId::new(request_id))
     }
 }
-use uuid::{Uuid, Variant, Version};
+use uuid::Uuid;
 use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 
 pub const OPENAPI_JSON: &str = include_str!("openapi.json");
@@ -734,10 +734,6 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             post(owner_force_reset),
         )
         .route(
-            "/spaces/{space_id}/admin/recovery/backup-codes",
-            post(owner_rotate_backup_codes),
-        )
-        .route(
             "/auth/invitations/accept",
             post(auth_invitation_accept_existing),
         )
@@ -1221,15 +1217,9 @@ async fn require_auth(
         if thumbprint != claims.cnf.jkt {
             return unauthorized("access token is not bound to this proof key");
         }
-        let htu = format!(
-            "{}{}",
-            issuer.trim_end_matches('/'),
-            request
-                .uri()
-                .path_and_query()
-                .map(|value| value.as_str())
-                .unwrap_or(request.uri().path())
-        );
+        // RFC 9449 `htu` is the scheme/authority/path only. Query parameters
+        // are request data, not part of the DPoP URI binding.
+        let htu = format!("{}{}", issuer.trim_end_matches('/'), request.uri().path());
         let Ok(proof_claims) = oauth::verify_dpop_proof(
             proof,
             &proof_key,
@@ -2078,7 +2068,6 @@ async fn recovery_target_account(
     space_id: &str,
     space_uid: Uuid,
     principal_id: Uuid,
-    issuer_account_id: Uuid,
 ) -> ApiResult<Uuid> {
     let authorization = Authorizer::new(state.service.operator().clone())
         .state(space_id)
@@ -2115,7 +2104,7 @@ async fn recovery_target_account(
         .iter()
         .filter(|binding| binding.principal_id == principal_id)
         .collect::<Vec<_>>();
-    if matching.len() != 1 || matching[0].node_account_id == issuer_account_id {
+    if matching.len() != 1 {
         return Err(ApiError::new(
             StatusCode::NOT_FOUND,
             json!({"code":"RECOVERY_TARGET_INVALID","message":"recovery target is invalid"}),
@@ -2142,14 +2131,6 @@ async fn validate_owner_recovery_context(
     state: &AppState,
     context: &OwnerRecoveryContext,
 ) -> ApiResult<()> {
-    if context.account_id == context.issuer_account_id
-        || context.principal_id == context.issuer_principal_id
-    {
-        return Err(ApiError::new(
-            StatusCode::UNAUTHORIZED,
-            json!({"code":"AUTHENTICATION_REQUIRED","message":"owner recovery is invalid"}),
-        ));
-    }
     let space_id = find_space_id_by_uid(state, context.space_uid).await?;
     let authorization = Authorizer::new(state.service.operator().clone())
         .state(&space_id)
@@ -2964,15 +2945,6 @@ fn recovery_result_headers() -> HeaderMap {
     headers
 }
 
-async fn append_recovery_space_audit(state: &AppState, space_id: &str, event_id: Uuid) -> bool {
-    let Ok(Some(event)) = state.identity.recovery_audit_event(event_id).await else {
-        return false;
-    };
-    audit::append_audit_event(state.service.operator(), space_id, &event, None)
-        .await
-        .is_ok()
-}
-
 /// Restart-safe recovery audit delivery. The Node outbox contains one
 /// redacted canonical event; each transition is persisted before the next
 /// delivery attempt, so a crash can resume without replaying secrets.
@@ -2995,8 +2967,8 @@ async fn reconcile_recovery_audit_outbox(state: &AppState, space_id: &str) -> an
                         actor_account_id: record.actor_account_id,
                         credential_id: record.actor_credential_id.or(record.credential_id),
                         action: &record.action,
-                        target_type: "human_account",
-                        target_id: Some(record.account_id.to_string()),
+                        target_type: "space_principal",
+                        target_id: Some(record.principal_id.to_string()),
                         outcome: "success",
                         request_id: Some(record.request_id.to_string()),
                         safe_metadata: record
@@ -3065,14 +3037,8 @@ async fn owner_force_reset(
             }),
         )
     })?;
-    let account_id = recovery_target_account(
-        &state,
-        &space_id,
-        space_uid,
-        payload.principal_id,
-        identity.account_id,
-    )
-    .await?;
+    let account_id =
+        recovery_target_account(&state, &space_id, space_uid, payload.principal_id).await?;
     let existing_fence = state
         .identity
         .active_owner_recovery_fence(account_id)
@@ -3221,7 +3187,7 @@ async fn owner_force_reset(
             )
             .await
     };
-    let (approval_id, token, expires_at) = match issued {
+    let (_, token, expires_at) = match issued {
         Ok(result) => result,
         Err(error) => {
             if recovery_write_outcome_is_ambiguous(&error) {
@@ -3255,50 +3221,6 @@ async fn owner_force_reset(
             return Err(recovery_fence_unavailable());
         }
     }
-    let node_audit_status = state
-        .identity
-        .append_node_audit_with_id(
-            approval_id,
-            NodeAuditInput {
-                subject_account_id: Some(account_id),
-                actor_account_id: Some(identity.account_id),
-                credential_id: Some(identity.request_identity.credential_id),
-                action: "recovery.owner_approval_issued",
-                target_type: "human_account",
-                target_id: Some(account_id.to_string()),
-                outcome: "success",
-                request_id: Some(approval_id.to_string()),
-                safe_metadata: json!({
-                    "space_uid": space_uid,
-                    "principal_id": payload.principal_id,
-                    "issuer_principal_id": issuer_principal_id
-                }),
-            },
-        )
-        .await
-        .is_ok();
-    if node_audit_status {
-        let _ = state
-            .identity
-            .mark_recovery_audit_stage(approval_id, "node")
-            .await;
-    }
-    let space_audit_status = append_recovery_space_audit(&state, &space_id, approval_id).await;
-    if space_audit_status {
-        let _ = state
-            .identity
-            .mark_recovery_audit_stage(approval_id, "space")
-            .await;
-    }
-    let audit_delivered = if node_audit_status && space_audit_status {
-        state
-            .identity
-            .mark_recovery_audit_delivered(approval_id)
-            .await
-            .is_ok()
-    } else {
-        false
-    };
     let mut headers = recovery_result_headers();
     Ok((
         StatusCode::CREATED,
@@ -3307,322 +3229,10 @@ async fn owner_force_reset(
             "principal_id": payload.principal_id,
             "owner_approval_token": token,
             "expires_at": expires_at,
-            "audit_status": if audit_delivered { "delivered" } else { "pending" }
+            "audit_status": "pending"
         })),
     )
         .into_response())
-}
-
-async fn owner_rotate_backup_codes(
-    State(state): State<AppState>,
-    Extension(identity): Extension<RequestIdentityContext>,
-    Path(space_id): Path<String>,
-    headers: HeaderMap,
-    Json(payload): Json<OwnerRecoveryApprovalRequest>,
-) -> ApiResult<Response> {
-    reconcile_recovery_fences_api(&state, &space_id).await?;
-    let Some(value) = headers.get("idempotency-key") else {
-        return Err(ApiError::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            json!({"code":"BACKUP_IDEMPOTENCY_KEY_INVALID","message":"Idempotency-Key must be a UUIDv4"}),
-        ));
-    };
-    let request_id = value.to_str().ok().and_then(parse_uuid_v4)
-        .ok_or_else(|| {
-            ApiError::new(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                json!({"code":"BACKUP_IDEMPOTENCY_KEY_INVALID","message":"Idempotency-Key must be a UUIDv4"}),
-            )
-        })?;
-    let (space_uid, issuer_principal_id) =
-        recovery_owner_context(&state, &space_id, &identity).await?;
-    let owner_session_token = identity.session_token.as_deref().ok_or_else(|| {
-        ApiError::new(
-            StatusCode::FORBIDDEN,
-            json!({
-                "code": "RECOVERY_AUTHORITY_REQUIRED",
-                "message": "owner recovery requires a browser Passkey session"
-            }),
-        )
-    })?;
-    let account_id = recovery_target_account(
-        &state,
-        &space_id,
-        space_uid,
-        payload.principal_id,
-        identity.account_id,
-    )
-    .await?;
-    if let Some(existing) = state
-        .identity
-        .backup_rotation_request(request_id)
-        .await
-        .map_err(auth_error)?
-    {
-        let authorization = Authorizer::new(state.service.operator().clone())
-            .state(&space_id)
-            .await
-            .map_err(ApiError::from_core)?;
-        let (issuer_generation, target_generation) =
-            recovery_account_generations(&state, identity.account_id, account_id).await?;
-        let issuer_space_epoch = authorization
-            .principal_lifecycle_epochs
-            .get(&issuer_principal_id)
-            .copied()
-            .unwrap_or_default();
-        let target_space_epoch = authorization
-            .principal_lifecycle_epochs
-            .get(&payload.principal_id)
-            .copied()
-            .unwrap_or_default();
-        let issuer_node_epoch = state
-            .identity
-            .recovery_account_lifecycle_epoch(identity.account_id)
-            .await
-            .map_err(recovery_commit_error)?;
-        let target_node_epoch = state
-            .identity
-            .recovery_account_lifecycle_epoch(account_id)
-            .await
-            .map_err(recovery_commit_error)?;
-        let fence_tuple_matches = existing.recovery_fence_id.is_some_and(|fence_id| {
-            authorization
-                .recovery_fences
-                .get(&fence_id)
-                .is_some_and(|fence| {
-                    fence.request_id == request_id
-                        && fence.authorization_revision == existing.space_authorization_revision
-                })
-        });
-        let same_tuple = existing.space_uid == space_uid
-            && existing.principal_id == payload.principal_id
-            && existing.account_id == account_id
-            && existing.issuer_principal_id == issuer_principal_id
-            && existing.issuer_account_id == identity.account_id
-            && existing.issuer_generation == issuer_generation
-            && existing.target_generation == target_generation
-            && existing.issuer_credential_id == Some(identity.request_identity.credential_id)
-            && existing.issuer_space_lifecycle_epoch == issuer_space_epoch
-            && existing.target_space_lifecycle_epoch == target_space_epoch
-            && existing.issuer_node_lifecycle_epoch == issuer_node_epoch
-            && existing.target_node_lifecycle_epoch == target_node_epoch
-            && fence_tuple_matches;
-        let replay_code = if !same_tuple {
-            "BACKUP_ROTATION_KEY_MISMATCH"
-        } else if existing.space_fence_status != "reconciled" {
-            "RECOVERY_FENCE_UNAVAILABLE"
-        } else if existing.codes_delivered_at.is_none() {
-            let codes = match state.identity.take_backup_rotation_codes(request_id).await {
-                Ok(codes) => codes,
-                Err(error)
-                    if error.to_string().contains("already delivered")
-                        || error.to_string().contains("no longer current") =>
-                {
-                    return Err(ApiError::new(
-                        StatusCode::CONFLICT,
-                        json!({"code":"BACKUP_ROTATION_ALREADY_COMMITTED","message":"backup rotation is already committed"}),
-                    ));
-                }
-                // The rotation marker is already durable on this path; a
-                // delivery/reconciliation failure is not a pre-CAS storage
-                // failure and must remain a recoverable conflict.
-                Err(_) => return Err(recovery_fence_unavailable()),
-            };
-            let _ = reconcile_recovery_audit_outbox(&state, &space_id).await;
-            let audit_delivered = state
-                .identity
-                .pending_recovery_audits()
-                .await
-                .map(|pending| {
-                    !pending
-                        .into_iter()
-                        .any(|record| record.event_id == request_id)
-                })
-                .unwrap_or(false);
-            let mut response_headers = recovery_result_headers();
-            return Ok((
-                StatusCode::OK,
-                std::mem::take(&mut response_headers),
-                Json(json!({
-                    "principal_id": payload.principal_id,
-                    "codes": codes,
-                    "issued_at": existing.issued_at,
-                    "audit_status": if audit_delivered { "delivered" } else { "pending" }
-                })),
-            )
-                .into_response());
-        } else {
-            "BACKUP_ROTATION_ALREADY_COMMITTED"
-        };
-        return Err(ApiError::new(
-            StatusCode::CONFLICT,
-            json!({
-                "code": replay_code,
-                "message": if replay_code == "BACKUP_ROTATION_ALREADY_COMMITTED" { "backup rotation is already committed" } else if replay_code == "RECOVERY_FENCE_UNAVAILABLE" { "recovery result is still being reconciled" } else { "idempotency key is bound to another recovery tuple" }
-            }),
-        ));
-    }
-    let (authorizer, fence, snapshot) = reserve_recovery_pair(
-        &state,
-        &space_id,
-        space_uid,
-        issuer_principal_id,
-        identity.account_id,
-        payload.principal_id,
-        account_id,
-        request_id,
-        chrono::Duration::minutes(5),
-    )
-    .await?;
-    let _generated_codes = match state
-        .identity
-        .rotate_recovery_codes_with_snapshot_credential_and_session(
-            request_id,
-            space_uid,
-            payload.principal_id,
-            account_id,
-            issuer_principal_id,
-            identity.account_id,
-            snapshot,
-            Some(identity.request_identity.credential_id),
-            owner_session_token,
-        )
-        .await
-    {
-        Ok(codes) => codes,
-        Err(error) => {
-            let message = error.to_string();
-            if recovery_write_outcome_is_ambiguous(&error) {
-                // The marker may already be durable. Keep both fences active
-                // so restart reconciliation can inspect the request marker;
-                // releasing here could strand a committed rotation with no
-                // way to return its one-time codes safely.
-                return Err(recovery_fence_unavailable());
-            }
-            state
-                .identity
-                .release_recovery_fence(fence.fence_id)
-                .await
-                .map_err(recovery_commit_error)?;
-            authorizer
-                .release_recovery_fence(&space_id, fence.fence_id)
-                .await
-                .map_err(|_| recovery_storage_unavailable())?;
-            if message.contains("key mismatch") {
-                return Err(ApiError::new(
-                    StatusCode::CONFLICT,
-                    json!({"code":"BACKUP_ROTATION_KEY_MISMATCH","message":"idempotency key is bound to another recovery tuple"}),
-                ));
-            }
-            if message.contains("already committed") {
-                return Err(ApiError::new(
-                    StatusCode::CONFLICT,
-                    json!({"code":"BACKUP_ROTATION_ALREADY_COMMITTED","message":"backup rotation is already committed"}),
-                ));
-            }
-            return Err(recovery_commit_error(error));
-        }
-    };
-    let space_fence_committed = authorizer
-        .complete_recovery_fence(&space_id, fence.fence_id)
-        .await
-        .is_ok();
-    let node_fence_committed = if space_fence_committed {
-        state
-            .identity
-            .complete_recovery_fence(fence.fence_id)
-            .await
-            .is_ok()
-    } else {
-        false
-    };
-    if !space_fence_committed || !node_fence_committed {
-        // The Node mutation is already durable. Do not expose the one-time
-        // plaintext codes until both halves of the fence are durable; the
-        // restart reconciler will finish the marker without replaying them.
-        return Err(recovery_fence_unavailable());
-    }
-    state
-        .identity
-        .mark_recovery_fence_reconciled(fence.fence_id)
-        .await
-        .map_err(|_| recovery_fence_unavailable())?;
-    let codes = match state.identity.take_backup_rotation_codes(request_id).await {
-        Ok(codes) => codes,
-        Err(error)
-            if error.to_string().contains("already delivered")
-                || error.to_string().contains("no longer current") =>
-        {
-            return Err(ApiError::new(
-                StatusCode::CONFLICT,
-                json!({"code":"BACKUP_ROTATION_ALREADY_COMMITTED","message":"backup rotation is already committed"}),
-            ));
-        }
-        Err(_) => return Err(recovery_fence_unavailable()),
-    };
-    let node_audit_status = state
-        .identity
-        .append_node_audit_with_id(
-            request_id,
-            NodeAuditInput {
-                subject_account_id: Some(account_id),
-                actor_account_id: Some(identity.account_id),
-                credential_id: Some(identity.request_identity.credential_id),
-                action: "recovery.backup_codes_rotated",
-                target_type: "human_account",
-                target_id: Some(account_id.to_string()),
-                outcome: "success",
-                request_id: Some(request_id.to_string()),
-                safe_metadata: json!({
-                    "space_uid": space_uid,
-                    "principal_id": payload.principal_id,
-                    "issuer_principal_id": issuer_principal_id,
-                    "code_count": codes.len()
-                }),
-            },
-        )
-        .await
-        .is_ok();
-    if node_audit_status {
-        let _ = state
-            .identity
-            .mark_recovery_audit_stage(request_id, "node")
-            .await;
-    }
-    let space_audit_status = append_recovery_space_audit(&state, &space_id, request_id).await;
-    if space_audit_status {
-        let _ = state
-            .identity
-            .mark_recovery_audit_stage(request_id, "space")
-            .await;
-    }
-    let audit_delivered = if node_audit_status && space_audit_status {
-        state
-            .identity
-            .mark_recovery_audit_delivered(request_id)
-            .await
-            .is_ok()
-    } else {
-        false
-    };
-    let mut response_headers = recovery_result_headers();
-    Ok((
-        StatusCode::OK,
-        std::mem::take(&mut response_headers),
-        Json(json!({
-            "principal_id": payload.principal_id,
-            "codes": codes,
-            "issued_at": chrono::Utc::now().to_rfc3339(),
-            "audit_status": if audit_delivered && space_fence_committed && node_fence_committed { "delivered" } else { "pending" }
-        })),
-    )
-        .into_response())
-}
-
-fn parse_uuid_v4(value: &str) -> Option<Uuid> {
-    Uuid::parse_str(value.trim()).ok().filter(|value| {
-        value.get_version() == Some(Version::Random) && value.get_variant() == Variant::RFC4122
-    })
 }
 
 async fn auth_owner_recovery_start(
@@ -3713,7 +3323,7 @@ async fn auth_owner_recovery_finish(
         {
             return Err(ApiError::new(
                 StatusCode::CONFLICT,
-                json!({"code":"OWNER_RESET_ALREADY_COMPLETED","message":"owner reset response is already committed"}),
+                json!({"code":"SPACE_RECOVERY_ALREADY_COMPLETED","message":"Space access recovery response is already committed"}),
             ));
         }
         Err(error) => return Err(owner_recovery_commit_api_error(error)),
@@ -3790,7 +3400,7 @@ async fn auth_owner_recovery_finish(
         {
             return Err(ApiError::new(
                 StatusCode::CONFLICT,
-                json!({"code":"OWNER_RESET_ALREADY_COMPLETED","message":"owner reset response is already committed"}),
+                json!({"code":"SPACE_RECOVERY_ALREADY_COMPLETED","message":"Space access recovery response is already committed"}),
             ));
         }
         Err(_) => return Err(recovery_fence_unavailable()),
@@ -3803,59 +3413,19 @@ async fn auth_owner_recovery_finish(
             .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "invalid auth cookie"))?,
     );
     let recovery_event_id = result.recovery_request_id.unwrap_or(payload.challenge_id);
-    let node_audit_status = state
+    if let Ok(space_id) = find_space_id_by_uid(&state, space_uid).await {
+        let _ = reconcile_recovery_audit_outbox(&state, &space_id).await;
+    }
+    let audit_delivered = state
         .identity
-        .append_node_audit_with_id(
-            recovery_event_id,
-            NodeAuditInput {
-            subject_account_id: Some(result.account.account_id),
-            actor_account_id: None,
-            credential_id: None,
-            action: "recovery.owner_reset_completed",
-            target_type: "human_account",
-            target_id: Some(result.account.account_id.to_string()),
-            outcome: "success",
-            request_id: Some(recovery_event_id.to_string()),
-            safe_metadata: json!({"credential_generation": result.account.credential_generation}),
-            },
-        )
+        .pending_recovery_audits()
         .await
-        .is_ok();
-    if node_audit_status {
-        let _ = state
-            .identity
-            .mark_recovery_audit_stage(recovery_event_id, "node")
-            .await;
-    }
-    let space_audit_status = match (
-        result.recovery_space_uid,
-        result.recovery_principal_id,
-        result.recovery_issuer_principal_id,
-        result.recovery_request_id,
-    ) {
-        (Some(space_uid), Some(_principal_id), Some(_issuer_principal_id), Some(request_id)) => {
-            match find_space_id_by_uid(&state, space_uid).await {
-                Ok(space_id) => append_recovery_space_audit(&state, &space_id, request_id).await,
-                Err(_) => false,
-            }
-        }
-        _ => false,
-    };
-    if space_audit_status {
-        let _ = state
-            .identity
-            .mark_recovery_audit_stage(recovery_event_id, "space")
-            .await;
-    }
-    let audit_delivered = if node_audit_status && space_audit_status {
-        state
-            .identity
-            .mark_recovery_audit_delivered(recovery_event_id)
-            .await
-            .is_ok()
-    } else {
-        false
-    };
+        .map(|pending| {
+            !pending
+                .into_iter()
+                .any(|record| record.event_id == recovery_event_id)
+        })
+        .unwrap_or(false);
     Ok((
         StatusCode::CREATED,
         headers,
@@ -3888,7 +3458,7 @@ fn owner_recovery_api_error(error: anyhow::Error) -> ApiError {
     let (status, code) = if message.contains("already pending") {
         (StatusCode::CONFLICT, "OWNER_RECOVERY_CHALLENGE_PENDING")
     } else if message.contains("no longer current") || message.contains("already completed") {
-        (StatusCode::CONFLICT, "OWNER_RESET_ALREADY_COMPLETED")
+        (StatusCode::CONFLICT, "SPACE_RECOVERY_ALREADY_COMPLETED")
     } else if message.contains("expired") {
         (StatusCode::GONE, "OWNER_APPROVAL_EXPIRED")
     } else if message.contains("verify owner recovery") {
@@ -4847,7 +4417,18 @@ async fn oauth_device_authorization(
     validate_mcp_resource(&payload.resource, state.identity.public_origin())?;
     oauth::jwk_thumbprint(&payload.public_key_jwk).map_err(auth_error)?;
     if payload.requested_actions.is_empty() {
-        payload.requested_actions.insert("read".to_string());
+        let defaults = if payload.resource.is_some() {
+            ["read"]
+                .into_iter()
+                .map(str::to_string)
+                .collect::<BTreeSet<_>>()
+        } else {
+            ["read", "create", "update"]
+                .into_iter()
+                .map(str::to_string)
+                .collect::<BTreeSet<_>>()
+        };
+        payload.requested_actions.extend(defaults);
     }
     validate_action_names(&payload.requested_actions)?;
     if payload.resource.is_some() {
@@ -9794,13 +9375,7 @@ mod authentication_regression_tests {
     use p256::ecdsa::{signature::Signer, Signature, SigningKey};
     use sha2::{Digest, Sha256};
     use tower::ServiceExt;
-    use ugoite_identity::node_identity::token_hash;
-
-    #[test]
-    fn backup_idempotency_requires_rfc4122_uuid_v4() {
-        assert!(parse_uuid_v4("018f1f3a-9d7b-4e1b-8e3a-6e8a4a6d1f12").is_some());
-        assert!(parse_uuid_v4("018f1f3a-9d7b-4e1b-0e3a-6e8a4a6d1f12").is_none());
-    }
+    use ugoite_identity::node_identity::{token_hash, RecoveryAuditOutboxRecord};
 
     fn token_claims(sub: Uuid, actor_principal_id: Option<Uuid>) -> AccessTokenClaims {
         AccessTokenClaims {
@@ -9986,7 +9561,8 @@ mod authentication_regression_tests {
         )
     }
 
-    fn mcp_request(
+    fn mcp_request_at_uri(
+        uri: &str,
         token: &str,
         scheme: &str,
         method: &str,
@@ -10005,7 +9581,7 @@ mod authentication_regression_tests {
                 "io.modelcontextprotocol/clientCapabilities": {}
             }),
         );
-        let mut builder = Request::post("/mcp")
+        let mut builder = Request::post(uri)
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json, text/event-stream")
             .header("mcp-protocol-version", "2026-07-28")
@@ -10022,6 +9598,17 @@ mod authentication_regression_tests {
                 json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}).to_string(),
             ))
             .expect("MCP test request")
+    }
+
+    fn mcp_request(
+        token: &str,
+        scheme: &str,
+        method: &str,
+        name: Option<&str>,
+        params: Value,
+        dpop: Option<&str>,
+    ) -> Request<Body> {
+        mcp_request_at_uri("/mcp", token, scheme, method, name, params, dpop)
     }
 
     async fn mcp_call(
@@ -10247,6 +9834,24 @@ mod authentication_regression_tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["result"]["supportedVersions"][0], "2026-07-28");
 
+        // RFC 9449 htu excludes query and fragment. The same proof shape
+        // must therefore authenticate an otherwise identical query-bearing
+        // MCP request, while the request routing still sees the query.
+        let query_proof = mcp_dpop_proof(&signing_key, &jwk, &token);
+        let query_response = router
+            .clone()
+            .oneshot(mcp_request_at_uri(
+                "/mcp?cursor=ignored",
+                &token,
+                "DPoP",
+                "server/discover",
+                None,
+                json!({}),
+                Some(&query_proof),
+            ))
+            .await?;
+        assert_eq!(query_response.status(), StatusCode::OK);
+
         let (status, body) = mcp_call(
             router,
             &token,
@@ -10259,6 +9864,224 @@ mod authentication_regression_tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["result"]["structuredContent"]["status"], "deleted");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oauth_device_authorization_defaults_to_read_create_update() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-cli-default-actions-{}",
+            Uuid::now_v7()
+        ))?;
+        state.initialize_node().await?;
+        let public_key_jwk = json!({
+            "kty": "EC",
+            "crv": "P-256",
+            "x": URL_SAFE_NO_PAD.encode([1_u8; 32]),
+            "y": URL_SAFE_NO_PAD.encode([2_u8; 32]),
+        });
+        let (status, Json(body)) = oauth_device_authorization(
+            State(state.clone()),
+            Json(DeviceAuthorizationPayload {
+                device_name: "CLI default actions".to_string(),
+                public_key_jwk,
+                space_uid: None,
+                requested_actions: BTreeSet::new(),
+                resource: None,
+            }),
+        )
+        .await
+        .map_err(|error| anyhow::anyhow!("{error:?}"))?;
+        assert_eq!(status, StatusCode::CREATED);
+        let pending = state
+            .identity
+            .pending_device_authorization(body["user_code"].as_str().expect("user code"))
+            .await?;
+        assert_eq!(
+            pending.requested_actions,
+            ["read", "create", "update"]
+                .into_iter()
+                .map(str::to_string)
+                .collect()
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn recovery_audit_delivery_failure_reloads_and_reconciles_exactly_once(
+    ) -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let root_uri = format!("fs://{}", root.path().display());
+        let operator = ugoite_storage::operator_from_uri(&root_uri)?;
+        let service = UgoiteService::from_operator(operator.clone(), root_uri.clone());
+        let identity = NodeIdentityService::new_for_tests_with_operator(
+            operator.clone(),
+            "localhost",
+            "http://localhost:8000",
+        )?;
+        let state = AppState {
+            service,
+            identity,
+            security_headers: SecurityHeadersPolicy::from_public_origin("http://localhost:8000"),
+        };
+        state.initialize_node().await?;
+
+        let issuer_principal_id = Uuid::now_v7();
+        let target_principal_id = Uuid::now_v7();
+        let old_account_id = Uuid::now_v7();
+        let new_account_id = Uuid::now_v7();
+        let issuer_account_id = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("recovery-audit-reload", issuer_principal_id, "Owner")
+            .await?;
+        let space_id = space_uid.to_string();
+        let event_id = Uuid::now_v7();
+        let request_id = Uuid::now_v7();
+        let credential_id = Uuid::now_v7();
+        let event = json!({
+            "event_id": event_id.to_string(),
+            "action": "recovery.space_binding_replaced",
+            "request_id": request_id.to_string(),
+            "challenge_id": Uuid::now_v7().to_string(),
+            "space_uid": space_uid.to_string(),
+            "subject_principal_id": target_principal_id.to_string(),
+            "subject_account_id": new_account_id.to_string(),
+            "actor_principal_id": issuer_principal_id.to_string(),
+            "actor_account_id": issuer_account_id.to_string(),
+            "credential_id": credential_id.to_string(),
+            "issuer_principal_id": issuer_principal_id.to_string(),
+            "issuer_account_id": issuer_account_id.to_string(),
+            "issuer_credential_id": credential_id.to_string(),
+            "outcome": "success",
+            "metadata": {
+                "space_uid": space_uid.to_string(),
+                "old_account_id": old_account_id.to_string(),
+                "new_account_id": new_account_id.to_string(),
+                "recovery_request_id": request_id.to_string(),
+            },
+        });
+        state
+            .identity
+            .seed_test_recovery_audit_outbox(RecoveryAuditOutboxRecord {
+                event_id,
+                action: "recovery.space_binding_replaced".to_string(),
+                request_id,
+                space_uid,
+                principal_id: target_principal_id,
+                account_id: new_account_id,
+                issuer_principal_id: Some(issuer_principal_id),
+                issuer_account_id: Some(issuer_account_id),
+                credential_id: Some(credential_id),
+                actor_principal_id: Some(issuer_principal_id),
+                actor_account_id: Some(issuer_account_id),
+                actor_credential_id: Some(credential_id),
+                status: "pending".to_string(),
+                event,
+            })
+            .await?;
+
+        // A conflicting event marker makes only the Space delivery fail. The
+        // Node audit stage and the pending outbox state remain durable.
+        let marker_path = format!("spaces/{space_id}/audit/event-ids/{event_id}.json");
+        operator
+            .create_dir(&format!("spaces/{space_id}/audit/event-ids/"))
+            .await?;
+        operator
+            .write(
+                &marker_path,
+                serde_json::to_vec(&json!({
+                    "status": "committed",
+                    "event": {
+                        "event_id": event_id.to_string(),
+                        "action": "recovery.conflicting_event",
+                        "subject_principal_id": target_principal_id.to_string(),
+                    }
+                }))?,
+            )
+            .await?;
+        assert!(reconcile_recovery_audit_outbox(&state, &space_id)
+            .await
+            .is_err());
+        let pending_after_failure = state.identity.pending_recovery_audits().await?;
+        assert_eq!(
+            pending_after_failure
+                .iter()
+                .find(|record| record.event_id == event_id)
+                .map(|record| record.status.as_str()),
+            Some("node")
+        );
+
+        operator.delete(&marker_path).await?;
+        drop(state);
+        let restarted = AppState {
+            service: UgoiteService::from_operator(operator.clone(), root_uri),
+            identity: NodeIdentityService::new_for_tests_with_operator(
+                operator.clone(),
+                "localhost",
+                "http://localhost:8000",
+            )?,
+            security_headers: SecurityHeadersPolicy::from_public_origin("http://localhost:8000"),
+        };
+        restarted.initialize_node().await?;
+        assert!(restarted
+            .identity
+            .pending_recovery_audits()
+            .await?
+            .iter()
+            .all(|record| record.event_id != event_id));
+
+        // A second reconciliation after restart must observe the committed
+        // marker and leave one canonical Space audit event.
+        reconcile_recovery_audit_outbox(&restarted, &space_id).await?;
+        let audit = audit::list_audit_events(
+            restarted.service.operator(),
+            &space_id,
+            AuditListOptions::default(),
+        )
+        .await?;
+        assert_eq!(audit["total"], 1);
+        assert_eq!(
+            audit["items"][0]["action"],
+            "recovery.space_binding_replaced"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oauth_mcp_device_authorization_defaults_to_read_only() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-mcp-default-actions-{}",
+            Uuid::now_v7()
+        ))?;
+        state.initialize_node().await?;
+        let public_key_jwk = json!({
+            "kty": "EC",
+            "crv": "P-256",
+            "x": URL_SAFE_NO_PAD.encode([3_u8; 32]),
+            "y": URL_SAFE_NO_PAD.encode([4_u8; 32]),
+        });
+        let (status, Json(body)) = oauth_device_authorization(
+            State(state.clone()),
+            Json(DeviceAuthorizationPayload {
+                device_name: "MCP default actions".to_string(),
+                public_key_jwk,
+                space_uid: None,
+                requested_actions: BTreeSet::new(),
+                resource: Some("http://localhost:8000/mcp".to_string()),
+            }),
+        )
+        .await
+        .map_err(|error| anyhow::anyhow!("{error:?}"))?;
+        assert_eq!(status, StatusCode::CREATED);
+        let pending = state
+            .identity
+            .pending_device_authorization(body["user_code"].as_str().expect("user code"))
+            .await?;
+        assert_eq!(
+            pending.requested_actions,
+            ["read"].into_iter().map(str::to_string).collect()
+        );
         Ok(())
     }
 

@@ -826,7 +826,7 @@ mod tests {
         let event_id = uuid::Uuid::now_v7().to_string();
         let payload = json!({
             "event_id": event_id,
-            "action": "recovery.owner_reset_completed",
+            "action": "recovery.space_binding_replaced",
             "subject_principal_id": uuid::Uuid::now_v7().to_string(),
             "actor_principal_id": uuid::Uuid::now_v7().to_string(),
             "metadata": {"safe": true}
@@ -849,14 +849,14 @@ mod tests {
         let event_id = uuid::Uuid::now_v7().to_string();
         let first = json!({
             "event_id": event_id,
-            "action": "recovery.owner_reset_completed",
+            "action": "recovery.space_binding_replaced",
             "space_uid": uuid::Uuid::now_v7().to_string(),
             "challenge_id": uuid::Uuid::now_v7().to_string(),
             "issuer_principal_id": uuid::Uuid::now_v7().to_string(),
             "issuer_account_id": uuid::Uuid::now_v7().to_string(),
             "subject_principal_id": uuid::Uuid::now_v7().to_string(),
             "actor_principal_id": uuid::Uuid::now_v7().to_string(),
-            "metadata": {"credential_generation": 2}
+            "metadata": {"space_uid": uuid::Uuid::now_v7(), "old_account_id": uuid::Uuid::now_v7(), "new_account_id": uuid::Uuid::now_v7(), "recovery_request_id": event_id}
         });
         append_audit_event(&op, "demo", &first, None).await?;
         let conflicting = json!({
@@ -886,7 +886,7 @@ mod tests {
         let op = operator_from_uri("memory://audit-retention")?;
         let retained = json!({
             "event_id": uuid::Uuid::now_v7().to_string(),
-            "action": "recovery.backup_codes_rotated",
+            "action": "recovery.space_binding_replaced",
             "subject_principal_id": uuid::Uuid::now_v7().to_string(),
             "actor_principal_id": uuid::Uuid::now_v7().to_string()
         });
@@ -896,7 +896,7 @@ mod tests {
             "demo",
             &json!({
                 "event_id": uuid::Uuid::now_v7().to_string(),
-                "action": "recovery.owner_approval_issued",
+                "action": "recovery.space_binding_replaced",
                 "subject_principal_id": uuid::Uuid::now_v7().to_string(),
                 "actor_principal_id": uuid::Uuid::now_v7().to_string()
             }),
@@ -915,10 +915,10 @@ mod tests {
         let event_id = uuid::Uuid::now_v7().to_string();
         let payload = json!({
             "event_id": event_id,
-            "action": "recovery.owner_reset_completed",
+            "action": "recovery.space_binding_replaced",
             "subject_principal_id": uuid::Uuid::now_v7().to_string(),
             "actor_principal_id": uuid::Uuid::now_v7().to_string(),
-            "metadata": {"credential_generation": 2}
+            "metadata": {"space_uid": uuid::Uuid::now_v7(), "old_account_id": uuid::Uuid::now_v7(), "new_account_id": uuid::Uuid::now_v7(), "recovery_request_id": event_id}
         });
         op.create_dir("spaces/demo/audit/event-ids/").await?;
         create_pending_marker(&op, "demo", &event_id, &payload).await?;
@@ -942,7 +942,7 @@ mod tests {
             .unwrap_or_else(|_| uuid::Uuid::now_v7().to_string());
         let payload = json!({
             "event_id": event_id,
-            "action": "recovery.owner_reset_completed",
+            "action": "recovery.space_binding_replaced",
             "subject_principal_id": "01900000-0000-7000-8000-000000000001",
             "actor_principal_id": "01900000-0000-7000-8000-000000000002",
             "metadata": {"credential_generation": 2}
@@ -984,7 +984,7 @@ mod tests {
         let event_id = uuid::Uuid::now_v7();
         let payload = json!({
             "event_id": event_id,
-            "action": "recovery.owner_reset_completed",
+            "action": "recovery.space_binding_replaced",
             "space_uid": uuid::Uuid::now_v7(),
             "challenge_id": uuid::Uuid::now_v7(),
             "issuer_principal_id": uuid::Uuid::now_v7(),

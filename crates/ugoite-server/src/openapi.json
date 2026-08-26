@@ -3,7 +3,7 @@
   "info": {
     "title": "Ugoite Rust Server API",
     "version": "0.1.0",
-    "description": "The generated endpoint inventory is authoritative for the server implementation. v0.1 supports mandatory browser authentication with Passkey/WebAuthn, opaque sessions, Space membership/ACL enforcement, authenticated MCP access, and authorized audit reads. TOTP/recovery-code workflows, OIDC, owner-approved recovery, managed service-account operations, audit CRUD, and remote CLI asset upload remain reference/future scope."
+    "description": "The generated endpoint inventory is authoritative for the server implementation. v0.1 supports mandatory browser authentication with Passkey/WebAuthn, owner-approved Space access recovery, remote CLI device authentication, opaque sessions, Space membership/ACL enforcement, authenticated MCP access, and authorized audit reads. Account self-recovery, TOTP/OIDC recovery, managed service-account operations, audit CRUD, and remote CLI asset upload remain reference/future scope."
   },
   "x-ugoite-response-signing": {
     "description": "Eligible materialized /api responses carry the reusable HMAC headers below. The signature is lowercase hexadecimal HMAC-SHA256 over the exact delivered body bytes.",
@@ -8821,7 +8821,7 @@
     },
     "/spaces/{space_id}/admin/recovery/force-reset": {
       "post": {
-        "summary": "Issue an owner-approved recovery token",
+        "summary": "Issue an owner-approved Space access recovery token",
         "parameters": [
           {
             "$ref": "#/components/parameters/SpaceId"
@@ -8955,174 +8955,9 @@
         }
       }
     },
-    "/spaces/{space_id}/admin/recovery/backup-codes": {
-      "post": {
-        "summary": "Rotate a member's recovery codes with owner authority",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/SpaceId"
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-              "description": "A fresh UUIDv4 rotation request key."
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OwnerRecoveryApprovalRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Recovery codes rotated once",
-            "headers": {
-              "Cache-Control": {
-                "schema": {
-                  "type": "string",
-                  "const": "no-store"
-                }
-              },
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BackupCodesRotationResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RecoveryErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "403": {
-            "description": "Recovery authority required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RecoveryErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "404": {
-            "description": "Recovery target invalid",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RecoveryErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "409": {
-            "description": "Rotation key, recovery fence, or committed result conflict",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RecoveryErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "422": {
-            "description": "Idempotency key is invalid",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RecoveryErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "503": {
-            "description": "No durable state committed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RecoveryErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          }
-        }
-      }
-    },
     "/auth/recovery/owner/start": {
       "post": {
-        "summary": "Start owner-approved recovery with a one-time token",
+        "summary": "Start owner-approved Space access recovery with a one-time token",
         "requestBody": {
           "required": true,
           "content": {
@@ -9235,7 +9070,7 @@
     },
     "/auth/recovery/owner/finish": {
       "post": {
-        "summary": "Finish owner-approved recovery and replace credentials",
+        "summary": "Finish owner-approved Space access recovery and create a fresh account",
         "requestBody": {
           "required": true,
           "content": {
@@ -12197,15 +12032,12 @@
               "RECOVERY_AUTHORITY_REQUIRED",
               "RECOVERY_TARGET_INVALID",
               "OWNER_RECOVERY_CHALLENGE_PENDING",
-              "OWNER_RESET_ALREADY_COMPLETED",
+              "SPACE_RECOVERY_ALREADY_COMPLETED",
               "OWNER_APPROVAL_ALREADY_COMMITTED",
               "OWNER_APPROVAL_EXPIRED",
               "WEBAUTHN_REGISTRATION_INVALID",
               "RECOVERY_FENCE_UNAVAILABLE",
               "RECOVERY_STORAGE_UNAVAILABLE",
-              "BACKUP_IDEMPOTENCY_KEY_INVALID",
-              "BACKUP_ROTATION_KEY_MISMATCH",
-              "BACKUP_ROTATION_ALREADY_COMMITTED",
               "RECENT_PASSKEY_REQUIRED",
               "INTERNAL_ERROR"
             ]
@@ -12243,37 +12075,6 @@
             "minLength": 43
           },
           "expires_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "audit_status": {
-            "$ref": "#/components/schemas/AuditStatus"
-          }
-        },
-        "additionalProperties": false
-      },
-      "BackupCodesRotationResponse": {
-        "type": "object",
-        "required": [
-          "principal_id",
-          "codes",
-          "issued_at",
-          "audit_status"
-        ],
-        "properties": {
-          "principal_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "codes": {
-            "type": "array",
-            "minItems": 8,
-            "maxItems": 8,
-            "items": {
-              "type": "string"
-            }
-          },
-          "issued_at": {
             "type": "string",
             "format": "date-time"
           },

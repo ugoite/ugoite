@@ -1,5 +1,5 @@
 version: 0.3
-status: future
+status: implemented
 updated: "2026-06-29"
 node_identity:
   human_authentication: [passkey, invited_oidc]
@@ -16,19 +16,20 @@ node_identity:
     recovery_code: { hashed: true, one_use: true }
     totp: { encrypted_at_rest: true, sufficient_alone: false }
     passkey_replacement_requires: [recovery_code, totp]
-    owner_approved:
+    owner_approved_space_access:
       authority: active_human_space_owner_with_recent_passkey
       approval_ttl_minutes: 15
       token: { entropy_bits_minimum: 256, hashed_at_rest: true, encrypted_for_one_time_response: true, one_use: true }
       challenge_ttl_minutes: 5
-      reset: { credential_generation: monotonic, old_human_credentials_invalidated: true, agent_credentials_preserved: true }
-      backup_codes: { count: 8, idempotency_key: uuid_v4, plaintext_returned_once: true }
+      reset: { fresh_human_account: true, principal_binding_replaced: true, space_identity_preserved: true, unrelated_credentials_preserved: true, plaintext_codes_returned_once: true }
 space_identity:
   id: UUIDv7 space_uid
   portable: [principals, memberships, acl, attribution, authorization_audit]
   node_local: [accounts, principal_bindings, sessions, issuer, webauthn_rp]
 oauth:
   device_authorization: implemented
+  rest_cli: { resource: omitted, audience: issuer, dpop: RFC9449_DPoP }
+  mcp: { resource: "{issuer}/mcp", audience: "{issuer}/mcp" }
   access_token: opaque_hashed_server_side
   access_token_minutes: 5
   refresh_rotation: every_use

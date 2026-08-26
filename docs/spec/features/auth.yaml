@@ -10,15 +10,16 @@ support_boundary:
   - invitations, membership lifecycle, roles, and ACL enforcement
   - authenticated REST and MCP access
   - Node and Space authorization audit read access
+  - owner-approved Space access recovery by principal-binding replacement
+  - remote CLI device authentication with DPoP
   internal_dependency:
   - authentication capability discovery
-  - MCP-scoped OAuth credential issuance and metadata
+  - shared device authorization/token machinery and MCP-scoped OAuth metadata
   experimental: []
   future:
   - TOTP and recovery-code account recovery
-  - owner-approved recovery
   - OIDC authentication and account linking
-  - CLI OAuth device authorization and DPoP credentials
+  - account-level self/admin recovery
   - agent and service-account principals
 apis:
   - id: auth.config
@@ -92,7 +93,7 @@ apis:
       path: /mcp
       file: crates/ugoite-server/src/mcp.rs
       function: handle
-    note: v0.1 supports the authenticated MCP protocol and ACL boundary. An MCP client obtains a scoped credential through the internal resource-bound OAuth device and token endpoints below; browser cookie sessions are rejected. CLI and agent credential provisioning remains future scope.
+    note: v0.1 supports the authenticated MCP protocol and ACL boundary. An MCP client obtains a scoped credential through the internal resource-bound OAuth device and token endpoints below; browser cookie sessions are rejected. MCP and CLI credentials remain separate by resource and audience.
   - id: auth.authorization
     method: GET|POST|PUT|PATCH|DELETE
     status: supported
@@ -103,24 +104,28 @@ apis:
     note: The path is a registry marker for the protected REST surface; concrete routes are authoritative in OpenAPI.
   - id: auth.recovery
     method: POST
+    status: supported
+    backend:
+      path: /spaces/{space_id}/admin/recovery/force-reset|/auth/recovery/owner/start|/auth/recovery/owner/finish
+      file: crates/ugoite-server/src/lib.rs
+      function: owner_force_reset
+    frontend:
+      path: /recover
+      file: frontend/src/routes/recover.tsx
+      function: RecoverRoute
+    note: Space recovery changes only the target principal's Node-local HumanAccount binding. Account self-recovery, TOTP, and OIDC recovery remain future scope.
+  - id: auth.account_recovery
+    method: POST
     status: future
     backend:
       path: /auth/recovery/start|/auth/recovery/finish|/auth/recovery/totp/start|/auth/recovery/totp/finish
       file: crates/ugoite-server/src/lib.rs
       function: auth_recovery_start
     frontend:
-      path: /recover|/settings/security
-      file: frontend/src/routes/recover.tsx
-      function: RecoverRoute
-    note: TOTP and recovery-code workflows are not part of the v0.1 support contract.
-  - id: auth.owner_recovery
-    method: POST
-    status: future
-    backend:
-      path: /spaces/{space_id}/admin/recovery/force-reset|/spaces/{space_id}/admin/recovery/backup-codes|/auth/recovery/owner/start|/auth/recovery/owner/finish
-      file: crates/ugoite-server/src/lib.rs
-      function: owner_force_reset
-    note: Owner-approved recovery remains a future release contract.
+      path: /settings/security
+      file: frontend/src/lib/auth-api.ts
+      function: recoverPasskey
+    note: Account self-recovery, recovery-code replacement, and TOTP recovery remain outside the v0.1 support contract.
   - id: auth.accounts
     method: GET|POST
     status: future
@@ -146,7 +151,19 @@ apis:
       path: /device
       file: frontend/src/routes/device.tsx
       function: DeviceApprovalRoute
-    note: Internal MCP dependency only when the requested resource is {issuer}/mcp. CLI OAuth device authorization and the ugoite auth login command remain future scope.
+    note: Shared internal device authorization/token machinery. REST CLI requests omit resource; MCP requests use exactly {issuer}/mcp.
+  - id: auth.cli_device
+    method: POST
+    status: supported
+    backend:
+      path: /oauth/device/authorization|/oauth/device/pending|/oauth/device/approve|/oauth/token|/auth/devices|/auth/devices/{credential_id}
+      file: crates/ugoite-server/src/lib.rs
+      function: oauth_device_authorization
+    frontend:
+      path: /device
+      file: frontend/src/routes/device.tsx
+      function: DeviceApprovalRoute
+    note: Remote CLI uses a fresh P-256 key, browser approval, opaque issuer-audience credentials, rotating refresh credentials, and DPoP. Logout deletes local state; remote asset upload remains future scope.
   - id: auth.agent
     method: POST
     status: future
@@ -161,4 +178,4 @@ apis:
       path: /.well-known/oauth-protected-resource|/.well-known/oauth-authorization-server
       file: crates/ugoite-server/src/lib.rs
       function: oauth_protected_resource_metadata
-    note: Metadata is exposed for supported MCP credential discovery; CLI and agent OAuth flows remain future scope.
+    note: Metadata is exposed for supported MCP credential discovery. Generic third-party OAuth compatibility is not a v0.1 goal.

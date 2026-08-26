@@ -39,10 +39,9 @@ content.
 - Do not interpret a 2xx response as durable success until the corresponding
   client decoder accepts the response body.
 - Recovery one-time responses use `Cache-Control: no-store`. Treat
-  `OWNER_RESET_ALREADY_COMPLETED` and `BACKUP_ROTATION_ALREADY_COMMITTED` as
-  terminal; do not replay the token or a committed backup-rotation key.
-  `audit_status: pending`
-  means the credential/code mutation committed and audit delivery is queued.
+  `SPACE_RECOVERY_ALREADY_COMPLETED` as terminal; do not replay the token.
+  `audit_status: pending` means the Space binding mutation committed and audit
+  delivery is queued.
   `RECOVERY_FENCE_UNAVAILABLE` is a 409: a committed recovery marker still
   holds an unreconciled Space fence and must be resolved by the restart-safe
   reconciler. `RECOVERY_STORAGE_UNAVAILABLE` is a 503 only for failures before

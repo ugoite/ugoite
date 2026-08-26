@@ -5,21 +5,21 @@ sidebar:
 ---
 
 > v0.1 support boundary: mandatory authentication, owner bootstrap,
-> Passkey/WebAuthn registration and login, opaque browser sessions, Space
+> Passkey/WebAuthn registration and login, opaque browser sessions,
+> owner-approved Space access recovery, Remote CLI device credentials, Space
 > membership/ACL enforcement, authenticated MCP access, and authorized audit
-> reads are supported. TOTP/recovery-code workflows, OIDC, owner-approved
-> recovery, CLI device credentials, agent principals, and audit CRUD remain
-> future scope.
+> reads are supported. Account self-recovery, TOTP/OIDC recovery, agent
+> principals, and audit CRUD remain future scope.
 
 Ugoite separates identity that belongs to one server from identity that must
 move with a Space.
 
 ## Identity boundaries
 
-Node Identity contains human accounts, Passkeys, browser sessions, and Node
-administrator roles. MCP-scoped device credentials are an internal dependency
-of the supported MCP flow; OIDC links, CLI devices, and agent principals are
-future designs. It is stored through the
+Node Identity contains human accounts, Passkeys, browser sessions, device
+credentials, and Node administrator roles. CLI and MCP device credentials use
+the same internal machinery but are separated by resource and audience; OIDC
+links and agent principals are future designs. It is stored through the
 atomic `NodeControlStore` below `_ugoite/nodes/{node_id}` and is never exported
 as part of a Space. `UGOITE_NODE_CONTROL_URI` may select a separate durable
 OpenDAL location. OIDC users are keyed by the exact `(issuer, subject)` pair;
@@ -69,13 +69,13 @@ Passkey authentication within the preceding five minutes. Agent lifecycle and
 OIDC configuration are future scope. Accounts should register two or more Passkeys. Ugoite refuses to remove
 the final Passkey.
 
-## Future: account recovery
+## Future: account self-recovery
 
-TOTP, recovery-code replacement, and owner-approved credential replacement are
-future capabilities. The v0.1 contract does not promise account recovery; keep
-access to a registered Passkey.
+TOTP, recovery-code replacement, and account-level self-recovery are future
+capabilities. The v0.1 contract does not promise account recovery; keep access
+to a registered Passkey.
 
-### Future: owner-approved recovery
+### Supported: owner-approved Space access recovery
 
 An active human Space Owner can recover another active human member with a
 recent Passkey session. `POST /spaces/{space_id}/admin/recovery/force-reset`
@@ -83,15 +83,19 @@ generates a server-side request identity and returns a 15-minute one-time
 token; give it to the member over a trusted channel. The member submits the
 token to `/auth/recovery/owner/start`, completes the
 five-minute WebAuthn challenge at `/auth/recovery/owner/finish`, and receives a
-new session plus eight recovery codes once. The target's Space membership and
-agent credentials are preserved; old human credentials are invalidated by a
-monotonic credential generation.
+new Passkey, session, and eight recovery codes once. The target Space Principal
+ID, membership, role, ACL, resource ownership, and audit identity are
+preserved. Only its Node-local binding moves from the old HumanAccount to the
+new one. The old account's credentials, sessions, device credentials, and
+bindings in other Spaces remain valid; it is denied only by the recovered
+Space's binding lookup.
 
-Owners may instead rotate a member's backup codes at
-`/spaces/{space_id}/admin/recovery/backup-codes`. Supply a fresh UUIDv4
-`Idempotency-Key` for each deliberate rotation. Never retry a timed-out request
-blindly: plaintext codes are delivered once, and the response reports whether
-audit delivery is `delivered` or `pending`.
+The completion checks the current binding revision, lifecycle/authorization
+fence, target membership, issuer ownership, expiry, and one-use state. Binding
+replacement and approval consumption are one persisted Node state transition;
+concurrent completion has exactly one winner. Space audit delivery is durable
+and separate from completion, so the response reports `delivered` or `pending`
+without reissuing secrets.
 
 ## Invitations and future identity providers
 
@@ -118,20 +122,26 @@ An account has at most one Node binding in a Space. If an already-bound account
 opens an invitation for that same Space, acceptance is idempotent and keeps the
 existing principal instead of creating a second membership.
 
-## Future: CLI devices
+## Supported: Remote CLI devices
 
-`ugoite auth login` is a future workflow. It generates a P-256 key, requests a device code, and prints a
+`ugoite auth login` generates a fresh P-256 key, requests a device code, and prints a
 verification URL and short user code. Approval shows the target Space and
 requested actions. The CLI stores its private key in the OS keychain when
 available, otherwise in an owner-only file. Access tokens last five minutes;
 refresh credentials rotate on every use and expire after 30 days.
 
+The default actions are `read,create,update`; delete and share are never added
+implicitly. REST CLI authorization requests omit `resource` and receive a token
+whose audience is the Node issuer. MCP requests use exactly `{issuer}/mcp` for
+both resource and audience, and the two credential types cannot cross-use.
+
 Access tokens are opaque random values; the Node control store saves only their
 hashes and server-side issuer, Node, Space, action, actor-chain, expiry,
 credential, and key-binding metadata. They can be revoked immediately and expose
-no claims to the holder. Every API request uses DPoP. Ugoite validates the proof
-signature, registered key thumbprint, method, URI, access-token hash, timestamp,
-and one-use `jti`. A copied access token is unusable without the device key.
+no claims to the holder. Every REST API request uses DPoP. Ugoite validates the
+proof signature, registered key thumbprint, method, scheme/authority/path `htu`
+(without query or fragment), access-token hash, timestamp, and persisted
+one-use `jti`. A copied access token is unusable without the device key.
 Devices and last-use state are visible and individually revocable. The expected
 URI comes from the Node's canonical public URL and the actual request path,
 never a client-provided forwarding header.
@@ -163,9 +173,9 @@ is available at `/.well-known/oauth-protected-resource` and
 `/.well-known/oauth-authorization-server`. A human MCP client requests a
 resource-bound device grant with `resource: {issuer}/mcp`, the signed-in owner
 approves it at `/device`, and the client exchanges the device code at
-`/oauth/token`. CLI device authorization and autonomous agent credentials are
-future scope. MCP tokens are restricted to one node, one `space_uid`, actions,
-principal, credential, and short expiry.
+`/oauth/token`. Autonomous agent credentials are future scope. MCP tokens are
+restricted to one node, one `space_uid`, actions, principal, credential, and
+short expiry.
 
 ## Data authorization
 

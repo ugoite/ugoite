@@ -49,9 +49,10 @@ one RFC 9449 proof. Agent credentials cannot use the MCP delete tool.
 
 Cookie sessions are rejected at `/mcp`. For v0.1, the supported boundary is the
 authenticated MCP protocol, its resource-bound credential flow, and ACL
-behavior. The `/device` approval page accepts only MCP-scoped requests; CLI
-credential storage, CLI device authorization, and agent credential flows remain
-future scope. The MCP adapter never asks for a Space ID, bucket, database, or
+behavior. The `/device` approval page accepts MCP-scoped requests and REST CLI
+requests with an omitted resource; those credentials remain separated by
+audience and cannot cross-use. Agent credential flows remain future scope. The
+MCP adapter never asks for a Space ID, bucket, database, or
 filesystem path.
 
 The REST implementation remains `crates/ugoite-server`; `/openapi.json` is the

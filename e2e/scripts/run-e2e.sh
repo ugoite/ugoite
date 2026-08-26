@@ -144,11 +144,11 @@ if [ "$FRONTEND_MODE" != "static" ]; then
   cd "$ROOT_DIR/frontend"
   if [ "$FRONTEND_MODE" = "prod" ]; then
     echo "Building frontend for production..."
-    BACKEND_URL="$BACKEND_URL" UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" deno task build
+    BACKEND_URL="$BACKEND_URL" VITE_API_PROXY=true UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" deno task build
     echo "Starting production frontend server..."
-    BACKEND_URL="$BACKEND_URL" UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" NODE_ENV=production PORT="$FRONTEND_PORT" deno task start &
+    BACKEND_URL="$BACKEND_URL" VITE_API_PROXY=true UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" NODE_ENV=production PORT="$FRONTEND_PORT" deno task start &
   else
-    BACKEND_URL="$BACKEND_URL" UGOITE_STATIC_SPA=true UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" PORT="$FRONTEND_PORT" deno task dev &
+    BACKEND_URL="$BACKEND_URL" VITE_API_PROXY=true UGOITE_STATIC_SPA=true UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" PORT="$FRONTEND_PORT" deno task dev &
   fi
   FRONTEND_PID=$!
 fi

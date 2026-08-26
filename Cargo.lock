@@ -6238,6 +6238,7 @@ dependencies = [
  "tokio",
  "ugoite-api-client",
  "ugoite-iceberg",
+ "url",
  "uuid",
 ]
 

@@ -18,7 +18,7 @@ ugoite config set --mode core
 ugoite config current
 ugoite space list /path/to/workspace
 
-# Server-backed mode (remote CLI authentication remains future scope)
+# Server-backed mode
 ugoite config set --mode backend --backend-url https://ugoite.example.com
 ugoite config current
 ```
@@ -28,21 +28,25 @@ In core mode, commands that address a Space take its full local path, such as
 such as `demo`. `ugoite space list` takes the workspace root only in core mode;
 omit the positional argument in backend/API mode.
 
-## Remote CLI authentication (future/reference)
+## Remote CLI authentication
 
-The device authorization, TOTP/OIDC login, and CLI credential storage flows
-below are endpoint-inventory reference material only; they are not a supported
-v0.1 remote CLI authentication contract. Browser Passkey authentication for
-the shipped server UI is supported and is documented in the operator guide.
-The supported v0.1 workflow is core mode, which reads the operator-owned Space
-directory directly:
+`ugoite auth login` generates a fresh P-256 key and starts browser-approved
+device authorization. Open the printed verification URL on a signed-in browser,
+approve the exact Space and actions, and return to the CLI. The default actions
+are `read,create,update`; delete and share are not implicit. REST CLI tokens are
+opaque, short-lived, issuer-audience credentials and every REST request carries
+DPoP. The CLI stores the private key in the OS keychain when available and falls
+back to an owner-only file (0600 on packaged Linux).
 
 ```bash
 ugoite config set --mode core
 ugoite space list /path/to/workspace
 ```
 
-Backend/API CLI authentication remains future work for this release.
+`ugoite auth logout` is local logout: it deletes the local credentials and
+private key. Server-side device-grant revocation is a separate operation. MCP
+credentials use `{issuer}/mcp` as resource and audience; REST and MCP
+credentials cannot cross-use. Remote CLI asset upload remains future scope.
 
 ## Spaces and entries
 

@@ -6,7 +6,7 @@ import { formatUserFacingError } from "~/lib/user-facing-error";
 type PendingMcpAuthorization = {
   device_name: string;
   requested_actions: string[];
-  resource: string;
+  resource: string | null;
 };
 
 export default function DeviceApprovalRoute() {
@@ -18,12 +18,12 @@ export default function DeviceApprovalRoute() {
   );
   const [pending, setPending] = createSignal<PendingMcpAuthorization>();
   const [done, setDone] = createSignal(false);
-  const [future, setFuture] = createSignal(false);
+  const [unsupported, setUnsupported] = createSignal(false);
   const [error, setError] = createSignal("");
 
   onMount(async () => {
     if (!code().trim()) {
-      setFuture(true);
+      setUnsupported(true);
       return;
     }
     try {
@@ -37,8 +37,11 @@ export default function DeviceApprovalRoute() {
         );
         return;
       }
-      if (payload.resource !== `${location.origin}/mcp`) {
-        setFuture(true);
+      if (
+        payload.resource !== null &&
+        payload.resource !== `${location.origin}/mcp`
+      ) {
+        setUnsupported(true);
         return;
       }
       setPending({
@@ -46,7 +49,7 @@ export default function DeviceApprovalRoute() {
         requested_actions: Array.isArray(payload.requested_actions)
           ? payload.requested_actions.map(String)
           : [],
-        resource: String(payload.resource),
+        resource: payload.resource === null ? null : String(payload.resource),
       });
       const values = await spaceApi.list();
       setSpaces(values);
@@ -93,26 +96,30 @@ export default function DeviceApprovalRoute() {
     <main class="publicShell">
       <section class="publicCard ui-stack">
         <Show
-          when={!future()}
+          when={!unsupported()}
           fallback={
             <>
               <h1 class="ui-page-title">
-                CLI device authorization is not available
+                Unsupported device authorization
               </h1>
               <p class="ui-muted">
-                CLI OAuth device authorization and agent credentials are future
-                functionality. MCP clients may use this page for an MCP-scoped
-                approval request.
+                This approval request is for an unsupported resource. REST CLI
+                requests omit the resource; MCP requests use this Node's
+                <code>/mcp</code> resource.
               </p>
             </>
           }
         >
-          <h1 class="ui-page-title">Approve MCP access</h1>
+          <h1 class="ui-page-title">
+            {pending()?.resource ? "Approve MCP access" : "Approve CLI access"}
+          </h1>
           <Show
             when={!done()}
             fallback={
               <p class="ui-alert">
-                MCP access approved. Return to the MCP client.
+                {pending()?.resource
+                  ? "MCP access approved. Return to the MCP client."
+                  : "CLI access approved. Return to the CLI."}
               </p>
             }
           >
@@ -124,7 +131,7 @@ export default function DeviceApprovalRoute() {
                 <form class="ui-stack-sm" onSubmit={approve}>
                   <p>
                     Approve <strong>{request().device_name}</strong>{" "}
-                    for MCP actions: {request().requested_actions.join(", ")}.
+                    for {request().resource ? "MCP" : "CLI"} actions: {request().requested_actions.join(", ")}.
                   </p>
                   <label class="ui-stack-sm">
                     <span>Space</span>
@@ -150,7 +157,9 @@ export default function DeviceApprovalRoute() {
                     class="ui-button ui-button-primary"
                     disabled={!spaceId()}
                   >
-                    Approve MCP access
+                    {request().resource
+                      ? "Approve MCP access"
+                      : "Approve CLI access"}
                   </button>
                 </form>
               )}

@@ -91,16 +91,17 @@ ugoite entry list /path/to/workspace/spaces/demo
 ugoite query /path/to/workspace/spaces/demo --sql "SELECT id, title FROM note LIMIT 10"
 ```
 
-Server-backed mode (reference only; the v0.1 supported workflow is core mode):
+Server-backed mode:
 
 ```bash
 ugoite config set --mode backend --backend-url http://127.0.0.1:8000
 ugoite space list
 ```
 
-The CLI authentication/device flow is future/reference scope and is not a
-shipped v0.1 remote CLI login contract. The server browser uses the supported
-Passkey/session flow; use core mode for the supported local-first CLI workflow.
+`ugoite auth login` uses browser-approved device authentication with a fresh
+P-256 key and DPoP-bound credentials. Owner-approved Space access recovery is
+available at the browser recovery route. Account self-recovery, OIDC/TOTP,
+agent principals, and remote CLI asset upload remain future scope.
 
 ## API and documentation
 

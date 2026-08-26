@@ -370,6 +370,27 @@ export const authApi = {
       },
     );
   },
+  async recoverSpaceAccess(ownerApprovalToken: string): Promise<{
+    account: { account_id: string; display_name: string };
+    recovery_codes: string[];
+    audit_status: "delivered" | "pending";
+  }> {
+    const challenge = await request<ChallengeEnvelope>(
+      "/auth/recovery/owner/start",
+      {
+        method: "POST",
+        body: JSON.stringify({ owner_approval_token: ownerApprovalToken }),
+      },
+    );
+    const credential = await createPasskey(challenge);
+    return await request("/auth/recovery/owner/finish", {
+      method: "POST",
+      body: JSON.stringify({
+        challenge_id: challenge.challenge_id,
+        credential,
+      }),
+    });
+  },
   async clearSession(): Promise<void> {
     await request("/auth/session", { method: "DELETE" });
   },

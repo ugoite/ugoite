@@ -14,6 +14,7 @@ use p256::{
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
+use url::Url;
 use uuid::Uuid;
 
 pub const DEFAULT_DEVICE_ACTIONS: &str = "read,create,update";
@@ -205,10 +206,18 @@ pub fn dpop_proof(session: &AuthSession, method: &str, uri: &str) -> Result<Stri
         &key,
         json!({"alg":"ES256","typ":"dpop+jwt","jwk":session.public_key_jwk}),
         json!({
-            "htm": method.to_uppercase(), "htu": uri, "ath": URL_SAFE_NO_PAD.encode(Sha256::digest(session.access_token.as_bytes())),
+            "htm": method.to_uppercase(), "htu": canonical_dpop_htu(uri)?, "ath": URL_SAFE_NO_PAD.encode(Sha256::digest(session.access_token.as_bytes())),
             "iat": Utc::now().timestamp(), "jti": Uuid::now_v7().to_string(),
         }),
     )
+}
+
+/// Return the DPoP HTTP target URI without query or fragment components.
+pub fn canonical_dpop_htu(uri: &str) -> Result<String> {
+    let mut url = Url::parse(uri).with_context(|| format!("invalid DPoP request URL: {uri}"))?;
+    url.set_query(None);
+    url.set_fragment(None);
+    Ok(url.to_string())
 }
 
 pub async fn active_session(base_url: &str) -> Result<Option<AuthSession>> {
@@ -287,4 +296,25 @@ fn public_jwk(key: &SigningKey) -> Value {
         "x": URL_SAFE_NO_PAD.encode(point.x().expect("uncompressed x")),
         "y": URL_SAFE_NO_PAD.encode(point.y().expect("uncompressed y")),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::canonical_dpop_htu;
+
+    #[test]
+    fn dpop_htu_excludes_query_and_fragment() {
+        assert_eq!(
+            canonical_dpop_htu("https://node.example/spaces/demo?cursor=next#ignored").unwrap(),
+            "https://node.example/spaces/demo"
+        );
+    }
+
+    #[test]
+    fn dpop_htu_preserves_path() {
+        assert_eq!(
+            canonical_dpop_htu("https://node.example:8443/api/").unwrap(),
+            "https://node.example:8443/api/"
+        );
+    }
 }
