@@ -1211,8 +1211,11 @@ async fn validate_complete_bootstrap_locked(op: &Operator, space_id: &str) -> Re
 
 pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Value> {
     validate_space_path_segment(name)?;
-    if let Some(lock_path) = local_space_patch_lock_path(op, name) {
-        if !lock_path.parent().is_some_and(std::path::Path::is_dir) {
+    if matches!(op.info().scheme(), "fs" | "file") {
+        let space_dir = Path::new(op.info().root().as_str())
+            .join("spaces")
+            .join(name);
+        if !space_dir.is_dir() {
             return Err(AppError::not_found(
                 ErrorCode::SpaceNotFound,
                 format!("Space not found: {name}"),

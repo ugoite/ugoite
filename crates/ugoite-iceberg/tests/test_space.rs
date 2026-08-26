@@ -75,6 +75,8 @@ async fn test_space_req_sto_003_local_space_permissions() -> anyhow::Result<()> 
 
     space::create_space(&op, "private-space", dir.path().to_string_lossy().as_ref()).await?;
     space::validate_complete_bootstrap(&op, "private-space").await?;
+    let runtime_space = space::get_space_raw(&op, "private-space").await?;
+    assert_eq!(runtime_space["storage_config"]["type"], "local");
 
     let spaces_root = dir.path().join("spaces");
     let space_dir = spaces_root.join("private-space");
