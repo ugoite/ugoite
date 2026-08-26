@@ -8,6 +8,7 @@ The pinned tools are declared in `mise.toml`:
 
 - Rust 1.94.0
 - Deno 2.8.3
+- cargo-nextest 0.9.143
 - `wasm32-unknown-unknown`
 
 ```bash
@@ -26,6 +27,7 @@ mise run test
 
 Run `mise run e2e:smoke` for a representative browser/container path and `mise run e2e` for the full suite.
 For CLI-only changes, `mise run test:cli` gives a faster package-focused loop before the full workspace tests.
+`mise run test:rust` is the canonical Rust test interface: unit and integration tests run with cargo-nextest, while Rust doctests run separately through Cargo.
 
 ## Responsibility boundaries
 
