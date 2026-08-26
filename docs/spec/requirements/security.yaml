@@ -62,7 +62,7 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-003
   title: Mandatory User Authentication
-  description: 'Every protected REST and MCP request MUST require an authenticated human or explicitly scoped future credential. Localhost mode and remote exposure configuration MUST NOT bypass authentication.'
+  description: 'Every protected REST and MCP request MUST require an authenticated user identity. Localhost mode and remote exposure configuration MUST NOT bypass authentication.'
   related_spec:
   - security/overview.md
   - api/rest.md#authentication
