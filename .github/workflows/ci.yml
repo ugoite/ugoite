@@ -130,7 +130,7 @@ jobs:
 
       - name: Start MinIO contract-test service
         run: |
-          docker run --detach --rm --name ugoite-ci-minio --network host \
+          docker run --detach --name ugoite-ci-minio --network host \
             --env MINIO_ROOT_USER=${AWS_ACCESS_KEY_ID} \
             --env MINIO_ROOT_PASSWORD=${AWS_SECRET_ACCESS_KEY} \
             minio/minio@sha256:c7175077d39a8cc10c9fd611cdcc68b6a5b365793e9ac6f4198ffff1ef0fe555 \
@@ -155,6 +155,16 @@ jobs:
       - name: Run Rust tests
         id: rust-test
         run: scripts/measure-step.sh rust-test mise run ci:lane:rust-test
+
+      - name: Inspect MinIO after failure
+        if: failure()
+        run: |
+          docker inspect --format '{{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' ugoite-ci-minio || true
+          docker logs ugoite-ci-minio || true
+
+      - name: Stop MinIO contract-test service
+        if: always()
+        run: docker rm --force ugoite-ci-minio || true
 
       - name: Show sccache stats
         if: always()
