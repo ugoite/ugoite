@@ -20,7 +20,7 @@ apis:
     command: ugoite asset upload
     file: crates/ugoite-cli/src/commands/asset.rs
     function: run
-  notes: Upload returns an AssetReference and does not create an Entry. Core/local CLI upload is implemented; remote CLI asset upload is intentionally unavailable in this release. API, REST, and frontend multipart upload remain implemented for the current local/memory server mutation boundary; non-local Space mutation requires a future atomic multi-object fencing contract.
+  notes: Upload returns an AssetReference and does not create an Entry. Core/local CLI upload is implemented; remote CLI asset upload is intentionally unavailable in this release. API, REST, and frontend multipart upload use the same verified-storage mutation boundary as other Space writes; unsupported or unverified non-local storage fails closed.
 - id: asset.delete
   method: DELETE
   status: implemented

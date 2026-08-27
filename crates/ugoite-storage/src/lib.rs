@@ -256,7 +256,7 @@ impl OpendalPublicationStore {
         let probe_path = self.path(&key);
         let mut probe_cleanup =
             PublicationProbeCleanup::new(self.operator.clone(), probe_path.clone());
-        let result = async {
+        let result = match tokio::time::timeout(Duration::from_secs(5), async {
             if self.create(&key, first.clone()).await? != CreateOutcome::Created {
                 return Err(PublicationError::Backend(anyhow!(
                     "publication probe create did not create a new object"
@@ -283,30 +283,138 @@ impl OpendalPublicationStore {
                     "publication probe CAS did not replace the object"
                 )));
             }
-            if self
-                .compare_and_swap(&key, &observed.revision, stale)
-                .await?
-                != CasOutcome::RevisionMismatch
-            {
+            let concurrent_a = b"{\"stage\":\"concurrent-a\"}".to_vec();
+            let concurrent_b = b"{\"stage\":\"concurrent-b\"}".to_vec();
+            let current = self
+                .load(&key)
+                .await
+                .map_err(|error| PublicationError::Backend(anyhow!(error)))?
+                .ok_or_else(|| {
+                    PublicationError::Backend(anyhow!("publication probe disappeared"))
+                })?;
+            let (winners, losers) = if self.operator.info().scheme() == "memory" {
+                // Memory has no native conditional-write primitive; its
+                // process-local implementation is the intended local-mode
+                // contract and is not used for shared-mode admission.
+                let (first_result, second_result) = tokio::join!(
+                    self.compare_and_swap(&key, &current.revision, concurrent_a.clone()),
+                    self.compare_and_swap(&key, &current.revision, concurrent_b.clone()),
+                );
+                let mut winners = 0;
+                let mut losers = 0;
+                for result in [first_result, second_result] {
+                    match result? {
+                        CasOutcome::Replaced => winners += 1,
+                        CasOutcome::RevisionMismatch => losers += 1,
+                    }
+                }
+                (winners, losers)
+            } else {
+                // Exercise the backend conditional-write primitive directly.
+                // The PublicationStore methods intentionally serialize callers
+                // within one process, which would otherwise make this probe
+                // prove only the serializer rather than backend CAS.
+                let expected = current.revision.backend_value().to_owned();
+                let (first_result, second_result) = tokio::join!(
+                    self.operator.write_options(
+                        &probe_path,
+                        concurrent_a.clone(),
+                        WriteOptions {
+                            if_match: Some(expected.clone()),
+                            ..Default::default()
+                        },
+                    ),
+                    self.operator.write_options(
+                        &probe_path,
+                        concurrent_b.clone(),
+                        WriteOptions {
+                            if_match: Some(expected),
+                            ..Default::default()
+                        },
+                    ),
+                );
+                let mut winners = 0;
+                let mut losers = 0;
+                for result in [first_result, second_result] {
+                    match result {
+                        Ok(_) => winners += 1,
+                        Err(error) if error.kind() == ErrorKind::ConditionNotMatch => losers += 1,
+                        Err(error) => return Err(classify_publication_write_error(error)),
+                    }
+                }
+                (winners, losers)
+            };
+            if winners != 1 || losers != 1 {
                 return Err(PublicationError::Backend(anyhow!(
-                    "publication probe accepted a stale revision"
+                    "publication probe did not produce one concurrent CAS winner"
                 )));
+            }
+            if self.operator.info().scheme() == "memory" {
+                if self
+                    .compare_and_swap(&key, &observed.revision, stale)
+                    .await?
+                    != CasOutcome::RevisionMismatch
+                {
+                    return Err(PublicationError::Backend(anyhow!(
+                        "publication probe accepted a stale revision"
+                    )));
+                }
+            } else {
+                match self
+                    .operator
+                    .write_options(
+                        &probe_path,
+                        stale,
+                        WriteOptions {
+                            if_match: Some(observed.revision.backend_value().to_owned()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                {
+                    Ok(_) => {
+                        return Err(PublicationError::Backend(anyhow!(
+                            "publication probe accepted a stale revision"
+                        )));
+                    }
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            ErrorKind::ConditionNotMatch | ErrorKind::NotFound
+                        ) => {}
+                    Err(error) => return Err(classify_publication_write_error(error)),
+                }
             }
             let final_object = self
                 .load(&key)
                 .await
                 .map_err(|error| PublicationError::Backend(anyhow!(error)))?
                 .ok_or_else(|| PublicationError::Backend(anyhow!("publication probe vanished")))?;
-            if final_object.bytes != second {
+            if final_object.bytes != concurrent_a && final_object.bytes != concurrent_b {
                 return Err(PublicationError::Backend(anyhow!(
-                    "publication probe returned unexpected final bytes"
+                    "publication concurrent probe returned unexpected final bytes"
                 )));
             }
             Ok(())
-        }
-        .await;
+        })
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(PublicationError::Backend(anyhow!(
+                "publication contract probe timed out"
+            ))),
+        };
 
-        let cleanup = self.operator.delete(&probe_path).await;
+        let cleanup =
+            match tokio::time::timeout(Duration::from_secs(5), self.operator.delete(&probe_path))
+                .await
+            {
+                Ok(result) => result,
+                Err(_) => Err(opendal::Error::new(
+                    ErrorKind::Unexpected,
+                    "remove publication probe timed out",
+                )),
+            };
         if cleanup.is_ok()
             || cleanup
                 .as_ref()
@@ -503,6 +611,29 @@ impl OpendalPublicationStore {
                 PublicationError::Backend(anyhow!(error))
             }
         })
+    }
+}
+
+/// Verifies the backend-neutral single-object CAS contract for a mutation
+/// that is not rooted at a Space Catalog, such as operator-level preferences
+/// or audit indexes. Local stores already have their process/filesystem
+/// serialization; non-local stores must prove the conditional behavior.
+pub async fn verify_publication_mutation_contract(operator: &Operator) -> Result<()> {
+    if is_local_operator(operator) {
+        return Ok(());
+    }
+    match tokio::time::timeout(
+        Duration::from_secs(5),
+        OpendalPublicationStore::new(operator.clone()).verify_contract(),
+    )
+    .await
+    {
+        Ok(result) => result.map_err(|error| {
+            anyhow!("authoritative storage contract verification failed: {error}")
+        }),
+        Err(_) => Err(anyhow!(
+            "authoritative storage contract verification timed out"
+        )),
     }
 }
 
@@ -704,10 +835,37 @@ pub struct RawDerivedRelationHead {
     pub etag: Option<String>,
 }
 
+/// Whether a store may publish authoritative visibility changes.
+///
+/// `SharedReadOnly` deliberately has the same exact-read semantics as a
+/// verified shared store, but it has no mutation permit until the runtime
+/// contract probe succeeds.  The distinction is kept in the storage layer so
+/// use-case code never admits writes from a provider name or URI scheme.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CatalogWriteMode {
-    Shared,
     SingleProcess,
+    SharedReadOnly,
+    SharedVerified,
+}
+
+impl CatalogWriteMode {
+    pub const fn is_shared(self) -> bool {
+        matches!(self, Self::SharedReadOnly | Self::SharedVerified)
+    }
+
+    pub const fn allows_mutation(self) -> bool {
+        matches!(self, Self::SingleProcess | Self::SharedVerified)
+    }
+
+    pub const fn is_verified(self) -> bool {
+        matches!(self, Self::SingleProcess | Self::SharedVerified)
+    }
+}
+
+/// Locality is a storage-topology fact, not an authoritative-write admission
+/// decision.  The latter is always based on the behavioral contract probe.
+pub fn is_local_operator(operator: &Operator) -> bool {
+    matches!(operator.info().scheme(), "memory" | "fs" | "file")
 }
 
 /// Obtain a backend-relative wall clock from an object store.
@@ -986,10 +1144,10 @@ impl DerivedRelationHeadStore {
         };
         let serializer =
             catalog_serializer(&operator, &format!("{space_root}/derived/{relation_id}"));
-        let write_mode = if matches!(operator.info().scheme(), "s3" | "gcs" | "oss" | "azdls") {
-            CatalogWriteMode::Shared
-        } else {
+        let write_mode = if is_local_operator(&operator) {
             CatalogWriteMode::SingleProcess
+        } else {
+            CatalogWriteMode::SharedReadOnly
         };
         Self {
             operator,
@@ -1009,7 +1167,7 @@ impl DerivedRelationHeadStore {
         SpaceCatalogStore::new(self.operator.clone(), self.space_root.clone())?
             .verify_shared_writes()
             .await?;
-        self.write_mode = CatalogWriteMode::Shared;
+        self.write_mode = CatalogWriteMode::SharedVerified;
         Ok(self)
     }
 
@@ -1020,7 +1178,7 @@ impl DerivedRelationHeadStore {
     /// DerivedRelation. Mutation callers must use [`Self::shared`] so the
     /// backend contract is still behaviorally verified before publishing.
     pub fn shared_read_only(mut self) -> Self {
-        self.write_mode = CatalogWriteMode::Shared;
+        self.write_mode = CatalogWriteMode::SharedReadOnly;
         self.read_only = true;
         self
     }
@@ -1030,7 +1188,7 @@ impl DerivedRelationHeadStore {
         // Head writes. Callers may request the local mode for local backends;
         // remote backends remain in shared CAS mode until their capability
         // probe has completed.
-        if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+        if is_local_operator(&self.operator) {
             self.write_mode = CatalogWriteMode::SingleProcess;
         }
         self
@@ -1044,6 +1202,11 @@ impl DerivedRelationHeadStore {
         if self.read_only {
             return Err(anyhow!(
                 "DerivedRelation Head store is read-only and cannot mutate"
+            ));
+        }
+        if !self.write_mode.allows_mutation() {
+            return Err(anyhow!(
+                "DerivedRelation Head store is not admitted for mutation"
             ));
         }
         Ok(())
@@ -1112,7 +1275,7 @@ impl DerivedRelationHeadStore {
     /// race leaves its newer Head untouched, while a crash-created malformed
     /// fence cannot permanently wedge the relation.
     async fn recover_malformed_head_fence(&self) -> Result<()> {
-        if self.write_mode != CatalogWriteMode::Shared {
+        if !self.write_mode.is_shared() {
             return Ok(());
         }
         let Some((value, _, Some(etag))) = self.read_raw_exact().await? else {
@@ -1232,7 +1395,7 @@ impl DerivedRelationHeadStore {
                 ));
             }
         }
-        if self.write_mode == CatalogWriteMode::Shared {
+        if self.write_mode.is_shared() {
             self.operator
                 .write_options(
                     &self.publishing_marker_path(build_id),
@@ -1288,9 +1451,7 @@ impl DerivedRelationHeadStore {
         {
             return Err(anyhow!("DerivedRelation staging lease disappeared"));
         }
-        if self.write_mode == CatalogWriteMode::Shared
-            && !self.renew_claim_role(build_id, "staging").await?
-        {
+        if self.write_mode.is_shared() && !self.renew_claim_role(build_id, "staging").await? {
             return Err(anyhow!("DerivedRelation staging claim was lost"));
         }
         self.operator
@@ -1334,7 +1495,7 @@ impl DerivedRelationHeadStore {
             .etag()
             .filter(|etag| !etag.is_empty())
             .map(str::to_owned);
-        if self.write_mode == CatalogWriteMode::Shared && etag.is_none() {
+        if self.write_mode.is_shared() && etag.is_none() {
             return Err(anyhow!(
                 "shared DerivedRelation claim read requires an ETag"
             ));
@@ -1366,7 +1527,7 @@ impl DerivedRelationHeadStore {
         _bytes: &[u8],
         last_modified: Option<SystemTime>,
     ) -> Result<bool> {
-        let now = if self.write_mode == CatalogWriteMode::Shared {
+        let now = if self.write_mode.is_shared() {
             Some(
                 backend_server_time(
                     &self.operator,
@@ -1393,7 +1554,7 @@ impl DerivedRelationHeadStore {
     }
 
     fn claim_is_stale_sync(&self, last_modified: Option<SystemTime>) -> bool {
-        self.write_mode != CatalogWriteMode::Shared
+        !self.write_mode.is_shared()
             && self.claim_is_stale_at(&[], last_modified, Some(SystemTime::now()))
     }
 
@@ -1421,8 +1582,7 @@ impl DerivedRelationHeadStore {
 
     fn gc_old_enough(&self, timestamp: Option<SystemTime>, minimum_gc_age: Duration) -> bool {
         minimum_gc_age.is_zero()
-            || (self.write_mode != CatalogWriteMode::Shared
-                && Self::old_enough(timestamp, minimum_gc_age))
+            || (!self.write_mode.is_shared() && Self::old_enough(timestamp, minimum_gc_age))
     }
 
     fn gc_old_enough_at(
@@ -1434,7 +1594,7 @@ impl DerivedRelationHeadStore {
         minimum_gc_age.is_zero()
             || match self.write_mode {
                 CatalogWriteMode::SingleProcess => Self::old_enough(timestamp, minimum_gc_age),
-                CatalogWriteMode::Shared => server_now
+                CatalogWriteMode::SharedReadOnly | CatalogWriteMode::SharedVerified => server_now
                     .is_some_and(|now| Self::old_enough_at(timestamp, minimum_gc_age, now)),
             }
     }
@@ -1496,7 +1656,7 @@ impl DerivedRelationHeadStore {
         if metadata_time.is_some() {
             return metadata_time;
         }
-        if self.write_mode == CatalogWriteMode::Shared {
+        if self.write_mode.is_shared() {
             return None;
         }
         self.operator
@@ -1515,7 +1675,7 @@ impl DerivedRelationHeadStore {
         if minimum_gc_age.is_zero() {
             return Ok(true);
         }
-        if self.write_mode == CatalogWriteMode::Shared {
+        if self.write_mode.is_shared() {
             let now = backend_server_time(
                 &self.operator,
                 &format!(
@@ -1609,7 +1769,7 @@ impl DerivedRelationHeadStore {
     ) -> Result<bool> {
         let path = self.publishing_marker_path(build_id);
         let result = match (self.write_mode, expected_etag) {
-            (CatalogWriteMode::Shared, Some(etag)) => {
+            (CatalogWriteMode::SharedReadOnly | CatalogWriteMode::SharedVerified, Some(etag)) => {
                 self.operator
                     .write_options(
                         &path,
@@ -1626,7 +1786,7 @@ impl DerivedRelationHeadStore {
                     .write(&path, Self::build_claim_bytes(build_id, role, owner))
                     .await
             }
-            (CatalogWriteMode::Shared, None) => {
+            (CatalogWriteMode::SharedReadOnly | CatalogWriteMode::SharedVerified, None) => {
                 return Err(anyhow!(
                     "shared DerivedRelation build claim did not return an ETag"
                 ));
@@ -1927,7 +2087,7 @@ impl DerivedRelationHeadStore {
         if Self::claim_owner(&bytes).as_deref() != Some(claim.owner.as_str()) {
             return Ok(false);
         }
-        if self.write_mode == CatalogWriteMode::Shared && etag.as_deref() != claim.etag.as_deref() {
+        if self.write_mode.is_shared() && etag.as_deref() != claim.etag.as_deref() {
             return Ok(false);
         }
         let renewed = self
@@ -1955,7 +2115,7 @@ impl DerivedRelationHeadStore {
     /// Head loses the CAS; a publisher that starts afterwards sees the garbage
     /// claim and cannot claim the build.
     async fn fence_head_before_garbage(&self, build_id: &str) -> Result<GarbageHeadFence> {
-        if self.write_mode != CatalogWriteMode::Shared {
+        if !self.write_mode.is_shared() {
             // The relation-local single-process mutex already excludes a
             // rebuild from this GC path.
             return Ok(GarbageHeadFence::Fenced {
@@ -2153,7 +2313,7 @@ impl DerivedRelationHeadStore {
     /// cleaned, so this recovery does not depend on a fresh listing or on the
     /// claim still being eligible for GC.
     async fn recover_completed_empty_head_fence(&self) -> Result<()> {
-        if self.write_mode != CatalogWriteMode::Shared {
+        if !self.write_mode.is_shared() {
             return Ok(());
         }
         let Some((value, _, etag)) = self.read_raw_exact().await? else {
@@ -2259,12 +2419,10 @@ impl DerivedRelationHeadStore {
         if Self::claim_owner(&bytes).as_deref() != Some(claim.owner.as_str()) {
             return Ok(false);
         }
-        if self.write_mode == CatalogWriteMode::Shared
-            && current_etag.as_deref() != claim.etag.as_deref()
-        {
+        if self.write_mode.is_shared() && current_etag.as_deref() != claim.etag.as_deref() {
             return Ok(false);
         }
-        let expected_etag = if self.write_mode == CatalogWriteMode::Shared {
+        let expected_etag = if self.write_mode.is_shared() {
             claim.etag.as_deref()
         } else {
             current_etag.as_deref()
@@ -2287,7 +2445,7 @@ impl DerivedRelationHeadStore {
         if Self::claim_owner(&bytes).as_deref() != Some(claim.owner.as_str()) {
             return Ok(false);
         }
-        let expected_etag = if self.write_mode == CatalogWriteMode::Shared {
+        let expected_etag = if self.write_mode.is_shared() {
             claim.etag.as_deref()
         } else {
             current_etag.as_deref()
@@ -2306,7 +2464,7 @@ impl DerivedRelationHeadStore {
         }
         let owner =
             Self::claim_owner(&bytes).context("terminal DerivedRelation claim has no owner")?;
-        let server_now = if self.write_mode == CatalogWriteMode::Shared {
+        let server_now = if self.write_mode.is_shared() {
             Some(
                 backend_server_time(
                     &self.operator,
@@ -2550,8 +2708,7 @@ impl DerivedRelationHeadStore {
             candidate.has_staging_marker |= is_staging_marker;
             candidate.has_publishing_marker |= is_publishing_marker;
             if is_staging_marker {
-                candidate.stale_staging_old_enough |=
-                    old_enough || self.write_mode == CatalogWriteMode::Shared;
+                candidate.stale_staging_old_enough |= old_enough || self.write_mode.is_shared();
             }
             if !is_garbage_marker && !is_staging_marker && !is_publishing_marker {
                 candidate.has_build_object = true;
@@ -2619,7 +2776,7 @@ impl DerivedRelationHeadStore {
                             // maintenance for every active shared claim so a
                             // crashed holder cannot become invisible here.
                             Some("staging") | Some("publishing") => {
-                                self.write_mode == CatalogWriteMode::Shared
+                                self.write_mode.is_shared()
                                     || self.claim_is_stale_sync(last_modified)
                             }
                             // A garbage claim without garbage.json means the
@@ -2670,7 +2827,7 @@ impl DerivedRelationHeadStore {
         self.reap_expired_terminal_tombstones().await?;
         self.recover_completed_empty_head_fence().await?;
         let observed_current_build_id = self.current_build_id().await?;
-        let server_now = if self.write_mode == CatalogWriteMode::Shared {
+        let server_now = if self.write_mode.is_shared() {
             Some(
                 backend_server_time(
                     &self.operator,
@@ -3224,7 +3381,7 @@ impl DerivedRelationHeadStore {
                         )
                         .await
                 }
-                None if self.write_mode == CatalogWriteMode::Shared => {
+                None if self.write_mode.is_shared() => {
                     return Err(anyhow!(
                         "exact DerivedRelation Head stat did not return an ETag"
                     ))
@@ -3395,7 +3552,7 @@ impl DerivedRelationHeadStore {
                         )
                         .await
                 }
-                None if self.write_mode == CatalogWriteMode::Shared => {
+                None if self.write_mode.is_shared() => {
                     return Err(anyhow!(
                         "exact DerivedRelation Head stat did not return an ETag"
                     ))
@@ -3425,7 +3582,7 @@ impl DerivedRelationHeadStore {
     /// because OpenDAL has no conditional delete operation.
     pub async fn invalidate_legacy_head(&self) -> Result<()> {
         self.ensure_writable()?;
-        if self.write_mode == CatalogWriteMode::Shared {
+        if self.write_mode.is_shared() {
             return Err(anyhow!(
                 "legacy DerivedRelation Head requires a single-process rebuild"
             ));
@@ -3471,61 +3628,64 @@ impl DerivedRelationHeadStore {
         self.ensure_build_publishable(&head.build_id).await?;
         let bytes = canonical_head_bytes(head)?;
         match self.write_mode {
-            CatalogWriteMode::Shared => match self.read_raw_exact().await? {
-                Some((value, _, Some(etag)))
-                    if self
-                        .head_fence(&value)
-                        .is_some_and(|(state, _)| state == "head_fence_released") =>
-                {
-                    let Some((_, _)) = self.head_fence(&value) else {
-                        unreachable!("released Head fence was checked above")
-                    };
-                    // A released empty-head fence can be replaced by a new
-                    // build. The publishing-claim check below still rejects
-                    // the build that GC has already completed.
-                    let Some((claim, _, _)) = self.read_build_claim(&head.build_id).await? else {
-                        return Err(anyhow!(
-                            "released empty DerivedRelation Head fence has no build claim"
-                        ));
-                    };
-                    if Self::claim_role(&claim).as_deref() != Some("publishing") {
-                        return Err(anyhow!(
+            CatalogWriteMode::SharedReadOnly | CatalogWriteMode::SharedVerified => {
+                match self.read_raw_exact().await? {
+                    Some((value, _, Some(etag)))
+                        if self
+                            .head_fence(&value)
+                            .is_some_and(|(state, _)| state == "head_fence_released") =>
+                    {
+                        let Some((_, _)) = self.head_fence(&value) else {
+                            unreachable!("released Head fence was checked above")
+                        };
+                        // A released empty-head fence can be replaced by a new
+                        // build. The publishing-claim check below still rejects
+                        // the build that GC has already completed.
+                        let Some((claim, _, _)) = self.read_build_claim(&head.build_id).await?
+                        else {
+                            return Err(anyhow!(
+                                "released empty DerivedRelation Head fence has no build claim"
+                            ));
+                        };
+                        if Self::claim_role(&claim).as_deref() != Some("publishing") {
+                            return Err(anyhow!(
                             "released empty DerivedRelation Head fence is no longer publishable"
                         ));
+                        }
+                        self.operator
+                            .write_options(
+                                &self.head_path(),
+                                bytes,
+                                WriteOptions {
+                                    if_match: Some(etag),
+                                    ..Default::default()
+                                },
+                            )
+                            .await?;
                     }
-                    self.operator
-                        .write_options(
-                            &self.head_path(),
-                            bytes,
-                            WriteOptions {
-                                if_match: Some(etag),
-                                ..Default::default()
-                            },
-                        )
-                        .await?;
+                    Some((value, _, None))
+                        if self
+                            .head_fence(&value)
+                            .is_some_and(|(state, _)| state == "head_fence_released") =>
+                    {
+                        return Err(anyhow!(
+                            "shared empty DerivedRelation Head fence did not return an ETag"
+                        ));
+                    }
+                    _ => {
+                        self.operator
+                            .write_options(
+                                &self.head_path(),
+                                bytes,
+                                WriteOptions {
+                                    if_not_exists: true,
+                                    ..Default::default()
+                                },
+                            )
+                            .await?;
+                    }
                 }
-                Some((value, _, None))
-                    if self
-                        .head_fence(&value)
-                        .is_some_and(|(state, _)| state == "head_fence_released") =>
-                {
-                    return Err(anyhow!(
-                        "shared empty DerivedRelation Head fence did not return an ETag"
-                    ));
-                }
-                _ => {
-                    self.operator
-                        .write_options(
-                            &self.head_path(),
-                            bytes,
-                            WriteOptions {
-                                if_not_exists: true,
-                                ..Default::default()
-                            },
-                        )
-                        .await?;
-                }
-            },
+            }
             CatalogWriteMode::SingleProcess => {
                 let _guard = self.serializer.lock().await;
                 if self.operator.exists(&self.head_path()).await? {
@@ -3547,7 +3707,7 @@ impl DerivedRelationHeadStore {
         self.ensure_build_publishable(&head.build_id).await?;
         let bytes = canonical_head_bytes(head)?;
         match self.write_mode {
-            CatalogWriteMode::Shared => {
+            CatalogWriteMode::SharedReadOnly | CatalogWriteMode::SharedVerified => {
                 let etag =
                     expected_etag.context("shared DerivedRelation replacement requires an ETag")?;
                 self.operator
@@ -3611,7 +3771,7 @@ impl DerivedRelationHeadStore {
         head: &DerivedRelationHead,
     ) -> Result<()> {
         self.ensure_writable()?;
-        if self.write_mode != CatalogWriteMode::Shared {
+        if !self.write_mode.is_shared() {
             return Err(anyhow!(
                 "legacy DerivedRelation replacement requires shared mode"
             ));
@@ -3889,13 +4049,18 @@ impl SpaceCatalogStore {
         let space_root = raw_space_root.trim_matches('/').to_string();
         Self::validate_space_root(&space_root)?;
         let single_process_serializer = catalog_serializer(&operator, &space_root);
+        let write_mode = if is_local_operator(&operator) {
+            CatalogWriteMode::SingleProcess
+        } else {
+            CatalogWriteMode::SharedReadOnly
+        };
         Ok(Self {
             storage: IcebergStorageConfig::from_operator(&operator)?,
             operator,
             space_root,
-            // Shared mode is opt-in only after `verify_shared_writes` proves
-            // the actual backend honors every conditional operation we need.
-            write_mode: CatalogWriteMode::SingleProcess,
+            // Remote stores begin in exact-read-only mode. Mutation callers
+            // must opt into SharedVerified after the behavioral probe.
+            write_mode,
             single_process_serializer,
             read_counter: None,
         })
@@ -3915,7 +4080,7 @@ impl SpaceCatalogStore {
         // serializer. Keep shared exact-read/CAS semantics for those
         // backends; authoritative callers must explicitly pass the verified
         // shared-write contract instead.
-        if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+        if is_local_operator(&self.operator) {
             self.write_mode = CatalogWriteMode::SingleProcess;
         }
         self
@@ -3925,7 +4090,7 @@ impl SpaceCatalogStore {
     /// Catalog readers must never fall back to a stat-then-unconditional-read
     /// sequence; mutation callers still use `verify_shared_writes`.
     pub fn shared_read_only(mut self) -> Self {
-        self.write_mode = CatalogWriteMode::Shared;
+        self.write_mode = CatalogWriteMode::SharedReadOnly;
         self
     }
 
@@ -3934,13 +4099,13 @@ impl SpaceCatalogStore {
     }
 
     pub fn mutation_permit(&self) -> Result<CatalogMutationPermit> {
-        if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+        if self.write_mode.allows_mutation() {
             return Ok(CatalogMutationPermit {
                 store_key: self.mutation_store_key(),
             });
         }
         Err(anyhow!(
-            "STORAGE_MUTATION_UNAVAILABLE: non-local authoritative Catalog writes are unavailable in v0.1"
+            "STORAGE_MUTATION_UNAVAILABLE: authoritative writes require a verified storage contract"
         ))
     }
 
@@ -4023,7 +4188,7 @@ impl SpaceCatalogStore {
         }
         let path = self.catalog_path(&format!("probes/{}.json", Uuid::now_v7()));
         let initial = b"{\"format_version\":1,\"stage\":\"created\"}".to_vec();
-        let verification: Result<()> = async {
+        let verification: Result<()> = match tokio::time::timeout(Duration::from_secs(5), async {
             self.operator
                 .write_options(
                     &path,
@@ -4046,15 +4211,13 @@ impl SpaceCatalogStore {
                 )
                 .await
                 .expect_err("conditional create probe must reject an existing object");
-            if duplicate_create.kind() != ErrorKind::ConditionNotMatch {
+            if !matches!(
+                duplicate_create.kind(),
+                ErrorKind::AlreadyExists | ErrorKind::ConditionNotMatch
+            ) {
                 return Err(duplicate_create.into());
             }
             let first_metadata = self.operator.stat(&path).await?;
-            if first_metadata.last_modified().is_none() {
-                return Err(anyhow!(
-                    "shared Catalog probe write did not return a server timestamp"
-                ));
-            }
             let first_etag = first_metadata
                 .etag()
                 .filter(|etag| !etag.is_empty())
@@ -4088,11 +4251,6 @@ impl SpaceCatalogStore {
                 )
                 .await?;
             let second_metadata = self.operator.stat(&path).await?;
-            if second_metadata.last_modified().is_none() {
-                return Err(anyhow!(
-                    "shared Catalog probe replacement did not return a server timestamp"
-                ));
-            }
             let second_etag = second_metadata
                 .etag()
                 .filter(|etag| !etag.is_empty())
@@ -4132,33 +4290,83 @@ impl SpaceCatalogStore {
             if stale_replace.kind() != ErrorKind::ConditionNotMatch {
                 return Err(stale_replace.into());
             }
+            let concurrent_a = b"{\"format_version\":1,\"stage\":\"concurrent-a\"}".to_vec();
+            let concurrent_b = b"{\"format_version\":1,\"stage\":\"concurrent-b\"}".to_vec();
+            let (first_result, second_result) = tokio::join!(
+                self.operator.write_options(
+                    &path,
+                    concurrent_a.clone(),
+                    WriteOptions {
+                        if_match: Some(second_etag.clone()),
+                        ..Default::default()
+                    },
+                ),
+                self.operator.write_options(
+                    &path,
+                    concurrent_b.clone(),
+                    WriteOptions {
+                        if_match: Some(second_etag.clone()),
+                        ..Default::default()
+                    },
+                ),
+            );
+            let mut winners = 0;
+            let mut stale_contenders = 0;
+            for result in [first_result, second_result] {
+                match result {
+                    Ok(_) => winners += 1,
+                    Err(error) if error.kind() == ErrorKind::ConditionNotMatch => {
+                        stale_contenders += 1
+                    }
+                    Err(error) => return Err(error.into()),
+                }
+            }
+            if winners != 1 || stale_contenders != 1 {
+                return Err(anyhow!(
+                    "shared Catalog probe did not produce one concurrent CAS winner"
+                ));
+            }
+            let final_metadata = self.operator.stat(&path).await?;
+            let final_etag = final_metadata
+                .etag()
+                .filter(|etag| !etag.is_empty())
+                .map(str::to_owned)
+                .context("shared Catalog concurrent probe did not return an ETag")?;
             let observed = self
                 .operator
                 .read_options(
                     &path,
                     ReadOptions {
-                        if_match: Some(second_etag),
+                        if_match: Some(final_etag),
                         ..Default::default()
                     },
                 )
                 .await?
                 .to_vec();
-            if observed != replaced {
+            if observed != concurrent_a && observed != concurrent_b {
                 return Err(anyhow!(
-                    "shared Catalog probe replacement returned different bytes"
+                    "shared Catalog concurrent probe returned unexpected bytes"
                 ));
             }
             Ok(())
-        }
-        .await;
+        })
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(anyhow!("shared Catalog contract probe timed out")),
+        };
         // Probe objects are never coordination state. Always attempt cleanup,
         // including when a capability check fails halfway through; otherwise
         // repeated startup verification leaks one object per attempt.
-        let cleanup = match self.operator.delete(&path).await {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(anyhow!(error)),
-        };
+        let cleanup =
+            match tokio::time::timeout(Duration::from_secs(5), self.operator.delete(&path)).await {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(error)) if error.kind() == ErrorKind::NotFound => Ok(()),
+                Ok(Err(error)) => Err(anyhow!(error)),
+                Err(_) => Err(anyhow!(
+                    "remove shared Catalog verification probe timed out"
+                )),
+            };
         if let Err(error) = verification {
             if let Err(cleanup_error) = cleanup {
                 return Err(error.context(format!(
@@ -4168,7 +4376,7 @@ impl SpaceCatalogStore {
             return Err(error);
         }
         cleanup.context("remove shared Catalog verification probe")?;
-        self.write_mode = CatalogWriteMode::Shared;
+        self.write_mode = CatalogWriteMode::SharedVerified;
         Ok(self)
     }
 
@@ -4257,7 +4465,7 @@ impl SpaceCatalogStore {
                     )
                     .await
                     .map(|bytes| bytes.to_vec()),
-                None if self.write_mode == CatalogWriteMode::Shared => {
+                None if self.write_mode.is_shared() => {
                     return Err(anyhow!("exact Catalog object stat did not return an ETag"));
                 }
                 None => self.operator.read(path).await.map(|bytes| bytes.to_vec()),
@@ -4291,7 +4499,7 @@ impl SpaceCatalogStore {
                 )
                 .await
                 .map(|bytes| bytes.to_vec()),
-            None if self.write_mode == CatalogWriteMode::Shared => Err(Error::new(
+            None if self.write_mode.is_shared() => Err(Error::new(
                 ErrorKind::Unexpected,
                 format!("exact Catalog object read requires an ETag: {path}"),
             )),
@@ -4306,7 +4514,7 @@ impl SpaceCatalogStore {
         bytes: Vec<u8>,
     ) -> Result<()> {
         match self.write_mode {
-            CatalogWriteMode::Shared => {
+            CatalogWriteMode::SharedReadOnly | CatalogWriteMode::SharedVerified => {
                 self.operator
                     .write_options(
                         path,
@@ -4331,7 +4539,7 @@ impl SpaceCatalogStore {
     pub async fn create_head(&self, permit: &CatalogMutationPermit, bytes: Vec<u8>) -> Result<()> {
         self.require_mutation_permit(permit)?;
         match self.write_mode {
-            CatalogWriteMode::Shared => {
+            CatalogWriteMode::SharedReadOnly | CatalogWriteMode::SharedVerified => {
                 self.operator
                     .write_options(
                         &self.head_path(),
@@ -4361,7 +4569,7 @@ impl SpaceCatalogStore {
     ) -> Result<()> {
         self.require_mutation_permit(permit)?;
         match self.write_mode {
-            CatalogWriteMode::Shared => {
+            CatalogWriteMode::SharedReadOnly | CatalogWriteMode::SharedVerified => {
                 self.operator
                     .write_options(
                         &self.head_path(),
@@ -5060,10 +5268,10 @@ impl StorageBackend for OpendalStorage {
 mod tests {
     use super::{
         canonical_head_bytes, classify_publication_write_error, operator_from_uri,
-        operator_from_uri_with_endpoint, CasOutcome, CreateOutcome, DerivedRelationHead,
-        DerivedRelationHeadStore, OpendalPublicationStore, OpendalStorage, PublicationError,
-        PublicationProbeCleanup, PublicationStore, ServerTimeProbeCleanup, SpaceCatalogStore,
-        SpaceKey, StorageBackend, MAX_DERIVED_TERMINAL_TOMBSTONES_PER_PASS,
+        operator_from_uri_with_endpoint, CasOutcome, CatalogWriteMode, CreateOutcome,
+        DerivedRelationHead, DerivedRelationHeadStore, OpendalPublicationStore, OpendalStorage,
+        PublicationError, PublicationProbeCleanup, PublicationStore, ServerTimeProbeCleanup,
+        SpaceCatalogStore, SpaceKey, StorageBackend, MAX_DERIVED_TERMINAL_TOMBSTONES_PER_PASS,
     };
     use anyhow::Result;
     use futures::future::join_all;
@@ -5391,6 +5599,32 @@ mod tests {
         let second = store.read_exact_head().await?.expect("Catalog Head exists");
         assert_eq!(second.bytes, b"second");
 
+        Ok(())
+    }
+
+    #[test]
+    fn catalog_write_mode_is_topology_safe_and_fail_closed_until_verified() -> Result<()> {
+        let local = SpaceCatalogStore::new(Operator::new(Memory::default())?, "spaces/local")?;
+        assert_eq!(local.write_mode(), CatalogWriteMode::SingleProcess);
+        assert!(local.mutation_permit().is_ok());
+
+        let remote = SpaceCatalogStore::new(
+            operator_from_uri_with_endpoint(
+                "s3://bucket/space",
+                Some("https://storage.example.test"),
+            )?,
+            "spaces/remote",
+        )?;
+        assert_eq!(remote.write_mode(), CatalogWriteMode::SharedReadOnly);
+        assert!(remote
+            .mutation_permit()
+            .expect_err("unverified remote stores must not receive mutation permits")
+            .to_string()
+            .contains("verified storage contract"));
+        assert_eq!(
+            remote.single_process().write_mode(),
+            CatalogWriteMode::SharedReadOnly
+        );
         Ok(())
     }
 

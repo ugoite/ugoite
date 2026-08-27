@@ -531,6 +531,7 @@ async fn append_revision_rows_to_workspace_authorized(
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
 ) -> Result<()> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::iceberg_store::ensure_mutation_admitted(op, ws_path).await?;
     if rows.is_empty() {
         return Err(anyhow!("revision batch must not be empty"));
     }
@@ -555,7 +556,7 @@ async fn append_revision_rows_to_workspace_authorized(
             .validate_payload(&domain_form)
             .map_err(|error| invalid_revision_input(error, &domain_form))?;
     }
-    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    let workspace = iceberg_store::native_mutation_workspace(op, ws_path).await?;
     let command = crate::publication_context(
         format!(
             "entry-revision-batch:{}",
@@ -1113,6 +1114,7 @@ pub async fn append_revision_batch_for_form(
     rows: &[RevisionRow],
 ) -> Result<()> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::iceberg_store::ensure_mutation_admitted(op, ws_path).await?;
     let form_def = form::read_form_definition(op, ws_path, form_name).await?;
     append_revision_rows_to_workspace(op, ws_path, rows, &form_def).await
 }
@@ -1190,6 +1192,7 @@ pub async fn create_entries_with_scopes<I: IntegrityProvider>(
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
 ) -> Result<Vec<EntryMeta>> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::iceberg_store::ensure_mutation_admitted(op, ws_path).await?;
     if requests.is_empty() {
         return Ok(Vec::new());
     }
@@ -1227,7 +1230,7 @@ pub async fn create_entries_with_scopes<I: IntegrityProvider>(
         entries.push(entry);
     }
     reject_cross_form_forward_references(&batches)?;
-    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    let workspace = iceberg_store::native_mutation_workspace(op, ws_path).await?;
     let domain_batches = batches
         .values()
         .map(|(form_def, revisions)| {
@@ -2093,7 +2096,7 @@ pub async fn restore_entry_from_checkpoint_authorized<I: IntegrityProvider>(
     form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
 ) -> Result<Value> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
-    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    let workspace = iceberg_store::native_mutation_workspace(op, ws_path).await?;
     let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
@@ -2399,6 +2402,7 @@ pub async fn delete_entry(
     actor: &str,
 ) -> Result<()> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::iceberg_store::ensure_mutation_admitted(op, ws_path).await?;
     let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
@@ -2568,6 +2572,7 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
 ) -> Result<Value> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::iceberg_store::ensure_mutation_admitted(op, ws_path).await?;
     let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;

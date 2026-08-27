@@ -310,6 +310,7 @@ pub async fn create_sql_session_authorized_for_principals_by_form_with_parameter
     saved_sql_entry_scope: EntryScope,
 ) -> Result<Value> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::iceberg_store::ensure_mutation_admitted(op, ws_path).await?;
     authorization.authorization.require_principals()?;
     let relation = index::sql_session_page_relation(sql).map_err(session_query_error)?;
     let readable_entry_ids = authorization
@@ -368,6 +369,7 @@ pub async fn create_sql_session_authorized_for_principals_with_frozen_policy_and
     saved_sql_entry_scope: &EntryScope,
 ) -> Result<Value> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::iceberg_store::ensure_mutation_admitted(op, ws_path).await?;
     authorization.require_principals()?;
     index::validate_sql_session_query_at_checkpoint(
         op,

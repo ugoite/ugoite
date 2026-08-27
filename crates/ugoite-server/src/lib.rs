@@ -518,9 +518,8 @@ impl AppState {
     }
 
     pub async fn initialize_node(&self) -> anyhow::Result<()> {
-        if let Err(error) = Authorizer::new(self.service.operator().clone())
-            .ensure_authoritative_mutation_contract()
-        {
+        let authorizer = Authorizer::new(self.service.operator().clone());
+        if let Err(error) = authorizer.ensure_authoritative_mutation_contract() {
             if error
                 .downcast_ref::<AppError>()
                 .is_some_and(|error| error.code() == ErrorCode::StorageMutationUnavailable)
@@ -529,6 +528,18 @@ impl AppState {
                 // bootstrap identity, recover claims, or start maintenance:
                 // those paths mutate multiple authoritative objects. Existing
                 // response-signing material remains usable by request paths.
+                return Ok(());
+            }
+            return Err(error);
+        }
+        if let Err(error) = authorizer.verify_authoritative_storage("startup").await {
+            if error
+                .downcast_ref::<AppError>()
+                .is_some_and(|error| error.code() == ErrorCode::StorageMutationUnavailable)
+            {
+                // Capability bits alone do not establish a usable shared
+                // mutation contract. Stay read-only until the active probe
+                // succeeds on a later startup.
                 return Ok(());
             }
             return Err(error);
@@ -2873,6 +2884,10 @@ async fn reconcile_recovery_fences_api(state: &AppState, space_id: &str) -> ApiR
     Authorizer::new(state.service.operator().clone())
         .ensure_authoritative_mutation_contract()
         .map_err(ApiError::from_core)?;
+    Authorizer::new(state.service.operator().clone())
+        .verify_authoritative_storage(space_id)
+        .await
+        .map_err(ApiError::from_core)?;
     if reconcile_recovery_fences(state, space_id).await.is_ok() {
         return Ok(());
     }
@@ -2894,6 +2909,10 @@ async fn reconcile_recovery_fences_api(state: &AppState, space_id: &str) -> ApiR
 async fn reconcile_all_recovery_fences_api(state: &AppState) -> ApiResult<()> {
     Authorizer::new(state.service.operator().clone())
         .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
+    Authorizer::new(state.service.operator().clone())
+        .verify_authoritative_storage("recovery")
+        .await
         .map_err(ApiError::from_core)?;
     if reconcile_all_recovery_fences(state).await.is_ok() {
         return Ok(());
@@ -7236,6 +7255,10 @@ async fn ensure_local_space_owner_binding(
 ) -> ApiResult<(Uuid, bool)> {
     Authorizer::new(state.service.operator().clone())
         .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
+    Authorizer::new(state.service.operator().clone())
+        .verify_authoritative_storage(slug)
+        .await
         .map_err(ApiError::from_core)?;
     if let Some(existing_id) = state
         .service

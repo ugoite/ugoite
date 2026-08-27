@@ -31,6 +31,7 @@ use ugoite_domain::identity::{
     evaluate_policy, role_actions, AccessPolicy, Action, AgentMode, AgentPrincipal, Membership,
     PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
 };
+use ugoite_storage::{is_local_operator, CatalogWriteMode, SpaceCatalogStore};
 use uuid::Uuid;
 
 const AUTHORIZATION_FILE: &str = "security/principals.json";
@@ -208,14 +209,13 @@ pub struct Authorizer {
 }
 
 /// Authorization lease held across one protected mutation. The process lock
-/// covers local callers; shared operators additionally carry the durable
-/// object-store lease in this value.
+/// covers local callers, while non-local callers are admitted by the storage
+/// contract probe and serialized by the exact AuthorizationState CAS.
 pub struct AuthorizationLease {
     _guard: OwnedMutexGuard<()>,
     // Held for the complete protected local mutation, including the
-    // authoritative content write. This is the cross-process counterpart of
-    // the in-process guard; write_state_with_lease deliberately reuses it so
-    // the same process does not try to lock the file twice.
+    // authoritative content write. write_state_with_lease deliberately reuses
+    // it so the same process does not try to lock the file twice.
     _local_lock: Option<std::fs::File>,
     durable: Option<DurableAuthorizationLease>,
 }
@@ -623,26 +623,52 @@ impl Authorizer {
 
     async fn acquire_durable_mutation_lease(
         &self,
-        _space_id: &str,
+        space_id: &str,
     ) -> Result<Option<DurableAuthorizationLease>> {
-        if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
-            return Ok(None);
+        // Ordinary authorization mutations are serialized by the exact state
+        // CAS below. A durable lease/heartbeat is deliberately not part of
+        // the current shared-backend contract.
+        if !is_local_operator(&self.operator) {
+            self.verify_authoritative_storage(space_id).await?;
         }
-        self.ensure_authoritative_mutation_contract()?;
-        unreachable!("shared authorization mutation leases are fail-closed in v1")
+        Ok(None)
     }
 
-    /// Shared authorization/content mutations are intentionally unavailable
-    /// until the storage backend can fence all participating objects as one
-    /// atomic operation.  This check is also used by multi-object bootstrap
-    /// paths before they create their first authoritative object.
+    pub async fn verify_authoritative_storage(&self, space_id: &str) -> Result<()> {
+        let store = SpaceCatalogStore::new(self.operator.clone(), format!("spaces/{space_id}"))?;
+        match store.write_mode() {
+            CatalogWriteMode::SingleProcess | CatalogWriteMode::SharedVerified => Ok(()),
+            CatalogWriteMode::SharedReadOnly => store
+                .verify_shared_writes()
+                .await
+                .map(|_| ())
+                .map_err(|error| {
+                    AppError::dependency_unavailable(
+                        ErrorCode::StorageMutationUnavailable,
+                        format!("authoritative storage contract verification failed: {error:#}"),
+                    )
+                    .into()
+                }),
+        }
+    }
+
+    /// Fast-fail capability admission for callers that have not yet entered
+    /// an async mutation path. The authoritative async paths also run the
+    /// behavioral probe before their first non-local write.
     pub fn ensure_authoritative_mutation_contract(&self) -> Result<()> {
-        if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+        if is_local_operator(&self.operator) {
+            return Ok(());
+        }
+        let capabilities = self.operator.info().capability();
+        if capabilities.read_with_if_match
+            && capabilities.write_with_if_match
+            && capabilities.write_with_if_not_exists
+        {
             return Ok(());
         }
         Err(AppError::dependency_unavailable(
             ErrorCode::StorageMutationUnavailable,
-            "non-local Space mutations are unavailable in v0.1 until the storage backend provides an atomic multi-object fencing contract",
+            "authoritative mutations require exact-read and conditional-write capabilities",
         )
         .into())
     }

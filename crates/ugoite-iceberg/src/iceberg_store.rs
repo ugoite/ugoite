@@ -3,6 +3,7 @@ use opendal::Operator;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
+use std::fmt::Display;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
 use ugoite_domain::entry::EntryRevision;
@@ -39,12 +40,54 @@ pub async fn native_workspace(
 ) -> Result<crate::IcebergWorkspace> {
     let space_id = stable_space_id(operator, workspace_path).await?;
     let store = SpaceCatalogStore::new(operator.clone(), workspace_path)?;
-    let store = if matches!(operator.info().scheme(), "s3" | "gcs" | "oss" | "azdls") {
-        store.shared_read_only()
-    } else {
-        store.single_process()
-    };
     crate::IcebergWorkspace::open_space(store, space_id, crate::WriteConfig::default()).await
+}
+
+/// Opens a workspace for an authoritative mutation. Local stores use the
+/// process serializer; every other topology must pass the storage boundary's
+/// behavioral exact-read/CAS probe before a mutation permit exists.
+pub async fn native_mutation_workspace(
+    operator: &Operator,
+    workspace_path: &str,
+) -> Result<crate::IcebergWorkspace> {
+    let store = mutation_store(operator, workspace_path).await?;
+    let space_id = stable_space_id(operator, workspace_path).await?;
+    crate::IcebergWorkspace::open_space(store, space_id, crate::WriteConfig::default()).await
+}
+
+/// Verifies mutation admission without requiring the Space metadata scaffold.
+/// This is used by mutation helpers that write an object before opening an
+/// Iceberg workspace, such as asset upload and authorization bootstrap.
+pub async fn ensure_mutation_admitted(operator: &Operator, workspace_path: &str) -> Result<()> {
+    mutation_store(operator, workspace_path)
+        .await
+        .map(|_| ())
+        .map_err(storage_mutation_unavailable)
+}
+
+pub(crate) fn storage_mutation_unavailable(error: impl Display) -> anyhow::Error {
+    AppError::dependency_unavailable(
+        ErrorCode::StorageMutationUnavailable,
+        format!("authoritative storage contract verification failed: {error}"),
+    )
+    .into()
+}
+
+async fn mutation_store(operator: &Operator, workspace_path: &str) -> Result<SpaceCatalogStore> {
+    let store = SpaceCatalogStore::new(operator.clone(), workspace_path)?;
+    let store = match store.write_mode() {
+        ugoite_storage::CatalogWriteMode::SingleProcess
+        | ugoite_storage::CatalogWriteMode::SharedVerified => store,
+        ugoite_storage::CatalogWriteMode::SharedReadOnly => {
+            store.verify_shared_writes().await.map_err(|error| {
+                anyhow::Error::from(AppError::dependency_unavailable(
+                    ErrorCode::StorageMutationUnavailable,
+                    format!("authoritative storage contract verification failed: {error:#}"),
+                ))
+            })?
+        }
+    };
+    Ok(store)
 }
 
 pub async fn ensure_form_tables(
@@ -59,7 +102,7 @@ pub async fn ensure_form_tables(
     // the system Form. That creation is still authoritative and must not
     // bypass the request's authorization write fence.
     crate::authorization::ensure_authorization_write_fence().await?;
-    let workspace = native_workspace(operator, workspace_path).await?;
+    let workspace = native_mutation_workspace(operator, workspace_path).await?;
     if !workspace.has_form(form.id).await? {
         let command =
             crate::publication_context(format!("form-create:{}", form.id), "form.create", &form)?;

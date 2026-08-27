@@ -307,6 +307,7 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
 
 pub async fn create_space(op: &Operator, name: &str, root_path: &str) -> Result<()> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{name}")).await?;
     let storage = OpendalStorage::from_operator(op);
     create_space_with_storage(&storage, name, uuid::Uuid::now_v7(), name, root_path).await?;
     let ws_path = format!("spaces/{name}");
@@ -331,6 +332,7 @@ pub async fn create_space_with_identity(
         return Err(anyhow!("UUID-addressed Space identity must be a UUIDv7"));
     }
     let directory_id = space_id.to_string();
+    crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{directory_id}")).await?;
     let storage = OpendalStorage::from_operator(op);
     create_space_with_storage(&storage, &directory_id, space_id, slug, root_path).await?;
     let ws_path = format!("spaces/{directory_id}");
@@ -354,6 +356,7 @@ pub async fn repair_space_with_identity(
         return Err(anyhow!("UUID-addressed Space identity must be a UUIDv7"));
     }
     let directory_id = space_uid.to_string();
+    crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{directory_id}")).await?;
     validate_space_path_segment(&directory_id)?;
     validate_space_path_segment(slug)?;
     let storage = OpendalStorage::from_operator(op);
@@ -394,6 +397,7 @@ pub async fn repair_space(
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     validate_space_path_segment(directory_id)?;
     validate_space_path_segment(slug)?;
+    crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{directory_id}")).await?;
     let storage = OpendalStorage::from_operator(op);
     let meta = ensure_space_identity(&storage, directory_id).await?;
     if meta.get("slug").and_then(serde_json::Value::as_str) != Some(slug) {
@@ -1061,6 +1065,7 @@ async fn recover_pending_space_patch(op: &Operator, space_id: &str) -> Result<()
         bail!("invalid Space patch journal status: {}", journal.status);
     }
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{space_id}")).await?;
     validate_current_space_metadata(space_id, &journal.new_metadata)?;
     if !journal.new_settings.is_object()
         || journal
@@ -1429,6 +1434,7 @@ pub async fn patch_space(
     patch: &serde_json::Value,
 ) -> Result<serde_json::Value> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{space_id}")).await?;
     crate::authorization::ensure_authorization_write_fence().await?;
     validate_complete_bootstrap(op, space_id).await?;
     patch_space_with_operator(op, space_id, patch, None).await
@@ -1444,6 +1450,7 @@ pub async fn patch_space_if_slug(
     expected_slug: &str,
 ) -> Result<serde_json::Value> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{space_id}")).await?;
     crate::authorization::ensure_authorization_write_fence().await?;
     validate_complete_bootstrap(op, space_id).await?;
     patch_space_with_operator(op, space_id, patch, Some(expected_slug)).await

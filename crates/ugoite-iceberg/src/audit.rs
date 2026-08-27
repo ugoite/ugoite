@@ -379,6 +379,9 @@ pub async fn append_audit_event(
     retention_limit: Option<usize>,
 ) -> Result<Value> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    ugoite_storage::verify_publication_mutation_contract(op)
+        .await
+        .map_err(crate::iceberg_store::storage_mutation_unavailable)?;
     let mut last_conflict = None;
     for _attempt in 0..3 {
         match append_audit_event_once(op, space_id, payload, retention_limit).await {

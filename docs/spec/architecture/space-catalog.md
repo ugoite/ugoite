@@ -70,9 +70,13 @@ fresh attempt and reruns the domain validation before publishing.
 
 Shared writes require behavioral probes, not merely capability flags: a real
 changing ETag, exact conditional read, conditional create-if-absent,
-conditional replacement, and stale-ETag rejection. Unsupported backends fail
-closed for shared writes. Explicit single-process mode may use local
-serialization but still writes every durable byte through OpenDAL.
+conditional replacement, stale-ETag rejection, and one winner when concurrent
+writers use the same observed revision. A store starts in `SharedReadOnly` and
+is promoted to `SharedVerified` only by this runtime probe; unsupported,
+unavailable, and unverified stores fail closed for mutation permits. Server
+timestamp availability is independent and only gates maintenance that needs
+age comparisons. Explicit single-process mode may use local serialization but
+still writes every durable byte through OpenDAL.
 
 Readers never lock. Writers may prepare immutable files concurrently. Visibility
 changes only through Head. One Form table commit is the mutation atomicity unit;

@@ -35,11 +35,14 @@ backed `SpaceCatalog`. Iceberg locations are persisted as
 operator bound to that Space. Core receives no OpenDAL, Iceberg, Arrow, Parquet,
 DataFusion, or SQL-parser types.
 
-The portable `PublicationStore` contract is the storage-boundary foundation. The
-current v0.1 authoritative Catalog mutation path remains fail-closed for
-non-local backends until the later authorization lease/fence contract is
-admitted; portable logical Iceberg coordinates are implemented independently of
-that mutation admission boundary.
+The portable `PublicationStore` contract is the storage-boundary foundation.
+Local stores use their single-process serializer; non-local authoritative
+mutations receive a permit only after the storage boundary verifies exact
+read, create-if-absent, conditional replacement, stale-revision rejection,
+and one-winner concurrent CAS behavior. Authorization mutations use an exact
+`AuthorizationState` load followed by its own single-object CAS; no durable
+lease, heartbeat, or cross-object write fence is required for ordinary
+mutations.
 
 `_ugoite/catalog/head.json` is the sole mutable catalog authority. Every Head
 generation names the Form tables and their immutable Iceberg metadata. A
