@@ -12,6 +12,7 @@ use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
+use ugoite_domain::change::ChangeCommand;
 use ugoite_domain::entry::{
     AssetReference, EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
     RevisionError,
@@ -83,6 +84,7 @@ fn invalid_revision_input(
         RevisionError::WrongType(field_id) => {
             format!("Field '{}': value has the wrong type", field_name(field_id))
         }
+        RevisionError::AuthorChanged => "entry author cannot change".to_string(),
         other => format!("Invalid Entry revision: {other}"),
     };
     invalid_entry_input(message)
@@ -196,6 +198,7 @@ pub struct EntryRow {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RevisionRow {
     pub revision_id: String,
+    pub change_id: String,
     pub entry_id: String,
     pub parent_revision_id: Option<String>,
     pub timestamp: f64,
@@ -530,6 +533,25 @@ async fn append_revision_rows_to_workspace_authorized(
     form_def: &Value,
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
 ) -> Result<()> {
+    append_revision_rows_to_workspace_authorized_with_change(
+        op,
+        ws_path,
+        rows,
+        form_def,
+        relation_scopes,
+        None,
+    )
+    .await
+}
+
+async fn append_revision_rows_to_workspace_authorized_with_change(
+    op: &Operator,
+    ws_path: &str,
+    rows: &[RevisionRow],
+    form_def: &Value,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+    change: Option<&ChangeCommand>,
+) -> Result<()> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     crate::iceberg_store::ensure_mutation_admitted(op, ws_path).await?;
     if rows.is_empty() {
@@ -557,18 +579,50 @@ async fn append_revision_rows_to_workspace_authorized(
             .map_err(|error| invalid_revision_input(error, &domain_form))?;
     }
     let workspace = iceberg_store::native_mutation_workspace(op, ws_path).await?;
-    let command = crate::publication_context(
-        format!(
-            "entry-revision-batch:{}",
-            revisions
+    let change_id = change
+        .map(|command| command.change_id.clone())
+        .or_else(|| revisions.first().map(|revision| revision.change_id.clone()))
+        .filter(|change_id| !change_id.trim().is_empty())
+        .ok_or_else(|| invalid_entry_input("revision is missing change_id"))?;
+    if revisions
+        .iter()
+        .any(|revision| revision.change_id != change_id)
+    {
+        return Err(invalid_entry_input(
+            "all revisions in one Form publication must share one change_id",
+        ));
+    }
+    let descriptor = change.map(ChangeCommand::descriptor).unwrap_or_else(|| {
+        ugoite_domain::change::ChangeDescriptor {
+            run_id: None,
+            actor_principal_id: revisions[0].entry.updated_by.clone(),
+            message: None,
+            reverts_change_id: None,
+            created_at_micros: revisions
                 .iter()
-                .map(|revision| revision.revision_id.to_string())
-                .collect::<Vec<_>>()
-                .join(",")
-        ),
-        "entry.append",
-        &revisions,
-    )?;
+                .map(|revision| revision.committed_at_micros)
+                .max()
+                .unwrap_or_default(),
+        }
+    });
+    if revisions
+        .iter()
+        .any(|revision| revision.entry.updated_by != descriptor.actor_principal_id)
+    {
+        return Err(invalid_entry_input(
+            "Change actor does not match revision attribution",
+        ));
+    }
+    let command = ChangeCommand {
+        change_id,
+        run_id: descriptor.run_id,
+        actor_principal_id: descriptor.actor_principal_id,
+        message: descriptor.message,
+        reverts_change_id: descriptor.reverts_change_id,
+        created_at_micros: descriptor.created_at_micros,
+    };
+    let command = crate::publication_context_for_change(&command, "entry.append", &revisions)
+        .map_err(|error| invalid_entry_input(format!("invalid Change metadata: {error}")))?;
     crate::authorization::ensure_authorization_write_fence().await?;
     workspace
         .commit(command)?
@@ -640,6 +694,7 @@ fn revision_row_to_domain(
         form_id: form.id,
         entry_id: entry_id.into(),
         revision_id: revision_id.into(),
+        change_id: row.change_id.clone(),
         parent_revision_id: parent_revision_id.map(RevisionId::from),
         entry_version: row.entry_version,
         expected_version: parent_revision_id.map(|_| row.entry_version.saturating_sub(1)),
@@ -925,6 +980,7 @@ fn revision_row_from_domain(
     };
     Ok(RevisionRow {
         revision_id: revision.revision_id.to_string(),
+        change_id: revision.change_id,
         entry_id: if revision.entry.external_id.is_empty() {
             revision.entry_id.to_string()
         } else {
@@ -1096,13 +1152,35 @@ pub(crate) async fn append_revision_row_for_form_authorized(
     form_def: &Value,
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
 ) -> Result<()> {
+    append_revision_row_for_form_authorized_with_change(
+        op,
+        ws_path,
+        form_name,
+        row,
+        form_def,
+        relation_scopes,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn append_revision_row_for_form_authorized_with_change(
+    op: &Operator,
+    ws_path: &str,
+    form_name: &str,
+    row: &RevisionRow,
+    form_def: &Value,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+    change: Option<&ChangeCommand>,
+) -> Result<()> {
     let _ = form_name;
-    append_revision_rows_to_workspace_authorized(
+    append_revision_rows_to_workspace_authorized_with_change(
         op,
         ws_path,
         std::slice::from_ref(row),
         form_def,
         relation_scopes,
+        change,
     )
     .await
 }
@@ -1157,13 +1235,38 @@ pub async fn create_entry_with_scopes<I: IntegrityProvider>(
     integrity: &I,
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
 ) -> Result<EntryMeta> {
-    let mut entries = create_entries_with_scopes(
+    create_entry_with_scopes_and_change(
+        op,
+        ws_path,
+        entry_id,
+        content,
+        author,
+        integrity,
+        relation_scopes,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn create_entry_with_scopes_and_change<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    content: &str,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+    change: Option<ChangeCommand>,
+) -> Result<EntryMeta> {
+    let mut entries = create_entries_with_scopes_and_change(
         op,
         ws_path,
         vec![EntryCreateRequest::new(entry_id, content)],
         author,
         integrity,
         relation_scopes,
+        change,
     )
     .await?;
     Ok(entries
@@ -1190,6 +1293,27 @@ pub async fn create_entries_with_scopes<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+) -> Result<Vec<EntryMeta>> {
+    create_entries_with_scopes_and_change(
+        op,
+        ws_path,
+        requests,
+        author,
+        integrity,
+        relation_scopes,
+        None,
+    )
+    .await
+}
+
+pub async fn create_entries_with_scopes_and_change<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    requests: Vec<EntryCreateRequest>,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+    change: Option<ChangeCommand>,
 ) -> Result<Vec<EntryMeta>> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     crate::iceberg_store::ensure_mutation_admitted(op, ws_path).await?;
@@ -1230,6 +1354,20 @@ pub async fn create_entries_with_scopes<I: IntegrityProvider>(
         entries.push(entry);
     }
     reject_cross_form_forward_references(&batches)?;
+    if change.is_some() && batches.len() > 1 {
+        return Err(invalid_entry_input(
+            "one Change cannot span multiple Forms in an entry create batch",
+        ));
+    }
+    for (_, revisions) in batches.values_mut() {
+        let change_id = change
+            .as_ref()
+            .map(|command| command.change_id.clone())
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+        for revision in revisions {
+            revision.change_id = change_id.clone();
+        }
+    }
     let workspace = iceberg_store::native_mutation_workspace(op, ws_path).await?;
     let domain_batches = batches
         .values()
@@ -1253,12 +1391,13 @@ pub async fn create_entries_with_scopes<I: IntegrityProvider>(
         .validate_revision_batches_authorized(&domain_batches, relation_scopes)
         .await?;
     for (_, (form_def, revisions)) in batches {
-        append_revision_rows_to_workspace_authorized(
+        append_revision_rows_to_workspace_authorized_with_change(
             op,
             ws_path,
             &revisions,
             &form_def,
             relation_scopes,
+            change.as_ref(),
         )
         .await?;
     }
@@ -1509,6 +1648,7 @@ async fn prepare_entry<I: IntegrityProvider>(
 
     let revision = RevisionRow {
         revision_id: revision_id.clone(),
+        change_id: revision_id.clone(),
         entry_id: entry_id.to_string(),
         parent_revision_id: None,
         timestamp,
@@ -2176,6 +2316,7 @@ pub async fn restore_entry_from_checkpoint_authorized<I: IntegrityProvider>(
         .map(|scope| BTreeMap::from([(form_name.to_ascii_lowercase(), scope)]));
     let restore_revision = RevisionRow {
         revision_id: new_revision_id.clone(),
+        change_id: new_revision_id.clone(),
         entry_id: entry_id.to_string(),
         parent_revision_id: row.parent_revision_id.clone(),
         timestamp,
@@ -2259,6 +2400,32 @@ pub async fn update_entry_authorized<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+) -> Result<Value> {
+    update_entry_authorized_with_change(
+        op,
+        ws_path,
+        entry_id,
+        content,
+        parent_revision_id,
+        author,
+        integrity,
+        relation_scopes,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn update_entry_authorized_with_change<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    content: &str,
+    parent_revision_id: Option<&str>,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+    change: Option<ChangeCommand>,
 ) -> Result<Value> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let form_name = find_entry_form(op, ws_path, entry_id)
@@ -2357,8 +2524,9 @@ pub async fn update_entry_authorized<I: IntegrityProvider>(
         signature: signature.clone(),
     };
 
-    let revision = RevisionRow {
+    let mut revision = RevisionRow {
         revision_id: revision_id.clone(),
+        change_id: revision_id.clone(),
         entry_id: entry_id.to_string(),
         parent_revision_id: row.parent_revision_id.clone(),
         timestamp,
@@ -2381,13 +2549,17 @@ pub async fn update_entry_authorized<I: IntegrityProvider>(
         source_id: None,
         extension_metadata: Value::Object(Map::new()),
     };
-    append_revision_row_for_form_authorized(
+    if let Some(change) = change.as_ref() {
+        revision.change_id = change.change_id.clone();
+    }
+    append_revision_row_for_form_authorized_with_change(
         op,
         ws_path,
         &form_name,
         &revision,
         &form_def,
         relation_scopes,
+        change.as_ref(),
     )
     .await?;
 
@@ -2400,6 +2572,17 @@ pub async fn delete_entry(
     entry_id: &str,
     hard_delete: bool,
     actor: &str,
+) -> Result<()> {
+    delete_entry_with_change(op, ws_path, entry_id, hard_delete, actor, None).await
+}
+
+pub async fn delete_entry_with_change(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    hard_delete: bool,
+    actor: &str,
+    change: Option<ChangeCommand>,
 ) -> Result<()> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     crate::iceberg_store::ensure_mutation_admitted(op, ws_path).await?;
@@ -2427,8 +2610,9 @@ pub async fn delete_entry(
     row.updated_by = actor.to_string();
     row.deleted_by = Some(actor.to_string());
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-    let tombstone = RevisionRow {
+    let mut tombstone = RevisionRow {
         revision_id: row.revision_id.clone(),
+        change_id: row.revision_id.clone(),
         entry_id: entry_id.to_string(),
         parent_revision_id: row.parent_revision_id.clone(),
         timestamp: delete_ts,
@@ -2448,7 +2632,19 @@ pub async fn delete_entry(
         source_id: None,
         extension_metadata: Value::Object(Map::new()),
     };
-    append_revision_row_for_form(op, ws_path, &form_name, &tombstone, &form_def).await?;
+    if let Some(change) = change.as_ref() {
+        tombstone.change_id = change.change_id.clone();
+    }
+    append_revision_row_for_form_authorized_with_change(
+        op,
+        ws_path,
+        &form_name,
+        &tombstone,
+        &form_def,
+        None,
+        change.as_ref(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -2464,6 +2660,7 @@ pub async fn get_entry_history(op: &Operator, ws_path: &str, entry_id: &str) -> 
         .map(|rev| {
             serde_json::json!({
                 "revision_id": rev.revision_id,
+                "change_id": rev.change_id,
                 "timestamp": rev.timestamp,
                 "checksum": rev.integrity.checksum,
                 "signature": rev.integrity.signature,
@@ -2514,6 +2711,7 @@ pub async fn get_entry_history_authorized(
         .map(|revision| {
             serde_json::json!({
                 "revision_id": revision.revision_id,
+                "change_id": revision.change_id,
                 "timestamp": revision.timestamp,
                 "checksum": revision.integrity.checksum,
                 "signature": revision.integrity.signature,
@@ -2622,6 +2820,7 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
     row.deleted_by = None;
     let restore_revision = RevisionRow {
         revision_id: new_rev_id.clone(),
+        change_id: new_rev_id.clone(),
         entry_id: entry_id.to_string(),
         parent_revision_id: row.parent_revision_id.clone(),
         timestamp,
@@ -2768,6 +2967,7 @@ mod input_conversion_tests {
         };
         let row = RevisionRow {
             revision_id: Uuid::from_u128(102).to_string(),
+            change_id: Uuid::from_u128(104).to_string(),
             entry_id: Uuid::from_u128(103).to_string(),
             parent_revision_id: None,
             timestamp: 1.0,

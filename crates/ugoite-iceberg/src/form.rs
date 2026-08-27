@@ -89,7 +89,7 @@ pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Resu
             to_domain_form(&normalized).map_err(|error| invalid_form_input(error.to_string()))?;
         let changes = form_changes(&current_domain, &desired_domain)?;
         if !changes.is_empty() {
-            let command = crate::publication_context(
+            let command = crate::system_publication_context(
                 format!(
                     "form-evolve:{}:{}",
                     current_domain.id,

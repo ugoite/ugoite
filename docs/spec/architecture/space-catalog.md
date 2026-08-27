@@ -66,6 +66,24 @@ command ID with a different digest fails. Direct physical Catalog and Arrow
 mutation APIs are private to `ugoite-iceberg`; every ETag conflict starts a
 fresh attempt and reruns the domain validation before publishing.
 
+## Changes, Runs, and Pins
+
+Knowledge mutations attach a `ChangeDescriptor` to their immutable publication.
+The command's `change_id` is the publication `command_id`; the descriptor records
+the authenticated actor, optional message, optional history-only `RunId`, and an
+optional `reverts_change_id`. `GET /spaces/{space_id}/changes` walks only the
+reachable publication chain and returns committed Changes in chronological order.
+There is no durable Run status or separate Change index in this history surface.
+A future Undo operation is represented by new append-only publications whose
+descriptors point at the Changes they selectively inverse.
+
+The Catalog Head owns the complete active Pin map. A Pin contains a
+`PublicationRef` (generation, logical publication URI, and publication checksum),
+plus creator and creation time. Creating or deleting a Pin is a metadata-only Head
+publication; it does not create a user-content Change. Reads return the exact Head
+map, and publication references are validated before use. Pin state is not
+reconstructed by listing objects or by duplicating Space identity/checksum data.
+
 ## Capability and concurrency boundary
 
 Shared writes require behavioral probes, not merely capability flags: a real
@@ -143,6 +161,7 @@ evidence. Failed-attempt and orphan candidates remain empty unless durable
 attempt coordinates exist: object-list inference is forbidden.
 
 `ugoite-core` owns domain validation, authorization meaning, use-case
-orchestration, domain commands, receipts, checkpoints, and errors. It neither
+orchestration, domain commands, Change/Revert planning, receipts, checkpoints,
+and errors. It neither
 constructs nor inspects OpenDAL, Iceberg, Arrow, Parquet, DataFusion, or SQL
 parser objects.

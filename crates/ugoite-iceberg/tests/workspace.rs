@@ -6,6 +6,7 @@ use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
 };
+use ugoite_domain::change::ChangeCommand;
 use ugoite_domain::entry::{
     EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
@@ -15,7 +16,8 @@ use ugoite_domain::form::{
 };
 use ugoite_domain::id::{FieldId, FormId, SpaceId};
 use ugoite_iceberg::{
-    physical_form_name, publication_context, IcebergWorkspace, RevisionView, WriteConfig,
+    physical_form_name, publication_context, publication_context_for_change, IcebergWorkspace,
+    RevisionView, WriteConfig,
 };
 use ugoite_storage::{SpaceCatalogStore, SpaceUri};
 use uuid::Uuid;
@@ -75,9 +77,37 @@ async fn append_revisions(
     form_id: FormId,
     revisions: Vec<EntryRevision>,
 ) -> anyhow::Result<ugoite_iceberg::CommitReceipt> {
-    let command = publication_context(Uuid::new_v4().to_string(), "test.entry.append", &revisions)?;
+    let change_id = revisions
+        .first()
+        .map(|revision| revision.change_id.clone())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let revisions = revisions
+        .into_iter()
+        .map(|mut revision| {
+            revision.change_id = change_id.clone();
+            revision
+        })
+        .collect::<Vec<_>>();
+    let actor = revisions
+        .first()
+        .map(|revision| revision.entry.updated_by.clone())
+        .unwrap_or_else(|| "test:owner".to_string());
+    let command = ChangeCommand {
+        change_id,
+        run_id: None,
+        actor_principal_id: actor,
+        message: Some("test change".into()),
+        reverts_change_id: None,
+        created_at_micros: revisions
+            .iter()
+            .map(|revision| revision.committed_at_micros)
+            .max()
+            .unwrap_or_default(),
+    };
+    let command_context =
+        publication_context_for_change(&command, "test.entry.append", &revisions)?;
     workspace
-        .commit(command)?
+        .commit(command_context)?
         .append_revisions(form_id, revisions)
         .await
 }
@@ -162,6 +192,155 @@ async fn one_stable_form_id_maps_to_one_catalog_table() -> anyhow::Result<()> {
         .await?
         .iter()
         .all(|batch| batch.num_rows() == 0));
+    Ok(())
+}
+
+#[tokio::test]
+async fn pins_are_head_owned_publication_references() -> anyhow::Result<()> {
+    let space_id = SpaceId::from(Uuid::now_v7());
+    let workspace =
+        IcebergWorkspace::memory_for_tests(space_id, "memory://iceberg-pin-head").await?;
+    let form = form();
+    create_form(&workspace, &form).await?;
+
+    let pin = workspace
+        .create_pin("before-import", "principal:owner", 42)
+        .await?;
+    assert_eq!(pin.created_by_principal_id, "principal:owner");
+    assert_eq!(pin.coordinate.generation, 0);
+    assert!(pin
+        .coordinate
+        .publication_uri
+        .to_string()
+        .starts_with("ugoite://"));
+
+    let pins = workspace.list_pins().await?;
+    assert_eq!(pins.get("before-import"), Some(&pin));
+    workspace.delete_pin("before-import").await?;
+    assert!(workspace.list_pins().await?.is_empty());
+
+    let revision = EntryRevision {
+        form_id: form.id,
+        entry_id: Uuid::from_u128(3_001).into(),
+        revision_id: Uuid::from_u128(3_002).into(),
+        change_id: "change-history-1".into(),
+        parent_revision_id: None,
+        entry_version: 1,
+        expected_version: None,
+        operation: EntryOperation::Upsert,
+        committed_at_micros: 43,
+        author_id: "principal:owner".into(),
+        form_version: form.version,
+        source_kind: "test".into(),
+        source_id: None,
+        entry: EntryMetadata {
+            external_id: "entry-history-1".into(),
+            updated_by: "principal:owner".into(),
+            ..EntryMetadata::default()
+        },
+        values: BTreeMap::from([(
+            FieldId::new(100).unwrap(),
+            FieldValue::String("history".into()),
+        )]),
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    };
+    let command = ChangeCommand {
+        change_id: "change-history-1".into(),
+        run_id: None,
+        actor_principal_id: "principal:owner".into(),
+        message: Some("test change".into()),
+        reverts_change_id: None,
+        created_at_micros: 43,
+    };
+    let command_context = publication_context_for_change(&command, "test.entry.append", &revision)?;
+    let receipt = workspace
+        .commit(command_context)?
+        .append_revisions(form.id, vec![revision])
+        .await?;
+    let changes = workspace.list_changes().await?;
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].change_id, receipt.command_id);
+    assert_eq!(changes[0].change.actor_principal_id, "principal:owner");
+    assert_eq!(changes[0].change.message.as_deref(), Some("test change"));
+    assert_eq!(changes[0].generation, receipt.catalog_generation);
+    Ok(())
+}
+
+#[tokio::test]
+async fn revert_change_appends_a_selective_inverse_without_rewinding_head() -> anyhow::Result<()> {
+    let space_id = SpaceId::from(Uuid::now_v7());
+    let workspace =
+        IcebergWorkspace::memory_for_tests(space_id, "memory://iceberg-revert-change").await?;
+    let form = form();
+    create_form(&workspace, &form).await?;
+    let entry_id = Uuid::from_u128(3_101).into();
+    let title = FieldId::new(100).unwrap();
+    let initial = EntryRevision {
+        form_id: form.id,
+        entry_id,
+        revision_id: Uuid::from_u128(3_102).into(),
+        change_id: "change-create".into(),
+        parent_revision_id: None,
+        entry_version: 1,
+        expected_version: None,
+        operation: EntryOperation::Upsert,
+        committed_at_micros: 1,
+        author_id: "principal:owner".into(),
+        form_version: form.version,
+        source_kind: "test".into(),
+        source_id: None,
+        entry: EntryMetadata {
+            external_id: "entry-revert-1".into(),
+            updated_by: "principal:owner".into(),
+            ..EntryMetadata::default()
+        },
+        values: BTreeMap::from([(title, FieldValue::String("before".into()))]),
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    };
+    append_revisions(&workspace, form.id, vec![initial.clone()]).await?;
+    let changed = EntryRevision {
+        revision_id: Uuid::from_u128(3_103).into(),
+        change_id: "change-target".into(),
+        parent_revision_id: Some(initial.revision_id),
+        entry_version: 2,
+        expected_version: Some(1),
+        committed_at_micros: 2,
+        entry: EntryMetadata {
+            external_id: "entry-revert-1".into(),
+            updated_by: "principal:owner".into(),
+            ..EntryMetadata::default()
+        },
+        values: BTreeMap::from([(title, FieldValue::String("after".into()))]),
+        ..initial
+    };
+    append_revisions(&workspace, form.id, vec![changed]).await?;
+
+    let command = ChangeCommand {
+        change_id: "change-undo".into(),
+        run_id: Some(ugoite_domain::change::RunId::new("run-1")?),
+        actor_principal_id: "principal:owner".into(),
+        message: Some("undo target".into()),
+        reverts_change_id: Some("change-target".into()),
+        created_at_micros: 3,
+    };
+    let receipt = workspace.revert_change("change-target", &command).await?;
+    assert_eq!(receipt.command_id, "change-undo");
+    let current = workspace
+        .read_revision_view(form.id, RevisionView::Current)
+        .await?;
+    assert_eq!(current.len(), 1);
+    assert_eq!(
+        current[0].values.get(&title),
+        Some(&FieldValue::String("before".into()))
+    );
+    let changes = workspace.list_changes().await?;
+    assert!(changes
+        .iter()
+        .any(|change| change.change_id == "change-undo"
+            && change.change.reverts_change_id.as_deref() == Some("change-target")
+            && change.change.run_id.as_ref().map(|run| run.as_str()) == Some("run-1")));
     Ok(())
 }
 
@@ -509,6 +688,7 @@ async fn append_enforces_revision_identity_and_entry_conflicts() -> anyhow::Resu
         form_id: form.id,
         entry_id: entry_id.into(),
         revision_id: revision_id.into(),
+        change_id: "change-32".into(),
         parent_revision_id: None,
         entry_version: 1,
         expected_version: None,
@@ -548,10 +728,11 @@ async fn append_enforces_revision_identity_and_entry_conflicts() -> anyhow::Resu
     let error = append_revisions(&workspace, form.id, vec![conflicting])
         .await
         .unwrap_err();
-    assert!(error.to_string().contains("conflict"));
+    assert!(error.to_string().contains("reused"));
 
     let changed_author = EntryRevision {
         revision_id: Uuid::from_u128(38).into(),
+        change_id: "change-38".into(),
         parent_revision_id: Some(revision.revision_id),
         entry_version: 2,
         expected_version: Some(1),
@@ -588,6 +769,7 @@ async fn revision_views_keep_tombstones_and_restore_current_entries() -> anyhow:
         form_id: form.id,
         entry_id: Uuid::from_u128(61).into(),
         revision_id: Uuid::from_u128(62).into(),
+        change_id: "change-62".into(),
         parent_revision_id: None,
         entry_version: 1,
         expected_version: None,
@@ -608,6 +790,7 @@ async fn revision_views_keep_tombstones_and_restore_current_entries() -> anyhow:
     let first_receipt = append_revisions(&workspace, form.id, vec![first.clone()]).await?;
 
     let deleted = EntryRevision {
+        change_id: "change-delete".into(),
         revision_id: Uuid::from_u128(63).into(),
         parent_revision_id: Some(first.revision_id),
         entry_version: 2,
@@ -662,6 +845,7 @@ async fn revision_views_keep_tombstones_and_restore_current_entries() -> anyhow:
     );
 
     let restored = EntryRevision {
+        change_id: "change-restore".into(),
         revision_id: Uuid::from_u128(64).into(),
         parent_revision_id: Some(deleted.revision_id),
         entry_version: 3,
@@ -702,6 +886,7 @@ async fn coordinator_replays_only_the_same_canonical_command() -> anyhow::Result
         form_id: form.id,
         entry_id: Uuid::from_u128(35).into(),
         revision_id: Uuid::from_u128(36).into(),
+        change_id: "change-36".into(),
         parent_revision_id: None,
         entry_version: 1,
         expected_version: None,
@@ -782,6 +967,7 @@ async fn append_recovery_adopts_existing_publication_without_rewriting_iceberg(
         form_id: form.id,
         entry_id: Uuid::from_u128(18_528).into(),
         revision_id: Uuid::from_u128(18_529).into(),
+        change_id: "change-18529".into(),
         parent_revision_id: None,
         entry_version: 1,
         expected_version: None,
@@ -811,7 +997,7 @@ async fn append_recovery_adopts_existing_publication_without_rewriting_iceberg(
     let base_head_json: serde_json::Value = serde_json::from_slice(&base_head.bytes)?;
     let intended = store.publication_path(
         base_head_json["generation"].as_u64().expect("generation") + 1,
-        &command.command_id,
+        command.command_id(),
     );
     let forms_prefix = "spaces/append-publication-recovery/forms";
 
@@ -895,6 +1081,7 @@ async fn one_explicit_form_batch_publishes_one_snapshot_and_receipt() -> anyhow:
                 form_id: form.id,
                 entry_id: Uuid::from_u128(id).into(),
                 revision_id: Uuid::from_u128(id + 100).into(),
+                change_id: format!("change-{id}"),
                 parent_revision_id: None,
                 entry_version: 1,
                 expected_version: None,
@@ -955,6 +1142,7 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
         form_id: form.id,
         entry_id,
         revision_id: Uuid::from_u128(62).into(),
+        change_id: "change-62".into(),
         parent_revision_id: None,
         entry_version: 1,
         expected_version: None,
@@ -1107,6 +1295,7 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
         form_id: evolved.id,
         entry_id,
         revision_id: Uuid::from_u128(63).into(),
+        change_id: "change-63".into(),
         parent_revision_id: Some(first.revision_id),
         entry_version: 2,
         expected_version: Some(1),
@@ -1204,6 +1393,7 @@ async fn typed_forms_and_fixed_entry_metadata_round_trip_without_json_payloads(
         form_id: form.id,
         entry_id: Uuid::from_u128(71).into(),
         revision_id: Uuid::from_u128(72).into(),
+        change_id: "change-72".into(),
         parent_revision_id: None,
         entry_version: 1,
         expected_version: None,
@@ -1308,6 +1498,7 @@ async fn every_supported_typed_list_item_round_trips_with_nulls() -> anyhow::Res
         form_id: form.id,
         entry_id: Uuid::from_u128(74).into(),
         revision_id: Uuid::from_u128(75).into(),
+        change_id: "change-75".into(),
         parent_revision_id: None,
         entry_version: 1,
         expected_version: None,

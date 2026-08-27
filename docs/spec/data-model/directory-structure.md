@@ -103,13 +103,14 @@ and table-property keys but leaves Iceberg metadata/data filenames unspecified.
 
 `_ugoite/catalog/head.json` is the only mutable catalog authority. It carries
 the Space identity, format version, catalog/form-registry generations, Form table
-coordinates, checksum, and current publication coordinate. A process opens a
-Space by reading this Head exactly with its OpenDAL ETag and loading only the
-referenced immutable Iceberg metadata.
+coordinates, the complete active Pin map, checksum, and current publication
+coordinate. A process opens a Space by reading this Head exactly with its OpenDAL
+ETag and loading only the referenced immutable Iceberg metadata.
 
 `_ugoite/catalog/publications/<generation>-<command-id>.json` records the
 complete next Head, its checksum, the preceding Head and publication
-coordinates, command identity/digest, and affected-table Iceberg coordinates.
+coordinates, command identity/digest, optional immutable Change metadata, and
+affected-table Iceberg coordinates.
 Records are immutable and authoritative only when reachable from Head. Listing
 objects never reconstructs catalog state or publication order. Missing/corrupt
 Head or reachable publication evidence is an explicit failure; old pointer

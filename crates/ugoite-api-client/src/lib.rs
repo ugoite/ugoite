@@ -30,6 +30,13 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "space.get",
     "space.audit",
     "space.health",
+    "change.list",
+    "change.revert",
+    "run.undo",
+    "ugoite.apply",
+    "pin.list",
+    "pin.create",
+    "pin.delete",
     "space.checkpoint_create",
     "space.checkpoint_diff",
     "space.patch",
@@ -378,6 +385,74 @@ pub fn prepare_request(
                     query,
                 )
             }
+            "change.list" => (
+                OperationSpec::get("Failed to list Knowledge changes"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "changes".into(),
+                ],
+                vec![],
+            ),
+            "change.revert" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to revert Knowledge change"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "changes".into(),
+                    required_string(operation, args, "change_id")?,
+                    "revert".into(),
+                ],
+                vec![],
+            ),
+            "run.undo" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to undo Run"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "runs".into(),
+                    required_string(operation, args, "run_id")?,
+                    "undo".into(),
+                ],
+                vec![],
+            ),
+            "ugoite.apply" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to apply Knowledge operations"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "apply".into(),
+                ],
+                vec![],
+            ),
+            "pin.list" => (
+                OperationSpec::get("Failed to list publication pins"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "pins".into(),
+                ],
+                vec![],
+            ),
+            "pin.create" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to create publication pin"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "pins".into(),
+                ],
+                vec![],
+            ),
+            "pin.delete" => (
+                OperationSpec::no_body(HttpMethod::Delete, "Failed to delete publication pin"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "pins".into(),
+                    required_string(operation, args, "pin_name")?,
+                ],
+                vec![],
+            ),
             "space.checkpoint_diff" => (
                 OperationSpec::get("Failed to diff checkpoints"),
                 vec![
@@ -910,7 +985,7 @@ pub fn prepare_request(
 
     if matches!(
         operation,
-        "entry.delete" | "sql.delete" | "asset.delete" | "access.put"
+        "entry.delete" | "sql.delete" | "asset.delete" | "access.put" | "ugoite.apply"
     ) {
         if let Some(value) = args.get("human_approval").filter(|value| !value.is_null()) {
             let value = value.as_str().ok_or_else(|| {
@@ -1183,6 +1258,41 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
         "space.health" => (
             HttpMethod::Get,
             "Failed to inspect Space health",
+            RequestBodyKind::None,
+        ),
+        "change.list" => (
+            HttpMethod::Get,
+            "Failed to list Knowledge changes",
+            RequestBodyKind::None,
+        ),
+        "change.revert" => (
+            HttpMethod::Post,
+            "Failed to revert Knowledge change",
+            RequestBodyKind::Json,
+        ),
+        "run.undo" => (
+            HttpMethod::Post,
+            "Failed to undo Run",
+            RequestBodyKind::Json,
+        ),
+        "ugoite.apply" => (
+            HttpMethod::Post,
+            "Failed to apply Knowledge operations",
+            RequestBodyKind::Json,
+        ),
+        "pin.list" => (
+            HttpMethod::Get,
+            "Failed to list publication pins",
+            RequestBodyKind::None,
+        ),
+        "pin.create" => (
+            HttpMethod::Post,
+            "Failed to create publication pin",
+            RequestBodyKind::Json,
+        ),
+        "pin.delete" => (
+            HttpMethod::Delete,
+            "Failed to delete publication pin",
             RequestBodyKind::None,
         ),
         "space.checkpoint_diff" => (
@@ -1597,6 +1707,47 @@ mod tests {
     }
 
     #[test]
+    fn change_and_pin_operations_use_the_portable_publication_routes() {
+        let changes = prepare_request("change.list", &json!({"space_id": "team/東京"}), None)
+            .expect("change list request");
+        assert_eq!(changes.path, "/spaces/team%2F%E6%9D%B1%E4%BA%AC/changes");
+
+        let pin = prepare_request(
+            "pin.create",
+            &json!({"space_id": "demo"}),
+            Some(&json!({"name": "release-current"})),
+        )
+        .expect("pin create request");
+        assert_eq!(pin.method, HttpMethod::Post);
+        assert_eq!(pin.path, "/spaces/demo/pins");
+
+        let delete = prepare_request(
+            "pin.delete",
+            &json!({"space_id": "demo", "pin_name": "release-current"}),
+            None,
+        )
+        .expect("pin delete request");
+        assert_eq!(delete.path, "/spaces/demo/pins/release-current");
+
+        let revert = prepare_request(
+            "change.revert",
+            &json!({"space_id": "demo", "change_id": "change-1"}),
+            Some(&json!({})),
+        )
+        .expect("change revert request");
+        assert_eq!(revert.path, "/spaces/demo/changes/change-1/revert");
+
+        let undo = prepare_request(
+            "run.undo",
+            &json!({"space_id": "demo", "run_id": "run-1"}),
+            Some(&json!({})),
+        )
+        .expect("run undo request");
+        assert_eq!(undo.body_kind, RequestBodyKind::Json);
+        assert_eq!(undo.path, "/spaces/demo/runs/run-1/undo");
+    }
+
+    #[test]
     fn dangerous_operations_put_human_approval_in_a_header_only() {
         let request = prepare_request(
             "entry.delete",
@@ -1618,6 +1769,31 @@ mod tests {
             }]
         );
         assert!(request.body.is_none());
+
+        let apply = prepare_request(
+            "ugoite.apply",
+            &json!({
+                "space_id": "demo",
+                "human_approval": "a".repeat(43)
+            }),
+            Some(&json!({
+                "operations": [{"kind": "remove", "id": "entry-1"}]
+            })),
+        )
+        .expect("approval-bound apply request");
+        assert_eq!(
+            apply.headers,
+            vec![
+                Header {
+                    name: "content-type".into(),
+                    value: "application/json".into()
+                },
+                Header {
+                    name: "x-ugoite-human-approval".into(),
+                    value: "a".repeat(43)
+                }
+            ]
+        );
     }
 
     #[test]
@@ -1927,6 +2103,10 @@ mod tests {
     fn sample_arguments(operation: &str) -> Value {
         let mut arguments = Map::new();
         let needs_space_id = operation.starts_with("space.")
+            || operation.starts_with("change.")
+            || operation.starts_with("pin.")
+            || operation == "run.undo"
+            || operation == "ugoite.apply"
             || operation.starts_with("form.")
             || operation.starts_with("entry.")
             || operation.starts_with("search.")
@@ -2006,6 +2186,18 @@ mod tests {
             arguments.insert("asset_id".into(), json!("asset-1"));
             arguments.insert("form".into(), json!("Meeting"));
             arguments.insert("entry_id".into(), json!("entry-1"));
+        }
+        if operation == "pin.delete" {
+            arguments.insert("pin_name".into(), json!("release-current"));
+        }
+        if operation == "change.revert" {
+            arguments.insert("change_id".into(), json!("change-1"));
+        }
+        if operation == "run.undo" {
+            arguments.insert("run_id".into(), json!("run-1"));
+        }
+        if operation == "ugoite.apply" {
+            arguments.insert("operations".into(), json!([]));
         }
         if operation == "agent.revoke" {
             arguments.insert(

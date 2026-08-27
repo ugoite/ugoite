@@ -30,8 +30,8 @@ pub mod space;
 pub mod sql_session;
 
 pub use health::SpaceHealthReport;
-pub use space_catalog::PublicationContext;
 use space_catalog::SpaceCatalog;
+pub use space_catalog::{PublicationContext, PublishedChange};
 pub use ugoite_domain::checkpoint::{
     CheckpointChange, CheckpointChangeKind, CheckpointDiff, CheckpointTable, SpaceCheckpoint,
 };
@@ -79,6 +79,9 @@ use tokio::sync::Semaphore;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
+};
+use ugoite_domain::change::{
+    selective_inverse_with_form_schema, ChangeCommand, ChangeDescriptor, RevertFieldAction,
 };
 use ugoite_domain::entry::{
     AssetReference, EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
@@ -277,6 +280,55 @@ pub struct IcebergWorkspace {
     logical_space_uid: uuid::Uuid,
     warehouse: String,
     write: WriteConfig,
+}
+
+impl IcebergWorkspace {
+    /// Read the exact active Pin set owned by the Space Catalog Head.
+    pub async fn list_pins(
+        &self,
+    ) -> Result<std::collections::BTreeMap<String, ugoite_domain::pin::PinEntry>> {
+        self.space_catalog
+            .as_ref()
+            .context("Pin operations require the OpenDAL-backed SpaceCatalog")?
+            .list_pins()
+            .await
+            .map_err(|error| anyhow!(error.to_string()))
+    }
+
+    pub async fn list_changes(&self) -> Result<Vec<space_catalog::PublishedChange>> {
+        self.space_catalog
+            .as_ref()
+            .context("Change history requires the OpenDAL-backed SpaceCatalog")?
+            .list_changes()
+            .await
+            .map_err(|error| anyhow!(error.to_string()))
+    }
+
+    /// Create a maintenance Pin by publishing a Head-only transition.
+    pub async fn create_pin(
+        &self,
+        name: &str,
+        created_by_principal_id: &str,
+        created_at_micros: i64,
+    ) -> Result<ugoite_domain::pin::PinEntry> {
+        self.space_catalog
+            .as_ref()
+            .context("Pin operations require the OpenDAL-backed SpaceCatalog")?
+            .new_attempt()
+            .create_pin(name, created_by_principal_id, created_at_micros)
+            .await
+            .map_err(|error| anyhow!(error.to_string()))
+    }
+
+    pub async fn delete_pin(&self, name: &str) -> Result<()> {
+        self.space_catalog
+            .as_ref()
+            .context("Pin operations require the OpenDAL-backed SpaceCatalog")?
+            .new_attempt()
+            .delete_pin(name)
+            .await
+            .map_err(|error| anyhow!(error.to_string()))
+    }
 }
 
 /// Query permits are process-wide per Space coordinate. A request creates a
@@ -504,6 +556,37 @@ pub fn publication_context<T: Serialize>(
     ))
 }
 
+/// Build a publication context from a validated semantic Change. The
+/// publication command identity is derived from the Change ID in one place,
+/// so adapters cannot accidentally create two identities for one mutation.
+pub fn publication_context_for_change<T: Serialize>(
+    command: &ChangeCommand,
+    command_kind: impl Into<String>,
+    payload: &T,
+) -> Result<PublicationContext> {
+    command.validate()?;
+    publication_context(command.change_id.clone(), command_kind, payload)?
+        .with_change_descriptor(command.descriptor())
+        .map_err(|error| anyhow!(error.to_string()))
+}
+
+pub(crate) fn system_publication_context<T: Serialize>(
+    command_id: impl Into<String>,
+    command_kind: impl Into<String>,
+    payload: &T,
+) -> Result<PublicationContext> {
+    let context = publication_context(command_id, command_kind, payload)?;
+    context
+        .with_change_descriptor(ChangeDescriptor {
+            run_id: None,
+            actor_principal_id: "system".to_owned(),
+            message: None,
+            reverts_change_id: None,
+            created_at_micros: chrono::Utc::now().timestamp_micros(),
+        })
+        .map_err(|error| anyhow!(error.to_string()))
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MaintenancePlan {
     pub form_id: FormId,
@@ -637,6 +720,9 @@ impl IcebergWorkspace {
             .as_ref()
             .context("SpaceCommitCoordinator requires the OpenDAL-backed SpaceCatalog")?
             .ensure_authoritative_mutation_contract()?;
+        publication
+            .validate()
+            .context("invalid publication Change contract")?;
         if self.space_catalog.is_none() {
             return Err(anyhow!(
                 "SpaceCommitCoordinator requires the OpenDAL-backed SpaceCatalog"
@@ -1068,6 +1154,154 @@ impl IcebergWorkspace {
 
     pub async fn list_forms(&self) -> Result<Vec<FormDefinition>> {
         self.list_forms_bounded(usize::MAX, usize::MAX).await
+    }
+
+    /// Append a selective inverse for one committed Change. The operation is
+    /// intentionally scoped to one Form publication: cross-Form atomicity is
+    /// a separate capability and must not be implied by the public API.
+    pub async fn revert_change(
+        &self,
+        target_change_id: &str,
+        command: &ChangeCommand,
+    ) -> Result<CommitReceipt> {
+        command
+            .validate()
+            .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+        if command.reverts_change_id.as_deref() != Some(target_change_id) {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "revert command must identify the target Change explicitly",
+            )
+            .into());
+        }
+        let now = command.created_at_micros;
+        let mut target_form = None;
+        let mut inverse_revisions = Vec::new();
+        for form in self.list_forms().await? {
+            let revisions = self.read_revisions(form.id).await?;
+            let targets = revisions
+                .iter()
+                .filter(|revision| revision.change_id == target_change_id)
+                .collect::<Vec<_>>();
+            if targets.is_empty() {
+                continue;
+            }
+            if target_form.replace(form.id).is_some() {
+                return Err(AppError::conflict(
+                    ErrorCode::RevisionConflict,
+                    "reverting a Change spanning multiple Forms is not supported",
+                )
+                .into());
+            }
+            let schema = form
+                .fields
+                .iter()
+                .map(|field| (field.id, field.clone()))
+                .collect::<BTreeMap<_, _>>();
+            let mut target_entries = BTreeSet::new();
+            for target in targets {
+                if !target_entries.insert(target.entry_id) {
+                    return Err(AppError::conflict(
+                        ErrorCode::RevisionConflict,
+                        "one Change contains multiple revisions for the same Entry",
+                    )
+                    .into());
+                }
+                let current = revisions
+                    .iter()
+                    .filter(|revision| revision.entry_id == target.entry_id)
+                    .max_by_key(|revision| revision.entry_version)
+                    .ok_or_else(|| {
+                        AppError::conflict(
+                            ErrorCode::RevisionConflict,
+                            "target Change has no current Entry revision",
+                        )
+                    })?;
+                let previous = revisions
+                    .iter()
+                    .filter(|revision| {
+                        revision.entry_id == target.entry_id
+                            && revision.entry_version < target.entry_version
+                    })
+                    .max_by_key(|revision| revision.entry_version);
+                let empty_before = BTreeMap::new();
+                let before = previous
+                    .map(|revision| &revision.values)
+                    .unwrap_or(&empty_before);
+                let plan = selective_inverse_with_form_schema(
+                    target_change_id,
+                    before,
+                    &target.values,
+                    &current.values,
+                    &schema,
+                )
+                .map_err(|conflict| {
+                    AppError::conflict(
+                        ErrorCode::RevisionConflict,
+                        format!("cannot revert {target_change_id}: {conflict}"),
+                    )
+                })?;
+                let mut values = current.values.clone();
+                for (field_id, action) in plan.fields {
+                    if let RevertFieldAction::Restore { value } = action {
+                        match value {
+                            Some(value) => {
+                                values.insert(field_id, value);
+                            }
+                            None => {
+                                values.remove(&field_id);
+                            }
+                        }
+                    }
+                }
+                let restoring_existing = previous.is_some();
+                let mut entry = current.entry.clone();
+                entry.updated_at_micros = now;
+                entry.updated_by = command.actor_principal_id.clone();
+                entry.deleted = !restoring_existing;
+                entry.deleted_at_micros = (!restoring_existing).then_some(now);
+                entry.deleted_by =
+                    (!restoring_existing).then(|| command.actor_principal_id.clone());
+                if !restoring_existing {
+                    values.clear();
+                }
+                inverse_revisions.push(EntryRevision {
+                    form_id: current.form_id,
+                    entry_id: current.entry_id,
+                    revision_id: RevisionId::from(Uuid::new_v4()),
+                    parent_revision_id: Some(current.revision_id),
+                    entry_version: current.entry_version.saturating_add(1),
+                    change_id: command.change_id.clone(),
+                    expected_version: Some(current.entry_version),
+                    operation: if restoring_existing {
+                        EntryOperation::Upsert
+                    } else {
+                        EntryOperation::Delete
+                    },
+                    committed_at_micros: now,
+                    author_id: current.author_id.clone(),
+                    form_version: current.form_version,
+                    source_kind: current.source_kind.clone(),
+                    source_id: current.source_id.clone(),
+                    entry,
+                    values,
+                    extra_attributes: current.extra_attributes.clone(),
+                    extension_metadata: current.extension_metadata.clone(),
+                });
+            }
+            break;
+        }
+        let form_id = target_form.ok_or_else(|| {
+            AppError::not_found(
+                ErrorCode::RevisionNotFound,
+                format!("target Change was not found: {target_change_id}"),
+            )
+        })?;
+        let publication =
+            publication_context_for_change(command, "change.revert", &inverse_revisions)?;
+        self.commit(publication)?
+            .append_revisions(form_id, inverse_revisions)
+            .await
     }
 
     /// Loads Form definitions with explicit count and serialized-size bounds.
@@ -2397,6 +2631,15 @@ impl SpaceCommitCoordinator {
         relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     ) -> Result<CommitReceipt> {
         self.ensure_authoritative_mutation_contract()?;
+        if self.publication.change.is_some()
+            && revisions
+                .iter()
+                .any(|revision| revision.change_id != self.publication.command_id)
+        {
+            return Err(anyhow!(
+                "Change ID must equal the publication command ID for every revision"
+            ));
+        }
         if let Some(receipt) = self.publication_receipt().await? {
             return Ok(CommitReceipt {
                 command_id: receipt.command_id,
@@ -2748,6 +2991,7 @@ fn form_schema(form: &FormDefinition) -> Result<Schema> {
         required(23, "ugoite_entry_external_id", PrimitiveType::String),
         required(24, "ugoite_entry_updated_by", PrimitiveType::String),
         optional(25, "ugoite_entry_deleted_by", PrimitiveType::String),
+        required(26, "change_id", PrimitiveType::String),
     ];
     for field in &form.fields {
         fields.push(Arc::new(NestedField::new(
@@ -3052,6 +3296,12 @@ fn revision_batch_from_values(
             revisions
                 .iter()
                 .map(|revision| revision.entry.deleted_by.as_deref())
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(StringArray::from(
+            revisions
+                .iter()
+                .map(|revision| revision.change_id.as_str())
                 .collect::<Vec<_>>(),
         )),
     ];
@@ -3821,6 +4071,7 @@ fn revisions_from_batch(
 ) -> Result<Vec<EntryRevision>> {
     let entry_ids = required_column::<FixedSizeBinaryArray>(batch, "entry_id")?;
     let revision_ids = required_column::<FixedSizeBinaryArray>(batch, "revision_id")?;
+    let change_ids = required_column::<StringArray>(batch, "change_id")?;
     let parents = required_column::<FixedSizeBinaryArray>(batch, "parent_revision_id")?;
     let versions = required_column::<Int64Array>(batch, "entry_version")?;
     let operations = required_column::<StringArray>(batch, "operation")?;
@@ -3883,6 +4134,7 @@ fn revisions_from_batch(
             form_id: form.id,
             entry_id: uuid_at(entry_ids, row)?,
             revision_id: RevisionId::from(uuid_value_at(revision_ids, row)?),
+            change_id: required_string(change_ids, row, "change_id")?.to_string(),
             parent_revision_id,
             entry_version,
             expected_version: parent_revision_id.map(|_| entry_version.saturating_sub(1)),
@@ -4458,6 +4710,7 @@ mod invariant_tests {
             form_id: form.id,
             entry_id: EntryId::from(Uuid::from_u128(18_511)),
             revision_id: RevisionId::from(Uuid::from_u128(revision_id)),
+            change_id: format!("change-{revision_id}"),
             parent_revision_id: None,
             entry_version: 1,
             expected_version: None,

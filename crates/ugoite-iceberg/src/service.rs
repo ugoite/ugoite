@@ -28,6 +28,7 @@ use crate::{
 use crate::{CheckpointIntegrityError, CheckpointUnavailable, SpaceCheckpoint};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
+use ugoite_domain::change::{ChangeCommand, RunId};
 use ugoite_domain::id::{
     validate_asset_id, validate_checkpoint_name, validate_entry_id, validate_form_name,
     validate_revision_id, validate_space_id, validate_sql_id, validate_sql_session_id, FormId,
@@ -53,6 +54,23 @@ pub enum SpacePermission {
     WriteContent,
     ManageSpace,
     ManageMembers,
+}
+
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ApplyOperation {
+    Create {
+        id: Option<String>,
+        markdown: String,
+    },
+    Update {
+        id: String,
+        version_token: String,
+        markdown: String,
+    },
+    Remove {
+        id: String,
+    },
 }
 
 #[derive(Clone)]
@@ -1194,6 +1212,251 @@ impl UgoiteService {
         space::get_space_raw(&self.operator, space_id).await
     }
 
+    pub async fn list_pins(&self, space_id: &str) -> Result<Value> {
+        self.validate_complete_space(space_id).await?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        Ok(serde_json::to_value(workspace.list_pins().await?)?)
+    }
+
+    pub async fn list_changes(&self, space_id: &str) -> Result<Value> {
+        self.validate_complete_space(space_id).await?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        Ok(serde_json::to_value(workspace.list_changes().await?)?)
+    }
+
+    pub async fn revert_change(
+        &self,
+        space_id: &str,
+        target_change_id: &str,
+        actor_principal_id: &str,
+        run_id: Option<&str>,
+        message: Option<&str>,
+    ) -> Result<Value> {
+        if target_change_id.trim().is_empty() {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "target_change_id must not be blank",
+            )
+            .into());
+        }
+        self.ensure_mutation_admitted(space_id).await?;
+        self.validate_complete_space(space_id).await?;
+        let workspace = iceberg_store::native_mutation_workspace(
+            &self.operator,
+            &self.workspace_path(space_id),
+        )
+        .await?;
+        let command = ChangeCommand {
+            change_id: Uuid::new_v4().to_string(),
+            run_id: run_id.map(RunId::new).transpose().map_err(|error| {
+                AppError::invalid_input(ErrorCode::InvalidInput, error.to_string())
+            })?,
+            actor_principal_id: actor_principal_id.to_owned(),
+            message: message.map(str::to_owned),
+            reverts_change_id: Some(target_change_id.to_owned()),
+            created_at_micros: Utc::now().timestamp_micros(),
+        };
+        let receipt = workspace.revert_change(target_change_id, &command).await?;
+        Ok(json!({
+            "change_id": receipt.command_id,
+            "reverts_change_id": target_change_id,
+            "catalog_generation": receipt.catalog_generation,
+            "revision_ids": receipt.committed_revision_ids,
+            "run_id": command.run_id,
+        }))
+    }
+
+    /// Undo every Change correlated to a Run in reverse publication order.
+    /// Each inverse is its own append-only Change; the Run itself has no
+    /// durable status record and can be resumed by repeating this request.
+    pub async fn undo_run(
+        &self,
+        space_id: &str,
+        run_id: &str,
+        actor_principal_id: &str,
+    ) -> Result<Value> {
+        let run_id = RunId::new(run_id)
+            .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+        self.ensure_mutation_admitted(space_id).await?;
+        self.validate_complete_space(space_id).await?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let changes = workspace.list_changes().await?;
+        let already_reverted = changes
+            .iter()
+            .filter_map(|change| change.change.reverts_change_id.clone())
+            .collect::<std::collections::HashSet<_>>();
+        let mut changes = changes
+            .into_iter()
+            .filter(|change| {
+                change.change.run_id.as_ref() == Some(&run_id)
+                    && change.change.reverts_change_id.is_none()
+                    && !already_reverted.contains(change.change_id.as_str())
+            })
+            .collect::<Vec<_>>();
+        changes.sort_by(|left, right| right.generation.cmp(&left.generation));
+        let mut inverses = Vec::with_capacity(changes.len());
+        for change in changes {
+            inverses.push(
+                self.revert_change(
+                    space_id,
+                    &change.change_id,
+                    actor_principal_id,
+                    Some(run_id.as_str()),
+                    Some("Undo Run"),
+                )
+                .await?,
+            );
+        }
+        Ok(json!({
+            "run_id": run_id,
+            "reverted_change_count": inverses.len(),
+            "inverses": inverses,
+        }))
+    }
+
+    /// Apply a portable batch using the same entry mutation use cases as the
+    /// individual REST operations. Each operation remains an append-only
+    /// Change; cross-Form atomicity is deliberately not promised in v1.
+    pub async fn apply_operations(
+        &self,
+        space_id: &str,
+        operations: Vec<ApplyOperation>,
+        actor_principal_id: &str,
+        principal_ids: &[Uuid],
+        run_id: Option<&str>,
+        _message: Option<&str>,
+    ) -> Result<Value> {
+        if operations.is_empty() {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "operations must not be empty",
+            )
+            .into());
+        }
+        let run_id = run_id
+            .map(RunId::new)
+            .transpose()
+            .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+        let mut results = Vec::with_capacity(operations.len());
+        for operation in operations {
+            match operation {
+                ApplyOperation::Create { id, markdown } => {
+                    let entry_id = id.unwrap_or_else(|| Uuid::new_v4().to_string());
+                    let change = ChangeCommand {
+                        change_id: Uuid::new_v4().to_string(),
+                        run_id: run_id.clone(),
+                        actor_principal_id: actor_principal_id.to_owned(),
+                        message: _message.map(str::to_owned),
+                        reverts_change_id: None,
+                        created_at_micros: Utc::now().timestamp_micros(),
+                    };
+                    let value = self
+                        .create_entry_authorized_for_principals_with_change(
+                            space_id,
+                            &entry_id,
+                            &markdown,
+                            actor_principal_id,
+                            principal_ids,
+                            Some(change),
+                        )
+                        .await?;
+                    results.push(json!({
+                        "kind": "create",
+                        "id": entry_id,
+                        "revision_id": value["revision_id"],
+                    }));
+                }
+                ApplyOperation::Update {
+                    id,
+                    version_token,
+                    markdown,
+                } => {
+                    let change = ChangeCommand {
+                        change_id: Uuid::new_v4().to_string(),
+                        run_id: run_id.clone(),
+                        actor_principal_id: actor_principal_id.to_owned(),
+                        message: _message.map(str::to_owned),
+                        reverts_change_id: None,
+                        created_at_micros: Utc::now().timestamp_micros(),
+                    };
+                    let value = self
+                        .update_entry_authorized_for_principals_with_change(
+                            space_id,
+                            &id,
+                            &markdown,
+                            Some(&version_token),
+                            actor_principal_id,
+                            principal_ids,
+                            Some(change),
+                        )
+                        .await?;
+                    results.push(json!({
+                        "kind": "update",
+                        "id": id,
+                        "revision_id": value["revision_id"],
+                    }));
+                }
+                ApplyOperation::Remove { id } => {
+                    let change = ChangeCommand {
+                        change_id: Uuid::new_v4().to_string(),
+                        run_id: run_id.clone(),
+                        actor_principal_id: actor_principal_id.to_owned(),
+                        message: _message.map(str::to_owned),
+                        reverts_change_id: None,
+                        created_at_micros: Utc::now().timestamp_micros(),
+                    };
+                    self.delete_entry_with_change(
+                        space_id,
+                        &id,
+                        false,
+                        actor_principal_id,
+                        Some(change),
+                    )
+                    .await?;
+                    results.push(json!({"kind": "remove", "id": id}));
+                }
+            }
+        }
+        Ok(json!({
+            "run_id": run_id,
+            "operations": results,
+        }))
+    }
+
+    pub async fn create_pin(
+        &self,
+        space_id: &str,
+        name: &str,
+        created_by_principal_id: &str,
+    ) -> Result<Value> {
+        self.ensure_mutation_admitted(space_id).await?;
+        self.validate_complete_space(space_id).await?;
+        let workspace = iceberg_store::native_mutation_workspace(
+            &self.operator,
+            &self.workspace_path(space_id),
+        )
+        .await?;
+        Ok(serde_json::to_value(
+            workspace
+                .create_pin(name, created_by_principal_id, Utc::now().timestamp_micros())
+                .await?,
+        )?)
+    }
+
+    pub async fn delete_pin(&self, space_id: &str, name: &str) -> Result<()> {
+        self.ensure_mutation_admitted(space_id).await?;
+        self.validate_complete_space(space_id).await?;
+        let workspace = iceberg_store::native_mutation_workspace(
+            &self.operator,
+            &self.workspace_path(space_id),
+        )
+        .await?;
+        workspace.delete_pin(name).await
+    }
+
     /// Returns read-only Catalog Head and Iceberg metadata evidence for one
     /// Space. Checkpoint names are caller-supplied because listing storage is
     /// not a source of Catalog or orphan authority.
@@ -1417,6 +1680,26 @@ impl UgoiteService {
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
+        self.create_entry_authorized_for_principals_with_change(
+            space_id,
+            entry_id,
+            markdown,
+            author,
+            principal_ids,
+            None,
+        )
+        .await
+    }
+
+    pub async fn create_entry_authorized_for_principals_with_change(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        markdown: &str,
+        author: &str,
+        principal_ids: &[Uuid],
+        change: Option<ChangeCommand>,
+    ) -> Result<Value> {
         require_nonempty_authorized_principals(principal_ids)?;
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
@@ -1441,7 +1724,7 @@ impl UgoiteService {
         };
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
         let workspace = self.workspace_path(space_id);
-        entry::create_entry_with_scopes(
+        entry::create_entry_with_scopes_and_change(
             &self.operator,
             &workspace,
             entry_id,
@@ -1449,6 +1732,7 @@ impl UgoiteService {
             author,
             &integrity,
             Some(&scopes),
+            change,
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
@@ -1531,6 +1815,29 @@ impl UgoiteService {
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
+        self.update_entry_authorized_for_principals_with_change(
+            space_id,
+            entry_id,
+            markdown,
+            parent_revision_id,
+            author,
+            principal_ids,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_entry_authorized_for_principals_with_change(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        markdown: &str,
+        parent_revision_id: Option<&str>,
+        author: &str,
+        principal_ids: &[Uuid],
+        change: Option<ChangeCommand>,
+    ) -> Result<Value> {
         require_nonempty_authorized_principals(principal_ids)?;
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
@@ -1564,7 +1871,7 @@ impl UgoiteService {
                 .await?,
             )
         };
-        let result = entry::update_entry_authorized(
+        let result = entry::update_entry_authorized_with_change(
             &self.operator,
             &self.workspace_path(space_id),
             entry_id,
@@ -1573,6 +1880,7 @@ impl UgoiteService {
             author,
             &integrity,
             scopes.as_ref(),
+            change,
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
@@ -1595,6 +1903,30 @@ impl UgoiteService {
             entry_id,
             hard_delete,
             actor,
+        )
+        .await?;
+        self.schedule_asset_text_refresh(space_id);
+        Ok(())
+    }
+
+    pub async fn delete_entry_with_change(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        hard_delete: bool,
+        actor: &str,
+        change: Option<ChangeCommand>,
+    ) -> Result<()> {
+        self.ensure_mutation_admitted(space_id).await?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        entry::delete_entry_with_change(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            hard_delete,
+            actor,
+            change,
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
