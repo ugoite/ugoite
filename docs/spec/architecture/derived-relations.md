@@ -38,9 +38,11 @@ author, ACL, publication-chain, or checkpoint-retention semantics.
 
 Readers establish visibility from this Head only. Object listing is reserved
 for diagnostics and garbage-collection candidate discovery. A shared writer
-must prove OpenDAL ETag-bound exact read, create-if-absent, conditional
-replacement, and stale rejection before using Head CAS. Single-process mode
-uses a process-local serializer while keeping all durable I/O on OpenDAL.
+must use the storage boundary's behavior-verified contract: OpenDAL ETag-bound
+exact read, create-if-absent, conditional replacement, stale rejection, and
+concurrent single-winner CAS. Single-process mode uses a process-local
+serializer while keeping all durable I/O on OpenDAL. Relation Head visibility
+does not require server timestamps; timestamps only support age-based cleanup.
 
 A rebuild writes a staging build completely, validates it, then performs one
 conditional Head swap. A failed or losing build is never visible. After the
@@ -86,8 +88,9 @@ works and AssetText search is degraded.
 Only the build named by the relation-local Head is visible. Detached build
 prefixes are garbage after the reader grace period; `garbage.json` is removed
 last, and a small terminal tombstone prevents build-ID reuse after the
-disposable claim is reaped. Shared garbage-age decisions require backend
-timestamps rather than producer clocks.
+disposable claim is reaped. Shared garbage-age decisions use backend timestamps
+when available; inability to obtain that maintenance signal does not disable
+authoritative relation publication or Catalog mutation.
 
 The internal DataFusion provider is not registered in Saved SQL, SQL Sessions,
 the public relation namespace, or SpaceCheckpoint-pinned query plans. Iceberg

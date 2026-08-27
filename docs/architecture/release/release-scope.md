@@ -23,10 +23,13 @@ support, and product claims stay aligned with the implementation.
 
 - remote CLI asset upload is intentionally unavailable in this release; the API
   client, REST, and frontend asset upload surfaces remain available;
-- S3-compatible and other non-local OpenDAL operators are available for
-  connection/configuration and relation-level CAS paths, but authoritative Space
-  mutations are local/memory-only in v0.1. A future multi-object fencing
-  contract is required before server mutations can use a non-local operator;
+- S3-compatible and other non-local OpenDAL operators can serve authoritative
+  Space mutations when startup or explicit revalidation proves the behavioral
+  exact-read and conditional-write contract. A binding whose exact reads are
+  unavailable fails as storage-unavailable; a readable binding whose
+  conditional writes cannot be proved is `SharedReadOnly`. The health report
+  exposes the selected mode and reason. Provider names do not grant or deny
+  mutation admission;
 - index run/stats are local core-mode commands. `index run` rebuilds the
   internal AssetText DerivedRelation, while stats reports derived health;
 - read-only, authorization-checked Node and Space audit-event listing is

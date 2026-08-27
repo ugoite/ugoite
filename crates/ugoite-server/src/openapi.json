@@ -11834,7 +11834,9 @@
         "type": "object",
         "required": [
           "status",
-          "mode"
+          "mode",
+          "write_mode",
+          "reason"
         ],
         "properties": {
           "status": {
@@ -11848,7 +11850,21 @@
             "enum": [
               "memory",
               "local",
-              "s3"
+              "remote"
+            ]
+          },
+          "write_mode": {
+            "type": "string",
+            "enum": [
+              "single_process",
+              "shared_read_only",
+              "shared_verified"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
             ]
           }
         }
@@ -12011,13 +12027,29 @@
       "HealthResponse": {
         "type": "object",
         "required": [
-          "status"
+          "status",
+          "write_mode",
+          "reason"
         ],
         "properties": {
           "status": {
             "type": "string",
             "enum": [
               "ok"
+            ]
+          },
+          "write_mode": {
+            "type": "string",
+            "enum": [
+              "single_process",
+              "shared_read_only",
+              "shared_verified"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
             ]
           }
         }

@@ -6,12 +6,15 @@ title: REST API
 checked-in OpenAPI snapshot and generated frontend path registry are verified in
 CI.
 
-The v0.1 server mutation boundary is local/memory-backed Space storage. S3-
-compatible and other non-local operators remain available for supported
-connection/configuration and derived CAS paths, but authoritative REST
-mutations fail closed until a backend-level atomic multi-object fencing
-contract is implemented. The stable error code is
-`STORAGE_MUTATION_UNAVAILABLE`.
+The server opens each Space through its configured OpenDAL binding. Local
+single-writer deployments use `SingleProcess`; non-local bindings are admitted
+as `SharedVerified` only after startup or explicit revalidation proves exact
+load, create-if-absent, conditional replacement, stale-revision rejection, and
+single-winner concurrent CAS. A readable binding whose conditional-write
+contract is not proven is `SharedReadOnly`; a binding that cannot provide exact
+reads is storage-unavailable. The stable mutation error code is
+`STORAGE_MUTATION_UNAVAILABLE`, and the health response exposes the mode and
+probe reason.
 
 > Release boundary: v0.1 supports mandatory browser authentication with
 > Passkey/WebAuthn, opaque sessions, owner-approved Space access recovery,

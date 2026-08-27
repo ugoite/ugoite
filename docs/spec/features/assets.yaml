@@ -20,7 +20,7 @@ apis:
     command: ugoite asset upload
     file: crates/ugoite-cli/src/commands/asset.rs
     function: run
-  notes: Upload returns an AssetReference and does not create an Entry. Core/local CLI upload is implemented; remote CLI asset upload is intentionally unavailable in this release. API, REST, and frontend multipart upload remain implemented for the current local/memory server mutation boundary; non-local Space mutation requires a future atomic multi-object fencing contract.
+  notes: Upload returns an AssetReference and does not create an Entry. Core/local CLI upload is implemented; remote CLI asset upload remains outside this release. API, REST, and frontend multipart upload use the same immutable blob plus Catalog Head CAS protocol on a `SharedVerified` binding. A failed Catalog publication leaves an orphan blob that is not authoritative.
 - id: asset.delete
   method: DELETE
   status: implemented

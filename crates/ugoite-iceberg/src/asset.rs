@@ -117,11 +117,9 @@ pub async fn save_asset_with_media_type(
     reference
         .validate()
         .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
-    // An uploaded object is still an authoritative mutation: an Entry may
-    // reference it immediately after this call. Keep the check at the
-    // object-write boundary so callers cannot accidentally bypass the
-    // authorization lease by using the lower-level asset helper.
-    crate::authorization::ensure_authorization_write_fence().await?;
+    // The blob is immutable and intentionally separate from Catalog
+    // publication. A failed later publication leaves this object orphaned;
+    // it never becomes authoritative by itself.
     op.write(&asset_path(ws_path, &reference.asset_id), content.to_vec())
         .await?;
     Ok(reference)
@@ -344,7 +342,6 @@ pub async fn delete_asset(
         "asset.delete",
         &serde_json::json!({"asset_id": asset_id}),
     )?;
-    crate::authorization::ensure_authorization_write_fence().await?;
     let deletion = workspace
         .commit(publication)?
         .delete_asset(asset_id, relation_scopes)

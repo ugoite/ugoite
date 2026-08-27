@@ -54,11 +54,16 @@ startup fails. It never falls back to read-then-write. Browser sessions,
 access-token records, and audit events are directly addressed objects; expired
 records may be removed lazily or by storage lifecycle rules.
 
-Portable Space authorization state has its own monotonic revision. Mutations
-compare the expected revision and use the storage ETag with `If-Match` where the
-backend supports it. Conflicting member, agent, or policy changes fail closed
-instead of overwriting a newer revocation. Independently constructed core
-services also share the local-process write lock.
+Portable Space authorization state has its own monotonic revision. The command
+authorization point is an exact load of `AuthorizationState`; the subsequent
+state mutation compares the expected logical revision and uses the storage
+revision with conditional replacement. Conflicting member, agent, or policy
+changes fail closed instead of overwriting a newer revocation. A revoke
+published after that point does not retroactively cancel the admitted command;
+the next command observes the newer state. Ordinary authorization/content
+mutation does not acquire a durable lease, heartbeat, or task-local write
+fence. Independently constructed core services still share the local-process
+write lock where the existing single-writer deployment contract uses one.
 
 `UGOITE_NODE_SECRET_KEY` or `UGOITE_NODE_SECRET_FILE` supplies at least 32 bytes
 of encryption-root material. Keep it outside the control namespace. Missing key

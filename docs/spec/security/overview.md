@@ -66,6 +66,12 @@ The following additional boundaries and controls apply to v0.1:
 - Entry and Asset use grant-only ACLs with default Space-role inheritance. Every
   adapter uses the core Authorizer. SQL constructs authorized source tables
   before joins, counts, and aggregates.
+- Ordinary command authorization linearizes at an exact
+  `AuthorizationState` load. A later revoke applies to commands whose
+  authorization point occurs after the revoke; it does not retroactively cancel
+  an already admitted in-flight command. The authorization object uses a
+  monotonic logical revision and conditional replacement, without a durable
+  mutation lease, heartbeat, or write fence.
 - The last Space owner and last account Passkey cannot be removed.
 - Agents cannot manage members, owners, or agents. An active human with the
   current permission can issue a single-use human approval for the exact `entry.delete`, `sql.delete`,

@@ -7,6 +7,7 @@ sidebar:
 | Variable                  | Purpose                                                            | Default                  |
 | ------------------------- | ------------------------------------------------------------------ | ------------------------ |
 | `UGOITE_ROOT`             | Operator-owned Space storage and, by default, Node control state    | `./data`                 |
+| `UGOITE_STORAGE_ENDPOINT` | Optional non-secret endpoint used when opening the active storage operator | unset                    |
 | `UGOITE_SERVER_ADDRESS`   | HTTP listen address                                                | `127.0.0.1:8000`         |
 | `UGOITE_STATIC_DIR`       | Optional compiled browser directory                                | unset                    |
 | `UGOITE_PUBLIC_ORIGIN`    | Exact public WebAuthn/OAuth issuer origin                          | `http://localhost:8000`  |

@@ -701,7 +701,7 @@ impl Catalog for DerivedRelationCatalog {
 }
 
 pub async fn rebuild_asset_text(op: &Operator, ws_path: &str) -> Result<DerivedRelationHead> {
-    let shared = matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls");
+    let shared = crate::is_shared_backend(op);
     rebuild_asset_text_with_timeout(op, ws_path, shared).await
 }
 
@@ -852,10 +852,8 @@ async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str)
                     Ok(metadata) => metadata,
                     Err(error) => return Err(error.into()),
                 };
-                if metadata.etag().filter(|etag| !etag.is_empty()).is_none()
-                    || metadata.last_modified().is_none()
-                {
-                    bail!("AssetText refresh marker admission lock lacks server metadata");
+                if metadata.etag().filter(|etag| !etag.is_empty()).is_none() {
+                    bail!("AssetText refresh marker admission lock lacks an ETag");
                 }
                 return Ok(owner);
             }
@@ -875,9 +873,6 @@ async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str)
         let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
             bail!("AssetText refresh marker admission lock has no ETag")
         };
-        if metadata.last_modified().is_none() {
-            bail!("AssetText refresh marker admission lock has no server timestamp")
-        }
         let bytes = match op
             .read_options(
                 &path,
@@ -892,18 +887,17 @@ async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str)
             Err(error) if error.kind() == ErrorKind::ConditionNotMatch => continue,
             Err(error) => return Err(error.into()),
         };
-        let shared_backend = matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls");
+        let shared_backend = crate::is_shared_backend(op);
         let server_now = if shared_backend {
-            Some(
-                backend_server_time(
-                    op,
-                    &format!(
-                        "{ws_path}/_ugoite/derived/relations/{}",
-                        DerivedRelationId::ASSET_TEXT
-                    ),
-                )
-                .await?,
+            backend_server_time(
+                op,
+                &format!(
+                    "{ws_path}/_ugoite/derived/relations/{}",
+                    DerivedRelationId::ASSET_TEXT
+                ),
             )
+            .await
+            .ok()
         } else {
             None
         };
@@ -932,10 +926,8 @@ async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str)
                     Ok(metadata) => metadata,
                     Err(error) => return Err(error.into()),
                 };
-                if metadata.etag().filter(|etag| !etag.is_empty()).is_none()
-                    || metadata.last_modified().is_none()
-                {
-                    bail!("AssetText refresh marker admission lock lacks server metadata");
+                if metadata.etag().filter(|etag| !etag.is_empty()).is_none() {
+                    bail!("AssetText refresh marker admission lock lacks an ETag");
                 }
                 return Ok(owner);
             }
@@ -1085,7 +1077,7 @@ where
         // same admission invariant with one process-local mutex. Shared
         // remote writers are rejected rather than pretending a read-then-write
         // check is atomic.
-        if !matches!(op.info().scheme(), "memory" | "fs" | "file") {
+        if crate::is_shared_backend(op) {
             bail!("AssetText refresh marker admission requires conditional object writes");
         }
         let lock = ASSET_TEXT_REFRESH_LOCAL_ADMISSION.get_or_init(Mutex::default);
@@ -1390,7 +1382,7 @@ async fn legacy_asset_text_refresh_pending(op: &Operator, path: &str) -> Result<
             )
             .await?
         }
-        None if !is_shared_backend(op) => op.read(path).await?,
+        None if !crate::is_shared_backend(op) => op.read(path).await?,
         None => bail!("shared legacy AssetText refresh marker requires an exact ETag"),
     };
     Ok(serde_json::from_slice::<Value>(&bytes.to_vec())
@@ -1425,7 +1417,7 @@ async fn acknowledge_legacy_asset_text_refresh_request(op: &Operator, path: &str
             )
             .await
             .map(|_| ()),
-        None if !is_shared_backend(op) => op.write(path, bytes).await.map(|_| ()),
+        None if !crate::is_shared_backend(op) => op.write(path, bytes).await.map(|_| ()),
         None => bail!("shared legacy AssetText refresh acknowledgement requires an ETag"),
     };
     match result {
@@ -2019,10 +2011,7 @@ fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Durat
                             relation_id,
                         );
                         let maintenance = tokio::time::timeout(GC_OPERATION_TIMEOUT, async {
-                            let head_store = if matches!(
-                                operator.info().scheme(),
-                                "s3" | "gcs" | "oss" | "azdls"
-                            ) {
+                            let head_store = if crate::is_shared_backend(&operator) {
                                 base.shared().await?
                             } else {
                                 base.single_process()
@@ -2144,12 +2133,7 @@ async fn ensure_cleanup_marker(head_store: &DerivedRelationHeadStore, build_id: 
 /// period; a short-lived CLI cannot keep that timer task alive after exit.
 pub async fn garbage_collect_asset_text(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
     let relation_id = asset_text_definition().relation_id.as_uuid();
-    let base = DerivedRelationHeadStore::new(op.clone(), ws_path, relation_id);
-    let head_store = if matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls") {
-        base.shared().await?
-    } else {
-        base.single_process()
-    };
+    let head_store = DerivedRelationHeadStore::new(op.clone(), ws_path, relation_id);
     let current_build_id = match head_store.read_exact().await {
         Ok(head) => {
             // A current-build Head is authoritative. Any v1 materialization
@@ -2359,14 +2343,10 @@ async fn validate_asset_text_read_boundary(op: &Operator, ws_path: &str) -> Resu
     Ok(())
 }
 
-fn is_shared_backend(op: &Operator) -> bool {
-    matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls")
-}
-
 async fn asset_text_head_store(op: &Operator, ws_path: &str) -> Result<DerivedRelationHeadStore> {
     let store =
         DerivedRelationHeadStore::new(op.clone(), ws_path, DerivedRelationId::ASSET_TEXT.as_uuid());
-    if is_shared_backend(op) {
+    if crate::is_shared_backend(op) {
         Ok(store.shared_read_only())
     } else {
         Ok(store.single_process())
@@ -2378,7 +2358,7 @@ async fn catalog_store_for_read(op: &Operator, ws_path: &str) -> Result<SpaceCat
     // Read paths must not write capability probes, but remote reads must still
     // use exact ETag-bound semantics. A remote backend without that contract
     // fails closed in `read_exact_head` rather than observing a moving Head.
-    Ok(if is_shared_backend(op) {
+    Ok(if crate::is_shared_backend(op) {
         store.shared_read_only()
     } else {
         store

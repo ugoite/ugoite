@@ -67,8 +67,11 @@ relation directories are lazy and are not part of bootstrap.
 
 The typed `SpaceMeta` view exposes only portable identity and creation metadata;
 it never contains a physical backend binding. The raw runtime response may
-merge `settings.json` and a Node-local `storage_config` binding. The binding is
-stored outside the `spaces/{id}` prefix and is not part of a Space copy.
+merge `settings.json` and a Node-local `storage_config` binding. A binding may
+carry the non-secret operator-construction settings needed by its adapter,
+such as a custom endpoint; credentials are never stored in the Space or
+binding. The binding is stored outside the `spaces/{id}` prefix and is not
+part of a Space copy.
 
 `settings.json` starts as:
 
@@ -139,5 +142,8 @@ Head or Iceberg state. Node control state and Space storage bindings are
 node-local and are not part of a
 Space move. A complete Node recovery set also preserves the configured Node
 control-store prefix, the Node-default `response_hmac/default.json`, and the
-node secret separately. PATCHing a Space storage binding changes the Node-local
-locator only; it does not move existing files.
+ node secret separately. PATCHing a Space storage binding changes the Node-local
+ locator only; it does not move existing files or change the active server
+ operator. To use a different backend, an operator quiesces writers, copies the
+ complete Space prefix, updates deployment storage configuration, and
+ reopens/revalidates the operator before resuming writes.

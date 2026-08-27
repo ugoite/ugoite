@@ -68,20 +68,39 @@ fresh attempt and reruns the domain validation before publishing.
 
 ## Capability and concurrency boundary
 
-Shared writes require behavioral probes, not merely capability flags: a real
-changing ETag, exact conditional read, conditional create-if-absent,
-conditional replacement, and stale-ETag rejection. Unsupported backends fail
-closed for shared writes. Explicit single-process mode may use local
-serialization but still writes every durable byte through OpenDAL.
+Shared writes require behavioral probes, not merely capability flags: exact
+load, create-if-absent, conditional replacement, stale-revision rejection, and
+exactly one winner for concurrent CAS from one revision. `CatalogWriteMode` is
+`SingleProcess`, `SharedReadOnly`, or `SharedVerified`; only the first and
+third issue mutation permits. Exact-read probe failure is storage unavailable,
+while a readable backend that cannot prove conditional writes is
+`SharedReadOnly`. Explicit single-process mode may use local serialization but
+still writes every durable byte through OpenDAL.
+
+The probe runs when a physical binding is opened at server startup or when an
+operator explicitly revalidates that binding. Its result is retained only in
+process memory and is never durable coordination state. Server-side timestamps
+are independent maintenance evidence for age-based garbage collection and are
+not required for Catalog publication or other authoritative writes.
+
+Independent mutable objects use the same narrow exact-load/CAS boundary when
+they can be updated by more than one writer. In particular,
+`users/{sha256(user_id)}/preferences.json` merges a patch against the exact
+revision it observed and retries a revision conflict; immutable objects and
+unique-ID session metadata do not become transactional authorities.
 
 Readers never lock. Writers may prepare immutable files concurrently. Visibility
 changes only through Head. One Form table commit is the mutation atomicity unit;
-Ugoite makes no cross-Form transaction claim. Leases, TTLs, heartbeats, lock
-files, fences, independent metadata-history or commit engines, object-list
-recovery, and custom maintenance engines are outside this architecture. The
-logical-coordinate FileIO bridge accepts only canonical `ugoite://` locations,
-binds them to the active Space operator, and rejects malformed or cross-Space
-coordinates. A narrow physical-schema compatibility adapter is permitted only
+Ugoite makes no cross-Form transaction claim. Ordinary authorization is
+evaluated at an exact `AuthorizationState` load and committed with that
+authority's CAS; revocation does not retroactively cancel an already admitted
+command. Durable leases, TTLs, heartbeats, lock files, and multi-object fences
+are not required for ordinary mutation. Custom FileIO, independent
+metadata-history or commit engines, object-list recovery, and custom
+maintenance engines are outside this architecture. The logical-coordinate
+FileIO bridge accepts only canonical `ugoite://` locations, binds them to the
+active Space operator, and rejects malformed or cross-Space coordinates. A
+narrow physical-schema compatibility adapter is permitted only
 when the upstream Rust API cannot retain an already-assigned Iceberg field ID;
 it must produce standard upstream Iceberg metadata and cannot establish a
 second field-identity authority.

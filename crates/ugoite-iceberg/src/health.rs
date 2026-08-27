@@ -98,13 +98,15 @@ pub struct BackendHealth {
     pub write_with_if_not_exists: bool,
     pub shared_write_contract: bool,
     pub probe_status: BackendProbeStatus,
+    pub probe_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BackendMode {
     SingleProcess,
-    Shared,
+    SharedReadOnly,
+    SharedVerified,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]

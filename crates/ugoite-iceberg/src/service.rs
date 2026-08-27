@@ -33,7 +33,10 @@ use ugoite_domain::id::{
     validate_revision_id, validate_space_id, validate_sql_id, validate_sql_session_id, FormId,
 };
 use ugoite_domain::identity::Action;
-use ugoite_storage::{operator_from_uri, OpendalStorage, StorageBackend};
+use ugoite_storage::{
+    operator_from_uri, operator_from_uri_with_endpoint, verify_storage_contract, OpendalStorage,
+    StorageBackend, StorageContractStatus,
+};
 
 pub const MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS: &[&str] = &[
     "admin_user_ids",
@@ -147,7 +150,7 @@ async fn renew_space_slug_claim(operator: &Operator, claim: &SpaceSlugClaim) -> 
         .etag()
         .filter(|etag| !etag.is_empty())
         .map(str::to_owned);
-    if etag.is_none() && !matches!(operator.info().scheme(), "memory" | "fs" | "file") {
+    if etag.is_none() && !crate::is_single_process_backend(operator) {
         bail!("shared Space slug claim renewal requires an exact ETag");
     }
     let current = operator
@@ -178,7 +181,7 @@ async fn renew_space_slug_claim(operator: &Operator, claim: &SpaceSlugClaim) -> 
                 },
             )
             .await?;
-    } else if matches!(operator.info().scheme(), "memory" | "fs" | "file") {
+    } else if crate::is_single_process_backend(operator) {
         operator.write(&path, bytes).await?;
     } else {
         bail!("shared Space slug claim renewal requires an exact ETag")
@@ -187,7 +190,7 @@ async fn renew_space_slug_claim(operator: &Operator, claim: &SpaceSlugClaim) -> 
 }
 
 fn local_space_slug_claim_lock_path(operator: &Operator, slug: &str) -> Option<PathBuf> {
-    if !matches!(operator.info().scheme(), "fs" | "file") {
+    if !crate::has_filesystem_locking_backend(operator) {
         return None;
     }
     Some(
@@ -223,8 +226,16 @@ async fn acquire_local_space_slug_claim_lock(
 
 impl UgoiteService {
     pub fn new(root_uri: impl Into<String>) -> Result<Self> {
+        Self::new_with_endpoint(root_uri, None)
+    }
+
+    /// Opens the node's physical storage binding with an optional
+    /// non-secret provider endpoint. The endpoint is deployment/operator
+    /// configuration; a persisted Space binding remains locator metadata and
+    /// does not perform a live backend migration.
+    pub fn new_with_endpoint(root_uri: impl Into<String>, endpoint: Option<&str>) -> Result<Self> {
         let root_uri = root_uri.into();
-        let operator = operator_from_uri(&root_uri)?;
+        let operator = operator_from_uri_with_endpoint(&root_uri, endpoint)?;
         Ok(Self {
             operator,
             root_uri,
@@ -260,6 +271,13 @@ impl UgoiteService {
 
     pub fn root_uri(&self) -> &str {
         &self.root_uri
+    }
+
+    /// Verify the physical binding once when a server or node opens it. The
+    /// result is retained by the storage boundary for all Space stores created
+    /// from this operator during this process.
+    pub async fn verify_storage_contract(&self) -> StorageContractStatus {
+        verify_storage_contract(&self.operator).await
     }
 
     pub fn workspace_path(&self, space_id: &str) -> String {
@@ -334,7 +352,7 @@ impl UgoiteService {
                     // post-mutation read contend with the rebuild.
                     tokio::time::sleep(ASSET_TEXT_REFRESH_DEBOUNCE).await;
                     while worker.pending.swap(false, Ordering::AcqRel) {
-                        let shared = matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls");
+                        let shared = crate::is_shared_backend(&op);
                         let result =
                             tokio::time::timeout(ASSET_TEXT_REFRESH_OPERATION_TIMEOUT, async {
                                 if shared {
@@ -663,7 +681,7 @@ impl UgoiteService {
                     )
                     .await?
             }
-            None if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") => {
+            None if crate::is_single_process_backend(&self.operator) => {
                 self.operator.read(&path).await?
             }
             None => bail!("shared Space slug claim read requires an exact ETag"),
@@ -706,7 +724,7 @@ impl UgoiteService {
                     },
                 )
                 .await?;
-        } else if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+        } else if crate::is_single_process_backend(&self.operator) {
             self.operator.write(path, bytes).await?;
         } else {
             bail!("shared Space slug claim write requires an exact ETag")
@@ -751,7 +769,7 @@ impl UgoiteService {
             .etag()
             .filter(|etag| !etag.is_empty())
             .map(str::to_owned);
-        if etag.is_none() && !matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+        if etag.is_none() && !crate::is_single_process_backend(&self.operator) {
             bail!("shared expired Space slug claim takeover requires an exact ETag");
         }
         let current = self
@@ -790,7 +808,7 @@ impl UgoiteService {
                 )
                 .await
                 .map_err(anyhow::Error::from)?;
-        } else if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+        } else if crate::is_single_process_backend(&self.operator) {
             self.operator
                 .write(&path, serde_json::to_vec(&replacement)?)
                 .await?;
@@ -822,7 +840,7 @@ impl UgoiteService {
             }
             let mut released = claim;
             released.state = "released".to_string();
-            if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+            if crate::is_single_process_backend(&self.operator) {
                 // Local claim operations are protected by the inter-process
                 // lock above. Removing the local tombstone keeps the
                 // filesystem layout compact; shared backends retain the
@@ -997,11 +1015,10 @@ impl UgoiteService {
             .get_or_init(|| Arc::new(AsyncMutex::new(())))
             .clone();
         let _creation_guard = creation_lock.lock().await;
-        // Space bootstrap spans the Space scaffold, the authorization owner,
-        // and the Node binding performed by the server.  There is no atomic
-        // multi-object fence for shared backends, so fail before the first
-        // write instead of leaving a partially bootstrapped Space that cannot
-        // be retried under the same slug.
+        // Space bootstrap is a special idempotent lifecycle journal spanning
+        // the scaffold, authorization owner, and Node binding. It is admitted
+        // only by the same verified storage write contract; repair remains
+        // scoped to this lifecycle and is not a generic transaction layer.
         Authorizer::new(self.operator.clone()).ensure_authoritative_mutation_contract()?;
         validate_storage_id(validate_space_id(slug))?;
         if self.recover_claimed_space(slug).await?.is_some()
@@ -2879,10 +2896,7 @@ impl UgoiteService {
         self.validate_complete_space(space_id).await?;
         let ws_path = self.workspace_path(space_id);
         if crate::derived_relation::asset_text_refresh_needed(&self.operator, &ws_path).await? {
-            let shared = matches!(
-                self.operator.info().scheme(),
-                "s3" | "gcs" | "oss" | "azdls"
-            );
+            let shared = crate::is_shared_backend(&self.operator);
             if shared {
                 crate::derived_relation::rebuild_asset_text_shared(&self.operator, &ws_path)
                     .await?;
@@ -3722,7 +3736,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn non_local_space_mutations_fail_closed_before_storage_writes() -> Result<()> {
+    async fn unverified_non_local_space_mutations_fail_closed_before_storage_writes() -> Result<()>
+    {
         let service = UgoiteService::new("s3://ugoite-test-bucket/space")?;
         let assert_unavailable = |error: anyhow::Error| {
             let message = error.to_string();
@@ -3735,9 +3750,7 @@ mod tests {
                 app_error.code(),
                 ugoite_core::error::ErrorCode::StorageMutationUnavailable
             );
-            assert!(app_error
-                .message()
-                .contains("non-local Space mutations are unavailable in v0.1"));
+            assert!(app_error.message().contains("conditional-write"));
         };
 
         assert_unavailable(

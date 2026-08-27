@@ -39,11 +39,6 @@ pub async fn native_workspace(
 ) -> Result<crate::IcebergWorkspace> {
     let space_id = stable_space_id(operator, workspace_path).await?;
     let store = SpaceCatalogStore::new(operator.clone(), workspace_path)?;
-    let store = if matches!(operator.info().scheme(), "s3" | "gcs" | "oss" | "azdls") {
-        store.shared_read_only()
-    } else {
-        store.single_process()
-    };
     crate::IcebergWorkspace::open_space(store, space_id, crate::WriteConfig::default()).await
 }
 
@@ -55,10 +50,6 @@ pub async fn ensure_form_tables(
     crate::authorization::Authorizer::new(operator.clone())
         .ensure_authoritative_mutation_contract()?;
     let form = crate::form::to_domain_form(form_definition)?;
-    // SQL helpers may call this function from read paths that lazily create
-    // the system Form. That creation is still authoritative and must not
-    // bypass the request's authorization write fence.
-    crate::authorization::ensure_authorization_write_fence().await?;
     let workspace = native_workspace(operator, workspace_path).await?;
     if !workspace.has_form(form.id).await? {
         let command =

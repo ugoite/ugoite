@@ -70,12 +70,16 @@ current Iceberg `Catalog` trait. Its sole mutable authority is
 `_ugoite/catalog/publications/` provide the evidence needed to resolve an
 ambiguous Head compare-and-swap after later writers publish.
 
-Shared writes require a real Head ETag, exact `if_match` reads, conditional
-initial creation, and conditional whole-object replacement proven by backend
-probes. ETags are opaque tokens. Unsupported backends fail closed for shared
-writes; an explicitly selected single-process mode may serialize in-process
-while retaining every durable byte through OpenDAL. Readers never lock, and no
-lease, heartbeat, TTL, lock file, fencing token, external Catalog, or relational
+Shared writes require exact load, conditional initial creation, conditional
+whole-object replacement, stale-revision rejection, and concurrent
+single-winner CAS proven by a runtime behavioral probe. ETags and
+`ObjectRevision` values are opaque tokens. The resulting `CatalogWriteMode`
+is `SingleProcess`, `SharedReadOnly`, or `SharedVerified`; provider names are
+not mutation gates. Readers never lock. Ordinary authorization linearizes at
+an exact `AuthorizationState` load and its own CAS, so no lease, heartbeat,
+TTL, lock file, or multi-object fencing token is required for ordinary
+mutation. The server timestamp capability is independent and only supports
+maintenance that needs age comparisons. No external Catalog or relational
 database is part of the production architecture.
 
 Iceberg requirement/update application, filenames, and I/O use the current

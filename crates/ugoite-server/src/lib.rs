@@ -472,12 +472,16 @@ pub struct AppState {
     service: UgoiteService,
     identity: NodeIdentityService,
     security_headers: SecurityHeadersPolicy,
+    verify_storage_on_startup: bool,
 }
 
 impl AppState {
     pub fn new(root_uri: impl Into<String>) -> anyhow::Result<Self> {
         let root_uri = root_uri.into();
-        let service = UgoiteService::new(root_uri)?;
+        let storage_endpoint = env::var("UGOITE_STORAGE_ENDPOINT")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
+        let service = UgoiteService::new_with_endpoint(root_uri, storage_endpoint.as_deref())?;
         let public_origin = env::var("UGOITE_PUBLIC_ORIGIN")
             .unwrap_or_else(|_| "http://localhost:8000".to_string());
         let rp_id = env::var("UGOITE_WEBAUTHN_RP_ID").unwrap_or_else(|_| {
@@ -496,6 +500,7 @@ impl AppState {
             security_headers: SecurityHeadersPolicy::from_public_origin(identity.public_origin()),
             identity,
             service,
+            verify_storage_on_startup: true,
         })
     }
 
@@ -506,6 +511,7 @@ impl AppState {
             identity: NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?,
             security_headers: SecurityHeadersPolicy::from_public_origin("http://localhost:8000"),
             service,
+            verify_storage_on_startup: false,
         })
     }
 
@@ -518,6 +524,17 @@ impl AppState {
     }
 
     pub async fn initialize_node(&self) -> anyhow::Result<()> {
+        if self.verify_storage_on_startup {
+            match self.service.verify_storage_contract().await {
+                ugoite_storage::StorageContractStatus::Unavailable { reason } => {
+                    return Err(anyhow::anyhow!(
+                        "storage binding is unavailable for exact reads: {reason}"
+                    ));
+                }
+                ugoite_storage::StorageContractStatus::Verified
+                | ugoite_storage::StorageContractStatus::ReadOnly { .. } => {}
+            }
+        }
         if let Err(error) = Authorizer::new(self.service.operator().clone())
             .ensure_authoritative_mutation_contract()
         {
@@ -525,10 +542,10 @@ impl AppState {
                 .downcast_ref::<AppError>()
                 .is_some_and(|error| error.code() == ErrorCode::StorageMutationUnavailable)
             {
-                // Remote operators are a read-only server mode in v1. Do not
-                // bootstrap identity, recover claims, or start maintenance:
-                // those paths mutate multiple authoritative objects. Existing
-                // response-signing material remains usable by request paths.
+                // An unverified shared binding is read-only. Do not bootstrap
+                // identity, recover claims, or start maintenance until an
+                // operator revalidates its conditional-write contract.
+                // Existing response-signing material remains usable by reads.
                 return Ok(());
             }
             return Err(error);
@@ -833,7 +850,7 @@ fn protected_routes(state: AppState) -> Router<AppState> {
 
 fn api_routes(state: AppState) -> Router<AppState> {
     Router::new()
-        .route("/health", get(|| async { Json(json!({"status": "ok"})) }))
+        .route("/health", get(public_health))
         .route("/openapi.json", get(|| async { OPENAPI_JSON }))
         .route("/auth/config", get(auth_config))
         .route("/auth/setup/start", post(auth_setup_start))
@@ -869,6 +886,27 @@ fn api_routes(state: AppState) -> Router<AppState> {
         .merge(protected_routes(state))
         .fallback(api_not_found)
         .layer(middleware::from_fn(mark_signable_api_response))
+}
+
+async fn public_health(State(state): State<AppState>) -> Json<Value> {
+    let write_mode = match ugoite_storage::catalog_write_mode(state.service.operator()) {
+        ugoite_storage::CatalogWriteMode::SingleProcess => "single_process",
+        ugoite_storage::CatalogWriteMode::SharedReadOnly => "shared_read_only",
+        ugoite_storage::CatalogWriteMode::SharedVerified => "shared_verified",
+    };
+    let reason =
+        ugoite_storage::storage_contract_status(state.service.operator()).and_then(|status| {
+            match status {
+                ugoite_storage::StorageContractStatus::ReadOnly { reason }
+                | ugoite_storage::StorageContractStatus::Unavailable { reason } => Some(reason),
+                ugoite_storage::StorageContractStatus::Verified => None,
+            }
+        });
+    Json(json!({
+        "status": "ok",
+        "write_mode": write_mode,
+        "reason": reason,
+    }))
 }
 
 async fn mark_signable_api_response(request: Request, next: Next) -> Response {
@@ -1066,7 +1104,7 @@ pub fn app(state: AppState) -> Router {
         );
     let router = if let Ok(static_dir) = env::var("UGOITE_STATIC_DIR") {
         metadata
-            .route("/health", get(|| async { Json(json!({"status": "ok"})) }))
+            .route("/health", get(public_health))
             .route("/openapi.json", get(|| async { OPENAPI_JSON }))
             .route("/mcp", any(mcp::handle))
             .route_service("/", ServeFile::new(format!("{static_dir}/index.html")))
@@ -3986,16 +4024,12 @@ async fn bind_invited_account(
         .acquire_state_lease(&space_id)
         .await
         .map_err(recovery_aware_auth_error)?;
-    let fence = lease.write_fence();
-    let result = match lease
-        .run_while_held(|| {
-            ugoite_iceberg::authorization::with_authorization_write_fence(
-                fence.clone(),
-                async {
-                    if has_active_recovery_fence(&authorization) {
-                        return Err(recovery_fence_unavailable());
-                    }
-            let active_space_member = authorization
+    let result = {
+        if has_active_recovery_fence(&authorization) {
+            return Err(recovery_fence_unavailable());
+        }
+        let active_space_member =
+            authorization
                 .principals
                 .get(&principal_id)
                 .is_some_and(|principal| {
@@ -4003,89 +4037,78 @@ async fn bind_invited_account(
                         && matches!(principal.state, PrincipalState::Active)
                         && authorization.memberships.contains_key(&principal_id)
                 });
-            let principal_has_conflicting_space_state = authorization
-                .principals
-                .get(&principal_id)
-                .is_some_and(|principal| {
-                    !active_space_member || !matches!(principal.kind, PrincipalKind::Human)
-                });
-            let existing_binding = state
+        let principal_has_conflicting_space_state = authorization
+            .principals
+            .get(&principal_id)
+            .is_some_and(|principal| {
+                !active_space_member || !matches!(principal.kind, PrincipalKind::Human)
+            });
+        let existing_binding = state
+            .identity
+            .binding_for_account(space_uid, account.account_id)
+            .await
+            .map_err(auth_error)?;
+        if existing_binding.is_some_and(|existing| existing != principal_id) {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                json!({
+                    "code": "ACCOUNT_ALREADY_BOUND",
+                    "message": "account is already bound to this Space",
+                }),
+            ));
+        }
+        if principal_has_conflicting_space_state
+            && (existing_binding.is_none() || authorization.principals.contains_key(&principal_id))
+        {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                json!({
+                    "code": "SPACE_MEMBERSHIP_CONFLICT",
+                    "message": "Space authorization state conflicts with the invitation principal",
+                }),
+            ));
+        }
+
+        // Commit the Node half first. If the process exits before the
+        // Space CAS below, retry sees the durable Node binding and can
+        // finish the Space membership. A terminal Node rejection cannot
+        // therefore strand an active Space member with no Node binding.
+        if existing_binding.is_none() {
+            state
                 .identity
-                .binding_for_account(space_uid, account.account_id)
+                .finalize_invitation_binding(
+                    invitation.invitation_id,
+                    account.account_id,
+                    principal_id,
+                    binding_method,
+                )
+                .await
+                .map_err(recovery_aware_auth_error)?;
+        }
+        if !active_space_member {
+            let inviter = state
+                .identity
+                .principal_for_account(space_uid, invitation.created_by)
                 .await
                 .map_err(auth_error)?;
-            if existing_binding.is_some_and(|existing| existing != principal_id) {
-                return Err(ApiError::new(
-                    StatusCode::CONFLICT,
-                    json!({
-                        "code": "ACCOUNT_ALREADY_BOUND",
-                        "message": "account is already bound to this Space",
-                    }),
-                ));
-            }
-            if principal_has_conflicting_space_state
-                && (existing_binding.is_none()
-                    || authorization.principals.contains_key(&principal_id))
-            {
-                return Err(ApiError::new(
-                    StatusCode::CONFLICT,
-                    json!({
-                        "code": "SPACE_MEMBERSHIP_CONFLICT",
-                        "message": "Space authorization state conflicts with the invitation principal",
-                    }),
-                ));
-            }
-
-            // Commit the Node half first. If the process exits before the
-            // Space CAS below, retry sees the durable Node binding and can
-            // finish the Space membership. A terminal Node rejection cannot
-            // therefore strand an active Space member with no Node binding.
-            if existing_binding.is_none() {
-                ugoite_iceberg::authorization::ensure_authorization_write_fence()
-                    .await
-                    .map_err(recovery_aware_auth_error)?;
-                state
-                    .identity
-                    .finalize_invitation_binding(
-                        invitation.invitation_id,
-                        account.account_id,
+            authorizer
+                .add_human_member_with_lease(
+                    &space_id,
+                    inviter,
+                    SpacePrincipal {
                         principal_id,
-                        binding_method,
-                    )
-                    .await
-                    .map_err(recovery_aware_auth_error)?;
-            }
-            if !active_space_member {
-                let inviter = state
-                    .identity
-                    .principal_for_account(space_uid, invitation.created_by)
-                    .await
-                    .map_err(auth_error)?;
-                authorizer
-                    .add_human_member_with_lease(
-                        &space_id,
-                        inviter,
-                        SpacePrincipal {
-                            principal_id,
-                            kind: PrincipalKind::Human,
-                            state: PrincipalState::Active,
-                            display_name: account.display_name.clone(),
-                            created_at: chrono::Utc::now().to_rfc3339(),
-                        },
-                        parse_space_role(invitation.role.as_deref().unwrap_or("viewer"))?,
-                        &lease,
-                    )
-                    .await
-                    .map_err(recovery_aware_auth_error)?;
-            }
-            Ok(())
-                },
-            )
-        })
-        .await
-    {
-        Ok(result) => result,
-        Err(()) => Err(recovery_fence_unavailable()),
+                        kind: PrincipalKind::Human,
+                        state: PrincipalState::Active,
+                        display_name: account.display_name.clone(),
+                        created_at: chrono::Utc::now().to_rfc3339(),
+                    },
+                    parse_space_role(invitation.role.as_deref().unwrap_or("viewer"))?,
+                    &lease,
+                )
+                .await
+                .map_err(recovery_aware_auth_error)?;
+        }
+        Ok(())
     };
     let release = lease.release().await;
     match (result, release) {
@@ -4094,7 +4117,7 @@ async fn bind_invited_account(
         (Ok(()), Err(error)) => Err(ApiError::from_core(error)),
         (Err(error), Err(release_error)) => {
             eprintln!(
-                "release Space authorization mutation lease after invitation failure: {release_error:#}"
+                "release Space authorization mutation guard after invitation failure: {release_error:#}"
             );
             Err(error)
         }
@@ -4328,9 +4351,6 @@ async fn oauth_authorize_approve(
                     "requested scope exceeds the principal's permission",
                 ));
             }
-            ugoite_iceberg::authorization::ensure_authorization_write_fence()
-                .await
-                .map_err(ApiError::from_core)?;
             identity_service
                 .issue_authorization_code(
                     &client_id,
@@ -4553,9 +4573,6 @@ async fn oauth_device_approve(
                     ));
                 }
             }
-            ugoite_iceberg::authorization::ensure_authorization_write_fence()
-                .await
-                .map_err(ApiError::from_core)?;
             identity_service
                 .approve_device_authorization(
                     &user_code,
@@ -4928,9 +4945,6 @@ async fn create_agent(
                     )
                     .await
                     .map_err(ApiError::from_core)?;
-                ugoite_iceberg::authorization::ensure_authorization_write_fence()
-                    .await
-                    .map_err(ApiError::from_core)?;
                 let credential = match identity_service
                     .agent_credential_for_agent(agent.agent_id)
                     .await
@@ -5013,9 +5027,6 @@ async fn revoke_agent(
             Box::pin(async move {
                 Authorizer::new(operator)
                     .revoke_agent_with_lease(&space_id_for_mutation, actor, agent_id, lease)
-                    .await
-                    .map_err(ApiError::from_core)?;
-                ugoite_iceberg::authorization::ensure_authorization_write_fence()
                     .await
                     .map_err(ApiError::from_core)?;
                 identity_service
@@ -5263,35 +5274,16 @@ async fn issue_agent_token(
             resource,
         )?;
         let claims_for_node = claims.clone();
-        let access_token = match lease
-            .run_while_held(|| {
-                let fence = lease.write_fence();
-                ugoite_iceberg::authorization::with_authorization_write_fence(fence, async {
-                    ugoite_iceberg::authorization::ensure_authorization_write_fence()
-                        .await
-                        .map_err(ApiError::from_core)?;
-                    let access_token = state
-                        .identity
-                        .issue_access_credential(claims_for_node)
-                        .await
-                        .map_err(auth_error)?;
-                    state
-                        .identity
-                        .mark_agent_credential_used(credential_id)
-                        .await
-                        .map_err(auth_error)?;
-                    Ok::<_, ApiError>(access_token)
-                })
-            })
+        let access_token = state
+            .identity
+            .issue_access_credential(claims_for_node)
             .await
-        {
-            Ok(access_token) => access_token?,
-            Err(()) => {
-                return Err(ApiError::from_core(anyhow::anyhow!(
-                    "Space authorization mutation lease was lost"
-                )))
-            }
-        };
+            .map_err(auth_error)?;
+        state
+            .identity
+            .mark_agent_credential_used(credential_id)
+            .await
+            .map_err(auth_error)?;
         authorizer
             .mark_agent_used_with_lease(space_id, agent_id, &lease)
             .await
@@ -5577,10 +5569,9 @@ async fn require_resource_action(
     Ok(principal_id)
 }
 
-/// Runs a content mutation under the same authorization lock used by ACL
-/// mutations. Local callers use the process lock; shared operators also hold
-/// a heartbeat-backed object-store lease, so the permission check and the
-/// authoritative write share one cross-process linearization window.
+/// Runs a content mutation after an exact AuthorizationState observation.
+/// The content authority has its own immutable-publication plus Head-CAS
+/// linearization point; authorization is not extended with a storage lease.
 async fn with_authorized_mutation<T, F, Fut>(
     state: &AppState,
     space_id: &str,
@@ -5632,24 +5623,8 @@ where
         let _ = lease.release().await;
         return Err(error);
     }
-    let fence = lease.write_fence();
-    let result = match lease
-        .run_while_held(|| {
-            ugoite_iceberg::authorization::with_authorization_write_fence(
-                fence.clone(),
-                operation(principal_id, principals),
-            )
-        })
-        .await
-    {
-        Ok(result) => result,
-        Err(()) => Err(ApiError::from_core(anyhow::anyhow!(
-            "Space authorization mutation lease was lost"
-        ))),
-    };
-    if let Err(error) = lease.release().await {
-        return Err(ApiError::from_core(error));
-    }
+    let result = operation(principal_id, principals).await;
+    drop(lease);
     result
 }
 
@@ -5705,10 +5680,9 @@ where
     operation(principal_id, principals).await
 }
 
-/// Lease-aware form of [`with_authorized_mutation`] for mutations that also
-/// update the authorization document. The callback must reuse this exact
-/// lease when it calls an Authorizer mutation; otherwise a shared backend
-/// would try to acquire the same durable lock twice.
+/// Form of [`with_authorized_mutation`] for mutations that also update the
+/// AuthorizationState document. The callback reuses the process-local state
+/// guard so the same process does not serialize the object twice.
 async fn with_authorized_mutation_with_lease<T, F>(
     state: &AppState,
     space_id: &str,
@@ -5763,24 +5737,8 @@ where
         let _ = lease.release().await;
         return Err(error);
     }
-    let fence = lease.write_fence();
-    let result = match lease
-        .run_while_held(|| {
-            ugoite_iceberg::authorization::with_authorization_write_fence(
-                fence.clone(),
-                operation(&lease, principal_id, principals),
-            )
-        })
-        .await
-    {
-        Ok(result) => result,
-        Err(()) => Err(ApiError::from_core(anyhow::anyhow!(
-            "Space authorization mutation lease was lost"
-        ))),
-    };
-    if let Err(error) = lease.release().await {
-        return Err(ApiError::from_core(error));
-    }
+    let result = operation(&lease, principal_id, principals).await;
+    drop(lease);
     result
 }
 
@@ -5800,32 +5758,15 @@ where
         .await
         .map_err(ApiError::from_core)?
         .1;
-    let fence = lease.write_fence();
-    let result = match lease
-        .run_while_held(|| {
-            ugoite_iceberg::authorization::with_authorization_write_fence(
-                fence.clone(),
-                operation(&lease),
-            )
-        })
-        .await
-    {
-        Ok(result) => result,
-        Err(()) => Err(ApiError::from_core(anyhow::anyhow!(
-            "Space authorization mutation lease was lost"
-        ))),
-    };
-    if let Err(error) = lease.release().await {
-        return Err(ApiError::from_core(error));
-    }
+    let result = operation(&lease).await;
+    drop(lease);
     result
 }
 
 /// Form upsert has a state-dependent action: creating a new Form requires
 /// `create`, while replacing an existing Form requires `update`. Resolve that
-/// distinction only after acquiring the same lease as the authorization
-/// check, otherwise a concurrent Form creation can turn a checked update into
-/// an unchecked create (or vice versa).
+/// distinction while holding the same process-local guard as the authorization
+/// check, otherwise a concurrent local Form creation could change the action.
 async fn with_authorized_form_upsert<T, F, Fut>(
     state: &AppState,
     space_id: &str,
@@ -5896,24 +5837,8 @@ where
         let _ = lease.release().await;
         return Err(error);
     }
-    let fence = lease.write_fence();
-    let result = match lease
-        .run_while_held(|| {
-            ugoite_iceberg::authorization::with_authorization_write_fence(
-                fence.clone(),
-                operation(&lease),
-            )
-        })
-        .await
-    {
-        Ok(result) => result,
-        Err(()) => Err(ApiError::from_core(anyhow::anyhow!(
-            "Space authorization mutation lease was lost"
-        ))),
-    };
-    if let Err(error) = lease.release().await {
-        return Err(ApiError::from_core(error));
-    }
+    let result = operation(&lease).await;
+    drop(lease);
     result
 }
 
@@ -9941,6 +9866,7 @@ mod authentication_regression_tests {
             service,
             identity,
             security_headers: SecurityHeadersPolicy::from_public_origin("http://localhost:8000"),
+            verify_storage_on_startup: false,
         };
         state.initialize_node().await?;
 
@@ -10040,6 +9966,7 @@ mod authentication_regression_tests {
                 "http://localhost:8000",
             )?,
             security_headers: SecurityHeadersPolicy::from_public_origin("http://localhost:8000"),
+            verify_storage_on_startup: false,
         };
         restarted.initialize_node().await?;
         assert!(restarted
@@ -10390,7 +10317,7 @@ mod authentication_regression_tests {
         let error = ApiError::from_core(
             AppError::dependency_unavailable(
                 ErrorCode::StorageMutationUnavailable,
-                "non-local Space mutations are unavailable in v0.1",
+                "storage conditional-write contract is unavailable or has not been verified",
             )
             .into(),
         );

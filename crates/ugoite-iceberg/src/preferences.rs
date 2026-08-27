@@ -4,7 +4,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use ugoite_storage::{OpendalStorage, StorageBackend};
+use ugoite_storage::{
+    CasOutcome, CreateOutcome, OpendalPublicationStore, OpendalStorage, PublicationError,
+    PublicationStore, SpaceKey, StorageBackend,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -70,10 +73,6 @@ fn hashed_user_segment(user_id: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-fn preferences_dir_for_hash(user_hash: &str) -> String {
-    format!("users/{user_hash}/")
-}
-
 fn preferences_path_for_hash(user_hash: &str) -> String {
     format!("users/{user_hash}/preferences.json")
 }
@@ -113,34 +112,69 @@ pub async fn get_user_preferences(op: &Operator, user_id: &str) -> Result<UserPr
     get_user_preferences_with_storage(&storage, user_id).await
 }
 
-async fn patch_user_preferences_with_storage<S: StorageBackend + ?Sized>(
-    storage: &S,
+async fn patch_user_preferences_with_storage(
+    op: &Operator,
     user_id: &str,
     patch: &Value,
 ) -> Result<UserPreferences> {
     let patch_obj = validate_patch(patch)?;
-    let current = get_user_preferences_with_storage(storage, user_id).await?;
-    let mut merged = serde_json::to_value(current)?;
-    let Some(merged_obj) = merged.as_object_mut() else {
-        return Err(anyhow!("preferences payload must serialize to an object"));
-    };
+    let path = preferences_path(user_id);
+    let key = SpaceKey::parse(&path)?;
+    let publication_store = OpendalPublicationStore::new(op.clone());
 
-    for (key, value) in patch_obj {
-        merged_obj.insert(key.clone(), value.clone());
+    for _attempt in 0..5 {
+        let current = publication_store
+            .load(&key)
+            .await
+            .map_err(|error| anyhow!(error))?;
+        let mut merged = match current.as_ref() {
+            Some(current) => serde_json::from_slice(&current.bytes)?,
+            None => serde_json::to_value(UserPreferences::default())?,
+        };
+        let Some(merged_obj) = merged.as_object_mut() else {
+            return Err(anyhow!("preferences payload must serialize to an object"));
+        };
+
+        for (key, value) in patch_obj {
+            merged_obj.insert(key.clone(), value.clone());
+        }
+
+        let preferences: UserPreferences = serde_json::from_value(merged)?;
+        let bytes = serde_json::to_vec_pretty(&preferences)?;
+        let outcome = match current.as_ref() {
+            Some(current) => publication_store
+                .compare_and_swap(&key, &current.revision, bytes.clone())
+                .await
+                .map(|outcome| match outcome {
+                    CasOutcome::Replaced => CreateOutcome::Created,
+                    CasOutcome::RevisionMismatch => CreateOutcome::AlreadyExists,
+                }),
+            None => publication_store.create(&key, bytes.clone()).await,
+        };
+
+        match outcome {
+            Ok(CreateOutcome::Created) => return Ok(preferences),
+            Ok(CreateOutcome::AlreadyExists) => {
+                if current.is_some() {
+                    continue;
+                }
+            }
+            Err(PublicationError::OutcomeUnknown(error)) => {
+                let committed = publication_store
+                    .load(&key)
+                    .await
+                    .map_err(|reread| anyhow!(reread))?
+                    .is_some_and(|observed| observed.bytes == bytes);
+                if committed {
+                    return Ok(preferences);
+                }
+                return Err(error.context("preference mutation outcome is unknown"));
+            }
+            Err(error) => return Err(anyhow!(error)),
+        }
     }
 
-    let preferences: UserPreferences = serde_json::from_value(merged)?;
-    let user_hash = hashed_user_segment(user_id);
-
-    storage.create_dir("users/").await?;
-    storage
-        .create_dir(&preferences_dir_for_hash(&user_hash))
-        .await?;
-    storage
-        .write_json(&preferences_path_for_hash(&user_hash), &preferences)
-        .await?;
-
-    Ok(preferences)
+    Err(anyhow!("preferences update conflicted with another writer"))
 }
 
 pub async fn patch_user_preferences(
@@ -149,6 +183,5 @@ pub async fn patch_user_preferences(
     patch: &Value,
 ) -> Result<UserPreferences> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
-    let storage = OpendalStorage::from_operator(op);
-    patch_user_preferences_with_storage(&storage, user_id, patch).await
+    patch_user_preferences_with_storage(op, user_id, patch).await
 }

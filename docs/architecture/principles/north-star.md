@@ -50,13 +50,24 @@ manifests, and data files remain Iceberg-owned immutable objects.
 
 Readers pin immutable Head and snapshot coordinates and never lock. Writers can
 prepare immutable objects concurrently, but make a mutation visible only by
-replacing Head with the exact ETag they read. Backends that cannot prove the
-conditional read/create/replace contract are read-only unless an operator
-explicitly selects single-process mode. Catalog authority and Form/Checkpoint
-correctness do not depend on leases, heartbeats, TTLs, lock files, or fencing.
-DerivedRelation garbage collection may use durable staging heartbeats and
-terminal claims only to make cleanup safe; those records never establish
-visibility, authority, or checkpoint state.
+replacing Head with the exact revision they read. An exact load returns bytes
+and its revision from one object observation; a stat followed by an
+unconditional read is not exact. The storage boundary admits a shared writer
+only after a runtime behavioral probe proves create-if-absent, exact load,
+conditional replacement, stale-revision rejection, and one winner for
+concurrent CAS. This produces `SingleProcess`, `SharedReadOnly`, or
+`SharedVerified` write mode based on the deployment contract and observed
+behavior, never on a provider name.
+
+`SharedVerified` uses the same immutable-before-publish plus one Head CAS
+protocol as `SingleProcess`. Probe failure distinguishes unavailable exact
+reads from readable-but-unverified conditional writes. Server timestamps are
+an independent maintenance capability: they may gate age-based DerivedRelation
+GC, but never authoritative Catalog or authorization writes. Catalog authority
+and ordinary mutation correctness do not depend on leases, heartbeats, TTLs,
+lock files, or fencing. DerivedRelation staging markers and special Space
+recovery journals are lifecycle mechanisms only; they never establish Catalog
+visibility or ordinary authorization.
 
 ## Target state
 

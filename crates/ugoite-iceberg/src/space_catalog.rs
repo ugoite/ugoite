@@ -287,10 +287,11 @@ impl std::fmt::Debug for SpaceCatalog {
 
 impl SpaceCatalog {
     pub fn new(store: SpaceCatalogStore, space_id: SpaceId) -> Result<Self> {
-        if store.write_mode() == CatalogWriteMode::Shared && !store.supports_shared_writes() {
+        if store.write_mode() == CatalogWriteMode::SharedVerified && !store.supports_shared_writes()
+        {
             return Err(Error::new(
                 ErrorKind::FeatureUnsupported,
-                "shared SpaceCatalog writes require ETag-bound reads and conditional writes",
+                "verified shared SpaceCatalog writes require ETag-bound reads and conditional writes",
             ));
         }
         let logical_space_uid = logical_space_uid(space_id);
@@ -319,7 +320,7 @@ impl SpaceCatalog {
         self.store.mutation_permit().map(|_| ()).map_err(|_| {
             ugoite_core::error::AppError::dependency_unavailable(
                 ugoite_core::error::ErrorCode::StorageMutationUnavailable,
-                "non-local Space mutations are unavailable in v0.1 until the storage backend provides an atomic multi-object fencing contract",
+                "Space mutations require a verified conditional-write storage contract",
             )
             .into()
         })
@@ -560,7 +561,8 @@ impl SpaceCatalog {
         let capability = self.store.backend_capabilities();
         let mode = match self.store.write_mode() {
             CatalogWriteMode::SingleProcess => BackendMode::SingleProcess,
-            CatalogWriteMode::Shared => BackendMode::Shared,
+            CatalogWriteMode::SharedReadOnly => BackendMode::SharedReadOnly,
+            CatalogWriteMode::SharedVerified => BackendMode::SharedVerified,
         };
         BackendHealth {
             mode,
@@ -570,12 +572,23 @@ impl SpaceCatalog {
             write_with_if_not_exists: capability.write_with_if_not_exists,
             shared_write_contract: capability.shared_write_contract,
             probe_status: match mode {
-                BackendMode::Shared => BackendProbeStatus::ActiveProbeVerified,
-                // No durable per-store probe history exists for the
-                // single-process contract, and health intentionally does not
-                // write one merely to answer this request.
-                BackendMode::SingleProcess => BackendProbeStatus::ActiveProbeUnavailable,
+                BackendMode::SharedVerified => BackendProbeStatus::ActiveProbeVerified,
+                BackendMode::SharedReadOnly => BackendProbeStatus::ActiveProbeUnavailable,
+                // The existing single-process deployment contract does not
+                // require the shared-storage probe. Health never writes a
+                // probe merely to answer this request.
+                BackendMode::SingleProcess => BackendProbeStatus::CapabilityDeclaration,
             },
+            probe_reason: self
+                .store
+                .contract_status()
+                .and_then(|status| match status {
+                    ugoite_storage::StorageContractStatus::ReadOnly { reason }
+                    | ugoite_storage::StorageContractStatus::Unavailable { reason } => {
+                        Some(reason.clone())
+                    }
+                    ugoite_storage::StorageContractStatus::Verified => None,
+                }),
         }
     }
 
@@ -4673,7 +4686,7 @@ mod tests {
             .expect_err("direct Catalog table writes must fail closed");
         assert!(error
             .to_string()
-            .contains("non-local Space mutations are unavailable"));
+            .contains("verified conditional-write storage contract"));
         Ok(())
     }
 

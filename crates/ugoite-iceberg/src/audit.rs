@@ -250,7 +250,7 @@ async fn write_events(
         op.write_with(&path, bytes).if_match(version).await?;
     } else if op.info().capability().write_with_if_not_exists && !op.exists(&path).await? {
         op.write_with(&path, bytes).if_not_exists(true).await?;
-    } else if matches!(op.info().scheme(), "memory" | "fs" | "file") {
+    } else if crate::is_single_process_backend(op) {
         op.write(&path, bytes).await?;
     } else {
         bail!("audit append requires conditional storage capabilities");
@@ -259,7 +259,7 @@ async fn write_events(
 }
 
 fn local_audit_lock(op: &Operator, space_id: &str) -> Result<Option<std::fs::File>> {
-    if !matches!(op.info().scheme(), "fs" | "file") {
+    if !crate::has_filesystem_locking_backend(op) {
         return Ok(None);
     }
     let path = Path::new(op.info().root().as_str())
@@ -316,7 +316,7 @@ async fn create_pending_marker(
                 .await?
                 .and_then(|(_, version)| version));
         }
-    } else if matches!(op.info().scheme(), "memory" | "fs" | "file") {
+    } else if crate::is_single_process_backend(op) {
         if !op.exists(&path).await? {
             op.write(&path, bytes).await?;
         }
@@ -344,14 +344,14 @@ async fn commit_event_marker(
     if let Some(version) = expected_version {
         if capabilities.write_with_if_match {
             op.write_with(&path, bytes).if_match(version).await?;
-        } else if matches!(op.info().scheme(), "memory" | "fs" | "file") {
+        } else if crate::is_single_process_backend(op) {
             op.write(&path, bytes).await?;
         } else {
             bail!("audit event marker requires conditional storage capabilities");
         }
     } else if capabilities.write_with_if_not_exists {
         if op.exists(&path).await? {
-            if matches!(op.info().scheme(), "memory" | "fs" | "file") {
+            if crate::is_single_process_backend(op) {
                 op.write(&path, bytes).await?;
             } else {
                 let metadata = op.stat(&path).await?;
@@ -364,7 +364,7 @@ async fn commit_event_marker(
         } else {
             op.write_with(&path, bytes).if_not_exists(true).await?;
         }
-    } else if matches!(op.info().scheme(), "memory" | "fs" | "file") {
+    } else if crate::is_single_process_backend(op) {
         op.write(&path, bytes).await?;
     } else {
         bail!("audit event marker requires conditional storage capabilities");
@@ -476,7 +476,7 @@ async fn append_audit_event_once(
     let path = audit_file_path(&safe_space_id);
     let capabilities = op.info().capability();
     let path_exists = op.exists(&path).await?;
-    let local_process_store = matches!(op.info().scheme(), "memory" | "fs" | "file");
+    let local_process_store = crate::is_single_process_backend(op);
     if !local_process_store
         && ((path_exists && !capabilities.write_with_if_match)
             || (!path_exists && !capabilities.write_with_if_not_exists))

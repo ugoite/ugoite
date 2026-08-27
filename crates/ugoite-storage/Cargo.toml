@@ -10,7 +10,7 @@ async-trait = "0.1"
 futures = "0.3"
 fs2 = "0.4"
 hex = "0.4"
-opendal = { version = "0.58", default-features = false, features = ["executors-tokio", "services-fs", "services-memory", "services-s3", "services-gcs", "services-azdls", "services-oss"] }
+opendal = { version = "0.58", default-features = false, features = ["executors-tokio", "http-transport-reqwest", "services-fs", "services-memory", "services-s3", "services-gcs", "services-azdls", "services-oss"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.11"

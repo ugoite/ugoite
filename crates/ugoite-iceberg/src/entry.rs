@@ -568,7 +568,6 @@ async fn append_revision_rows_to_workspace_authorized(
         "entry.append",
         &revisions,
     )?;
-    crate::authorization::ensure_authorization_write_fence().await?;
     workspace
         .commit(command)?
         .append_revisions_authorized(domain_form.id, revisions, relation_scopes)

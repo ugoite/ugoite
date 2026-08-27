@@ -19,7 +19,10 @@ use crate::form;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::id::validate_space_id;
 pub use ugoite_domain::space::{storage_type_and_root, SpaceMeta, StorageConfig};
-use ugoite_storage::{operator_from_uri_with_endpoint, OpendalStorage, StorageBackend};
+use ugoite_storage::{
+    catalog_write_mode, operator_from_uri_with_endpoint, verify_storage_contract, CatalogWriteMode,
+    OpendalStorage, StorageBackend, StorageContractStatus,
+};
 
 pub(crate) const CURRENT_SPACE_SCHEMA_VERSION: u64 = 3;
 const STORAGE_CONNECTION_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -47,19 +50,44 @@ fn space_binding_path(space_id: &str) -> String {
     format!("_ugoite/space-bindings/{space_id}.json")
 }
 
-fn space_binding_value(root_path: &str) -> serde_json::Value {
-    let (storage_type, storage_root, _) = storage_type_and_root(root_path);
-    serde_json::json!({
+fn space_binding_value(root_path: &str, endpoint: Option<&str>) -> Result<serde_json::Value> {
+    let (storage_type, parsed_root, _) = storage_type_and_root(root_path);
+    // A remote binding must retain the bucket/container authority as well as
+    // its prefix. Credentials, if an operator supplied them through another
+    // mechanism, are intentionally not copied into this node-local record.
+    let storage_root = if matches!(storage_type.as_str(), "local" | "file" | "fs" | "memory") {
+        parsed_root
+    } else if let Ok(uri) = Url::parse(root_path) {
+        let host = uri
+            .host_str()
+            .ok_or_else(|| anyhow!("storage URI must include a bucket or container"))?;
+        let path = uri.path().trim_matches('/');
+        if path.is_empty() {
+            host.to_string()
+        } else {
+            format!("{host}/{path}")
+        }
+    } else {
+        parsed_root
+    };
+    let mut binding = serde_json::json!({
         "type": storage_type,
         "root": storage_root,
-    })
+    });
+    if let Some(endpoint) = endpoint {
+        binding["endpoint"] = serde_json::Value::String(endpoint.to_string());
+    }
+    Ok(binding)
 }
 
 fn validate_space_binding(value: &serde_json::Value) -> Result<()> {
     let object = value
         .as_object()
         .ok_or_else(|| anyhow!("Node Space binding must be an object"))?;
-    if object.keys().any(|key| key != "type" && key != "root") {
+    if object
+        .keys()
+        .any(|key| !matches!(key.as_str(), "type" | "root" | "endpoint"))
+    {
         bail!("Node Space binding contains unsupported fields");
     }
     if object
@@ -76,6 +104,12 @@ fn validate_space_binding(value: &serde_json::Value) -> Result<()> {
     {
         bail!("Node Space binding requires a string root");
     }
+    if let Some(endpoint) = object.get("endpoint") {
+        let endpoint = endpoint
+            .as_str()
+            .context("Node Space binding endpoint must be a string")?;
+        validate_storage_endpoint(Some(endpoint))?;
+    }
     Ok(())
 }
 
@@ -84,12 +118,16 @@ fn storage_binding_from_config(value: &serde_json::Value) -> Result<serde_json::
         if uri.trim().is_empty() {
             bail!("storage_config.uri is required");
         }
-        return Ok(space_binding_value(uri));
+        let endpoint = value.get("endpoint").and_then(serde_json::Value::as_str);
+        return space_binding_value(uri, validate_storage_endpoint(endpoint)?);
     }
-    let binding = serde_json::json!({
+    let mut binding = serde_json::json!({
         "type": value.get("type").cloned().unwrap_or_default(),
         "root": value.get("root").cloned().unwrap_or_default(),
     });
+    if let Some(endpoint) = value.get("endpoint") {
+        binding["endpoint"] = endpoint.clone();
+    }
     validate_space_binding(&binding)?;
     Ok(binding)
 }
@@ -111,11 +149,15 @@ fn storage_binding_response(value: &serde_json::Value) -> Result<serde_json::Val
     } else {
         format!("{}://{}", storage_type, root.trim_start_matches('/'))
     };
-    Ok(serde_json::json!({
+    let mut response = serde_json::json!({
         "uri": uri,
         "type": storage_type,
         "root": root,
-    }))
+    });
+    if let Some(endpoint) = value.get("endpoint") {
+        response["endpoint"] = endpoint.clone();
+    }
+    Ok(response)
 }
 
 pub async fn space_exists(op: &Operator, name: &str) -> Result<bool> {
@@ -149,8 +191,7 @@ fn starter_entry_form_definition() -> serde_json::Value {
 
 #[cfg(unix)]
 fn local_space_fs_path(op: &Operator, space_id: &str) -> Option<PathBuf> {
-    let scheme = op.info().scheme();
-    if scheme != "fs" && scheme != "file" {
+    if !crate::has_filesystem_locking_backend(op) {
         return None;
     }
     Some(
@@ -298,7 +339,7 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
     // The locator is Node-local control state, not portable Space metadata.
     let binding_path = space_binding_path(directory_id);
     storage
-        .write_json(&binding_path, &space_binding_value(_root_path))
+        .write_json(&binding_path, &space_binding_value(_root_path, None)?)
         .await?;
     storage.set_private(&binding_path).await?;
 
@@ -440,7 +481,7 @@ async fn repair_space_scaffold(
     }
     let binding_path = space_binding_path(directory_id);
     storage
-        .write_json(&binding_path, &space_binding_value(_root_path))
+        .write_json(&binding_path, &space_binding_value(_root_path, None)?)
         .await?;
     storage.set_private(&binding_path).await?;
     match form::get_form(op, &ws_path, "Entry").await {
@@ -707,7 +748,7 @@ fn space_patch_journal_path(space_id: &str) -> String {
 }
 
 fn local_space_patch_control_dir(op: &Operator) -> Option<PathBuf> {
-    if !matches!(op.info().scheme(), "fs" | "file") {
+    if !crate::has_filesystem_locking_backend(op) {
         return None;
     }
     Some(Path::new(op.info().root().as_str()).join("_ugoite/space-patches"))
@@ -718,7 +759,7 @@ fn local_space_patch_journal_fs_path(op: &Operator, space_id: &str) -> Option<Pa
 }
 
 fn local_space_patch_lock_path(op: &Operator, space_id: &str) -> Option<PathBuf> {
-    if !matches!(op.info().scheme(), "fs" | "file") {
+    if !crate::has_filesystem_locking_backend(op) {
         return None;
     }
     local_space_patch_control_dir(op).map(|path| path.join(format!("{space_id}.lock")))
@@ -796,7 +837,7 @@ async fn read_space_json_exact(
             )
             .await?
         }
-        None if matches!(op.info().scheme(), "memory" | "fs" | "file") => op.read(path).await?,
+        None if crate::is_single_process_backend(op) => op.read(path).await?,
         None => bail!("exact read requires an ETag: {path}"),
     };
     Ok(Some((serde_json::from_slice(&bytes.to_vec())?, etag)))
@@ -809,7 +850,7 @@ async fn write_space_patch_value(
     etag: Option<&str>,
 ) -> Result<()> {
     let bytes = serde_json::to_vec_pretty(value)?;
-    if matches!(op.info().scheme(), "fs" | "file") {
+    if crate::has_filesystem_locking_backend(op) {
         // The caller holds the local patch lock, so the same-filesystem
         // rename is the local serialization boundary even if a backend
         // reports an incidental ETag.
@@ -824,7 +865,7 @@ async fn write_space_patch_value(
             },
         )
         .await?;
-    } else if op.info().scheme() == "memory" {
+    } else if crate::is_single_process_backend(op) {
         op.write(path, bytes).await?;
     } else {
         bail!("conditional Space patch write requires an ETag: {path}");
@@ -844,7 +885,7 @@ async fn write_local_space_json_atomic(
     bytes: &[u8],
     if_not_exists: bool,
 ) -> Result<()> {
-    if !matches!(op.info().scheme(), "fs" | "file") {
+    if !crate::has_filesystem_locking_backend(op) {
         bail!("local atomic Space JSON writer used for non-local operator: {path}");
     }
     let target = Path::new(op.info().root().as_str()).join(path);
@@ -889,7 +930,7 @@ async fn write_local_space_json_atomic(
 
 fn restore_local_space_json_permissions(op: &Operator, path: &str) -> Result<()> {
     #[cfg(unix)]
-    if matches!(op.info().scheme(), "fs" | "file") {
+    if crate::has_filesystem_locking_backend(op) {
         let target = Path::new(op.info().root().as_str()).join(path);
         set_owner_only_mode(&target, 0o600)?;
     }
@@ -918,7 +959,7 @@ async fn complete_space_patch_journal(
     let mut completed = journal.clone();
     completed.status = SPACE_PATCH_COMPLETE.to_string();
     let bytes = serde_json::to_vec_pretty(&completed)?;
-    let result = if matches!(op.info().scheme(), "fs" | "file") {
+    let result = if crate::has_filesystem_locking_backend(op) {
         write_local_space_json_atomic(op, path, &bytes, false).await?;
         Ok(())
     } else if let Some(etag) = expected_etag {
@@ -933,7 +974,7 @@ async fn complete_space_patch_journal(
         .await
         .map(|_| ())
         .map_err(anyhow::Error::from)
-    } else if op.info().scheme() == "memory" {
+    } else if crate::is_single_process_backend(op) {
         op.write(path, bytes)
             .await
             .map(|_| ())
@@ -978,7 +1019,7 @@ async fn write_pending_space_patch(
             if existing.status != SPACE_PATCH_COMPLETE {
                 bail!("invalid Space patch journal status: {}", existing.status);
             }
-            let result = if matches!(op.info().scheme(), "fs" | "file") {
+            let result = if crate::has_filesystem_locking_backend(op) {
                 write_local_space_json_atomic(op, path, &bytes, false).await
             } else if let Some(etag) = etag {
                 op.write_options(
@@ -992,7 +1033,7 @@ async fn write_pending_space_patch(
                 .await
                 .map(|_| ())
                 .map_err(anyhow::Error::from)
-            } else if op.info().scheme() == "memory" {
+            } else if crate::is_single_process_backend(op) {
                 op.write(path, bytes.clone())
                     .await
                     .map(|_| ())
@@ -1006,7 +1047,7 @@ async fn write_pending_space_patch(
                 Err(error) => return Err(error),
             }
         } else {
-            let result = if matches!(op.info().scheme(), "fs" | "file") {
+            let result = if crate::has_filesystem_locking_backend(op) {
                 write_local_space_json_atomic(op, path, &bytes, true).await
             } else {
                 op.write_options(
@@ -1211,7 +1252,7 @@ async fn validate_complete_bootstrap_locked(op: &Operator, space_id: &str) -> Re
 
 pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Value> {
     validate_space_path_segment(name)?;
-    if matches!(op.info().scheme(), "fs" | "file") {
+    if crate::has_filesystem_locking_backend(op) {
         let space_dir = Path::new(op.info().root().as_str())
             .join("spaces")
             .join(name);
@@ -1277,9 +1318,7 @@ async fn patch_space_with_operator(
                     error.into()
                 }
             })?,
-        None if matches!(op.info().scheme(), "memory" | "fs" | "file") => {
-            op.read(&meta_path).await?
-        }
+        None if crate::is_single_process_backend(op) => op.read(&meta_path).await?,
         None => {
             return Err(anyhow!(
                 "Space metadata update requires an exact storage ETag"
@@ -1364,7 +1403,7 @@ async fn patch_space_with_operator(
 
     let meta_bytes = serde_json::to_vec_pretty(&meta)?;
     match etag {
-        Some(_) if matches!(op.info().scheme(), "fs" | "file") => {
+        Some(_) if crate::has_filesystem_locking_backend(op) => {
             write_local_space_json_atomic(op, &meta_path, &meta_bytes, false).await?
         }
         Some(etag) => op
@@ -1385,7 +1424,7 @@ async fn patch_space_with_operator(
                     error.into()
                 }
             })?,
-        None if matches!(op.info().scheme(), "fs" | "file") => {
+        None if crate::has_filesystem_locking_backend(op) => {
             write_local_space_json_atomic(op, &meta_path, &meta_bytes, false).await?
         }
         None => {
@@ -1414,7 +1453,11 @@ async fn patch_space_with_operator(
 
 fn space_patch_serializer(op: &Operator, space_id: &str) -> Arc<AsyncMutex<()>> {
     static SERIALIZERS: OnceLock<StdMutex<BTreeMap<String, Arc<AsyncMutex<()>>>>> = OnceLock::new();
-    let key = format!("{}:{}:{space_id}", op.info().scheme(), op.info().root());
+    let key = format!(
+        "{:p}:{}:{space_id}",
+        Arc::as_ptr(op.service()),
+        op.info().root()
+    );
     let serializers = SERIALIZERS.get_or_init(|| StdMutex::new(BTreeMap::new()));
     let mut serializers = serializers.lock().expect("Space patch serializer poisoned");
     serializers
@@ -1429,7 +1472,6 @@ pub async fn patch_space(
     patch: &serde_json::Value,
 ) -> Result<serde_json::Value> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
-    crate::authorization::ensure_authorization_write_fence().await?;
     validate_complete_bootstrap(op, space_id).await?;
     patch_space_with_operator(op, space_id, patch, None).await
 }
@@ -1444,7 +1486,6 @@ pub async fn patch_space_if_slug(
     expected_slug: &str,
 ) -> Result<serde_json::Value> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
-    crate::authorization::ensure_authorization_write_fence().await?;
     validate_complete_bootstrap(op, space_id).await?;
     patch_space_with_operator(op, space_id, patch, Some(expected_slug)).await
 }
@@ -1461,7 +1502,31 @@ pub async fn test_storage_connection(
     let endpoint = validate_storage_endpoint(config.endpoint.as_deref())?;
     let operator = operator_from_uri_with_endpoint(trimmed, endpoint)?;
     probe_storage_connection(&operator, STORAGE_CONNECTION_PROBE_TIMEOUT).await?;
-    Ok(serde_json::json!({"status": "ok", "mode": mode}))
+    let contract = verify_storage_contract(&operator).await;
+    let (write_mode, reason) = match contract {
+        StorageContractStatus::Verified => (
+            match catalog_write_mode(&operator) {
+                CatalogWriteMode::SingleProcess => "single_process",
+                CatalogWriteMode::SharedReadOnly => "shared_read_only",
+                CatalogWriteMode::SharedVerified => "shared_verified",
+            },
+            None,
+        ),
+        StorageContractStatus::ReadOnly { reason } => ("shared_read_only", Some(reason)),
+        StorageContractStatus::Unavailable { reason } => {
+            return Err(AppError::dependency_unavailable(
+                ErrorCode::StorageConnectionFailed,
+                format!("storage exact-read contract unavailable: {reason}"),
+            )
+            .into());
+        }
+    };
+    Ok(serde_json::json!({
+        "status": "ok",
+        "mode": mode,
+        "write_mode": write_mode,
+        "reason": reason,
+    }))
 }
 
 async fn probe_storage_connection(operator: &Operator, timeout: Duration) -> Result<()> {
@@ -1500,11 +1565,8 @@ fn storage_connection_mode(uri: &str) -> Result<&'static str> {
     if uri.starts_with("file://") || uri.starts_with("fs://") || uri.starts_with('/') {
         return Ok("local");
     }
-    if uri.starts_with("s3://") {
-        validate_remote_storage_uri(uri)?;
-        return Ok("s3");
-    }
-    anyhow::bail!("unsupported storage URI: {uri}")
+    validate_remote_storage_uri(uri)?;
+    Ok("remote")
 }
 
 fn validate_storage_endpoint(endpoint: Option<&str>) -> Result<Option<&str>> {
@@ -1590,6 +1652,29 @@ mod tests {
             "unexpected storage probe error: {}",
             app_error.message()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn remote_space_binding_preserves_bucket_prefix_and_endpoint_without_credentials() -> Result<()>
+    {
+        let binding = space_binding_value(
+            "s3://access:secret@example.invalid/ugoite",
+            Some("https://objects.example.invalid"),
+        )?;
+        assert_eq!(binding["type"], "s3");
+        assert_eq!(binding["root"], "example.invalid/ugoite");
+        assert_eq!(
+            storage_binding_response(&binding)?["uri"],
+            "s3://example.invalid/ugoite"
+        );
+        assert_eq!(
+            storage_binding_response(&binding)?["endpoint"],
+            "https://objects.example.invalid"
+        );
+        let serialized = serde_json::to_string(&binding)?;
+        assert!(!serialized.contains("access"));
+        assert!(!serialized.contains("secret"));
         Ok(())
     }
 }

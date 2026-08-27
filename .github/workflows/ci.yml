@@ -86,6 +86,23 @@ jobs:
     timeout-minutes: 75
     env:
       CARGO_INCREMENTAL: "0"
+      UGOITE_MINIO_ENDPOINT: http://127.0.0.1:9000
+      UGOITE_MINIO_BUCKET: ugoite-ci
+      AWS_ACCESS_KEY_ID: ugoite-ci
+      AWS_SECRET_ACCESS_KEY: ugoite-ci-secret
+    services:
+      minio:
+        image: minio/minio@sha256:c7175077d39a8cc10c9fd611cdcc68b6a5b365793e9ac6f4198ffff1ef0fe555
+        env:
+          MINIO_ROOT_USER: ugoite-ci
+          MINIO_ROOT_PASSWORD: ugoite-ci-secret
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/live || exit 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -123,6 +140,22 @@ jobs:
           else
             echo "SCCACHE_GHA_RW_MODE=READ_ONLY" >>"$GITHUB_ENV"
           fi
+
+      - name: Create MinIO contract-test bucket
+        run: |
+          for attempt in {1..30}; do
+            if curl -fsS "${UGOITE_MINIO_ENDPOINT}/minio/health/ready" >/dev/null; then
+              break
+            fi
+            if [[ "$attempt" == "30" ]]; then
+              echo "MinIO did not become ready" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          docker run --rm --network host --entrypoint /bin/sh \
+            minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727 \
+            -c "mc alias set ci ${UGOITE_MINIO_ENDPOINT} ${AWS_ACCESS_KEY_ID} ${AWS_SECRET_ACCESS_KEY} && mc mb --ignore-existing ci/${UGOITE_MINIO_BUCKET}"
 
       - name: Run Rust tests
         id: rust-test

@@ -6,12 +6,13 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, SecondsFormat, Utc};
 use fs2::FileExt;
 use futures::TryStreamExt;
-use opendal::options::{ReadOptions, WriteOptions};
 use opendal::Operator;
 use rand::TryRng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+#[cfg(test)]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
@@ -19,18 +20,15 @@ use std::{
     io::ErrorKind,
     path::Path,
     pin::Pin,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, OnceLock,
-    },
+    sync::{Arc, OnceLock},
 };
 use tokio::sync::{Mutex, OwnedMutexGuard};
-use tokio::task::JoinHandle;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::identity::{
     evaluate_policy, role_actions, AccessPolicy, Action, AgentMode, AgentPrincipal, Membership,
     PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
 };
+use ugoite_storage::{catalog_write_mode, CatalogWriteMode};
 use uuid::Uuid;
 
 const AUTHORIZATION_FILE: &str = "security/principals.json";
@@ -207,48 +205,17 @@ pub struct Authorizer {
     ambiguous_write_with_post_commit_writer_once: Arc<AtomicBool>,
 }
 
-/// Authorization lease held across one protected mutation. The process lock
-/// covers local callers; shared operators additionally carry the durable
-/// object-store lease in this value.
+/// Authorization state guard held across one protected mutation.
+///
+/// The name of this type is retained at the existing authorization API
+/// boundary, but it is deliberately process-local: ordinary authorization is
+/// linearized by an exact state observation and AuthorizationState CAS, never
+/// by a durable lease, heartbeat, or write fence.
 pub struct AuthorizationLease {
     _guard: OwnedMutexGuard<()>,
-    // Held for the complete protected local mutation, including the
-    // authoritative content write. This is the cross-process counterpart of
-    // the in-process guard; write_state_with_lease deliberately reuses it so
-    // the same process does not try to lock the file twice.
+    // Held for the complete local mutation so the same process does not
+    // serialize the authorization object twice.
     _local_lock: Option<std::fs::File>,
-    durable: Option<DurableAuthorizationLease>,
-}
-
-/// Cross-process lease for a shared Space authorization/content mutation.
-/// The lease is deliberately an object-store CAS record rather than a local
-/// mutex: a remote ACL writer must not commit between a protected mutation's
-/// authorization check and its authoritative write.
-struct DurableAuthorizationLease {
-    operator: Operator,
-    path: String,
-    owner: String,
-    etag: Arc<Mutex<String>>,
-    lost: Arc<AtomicBool>,
-    released: Arc<AtomicBool>,
-    heartbeat: Option<JoinHandle<()>>,
-}
-
-#[derive(Clone)]
-pub struct AuthorizationWriteFence {
-    durable: Option<Arc<DurableAuthorizationWriteFence>>,
-}
-
-struct DurableAuthorizationWriteFence {
-    operator: Operator,
-    path: String,
-    owner: String,
-    etag: Arc<Mutex<String>>,
-    lost: Arc<AtomicBool>,
-}
-
-tokio::task_local! {
-    static AUTHORIZATION_WRITE_FENCE: AuthorizationWriteFence;
 }
 
 fn authorization_write_lock() -> Arc<Mutex<()>> {
@@ -256,177 +223,19 @@ fn authorization_write_lock() -> Arc<Mutex<()>> {
     LOCK.get_or_init(|| Arc::new(Mutex::new(()))).clone()
 }
 
-fn authorization_mutation_lock_bytes(owner: &str, released: bool) -> Vec<u8> {
-    serde_json::to_vec(&serde_json::json!({
-        "owner": owner,
-        "released": released,
-        "heartbeat_at": Utc::now().timestamp(),
-    }))
-    .expect("authorization mutation lock is serializable")
-}
-
-impl DurableAuthorizationLease {
-    async fn release(mut self) -> Result<()> {
-        if let Some(heartbeat) = self.heartbeat.take() {
-            heartbeat.abort();
-            let _ = heartbeat.await;
-        }
-        if self.lost.load(Ordering::Acquire) {
-            return Err(anyhow!(
-                "Space authorization mutation lease was lost before release"
-            ));
-        }
-        let etag = self.etag.lock().await.clone();
-        let result = match self
-            .operator
-            .write_options(
-                &self.path,
-                authorization_mutation_lock_bytes(&self.owner, true),
-                WriteOptions {
-                    if_match: Some(etag),
-                    ..Default::default()
-                },
-            )
-            .await
-        {
-            Ok(_) => {
-                self.released.store(true, Ordering::Release);
-                Ok(())
-            }
-            Err(error) if error.kind() == opendal::ErrorKind::ConditionNotMatch => Err(anyhow!(
-                "Space authorization mutation lease changed before release"
-            )),
-            Err(error) => Err(error.into()),
-        };
-        result
+impl AuthorizationLease {
+    pub fn ensure_held(&self) -> Result<()> {
+        Ok(())
     }
 
-    fn ensure_held(&self) -> Result<()> {
-        if self.lost.load(Ordering::Acquire) {
-            bail!("Space authorization mutation lease was lost")
-        }
+    pub async fn release(self) -> Result<()> {
         Ok(())
     }
 }
 
-impl Drop for DurableAuthorizationLease {
-    fn drop(&mut self) {
-        if let Some(heartbeat) = self.heartbeat.take() {
-            heartbeat.abort();
-        }
-        // Never release a shared mutation lease from Drop. Drop is also the
-        // cancellation path, and an asynchronous best-effort release could
-        // race a committed-or-unknown mutation and let a new writer enter
-        // before the old write has settled. Explicit release is the only
-        // successful hand-off; cancellation and lease loss retain the owner
-        // fence until the backend TTL expires.
-    }
-}
-
-impl AuthorizationLease {
-    pub fn write_fence(&self) -> AuthorizationWriteFence {
-        AuthorizationWriteFence {
-            durable: self.durable.as_ref().map(|lease| {
-                Arc::new(DurableAuthorizationWriteFence {
-                    operator: lease.operator.clone(),
-                    path: lease.path.clone(),
-                    owner: lease.owner.clone(),
-                    etag: lease.etag.clone(),
-                    lost: lease.lost.clone(),
-                })
-            }),
-        }
-    }
-
-    pub async fn release(mut self) -> Result<()> {
-        if let Some(durable) = self.durable.take() {
-            durable.release().await
-        } else {
-            Ok(())
-        }
-    }
-
-    /// Run a protected callback while a shared lease remains alive. The
-    /// callback is deliberately allowed to finish if the heartbeat is lost:
-    /// dropping an in-flight storage future would make a committed-or-unknown
-    /// mutation impossible to reconcile. The latched pre/post checks instead
-    /// fail closed and force callers to treat the outcome as retryable.
-    pub async fn run_while_held<T, F, Fut>(&self, operation: F) -> std::result::Result<T, ()>
-    where
-        F: FnOnce() -> Fut,
-        Fut: Future<Output = T>,
-    {
-        let Some(durable) = self.durable.as_ref() else {
-            return Ok(operation().await);
-        };
-        durable.ensure_held().map_err(|_| ())?;
-        let value = operation().await;
-        durable.ensure_held().map_err(|_| ())?;
-        Ok(value)
-    }
-}
-
-pub async fn with_authorization_write_fence<T, F>(fence: AuthorizationWriteFence, operation: F) -> T
-where
-    F: Future<Output = T>,
-{
-    AUTHORIZATION_WRITE_FENCE.scope(fence, operation).await
-}
-
-/// Check the lease at the last write boundary of authoritative storage
-/// operations. Local callers without a server authorization scope are
-/// intentionally unaffected; shared server mutations must still own the
-/// conditional lock immediately before committing.
-pub async fn ensure_authorization_write_fence() -> Result<()> {
-    let Some(fence) = AUTHORIZATION_WRITE_FENCE.try_with(Clone::clone).ok() else {
-        return Ok(());
-    };
-    if let Some(durable) = fence.durable {
-        if durable.lost.load(Ordering::Acquire) {
-            bail!("Space authorization mutation lease was lost before write");
-        }
-        for _ in 0..2 {
-            let etag = durable.etag.lock().await.clone();
-            let bytes = match durable
-                .operator
-                .read_options(
-                    &durable.path,
-                    ReadOptions {
-                        if_match: Some(etag),
-                        ..Default::default()
-                    },
-                )
-                .await
-            {
-                Ok(bytes) => bytes,
-                Err(error) if error.kind() == opendal::ErrorKind::ConditionNotMatch => continue,
-                Err(error) => return Err(error.into()),
-            };
-            let value: Value = serde_json::from_slice(&bytes.to_vec())
-                .context("decode Space authorization mutation fence")?;
-            if value.get("owner").and_then(Value::as_str) != Some(durable.owner.as_str())
-                || value.get("released").and_then(Value::as_bool) == Some(true)
-            {
-                durable.lost.store(true, Ordering::Release);
-                bail!("Space authorization mutation lease changed before write");
-            }
-            return Ok(());
-        }
-        bail!("Space authorization mutation lease changed before write");
-    }
-    Ok(())
-}
-
 async fn finish_authorization_lease<T>(lease: AuthorizationLease, result: Result<T>) -> Result<T> {
-    let release = lease.release().await;
-    match (result, release) {
-        (Ok(value), Ok(())) => Ok(value),
-        (Err(error), Ok(())) => Err(error),
-        (Ok(_), Err(error)) => Err(error),
-        (Err(error), Err(release_error)) => Err(error.context(format!(
-            "release Space authorization mutation lease: {release_error:#}"
-        ))),
-    }
+    drop(lease);
+    result
 }
 
 #[derive(Clone)]
@@ -621,30 +430,18 @@ impl Authorizer {
         Ok(state)
     }
 
-    async fn acquire_durable_mutation_lease(
-        &self,
-        _space_id: &str,
-    ) -> Result<Option<DurableAuthorizationLease>> {
-        if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
-            return Ok(None);
-        }
-        self.ensure_authoritative_mutation_contract()?;
-        unreachable!("shared authorization mutation leases are fail-closed in v1")
-    }
-
-    /// Shared authorization/content mutations are intentionally unavailable
-    /// until the storage backend can fence all participating objects as one
-    /// atomic operation.  This check is also used by multi-object bootstrap
-    /// paths before they create their first authoritative object.
+    /// Authoritative authorization-state writes require the same verified
+    /// conditional object contract as Catalog Head writes. No multi-object
+    /// lease or fencing primitive is required for ordinary mutations.
     pub fn ensure_authoritative_mutation_contract(&self) -> Result<()> {
-        if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
-            return Ok(());
+        match catalog_write_mode(&self.operator) {
+            CatalogWriteMode::SingleProcess | CatalogWriteMode::SharedVerified => Ok(()),
+            CatalogWriteMode::SharedReadOnly => Err(AppError::dependency_unavailable(
+                ErrorCode::StorageMutationUnavailable,
+                "storage conditional-write contract is unavailable or has not been verified",
+            )
+            .into()),
         }
-        Err(AppError::dependency_unavailable(
-            ErrorCode::StorageMutationUnavailable,
-            "non-local Space mutations are unavailable in v0.1 until the storage backend provides an atomic multi-object fencing contract",
-        )
-        .into())
     }
 
     /// Runs an authorization-dependent read while holding the same process
@@ -656,12 +453,6 @@ impl Authorizer {
         F: FnOnce(AuthorizationState) -> Fut,
         Fut: Future<Output = Result<T>>,
     {
-        let _guard: OwnedMutexGuard<()> = self.lock.clone().lock_owned().await;
-        // The process mutex does not coordinate a second CLI/server process
-        // using the same local Space. Hold the filesystem lock shared for the
-        // complete protected read so an ACL writer cannot commit between the
-        // snapshot and the content read.
-        let _local_read_lock = self.local_authorization_read_lock(space_id).await?;
         let state = self.state(space_id).await?;
         operation(state).await
     }
@@ -672,22 +463,12 @@ impl Authorizer {
     ) -> Result<(AuthorizationState, AuthorizationLease)> {
         let guard = self.lock.clone().lock_owned().await;
         let local_lock = self.local_authorization_lock(space_id).await?;
-        let durable = self.acquire_durable_mutation_lease(space_id).await?;
-        let state = match self.state(space_id).await {
-            Ok(state) => state,
-            Err(error) => {
-                if let Some(durable) = durable {
-                    let _ = durable.release().await;
-                }
-                return Err(error);
-            }
-        };
+        let state = self.state(space_id).await?;
         Ok((
             state,
             AuthorizationLease {
                 _guard: guard,
                 _local_lock: local_lock,
-                durable,
             },
         ))
     }
@@ -752,10 +533,7 @@ impl Authorizer {
             )
             .into());
         }
-        lease
-            .durable
-            .as_ref()
-            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        lease.ensure_held()?;
         let mut state = self.state(space_id).await?;
         let issuer = state
             .principals
@@ -976,11 +754,9 @@ impl Authorizer {
     {
         let guard = self.lock.clone().lock_owned().await;
         let local_lock = self.local_authorization_lock(space_id).await?;
-        let durable = self.acquire_durable_mutation_lease(space_id).await?;
         let lease = AuthorizationLease {
             _guard: guard,
             _local_lock: local_lock,
-            durable,
         };
         let result = self
             .consume_human_approval_with_audit_and_locked(
@@ -1158,10 +934,8 @@ impl Authorizer {
             .ok_or_else(|| anyhow!("authorization revision overflow"))?;
         self.write_human_approval_state(space_id, &state, Some(approval.approval_id), lease)
             .await?;
-        let mutation = lease
-            .run_while_held(|| mutation(lease))
-            .await
-            .map_err(|_| anyhow!("Space authorization mutation lease was lost"))?;
+        lease.ensure_held()?;
+        let mutation = mutation(lease).await;
         Ok((approval, mutation))
     }
 
@@ -1377,10 +1151,7 @@ impl Authorizer {
         ttl: chrono::Duration,
         lease: &AuthorizationLease,
     ) -> Result<RecoveryFence> {
-        lease
-            .durable
-            .as_ref()
-            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        lease.ensure_held()?;
         let mut state = self.state(space_id).await?;
         if state.space_uid == Uuid::nil() {
             bail!("recovery fence is unavailable")
@@ -1492,10 +1263,7 @@ impl Authorizer {
         fence_id: Uuid,
         lease: &AuthorizationLease,
     ) -> Result<()> {
-        lease
-            .durable
-            .as_ref()
-            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        lease.ensure_held()?;
         let mut state = self.state(space_id).await?;
         let fence = state
             .recovery_fences
@@ -1559,10 +1327,7 @@ impl Authorizer {
         fence_id: Uuid,
         lease: &AuthorizationLease,
     ) -> Result<()> {
-        lease
-            .durable
-            .as_ref()
-            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        lease.ensure_held()?;
         let mut state = self.state(space_id).await?;
         if let Some(fence) = state.recovery_fences.get_mut(&fence_id) {
             if fence.status == "active" {
@@ -1700,10 +1465,7 @@ impl Authorizer {
     ) -> Result<()> {
         self.require(space_id, actor, Action::Share, Some(resource))
             .await?;
-        lease
-            .durable
-            .as_ref()
-            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        lease.ensure_held()?;
         self.set_policy_locked(space_id, actor, resource, policy, true, lease)
             .await
     }
@@ -1718,10 +1480,7 @@ impl Authorizer {
     ) -> Result<()> {
         self.require(space_id, actor, Action::Share, Some(resource))
             .await?;
-        lease
-            .durable
-            .as_ref()
-            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        lease.ensure_held()?;
         self.set_policy_locked(space_id, actor, resource, policy, false, lease)
             .await
     }
@@ -1813,10 +1572,7 @@ impl Authorizer {
         lease: &AuthorizationLease,
     ) -> Result<()> {
         self.require(space_id, actor, Action::Share, None).await?;
-        lease
-            .durable
-            .as_ref()
-            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        lease.ensure_held()?;
         if !matches!(principal.kind, PrincipalKind::Human) {
             bail!("human member must use a human principal");
         }
@@ -1906,10 +1662,7 @@ impl Authorizer {
             expires_at,
         } = request;
         self.require(space_id, actor, Action::Share, None).await?;
-        lease
-            .durable
-            .as_ref()
-            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        lease.ensure_held()?;
         if granted_actions.contains(&Action::Delete) || granted_actions.contains(&Action::Share) {
             bail!("agents cannot receive delete or share actions");
         }
@@ -2047,10 +1800,7 @@ impl Authorizer {
         lease: &AuthorizationLease,
     ) -> Result<()> {
         self.require(space_id, actor, Action::Share, None).await?;
-        lease
-            .durable
-            .as_ref()
-            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        lease.ensure_held()?;
         let mut state = self.state(space_id).await?;
         self.ensure_recovery_mutation_allowed(&mut state)?;
         let agent = state
@@ -2101,10 +1851,7 @@ impl Authorizer {
         agent_id: Uuid,
         lease: &AuthorizationLease,
     ) -> Result<()> {
-        lease
-            .durable
-            .as_ref()
-            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        lease.ensure_held()?;
         let mut state = self.state(space_id).await?;
         self.ensure_recovery_mutation_allowed(&mut state)?;
         let agent = state
@@ -2140,10 +1887,7 @@ impl Authorizer {
         lease: &AuthorizationLease,
     ) -> Result<()> {
         self.require(space_id, actor, Action::Share, None).await?;
-        lease
-            .durable
-            .as_ref()
-            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        lease.ensure_held()?;
         let mut state = self.state(space_id).await?;
         self.ensure_recovery_mutation_allowed(&mut state)?;
         let current = state
@@ -2248,10 +1992,7 @@ impl Authorizer {
         lease: &AuthorizationLease,
     ) -> Result<()> {
         self.require(space_id, actor, Action::Share, None).await?;
-        lease
-            .durable
-            .as_ref()
-            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        lease.ensure_held()?;
         let mut state = self.state(space_id).await?;
         self.ensure_recovery_mutation_allowed(&mut state)?;
         if state
@@ -2323,21 +2064,7 @@ impl Authorizer {
     }
 
     async fn write_state(&self, space_id: &str, state: &AuthorizationState) -> Result<()> {
-        let durable = self.acquire_durable_mutation_lease(space_id).await?;
-        let result = self.write_state_inner(space_id, state).await;
-        let release = if let Some(durable) = durable {
-            durable.release().await
-        } else {
-            Ok(())
-        };
-        match (result, release) {
-            (Ok(()), Ok(())) => Ok(()),
-            (Err(error), Ok(())) => Err(error),
-            (Ok(()), Err(error)) => Err(error),
-            (Err(error), Err(release_error)) => Err(error.context(format!(
-                "release Space authorization mutation lease: {release_error:#}"
-            ))),
-        }
+        self.write_state_inner(space_id, state).await
     }
 
     async fn write_state_with_local_lock(
@@ -2345,33 +2072,8 @@ impl Authorizer {
         space_id: &str,
         state: &AuthorizationState,
     ) -> Result<()> {
-        let durable = self.acquire_durable_mutation_lease(space_id).await?;
-        let result = self
-            .write_state_inner_with_local_lock(space_id, state, true)
-            .await;
-        let release = if let Some(durable) = durable {
-            durable.release().await
-        } else {
-            Ok(())
-        };
-        match (result, release) {
-            (Ok(()), Ok(())) => Ok(()),
-            (Err(error), Ok(())) => Err(error),
-            (Ok(()), Err(error)) => Err(error),
-            (Err(error), Err(release_error)) => Err(error.context(format!(
-                "release Space authorization mutation lease: {release_error:#}"
-            ))),
-        }
-    }
-
-    async fn write_state_with_durable(
-        &self,
-        space_id: &str,
-        state: &AuthorizationState,
-        durable: &DurableAuthorizationLease,
-    ) -> Result<()> {
-        durable.ensure_held()?;
-        self.write_state_inner(space_id, state).await
+        self.write_state_inner_with_local_lock(space_id, state, true)
+            .await
     }
 
     async fn write_state_with_lease(
@@ -2380,16 +2082,9 @@ impl Authorizer {
         state: &AuthorizationState,
         lease: &AuthorizationLease,
     ) -> Result<()> {
-        match lease.durable.as_ref() {
-            Some(durable) => {
-                self.write_state_with_durable(space_id, state, durable)
-                    .await
-            }
-            None => {
-                self.write_state_inner_with_local_lock(space_id, state, lease._local_lock.is_some())
-                    .await
-            }
-        }
+        lease.ensure_held()?;
+        self.write_state_inner_with_local_lock(space_id, state, lease._local_lock.is_some())
+            .await
     }
 
     async fn write_state_inner(&self, space_id: &str, state: &AuthorizationState) -> Result<()> {
@@ -2427,7 +2122,7 @@ impl Authorizer {
                     .if_not_exists(true)
                     .await
                     .context("atomically create Space authorization state")?;
-            } else if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+            } else if crate::is_single_process_backend(&self.operator) {
                 if self.operator.exists(&path).await? {
                     bail!("authorization state already exists");
                 }
@@ -2471,10 +2166,9 @@ impl Authorizer {
                 let error: anyhow::Error = error.into();
                 let error = error.context("compare-and-swap Space authorization state");
                 // A remote conditional write may have committed before its
-                // response was lost. Do not release the paired Node fence
-                // until the Space outcome is classified. The exact desired
-                // bytes prove this write committed; a failed verification is
-                // deliberately treated as unknown and remains fenced.
+                // response was lost. The exact desired bytes prove this
+                // write committed; a failed verification remains an
+                // explicitly unknown authority outcome for the caller.
                 match self.state(space_id).await {
                     Ok(observed) => {
                         if serde_json::to_vec_pretty(&observed)
@@ -2494,7 +2188,7 @@ impl Authorizer {
                     }
                 }
             }
-        } else if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+        } else if crate::is_single_process_backend(&self.operator) {
             // Filesystem and in-memory adapters are serialized by the shared process lock.
             let current = self.state(space_id).await?;
             if current.revision != expected_revision {
@@ -2532,16 +2226,12 @@ impl Authorizer {
         self.acquire_local_authorization_lock(space_id, false).await
     }
 
-    async fn local_authorization_read_lock(&self, space_id: &str) -> Result<Option<std::fs::File>> {
-        self.acquire_local_authorization_lock(space_id, true).await
-    }
-
     async fn acquire_local_authorization_lock(
         &self,
         space_id: &str,
         shared: bool,
     ) -> Result<Option<std::fs::File>> {
-        if !matches!(self.operator.info().scheme(), "fs" | "file") {
+        if !crate::has_filesystem_locking_backend(&self.operator) {
             return Ok(None);
         }
         let root_value = self.operator.info().root();

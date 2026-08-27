@@ -36,6 +36,7 @@ pub use ugoite_domain::checkpoint::{
     CheckpointChange, CheckpointChangeKind, CheckpointDiff, CheckpointTable, SpaceCheckpoint,
 };
 
+use crate::logical_storage::{logical_space_uid, logical_uri};
 use anyhow::{anyhow, bail, Context, Result};
 use arrow_array::builder::{
     BooleanBuilder, Date32Builder, FixedSizeBinaryBuilder, Float32Builder, Float64Builder,
@@ -89,13 +90,22 @@ use ugoite_domain::form::{
     FormDefinition, FormField, ListItemDefinition,
 };
 use ugoite_domain::id::{validate_checkpoint_name, FormId, RevisionId, SpaceId};
-
-use crate::logical_storage::{logical_space_uid, logical_uri};
-use ugoite_storage::{operator_from_uri, SpaceCatalogStore};
+use ugoite_storage::{
+    catalog_write_mode, has_filesystem_locking, is_single_process_operator, operator_from_uri,
+    SpaceCatalogStore,
+};
 use uuid::Uuid;
 
 pub(crate) fn is_shared_backend(operator: &Operator) -> bool {
-    matches!(operator.info().scheme(), "s3" | "gcs" | "oss" | "azdls")
+    catalog_write_mode(operator).is_shared()
+}
+
+pub(crate) fn is_single_process_backend(operator: &Operator) -> bool {
+    is_single_process_operator(operator)
+}
+
+pub(crate) fn has_filesystem_locking_backend(operator: &Operator) -> bool {
+    has_filesystem_locking(operator)
 }
 
 /// Read an object against the exact version observed by `stat`.
@@ -682,7 +692,6 @@ impl IcebergWorkspace {
             .as_ref()
             .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
             .ensure_authoritative_mutation_contract()?;
-        crate::authorization::ensure_authorization_write_fence().await?;
         validate_checkpoint_name(name)?;
         self.validate_checkpoint(checkpoint)?;
         self.space_catalog
