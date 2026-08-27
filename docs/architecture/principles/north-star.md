@@ -54,20 +54,20 @@ replacing Head with the exact revision they read. An exact load returns bytes
 and its revision from one object observation; a stat followed by an
 unconditional read is not exact. The storage boundary admits a shared writer
 only after a runtime behavioral probe proves create-if-absent, exact load,
-conditional replacement, stale-revision rejection, and one winner for
-concurrent CAS. This produces `SingleProcess`, `SharedReadOnly`, or
-`SharedVerified` write mode based on the deployment contract and observed
-behavior, never on a provider name.
+conditional replacement, stale-revision rejection, and one winner for concurrent
+CAS. This produces `SingleProcess`, `SharedReadOnly`, or `SharedVerified` write
+mode based on the deployment contract and observed behavior, never on a provider
+name.
 
 `SharedVerified` uses the same immutable-before-publish plus one Head CAS
-protocol as `SingleProcess`. Probe failure distinguishes unavailable exact
-reads from readable-but-unverified conditional writes. Server timestamps are
-an independent maintenance capability: they may gate age-based DerivedRelation
-GC, but never authoritative Catalog or authorization writes. Catalog authority
-and ordinary mutation correctness do not depend on leases, heartbeats, TTLs,
-lock files, or fencing. DerivedRelation staging markers and special Space
-recovery journals are lifecycle mechanisms only; they never establish Catalog
-visibility or ordinary authorization.
+protocol as `SingleProcess`. Probe failure distinguishes unavailable exact reads
+from readable-but-unverified conditional writes. Server timestamps are an
+independent maintenance capability: they may gate age-based DerivedRelation GC,
+but never authoritative Catalog or authorization writes. Catalog authority and
+ordinary mutation correctness do not depend on leases, heartbeats, TTLs, lock
+files, or fencing. DerivedRelation staging markers and special Space recovery
+journals are lifecycle mechanisms only; they never establish Catalog visibility
+or ordinary authorization.
 
 ## Target state
 

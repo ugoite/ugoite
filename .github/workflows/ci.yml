@@ -90,19 +90,6 @@ jobs:
       UGOITE_MINIO_BUCKET: ugoite-ci
       AWS_ACCESS_KEY_ID: ugoite-ci
       AWS_SECRET_ACCESS_KEY: ugoite-ci-secret
-    services:
-      minio:
-        image: minio/minio@sha256:c7175077d39a8cc10c9fd611cdcc68b6a5b365793e9ac6f4198ffff1ef0fe555
-        env:
-          MINIO_ROOT_USER: ugoite-ci
-          MINIO_ROOT_PASSWORD: ugoite-ci-secret
-        ports:
-          - 9000:9000
-        options: >-
-          --health-cmd "curl -f http://localhost:9000/minio/health/live || exit 1"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -140,6 +127,14 @@ jobs:
           else
             echo "SCCACHE_GHA_RW_MODE=READ_ONLY" >>"$GITHUB_ENV"
           fi
+
+      - name: Start MinIO contract-test service
+        run: |
+          docker run --detach --rm --name ugoite-ci-minio --network host \
+            --env MINIO_ROOT_USER=${AWS_ACCESS_KEY_ID} \
+            --env MINIO_ROOT_PASSWORD=${AWS_SECRET_ACCESS_KEY} \
+            minio/minio@sha256:c7175077d39a8cc10c9fd611cdcc68b6a5b365793e9ac6f4198ffff1ef0fe555 \
+            server /data --address :9000
 
       - name: Create MinIO contract-test bucket
         run: |

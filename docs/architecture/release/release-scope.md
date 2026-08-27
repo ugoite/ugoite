@@ -26,10 +26,10 @@ support, and product claims stay aligned with the implementation.
 - S3-compatible and other non-local OpenDAL operators can serve authoritative
   Space mutations when startup or explicit revalidation proves the behavioral
   exact-read and conditional-write contract. A binding whose exact reads are
-  unavailable fails as storage-unavailable; a readable binding whose
-  conditional writes cannot be proved is `SharedReadOnly`. The health report
-  exposes the selected mode and reason. Provider names do not grant or deny
-  mutation admission;
+  unavailable fails as storage-unavailable; a readable binding whose conditional
+  writes cannot be proved is `SharedReadOnly`. The health report exposes the
+  selected mode and reason. Provider names do not grant or deny mutation
+  admission;
 - index run/stats are local core-mode commands. `index run` rebuilds the
   internal AssetText DerivedRelation, while stats reports derived health;
 - read-only, authorization-checked Node and Space audit-event listing is
