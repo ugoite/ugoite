@@ -2979,6 +2979,7 @@ impl NodeIdentityService {
         let account_before = state
             .accounts
             .get(&account_id)
+            .filter(|account| matches!(account.status, AccountStatus::Active))
             .cloned()
             .ok_or_else(|| anyhow!("recovery credentials are invalid"))?;
         if account_before.credential_generation != challenge.credential_generation {
@@ -3068,6 +3069,7 @@ impl NodeIdentityService {
         recovery.code_hashes = recovery_codes.iter().map(|code| token_hash(code)).collect();
         recovery.failed_attempts = 0;
         recovery.locked_until = None;
+        self.write_state(&state).await?;
         let session_id = self
             .create_session(
                 &state,
@@ -3076,7 +3078,6 @@ impl NodeIdentityService {
                 AssuranceLevel::PhishingResistant,
             )
             .await?;
-        self.write_state(&state).await?;
         self.append_node_audit(NodeAuditInput {
             subject_account_id: Some(account_id),
             actor_account_id: Some(account_id),
@@ -4724,6 +4725,7 @@ impl NodeIdentityService {
         let now = timestamp(Utc::now());
         if target.status != status {
             invalidate_pending_recovery_responses(&mut state, account_id, &now);
+            invalidate_pending_account_recovery_challenges(&mut state, account_id);
             *state
                 .account_lifecycle_epochs
                 .entry(account_id)
@@ -7503,11 +7505,7 @@ mod tests {
         );
 
         let mut state = service.read_state().await?;
-        state
-            .accounts
-            .get_mut(&account_id)
-            .expect("account")
-            .credential_generation += 1;
+        state.accounts.get_mut(&account_id).expect("account").status = AccountStatus::Suspended;
         service.write_state(&state).await?;
         let invalid_credential: RegisterPublicKeyCredential =
             serde_json::from_value(serde_json::json!({
@@ -7519,6 +7517,25 @@ mod tests {
                 },
                 "type": "public-key"
             }))?;
+        let error = service
+            .finish_recovery_registration(account_id, start.challenge_id, &invalid_credential)
+            .await
+            .expect_err("suspended accounts must not replace credentials");
+        assert!(error
+            .to_string()
+            .contains("recovery credentials are invalid"));
+
+        let mut state = service.read_state().await?;
+        state.accounts.get_mut(&account_id).expect("account").status = AccountStatus::Active;
+        service.write_state(&state).await?;
+
+        let mut state = service.read_state().await?;
+        state
+            .accounts
+            .get_mut(&account_id)
+            .expect("account")
+            .credential_generation += 1;
+        service.write_state(&state).await?;
         let error = service
             .finish_recovery_registration(account_id, start.challenge_id, &invalid_credential)
             .await

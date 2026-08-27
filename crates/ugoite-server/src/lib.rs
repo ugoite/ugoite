@@ -1922,10 +1922,13 @@ async fn auth_recovery_finish(
         .map_err(recovery_aware_auth_error)?;
     Ok((
         StatusCode::CREATED,
-        [(
-            "set-cookie",
-            auth_cookie(&result.session_id, 60 * 60 * 24 * 30),
-        )],
+        [
+            (
+                "set-cookie",
+                auth_cookie(&result.session_id, 60 * 60 * 24 * 30),
+            ),
+            ("cache-control", "no-store".to_string()),
+        ],
         Json(json!({
             "account": result.account,
             "recovery_codes": result.recovery_codes
