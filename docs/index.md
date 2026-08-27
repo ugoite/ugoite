@@ -47,11 +47,12 @@ remain planned work. :::
   static browser hosting.
 - v0.1 supports mandatory browser authentication with Passkey/WebAuthn,
   opaque sessions, owner-approved Space access recovery, Remote CLI device/DPoP
-  credentials, Space membership/ACL enforcement, authenticated MCP access, and
-  authorized audit reads.
-- Account self-recovery, TOTP/OIDC recovery, agent/service-account flows, generic
+  credentials, recovery-code + recovery-TOTP Account Self-Recovery, Space
+  membership/ACL enforcement, authenticated MCP access, and authorized audit
+  reads.
+- OIDC linking, administrator recovery, agent/service-account flows, generic
   OAuth client compatibility, audit CRUD, and remote CLI asset upload remain
-  outside the supported v0.1 release contract.
+  outside the supported v0.1 release contract. TOTP is recovery-only.
 
 ## Source-of-truth rules
 

@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SecuritySettingsRoute from "./security";
 import { authApi } from "~/lib/auth-api";
@@ -113,6 +113,30 @@ describe("SecuritySettingsRoute", () => {
       "TOTP コードが正しくありません。",
     );
     expect(screen.getByRole("alert")).toHaveTextContent("credential-1");
+  });
+
+  it("sets up the recovery-only authenticator without adding a login method", async () => {
+    render(() => <SecuritySettingsRoute />);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Set up or replace recovery authenticator",
+      }),
+    );
+    expect(await screen.findByTestId("recovery-secret")).toHaveTextContent(
+      "secret",
+    );
+    fireEvent.input(screen.getByLabelText("Current six-digit code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm TOTP" }));
+
+    await waitFor(() =>
+      expect(authApi.finishTotpEnrollment).toHaveBeenCalledWith("123456")
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Recovery TOTP configured.",
+    );
   });
 
   it("localizes a client-side passkey cancellation", async () => {

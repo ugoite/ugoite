@@ -409,7 +409,7 @@ fn docs_current_stack_check() -> Result<()> {
     let deferred_requirements = [
         (
             "docs/spec/requirements/security.yaml",
-            ["REQ-SEC-009", "REQ-SEC-014"].as_slice(),
+            ["REQ-SEC-009", "REQ-SEC-016"].as_slice(),
         ),
         (
             "docs/spec/requirements/ops.yaml",

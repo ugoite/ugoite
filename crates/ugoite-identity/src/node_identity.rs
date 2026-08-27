@@ -82,6 +82,9 @@ struct RegistrationChallenge {
     /// ambiguous Node state write.
     #[serde(default)]
     public_key: Option<CreationChallengeResponse>,
+    /// Bind an account-recovery registration challenge to the Recovery Code
+    /// that was validated at start. The code is never stored in plaintext.
+    recovery_code_hash: Option<String>,
     purpose: RegistrationPurpose,
     expires_at: String,
 }
@@ -448,6 +451,13 @@ fn invalidate_pending_recovery_responses(state: &mut NodeState, account_id: Uuid
     {
         record.codes_invalidated_at = Some(now.to_string());
     }
+}
+
+fn invalidate_pending_account_recovery_challenges(state: &mut NodeState, account_id: Uuid) {
+    state.registration_challenges.retain(|_, challenge| {
+        challenge.account_id != account_id
+            || !matches!(&challenge.purpose, RegistrationPurpose::Recovery)
+    });
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -2200,6 +2210,7 @@ impl NodeIdentityService {
                 display_name,
                 state: registration,
                 public_key: Some(public_key.clone()),
+                recovery_code_hash: None,
                 purpose: RegistrationPurpose::Setup,
                 expires_at: timestamp(Utc::now() + Duration::minutes(CHALLENGE_LIFETIME_MINUTES)),
             },
@@ -2394,6 +2405,7 @@ impl NodeIdentityService {
                 display_name: invitation.display_name,
                 state: registration,
                 public_key: Some(public_key.clone()),
+                recovery_code_hash: None,
                 purpose: RegistrationPurpose::Invitation {
                     invitation_id: invitation.invitation_id,
                 },
@@ -2610,6 +2622,7 @@ impl NodeIdentityService {
                 display_name: account.display_name,
                 state: registration,
                 public_key: Some(public_key.clone()),
+                recovery_code_hash: None,
                 purpose: RegistrationPurpose::AddCredential,
                 expires_at: timestamp(Utc::now() + Duration::minutes(CHALLENGE_LIFETIME_MINUTES)),
             },
@@ -2825,6 +2838,7 @@ impl NodeIdentityService {
         }
         let now = timestamp(Utc::now());
         invalidate_pending_recovery_responses(&mut state, account_id, &now);
+        invalidate_pending_account_recovery_challenges(&mut state, account_id);
         state.pending_totp_enrollments.remove(&account_id);
         let recovery = state.recovery.get_mut(&account_id).ok_or_else(|| {
             TotpEnrollmentFinishError::Internal(anyhow!("recovery record not found"))
@@ -2876,10 +2890,10 @@ impl NodeIdentityService {
             bail!("recovery credentials are temporarily locked");
         }
         let code_hash = token_hash(&recovery_code.trim().to_uppercase());
-        let code_index = recovery
+        let code_is_valid = recovery
             .code_hashes
             .iter()
-            .position(|candidate| candidate == &code_hash);
+            .any(|candidate| candidate == &code_hash);
         let encrypted_secret = recovery
             .totp_secret_encrypted
             .as_deref()
@@ -2887,7 +2901,7 @@ impl NodeIdentityService {
         let valid_totp = encrypted_secret.as_deref().is_some_and(|secret| {
             verify_totp(secret, totp_code, Utc::now().timestamp()).unwrap_or(false)
         });
-        if code_index.is_none() || !valid_totp {
+        if !code_is_valid || !valid_totp {
             let recovery = state
                 .recovery
                 .get_mut(&account_id)
@@ -2906,10 +2920,6 @@ impl NodeIdentityService {
             .ok_or_else(|| anyhow!("recovery credentials are invalid"))?;
         recovery.failed_attempts = 0;
         recovery.locked_until = None;
-        recovery
-            .code_hashes
-            .remove(code_index.expect("validated above"));
-
         let (mut public_key, registration) = self.webauthn.start_passkey_registration(
             // Recovery must add a credential without overwriting a surviving passkey on the
             // same authenticator. The account association remains in RegistrationChallenge.
@@ -2935,6 +2945,7 @@ impl NodeIdentityService {
                 display_name: account.display_name,
                 state: registration,
                 public_key: Some(public_key.clone()),
+                recovery_code_hash: Some(code_hash.clone()),
                 purpose: RegistrationPurpose::Recovery,
                 expires_at: timestamp(Utc::now() + Duration::minutes(CHALLENGE_LIFETIME_MINUTES)),
             },
@@ -2960,17 +2971,41 @@ impl NodeIdentityService {
             .ok_or_else(|| anyhow!("unknown or consumed recovery challenge"))?;
         validate_expiry(&challenge.expires_at, "recovery challenge")?;
         if challenge.account_id != account_id
-            || !matches!(challenge.purpose, RegistrationPurpose::Recovery)
+            || !matches!(&challenge.purpose, RegistrationPurpose::Recovery)
         {
             bail!("recovery challenge has the wrong account or purpose");
         }
         ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
-        if state
+        let account_before = state
             .accounts
             .get(&account_id)
-            .is_none_or(|account| account.credential_generation != challenge.credential_generation)
-        {
+            .cloned()
+            .ok_or_else(|| anyhow!("recovery credentials are invalid"))?;
+        if account_before.credential_generation != challenge.credential_generation {
             bail!("recovery challenge is stale");
+        }
+        let recovery_code_hash = challenge
+            .recovery_code_hash
+            .as_deref()
+            .ok_or_else(|| anyhow!("recovery credentials are invalid"))?;
+        let recovery = state
+            .recovery
+            .get(&account_id)
+            .ok_or_else(|| anyhow!("recovery credentials are invalid"))?;
+        if recovery
+            .locked_until
+            .as_deref()
+            .is_some_and(|locked_until| {
+                DateTime::parse_from_rfc3339(locked_until)
+                    .map(|value| value.with_timezone(&Utc) > Utc::now())
+                    .unwrap_or(true)
+            })
+            || !recovery
+                .code_hashes
+                .iter()
+                .any(|candidate| candidate == recovery_code_hash)
+        {
+            bail!("recovery credentials are invalid");
         }
         let passkey = self
             .webauthn
@@ -2982,6 +3017,14 @@ impl NodeIdentityService {
         }
         let now = timestamp(Utc::now());
         invalidate_pending_recovery_responses(&mut state, account_id, &now);
+        invalidate_pending_account_recovery_challenges(&mut state, account_id);
+        state
+            .passkeys
+            .retain(|_, stored_passkey| stored_passkey.account_id != account_id);
+        state.authentication_methods.retain(|_, method| {
+            method.account_id != account_id
+                || !matches!(&method.kind, AuthenticationMethodKind::Passkey)
+        });
         let method_id = Uuid::now_v7();
         state.passkeys.insert(
             credential_id.clone(),
@@ -3008,9 +3051,13 @@ impl NodeIdentityService {
         );
         let account = state
             .accounts
-            .get(&account_id)
-            .cloned()
+            .get_mut(&account_id)
             .ok_or_else(|| anyhow!("account not found"))?;
+        account.credential_generation = account
+            .credential_generation
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("credential generation overflow"))?;
+        let account = account.clone();
         let recovery_codes = (0..8)
             .map(|_| random_recovery_code())
             .collect::<Result<Vec<_>>>()?;
@@ -3030,6 +3077,21 @@ impl NodeIdentityService {
             )
             .await?;
         self.write_state(&state).await?;
+        self.append_node_audit(NodeAuditInput {
+            subject_account_id: Some(account_id),
+            actor_account_id: Some(account_id),
+            credential_id: Some(method_id),
+            action: "account.recovered",
+            target_type: "human_account",
+            target_id: Some(account_id.to_string()),
+            outcome: "success",
+            request_id: None,
+            safe_metadata: serde_json::json!({
+                "method": "recovery_code+totp",
+                "new_credential_id": method_id,
+            }),
+        })
+        .await?;
         Ok(RecoveryRegistrationFinish {
             account,
             session_id,
@@ -3697,6 +3759,7 @@ impl NodeIdentityService {
                         display_name: challenge.display_name,
                         state: registration,
                         public_key: Some(public_key.clone()),
+                        recovery_code_hash: None,
                         purpose: RegistrationPurpose::OwnerRecovery {
                             approval_id,
                             reset_id,
@@ -3823,6 +3886,7 @@ impl NodeIdentityService {
                 display_name: account.display_name,
                 state: registration,
                 public_key: Some(public_key.clone()),
+                recovery_code_hash: None,
                 purpose: RegistrationPurpose::OwnerRecovery {
                     approval_id,
                     reset_id,
@@ -4383,10 +4447,7 @@ impl NodeIdentityService {
         recovery.code_hashes = code_hashes.clone();
         recovery.failed_attempts = 0;
         recovery.locked_until = None;
-        state.registration_challenges.retain(|_, challenge| {
-            challenge.account_id != account_id
-                || !matches!(challenge.purpose, RegistrationPurpose::Recovery)
-        });
+        invalidate_pending_account_recovery_challenges(&mut state, account_id);
         state.backup_rotation_requests.insert(
             request_id,
             BackupRotationRecord {
@@ -6913,7 +6974,11 @@ mod tests {
     }
 
     fn current_totp_code(secret: &[u8]) -> String {
-        let counter = Utc::now().timestamp().div_euclid(30) as u64;
+        totp_code_at(secret, Utc::now().timestamp())
+    }
+
+    fn totp_code_at(secret: &[u8], unix_seconds: i64) -> String {
+        let counter = unix_seconds.div_euclid(30) as u64;
         let mut mac = <Hmac<Sha256> as HmacKeyInit>::new_from_slice(secret)
             .expect("TOTP secret is valid HMAC material");
         mac.update(&counter.to_be_bytes());
@@ -7306,6 +7371,15 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn totp_accepts_one_adjacent_step_but_not_two() -> Result<()> {
+        let secret = b"12345678901234567890123456789012";
+        let code = totp_code_at(secret, 30);
+        assert!(verify_totp(secret, &code, 60)?);
+        assert!(!verify_totp(secret, &code, 90)?);
+        Ok(())
+    }
+
     #[tokio::test]
     async fn totp_enrollment_distinguishes_invalid_codes_from_internal_state_errors() -> Result<()>
     {
@@ -7365,6 +7439,221 @@ mod tests {
             service.finish_totp_enrollment(account_id, "000000").await,
             Err(TotpEnrollmentFinishError::Internal(_))
         ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn recovery_start_validates_without_consuming_code_or_persisting_plaintext() -> Result<()>
+    {
+        const RECOVERY_CODE: &str = "START-RECOVERY-CODE";
+        const TOTP_SECRET: &[u8] = b"12345678901234567890123456789012";
+
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.lifecycle = NodeLifecycle::Active;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "Recovery start".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+                credential_generation: 7,
+            },
+        );
+        state.recovery.insert(
+            account_id,
+            RecoveryRecord {
+                account_id,
+                code_hashes: vec![token_hash(RECOVERY_CODE)],
+                totp_secret_encrypted: Some(encrypt_recovery_secret(
+                    &service.encryption_key,
+                    TOTP_SECRET,
+                )?),
+                created_at: timestamp(Utc::now()),
+                failed_attempts: 0,
+                locked_until: None,
+            },
+        );
+        service.write_state(&state).await?;
+
+        let start = service
+            .start_recovery_registration(
+                account_id,
+                RECOVERY_CODE,
+                &totp_code_at(TOTP_SECRET, Utc::now().timestamp()),
+            )
+            .await?;
+        let state = service.read_state().await?;
+        let recovery = state.recovery.get(&account_id).expect("recovery record");
+        assert_eq!(recovery.code_hashes, vec![token_hash(RECOVERY_CODE)]);
+        assert_eq!(recovery.failed_attempts, 0);
+        assert!(!serde_json::to_string(&state)?.contains(RECOVERY_CODE));
+        let challenge = state
+            .registration_challenges
+            .get(&start.challenge_id)
+            .expect("recovery challenge");
+        assert_eq!(challenge.credential_generation, 7);
+        assert_eq!(
+            challenge.recovery_code_hash.as_deref(),
+            Some(token_hash(RECOVERY_CODE).as_str())
+        );
+
+        let mut state = service.read_state().await?;
+        state
+            .accounts
+            .get_mut(&account_id)
+            .expect("account")
+            .credential_generation += 1;
+        service.write_state(&state).await?;
+        let invalid_credential: RegisterPublicKeyCredential =
+            serde_json::from_value(serde_json::json!({
+                "id": "invalid",
+                "rawId": "aW52YWxpZA",
+                "response": {
+                    "attestationObject": "aW52YWxpZA",
+                    "clientDataJSON": "aW52YWxpZA"
+                },
+                "type": "public-key"
+            }))?;
+        let error = service
+            .finish_recovery_registration(account_id, start.challenge_id, &invalid_credential)
+            .await
+            .expect_err("generation changes must invalidate the challenge");
+        assert!(error.to_string().contains("recovery challenge is stale"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn recovery_failures_lock_after_five_attempts_and_lock_valid_credentials() -> Result<()> {
+        const RECOVERY_CODE: &str = "LOCK-RECOVERY-CODE";
+        const TOTP_SECRET: &[u8] = b"12345678901234567890123456789012";
+
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.lifecycle = NodeLifecycle::Active;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "Recovery lock".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+                credential_generation: 0,
+            },
+        );
+        state.recovery.insert(
+            account_id,
+            RecoveryRecord {
+                account_id,
+                code_hashes: vec![token_hash(RECOVERY_CODE)],
+                totp_secret_encrypted: Some(encrypt_recovery_secret(
+                    &service.encryption_key,
+                    TOTP_SECRET,
+                )?),
+                created_at: timestamp(Utc::now()),
+                failed_attempts: 0,
+                locked_until: None,
+            },
+        );
+        service.write_state(&state).await?;
+
+        for attempt in 1..=5 {
+            let error = service
+                .start_recovery_registration(account_id, RECOVERY_CODE, "000000")
+                .await
+                .expect_err("invalid TOTP must fail");
+            assert!(error
+                .to_string()
+                .contains("recovery credentials are invalid"));
+            let state = service.read_state().await?;
+            let recovery = state.recovery.get(&account_id).expect("recovery record");
+            if attempt < 5 {
+                assert_eq!(recovery.failed_attempts, attempt);
+                assert!(recovery.locked_until.is_none());
+            } else {
+                assert_eq!(recovery.failed_attempts, 0);
+                assert!(recovery.locked_until.is_some());
+            }
+        }
+        let error = service
+            .start_recovery_registration(
+                account_id,
+                RECOVERY_CODE,
+                &totp_code_at(TOTP_SECRET, Utc::now().timestamp()),
+            )
+            .await
+            .expect_err("temporary lock must reject even valid credentials");
+        assert!(error.to_string().contains("temporarily locked"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn changing_recovery_totp_invalidates_pending_account_recovery_challenges() -> Result<()>
+    {
+        const RECOVERY_CODE: &str = "TOTP-CHANGE-RECOVERY-CODE";
+        const OLD_SECRET: &[u8] = b"12345678901234567890123456789012";
+
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.lifecycle = NodeLifecycle::Active;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "TOTP change".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+                credential_generation: 0,
+            },
+        );
+        state.recovery.insert(
+            account_id,
+            RecoveryRecord {
+                account_id,
+                code_hashes: vec![token_hash(RECOVERY_CODE)],
+                totp_secret_encrypted: Some(encrypt_recovery_secret(
+                    &service.encryption_key,
+                    OLD_SECRET,
+                )?),
+                created_at: timestamp(Utc::now()),
+                failed_attempts: 0,
+                locked_until: None,
+            },
+        );
+        service.write_state(&state).await?;
+        let start = service
+            .start_recovery_registration(
+                account_id,
+                RECOVERY_CODE,
+                &totp_code_at(OLD_SECRET, Utc::now().timestamp()),
+            )
+            .await?;
+
+        let enrollment = service.start_totp_enrollment(account_id).await?;
+        let encoded_secret = enrollment["secret"].as_str().expect("TOTP secret");
+        let new_secret = BASE32_NOPAD.decode(encoded_secret.as_bytes())?;
+        service
+            .finish_totp_enrollment(
+                account_id,
+                &totp_code_at(&new_secret, Utc::now().timestamp()),
+            )
+            .await
+            .expect("new TOTP code should finish enrollment");
+
+        let state = service.read_state().await?;
+        assert!(!state
+            .registration_challenges
+            .contains_key(&start.challenge_id));
         Ok(())
     }
 

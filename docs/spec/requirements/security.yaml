@@ -126,7 +126,7 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-005
   title: Initial Owner Bootstrap Controls
-  description: 'Initial setup MUST use an expiring one-time secret stored only as a hash, MUST reject reuse, MUST create the administrator account and required initial Passkey state, MUST emit bootstrap-only recovery-code material once, and MUST create an authenticated opaque browser session. Account recovery is specified separately as future scope.'
+  description: 'Initial setup MUST use an expiring one-time secret stored only as a hash, MUST reject reuse, MUST create the administrator account and required initial Passkey state, MUST emit bootstrap-only recovery-code material once, and MUST create an authenticated opaque browser session. Account Self-Recovery is a separate explicitly enrolled flow.'
   related_spec:
   - security/overview.md
   - api/rest.md#authentication
@@ -156,8 +156,44 @@ requirements:
   - SPEC-SECURITY-SANDBOX
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-014
-  title: Account Recovery and External Identity Linking
-  description: 'Account self-recovery, TOTP/recovery-code replacement, OIDC identity linking, and Node-level credential recovery remain future capabilities and MUST NOT be part of the v0.1 support contract. Owner-approved Space access recovery is specified by REQ-SEC-012.'
+  title: Account Self-Recovery
+  description: 'An active HumanAccount with enrolled recovery TOTP and issued Recovery Codes MUST be able to replace its Node-local credential generation using the exact Account ID, one currently valid Recovery Code, and a valid TOTP code. Successful recovery MUST preserve the HumanAccount and its Space bindings, replace its Passkeys, advance credential_generation, invalidate pre-recovery authentication authority, rotate all Recovery Codes, establish a new authenticated browser session, and emit attributable Node audit state. Recovery replaces credentials, not identity; TOTP remains recovery-only.'
+  related_spec:
+  - security/overview.md
+  - api/rest.md#authentication
+  - stories/experimental.yaml
+  priority: high
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-identity/src/node_identity.rs
+    cases:
+    - totp_enrollment_distinguishes_invalid_codes_from_internal_state_errors
+    - totp_accepts_one_adjacent_step_but_not_two
+    - recovery_start_validates_without_consuming_code_or_persisting_plaintext
+    - recovery_failures_lock_after_five_attempts_and_lock_valid_credentials
+    - changing_recovery_totp_invalidates_pending_account_recovery_challenges
+  - file: frontend/src/routes/recover/account.test.tsx
+    cases:
+    - replaces the Passkey and displays the rotated codes once
+  - file: e2e/account-self-recovery.test.ts
+    cases:
+    - replaces the credential generation and preserves the HumanAccount
+- set_id: REQCAT-SECURITY
+  source_file: requirements/security.yaml
+  scope: Security controls, integrity protections, and isolation requirements.
+  linked_policies:
+  - POL-003
+  - POL-004
+  - POL-010
+  - POL-011
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-SECURITY-SANDBOX
+  - SPEC-ARCH-INTERFACE
+  id: REQ-SEC-016
+  title: External Identity Linking
+  description: OIDC authentication and account linking remain planned capabilities. External identity linking MUST remain outside the v0.1 Account Self-Recovery support contract.
   related_spec:
   - security/overview.md
   - api/rest.md#authentication
@@ -168,7 +204,6 @@ requirements:
   tests:
   - file: crates/ugoite-identity/src/node_identity.rs
     cases:
-    - totp_enrollment_distinguishes_invalid_codes_from_internal_state_errors
     - oidc_subject_links_to_exact_existing_account
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml

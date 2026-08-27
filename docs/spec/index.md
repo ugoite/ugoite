@@ -20,13 +20,14 @@ authoritative; indexes and query sessions are derived.
 - The browser is server-backed.
 - v0.1 supports mandatory user authentication, owner bootstrap, Passkey/WebAuthn
   login, opaque browser sessions, owner-approved Space access recovery,
+  recovery-code + recovery-TOTP Account Self-Recovery,
   Remote CLI device authentication, Space membership/ACL enforcement,
   authenticated MCP access, and authorized audit reads.
 - Browser-local persistence and optional sync are planned.
-- Account self-recovery, TOTP/OIDC recovery, agent/service-account principals,
-  generic OAuth client compatibility, audit CRUD, and remote CLI asset upload
-  remain future or limited capability. They are not v0.1 product promises even
-  where an implementation or generated API reference exists.
+- OIDC linking, administrator recovery, account discovery, agent/service-account
+  principals, generic OAuth client compatibility, audit CRUD, and remote CLI
+  asset upload remain future or limited capability. TOTP is a recovery-only
+  factor and is not a normal login method.
 
 ## Read the specification map
 

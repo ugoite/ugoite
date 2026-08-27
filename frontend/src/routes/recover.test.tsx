@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { describe, expect, it, vi } from "vitest";
-import RecoverRoute from "./recover";
+import RecoverRoute from "./recover/index";
 import { authApi } from "~/lib/auth-api";
 
 vi.mock("@solidjs/router", () => ({

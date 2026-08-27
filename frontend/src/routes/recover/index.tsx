@@ -11,9 +11,11 @@ export default function RecoverRoute() {
   );
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
-  const [result, setResult] = createSignal<Awaited<
-    ReturnType<typeof authApi.recoverSpaceAccess>
-  > | null>(null);
+  const [result, setResult] = createSignal<
+    Awaited<
+      ReturnType<typeof authApi.recoverSpaceAccess>
+    > | null
+  >(null);
   const nextPath = () => getSafeNextPath(params.next);
 
   const submit = async (event: Event) => {
@@ -66,12 +68,15 @@ export default function RecoverRoute() {
                 shown only once. Audit delivery is {completed().audit_status}.
               </p>
               <ul class="font-mono">
-                <For each={completed().recovery_codes}>{(code) => <li>{code}</li>}</For>
+                <For each={completed().recovery_codes}>
+                  {(code) => <li>{code}</li>}
+                </For>
               </ul>
               <button
                 type="button"
                 class="ui-button ui-button-primary"
-                onClick={() => navigate(nextPath(), { replace: true })}
+                onClick={() =>
+                  navigate(nextPath(), { replace: true })}
               >
                 I saved the codes
               </button>

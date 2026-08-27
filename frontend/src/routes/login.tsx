@@ -68,6 +68,9 @@ export default function LoginRoute() {
           >
             {busy() ? "Waiting for passkey…" : "Sign in with a passkey"}
           </button>
+          <a class="ui-link text-sm" href={`/recover/account${nextQuery()}`}>
+            Lost your Passkey?
+          </a>
         </Show>
         <Show when={error()}>
           <p class="ui-alert ui-alert-error text-sm">{error()}</p>

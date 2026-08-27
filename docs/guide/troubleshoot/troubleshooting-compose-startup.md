@@ -4,8 +4,9 @@ sidebar:
   order: 2
 ---
 
-> Release note: Passkey setup and passwordless browser login are supported v0.1
-> behavior. TOTP/recovery setup remains future/reference material.
+> Release note: Passkey setup, passwordless browser login, and the explicit
+> recovery-only TOTP setup for Account Self-Recovery are supported v0.1
+> behavior. OIDC linking remains future/reference material.
 
 Use these checks when the Compose service does not start, cannot be reached,
 rejects login, or appears to lose mounted data.

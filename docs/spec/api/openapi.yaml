@@ -3,7 +3,7 @@
   "info": {
     "title": "Ugoite Rust Server API",
     "version": "0.1.0",
-    "description": "The generated endpoint inventory is authoritative for the server implementation. v0.1 supports mandatory browser authentication with Passkey/WebAuthn, owner-approved Space access recovery, remote CLI device authentication, opaque sessions, Space membership/ACL enforcement, authenticated MCP access, and authorized audit reads. Account self-recovery, TOTP/OIDC recovery, managed service-account operations, audit CRUD, and remote CLI asset upload remain reference/future scope."
+    "description": "The generated endpoint inventory is authoritative for the server implementation. v0.1 supports mandatory browser authentication with Passkey/WebAuthn, owner-approved Space access recovery, recovery-code + recovery-TOTP Account Self-Recovery, remote CLI device authentication, opaque sessions, Space membership/ACL enforcement, authenticated MCP access, and authorized audit reads. OIDC linking, administrator recovery, managed service-account operations, audit CRUD, and remote CLI asset upload remain reference/future scope. TOTP is recovery-only."
   },
   "x-ugoite-response-signing": {
     "description": "Eligible materialized /api responses carry the reusable HMAC headers below. The signature is lowercase hexadecimal HMAC-SHA256 over the exact delivered body bytes.",
@@ -8715,7 +8715,7 @@
     },
     "/auth/recovery/start": {
       "post": {
-        "summary": "Start recovery with a one-use recovery code and TOTP",
+        "summary": "Start Account Self-Recovery with a valid recovery code and recovery-only TOTP",
         "requestBody": {
           "required": true,
           "content": {
@@ -8745,7 +8745,7 @@
               }
             }
           },
-          "400": {
+          "401": {
             "description": "Invalid recovery credentials",
             "content": {
               "application/json": {
@@ -8768,7 +8768,7 @@
     },
     "/auth/recovery/finish": {
       "post": {
-        "summary": "Register a replacement Passkey after recovery",
+        "summary": "Commit Account Self-Recovery with a replacement Passkey",
         "requestBody": {
           "required": true,
           "content": {
@@ -8798,7 +8798,7 @@
               }
             }
           },
-          "400": {
+          "401": {
             "description": "Invalid recovery challenge",
             "content": {
               "application/json": {

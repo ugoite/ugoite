@@ -42,6 +42,10 @@ export default function SecuritySettingsRoute() {
 export function CredentialSettings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [actionError, setActionError] = createSignal<string | null>(null);
+  const [recoverySecret, setRecoverySecret] = createSignal<string | null>(null);
+  const [recoveryUri, setRecoveryUri] = createSignal<string | null>(null);
+  const [recoveryCode, setRecoveryCode] = createSignal("");
+  const [recoveryConfigured, setRecoveryConfigured] = createSignal(false);
   const [activeTab, setActiveTab] = createSignal<CredentialTab>(
     credentialTabFromSearch(searchParams.tab),
   );
@@ -92,6 +96,76 @@ export function CredentialSettings() {
           )}
         </For>
       </div>
+      <section
+        class="ui-card ui-stack-sm"
+        aria-labelledby="account-recovery-heading"
+      >
+        <div>
+          <h2 id="account-recovery-heading" class="text-lg font-semibold">
+            {t("securityPage.accountRecovery")}
+          </h2>
+          <p class="ui-muted">{t("securityPage.accountRecoveryDescription")}</p>
+        </div>
+        <Show when={recoveryConfigured()}>
+          <p role="status">{t("securityPage.configured")}</p>
+        </Show>
+        <Show
+          when={recoverySecret()}
+          fallback={
+            <button
+              type="button"
+              class="ui-button ui-button-secondary"
+              onClick={() =>
+                void runAction(async () => {
+                  const enrollment = await authApi.startTotpEnrollment();
+                  setRecoverySecret(enrollment.secret);
+                  setRecoveryUri(enrollment.otpauth_uri);
+                  setRecoveryConfigured(false);
+                  setRecoveryCode("");
+                })}
+            >
+              {t("securityPage.setUpRecoveryAuthenticator")}
+            </button>
+          }
+        >
+          {(secret) => (
+            <div class="ui-stack-sm">
+              <p>{t("securityPage.secretHelp")}</p>
+              <code data-testid="recovery-secret">{secret()}</code>
+              <Show when={recoveryUri()}>
+                {(uri) => <code data-testid="recovery-uri">{uri()}</code>}
+              </Show>
+              <label class="ui-stack-sm">
+                <span>{t("securityPage.currentCode")}</span>
+                <input
+                  class="ui-input font-mono"
+                  inputmode="numeric"
+                  autocomplete="one-time-code"
+                  pattern="[0-9]{6}"
+                  value={recoveryCode()}
+                  onInput={(event) =>
+                    setRecoveryCode(event.currentTarget.value)}
+                  required
+                />
+              </label>
+              <button
+                type="button"
+                class="ui-button ui-button-primary"
+                onClick={() =>
+                  void runAction(async () => {
+                    await authApi.finishTotpEnrollment(recoveryCode().trim());
+                    setRecoverySecret(null);
+                    setRecoveryUri(null);
+                    setRecoveryCode("");
+                    setRecoveryConfigured(true);
+                  })}
+              >
+                {t("securityPage.confirmTotp")}
+              </button>
+            </div>
+          )}
+        </Show>
+      </section>
       <Show when={credentials.error}>
         <p class="ui-alert ui-alert-error">
           {formatUserFacingError(

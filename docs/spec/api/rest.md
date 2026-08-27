@@ -15,17 +15,22 @@ contract is implemented. The stable error code is
 
 > Release boundary: v0.1 supports mandatory browser authentication with
 > Passkey/WebAuthn, opaque sessions, owner-approved Space access recovery,
+> recovery-code + recovery-TOTP Account Self-Recovery,
 > Remote CLI device authentication, Space membership/ACL enforcement,
-> authenticated MCP access, and authorized audit reads. Account self-recovery,
-> TOTP/OIDC recovery, managed service-account operations, audit CRUD, and remote
-> CLI asset upload remain future/reference material.
+> authenticated MCP access, and authorized audit reads. OIDC linking,
+> administrator recovery, account discovery, managed service-account operations,
+> audit CRUD, and remote CLI asset upload remain future/reference material.
 
 ## Authentication surfaces
 
 Passkey/WebAuthn registration and passwordless browser login, opaque browser
-sessions, session revocation, owner-approved Space access recovery, and CLI
-OAuth device authentication are supported v0.1 authentication surfaces.
-Account self-recovery, OIDC linking, managed service-account operations, and
+sessions, session revocation, owner-approved Space access recovery, recovery-code
+and recovery-TOTP Account Self-Recovery, and CLI OAuth device authentication are
+supported v0.1 authentication surfaces. Account Self-Recovery requires the exact
+Account ID, one valid offline Recovery Code, and a valid recovery-only TOTP code;
+it replaces credential authority without replacing the HumanAccount or Space
+identity, then rotates Recovery Codes and establishes a new browser session.
+OIDC linking, administrator recovery, managed service-account operations, and
 audit CRUD remain reference-only endpoint inventory. CLI REST credentials omit
 the `resource` parameter and use the Node issuer as `aud`; MCP credentials use
 exactly `{issuer}/mcp` for both. DPoP `htu` is the scheme, authority, and path,
@@ -39,8 +44,8 @@ without a server.
   query string, log, or audit event.
 
 Browser session cookies are opaque, server-side, and part of the supported v0.1
-contract. TOTP/recovery workflows beyond the bootstrap-only code display,
-generic OAuth clients, and remote asset upload remain future scope. Remote CLI
+contract. TOTP remains a recovery-only factor and is not used for normal login.
+Generic OAuth clients and remote asset upload remain future scope. Remote CLI
 device credentials are supported through the browser-approved device flow. This
 release does not provide a local authentication bypass.
 

@@ -2,7 +2,7 @@ version: 0.3
 status: implemented
 updated: "2026-06-29"
 node_identity:
-  human_authentication: [passkey, invited_oidc]
+  human_authentication: [passkey]
   browser_session: {
     kind: opaque_server_side,
     idle_hours: 24,
@@ -10,12 +10,14 @@ node_identity:
   }
   setup: { random: true, hashed: true, one_use: true, lifetime_minutes: 30 }
   setup_strength:
-    accepted: [two_passkeys, passkey_totp_recovery_codes]
+    accepted: [two_passkeys]
   persistence: atomic_opendal_node_control_store
   recovery:
-    recovery_code: { hashed: true, one_use: true }
-    totp: { encrypted_at_rest: true, sufficient_alone: false }
+    recovery_code: { hashed: true, one_use: true, consumed_on_start: false, rotated_on_success: true }
+    totp: { encrypted_at_rest: true, sufficient_alone: false, digits: 6, period_seconds: 30, clock_skew_steps: 1, replay_tracking: false }
     passkey_replacement_requires: [recovery_code, totp]
+    credential_boundary: { field: credential_generation, stale_challenge_fails_closed: true, old_passkeys_removed: true, old_authority_invalidated: true }
+    successful_self_recovery: { preserves_human_account: true, preserves_space_identity: true, new_browser_session: true, audit_action: account.recovered }
     owner_approved_space_access:
       authority: active_human_space_owner_with_recent_passkey
       approval_ttl_minutes: 15

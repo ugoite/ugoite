@@ -9091,6 +9091,21 @@ mod security_headers_tests {
     use http_body_util::BodyExt as _;
 
     #[test]
+    fn account_recovery_credential_failures_share_authentication_error() {
+        for message in [
+            "account is missing",
+            "recovery code is invalid",
+            "recovery credentials are temporarily locked",
+            "recovery challenge is stale",
+        ] {
+            let error = recovery_aware_auth_error(anyhow::anyhow!(message));
+            assert_eq!(error.status, StatusCode::UNAUTHORIZED);
+            assert_eq!(error.detail["code"], "AUTHENTICATION_FAILED");
+            assert_eq!(error.detail["message"], "Authentication failed");
+        }
+    }
+
+    #[test]
     fn req_sec_002_omits_hsts_for_local_origins() {
         for origin in [
             "http://localhost:8000",

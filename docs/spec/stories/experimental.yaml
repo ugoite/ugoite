@@ -16,12 +16,12 @@ stories:
       - Space creator is initial admin and can delegate admin privileges
       - Form-level read/write permissions can target User or UserGroup
       - Materialized views inherit access policy from source Forms
-      - Account self-recovery and external identity recovery remain future workflows
+      - Account Self-Recovery is supported with Account ID, one offline Recovery Code, and recovery-only TOTP
       - Concurrent edits are handled with conflict resolution
     requirements: []
     milestone: User Management
     status: planned
-    implementation_notes: Invited OIDC, Agent Principals, and account recovery are future/reference designs. Owner-approved Space access recovery, Remote CLI device authentication, Passkey, Space membership/roles, resource ACLs, and read-only authorization audit history are supported v0.1 capabilities; the remaining endpoint inventory is an implementation reference.
+    implementation_notes: OIDC linking, administrator recovery, and Agent Principals are future/reference designs. Account Self-Recovery is supported only with an exact Account ID, one offline Recovery Code, and recovery-only TOTP. Owner-approved Space access recovery, Remote CLI device authentication, Passkey, Space membership/roles, resource ACLs, and read-only authorization audit history are supported v0.1 capabilities; the remaining endpoint inventory is an implementation reference.
     planned_apis:
       - rest: POST /spaces/{space_id}/auth/webauthn/register/options
       - rest: POST /spaces/{space_id}/auth/webauthn/register/verify

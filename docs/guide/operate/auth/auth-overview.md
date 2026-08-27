@@ -6,10 +6,11 @@ sidebar:
 
 > v0.1 support boundary: mandatory authentication, owner bootstrap,
 > Passkey/WebAuthn registration and login, opaque browser sessions,
-> owner-approved Space access recovery, Remote CLI device credentials, Space
-> membership/ACL enforcement, authenticated MCP access, and authorized audit
-> reads are supported. Account self-recovery, TOTP/OIDC recovery, agent
-> principals, and audit CRUD remain future scope.
+> owner-approved Space access recovery, recovery-code + recovery-TOTP Account
+> Self-Recovery, Remote CLI device credentials, Space membership/ACL
+> enforcement, authenticated MCP access, and authorized audit reads are
+> supported. OIDC linking, administrator recovery, agent principals, and audit
+> CRUD remain future scope. TOTP is recovery-only.
 
 Ugoite separates identity that belongs to one server from identity that must
 move with a Space.
@@ -46,10 +47,10 @@ credential-strengthening endpoints.
 
 The first account receives `node_admin`, owner bindings for existing supported
 operator-created Spaces (or a new `default` Space when none exist), a one-time
-recovery-code set for safekeeping, and an opaque browser session. The codes are
-bootstrap output only; v0.1 does not support using them or TOTP for account
-recovery or Passkey replacement. The setup secret cannot be reused. Visiting
-the server first never grants administrator access.
+recovery-code set for safekeeping, and an opaque browser session. Account
+Self-Recovery becomes available after the account explicitly enrolls a
+recovery-only TOTP in Security Settings. The setup secret cannot be reused.
+Visiting the server first never grants administrator access.
 
 ## Browser login and sessions
 
@@ -69,11 +70,19 @@ Passkey authentication within the preceding five minutes. Agent lifecycle and
 OIDC configuration are future scope. Accounts should register two or more Passkeys. Ugoite refuses to remove
 the final Passkey.
 
-## Future: account self-recovery
+## Account Self-Recovery
 
-TOTP, recovery-code replacement, and account-level self-recovery are future
-capabilities. The v0.1 contract does not promise account recovery; keep access
-to a registered Passkey.
+An account that has explicitly enrolled recovery protection can recover after
+losing all Passkeys at `/recover/account`. The user enters the exact Account
+ID, one currently valid offline Recovery Code, and a valid recovery-only TOTP
+code, then completes a short WebAuthn registration ceremony. Successful
+completion preserves the HumanAccount, Space principals, memberships, roles,
+ACLs, ownership, and bindings while replacing the Node-local credential
+generation with a new Passkey, invalidating pre-recovery authentication
+authority, rotating all Recovery Codes, creating a new browser session, and
+emitting a secret-free Node audit event. TOTP is not accepted as a normal login
+factor, and neither factor works alone. OIDC linking, administrator recovery,
+account discovery, and operator overrides remain outside the v0.1 contract.
 
 ### Supported: owner-approved Space access recovery
 

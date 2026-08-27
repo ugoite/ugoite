@@ -60,4 +60,16 @@ describe("/login continuation", () => {
       .toBeNull();
     expect(authApi.loginWithOidc).not.toHaveBeenCalled();
   });
+
+  it("links to the dedicated Account Self-Recovery journey", async () => {
+    render(() => <LoginRoute />);
+
+    const link = await screen.findByRole("link", {
+      name: "Lost your Passkey?",
+    });
+    expect(link).toHaveAttribute(
+      "href",
+      "/recover/account?next=%2Fspaces%2Fdemo%2Fdashboard%3Ftab%3Drecent",
+    );
+  });
 });
