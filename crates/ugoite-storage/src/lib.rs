@@ -730,10 +730,6 @@ pub async fn verify_storage_contract(operator: &Operator) -> StorageContractStat
     let status = match store.verify_contract_with_phase().await {
         Ok(()) => StorageContractStatus::Verified,
         Err(failure) if failure.phase == ContractProbePhase::ExactRead => {
-            eprintln!(
-                "storage contract exact-read probe failed: {:?}",
-                failure.error
-            );
             StorageContractStatus::Unavailable {
                 reason: "exact-read contract probe failed".to_string(),
             }
