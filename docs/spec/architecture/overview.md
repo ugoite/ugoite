@@ -29,15 +29,17 @@ revision table per stable Form ID. `ugoite-storage` normalizes backend
 configuration and owns the small Catalog Head/publication object boundary. Its
 `PublicationStore` exposes opaque revisions and backend-neutral create/CAS
 outcomes without leaking ETags or backend schemes upward. `ugoite-iceberg`
-constructs the official `iceberg-storage-opendal` factory, owns physical
-schemas, and implements the OpenDAL-backed `SpaceCatalog`. Core receives no
-OpenDAL, Iceberg, Arrow, Parquet, DataFusion, or SQL-parser types.
+owns the logical-coordinate FileIO bridge, physical schemas, and the OpenDAL-
+backed `SpaceCatalog`. Iceberg locations are persisted as
+`ugoite://{space_uid}/{space-relative-key}` and resolved only against the
+operator bound to that Space. Core receives no OpenDAL, Iceberg, Arrow, Parquet,
+DataFusion, or SQL-parser types.
 
-The portable `PublicationStore` contract is the storage-boundary foundation;
-the current v0.1 authoritative Catalog mutation path remains fail-closed for
-non-local backends until the later authorization lease/fence and logical
-Iceberg URI integration are admitted. Those integrations are future
-architecture, not a claim that remote mutation is already supported.
+The portable `PublicationStore` contract is the storage-boundary foundation. The
+current v0.1 authoritative Catalog mutation path remains fail-closed for
+non-local backends until the later authorization lease/fence contract is
+admitted; portable logical Iceberg coordinates are implemented independently of
+that mutation admission boundary.
 
 `_ugoite/catalog/head.json` is the sole mutable catalog authority. Every Head
 generation names the Form tables and their immutable Iceberg metadata. A

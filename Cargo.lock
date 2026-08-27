@@ -1355,9 +1355,9 @@ dependencies = [
 
 [[package]]
 name = "ctor"
-version = "1.0.11"
+version = "1.0.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9bb72bb94fdc1bd619f4c18cc91ecf6302aeb333d31b3c6ec0bb841cd920209"
+checksum = "914a755b7c2d4af2bdcff7ce1739e2db9a1b81a9b07123d8015786ae03c0980d"
 dependencies = [
  "link-section",
  "linktime-proc-macro",
@@ -3060,25 +3060,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "iceberg-storage-opendal"
-version = "0.10.0"
-source = "git+https://github.com/apache/iceberg-rust.git?rev=1ecd497#1ecd497774612405f0af0dc9e1dc2bd6da3c3311"
-dependencies = [
- "anyhow",
- "async-trait",
- "bytes",
- "cfg-if",
- "futures",
- "iceberg",
- "opendal",
- "reqsign-aws-v4",
- "reqsign-core",
- "serde",
- "typetag",
- "url",
-]
-
-[[package]]
 name = "icu_collections"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3535,15 +3516,15 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "link-section"
-version = "0.19.1"
+version = "0.19.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8dc98458dfe90986c5e2f6ddcf68360c7e5c4252600153e06aa4ee8176c0f8d1"
+checksum = "39c29a617ce3df32c08497bdc1ab6e2376e0b17948ac166a2fbe5977c5954cd9"
 
 [[package]]
 name = "linktime-proc-macro"
-version = "0.2.0"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c7b0a3383c2a1002d11349c92c85a666a5fb679e96c79d782cf0dbe557fd6ee"
+checksum = "7e57c38c1e860fd37c604281cdfb1dd2216977fd76a50f85ba2f388ef3219616"
 
 [[package]]
 name = "linux-keyutils"
@@ -3893,10 +3874,6 @@ dependencies = [
  "ctor",
  "opendal-core",
  "opendal-http-transport-reqwest",
- "opendal-layer-concurrent-limit",
- "opendal-layer-logging",
- "opendal-layer-retry",
- "opendal-layer-timeout",
  "opendal-service-azdls",
  "opendal-service-fs",
  "opendal-service-gcs",
@@ -3942,49 +3919,6 @@ dependencies = [
  "http-body",
  "opendal-core",
  "reqwest 0.13.4",
-]
-
-[[package]]
-name = "opendal-layer-concurrent-limit"
-version = "0.58.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03f9e144b5228d741c3763ade8711d9b72e5fb6d998e779f2d7a09da0b5a3eba"
-dependencies = [
- "asyncband",
- "futures",
- "http",
- "opendal-core",
-]
-
-[[package]]
-name = "opendal-layer-logging"
-version = "0.58.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2de17c61cd32e9d8d7d8efb91795e714dbccbafbc3c4e219e1542f4d6324161"
-dependencies = [
- "log",
- "opendal-core",
-]
-
-[[package]]
-name = "opendal-layer-retry"
-version = "0.58.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e94db301964a25366090484d61e6da16d5979cc8faf02c3e12210dc74fafed38"
-dependencies = [
- "backon",
- "log",
- "opendal-core",
-]
-
-[[package]]
-name = "opendal-layer-timeout"
-version = "0.58.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08956ddda07465449bfd48825f4f0f25e0351278ac974eaa659895d9d74f2c80"
-dependencies = [
- "opendal-core",
- "tokio",
 ]
 
 [[package]]
@@ -6284,6 +6218,7 @@ dependencies = [
  "arrow-schema",
  "async-trait",
  "base64 0.23.1",
+ "bytes",
  "chrono",
  "criterion",
  "datafusion",
@@ -6294,7 +6229,6 @@ dependencies = [
  "hmac 0.13.0",
  "iceberg",
  "iceberg-datafusion",
- "iceberg-storage-opendal",
  "opendal",
  "parquet",
  "quick-xml 0.42.0",

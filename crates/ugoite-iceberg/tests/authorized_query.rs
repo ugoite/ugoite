@@ -8,7 +8,7 @@ use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldVa
 use ugoite_domain::form::{FieldType, FormDefinition, FormField, FormVersion};
 use ugoite_domain::id::{EntryId, FieldId, FormId, SpaceId};
 use ugoite_iceberg::{publication_context, query_context::AuthorizedQueryError, IcebergWorkspace};
-use ugoite_storage::operator_from_uri;
+use ugoite_storage::{operator_from_uri, SpaceUri};
 use uuid::Uuid;
 
 fn form(id: u128, name: &str) -> FormDefinition {
@@ -321,16 +321,9 @@ async fn function_variants_and_storage_failures_are_closed_errors() -> anyhow::R
     let checkpoint = workspace.capture_checkpoint().await?;
     let mut checkpoint_policy = policy(&tasks, &[72]);
     checkpoint_policy.checkpoint = Some(checkpoint.clone());
-    let metadata_path = checkpoint.tables[0]
-        .metadata_location
-        .strip_prefix("memory:///")
-        .or_else(|| {
-            checkpoint.tables[0]
-                .metadata_location
-                .strip_prefix("memory:/")
-        })
-        .expect("memory metadata location");
-    operator_from_uri(warehouse)?.delete(metadata_path).await?;
+    let metadata_uri = SpaceUri::parse(&checkpoint.tables[0].metadata_location)?;
+    let metadata_path = format!("test/space_{:032x}/{}", 70_u128, metadata_uri.key());
+    operator_from_uri(warehouse)?.delete(&metadata_path).await?;
     let error = match workspace.authorized_query_context(checkpoint_policy).await {
         Ok(_) => anyhow::bail!("missing checkpoint metadata must not create a query context"),
         Err(error) => error,

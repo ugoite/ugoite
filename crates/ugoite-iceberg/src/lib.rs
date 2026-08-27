@@ -7,6 +7,7 @@
 #![recursion_limit = "512"]
 
 pub mod derived_relation;
+mod logical_storage;
 mod read_schema_provider;
 mod space_catalog;
 
@@ -88,6 +89,8 @@ use ugoite_domain::form::{
     FormDefinition, FormField, ListItemDefinition,
 };
 use ugoite_domain::id::{validate_checkpoint_name, FormId, RevisionId, SpaceId};
+
+use crate::logical_storage::{logical_space_uid, logical_uri};
 use ugoite_storage::{operator_from_uri, SpaceCatalogStore};
 use uuid::Uuid;
 
@@ -271,6 +274,7 @@ pub struct IcebergWorkspace {
     space_catalog: Option<Arc<SpaceCatalog>>,
     namespace: NamespaceIdent,
     space_id: SpaceId,
+    logical_space_uid: uuid::Uuid,
     warehouse: String,
     write: WriteConfig,
 }
@@ -578,6 +582,7 @@ impl IcebergWorkspace {
             space_catalog: Some(catalog),
             namespace,
             space_id,
+            logical_space_uid: logical_space_uid(space_id),
             warehouse: warehouse.into(),
             write,
         })
@@ -2269,12 +2274,11 @@ impl IcebergWorkspace {
         TableIdent::new(self.namespace.clone(), physical_form_name(form_id))
     }
     fn form_location(&self, form_id: FormId) -> String {
-        format!(
-            "{}/space_{}/{}",
-            self.warehouse.trim_end_matches('/'),
-            self.space_id.as_uuid().simple(),
-            physical_form_name(form_id)
+        logical_uri(
+            self.logical_space_uid,
+            &format!("forms/{}", physical_form_name(form_id)),
         )
+        .expect("workspace logical Form location must be canonical")
     }
 }
 
@@ -2321,6 +2325,7 @@ impl SpaceCommitCoordinator {
             space_catalog: Some(catalog),
             namespace: self.workspace.namespace.clone(),
             space_id: self.workspace.space_id,
+            logical_space_uid: self.workspace.logical_space_uid,
             warehouse: self.workspace.warehouse.clone(),
             write: self.workspace.write,
         })
