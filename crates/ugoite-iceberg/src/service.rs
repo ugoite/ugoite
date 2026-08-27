@@ -33,7 +33,9 @@ use ugoite_domain::id::{
     validate_revision_id, validate_space_id, validate_sql_id, validate_sql_session_id, FormId,
 };
 use ugoite_domain::identity::Action;
-use ugoite_storage::{operator_from_uri, OpendalStorage, StorageBackend};
+use ugoite_storage::{
+    operator_from_uri, operator_from_uri_with_endpoint, OpendalStorage, StorageBackend,
+};
 
 pub const MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS: &[&str] = &[
     "admin_user_ids",
@@ -223,8 +225,12 @@ async fn acquire_local_space_slug_claim_lock(
 
 impl UgoiteService {
     pub fn new(root_uri: impl Into<String>) -> Result<Self> {
+        Self::new_with_endpoint(root_uri, None)
+    }
+
+    pub fn new_with_endpoint(root_uri: impl Into<String>, endpoint: Option<&str>) -> Result<Self> {
         let root_uri = root_uri.into();
-        let operator = operator_from_uri(&root_uri)?;
+        let operator = operator_from_uri_with_endpoint(&root_uri, endpoint)?;
         Ok(Self {
             operator,
             root_uri,

@@ -1514,7 +1514,7 @@ fn storage_connection_mode(uri: &str) -> Result<&'static str> {
     anyhow::bail!("unsupported storage URI: {uri}")
 }
 
-fn validate_storage_endpoint(endpoint: Option<&str>) -> Result<Option<&str>> {
+pub fn validate_storage_endpoint(endpoint: Option<&str>) -> Result<Option<&str>> {
     let Some(endpoint) = endpoint.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(None);
     };
