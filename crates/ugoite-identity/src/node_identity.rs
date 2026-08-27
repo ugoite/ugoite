@@ -8901,7 +8901,7 @@ mod tests {
             .save_oidc_attempt(
                 provider_id,
                 "one-shot-state",
-                Uuid::now_v7().to_string(),
+                &Uuid::now_v7().to_string(),
                 "verifier",
                 None,
                 None,
@@ -8963,7 +8963,7 @@ mod tests {
             .save_oidc_attempt(
                 provider_id,
                 "disabled-inflight-state",
-                Uuid::now_v7().to_string(),
+                &Uuid::now_v7().to_string(),
                 "verifier",
                 None,
                 None,
@@ -8976,7 +8976,7 @@ mod tests {
             .save_oidc_attempt(
                 provider_id,
                 "disabled-state",
-                Uuid::now_v7().to_string(),
+                &Uuid::now_v7().to_string(),
                 "verifier",
                 None,
                 None
@@ -9110,7 +9110,7 @@ mod tests {
             .save_oidc_attempt(
                 provider_id,
                 "stale-link-state",
-                Uuid::now_v7().to_string(),
+                &Uuid::now_v7().to_string(),
                 "verifier",
                 None,
                 Some(account_id),
@@ -9986,7 +9986,7 @@ mod tests {
             .save_oidc_attempt(
                 provider_id,
                 "oidc-state",
-                Uuid::now_v7().to_string(),
+                &Uuid::now_v7().to_string(),
                 "pkce",
                 Some(token),
                 None,
