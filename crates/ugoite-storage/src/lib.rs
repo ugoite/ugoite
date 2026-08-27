@@ -10,6 +10,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::env;
 use std::fmt;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -5023,7 +5024,8 @@ pub fn operator_from_uri_with_endpoint(uri: &str, endpoint: Option<&str>) -> Res
             .host_str()
             .ok_or_else(|| anyhow::anyhow!("s3 storage URI must include a bucket"))?;
         let root = parsed.path().trim_start_matches('/');
-        let mut builder = S3::default().bucket(bucket).root(root).region("us-east-1");
+        let region = configured_s3_region();
+        let mut builder = S3::default().bucket(bucket).root(root).region(&region);
         if let Some(endpoint) = endpoint {
             builder = builder.endpoint(endpoint);
         }
@@ -5031,6 +5033,22 @@ pub fn operator_from_uri_with_endpoint(uri: &str, endpoint: Option<&str>) -> Res
     }
 
     Ok(Operator::from_uri(uri)?)
+}
+
+fn configured_s3_region() -> String {
+    configured_s3_region_from(
+        env::var("AWS_REGION").ok().as_deref(),
+        env::var("AWS_DEFAULT_REGION").ok().as_deref(),
+    )
+}
+
+fn configured_s3_region_from(aws_region: Option<&str>, aws_default_region: Option<&str>) -> String {
+    [aws_region, aws_default_region]
+        .into_iter()
+        .flatten()
+        .find(|value| !value.trim().is_empty())
+        .unwrap_or("us-east-1")
+        .to_string()
 }
 
 #[derive(Clone)]
@@ -5553,6 +5571,19 @@ mod tests {
         assert_eq!(op.info().root(), "/prefix/");
 
         Ok(())
+    }
+
+    #[test]
+    fn configured_s3_region_prefers_deployment_region() {
+        assert_eq!(
+            super::configured_s3_region_from(Some("eu-west-1"), Some("us-west-2")),
+            "eu-west-1"
+        );
+        assert_eq!(
+            super::configured_s3_region_from(Some(" "), Some("us-west-2")),
+            "us-west-2"
+        );
+        assert_eq!(super::configured_s3_region_from(None, None), "us-east-1");
     }
 
     #[test]

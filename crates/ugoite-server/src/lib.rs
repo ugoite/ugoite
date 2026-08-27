@@ -479,7 +479,9 @@ pub struct AppState {
 impl AppState {
     pub fn new(root_uri: impl Into<String>) -> anyhow::Result<Self> {
         let root_uri = root_uri.into();
-        let service = UgoiteService::new(root_uri)?;
+        let endpoint = env::var("UGOITE_STORAGE_ENDPOINT").ok();
+        let endpoint = space::validate_storage_endpoint(endpoint.as_deref())?;
+        let service = UgoiteService::new_with_endpoint(root_uri, endpoint)?;
         let public_origin = env::var("UGOITE_PUBLIC_ORIGIN")
             .unwrap_or_else(|_| "http://localhost:8000".to_string());
         let rp_id = env::var("UGOITE_WEBAUTHN_RP_ID").unwrap_or_else(|_| {
