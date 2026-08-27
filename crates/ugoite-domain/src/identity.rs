@@ -262,7 +262,6 @@ impl AgentPrincipal {
 
 pub fn oidc_external_subject(issuer: &str, subject: &str) -> Result<String> {
     let issuer = issuer.trim().trim_end_matches('/');
-    let subject = subject.trim();
     if issuer.is_empty() || subject.is_empty() || issuer.contains('\n') || subject.contains('\n') {
         bail!("OIDC issuer and subject must be non-empty single-line values");
     }
@@ -316,6 +315,14 @@ mod tests {
         assert_eq!(
             oidc_external_subject("https://id.example/", "user-42").unwrap(),
             "https://id.example\nuser-42"
+        );
+    }
+
+    #[test]
+    fn oidc_subject_is_not_normalized_into_another_identity() {
+        assert_ne!(
+            oidc_external_subject("https://id.example", "user-42").unwrap(),
+            oidc_external_subject("https://id.example", " user-42").unwrap(),
         );
     }
 

@@ -12,7 +12,7 @@ stories:
       - Every client requires authenticated user login for the target space
       - Future primary login may use passkey/WebAuthn without passwords
       - Admin can issue one-time invite token for first-time registration
-      - Optional OAuth2 account linking is supported and can auto-provision users
+      - Invitation-gated OIDC account linking is supported and can provision the invited HumanAccount
       - Space creator is initial admin and can delegate admin privileges
       - Form-level read/write permissions can target User or UserGroup
       - Materialized views inherit access policy from source Forms
@@ -21,7 +21,7 @@ stories:
     requirements: []
     milestone: User Management
     status: planned
-    implementation_notes: OIDC linking, administrator recovery, and Agent Principals are future/reference designs. Account Self-Recovery is supported only with an exact Account ID, one offline Recovery Code, and recovery-only TOTP. Owner-approved Space access recovery, Remote CLI device authentication, Passkey, Space membership/roles, resource ACLs, and read-only authorization audit history are supported v0.1 capabilities; the remaining endpoint inventory is an implementation reference.
+    implementation_notes: Invitation-gated OIDC linking, Account Self-Recovery, Owner-approved Space access recovery, Remote CLI device authentication, Passkey, Space membership/roles, resource ACLs, and read-only authorization audit history are supported v0.1 capabilities. Administrator recovery and Agent Principals remain reference designs; the remaining endpoint inventory is an implementation reference.
     planned_apis:
       - rest: POST /spaces/{space_id}/auth/webauthn/register/options
       - rest: POST /spaces/{space_id}/auth/webauthn/register/verify

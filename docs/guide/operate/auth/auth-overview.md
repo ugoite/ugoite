@@ -8,9 +8,10 @@ sidebar:
 > Passkey/WebAuthn registration and login, opaque browser sessions,
 > owner-approved Space access recovery, recovery-code + recovery-TOTP Account
 > Self-Recovery, Remote CLI device credentials, Space membership/ACL
-> enforcement, authenticated MCP access, and authorized audit reads are
-> supported. OIDC linking, administrator recovery, agent principals, and audit
-> CRUD remain future scope. TOTP is recovery-only.
+> enforcement, authenticated MCP access, authorized audit reads, and
+> invitation-gated OIDC authentication/account linking are supported.
+> Administrator recovery, agent principals, and audit CRUD remain future scope.
+> TOTP is recovery-only.
 
 Ugoite separates identity that belongs to one server from identity that must
 move with a Space.
@@ -20,7 +21,8 @@ move with a Space.
 Node Identity contains human accounts, Passkeys, browser sessions, device
 credentials, and Node administrator roles. CLI and MCP device credentials use
 the same internal machinery but are separated by resource and audience; OIDC
-links and agent principals are future designs. It is stored through the
+links are supported AuthenticationMethods, while agent principals remain a
+future design. It is stored through the
 atomic `NodeControlStore` below `_ugoite/nodes/{node_id}` and is never exported
 as part of a Space. `UGOITE_NODE_CONTROL_URI` may select a separate durable
 OpenDAL location. OIDC users are keyed by the exact `(issuer, subject)` pair;
@@ -66,8 +68,9 @@ expiry, and revocation state. A user can revoke any individual session; the
 change is enforced on its next request.
 
 Credential enrollment, MCP device approval, and role/ACL changes require a
-Passkey authentication within the preceding five minutes. Agent lifecycle and
-OIDC configuration are future scope. Accounts should register two or more Passkeys. Ugoite refuses to remove
+Passkey authentication within the preceding five minutes. OIDC provider
+configuration and identity linking use the same recent-Passkey boundary.
+Accounts should register two or more Passkeys. Ugoite refuses to remove
 the final Passkey.
 
 ## Account Self-Recovery
@@ -81,8 +84,8 @@ ACLs, ownership, and bindings while replacing the Node-local credential
 generation with a new Passkey, invalidating pre-recovery authentication
 authority, rotating all Recovery Codes, creating a new browser session, and
 emitting a secret-free Node audit event. TOTP is not accepted as a normal login
-factor, and neither factor works alone. OIDC linking, administrator recovery,
-account discovery, and operator overrides remain outside the v0.1 contract.
+factor, and neither factor works alone. Account Self-Recovery also removes all
+linked OIDC methods; a later OIDC link requires a new recent-Passkey session.
 
 ### Supported: owner-approved Space access recovery
 
@@ -106,14 +109,17 @@ concurrent completion has exactly one winner. Space audit delivery is durable
 and separate from completion, so the response reports `delivered` or `pending`
 without reissuing secrets.
 
-## Invitations and future identity providers
+## Invitations and OIDC identity providers
 
 Space owners issue a one-use invitation URL. Only the invitation hash, expiry,
 creator, Space UID, requested role, and its durable acceptance claim are stored.
 The recipient registers a Passkey or accepts with an existing signed-in
-account. OIDC authorization-code login and identity linking are future scope;
-they are not required for v0.1 membership acceptance and provider tokens are not
-accepted by the v0.1 API.
+account. An unknown OIDC identity is accepted only in this invitation journey;
+the invitation display name becomes the new HumanAccount display name. The
+result is an ordinary Federated browser session. The account can immediately
+register its first Passkey from that session; after that one bootstrap operation,
+all credential management again requires a recent Passkey. Provider tokens are
+never accepted by the v0.1 API.
 
 An account has at most one Node binding in a Space. If an already-bound account
 opens an invitation for that same Space, acceptance is idempotent and keeps the

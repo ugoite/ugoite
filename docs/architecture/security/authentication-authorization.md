@@ -7,10 +7,10 @@ sidebar:
 
 > v0.1 support boundary: Passkey/WebAuthn bootstrap and login, opaque browser
 > sessions, recovery-code + recovery-TOTP Account Self-Recovery, Space
-> membership/ACL enforcement, authenticated MCP access, and authorized audit
-> reads are supported. OIDC linking, administrator recovery, device
-> credentials, agent principals, and audit mutation remain future/reference
-> architecture. TOTP is recovery-only.
+> membership/ACL enforcement, authenticated MCP access, authorized audit
+> reads, and invitation-gated OIDC authentication/account linking are
+> supported. Administrator recovery, agent principals, and audit mutation
+> remain future/reference architecture. TOTP is recovery-only.
 
 Ugoite has one production authentication architecture. There is no selectable
 development authentication mode, default credential, fixed password, or shared
@@ -25,8 +25,10 @@ audit history below the portable Space directory. Authenticated MCP clients use
 short-lived, node-, audience-, Space-, action-, and sender-constrained access
 credentials; CLI/device credentials and agent credentials are future designs.
 
-OIDC identities, CLI/device credentials, and agent principals are retained in
-the architecture as future designs; they are not v0.1 support commitments.
+OIDC identities are Node-local AuthenticationMethods linked to HumanAccounts by
+the exact `(issuer, subject)` pair. They use the same BrowserSession, Principal,
+and ACL path as Passkey authentication. CLI/device credentials and agent
+principals remain separate capability boundaries.
 
 Host root, direct storage access, and operator-local CLI core mode remain
 outside the application authentication boundary. A Node administrator can
@@ -89,8 +91,9 @@ enables an exact comma-separated allowlist.
 
 ## External identity and recovery boundary
 
-OIDC linking, administrator recovery, account discovery, and operator overrides
-remain future/reference architecture. Account Self-Recovery is available only
+Administrator recovery, account discovery, and operator overrides remain
+future/reference architecture. The supported OIDC authentication and account
+linking boundary is narrow. Account Self-Recovery is available only
 for a HumanAccount with explicitly enrolled recovery TOTP and issued Recovery
 Codes.
 
@@ -98,8 +101,15 @@ OIDC uses Authorization Code with PKCE, discovery, exact issuer/redirect checks,
 state, nonce, and signature validation. The account key is exact issuer plus
 subject; email is never an identity key. An upstream token is never accepted by
 Ugoite resources. A new OIDC account requires an unexpired Ugoite invitation.
-Existing local accounts may accept invitations directly and may link an OIDC
-issuer/subject pair after recent Passkey authentication.
+Existing linked identities may log in. Unknown identities can create an account
+only through an unexpired Space Invitation; its display name is copied from the
+invitation, never from IdP profile claims. Existing accounts may link or unlink
+an OIDC issuer/subject pair only after recent Passkey authentication. The
+resulting session is an ordinary opaque Federated BrowserSession, which cannot
+perform Passkey-required operations. A just-created invited account can use
+its creation session to register exactly one first Passkey, after which normal
+credential rules apply. Provider disable is a soft disable that rejects new and
+in-flight attempts without deleting existing methods.
 
 Account Self-Recovery requires the exact Account ID, one currently valid
 offline Recovery Code, and a valid recovery-only TOTP code. Attempts are

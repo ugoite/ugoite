@@ -6,7 +6,8 @@ sidebar:
 
 > Release note: Passkey setup, passwordless browser login, and the explicit
 > recovery-only TOTP setup for Account Self-Recovery are supported v0.1
-> behavior. OIDC linking remains future/reference material.
+> behavior. Invitation-gated OIDC authentication and linking are also
+> supported when a provider is configured.
 
 Use these checks when the Compose service does not start, cannot be reached,
 rejects login, or appears to lose mounted data.

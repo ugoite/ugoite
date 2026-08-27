@@ -43,6 +43,7 @@ const SESSION_IDLE_HOURS: i64 = 24;
 const SESSION_ABSOLUTE_DAYS: i64 = 30;
 const INVITATION_LIFETIME_HOURS: i64 = 72;
 const TOTP_ENROLLMENT_LIFETIME_MINUTES: i64 = 10;
+const OIDC_ATTEMPT_LIFETIME_MINUTES: i64 = 10;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -96,6 +97,9 @@ enum RegistrationPurpose {
     Invitation {
         invitation_id: Uuid,
     },
+    Bootstrap {
+        session_id: Uuid,
+    },
     AddCredential,
     Recovery,
     OwnerRecovery {
@@ -129,6 +133,10 @@ pub struct BrowserSession {
     pub expires_at: String,
     pub authenticated_at: String,
     pub revoked_at: Option<String>,
+    /// Only the Federated session issued for an invitation-created OIDC
+    /// account may use the one-time first-Passkey bootstrap path. The normal
+    /// BrowserSession model remains the sole session model.
+    pub passkey_bootstrap: bool,
     /// Sessions created by owner recovery are accepted only after the
     /// matching reset marker is durably committed.
     #[serde(default)]
@@ -147,6 +155,7 @@ pub struct AuthenticatedSession {
     pub session_id: Uuid,
     pub credential_id: Uuid,
     pub assurance: AssuranceLevel,
+    pub passkey_bootstrap: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -739,18 +748,36 @@ pub struct OidcProvider {
 pub struct OidcLoginAttempt {
     pub state_hash: String,
     pub provider_id: Uuid,
+    pub purpose: OidcAttemptPurpose,
     pub nonce: String,
     pub pkce_verifier: String,
-    pub invitation_hash: Option<String>,
-    #[serde(default)]
-    pub link_account_id: Option<Uuid>,
-    #[serde(default)]
-    pub link_account_generation: Option<u64>,
-    #[serde(default)]
-    pub invitation_account_id: Option<Uuid>,
-    #[serde(default)]
-    pub invitation_account_generation: Option<u64>,
+    /// Hash of the browser session that initiated a link attempt. Login and
+    /// invitation attempts are bound to the short-lived state cookie instead.
+    pub initiating_session_hash: Option<String>,
     pub expires_at: String,
+}
+
+/// The operation meaning is fixed when authorization starts. The callback
+/// never infers it from query parameters, claims, or the current session.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OidcAttemptPurpose {
+    Login,
+    Invitation {
+        invitation_id: Uuid,
+    },
+    Link {
+        account_id: Uuid,
+        credential_generation: u64,
+    },
+}
+
+#[derive(Debug)]
+pub struct OidcLoginCompletion {
+    pub account: HumanAccount,
+    pub session_id: Option<String>,
+    pub invitation: Option<AccountInvitation>,
+    pub passkey_bootstrap: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1135,6 +1162,7 @@ pub struct NodeIdentityService {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ActiveCredentialKind {
     Passkey,
+    Oidc,
     Device,
     Agent,
 }
@@ -1942,6 +1970,31 @@ impl NodeIdentityService {
         self.write_state(&state).await
     }
 
+    /// Seed a provider for the server's in-process mock-issuer integration
+    /// tests. Production provider creation still goes through discovery and
+    /// HTTPS validation in the server adapter.
+    #[doc(hidden)]
+    pub async fn seed_test_oidc_provider(&self, provider: OidcProvider) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        state.lifecycle = NodeLifecycle::Active;
+        state.setup = None;
+        state.oidc_providers.insert(provider.provider_id, provider);
+        self.write_state(&state).await
+    }
+
+    /// Read an attempt for the server's mock OIDC issuer tests without
+    /// consuming it. Production callbacks use `consume_oidc_attempt` only.
+    #[doc(hidden)]
+    pub async fn inspect_test_oidc_attempt(&self, state_token: &str) -> Result<OidcLoginAttempt> {
+        let state = self.read_state().await?;
+        state
+            .oidc_attempts
+            .get(&token_hash(state_token))
+            .cloned()
+            .ok_or_else(|| anyhow!("OIDC test attempt not found"))
+    }
+
     /// Seed the Node bindings and credentials needed by cross-crate approval
     /// tests. This is deliberately hidden from the public product contract;
     /// production registration still requires the normal Passkey ceremony.
@@ -2634,6 +2687,144 @@ impl NodeIdentityService {
         })
     }
 
+    /// Starts the only credential-management operation allowed from a
+    /// Federated session: registering the first Passkey immediately after an
+    /// invitation-created OIDC account.
+    pub async fn start_bootstrap_passkey(
+        &self,
+        session_token: &str,
+        account_id: Uuid,
+    ) -> Result<RegistrationStart> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let session = self
+            .validate_bootstrap_session(&state, session_token, account_id)
+            .await?;
+        let account = state
+            .accounts
+            .get(&account_id)
+            .filter(|account| matches!(account.status, AccountStatus::Active))
+            .cloned()
+            .ok_or_else(|| anyhow!("account is not active"))?;
+        if state
+            .passkeys
+            .values()
+            .any(|passkey| passkey.account_id == account_id)
+        {
+            bail!("first Passkey bootstrap has already completed");
+        }
+        let (mut public_key, registration) = self.webauthn.start_passkey_registration(
+            Uuid::now_v7(),
+            &account_id.to_string(),
+            &account.display_name,
+            None,
+        )?;
+        if let Some(selection) = public_key.public_key.authenticator_selection.as_mut() {
+            selection.resident_key = Some(serde_json::from_value(serde_json::json!("required"))?);
+            selection.require_resident_key = true;
+        }
+        let challenge_id = Uuid::now_v7();
+        state.registration_challenges.insert(
+            challenge_id,
+            RegistrationChallenge {
+                account_id,
+                credential_generation: account.credential_generation,
+                display_name: account.display_name,
+                state: registration,
+                public_key: Some(public_key.clone()),
+                recovery_code_hash: None,
+                purpose: RegistrationPurpose::Bootstrap {
+                    session_id: session.session_id,
+                },
+                expires_at: timestamp(Utc::now() + Duration::minutes(CHALLENGE_LIFETIME_MINUTES)),
+            },
+        );
+        self.write_state(&state).await?;
+        Ok(RegistrationStart {
+            challenge_id,
+            public_key,
+        })
+    }
+
+    pub async fn finish_bootstrap_passkey(
+        &self,
+        session_token: &str,
+        account_id: Uuid,
+        challenge_id: Uuid,
+        credential: &RegisterPublicKeyCredential,
+    ) -> Result<serde_json::Value> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let session = self
+            .validate_bootstrap_session(&state, session_token, account_id)
+            .await?;
+        let challenge = state
+            .registration_challenges
+            .remove(&challenge_id)
+            .ok_or_else(|| anyhow!("unknown or consumed registration challenge"))?;
+        let result = (|| -> Result<serde_json::Value> {
+            if challenge.account_id != account_id
+                || !matches!(challenge.purpose, RegistrationPurpose::Bootstrap { session_id } if session_id == session.session_id)
+            {
+                bail!("registration challenge has wrong account or purpose");
+            }
+            if state.accounts.get(&account_id).is_none_or(|account| {
+                account.credential_generation != challenge.credential_generation
+            }) {
+                bail!("registration challenge is stale");
+            }
+            validate_expiry(&challenge.expires_at, "registration challenge")?;
+            if state
+                .passkeys
+                .values()
+                .any(|passkey| passkey.account_id == account_id)
+            {
+                bail!("first Passkey bootstrap has already completed");
+            }
+            let passkey = self
+                .webauthn
+                .finish_passkey_registration(credential, &challenge.state)
+                .context("verify bootstrap Passkey registration")?;
+            let credential_id = URL_SAFE_NO_PAD.encode(passkey.cred_id());
+            if state.passkeys.contains_key(&credential_id) {
+                bail!("credential is already registered");
+            }
+            let now = timestamp(Utc::now());
+            let method_id = Uuid::now_v7();
+            state.passkeys.insert(
+                credential_id.clone(),
+                StoredPasskey {
+                    credential_id: credential_id.clone(),
+                    account_id,
+                    method_id,
+                    passkey,
+                    created_at: now.clone(),
+                    last_used_at: Some(now.clone()),
+                    rp_id: self.rp_id.clone(),
+                },
+            );
+            state.authentication_methods.insert(
+                method_id,
+                AuthenticationMethod {
+                    method_id,
+                    account_id,
+                    kind: AuthenticationMethodKind::Passkey,
+                    external_subject: None,
+                    created_at: now.clone(),
+                    last_used_at: Some(now),
+                },
+            );
+            Ok(serde_json::json!({
+                "credential_id": credential_id,
+                "setup_activated": false,
+            }))
+        })();
+        // Keep bootstrap registration one-shot even when WebAuthn validation
+        // fails: the challenge was removed before verification.
+        self.write_state(&state).await?;
+        result
+    }
+
     pub async fn finish_add_passkey(
         &self,
         account_id: Uuid,
@@ -3019,13 +3210,7 @@ impl NodeIdentityService {
         let now = timestamp(Utc::now());
         invalidate_pending_recovery_responses(&mut state, account_id, &now);
         invalidate_pending_account_recovery_challenges(&mut state, account_id);
-        state
-            .passkeys
-            .retain(|_, stored_passkey| stored_passkey.account_id != account_id);
-        state.authentication_methods.retain(|_, method| {
-            method.account_id != account_id
-                || !matches!(&method.kind, AuthenticationMethodKind::Passkey)
-        });
+        invalidate_account_credentials(&mut state, account_id);
         let method_id = Uuid::now_v7();
         state.passkeys.insert(
             credential_id.clone(),
@@ -3047,7 +3232,7 @@ impl NodeIdentityService {
                 kind: AuthenticationMethodKind::Passkey,
                 external_subject: None,
                 created_at: now.clone(),
-                last_used_at: Some(now),
+                last_used_at: Some(now.clone()),
             },
         );
         let account = state
@@ -3069,7 +3254,23 @@ impl NodeIdentityService {
         recovery.code_hashes = recovery_codes.iter().map(|code| token_hash(code)).collect();
         recovery.failed_attempts = 0;
         recovery.locked_until = None;
+        for credential in state
+            .device_credentials
+            .values_mut()
+            .filter(|credential| credential.account_id == account_id)
+        {
+            credential.revoked_at = Some(now.clone());
+        }
+        for refresh in state
+            .refresh_credentials
+            .values_mut()
+            .filter(|refresh| refresh.account_id == account_id)
+        {
+            refresh.revoked_at = Some(now.clone());
+        }
         self.write_state(&state).await?;
+        self.revoke_account_sessions(state.node_id, account_id, &now)
+            .await?;
         let session_id = self
             .create_session(
                 &state,
@@ -4573,6 +4774,7 @@ impl NodeIdentityService {
             session_id: session.session_id,
             credential_id: session.credential_id,
             assurance: session.assurance.clone(),
+            passkey_bootstrap: session.passkey_bootstrap,
         };
         if refresh_idle_deadline
             && self
@@ -4763,6 +4965,62 @@ impl NodeIdentityService {
             return Ok(false);
         }
         Ok(Utc::now() - parse_timestamp(&session.authenticated_at)? <= Duration::minutes(5))
+    }
+
+    async fn validate_bootstrap_session(
+        &self,
+        state: &NodeState,
+        session_token: &str,
+        account_id: Uuid,
+    ) -> Result<BrowserSession> {
+        let record = self
+            .state_store
+            .get(&session_key(state.node_id, &token_hash(session_token)))
+            .await?
+            .ok_or_else(|| anyhow!("invalid session"))?;
+        let session: BrowserSession = serde_json::from_slice(&record.value)?;
+        if session.account_id != account_id
+            || session.revoked_at.is_some()
+            || !session.passkey_bootstrap
+            || !matches!(session.assurance, AssuranceLevel::Federated)
+        {
+            bail!("first Passkey bootstrap is unavailable");
+        }
+        validate_expiry(&session.expires_at, "session")?;
+        if Utc::now() - parse_timestamp(&session.last_seen_at)?
+            > Duration::hours(SESSION_IDLE_HOURS)
+        {
+            bail!("session idle timeout exceeded");
+        }
+        let account = state
+            .accounts
+            .get(&account_id)
+            .filter(|account| {
+                matches!(account.status, AccountStatus::Active)
+                    && account.credential_generation == session.credential_generation
+            })
+            .ok_or_else(|| anyhow!("account is not active"))?;
+        if state
+            .passkeys
+            .values()
+            .any(|passkey| passkey.account_id == account.account_id)
+        {
+            bail!("first Passkey bootstrap has already completed");
+        }
+        if !state
+            .authentication_methods
+            .get(&session.credential_id)
+            .is_some_and(|method| {
+                method.account_id == account_id
+                    && matches!(method.kind, AuthenticationMethodKind::Oidc)
+            })
+        {
+            bail!("first Passkey bootstrap requires the invitation OIDC session");
+        }
+        if !recovery_session_is_committed(&session, &state.recovery_reset_markers) {
+            bail!("recovery session was not the committed reset winner");
+        }
+        Ok(session)
     }
 
     pub async fn revalidate_recent_passkey_session(
@@ -6012,11 +6270,25 @@ impl NodeIdentityService {
             bail!("node admin role is required");
         }
         let issuer = issuer.trim().trim_end_matches('/');
-        if !issuer.starts_with("https://") {
+        let parsed_issuer = Url::parse(issuer).context("invalid OIDC issuer URL")?;
+        if parsed_issuer.scheme() != "https"
+            || parsed_issuer.host_str().is_none()
+            || !parsed_issuer.username().is_empty()
+            || parsed_issuer.password().is_some()
+            || parsed_issuer.query().is_some()
+            || parsed_issuer.fragment().is_some()
+        {
             bail!("OIDC issuer must use https");
         }
         if client_id.trim().is_empty() {
             bail!("OIDC client_id is required");
+        }
+        if state
+            .oidc_providers
+            .values()
+            .any(|provider| provider.enabled && provider.issuer == issuer)
+        {
+            bail!("an enabled OIDC provider already uses this issuer");
         }
         let provider_id = Uuid::now_v7();
         let encrypted_secret = client_secret
@@ -6046,6 +6318,7 @@ impl NodeIdentityService {
         Ok(state
             .oidc_providers
             .values()
+            .filter(|provider| provider.enabled)
             .cloned()
             .map(|mut provider| {
                 provider.client_secret = None;
@@ -6075,6 +6348,31 @@ impl NodeIdentityService {
         Ok(provider)
     }
 
+    pub async fn disable_oidc_provider(
+        &self,
+        actor: Uuid,
+        provider_id: Uuid,
+    ) -> Result<OidcProvider> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let actor = state
+            .accounts
+            .get(&actor)
+            .ok_or_else(|| anyhow!("actor not found"))?;
+        if !actor.node_roles.contains(&NodeRole::NodeAdmin) {
+            bail!("node admin role is required");
+        }
+        let provider = state
+            .oidc_providers
+            .get_mut(&provider_id)
+            .ok_or_else(|| anyhow!("OIDC provider not found"))?;
+        provider.enabled = false;
+        let mut response = provider.clone();
+        response.client_secret = None;
+        self.write_state(&state).await?;
+        Ok(response)
+    }
+
     pub async fn save_oidc_attempt(
         &self,
         provider_id: Uuid,
@@ -6084,6 +6382,32 @@ impl NodeIdentityService {
         invitation_token: Option<&str>,
         link_account_id: Option<Uuid>,
     ) -> Result<()> {
+        self.save_oidc_attempt_with_session(
+            provider_id,
+            state_token,
+            nonce,
+            pkce_verifier,
+            invitation_token,
+            link_account_id,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn save_oidc_attempt_with_session(
+        &self,
+        provider_id: Uuid,
+        state_token: &str,
+        nonce: &str,
+        pkce_verifier: &str,
+        invitation_token: Option<&str>,
+        link_account_id: Option<Uuid>,
+        initiating_session_token: Option<&str>,
+    ) -> Result<()> {
+        if invitation_token.is_some() && link_account_id.is_some() {
+            bail!("OIDC attempt cannot combine invitation and link purposes");
+        }
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
         if !state
@@ -6093,54 +6417,56 @@ impl NodeIdentityService {
         {
             bail!("OIDC provider is not enabled");
         }
-        if let Some(account_id) = link_account_id {
+        let purpose = if let Some(account_id) = link_account_id {
             ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
-        }
-        if let Some(space_uid) = invitation_token.and_then(|token| {
-            state
-                .invitations
-                .values()
-                .find(|invitation| invitation.token_hash == token_hash(token))
-                .and_then(|invitation| invitation.space_uid)
-        }) {
-            ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
-        }
-        let invitation_account_id = invitation_token.and_then(|token| {
-            state
-                .invitations
-                .values()
-                .find(|invitation| invitation.token_hash == token_hash(token))
-                .and_then(|invitation| invitation.acceptance.as_ref())
-                .map(InvitationAcceptance::account_id)
-        });
-        if let Some(account_id) = invitation_account_id {
-            ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
-        }
-        let invitation_account_generation = invitation_account_id.and_then(|account_id| {
-            state
+            let account = state
                 .accounts
                 .get(&account_id)
-                .map(|account| account.credential_generation)
-        });
-        let link_account_generation = link_account_id.and_then(|account_id| {
-            state
-                .accounts
-                .get(&account_id)
-                .map(|account| account.credential_generation)
+                .filter(|account| matches!(account.status, AccountStatus::Active))
+                .ok_or_else(|| anyhow!("account is not active"))?;
+            OidcAttemptPurpose::Link {
+                account_id,
+                credential_generation: account.credential_generation,
+            }
+        } else if let Some(invitation_token) = invitation_token {
+            let invitation = state
+                .invitations
+                .values()
+                .find(|invitation| invitation.token_hash == token_hash(invitation_token))
+                .cloned()
+                .ok_or_else(|| anyhow!("invitation is invalid"))?;
+            validate_expiry(&invitation.expires_at, "invitation")?;
+            if invitation.acceptance.as_ref().is_some_and(|acceptance| {
+                !matches!(acceptance.kind(), InvitationAcceptanceKind::Oidc)
+            }) {
+                bail!("invitation is invalid or used");
+            }
+            if let Some(space_uid) = invitation.space_uid {
+                ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
+            }
+            if let Some(acceptance) = invitation.acceptance.as_ref() {
+                ensure_node_account_recovery_mutation_allowed(&mut state, acceptance.account_id())?;
+            }
+            OidcAttemptPurpose::Invitation {
+                invitation_id: invitation.invitation_id,
+            }
+        } else {
+            OidcAttemptPurpose::Login
+        };
+        let now = Utc::now();
+        state.oidc_attempts.retain(|_, attempt| {
+            parse_timestamp(&attempt.expires_at).is_ok_and(|expires_at| expires_at > now)
         });
         state.oidc_attempts.insert(
             token_hash(state_token),
             OidcLoginAttempt {
                 state_hash: token_hash(state_token),
                 provider_id,
+                purpose,
                 nonce: nonce.to_string(),
                 pkce_verifier: pkce_verifier.to_string(),
-                invitation_hash: invitation_token.map(token_hash),
-                link_account_id,
-                link_account_generation,
-                invitation_account_id,
-                invitation_account_generation,
-                expires_at: timestamp(Utc::now() + Duration::minutes(10)),
+                initiating_session_hash: initiating_session_token.map(token_hash),
+                expires_at: timestamp(now + Duration::minutes(OIDC_ATTEMPT_LIFETIME_MINUTES)),
             },
         );
         self.write_state(&state).await
@@ -6153,79 +6479,98 @@ impl NodeIdentityService {
             .oidc_attempts
             .remove(&token_hash(state_token))
             .ok_or_else(|| anyhow!("invalid OIDC state"))?;
-        validate_expiry(&attempt.expires_at, "OIDC login attempt")?;
-        if let (Some(account_id), Some(expected_generation)) =
-            (attempt.link_account_id, attempt.link_account_generation)
-        {
-            ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
-            if state
-                .accounts
-                .get(&account_id)
-                .is_none_or(|account| account.credential_generation != expected_generation)
+        // Persist the removal before validating the rest of the transaction.
+        // Invalid, expired, stale, and disabled-provider callbacks are all
+        // one-shot and cannot be replayed.
+        let validation = (|| -> Result<()> {
+            validate_expiry(&attempt.expires_at, "OIDC login attempt")?;
+            if !state
+                .oidc_providers
+                .get(&attempt.provider_id)
+                .is_some_and(|provider| provider.enabled)
             {
-                bail!("OIDC login attempt is stale");
+                bail!("OIDC provider is not enabled");
             }
-        }
-        if let (Some(account_id), Some(expected_generation)) = (
-            attempt.invitation_account_id,
-            attempt.invitation_account_generation,
-        ) {
-            ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
-            if state
-                .accounts
-                .get(&account_id)
-                .is_none_or(|account| account.credential_generation != expected_generation)
-            {
-                bail!("OIDC invitation login attempt is stale");
+            match &attempt.purpose {
+                OidcAttemptPurpose::Login => {}
+                OidcAttemptPurpose::Link {
+                    account_id,
+                    credential_generation,
+                } => {
+                    ensure_node_account_recovery_mutation_allowed(&mut state, *account_id)?;
+                    if state.accounts.get(account_id).is_none_or(|account| {
+                        account.credential_generation != *credential_generation
+                    }) {
+                        bail!("OIDC login attempt is stale");
+                    }
+                }
+                OidcAttemptPurpose::Invitation { invitation_id } => {
+                    let invitation = state
+                        .invitations
+                        .get(invitation_id)
+                        .cloned()
+                        .ok_or_else(|| anyhow!("OIDC invitation login attempt is stale"))?;
+                    if let Some(space_uid) = invitation.space_uid {
+                        ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
+                    }
+                    if let Some(acceptance) = invitation.acceptance {
+                        let account_id = acceptance.account_id();
+                        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+                        if state.accounts.get(&account_id).is_none_or(|account| {
+                            account.credential_generation != acceptance.credential_generation()
+                        }) {
+                            bail!("OIDC invitation login attempt is stale");
+                        }
+                    }
+                }
             }
-        }
-        let legacy_invitation_account = attempt.invitation_hash.as_ref().and_then(|hash| {
-            state
-                .invitations
-                .values()
-                .find(|invitation| invitation.token_hash == *hash)
-                .and_then(|invitation| invitation.acceptance.as_ref())
-                .map(InvitationAcceptance::account_id)
-        });
-        if let Some(account_id) = legacy_invitation_account {
-            let expected_generation = attempt
-                .invitation_account_generation
-                .ok_or_else(|| anyhow!("OIDC invitation login attempt is stale"))?;
-            ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
-            if state
-                .accounts
-                .get(&account_id)
-                .is_none_or(|account| account.credential_generation != expected_generation)
-            {
-                bail!("OIDC invitation login attempt is stale");
-            }
-        }
-        if let Some(space_uid) = attempt.invitation_hash.as_deref().and_then(|hash| {
-            state
-                .invitations
-                .values()
-                .find(|invitation| invitation.token_hash == hash)
-                .and_then(|invitation| invitation.space_uid)
-        }) {
-            ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
-        }
+            Ok(())
+        })();
         self.write_state(&state).await?;
+        validation?;
         Ok(attempt)
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn complete_oidc_login(
         &self,
+        provider_id: Uuid,
         issuer: &str,
         subject: &str,
-        display_name: &str,
-        invitation_hash: Option<&str>,
-        link_account_id: Option<Uuid>,
-        link_account_generation: Option<u64>,
-        invitation_account_generation: Option<u64>,
-    ) -> Result<(HumanAccount, String, Option<AccountInvitation>)> {
+        purpose: &OidcAttemptPurpose,
+    ) -> Result<OidcLoginCompletion> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        let provider = state
+            .oidc_providers
+            .get(&provider_id)
+            .filter(|provider| provider.enabled)
+            .cloned()
+            .ok_or_else(|| anyhow!("OIDC provider is not enabled"))?;
+        if provider.issuer != issuer.trim().trim_end_matches('/') {
+            bail!("OIDC issuer does not match the configured provider");
+        }
+        let (link_account_id, link_account_generation) = match purpose {
+            OidcAttemptPurpose::Link {
+                account_id,
+                credential_generation,
+            } => (Some(*account_id), Some(*credential_generation)),
+            _ => (None, None),
+        };
+        let invitation_hash = match purpose {
+            OidcAttemptPurpose::Invitation { invitation_id } => state
+                .invitations
+                .get(invitation_id)
+                .map(|invitation| invitation.token_hash.clone()),
+            _ => None,
+        };
+        let invitation_account_generation = match purpose {
+            OidcAttemptPurpose::Invitation { invitation_id } => state
+                .invitations
+                .get(invitation_id)
+                .and_then(|invitation| invitation.acceptance.as_ref())
+                .map(InvitationAcceptance::credential_generation),
+            _ => None,
+        };
         if let Some(link_account_id) = link_account_id {
             let expected_generation = link_account_generation
                 .ok_or_else(|| anyhow!("OIDC login attempt is missing credential generation"))?;
@@ -6247,6 +6592,7 @@ impl NodeIdentityService {
                     && method.external_subject.as_deref() == Some(&external_subject)
             })
             .map(|method| method.account_id);
+        let mut new_account = false;
         let (account, invitation) = if let Some(link_account_id) = link_account_id {
             if existing_account.is_some_and(|account_id| account_id != link_account_id) {
                 bail!("OIDC identity is already linked to another account");
@@ -6264,11 +6610,11 @@ impl NodeIdentityService {
             }
             (account, None)
         } else if let Some(account_id) = existing_account {
-            let invitation_is_already_bound = invitation_hash.is_some_and(|hash| {
+            let invitation_is_already_bound = invitation_hash.as_ref().is_some_and(|hash| {
                 state
                     .invitations
                     .values()
-                    .find(|invitation| invitation.token_hash == hash)
+                    .find(|invitation| invitation.token_hash == *hash)
                     .and_then(|invitation| invitation.acceptance.as_ref())
                     .is_some()
             });
@@ -6349,11 +6695,7 @@ impl NodeIdentityService {
             }
             let account = HumanAccount {
                 account_id: Uuid::now_v7(),
-                display_name: if display_name.trim().is_empty() {
-                    invitation.display_name.clone()
-                } else {
-                    normalized_display_name(display_name)?
-                },
+                display_name: normalized_display_name(&invitation.display_name)?,
                 status: AccountStatus::Active,
                 created_at: timestamp(Utc::now()),
                 node_roles: BTreeSet::new(),
@@ -6368,9 +6710,17 @@ impl NodeIdentityService {
             });
             let invitation_copy = invitation.clone();
             state.accounts.insert(account.account_id, account.clone());
+            new_account = true;
             (account, Some(invitation_copy))
         };
-        if existing_account.is_none() {
+        let now = timestamp(Utc::now());
+        if let Some(method) = state.authentication_methods.values_mut().find(|method| {
+            method.account_id == account.account_id
+                && matches!(method.kind, AuthenticationMethodKind::Oidc)
+                && method.external_subject.as_deref() == Some(&external_subject)
+        }) {
+            method.last_used_at = Some(now.clone());
+        } else {
             let method_id = Uuid::now_v7();
             state.authentication_methods.insert(
                 method_id,
@@ -6379,8 +6729,8 @@ impl NodeIdentityService {
                     account_id: account.account_id,
                     kind: AuthenticationMethodKind::Oidc,
                     external_subject: Some(external_subject.clone()),
-                    created_at: timestamp(Utc::now()),
-                    last_used_at: Some(timestamp(Utc::now())),
+                    created_at: now.clone(),
+                    last_used_at: Some(now),
                 },
             );
         }
@@ -6394,16 +6744,84 @@ impl NodeIdentityService {
             })
             .map(|method| method.method_id)
             .ok_or_else(|| anyhow!("OIDC authentication method is unavailable"))?;
-        let session = self
-            .create_session(
-                &state,
-                account.account_id,
-                method_id,
-                AssuranceLevel::Federated,
+        let session_id = if link_account_id.is_some() {
+            None
+        } else {
+            Some(
+                self.create_session_with_bootstrap(
+                    &state,
+                    account.account_id,
+                    method_id,
+                    AssuranceLevel::Federated,
+                    None,
+                    new_account,
+                )
+                .await?,
             )
-            .await?;
+        };
         self.write_state(&state).await?;
-        Ok((account, session, invitation))
+        Ok(OidcLoginCompletion {
+            account,
+            session_id,
+            invitation,
+            passkey_bootstrap: new_account,
+        })
+    }
+
+    pub async fn list_oidc_links(&self, account_id: Uuid) -> Result<Vec<serde_json::Value>> {
+        let state = self.read_state().await?;
+        state
+            .authentication_methods
+            .values()
+            .filter(|method| {
+                method.account_id == account_id
+                    && matches!(method.kind, AuthenticationMethodKind::Oidc)
+            })
+            .map(|method| {
+                let external_subject = method
+                    .external_subject
+                    .as_deref()
+                    .ok_or_else(|| anyhow!("OIDC authentication method is missing its identity"))?;
+                let issuer = external_subject
+                    .split_once('\n')
+                    .map(|(issuer, _)| issuer.to_string())
+                    .ok_or_else(|| anyhow!("OIDC authentication method has an invalid identity"))?;
+                Ok(serde_json::json!({
+                    "method_id": method.method_id,
+                    "issuer": issuer,
+                    "created_at": method.created_at,
+                    "last_used_at": method.last_used_at,
+                }))
+            })
+            .collect()
+    }
+
+    pub async fn unlink_oidc(
+        &self,
+        account_id: Uuid,
+        expected_generation: u64,
+        method_id: Uuid,
+    ) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+        if state
+            .accounts
+            .get(&account_id)
+            .is_none_or(|account| account.credential_generation != expected_generation)
+        {
+            bail!("credential generation is stale");
+        }
+        let method = state
+            .authentication_methods
+            .get(&method_id)
+            .ok_or_else(|| anyhow!("OIDC authentication method not found"))?;
+        if method.account_id != account_id || !matches!(method.kind, AuthenticationMethodKind::Oidc)
+        {
+            bail!("OIDC authentication method does not belong to the account");
+        }
+        state.authentication_methods.remove(&method_id);
+        self.write_state(&state).await
     }
 
     pub async fn record_proof_jti(&self, jti: &str) -> Result<()> {
@@ -6538,7 +6956,7 @@ impl NodeIdentityService {
         credential_id: Uuid,
         assurance: AssuranceLevel,
     ) -> Result<String> {
-        self.create_session_with_recovery(state, account_id, credential_id, assurance, None)
+        self.create_session_with_bootstrap(state, account_id, credential_id, assurance, None, false)
             .await
     }
 
@@ -6549,6 +6967,26 @@ impl NodeIdentityService {
         credential_id: Uuid,
         assurance: AssuranceLevel,
         recovery_reset_id: Option<Uuid>,
+    ) -> Result<String> {
+        self.create_session_with_bootstrap(
+            state,
+            account_id,
+            credential_id,
+            assurance,
+            recovery_reset_id,
+            false,
+        )
+        .await
+    }
+
+    async fn create_session_with_bootstrap(
+        &self,
+        state: &NodeState,
+        account_id: Uuid,
+        credential_id: Uuid,
+        assurance: AssuranceLevel,
+        recovery_reset_id: Option<Uuid>,
+        passkey_bootstrap: bool,
     ) -> Result<String> {
         let session_token = random_token(32)?;
         let now = Utc::now();
@@ -6571,6 +7009,7 @@ impl NodeIdentityService {
             expires_at: timestamp(now + Duration::days(SESSION_ABSOLUTE_DAYS)),
             authenticated_at: now_text,
             revoked_at: None,
+            passkey_bootstrap,
             recovery_reset_id,
             revocation_epoch: state
                 .session_revocation_epochs
@@ -6708,6 +7147,15 @@ impl NodeIdentityService {
     }
 }
 
+fn invalidate_account_credentials(state: &mut NodeState, account_id: Uuid) {
+    state
+        .passkeys
+        .retain(|_, passkey| passkey.account_id != account_id);
+    state
+        .authentication_methods
+        .retain(|_, method| method.account_id != account_id);
+}
+
 fn normalized_display_name(value: &str) -> Result<String> {
     let value = value.trim();
     if value.is_empty() || value.len() > 120 || value.contains(['\r', '\n']) {
@@ -6758,6 +7206,22 @@ fn validate_active_credential(
                 passkey.account_id == account_id && passkey.method_id == credential_id
             }) {
                 bail!("human approval request Passkey is no longer registered");
+            }
+        }
+        ActiveCredentialKind::Oidc => {
+            let account_id =
+                account_id.ok_or_else(|| anyhow!("human approval request account is missing"))?;
+            state
+                .accounts
+                .get(&account_id)
+                .filter(|account| matches!(account.status, AccountStatus::Active))
+                .ok_or_else(|| anyhow!("human approval request account is inactive"))?;
+            if !state.authentication_methods.values().any(|method| {
+                method.account_id == account_id
+                    && method.method_id == credential_id
+                    && matches!(method.kind, AuthenticationMethodKind::Oidc)
+            }) {
+                bail!("human approval request OIDC identity is no longer linked");
             }
         }
         ActiveCredentialKind::Device => {
@@ -7064,6 +7528,7 @@ mod tests {
             expires_at: "2099-01-01T00:00:00Z".to_string(),
             authenticated_at: "2026-01-01T00:00:00Z".to_string(),
             revoked_at: None,
+            passkey_bootstrap: false,
             recovery_reset_id: Some(reset_id),
             revocation_epoch: 0,
         };
@@ -8227,22 +8692,34 @@ mod tests {
                 },
             );
         }
+        let provider_id = Uuid::now_v7();
+        state.oidc_providers.insert(
+            provider_id,
+            OidcProvider {
+                provider_id,
+                issuer: "https://identity.example".to_string(),
+                client_id: "client".to_string(),
+                client_secret: None,
+                enabled: true,
+                created_at: timestamp(Utc::now()),
+            },
+        );
         service.write_state(&state).await?;
         let issuer = "https://identity.example";
         let subject = "stable-subject";
-        let (account, _, _) = service
+        let completion = service
             .complete_oidc_login(
+                provider_id,
                 issuer,
                 subject,
-                "ignored",
-                None,
-                Some(account_id),
-                Some(0),
-                None,
+                &OidcAttemptPurpose::Link {
+                    account_id,
+                    credential_generation: 0,
+                },
             )
             .await?;
-        assert_eq!(account.account_id, account_id);
-        let (invitation, invitation_token) = service
+        assert_eq!(completion.account.account_id, account_id);
+        let (invitation, _invitation_token) = service
             .issue_invitation(
                 account_id,
                 "OIDC invite",
@@ -8250,33 +8727,459 @@ mod tests {
                 Some("viewer".to_string()),
             )
             .await?;
-        let (_, _, accepted) = service
+        let completion = service
             .complete_oidc_login(
+                provider_id,
                 issuer,
                 subject,
-                "ignored",
-                Some(&token_hash(&invitation_token)),
-                None,
-                None,
-                None,
+                &OidcAttemptPurpose::Invitation {
+                    invitation_id: invitation.invitation_id,
+                },
             )
             .await?;
         assert_eq!(
-            accepted.map(|value| value.invitation_id),
+            completion.invitation.map(|value| value.invitation_id),
             Some(invitation.invitation_id)
         );
         assert!(service
             .complete_oidc_login(
+                provider_id,
                 issuer,
                 subject,
-                "ignored",
-                None,
-                Some(other_account_id),
-                Some(0),
-                None,
+                &OidcAttemptPurpose::Link {
+                    account_id: other_account_id,
+                    credential_generation: 0,
+                },
             )
             .await
             .is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oidc_unknown_identity_requires_invitation() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let provider_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.oidc_providers.insert(
+            provider_id,
+            OidcProvider {
+                provider_id,
+                issuer: "https://issuer.example".to_string(),
+                client_id: "client".to_string(),
+                client_secret: None,
+                enabled: true,
+                created_at: timestamp(Utc::now()),
+            },
+        );
+        service.write_state(&state).await?;
+
+        let error = service
+            .complete_oidc_login(
+                provider_id,
+                "https://issuer.example",
+                "unknown-subject",
+                &OidcAttemptPurpose::Login,
+            )
+            .await
+            .expect_err("an unknown OIDC identity must not create an account from login");
+        assert!(error
+            .to_string()
+            .contains("new OIDC users require an invitation"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oidc_invitation_uses_invitation_display_name_and_federated_bootstrap_session(
+    ) -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let actor_id = Uuid::now_v7();
+        let provider_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.accounts.insert(
+            actor_id,
+            HumanAccount {
+                account_id: actor_id,
+                display_name: "Node admin".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: [NodeRole::NodeAdmin].into_iter().collect(),
+                credential_generation: 0,
+            },
+        );
+        state.oidc_providers.insert(
+            provider_id,
+            OidcProvider {
+                provider_id,
+                issuer: "https://issuer.example".to_string(),
+                client_id: "client".to_string(),
+                client_secret: None,
+                enabled: true,
+                created_at: timestamp(Utc::now()),
+            },
+        );
+        service.write_state(&state).await?;
+        let (invitation, _) = service
+            .issue_invitation(actor_id, "  Invitation display  ", None, None)
+            .await?;
+
+        let completion = service
+            .complete_oidc_login(
+                provider_id,
+                "https://issuer.example",
+                "subject-from-idp",
+                &OidcAttemptPurpose::Invitation {
+                    invitation_id: invitation.invitation_id,
+                },
+            )
+            .await?;
+        assert_eq!(completion.account.display_name, "Invitation display");
+        assert!(completion.passkey_bootstrap);
+        let session_token = completion.session_id.expect("OIDC login session");
+        let authenticated = service.authenticate_session(&session_token).await?;
+        assert_eq!(
+            authenticated.account.account_id,
+            completion.account.account_id
+        );
+        assert!(matches!(authenticated.assurance, AssuranceLevel::Federated));
+        assert!(authenticated.passkey_bootstrap);
+
+        let start = service
+            .start_bootstrap_passkey(&session_token, completion.account.account_id)
+            .await?;
+        let state = service.read_state().await?;
+        assert!(matches!(
+            state
+                .registration_challenges
+                .get(&start.challenge_id)
+                .map(|challenge| &challenge.purpose),
+            Some(RegistrationPurpose::Bootstrap { .. })
+        ));
+
+        let mut state = service.read_state().await?;
+        state.passkeys.insert(
+            "existing-passkey".to_string(),
+            StoredPasskey {
+                credential_id: "existing-passkey".to_string(),
+                account_id: completion.account.account_id,
+                method_id: Uuid::now_v7(),
+                passkey: test_passkey(),
+                created_at: timestamp(Utc::now()),
+                last_used_at: None,
+                rp_id: "localhost".to_string(),
+            },
+        );
+        service.write_state(&state).await?;
+        assert!(service
+            .start_bootstrap_passkey(&session_token, completion.account.account_id)
+            .await
+            .is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oidc_attempt_is_one_shot_after_validation_failure() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let provider_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.oidc_providers.insert(
+            provider_id,
+            OidcProvider {
+                provider_id,
+                issuer: "https://issuer.example".to_string(),
+                client_id: "client".to_string(),
+                client_secret: None,
+                enabled: true,
+                created_at: timestamp(Utc::now()),
+            },
+        );
+        service.write_state(&state).await?;
+        service
+            .save_oidc_attempt(
+                provider_id,
+                "one-shot-state",
+                "nonce",
+                "verifier",
+                None,
+                None,
+            )
+            .await?;
+        let mut state = service.read_state().await?;
+        state
+            .oidc_attempts
+            .get_mut(&token_hash("one-shot-state"))
+            .expect("saved attempt")
+            .expires_at = "2000-01-01T00:00:00Z".to_string();
+        service.write_state(&state).await?;
+        assert!(service
+            .consume_oidc_attempt("one-shot-state")
+            .await
+            .expect_err("expired attempt must fail")
+            .to_string()
+            .contains("OIDC login attempt has expired"));
+        assert!(service
+            .consume_oidc_attempt("one-shot-state")
+            .await
+            .expect_err("failed callback must not be replayable")
+            .to_string()
+            .contains("invalid OIDC state"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oidc_disabled_provider_rejects_new_attempts() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let actor_id = Uuid::now_v7();
+        let provider_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.accounts.insert(
+            actor_id,
+            HumanAccount {
+                account_id: actor_id,
+                display_name: "Node admin".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: [NodeRole::NodeAdmin].into_iter().collect(),
+                credential_generation: 0,
+            },
+        );
+        state.oidc_providers.insert(
+            provider_id,
+            OidcProvider {
+                provider_id,
+                issuer: "https://issuer.example".to_string(),
+                client_id: "client".to_string(),
+                client_secret: None,
+                enabled: true,
+                created_at: timestamp(Utc::now()),
+            },
+        );
+        service.write_state(&state).await?;
+        service
+            .save_oidc_attempt(
+                provider_id,
+                "disabled-inflight-state",
+                "nonce",
+                "verifier",
+                None,
+                None,
+            )
+            .await?;
+        service.disable_oidc_provider(actor_id, provider_id).await?;
+        assert!(service.list_oidc_providers().await?.is_empty());
+        assert!(service.oidc_provider(provider_id).await.is_err());
+        assert!(service
+            .save_oidc_attempt(
+                provider_id,
+                "disabled-state",
+                "nonce",
+                "verifier",
+                None,
+                None
+            )
+            .await
+            .is_err());
+        assert!(service
+            .consume_oidc_attempt("disabled-inflight-state")
+            .await
+            .expect_err("provider disable must reject an in-flight callback")
+            .to_string()
+            .contains("OIDC provider is not enabled"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oidc_unlink_rejects_another_accounts_method() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let other_account_id = Uuid::now_v7();
+        let method_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        for id in [account_id, other_account_id] {
+            state.accounts.insert(
+                id,
+                HumanAccount {
+                    account_id: id,
+                    display_name: id.to_string(),
+                    status: AccountStatus::Active,
+                    created_at: timestamp(Utc::now()),
+                    node_roles: BTreeSet::new(),
+                    credential_generation: 0,
+                },
+            );
+        }
+        state.authentication_methods.insert(
+            method_id,
+            AuthenticationMethod {
+                method_id,
+                account_id: other_account_id,
+                kind: AuthenticationMethodKind::Oidc,
+                external_subject: Some("https://issuer.example\nsubject".to_string()),
+                created_at: timestamp(Utc::now()),
+                last_used_at: None,
+            },
+        );
+        service.write_state(&state).await?;
+        assert!(service.unlink_oidc(account_id, 0, method_id).await.is_err());
+        assert!(service
+            .list_oidc_links(other_account_id)
+            .await?
+            .iter()
+            .any(|link| link["method_id"] == serde_json::json!(method_id)));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn federated_oidc_method_remains_valid_for_ordinary_mutations() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let method_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "Federated account".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+                credential_generation: 0,
+            },
+        );
+        state.authentication_methods.insert(
+            method_id,
+            AuthenticationMethod {
+                method_id,
+                account_id,
+                kind: AuthenticationMethodKind::Oidc,
+                external_subject: Some("https://issuer.example\nsubject".to_string()),
+                created_at: timestamp(Utc::now()),
+                last_used_at: None,
+            },
+        );
+        service.write_state(&state).await?;
+        let result = service
+            .with_active_credential(
+                method_id,
+                Some(account_id),
+                ActiveCredentialKind::Oidc,
+                || async { Ok::<_, anyhow::Error>("ordinary mutation") },
+            )
+            .await?;
+        assert_eq!(result, "ordinary mutation");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oidc_link_attempt_is_rejected_after_credential_authority_changes() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let provider_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "Link target".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+                credential_generation: 0,
+            },
+        );
+        state.oidc_providers.insert(
+            provider_id,
+            OidcProvider {
+                provider_id,
+                issuer: "https://issuer.example".to_string(),
+                client_id: "client".to_string(),
+                client_secret: None,
+                enabled: true,
+                created_at: timestamp(Utc::now()),
+            },
+        );
+        service.write_state(&state).await?;
+        service
+            .save_oidc_attempt(
+                provider_id,
+                "stale-link-state",
+                "nonce",
+                "verifier",
+                None,
+                Some(account_id),
+            )
+            .await?;
+        let mut state = service.read_state().await?;
+        state
+            .accounts
+            .get_mut(&account_id)
+            .expect("account")
+            .credential_generation = 1;
+        service.write_state(&state).await?;
+        let error = service
+            .consume_oidc_attempt("stale-link-state")
+            .await
+            .expect_err("a link started before recovery must be stale");
+        assert!(error.to_string().contains("OIDC login attempt is stale"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn recovery_credential_replacement_removes_oidc_methods() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "Recovery target".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+                credential_generation: 0,
+            },
+        );
+        state.authentication_methods.insert(
+            Uuid::now_v7(),
+            AuthenticationMethod {
+                method_id: Uuid::now_v7(),
+                account_id,
+                kind: AuthenticationMethodKind::Oidc,
+                external_subject: Some("https://issuer.example\nsubject".to_string()),
+                created_at: timestamp(Utc::now()),
+                last_used_at: None,
+            },
+        );
+        state.passkeys.insert(
+            "old-passkey".to_string(),
+            StoredPasskey {
+                credential_id: "old-passkey".to_string(),
+                account_id,
+                method_id: Uuid::now_v7(),
+                passkey: test_passkey(),
+                created_at: timestamp(Utc::now()),
+                last_used_at: None,
+                rp_id: "localhost".to_string(),
+            },
+        );
+        invalidate_account_credentials(&mut state, account_id);
+        assert!(!state
+            .authentication_methods
+            .values()
+            .any(|method| method.account_id == account_id));
+        assert!(!state
+            .passkeys
+            .values()
+            .any(|passkey| passkey.account_id == account_id));
         Ok(())
     }
 
@@ -8940,6 +9843,18 @@ mod tests {
                 created_by: issuer_account_id,
             },
         );
+        let provider_id = Uuid::now_v7();
+        state.oidc_providers.insert(
+            provider_id,
+            OidcProvider {
+                provider_id,
+                issuer: "https://issuer.example".to_string(),
+                client_id: "client".to_string(),
+                client_secret: None,
+                enabled: true,
+                created_at: timestamp(Utc::now()),
+            },
+        );
         service.write_state(&state).await?;
         let snapshot = RecoveryBindingSnapshot {
             request_id: Uuid::now_v7(),
@@ -8973,13 +9888,13 @@ mod tests {
             .is_err());
         assert!(service
             .complete_oidc_login(
+                provider_id,
                 "https://issuer.example",
                 "blocked-subject",
-                "Blocked",
-                None,
-                Some(target_account_id),
-                Some(0),
-                None,
+                &OidcAttemptPurpose::Link {
+                    account_id: target_account_id,
+                    credential_generation: 0,
+                },
             )
             .await
             .is_err());
@@ -9078,11 +9993,6 @@ mod tests {
             )
             .await?;
         let mut state = service.read_state().await?;
-        state
-            .oidc_attempts
-            .get_mut(&token_hash("oidc-state"))
-            .expect("saved OIDC attempt")
-            .invitation_account_generation = None;
         state
             .accounts
             .get_mut(&account_id)

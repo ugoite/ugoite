@@ -14,9 +14,9 @@ requirement_ids:
 - REQ-SEC-013
 - REQ-SEC-014
 - REQ-SEC-015
+- REQ-SEC-016
 future_requirement_ids:
 - REQ-SEC-009
-- REQ-SEC-016
 phases:
 - id: design
   status: completed
@@ -32,12 +32,12 @@ phases:
     done: true
   - description: Implement portable Space principals, roles, invitations, ACLs, and owner-visible audit reads.
     done: true
-  - description: Support recovery-code + recovery-TOTP Account Self-Recovery while keeping OIDC linking, administrator account recovery, and agent principals outside the v0.1 support contract.
+  - description: Support recovery-code + recovery-TOTP Account Self-Recovery with OIDC invalidation, invitation-gated OIDC account creation, linking, unlinking, and first-Passkey bootstrap while keeping administrator account recovery and agent principals outside the v0.1 support contract.
     done: true
 - id: testing
   status: completed
   tasks:
-  - description: Trace mandatory authentication, bootstrap, Passkey, Account Self-Recovery, session, membership, ACL, and audit MUST statements to their owning tests.
+  - description: Trace mandatory authentication, bootstrap, Passkey, Account Self-Recovery, OIDC identity, session, membership, ACL, and audit MUST statements to their owning tests.
     done: true
   - description: Run the bootstrap acceptance gate on the shipped browser journey before the normal Playwright suite.
     done: true

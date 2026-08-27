@@ -705,6 +705,38 @@ async fn uninitialized_node_exposes_setup_capability_without_default_identity() 
 }
 
 #[tokio::test]
+async fn oidc_links_are_protected_and_provider_listing_is_publicly_redacted() {
+    let app = initialized_app("oidc-boundary").await;
+    let providers = app
+        .clone()
+        .oneshot(
+            Request::get("/auth/oidc/providers")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(providers.status(), StatusCode::OK);
+    assert_eq!(json(providers).await, serde_json::json!([]));
+
+    for request in [
+        Request::get("/auth/oidc/links")
+            .body(Body::empty())
+            .unwrap(),
+        Request::get("/auth/oidc/links")
+            .header("authorization", "Bearer upstream-token")
+            .body(Body::empty())
+            .unwrap(),
+        Request::delete(format!("/auth/oidc/links/{}", Uuid::now_v7()))
+            .body(Body::empty())
+            .unwrap(),
+    ] {
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::LOCKED);
+    }
+}
+
+#[tokio::test]
 async fn uninitialized_protected_routes_are_locked_for_every_credential_shape() {
     let app = initialized_app("protected").await;
     for request in [
@@ -794,6 +826,34 @@ fn openapi_does_not_publish_removed_credentials() {
     assert!(snapshot.pointer("/paths/~1auth~1login").is_none());
     assert!(snapshot.pointer("/paths/~1auth~1passkey~1start").is_some());
     assert!(snapshot.pointer("/paths/~1oauth~1token").is_some());
+}
+
+#[test]
+fn openapi_publishes_oidc_account_linking_and_bootstrap_surfaces() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    for path in [
+        "/auth/oidc/providers",
+        "/auth/oidc/providers/{provider_id}",
+        "/auth/oidc/links",
+        "/auth/oidc/links/{method_id}",
+        "/auth/oidc/{provider_id}/start",
+        "/auth/oidc/{provider_id}/link",
+        "/auth/oidc/callback",
+        "/auth/passkeys/bootstrap/start",
+        "/auth/passkeys/bootstrap/finish",
+    ] {
+        assert!(snapshot["paths"].get(path).is_some(), "missing {path}");
+    }
+    assert_eq!(
+        snapshot["paths"]["/auth/oidc/links"]["get"]["responses"]["200"]["content"]
+            ["application/json"]["schema"]["type"],
+        "array"
+    );
+    assert_eq!(
+        snapshot["paths"]["/auth/oidc/links/{method_id}"]["delete"]["responses"]["204"]
+            ["description"],
+        "OIDC identity unlinked"
+    );
 }
 
 #[test]

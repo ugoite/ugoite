@@ -1,6 +1,6 @@
 import { useSearchParams } from "@solidjs/router";
 import { createEffect, createSignal, For, Show } from "solid-js";
-import { authApi } from "~/lib/auth-api";
+import { authApi, oidcIssuerLabel } from "~/lib/auth-api";
 import { GlobalShell } from "~/components/GlobalShell";
 import { createResource } from "~/lib/recoverable-resource";
 import { t, type TranslationKey } from "~/lib/i18n";
@@ -69,6 +69,8 @@ export function CredentialSettings() {
     async () => ({
       passkeys: await authApi.listPasskeys(),
       sessions: await authApi.listSessions(),
+      oidcLinks: await authApi.listOidcLinks(),
+      oidcProviders: await authApi.listOidcProviders(),
     }),
   );
   return (
@@ -176,6 +178,89 @@ export function CredentialSettings() {
       </Show>
       <Show when={actionError()}>
         <p class="ui-alert ui-alert-error" role="alert">{actionError()}</p>
+      </Show>
+      <Show when={credentials()}>
+        {(value) => (
+          <section
+            class="ui-card ui-stack-sm"
+            aria-labelledby="external-sign-ins"
+          >
+            <h2 id="external-sign-ins" class="text-lg font-semibold">
+              {t("securityPage.externalSignIns")}
+            </h2>
+            <p class="ui-muted">
+              {t("securityPage.externalSignInsDescription")}
+            </p>
+            <For each={value().oidcLinks}>
+              {(link) => (
+                <div class="flex items-center justify-between">
+                  <span>
+                    {oidcIssuerLabel(link.issuer)} · {t("securityPage.linked")}
+                    {link.last_used_at
+                      ? ` · ${t("securityPage.lastUsed")} ${formatDateTimeLabel(link.last_used_at)}`
+                      : ""}
+                  </span>
+                  <button
+                    type="button"
+                    class="ui-button ui-button-secondary"
+                    onClick={() =>
+                      void runAction(async () => {
+                        await authApi.unlinkOidc(link.method_id);
+                        await refetch();
+                      })}
+                  >
+                    {t("securityPage.unlink")}
+                  </button>
+                </div>
+              )}
+            </For>
+            <For
+              each={value().oidcProviders.filter((provider) =>
+                !value().oidcLinks.some((link) =>
+                  link.issuer === provider.issuer
+                )
+              )}
+            >
+              {(provider) => (
+                <button
+                  type="button"
+                  class="ui-button ui-button-secondary"
+                  onClick={() => authApi.linkOidc(provider.provider_id)}
+                >
+                  {t("securityPage.link", {
+                    issuer: oidcIssuerLabel(provider.issuer),
+                  })}
+                </button>
+              )}
+            </For>
+          </section>
+        )}
+      </Show>
+      <Show when={searchParams.bootstrap === "1"}>
+        <Show when={credentials()?.passkeys.length === 0}>
+          <section
+            class="ui-card ui-stack-sm"
+            aria-labelledby="bootstrap-passkey"
+          >
+            <h2 id="bootstrap-passkey" class="text-lg font-semibold">
+              {t("securityPage.bootstrapTitle")}
+            </h2>
+            <p class="ui-muted">
+              {t("securityPage.bootstrapDescription")}
+            </p>
+            <button
+              type="button"
+              class="ui-button ui-button-primary"
+              onClick={() =>
+                void runAction(async () => {
+                  await authApi.addBootstrapPasskey();
+                  await refetch();
+                })}
+            >
+              {t("securityPage.bootstrapPasskey")}
+            </button>
+          </section>
+        </Show>
       </Show>
       <Show when={activeTab() === "passkeys"}>
         <section

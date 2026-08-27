@@ -193,18 +193,36 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-016
   title: External Identity Linking
-  description: OIDC authentication and account linking remain planned capabilities. External identity linking MUST remain outside the v0.1 Account Self-Recovery support contract.
+  description: 'OIDC authentication MUST use Authorization Code + PKCE S256, random state and nonce, provider discovery, HTTPS issuers, fixed callback redirect URI, short-lived one-shot attempts, and server-side ID Token validation. The canonical external identity key MUST be the exact (issuer, subject) pair; email and profile claims MUST NOT link or update a HumanAccount. Existing identities may log in, recent-Passkey sessions may link or unlink identities, and unknown identities may create an Account only through a valid Space Invitation. Invitation-created Accounts MUST have a narrow first-Passkey bootstrap path and then return to normal recent-Passkey credential rules. Federated sessions MUST use the ordinary opaque BrowserSession and MUST NOT authorize Passkey-required operations. Account Self-Recovery MUST remove linked OIDC methods; Owner-approved Space Access Recovery MUST NOT change them. Disabled providers MUST reject new and in-flight attempts.'
   related_spec:
   - security/overview.md
   - api/rest.md#authentication
   - stories/experimental.yaml
   priority: high
-  status: planned
+  status: implemented
   verification: traced
   tests:
   - file: crates/ugoite-identity/src/node_identity.rs
     cases:
     - oidc_subject_links_to_exact_existing_account
+    - oidc_unknown_identity_requires_invitation
+    - oidc_invitation_uses_invitation_display_name_and_federated_bootstrap_session
+    - oidc_attempt_is_one_shot_after_validation_failure
+    - oidc_disabled_provider_rejects_new_attempts
+    - oidc_unlink_rejects_another_accounts_method
+    - oidc_link_attempt_is_rejected_after_credential_authority_changes
+    - recovery_credential_replacement_removes_oidc_methods
+  - file: crates/ugoite-server/src/lib.rs
+    cases:
+    - oidc_callback
+    - configure_oidc_provider
+    - disable_oidc_provider
+    - oidc_mock_issuer_completes_invitation_login_with_pkce_and_federated_session
+    - oidc_provider_configuration_rejects_non_https_issuer
+  - file: crates/ugoite-server/tests/api_contract.rs
+    cases:
+    - oidc_links_are_protected_and_provider_listing_is_publicly_redacted
+    - openapi_publishes_oidc_account_linking_and_bootstrap_surfaces
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.

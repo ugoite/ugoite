@@ -10,6 +10,7 @@ support_boundary:
   - invitations, membership lifecycle, roles, and ACL enforcement
   - authenticated REST and MCP access
   - Node and Space authorization audit read access
+  - OIDC authentication, invitation account creation, and account linking
   - owner-approved Space access recovery by principal-binding replacement
   - recovery-code + recovery-TOTP Account Self-Recovery
   - remote CLI device authentication with DPoP
@@ -18,7 +19,6 @@ support_boundary:
   - shared device authorization/token machinery and MCP-scoped OAuth metadata
   experimental: []
   future:
-  - OIDC authentication and account linking
   - administrator account recovery
   - agent and service-account principals
 apis:
@@ -53,6 +53,7 @@ apis:
       path: /login|/settings/security
       file: frontend/src/routes/login.tsx
       function: LoginRoute
+    note: Passkey remains the primary credential. Invitation-created OIDC accounts can register exactly one initial Passkey through the narrow bootstrap path before normal recent-Passkey credential rules apply.
   - id: auth.session
     method: GET|DELETE
     status: supported
@@ -125,7 +126,7 @@ apis:
       path: /recover/account|/settings/security
       file: frontend/src/lib/auth-api.ts
       function: recoverPasskey
-    note: Account Self-Recovery accepts Account ID + one offline Recovery Code + recovery-only TOTP, then replaces the Node-local credential generation with a new Passkey and rotates all Recovery Codes. It preserves the HumanAccount and Space identity; OIDC linking and administrator recovery remain future scope.
+    note: Account Self-Recovery accepts Account ID + one offline Recovery Code + recovery-only TOTP, then replaces the Node-local credential generation with a new Passkey and rotates all Recovery Codes. It preserves the HumanAccount and Space identity and removes linked OIDC methods.
   - id: auth.accounts
     method: GET|POST
     status: future
@@ -134,12 +135,17 @@ apis:
       file: crates/ugoite-server/src/lib.rs
       function: list_accounts
   - id: auth.oidc
-    method: GET|POST
-    status: future
+    method: GET|POST|DELETE
+    status: supported
     backend:
-      path: /auth/oidc/providers|/auth/oidc/{provider_id}/start|/auth/oidc/callback|/auth/oidc/{provider_id}/link
+      path: /auth/oidc/providers|/auth/oidc/providers/{provider_id}|/auth/oidc/{provider_id}/start|/auth/oidc/callback|/auth/oidc/{provider_id}/link|/auth/oidc/links|/auth/oidc/links/{method_id}|/auth/passkeys/bootstrap/start|/auth/passkeys/bootstrap/finish
       file: crates/ugoite-server/src/lib.rs
       function: oidc_start
+    frontend:
+      path: /login|/spaces/join|/settings/security
+      file: frontend/src/routes/login.tsx
+      function: LoginRoute
+    note: OIDC uses the exact (issuer, subject) identity key, invitation-gated account creation, ordinary opaque Federated BrowserSessions, recent-Passkey protection for linking/unlinking/provider management, and no upstream token API boundary.
   - id: auth.device
     method: GET|POST|DELETE
     status: internal

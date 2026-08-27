@@ -1,6 +1,6 @@
 import { A, useNavigate } from "@solidjs/router";
-import { createSignal, Show } from "solid-js";
-import { authApi } from "~/lib/auth-api";
+import { createSignal, For, Show } from "solid-js";
+import { authApi, oidcIssuerLabel, type OidcProvider } from "~/lib/auth-api";
 import { GlobalShell } from "~/components/GlobalShell";
 import { createResource } from "~/lib/recoverable-resource";
 
@@ -12,6 +12,9 @@ export default function SpaceInvitationJoinRoute() {
   const [token, setToken] = createSignal(hashToken);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
+  const [providers] = createResource<OidcProvider[]>(async () =>
+    await authApi.listOidcProviders().catch(() => [])
+  );
   const [session] = createResource(async () =>
     await authApi.getSession().catch(() => ({ authenticated: false }))
   );
@@ -73,6 +76,22 @@ export default function SpaceInvitationJoinRoute() {
             {busy() ? "Joining…" : "Accept invitation"}
           </button>
         </form>
+        <Show when={providers()?.length}>
+          <div class="ui-divider" aria-hidden="true">or</div>
+          <For each={providers()}>
+            {(provider) => (
+              <button
+                type="button"
+                class="btn"
+                disabled={busy() || !token().trim()}
+                onClick={() =>
+                  authApi.loginWithOidc(provider.provider_id, token().trim())}
+              >
+                Continue with {oidcIssuerLabel(provider.issuer)}
+              </button>
+            )}
+          </For>
+        </Show>
         <Show when={error()}>
           <p class="ui-alert ui-alert-error">{error()}</p>
         </Show>

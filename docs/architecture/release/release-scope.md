@@ -36,11 +36,11 @@ support, and product claims stay aligned with the implementation.
 - Passkey/WebAuthn login, opaque browser sessions, Space membership/ACL
   enforcement, owner-approved Space access recovery, recovery-code +
   recovery-TOTP Account Self-Recovery, Remote CLI device authentication,
-  authenticated MCP access, and authorized audit reads are supported v0.1
-  capabilities;
-- OIDC linking, administrator recovery, managed service accounts, audit CRUD,
-  and remote CLI asset upload are not supported v0.1 capabilities. TOTP is
-  recovery-only and is not a normal login method;
+  invitation-gated OIDC authentication/account linking, authenticated MCP
+  access, and authorized audit reads are supported v0.1 capabilities;
+- administrator recovery, managed service accounts, audit CRUD, and remote CLI
+  asset upload are not supported v0.1 capabilities. TOTP is recovery-only and is
+  not a normal login method;
 - the `Release Publish` workflow now publishes versioned release artifacts and
   verifies the published Compose and CLI quick starts; an operator-supported
   release still requires a successful published version.

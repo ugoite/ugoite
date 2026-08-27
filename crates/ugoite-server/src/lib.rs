@@ -64,7 +64,8 @@ use ugoite_iceberg::{
 use ugoite_identity::{
     node_identity::{
         AccountInvitation, ActiveCredentialKind, NodeAuditInput, NodeIdentityService,
-        OwnerRecoveryContext, RecoveryBindingSnapshot, TotpEnrollmentFinishError,
+        OidcAttemptPurpose, OwnerRecoveryContext, RecoveryBindingSnapshot,
+        TotpEnrollmentFinishError,
     },
     oauth::{self, AccessTokenClaims, Confirmation},
 };
@@ -94,6 +95,7 @@ const MAX_STARTUP_REFRESH_REARM_RETRIES: usize = 8;
 const MAX_STARTUP_DERIVED_MAINTENANCE_CONCURRENCY: usize = 8;
 const RESPONSE_KEY_ID_HEADER: HeaderName = HeaderName::from_static("x-ugoite-key-id");
 const RESPONSE_SIGNATURE_HEADER: HeaderName = HeaderName::from_static("x-ugoite-signature");
+const OIDC_STATE_COOKIE: &str = "ugoite_oidc_state";
 
 #[derive(Clone, Debug)]
 struct SignableResponseBody(Bytes);
@@ -721,11 +723,25 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             post(set_account_status),
         )
         .route("/auth/oidc/providers", post(configure_oidc_provider))
+        .route(
+            "/auth/oidc/providers/{provider_id}",
+            delete(disable_oidc_provider),
+        )
+        .route("/auth/oidc/links", get(list_oidc_links))
+        .route("/auth/oidc/links/{method_id}", delete(unlink_oidc))
         .route("/auth/passkeys", get(list_passkeys))
         .route("/auth/sessions", get(list_sessions))
         .route("/auth/sessions/{session_id}", delete(revoke_session_by_id))
         .route("/auth/passkeys/start", post(start_add_passkey))
         .route("/auth/passkeys/finish", post(finish_add_passkey))
+        .route(
+            "/auth/passkeys/bootstrap/start",
+            post(start_bootstrap_passkey),
+        )
+        .route(
+            "/auth/passkeys/bootstrap/finish",
+            post(finish_bootstrap_passkey),
+        )
         .route("/auth/passkeys/{credential_id}", delete(revoke_passkey))
         .route("/auth/recovery/totp/start", post(start_totp_enrollment))
         .route("/auth/recovery/totp/finish", post(finish_totp_enrollment))
@@ -3624,16 +3640,24 @@ async fn set_account_status(
     ))
 }
 
-fn auth_session_cookie(headers: &HeaderMap) -> Option<String> {
+fn request_cookie(headers: &HeaderMap, cookie_name: &str) -> Option<String> {
     headers
         .get("cookie")
         .and_then(|value| value.to_str().ok())
         .and_then(|cookies| {
             cookies.split(';').find_map(|cookie| {
                 let (name, value) = cookie.trim().split_once('=')?;
-                (name == "ugoite_session").then(|| value.to_string())
+                (name == cookie_name).then(|| value.to_string())
             })
         })
+}
+
+fn auth_session_cookie(headers: &HeaderMap) -> Option<String> {
+    request_cookie(headers, "ugoite_session")
+}
+
+fn oidc_state_cookie(headers: &HeaderMap) -> Option<String> {
+    request_cookie(headers, OIDC_STATE_COOKIE)
 }
 
 fn auth_cookie(token: &str, max_age_seconds: i64) -> String {
@@ -3648,6 +3672,20 @@ fn auth_cookie(token: &str, max_age_seconds: i64) -> String {
 
 fn clear_auth_cookie() -> String {
     "ugoite_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT".to_string()
+}
+
+fn oidc_state_cookie_header(state_hash: &str, max_age_seconds: i64) -> String {
+    let secure = env::var("UGOITE_PUBLIC_ORIGIN")
+        .unwrap_or_default()
+        .starts_with("https://");
+    format!(
+        "{OIDC_STATE_COOKIE}={state_hash}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age_seconds}{}",
+        if secure { "; Secure" } else { "" }
+    )
+}
+
+fn clear_oidc_state_cookie() -> String {
+    oidc_state_cookie_header("", 0)
 }
 
 fn auth_error(_error: anyhow::Error) -> ApiError {
@@ -3684,6 +3722,57 @@ struct OidcProviderPayload {
     client_secret: Option<String>,
 }
 
+fn redact_oidc_provider_secret(mut value: Value) -> Value {
+    if let Value::Object(object) = &mut value {
+        object.remove("client_secret");
+    }
+    value
+}
+
+fn normalized_oidc_issuer(issuer: &str) -> anyhow::Result<String> {
+    let normalized = issuer.trim().trim_end_matches('/');
+    let parsed = url::Url::parse(normalized).context("invalid OIDC issuer URL")?;
+    if parsed.scheme() != "https"
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        anyhow::bail!("OIDC issuer must use https without userinfo, query, or fragment")
+    }
+    Ok(normalized.to_string())
+}
+
+fn validate_oidc_endpoint(url: &url::Url, name: &str) -> anyhow::Result<()> {
+    // The in-process mock issuer used by server tests is intentionally plain
+    // HTTP on loopback. Production provider configuration and all non-test
+    // endpoints remain HTTPS-only.
+    if cfg!(test)
+        && url.scheme() == "http"
+        && matches!(url.host_str(), Some("127.0.0.1" | "localhost"))
+    {
+        return Ok(());
+    }
+    if url.scheme() != "https" || url.host_str().is_none() {
+        anyhow::bail!("OIDC {name} endpoint must use https")
+    }
+    Ok(())
+}
+
+fn validate_oidc_metadata(metadata: &CoreProviderMetadata) -> anyhow::Result<()> {
+    validate_oidc_endpoint(metadata.authorization_endpoint().url(), "authorization")?;
+    validate_oidc_endpoint(metadata.jwks_uri().url(), "JWKS")?;
+    let token_endpoint = metadata
+        .token_endpoint()
+        .ok_or_else(|| anyhow::anyhow!("OIDC discovery did not provide a token endpoint"))?;
+    validate_oidc_endpoint(token_endpoint.url(), "token")?;
+    if metadata.id_token_signing_alg_values_supported().is_empty() {
+        anyhow::bail!("OIDC discovery did not provide a usable ID Token signing algorithm")
+    }
+    Ok(())
+}
+
 async fn configure_oidc_provider(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
@@ -3696,14 +3785,16 @@ async fn configure_oidc_provider(
             "recent node-admin Passkey session is required",
         ));
     }
+    let issuer = normalized_oidc_issuer(&payload.issuer).map_err(auth_error)?;
     // Discovery is performed before persistence so invalid issuers never become active.
     let http = oidc_http_client().map_err(auth_error)?;
     CoreProviderMetadata::discover_async(
-        IssuerUrl::new(payload.issuer.clone()).map_err(|error| auth_error(error.into()))?,
+        IssuerUrl::new(issuer).map_err(|error| auth_error(error.into()))?,
         &http,
     )
     .await
-    .map_err(|error| auth_error(anyhow::anyhow!(error.to_string())))?;
+    .map_err(|error| auth_error(anyhow::anyhow!(error.to_string())))
+    .and_then(|metadata| validate_oidc_metadata(&metadata).map_err(auth_error))?;
     let provider = state
         .identity
         .configure_oidc_provider(
@@ -3720,7 +3811,7 @@ async fn configure_oidc_provider(
             subject_account_id: Some(identity.account_id),
             actor_account_id: Some(identity.account_id),
             credential_id: None,
-            action: "oidc_provider.configured",
+            action: "oidc.provider_created",
             target_type: "oidc_provider",
             target_id: Some(provider.provider_id.to_string()),
             outcome: "success",
@@ -3729,22 +3820,113 @@ async fn configure_oidc_provider(
         })
         .await
         .map_err(auth_error)?;
-    let mut value = serde_json::to_value(provider).map_err(|error| auth_error(error.into()))?;
-    value["client_secret"] = Value::Null;
+    let value = redact_oidc_provider_secret(
+        serde_json::to_value(provider).map_err(|error| auth_error(error.into()))?,
+    );
     Ok((StatusCode::CREATED, Json(value)))
 }
 
 async fn list_oidc_providers(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    Ok(Json(
-        serde_json::to_value(
-            state
-                .identity
-                .list_oidc_providers()
-                .await
-                .map_err(auth_error)?,
+    let providers = state
+        .identity
+        .list_oidc_providers()
+        .await
+        .map_err(auth_error)?;
+    let value = serde_json::to_value(providers).map_err(|error| auth_error(error.into()))?;
+    let Value::Array(providers) = value else {
+        return Err(auth_error(anyhow::anyhow!(
+            "invalid OIDC provider response"
+        )));
+    };
+    Ok(Json(Value::Array(
+        providers
+            .into_iter()
+            .map(redact_oidc_provider_secret)
+            .collect(),
+    )))
+}
+
+async fn disable_oidc_provider(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(provider_id): Path<Uuid>,
+) -> ApiResult<Json<Value>> {
+    require_recent_passkey(&identity)?;
+    if !identity.node_admin {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "recent node-admin Passkey session is required",
+        ));
+    }
+    let provider = state
+        .identity
+        .disable_oidc_provider(identity.account_id, provider_id)
+        .await
+        .map_err(recovery_aware_auth_error)?;
+    state
+        .identity
+        .append_node_audit(NodeAuditInput {
+            subject_account_id: Some(identity.account_id),
+            actor_account_id: Some(identity.account_id),
+            credential_id: Some(identity.request_identity.credential_id),
+            action: "oidc.provider_disabled",
+            target_type: "oidc_provider",
+            target_id: Some(provider_id.to_string()),
+            outcome: "success",
+            request_id: None,
+            safe_metadata: json!({"issuer": provider.issuer}),
+        })
+        .await
+        .map_err(auth_error)?;
+    Ok(Json(redact_oidc_provider_secret(
+        serde_json::to_value(provider).map_err(|error| auth_error(error.into()))?,
+    )))
+}
+
+async fn list_oidc_links(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(Value::Array(
+        state
+            .identity
+            .list_oidc_links(identity.account_id)
+            .await
+            .map_err(auth_error)?,
+    )))
+}
+
+async fn unlink_oidc(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(method_id): Path<Uuid>,
+) -> ApiResult<StatusCode> {
+    require_recent_passkey(&identity)?;
+    state
+        .identity
+        .unlink_oidc(
+            identity.account_id,
+            identity.credential_generation,
+            method_id,
         )
-        .map_err(|error| auth_error(error.into()))?,
-    ))
+        .await
+        .map_err(recovery_aware_auth_error)?;
+    state
+        .identity
+        .append_node_audit(NodeAuditInput {
+            subject_account_id: Some(identity.account_id),
+            actor_account_id: Some(identity.account_id),
+            credential_id: Some(identity.request_identity.credential_id),
+            action: "oidc.identity_unlinked",
+            target_type: "oidc_authentication_method",
+            target_id: Some(method_id.to_string()),
+            outcome: "success",
+            request_id: None,
+            safe_metadata: json!({}),
+        })
+        .await
+        .map_err(auth_error)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
@@ -3756,17 +3938,107 @@ async fn oidc_start(
     State(state): State<AppState>,
     Path(provider_id): Path<Uuid>,
     Query(query): Query<OidcStartQuery>,
-) -> ApiResult<Redirect> {
-    start_oidc_authorization(&state, provider_id, query.invitation_token.as_deref(), None).await
+) -> ApiResult<Response> {
+    let (redirect, state_hash) = start_oidc_authorization(
+        &state,
+        provider_id,
+        query.invitation_token.as_deref(),
+        None,
+        None,
+    )
+    .await?;
+    let mut response = redirect.into_response();
+    response.headers_mut().append(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&oidc_state_cookie_header(&state_hash, 600))
+            .map_err(|_| auth_error(anyhow::anyhow!("invalid OIDC state cookie")))?,
+    );
+    Ok(response)
 }
 
 async fn oidc_link_start(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path(provider_id): Path<Uuid>,
-) -> ApiResult<Redirect> {
+) -> ApiResult<Response> {
     require_recent_passkey(&identity)?;
-    start_oidc_authorization(&state, provider_id, None, Some(identity.account_id)).await
+    let (redirect, state_hash) = start_oidc_authorization(
+        &state,
+        provider_id,
+        None,
+        Some(identity.account_id),
+        identity.session_token.as_deref(),
+    )
+    .await?;
+    let mut response = redirect.into_response();
+    response.headers_mut().append(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&oidc_state_cookie_header(&state_hash, 600))
+            .map_err(|_| auth_error(anyhow::anyhow!("invalid OIDC state cookie")))?,
+    );
+    Ok(response)
+}
+
+async fn start_bootstrap_passkey(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+) -> ApiResult<Json<Value>> {
+    let session_token = identity.session_token.as_deref().ok_or_else(|| {
+        ApiError::new(
+            StatusCode::FORBIDDEN,
+            "the invitation OIDC session is required",
+        )
+    })?;
+    let result = state
+        .identity
+        .start_bootstrap_passkey(session_token, identity.account_id)
+        .await
+        .map_err(recovery_aware_auth_error)?;
+    Ok(Json(
+        serde_json::to_value(result).map_err(|error| auth_error(error.into()))?,
+    ))
+}
+
+async fn finish_bootstrap_passkey(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Json(payload): Json<AddPasskeyFinishRequest>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let session_token = identity.session_token.as_deref().ok_or_else(|| {
+        ApiError::new(
+            StatusCode::FORBIDDEN,
+            "the invitation OIDC session is required",
+        )
+    })?;
+    let result = state
+        .identity
+        .finish_bootstrap_passkey(
+            session_token,
+            identity.account_id,
+            payload.challenge_id,
+            &payload.credential,
+        )
+        .await
+        .map_err(recovery_aware_auth_error)?;
+    state
+        .identity
+        .append_node_audit(NodeAuditInput {
+            subject_account_id: Some(identity.account_id),
+            actor_account_id: Some(identity.account_id),
+            credential_id: None,
+            action: "passkey.added",
+            target_type: "passkey",
+            target_id: result
+                .get("credential_id")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            outcome: "success",
+            request_id: None,
+            safe_metadata: json!({"bootstrap": true}),
+        })
+        .await
+        .map_err(auth_error)?;
+    Ok((StatusCode::CREATED, Json(result)))
 }
 
 async fn start_oidc_authorization(
@@ -3774,7 +4046,8 @@ async fn start_oidc_authorization(
     provider_id: Uuid,
     invitation_token: Option<&str>,
     link_account_id: Option<Uuid>,
-) -> ApiResult<Redirect> {
+    initiating_session_token: Option<&str>,
+) -> ApiResult<(Redirect, String)> {
     let provider = state
         .identity
         .oidc_provider(provider_id)
@@ -3787,6 +4060,7 @@ async fn start_oidc_authorization(
     )
     .await
     .map_err(|error| auth_error(anyhow::anyhow!(error.to_string())))?;
+    validate_oidc_metadata(&metadata).map_err(auth_error)?;
     let (issuer, _) = state.identity.issuer_metadata().await.map_err(auth_error)?;
     let client = CoreClient::from_provider_metadata(
         metadata,
@@ -3809,34 +4083,86 @@ async fn start_oidc_authorization(
         .url();
     state
         .identity
-        .save_oidc_attempt(
+        .save_oidc_attempt_with_session(
             provider_id,
             csrf.secret(),
             nonce.secret(),
             pkce_verifier.secret(),
             invitation_token,
             link_account_id,
+            initiating_session_token,
         )
         .await
         .map_err(recovery_aware_auth_error)?;
-    Ok(Redirect::temporary(auth_url.as_str()))
+    Ok((
+        Redirect::temporary(auth_url.as_str()),
+        hex::encode(Sha256::digest(csrf.secret().as_bytes())),
+    ))
 }
 
 #[derive(Deserialize)]
 struct OidcCallbackQuery {
-    code: String,
+    code: Option<String>,
     state: String,
+    error: Option<String>,
 }
 
 async fn oidc_callback(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<OidcCallbackQuery>,
 ) -> ApiResult<Response> {
+    let expected_state_hash = hex::encode(Sha256::digest(query.state.as_bytes()));
+    if oidc_state_cookie(&headers).as_deref() != Some(expected_state_hash.as_str()) {
+        return Err(auth_error(anyhow::anyhow!(
+            "OIDC browser state is not bound"
+        )));
+    }
     let attempt = state
         .identity
         .consume_oidc_attempt(&query.state)
         .await
         .map_err(recovery_aware_auth_error)?;
+    if let OidcAttemptPurpose::Link {
+        account_id,
+        credential_generation,
+    } = &attempt.purpose
+    {
+        let session_token = auth_session_cookie(&headers)
+            .ok_or_else(|| auth_error(anyhow::anyhow!("OIDC link session is missing")))?;
+        let actual_session_hash = hex::encode(Sha256::digest(session_token.as_bytes()));
+        if attempt.initiating_session_hash.as_deref() != Some(actual_session_hash.as_str()) {
+            return Err(auth_error(anyhow::anyhow!(
+                "OIDC link session is not bound"
+            )));
+        }
+        let session = state
+            .identity
+            .authenticate_session(&session_token)
+            .await
+            .map_err(recovery_aware_auth_error)?;
+        if session.account.account_id != *account_id {
+            return Err(auth_error(anyhow::anyhow!(
+                "OIDC link account is not bound"
+            )));
+        }
+        state
+            .identity
+            .revalidate_recent_passkey_session(
+                &session_token,
+                *account_id,
+                session.credential_id,
+                *credential_generation,
+            )
+            .await
+            .map_err(recovery_aware_auth_error)?;
+    }
+    if query.error.is_some() {
+        return Err(auth_error(anyhow::anyhow!("OIDC authorization was denied")));
+    }
+    let code = query
+        .code
+        .ok_or_else(|| auth_error(anyhow::anyhow!("OIDC provider omitted authorization code")))?;
     let provider = state
         .identity
         .oidc_provider(attempt.provider_id)
@@ -3849,6 +4175,7 @@ async fn oidc_callback(
     )
     .await
     .map_err(|error| auth_error(anyhow::anyhow!(error.to_string())))?;
+    validate_oidc_metadata(&metadata).map_err(auth_error)?;
     let (issuer, _) = state.identity.issuer_metadata().await.map_err(auth_error)?;
     let client = CoreClient::from_provider_metadata(
         metadata,
@@ -3860,7 +4187,7 @@ async fn oidc_callback(
             .map_err(|error| auth_error(error.into()))?,
     );
     let token = client
-        .exchange_code(AuthorizationCode::new(query.code))
+        .exchange_code(AuthorizationCode::new(code))
         .map_err(|error| auth_error(anyhow::anyhow!(error.to_string())))?
         .set_pkce_verifier(PkceCodeVerifier::new(attempt.pkce_verifier))
         .request_async(&http)
@@ -3873,27 +4200,30 @@ async fn oidc_callback(
         .claims(&client.id_token_verifier(), &Nonce::new(attempt.nonce))
         .map_err(|error| auth_error(anyhow::anyhow!(error.to_string())))?;
     let subject = claims.subject().as_str();
-    let linked_existing_account = attempt.link_account_id.is_some();
-    let (account, session_id, invitation) = state
+    let linked_existing_account = matches!(attempt.purpose, OidcAttemptPurpose::Link { .. });
+    let completion = state
         .identity
         .complete_oidc_login(
+            attempt.provider_id,
             &provider.issuer,
             subject,
-            subject,
-            attempt.invitation_hash.as_deref(),
-            attempt.link_account_id,
-            attempt.link_account_generation,
-            attempt.invitation_account_generation,
+            &attempt.purpose,
         )
         .await
         .map_err(recovery_aware_auth_error)?;
-    if let Some(invitation) = invitation {
-        bind_invited_account(&state, &account, &invitation, BindingMethod::Oidc).await?;
+    if let Some(invitation) = completion.invitation {
+        bind_invited_account(
+            &state,
+            &completion.account,
+            &invitation,
+            BindingMethod::Oidc,
+        )
+        .await?;
         state
             .identity
             .complete_invitation_acceptance(
                 invitation.invitation_id,
-                account.account_id,
+                completion.account.account_id,
                 invitation.accepted_principal_id().ok_or_else(|| {
                     ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
                 })?,
@@ -3904,8 +4234,8 @@ async fn oidc_callback(
     state
         .identity
         .append_node_audit(NodeAuditInput {
-            subject_account_id: Some(account.account_id),
-            actor_account_id: Some(account.account_id),
+            subject_account_id: Some(completion.account.account_id),
+            actor_account_id: Some(completion.account.account_id),
             credential_id: None,
             action: if linked_existing_account {
                 "oidc.identity_linked"
@@ -3913,34 +4243,44 @@ async fn oidc_callback(
                 "oidc.login"
             },
             target_type: "human_account",
-            target_id: Some(account.account_id.to_string()),
+            target_id: Some(completion.account.account_id.to_string()),
             outcome: "success",
             request_id: None,
             safe_metadata: json!({"issuer": provider.issuer}),
         })
         .await
         .map_err(auth_error)?;
-    Ok((
-        StatusCode::SEE_OTHER,
-        [
-            ("set-cookie", auth_cookie(&session_id, 60 * 60 * 24 * 30)),
-            (
-                "location",
-                if linked_existing_account {
-                    "/settings/security"
-                } else {
-                    "/spaces"
-                }
-                .to_string(),
-            ),
-        ],
-    )
-        .into_response())
+    let location = if linked_existing_account {
+        "/settings/security"
+    } else if completion.passkey_bootstrap {
+        "/settings/security?bootstrap=1"
+    } else {
+        "/spaces"
+    };
+    let mut response = Response::new(Body::empty());
+    *response.status_mut() = StatusCode::SEE_OTHER;
+    response
+        .headers_mut()
+        .insert(header::LOCATION, HeaderValue::from_static(location));
+    response.headers_mut().append(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&clear_oidc_state_cookie())
+            .map_err(|_| auth_error(anyhow::anyhow!("invalid OIDC state cookie")))?,
+    );
+    if let Some(session_id) = completion.session_id {
+        response.headers_mut().append(
+            header::SET_COOKIE,
+            HeaderValue::from_str(&auth_cookie(&session_id, 60 * 60 * 24 * 30))
+                .map_err(|_| auth_error(anyhow::anyhow!("invalid auth cookie")))?,
+        );
+    }
+    Ok(response)
 }
 
 fn oidc_http_client() -> anyhow::Result<openidconnect::reqwest::Client> {
     Ok(openidconnect::reqwest::ClientBuilder::new()
         .redirect(openidconnect::reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(10))
         .build()?)
 }
 
@@ -5931,9 +6271,8 @@ fn active_credential_kind(identity: &RequestIdentityContext) -> ActiveCredential
     match identity.request_identity.authentication_method {
         RequestAuthenticationMethod::AgentAssertion => ActiveCredentialKind::Agent,
         RequestAuthenticationMethod::DeviceProof => ActiveCredentialKind::Device,
-        RequestAuthenticationMethod::Passkey | RequestAuthenticationMethod::Oidc => {
-            ActiveCredentialKind::Passkey
-        }
+        RequestAuthenticationMethod::Passkey => ActiveCredentialKind::Passkey,
+        RequestAuthenticationMethod::Oidc => ActiveCredentialKind::Oidc,
     }
 }
 
@@ -9255,6 +9594,313 @@ mod security_headers_tests {
                 .unwrap(),
             trailers
         );
+    }
+}
+
+#[cfg(test)]
+mod oidc_integration_tests {
+    use super::*;
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    use p256::ecdsa::{signature::Signer, SigningKey};
+    use std::collections::HashMap;
+    use tokio::net::TcpListener;
+
+    #[derive(Clone)]
+    struct MockIssuer {
+        issuer: String,
+        signing_key: SigningKey,
+        subject: String,
+    }
+
+    async fn mock_configuration(State(mock): State<MockIssuer>) -> Json<Value> {
+        Json(json!({
+            "issuer": mock.issuer,
+            "authorization_endpoint": format!("{}/authorize", mock.issuer),
+            "token_endpoint": format!("{}/token", mock.issuer),
+            "jwks_uri": format!("{}/jwks", mock.issuer),
+            "response_types_supported": ["code"],
+            "subject_types_supported": ["public"],
+            "id_token_signing_alg_values_supported": ["ES256"]
+        }))
+    }
+
+    #[derive(Deserialize)]
+    struct MockAuthorizeQuery {
+        redirect_uri: String,
+        state: String,
+        nonce: String,
+    }
+
+    async fn mock_authorize(Query(query): Query<MockAuthorizeQuery>) -> Redirect {
+        let mut redirect = url::Url::parse(&query.redirect_uri).expect("mock redirect URI");
+        redirect
+            .query_pairs_mut()
+            .append_pair("code", &query.nonce)
+            .append_pair("state", &query.state);
+        Redirect::temporary(redirect.as_str())
+    }
+
+    async fn mock_token(
+        State(mock): State<MockIssuer>,
+        Form(form): Form<HashMap<String, String>>,
+    ) -> Json<Value> {
+        let nonce = form.get("code").cloned().unwrap_or_default();
+        let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"ES256","kid":"mock-key","typ":"JWT"}"#);
+        let payload = URL_SAFE_NO_PAD.encode(
+            serde_json::to_vec(&json!({
+                "iss": mock.issuer,
+                "sub": mock.subject,
+                "aud": "client",
+                "exp": Utc::now().timestamp() + 300,
+                "iat": Utc::now().timestamp(),
+                "nonce": nonce
+            }))
+            .expect("mock ID Token claims"),
+        );
+        let signing_input = format!("{header}.{payload}");
+        let signature: p256::ecdsa::Signature = mock.signing_key.sign(signing_input.as_bytes());
+        let token = format!(
+            "{signing_input}.{}",
+            URL_SAFE_NO_PAD.encode(signature.to_bytes())
+        );
+        Json(json!({
+            "access_token": "mock-upstream-access-token",
+            "token_type": "Bearer",
+            "id_token": token
+        }))
+    }
+
+    async fn mock_jwks(State(mock): State<MockIssuer>) -> Json<Value> {
+        let point = mock.signing_key.verifying_key().to_encoded_point(false);
+        Json(json!({
+            "keys": [{
+                "kty": "EC",
+                "crv": "P-256",
+                "x": URL_SAFE_NO_PAD.encode(point.x().expect("mock key x")),
+                "y": URL_SAFE_NO_PAD.encode(point.y().expect("mock key y")),
+                "use": "sig",
+                "kid": "mock-key",
+                "alg": "ES256"
+            }]
+        }))
+    }
+
+    async fn start_mock_issuer(
+        subject: &str,
+    ) -> anyhow::Result<(MockIssuer, tokio::task::JoinHandle<()>)> {
+        let signing_key = SigningKey::from_bytes((&[7_u8; 32]).into())?;
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let issuer = format!("http://{}", listener.local_addr()?);
+        let mock = MockIssuer {
+            issuer,
+            signing_key,
+            subject: subject.to_string(),
+        };
+        let router = Router::new()
+            .route("/.well-known/openid-configuration", get(mock_configuration))
+            .route("/authorize", get(mock_authorize))
+            .route("/token", post(mock_token))
+            .route("/jwks", get(mock_jwks))
+            .with_state(mock.clone());
+        let handle = tokio::spawn(async move {
+            let _ = axum::serve(listener, router).await;
+        });
+        Ok((mock, handle))
+    }
+
+    #[tokio::test]
+    async fn oidc_mock_issuer_completes_invitation_login_with_pkce_and_federated_session(
+    ) -> anyhow::Result<()> {
+        let state =
+            AppState::new_for_tests(format!("memory://server-oidc-mock-{}", Uuid::now_v7()))?;
+        state.initialize_node().await?;
+        let actor_id = Uuid::now_v7();
+        state
+            .identity
+            .seed_test_recovery_accounts(&[(actor_id, Uuid::now_v7(), Uuid::now_v7())])
+            .await?;
+        let (_invitation, invitation_token) = state
+            .identity
+            .issue_invitation(actor_id, "Mock invited account", None, None)
+            .await?;
+        let (mock, server) = start_mock_issuer("mock-subject").await?;
+        let provider_id = Uuid::now_v7();
+        state
+            .identity
+            .seed_test_oidc_provider(ugoite_identity::node_identity::OidcProvider {
+                provider_id,
+                issuer: mock.issuer.clone(),
+                client_id: "client".to_string(),
+                client_secret: None,
+                enabled: true,
+                created_at: Utc::now().to_rfc3339(),
+            })
+            .await?;
+
+        let (redirect, state_hash) =
+            start_oidc_authorization(&state, provider_id, Some(&invitation_token), None, None)
+                .await
+                .map_err(|error| anyhow::anyhow!("OIDC start failed: {error:?}"))?;
+        let redirect_response = redirect.into_response();
+        let location = redirect_response
+            .headers()
+            .get(header::LOCATION)
+            .expect("OIDC redirect")
+            .to_str()?;
+        let state_token = url::Url::parse(location)?
+            .query_pairs()
+            .find(|(key, _)| key == "state")
+            .map(|(_, value)| value.into_owned())
+            .expect("OIDC state");
+        let attempt = state
+            .identity
+            .inspect_test_oidc_attempt(&state_token)
+            .await?;
+        let authorization = mock_authorize(Query(MockAuthorizeQuery {
+            redirect_uri: url::Url::parse(location)?
+                .query_pairs()
+                .find(|(key, _)| key == "redirect_uri")
+                .map(|(_, value)| value.into_owned())
+                .expect("OIDC redirect URI"),
+            state: state_token.clone(),
+            nonce: attempt.nonce.clone(),
+        }))
+        .await;
+        let authorization_response = authorization.into_response();
+        let authorization_location = authorization_response
+            .headers()
+            .get(header::LOCATION)
+            .expect("mock authorization callback")
+            .to_str()?;
+        let callback_url = url::Url::parse(authorization_location)?;
+        let callback_code = callback_url
+            .query_pairs()
+            .find(|(key, _)| key == "code")
+            .map(|(_, value)| value.into_owned())
+            .expect("mock authorization code");
+        let callback_state = callback_url
+            .query_pairs()
+            .find(|(key, _)| key == "state")
+            .map(|(_, value)| value.into_owned())
+            .expect("mock authorization state");
+        let mut wrong_state_headers = HeaderMap::new();
+        wrong_state_headers.insert(
+            header::COOKIE,
+            HeaderValue::from_str(&format!(
+                "{OIDC_STATE_COOKIE}={}",
+                hex::encode(Sha256::digest(b"wrong-state"))
+            ))?,
+        );
+        assert!(oidc_callback(
+            State(state.clone()),
+            wrong_state_headers,
+            Query(OidcCallbackQuery {
+                code: Some(callback_code.clone()),
+                state: callback_state.clone(),
+                error: None,
+            }),
+        )
+        .await
+        .is_err());
+        let unknown_state = "not-the-saved-state";
+        let mut unknown_state_headers = HeaderMap::new();
+        unknown_state_headers.insert(
+            header::COOKIE,
+            HeaderValue::from_str(&format!(
+                "{OIDC_STATE_COOKIE}={}",
+                hex::encode(Sha256::digest(unknown_state.as_bytes()))
+            ))?,
+        );
+        assert!(oidc_callback(
+            State(state.clone()),
+            unknown_state_headers,
+            Query(OidcCallbackQuery {
+                code: Some(callback_code.clone()),
+                state: unknown_state.to_string(),
+                error: None,
+            }),
+        )
+        .await
+        .is_err());
+        let callback = oidc_callback(
+            State(state.clone()),
+            [(
+                header::COOKIE,
+                HeaderValue::from_str(&format!("{OIDC_STATE_COOKIE}={state_hash}"))?,
+            )]
+            .into_iter()
+            .collect(),
+            Query(OidcCallbackQuery {
+                code: Some(callback_code),
+                state: callback_state,
+                error: None,
+            }),
+        )
+        .await
+        .map_err(|error| anyhow::anyhow!("OIDC callback failed: {error:?}"))?;
+        assert_eq!(callback.status(), StatusCode::SEE_OTHER);
+        let cookie = callback
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .find_map(|value| {
+                value
+                    .to_str()
+                    .ok()
+                    .filter(|value| value.starts_with("ugoite_session="))
+            })
+            .expect("Federated browser session");
+        let session_token = cookie
+            .strip_prefix("ugoite_session=")
+            .and_then(|value| value.split(';').next())
+            .expect("opaque session cookie");
+        let account = state
+            .identity
+            .list_accounts()
+            .await?
+            .into_iter()
+            .find(|account| account.display_name == "Mock invited account")
+            .expect("invited OIDC account");
+        let session = state.identity.authenticate_session(session_token).await?;
+        assert_eq!(session.account.account_id, account.account_id);
+        assert!(matches!(session.assurance, AssuranceLevel::Federated));
+        assert!(session.passkey_bootstrap);
+        assert_eq!(
+            state
+                .identity
+                .list_sessions(account.account_id)
+                .await?
+                .len(),
+            1
+        );
+        assert!(state
+            .identity
+            .list_oidc_links(account.account_id)
+            .await?
+            .iter()
+            .all(|link| link.get("issuer").and_then(Value::as_str) == Some(mock.issuer.as_str())));
+        server.abort();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oidc_provider_configuration_rejects_non_https_issuer() -> anyhow::Result<()> {
+        assert!(normalized_oidc_issuer("https://issuer.example?tenant=internal").is_err());
+        assert!(
+            validate_oidc_endpoint(&url::Url::parse("http://issuer.example/token")?, "token")
+                .is_err()
+        );
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        service
+            .seed_test_recovery_accounts(&[(account_id, Uuid::now_v7(), Uuid::now_v7())])
+            .await?;
+        assert!(service
+            .configure_oidc_provider(account_id, "http://issuer.example", "client", None)
+            .await
+            .is_err());
+        Ok(())
     }
 }
 

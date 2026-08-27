@@ -8,7 +8,7 @@ the advisory at this version boundary.
 
 The dependency is transitive through two separately scoped surfaces:
 
-- `openidconnect`, used by the server's optional OIDC implementation reference;
+- `openidconnect`, used by the server's supported OIDC protocol adapter;
 - OpenDAL/reqsign cloud backends, used by S3/GCS/Azure/OSS storage support.
 
 The package is not used by the local-first core data path. Removing it would

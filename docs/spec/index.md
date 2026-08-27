@@ -23,9 +23,12 @@ authoritative; indexes and query sessions are derived.
   recovery-code + recovery-TOTP Account Self-Recovery,
   Remote CLI device authentication, Space membership/ACL enforcement,
   authenticated MCP access, and authorized audit reads.
+- OIDC authentication, invitation-gated account creation, external identity
+  linking/unlinking, and Federated browser sessions are also supported within
+  the v0.1 security boundary.
 - Browser-local persistence and optional sync are planned.
-- OIDC linking, administrator recovery, account discovery, agent/service-account
-  principals, generic OAuth client compatibility, audit CRUD, and remote CLI
+- administrator recovery, account discovery, agent/service-account principals,
+  generic OAuth client compatibility, audit CRUD, and remote CLI
   asset upload remain future or limited capability. TOTP is a recovery-only
   factor and is not a normal login method.
 
