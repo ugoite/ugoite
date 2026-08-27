@@ -7,7 +7,7 @@ use ugoite_iceberg::{
     publication_context, CheckpointIntegrityError, CheckpointUnavailable, IcebergWorkspace,
     RevisionView,
 };
-use ugoite_storage::operator_from_uri;
+use ugoite_storage::{operator_from_uri, SpaceUri};
 use uuid::Uuid;
 
 fn form() -> FormDefinition {
@@ -122,11 +122,15 @@ async fn checkpoint_with_one_revision(
     Ok((workspace, form, checkpoint))
 }
 
-fn object_path(location: &str) -> &str {
+fn object_path(location: &str, space: u128) -> String {
+    if let Ok(uri) = SpaceUri::parse(location) {
+        return format!("test/space_{:032x}/{}", space, uri.key());
+    }
     location
         .strip_prefix("memory:///")
         .or_else(|| location.strip_prefix("memory:/"))
         .unwrap_or(location)
+        .to_string()
 }
 
 async fn assert_checkpoint_unavailable_after_delete(
@@ -141,7 +145,7 @@ async fn assert_checkpoint_unavailable_after_delete(
     let (workspace, form, checkpoint) = checkpoint_with_one_revision(warehouse, space).await?;
     let path = target(&workspace, &form, &checkpoint)?;
     operator_from_uri(warehouse)?
-        .delete(object_path(&path))
+        .delete(&object_path(&path, space))
         .await?;
     let error = workspace
         .read_revision_view_at_checkpoint(&checkpoint, form.id, RevisionView::Current)
@@ -476,7 +480,7 @@ async fn checkpoint_missing_manifest_list_or_data_file_is_unavailable() -> anyho
     let (workspace, form, checkpoint) = checkpoint_with_one_revision(warehouse, 33).await?;
     let (manifest_list, _, _) = manifest_and_data_locations(&workspace, &checkpoint).await?;
     operator_from_uri(warehouse)?
-        .delete(object_path(&manifest_list))
+        .delete(&object_path(&manifest_list, 33))
         .await?;
     let error = workspace
         .read_revision_view_at_checkpoint(&checkpoint, form.id, RevisionView::Current)
@@ -488,7 +492,7 @@ async fn checkpoint_missing_manifest_list_or_data_file_is_unavailable() -> anyho
     let (workspace, form, checkpoint) = checkpoint_with_one_revision(warehouse, 34).await?;
     let (_, manifest, _) = manifest_and_data_locations(&workspace, &checkpoint).await?;
     operator_from_uri(warehouse)?
-        .delete(object_path(&manifest))
+        .delete(&object_path(&manifest, 34))
         .await?;
     let error = workspace
         .read_revision_view_at_checkpoint(&checkpoint, form.id, RevisionView::Current)
@@ -500,7 +504,7 @@ async fn checkpoint_missing_manifest_list_or_data_file_is_unavailable() -> anyho
     let (workspace, form, checkpoint) = checkpoint_with_one_revision(warehouse, 35).await?;
     let (_, _, data) = manifest_and_data_locations(&workspace, &checkpoint).await?;
     operator_from_uri(warehouse)?
-        .delete(object_path(&data))
+        .delete(&object_path(&data, 35))
         .await?;
     let error = workspace
         .read_revision_view_at_checkpoint(&checkpoint, form.id, RevisionView::Current)

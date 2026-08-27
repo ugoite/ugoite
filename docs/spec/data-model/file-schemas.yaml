@@ -48,7 +48,7 @@ schemas:
         table_uuid: {type: string, format: uuid}
         metadata_location:
           type: string
-          description: Iceberg metadata location under this Head's builds/{build_id}/ prefix.
+          description: Canonical ugoite://{space_uid}/_ugoite/derived/relations/{relation_id}/builds/{build_id}/... location under this Head's build.
         snapshot_id: {type: [integer, 'null']}
         schema_id: {type: integer}
         input_digest: {type: string}
@@ -199,7 +199,7 @@ schemas:
           format: date-time
   form_definition:
     description: Normalized Form definition persisted through Iceberg metadata.
-    path: iceberg://spaces/{space_id}/form_{form_id}
+    path: ugoite://{space_uid}/forms/form_{form_id}
     schema:
       type: object
       required:
@@ -270,7 +270,9 @@ schemas:
                   table: {type: string}
               form_id: {type: [string, 'null'], format: uuid}
               table_uuid: {type: string, format: uuid}
-              metadata_location: {type: string}
+              metadata_location:
+                type: string
+                description: Canonical ugoite://{space_uid}/{space-relative-key} Iceberg metadata coordinate for this Space.
         publication_location: {type: [string, 'null']}
         publication_command_id: {type: [string, 'null']}
         checksum: {type: string}
@@ -357,7 +359,7 @@ schemas:
           type: object
   entry_revision:
     description: Authoritative append-only Entry revision for one stable Form ID. Core writes this schema through ugoite-iceberg.
-    path: iceberg://spaces/{space_id}/form_{form_id}
+    path: ugoite://{space_uid}/forms/form_{form_id}
     schema:
       type: object
       required:

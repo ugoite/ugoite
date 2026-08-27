@@ -77,9 +77,11 @@ serialization but still writes every durable byte through OpenDAL.
 Readers never lock. Writers may prepare immutable files concurrently. Visibility
 changes only through Head. One Form table commit is the mutation atomicity unit;
 Ugoite makes no cross-Form transaction claim. Leases, TTLs, heartbeats, lock
-files, fences, custom FileIO, independent metadata-history or commit engines,
-object-list recovery, and custom maintenance engines are outside this
-architecture. A narrow physical-schema compatibility adapter is permitted only
+files, fences, independent metadata-history or commit engines, object-list
+recovery, and custom maintenance engines are outside this architecture. The
+logical-coordinate FileIO bridge accepts only canonical `ugoite://` locations,
+binds them to the active Space operator, and rejects malformed or cross-Space
+coordinates. A narrow physical-schema compatibility adapter is permitted only
 when the upstream Rust API cannot retain an already-assigned Iceberg field ID;
 it must produce standard upstream Iceberg metadata and cannot establish a
 second field-identity authority.
@@ -113,10 +115,10 @@ roots in that upstream design.
 operator, capability probes, and the small conditional-object API. It does not
 become a generic OpenDAL wrapper.
 
-`ugoite-iceberg` owns `iceberg-storage-opendal`, `SpaceCatalog`, physical
-schemas, typed Arrow conversion, upstream writers, table commits, snapshots,
-DataFusion, checkpoints, and health evidence. Its physical upstream types do
-not cross into Core.
+`ugoite-iceberg` owns the logical-coordinate FileIO bridge, `SpaceCatalog`,
+physical schemas, typed Arrow conversion, upstream writers, table commits,
+snapshots, DataFusion, checkpoints, and health evidence. Its physical upstream
+types do not cross into Core.
 
 ## Read-only health evidence
 

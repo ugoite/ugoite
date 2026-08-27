@@ -3288,52 +3288,18 @@ impl DerivedRelationHeadStore {
                 "DerivedRelation Head table_identifier must be a non-empty object"
             ));
         }
-        let storage = IcebergStorageConfig::from_operator(&self.operator)?;
-        let warehouse_uri = if storage.warehouse_uri == "memory:" {
-            "memory:///".to_string()
-        } else {
-            format!("{}/", storage.warehouse_uri.trim_end_matches('/'))
-        };
+        let metadata_uri = SpaceUri::parse(&head.metadata_location).map_err(|error| {
+            anyhow!("DerivedRelation Head metadata_location is not a valid logical URI: {error}")
+        })?;
         let expected_prefix = format!(
-            "{}{}/_ugoite/derived/relations/{}/builds/{}",
-            warehouse_uri, self.space_root, self.relation_id, head.build_id
+            "_ugoite/derived/relations/{}/builds/{}/",
+            self.relation_id, head.build_id
         );
-        let expected_url = url::Url::parse(&expected_prefix)
-            .context("parse expected DerivedRelation metadata URI")?;
-        let actual_url = url::Url::parse(&head.metadata_location)
-            .context("parse DerivedRelation Head metadata_location")?;
-        let raw_has_dot_segment = head.metadata_location.split('/').any(|segment| {
-            let segment = segment
-                .split(['?', '#'])
-                .next()
-                .unwrap_or("")
-                .to_ascii_lowercase();
-            matches!(segment.as_str(), "." | ".." | "%2e" | "%2e%2e")
-        });
-        let expected_segments = expected_url
-            .path_segments()
-            .map(|segments| segments.collect::<Vec<_>>())
-            .unwrap_or_default();
-        let actual_segments = actual_url
-            .path_segments()
-            .map(|segments| segments.collect::<Vec<_>>())
-            .unwrap_or_default();
-        let exact_authority = actual_url.scheme() == expected_url.scheme()
-            && actual_url.username() == expected_url.username()
-            && actual_url.password() == expected_url.password()
-            && actual_url.host() == expected_url.host()
-            && actual_url.port_or_known_default() == expected_url.port_or_known_default();
-        let has_safe_metadata_path = actual_segments.len() > expected_segments.len()
-            && actual_segments[..expected_segments.len()] == expected_segments[..]
-            && actual_segments[expected_segments.len()..]
-                .iter()
-                .all(|segment| !matches!(*segment, "." | ".."));
-        if head.metadata_location.trim().is_empty()
-            || !exact_authority
-            || actual_url.query().is_some()
-            || actual_url.fragment().is_some()
-            || raw_has_dot_segment
-            || !has_safe_metadata_path
+        let metadata_key = metadata_uri.key().as_str();
+        if metadata_uri.space_uid() != space_uid
+            || metadata_key
+                .strip_prefix(&expected_prefix)
+                .is_none_or(|suffix| suffix.is_empty())
         {
             return Err(anyhow!(
                 "DerivedRelation Head metadata_location is not bound to its Space, relation, and build"
@@ -4208,6 +4174,19 @@ impl SpaceCatalogStore {
 
     pub fn iceberg_storage(&self) -> &IcebergStorageConfig {
         &self.storage
+    }
+
+    /// Returns the operator explicitly bound to this Space. Iceberg's
+    /// portable URI adapter uses it only after validating the logical Space
+    /// identity and relative key.
+    pub fn operator(&self) -> &Operator {
+        &self.operator
+    }
+
+    /// Returns the validated physical prefix used to resolve logical Space
+    /// coordinates for this store.
+    pub fn space_root(&self) -> &str {
+        &self.space_root
     }
 
     /// Returns the backend-neutral publication primitive rooted at this Space
@@ -5502,7 +5481,7 @@ mod tests {
             table_identifier: serde_json::json!({"table":"derived"}),
             table_uuid: Uuid::now_v7().to_string(),
             metadata_location: format!(
-                "memory:///spaces/demo/_ugoite/derived/relations/{relation_id}/builds/{first_build_id}/metadata.json"
+                "ugoite://{space_uid}/_ugoite/derived/relations/{relation_id}/builds/{first_build_id}/metadata.json"
             ),
             snapshot_id: None,
             schema_id: 0,
@@ -5521,7 +5500,7 @@ mod tests {
         escaped.generation = 2;
         escaped.build_id = escaped_build_id.clone();
         escaped.metadata_location = format!(
-            "memory:///spaces/demo/_ugoite/derived/relations/{relation_id}/builds/{escaped_build_id}/../outside/metadata.json"
+            "ugoite://{space_uid}/_ugoite/derived/relations/{relation_id}/builds/{escaped_build_id}/../outside/metadata.json"
         );
         store.mark_staging(&escaped.build_id).await?;
         let escape_error = store
@@ -5534,7 +5513,7 @@ mod tests {
         second.generation = 2;
         second.build_id = test_build_id();
         second.metadata_location = format!(
-            "memory:///spaces/demo/_ugoite/derived/relations/{relation_id}/builds/{}/metadata.json",
+            "ugoite://{space_uid}/_ugoite/derived/relations/{relation_id}/builds/{}/metadata.json",
             second.build_id
         );
         store.mark_staging(&second.build_id).await?;
@@ -6247,7 +6226,7 @@ mod tests {
             table_identifier: serde_json::json!({"table":"derived"}),
             table_uuid: Uuid::now_v7().to_string(),
             metadata_location: format!(
-                "memory:///spaces/demo/_ugoite/derived/relations/{relation_id}/builds/{build_id}/metadata.json"
+                "ugoite://{space_uid}/_ugoite/derived/relations/{relation_id}/builds/{build_id}/metadata.json"
             ),
             snapshot_id: None,
             schema_id: 0,
@@ -6304,7 +6283,7 @@ mod tests {
             table_identifier: serde_json::json!({"table":"derived"}),
             table_uuid: Uuid::now_v7().to_string(),
             metadata_location: format!(
-                "memory:///spaces/demo/_ugoite/derived/relations/{relation_id}/builds/{current_build_id}/metadata.json"
+                "ugoite://{space_uid}/_ugoite/derived/relations/{relation_id}/builds/{current_build_id}/metadata.json"
             ),
             snapshot_id: None,
             schema_id: 0,
@@ -6361,7 +6340,7 @@ mod tests {
             table_identifier: serde_json::json!({"table":"derived"}),
             table_uuid: Uuid::now_v7().to_string(),
             metadata_location: format!(
-                "memory:///spaces/demo/_ugoite/derived/relations/{relation_id}/builds/{first_build_id}/metadata.json"
+                "ugoite://{space_uid}/_ugoite/derived/relations/{relation_id}/builds/{first_build_id}/metadata.json"
             ),
             snapshot_id: None,
             schema_id: 0,
@@ -6383,7 +6362,7 @@ mod tests {
         first.generation = 2;
         first.build_id = test_build_id();
         first.metadata_location = format!(
-            "memory:///spaces/demo/_ugoite/derived/relations/{relation_id}/builds/{}/metadata.json",
+            "ugoite://{space_uid}/_ugoite/derived/relations/{relation_id}/builds/{}/metadata.json",
             first.build_id
         );
         store.mark_staging(&first.build_id).await?;
@@ -6392,7 +6371,7 @@ mod tests {
         loser.generation = 3;
         loser.build_id = test_build_id();
         loser.metadata_location = format!(
-            "memory:///spaces/demo/_ugoite/derived/relations/{relation_id}/builds/{}/metadata.json",
+            "ugoite://{space_uid}/_ugoite/derived/relations/{relation_id}/builds/{}/metadata.json",
             loser.build_id
         );
         store.mark_staging(&loser.build_id).await?;

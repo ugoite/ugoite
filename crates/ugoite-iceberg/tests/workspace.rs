@@ -17,7 +17,7 @@ use ugoite_domain::id::{FieldId, FormId, SpaceId};
 use ugoite_iceberg::{
     physical_form_name, publication_context, IcebergWorkspace, RevisionView, WriteConfig,
 };
-use ugoite_storage::SpaceCatalogStore;
+use ugoite_storage::{SpaceCatalogStore, SpaceUri};
 use uuid::Uuid;
 
 fn form() -> FormDefinition {
@@ -84,11 +84,9 @@ async fn append_revisions(
 
 #[tokio::test]
 async fn one_stable_form_id_maps_to_one_catalog_table() -> anyhow::Result<()> {
-    let workspace = IcebergWorkspace::memory_for_tests(
-        SpaceId::from(Uuid::from_u128(1)),
-        "memory://iceberg-native-workspace",
-    )
-    .await?;
+    let space_id = SpaceId::from(Uuid::now_v7());
+    let workspace =
+        IcebergWorkspace::memory_for_tests(space_id, "memory://iceberg-native-workspace").await?;
     let form = form();
     create_form(&workspace, &form).await?;
     assert_eq!(workspace.list_forms().await?, vec![form.clone()]);
@@ -125,9 +123,27 @@ async fn one_stable_form_id_maps_to_one_catalog_table() -> anyhow::Result<()> {
         physical_form_name(form.id),
         "form_00000000000000000000000000000002"
     );
-    assert!(table.metadata().location().ends_with(
-        "/space_00000000000000000000000000000001/form_00000000000000000000000000000002"
-    ));
+    let table_location = SpaceUri::parse(table.metadata().location())?;
+    assert_eq!(table_location.space_uid(), space_id.as_uuid());
+    assert_eq!(
+        table_location.key().as_str(),
+        "forms/form_00000000000000000000000000000002"
+    );
+    let metadata_location = SpaceUri::parse(table.metadata_location_result()?)?;
+    assert_eq!(metadata_location.space_uid(), space_id.as_uuid());
+    assert!(metadata_location
+        .key()
+        .as_str()
+        .starts_with("forms/form_00000000000000000000000000000002/metadata/"));
+    let persisted_metadata = table
+        .file_io()
+        .new_input(table.metadata_location_result()?)?
+        .read()
+        .await?;
+    let persisted_metadata = String::from_utf8(persisted_metadata.to_vec())?;
+    assert!(persisted_metadata.contains("ugoite://"));
+    assert!(!persisted_metadata.contains("memory://"));
+    assert!(!persisted_metadata.contains("file://"));
     assert_eq!(
         workspace
             .catalog_for_testing()

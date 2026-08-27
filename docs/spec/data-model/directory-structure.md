@@ -4,7 +4,11 @@ title: 'Directory structure'
 
 `directory-layout.yaml` is the machine-readable inventory for repository-owned
 paths. Apache Iceberg owns table data and metadata locations beneath the Space;
-documentation and tests must not depend on its internal filenames.
+documentation and tests must not depend on its internal filenames. Every
+Iceberg-persisted location uses the canonical logical coordinate
+`ugoite://{space_uid}/{space-relative-key}`. The active operator resolves that
+coordinate to the Space prefix at I/O time; its physical warehouse URI is never
+written into portable Space or Iceberg metadata.
 
 ## Workspace layout
 

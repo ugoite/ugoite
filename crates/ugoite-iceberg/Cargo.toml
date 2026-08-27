@@ -11,6 +11,7 @@ arrow-array = "58.4"
 arrow-json = "58.4"
 arrow-schema = "58.4"
 base64 = "0.23"
+bytes = "1"
 chrono = { version = "0.4.44", features = ["serde"] }
 datafusion = "54.1.0"
 flate2 = "1.1"
@@ -18,8 +19,7 @@ fs2 = "0.4"
 futures = "0.3"
 iceberg = { git = "https://github.com/apache/iceberg-rust.git", rev = "1ecd497", version = "0.10.0" }
 iceberg-datafusion = { git = "https://github.com/apache/iceberg-rust.git", rev = "1ecd497", version = "0.10.0" }
-iceberg-storage-opendal = { git = "https://github.com/apache/iceberg-rust.git", rev = "1ecd497", version = "0.10.0" }
-opendal = { version = "0.58", default-features = false, features = ["executors-tokio", "services-fs", "services-memory", "services-s3", "services-gcs", "services-azdls", "services-oss"] }
+opendal = { version = "0.58", default-features = false, features = ["auto-register-services", "http-transport-reqwest", "executors-tokio", "services-fs", "services-memory", "services-s3", "services-gcs", "services-azdls", "services-oss"] }
 parquet = { version = "58.4", default-features = false, features = ["arrow", "async"] }
 quick-xml = "0.42.0"
 serde = { version = "1.0", features = ["derive"] }

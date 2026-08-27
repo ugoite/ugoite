@@ -51,7 +51,7 @@ use ugoite_domain::derived_relation::{
 };
 use ugoite_domain::entry::AssetReference;
 use ugoite_domain::form::FieldType;
-use ugoite_domain::id::validate_asset_id;
+use ugoite_domain::id::{validate_asset_id, SpaceId};
 use ugoite_storage::{
     backend_server_time, DerivedRelationHead, DerivedRelationHeadStore, SpaceCatalogStore,
 };
@@ -1621,13 +1621,21 @@ async fn rebuild_asset_text_with_mode(
     // marker so relation GC can reclaim the partial prefix as well.
     let build_result: Result<DerivedRelationHead> = async {
         let store = SpaceCatalogStore::new(op.clone(), ws_path)?;
+        let space_uid = space_id_from_metadata(op, ws_path)
+            .await?
+            .parse::<Uuid>()
+            .context("authoritative Space metadata has an invalid space_uid")?;
         // Iceberg locations must use the same URI namespace as the official
         // SpaceCatalog FileIO.  `Operator::info().root()` is not a portable
         // warehouse URI for all OpenDAL backends (notably memory and remote
         // stores), so do not manufacture a second location scheme here.
-        let table_location = format!("{}{}", iceberg_root_uri(&store), build_path);
+        let space_prefix = format!("{}/", ws_path.trim_end_matches('/'));
+        let build_key = build_path
+            .strip_prefix(&space_prefix)
+            .context("DerivedRelation build path is outside its Space")?;
+        let table_location = crate::logical_storage::logical_uri(space_uid, build_key)?;
         let catalog = DerivedRelationCatalog::new(
-            crate::space_catalog::file_io_for_store(&store),
+            crate::space_catalog::file_io_for_store(&store, SpaceId::from(space_uid)),
             Runtime::current(),
             NamespaceIdent::new("derived".to_string()),
         );
@@ -2184,15 +2192,6 @@ pub async fn rearm_asset_text_gc(op: &Operator, ws_path: &str) -> Result<()> {
             schedule_asset_text_gc_after_delay(op, ws_path, GC_RETRY_DELAY);
             Err(error)
         }
-    }
-}
-
-fn iceberg_root_uri(store: &SpaceCatalogStore) -> String {
-    let warehouse_uri = &store.iceberg_storage().warehouse_uri;
-    if warehouse_uri == "memory:" {
-        "memory:///".to_string()
-    } else {
-        format!("{}/", warehouse_uri.trim_end_matches('/'))
     }
 }
 
@@ -3657,7 +3656,11 @@ async fn asset_text_table_from_head(
 ) -> Result<Table> {
     validate_asset_text_head_binding(op, ws_path, head).await?;
     let store = catalog_store_for_read(op, ws_path).await?;
-    let file_io = crate::space_catalog::file_io_for_store(&store);
+    let space_uid = head
+        .space_id
+        .parse::<Uuid>()
+        .context("AssetText Head space_id is not a UUID")?;
+    let file_io = crate::space_catalog::file_io_for_store(&store, SpaceId::from(space_uid));
     let metadata =
         iceberg::spec::TableMetadata::read_from(&file_io, &head.metadata_location).await?;
     let table_ident: TableIdent = serde_json::from_value(head.table_identifier.clone())?;
@@ -4407,6 +4410,22 @@ mod tests {
         let catalog_head_before = op.read(&catalog_head_path).await?.to_vec();
         let head = rebuild_asset_text(&op, ws_path).await?;
         assert!(head.snapshot_id.is_some());
+        let metadata_uri = ugoite_storage::SpaceUri::parse(&head.metadata_location)?;
+        let space_uid = space_id_from_metadata(&op, ws_path)
+            .await?
+            .parse::<Uuid>()?;
+        assert_eq!(metadata_uri.space_uid(), space_uid);
+        assert!(metadata_uri.key().as_str().starts_with(&format!(
+            "_ugoite/derived/relations/{}/builds/",
+            DerivedRelationId::ASSET_TEXT
+        )));
+        let persisted_metadata = op
+            .read(&format!("{ws_path}/{}", metadata_uri.key()))
+            .await?;
+        let persisted_metadata = String::from_utf8(persisted_metadata.to_vec())?;
+        assert!(persisted_metadata.contains("ugoite://"));
+        assert!(!persisted_metadata.contains("memory://"));
+        assert!(!persisted_metadata.contains("file://"));
         let manifest: AssetTextManifest = serde_json::from_slice(
             &op.read(&format!(
                 "{ws_path}/_ugoite/derived/relations/{}/builds/{}/manifest.json",

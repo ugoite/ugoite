@@ -78,12 +78,14 @@ while retaining every durable byte through OpenDAL. Readers never lock, and no
 lease, heartbeat, TTL, lock file, fencing token, external Catalog, or relational
 database is part of the production architecture.
 
-Iceberg requirement/update application, file locations, filenames, and I/O use
-the current official Iceberg Rust stack and `iceberg-storage-opendal`; Ugoite
-does not supply a second FileIO or infer metadata from listings. DataFusion is
-the standard structured query engine and receives authorization-filtered,
-snapshot-pinned Iceberg providers. One Form-table commit is atomic; cross-Form
-transactions are explicitly unsupported.
+Iceberg requirement/update application, filenames, and I/O use the current
+official Iceberg Rust stack. Ugoite's logical-coordinate FileIO bridge accepts
+only `ugoite://{space_uid}/{space-relative-key}`, resolves it against the
+operator bound to the Space, and rejects malformed or cross-Space locations.
+It never persists the physical warehouse URI or infers metadata from listings.
+DataFusion is the standard structured query engine and receives
+authorization-filtered, snapshot-pinned Iceberg providers. One Form-table
+commit is atomic; cross-Form transactions are explicitly unsupported.
 
 ## ADR-011 — Portable logic is not a storage adapter
 

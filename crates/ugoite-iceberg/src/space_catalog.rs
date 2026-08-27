@@ -1,13 +1,12 @@
 #[cfg(test)]
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
-use iceberg::io::{FileIO, FileIOBuilder, Storage, StorageConfig, StorageFactory};
+use iceberg::io::{FileIO, FileIOBuilder};
 use iceberg::spec::{FormatVersion, TableMetadata, TableMetadataBuilder};
 use iceberg::{
     Catalog, Error, ErrorKind, MetadataLocation, Namespace, NamespaceIdent, Result, Runtime,
     TableCommit, TableCreation, TableIdent,
 };
-use iceberg_storage_opendal::{OpenDalResolvingStorageFactory, OpenDalStorage};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -17,8 +16,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use ugoite_domain::checkpoint::{CheckpointTable, SpaceCheckpoint};
 use ugoite_domain::id::{validate_asset_id, FormId, SpaceId};
+use ugoite_domain::space_key::SpaceUri;
 use ugoite_storage::{
-    operator_from_uri, CatalogMutationPermit, CatalogWriteMode, ExactCatalogHead, SpaceCatalogStore,
+    CatalogMutationPermit, CatalogWriteMode, ExactCatalogHead, SpaceCatalogStore,
 };
 use uuid::Uuid;
 
@@ -27,34 +27,13 @@ use crate::health::{
     FileSizeDistribution, HealthIssue, HealthStatus, SpaceHealthReport, TableHealth,
     TableIdentifierHealth, UnavailableCapability,
 };
+use crate::logical_storage::{logical_space_uid, LogicalStorageFactory};
 use crate::FORM_ID_PROPERTY;
 
 const SPACE_FORMAT_VERSION: u32 = 1;
 const MAX_HEAD_BYTES: usize = 1 << 20;
 const SMALL_FILE_THRESHOLD_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_DELETED_ASSET_BLOBS_PER_PASS: usize = 1_024;
-
-/// Holds the official OpenDAL Iceberg storage instance for test-only memory
-/// spaces. It adds no I/O behavior; it merely keeps Iceberg metadata and
-/// Catalog Head on the same OpenDAL operator.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct FixedOpenDalStorageFactory {
-    #[serde(skip, default = "default_memory_storage")]
-    storage: Arc<OpenDalStorage>,
-}
-
-fn default_memory_storage() -> Arc<OpenDalStorage> {
-    let operator = opendal::Operator::new(opendal::services::Memory::default())
-        .expect("memory operator configuration");
-    Arc::new(OpenDalStorage::Memory(operator))
-}
-
-#[typetag::serde(name = "UgoiteFixedOpenDalStorageFactory")]
-impl StorageFactory for FixedOpenDalStorageFactory {
-    fn build(&self, _config: &StorageConfig) -> Result<Arc<dyn Storage>> {
-        Ok(self.storage.clone())
-    }
-}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PublicationContext {
@@ -281,6 +260,7 @@ pub struct SpaceCatalog {
     store: SpaceCatalogStore,
     namespace: NamespaceIdent,
     space_id: SpaceId,
+    logical_space_uid: Uuid,
     file_io: FileIO,
     runtime: Runtime,
     publication: PublicationContext,
@@ -307,36 +287,24 @@ impl std::fmt::Debug for SpaceCatalog {
 
 impl SpaceCatalog {
     pub fn new(store: SpaceCatalogStore, space_id: SpaceId) -> Result<Self> {
-        let storage = store.iceberg_storage();
         if store.write_mode() == CatalogWriteMode::Shared && !store.supports_shared_writes() {
             return Err(Error::new(
                 ErrorKind::FeatureUnsupported,
                 "shared SpaceCatalog writes require ETag-bound reads and conditional writes",
             ));
         }
-        let file_io = if storage.scheme == "memory" {
-            let memory_uri = storage.memory_uri.as_deref().ok_or_else(|| {
-                Error::new(
-                    ErrorKind::DataInvalid,
-                    "memory Catalog has no registered operator",
-                )
-            })?;
-            FileIOBuilder::new(Arc::new(FixedOpenDalStorageFactory {
-                storage: Arc::new(OpenDalStorage::Memory(
-                    operator_from_uri(memory_uri)
-                        .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?,
-                )),
-            }))
-            .build()
-        } else {
-            FileIOBuilder::new(Arc::new(OpenDalResolvingStorageFactory::new()))
-                .with_props(storage.properties.clone())
-                .build()
-        };
+        let logical_space_uid = logical_space_uid(space_id);
+        let file_io = FileIOBuilder::new(Arc::new(LogicalStorageFactory::new(
+            store.operator().clone(),
+            store.space_root(),
+            logical_space_uid,
+        )))
+        .build();
         Ok(Self {
             store,
             namespace: NamespaceIdent::new(format!("space_{}", space_id.as_uuid().simple())),
             space_id,
+            logical_space_uid,
             file_io,
             runtime: Runtime::current(),
             publication: PublicationContext::generated(),
@@ -374,6 +342,7 @@ impl SpaceCatalog {
             store: self.store.clone(),
             namespace: self.namespace.clone(),
             space_id: self.space_id,
+            logical_space_uid: self.logical_space_uid,
             file_io: self.file_io.clone(),
             runtime: self.runtime.clone(),
             publication: PublicationContext::generated(),
@@ -1062,6 +1031,12 @@ impl SpaceCatalog {
         let metadata = TableMetadata::read_from(&self.file_io, &reference.metadata_location)
             .await
             .map_err(checkpoint_metadata_error)?;
+        validate_logical_location(
+            metadata.location(),
+            self.logical_space_uid,
+            "Iceberg table location",
+        )
+        .map_err(checkpoint_metadata_error)?;
         if metadata.uuid().to_string() != reference.table_uuid {
             return Err(crate::CheckpointIntegrityError::new(
                 "Iceberg table UUID does not match the Catalog Head",
@@ -1101,6 +1076,12 @@ impl SpaceCatalog {
         let metadata = TableMetadata::read_from(&self.file_io, &coordinate.metadata_location)
             .await
             .map_err(checkpoint_metadata_error)?;
+        validate_logical_location(
+            metadata.location(),
+            self.logical_space_uid,
+            "Iceberg table location",
+        )
+        .map_err(checkpoint_metadata_error)?;
         if metadata.uuid().to_string() != coordinate.table_uuid {
             return Err(crate::CheckpointIntegrityError::new(
                 "Iceberg table UUID does not match the checkpoint",
@@ -1974,6 +1955,11 @@ impl SpaceCatalog {
         })?;
         let metadata =
             TableMetadata::read_from(&self.file_io, &reference.metadata_location).await?;
+        validate_logical_location(
+            metadata.location(),
+            self.logical_space_uid,
+            "Iceberg table location",
+        )?;
         iceberg::table::Table::builder()
             .identifier(table.clone())
             .metadata(metadata)
@@ -3354,6 +3340,13 @@ impl SpaceCatalog {
                 .map_err(storage_error)?,
         )?;
         validate_publication_matches_head(&publication, head)?;
+        for reference in head.tables.values() {
+            validate_logical_location(
+                &reference.metadata_location,
+                self.logical_space_uid,
+                "Catalog Head table metadata location",
+            )?;
+        }
         match (
             publication.previous_generation,
             publication.previous_publication.as_deref(),
@@ -3391,24 +3384,13 @@ impl SpaceCatalog {
 /// Builds the official Iceberg FileIO used by a relation-local derived
 /// catalog.  Derived materializations use their Relation Head for visibility;
 /// this helper only shares the operator-backed Iceberg storage mechanics.
-pub(crate) fn file_io_for_store(store: &SpaceCatalogStore) -> FileIO {
-    let storage = store.iceberg_storage();
-    if storage.scheme == "memory" {
-        let memory_uri = storage
-            .memory_uri
-            .as_deref()
-            .expect("memory Catalog has no registered operator");
-        FileIOBuilder::new(Arc::new(FixedOpenDalStorageFactory {
-            storage: Arc::new(OpenDalStorage::Memory(
-                operator_from_uri(memory_uri).expect("memory operator"),
-            )),
-        }))
-        .build()
-    } else {
-        FileIOBuilder::new(Arc::new(OpenDalResolvingStorageFactory::new()))
-            .with_props(storage.properties.clone())
-            .build()
-    }
+pub(crate) fn file_io_for_store(store: &SpaceCatalogStore, space_id: SpaceId) -> FileIO {
+    FileIOBuilder::new(Arc::new(LogicalStorageFactory::new(
+        store.operator().clone(),
+        store.space_root(),
+        logical_space_uid(space_id),
+    )))
+    .build()
 }
 
 fn checkpoint_table_matches_reference(
@@ -3611,7 +3593,7 @@ impl Catalog for SpaceCatalog {
         );
         next.tables.insert(
             Self::table_key(&table),
-            TableReference::from_table(&created)?,
+            TableReference::from_table(&created, self.logical_space_uid)?,
         );
         next.form_registry_generation += 1;
         let base_metadata_location = attempt
@@ -3721,7 +3703,7 @@ impl Catalog for SpaceCatalog {
         let mut next = head.next_generation();
         next.tables.insert(
             Self::table_key(&table),
-            TableReference::from_table(&staged)?,
+            TableReference::from_table(&staged, self.logical_space_uid)?,
         );
         let publication = self
             .publish_new_head(
@@ -3816,12 +3798,23 @@ struct TableReference {
 }
 
 impl TableReference {
-    fn from_table(table: &iceberg::table::Table) -> Result<Self> {
+    fn from_table(table: &iceberg::table::Table, space_uid: Uuid) -> Result<Self> {
+        let metadata_location = table.metadata_location_result()?.to_string();
+        validate_logical_location(
+            &metadata_location,
+            space_uid,
+            "Iceberg table metadata location",
+        )?;
+        validate_logical_location(
+            table.metadata().location(),
+            space_uid,
+            "Iceberg table location",
+        )?;
         Ok(Self {
             identifier: TableCoordinates::from(table.identifier()),
             form_id: table.metadata().properties().get("ugoite.form.id").cloned(),
             table_uuid: table.metadata().uuid().to_string(),
-            metadata_location: table.metadata_location_result()?.to_string(),
+            metadata_location,
         })
     }
 }
@@ -3849,6 +3842,23 @@ struct PublicationRecord {
 
 fn checksum(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
+}
+
+fn validate_logical_location(location: &str, space_uid: Uuid, context: &str) -> Result<()> {
+    let uri = SpaceUri::parse(location).map_err(|error| {
+        Error::new(
+            ErrorKind::DataInvalid,
+            format!("{context} must be a Ugoite logical URI"),
+        )
+        .with_source(error)
+    })?;
+    if uri.space_uid() != space_uid {
+        return Err(Error::new(
+            ErrorKind::DataInvalid,
+            format!("{context} belongs to another Space"),
+        ));
+    }
+    Ok(())
 }
 
 fn head_checksum(head: &CatalogHead) -> Result<String> {
@@ -4029,6 +4039,14 @@ mod tests {
     use tempfile::tempdir;
     use ugoite_storage::operator_from_uri;
 
+    fn logical_test_location(space_id: SpaceId, key: &str) -> String {
+        crate::logical_storage::logical_uri(
+            crate::logical_storage::logical_space_uid(space_id),
+            key,
+        )
+        .expect("test logical location")
+    }
+
     #[tokio::test]
     async fn creates_reopens_and_updates_a_table_through_head_publication() -> AnyResult<()> {
         let temp = tempdir()?;
@@ -4051,9 +4069,9 @@ mod tests {
                 &namespace,
                 TableCreation::builder()
                     .name("form_00000000000000000000000000000001".to_string())
-                    .location(format!(
-                        "file://{}/spaces/demo/forms/form",
-                        temp.path().display()
+                    .location(logical_test_location(
+                        SpaceId::from(Uuid::from_u128(1)),
+                        "forms/form",
                     ))
                     .schema(schema)
                     .build(),
@@ -4140,7 +4158,10 @@ mod tests {
                 &namespace,
                 TableCreation::builder()
                     .name("form_00000000000000000000000000000002".to_string())
-                    .location("memory:///spaces/memory/forms/form".to_string())
+                    .location(logical_test_location(
+                        SpaceId::from(Uuid::from_u128(2)),
+                        "forms/form",
+                    ))
                     .schema(schema)
                     .build(),
             )
@@ -4286,10 +4307,7 @@ mod tests {
                 &namespace,
                 TableCreation::builder()
                     .name("form_00000000000000000000000000000003".to_string())
-                    .location(format!(
-                        "file://{}/spaces/many-publications/forms/form",
-                        temp.path().display()
-                    ))
+                    .location(logical_test_location(space_id, "forms/form"))
                     .schema(
                         iceberg::spec::Schema::builder()
                             .with_fields(vec![])
@@ -5062,7 +5080,7 @@ mod tests {
                 &namespace,
                 TableCreation::builder()
                     .name("form_asset_recovery".to_string())
-                    .location("memory:///spaces/asset-recovery/form".to_string())
+                    .location(logical_test_location(space_id, "forms/form"))
                     .schema(
                         iceberg::spec::Schema::builder()
                             .with_fields(vec![])

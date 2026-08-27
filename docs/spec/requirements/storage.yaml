@@ -46,7 +46,9 @@ requirements:
   description: 'DerivedRelation Heads and immutable Iceberg builds MUST
     remain under the owning Space prefix. They MUST use exact conditional Head
     publication, remain outside the authoritative Catalog Head and SpaceCheckpoint,
-    and be safely rebuildable from authoritative data.'
+    and be safely rebuildable from authoritative data. Iceberg metadata and
+    data coordinates MUST use canonical `ugoite://{space_uid}/{space-relative-key}`
+    URIs, and the resolver MUST reject malformed or cross-Space coordinates.'
   related_spec:
   - architecture/derived-relations.md
   - data-model/directory-layout.yaml
@@ -56,6 +58,7 @@ requirements:
   tests:
   - file: crates/ugoite-storage/src/lib.rs
   - file: crates/ugoite-iceberg/src/derived_relation.rs
+  - file: crates/ugoite-iceberg/src/logical_storage.rs
 - set_id: REQCAT-STORAGE
   source_file: requirements/storage.yaml
   scope: Storage architecture, data persistence, and portability requirements.
