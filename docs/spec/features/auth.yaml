@@ -11,15 +11,15 @@ support_boundary:
   - authenticated REST and MCP access
   - Node and Space authorization audit read access
   - owner-approved Space access recovery by principal-binding replacement
+  - recovery-code + recovery-TOTP Account Self-Recovery
   - remote CLI device authentication with DPoP
   internal_dependency:
   - authentication capability discovery
   - shared device authorization/token machinery and MCP-scoped OAuth metadata
   experimental: []
   future:
-  - TOTP and recovery-code account recovery
   - OIDC authentication and account linking
-  - account-level self/admin recovery
+  - administrator account recovery
   - agent and service-account principals
 apis:
   - id: auth.config
@@ -41,7 +41,7 @@ apis:
       path: /setup
       file: frontend/src/routes/setup.tsx
       function: SetupRoute
-    note: Bootstrap-only recovery-code display is part of setup output; TOTP and recovery-code account recovery remain future scope.
+    note: Bootstrap-only recovery-code display is part of setup output. Account Self-Recovery requires the user to explicitly enroll a recovery authenticator in Security Settings.
   - id: auth.passkey
     method: POST|DELETE|GET
     status: supported
@@ -111,21 +111,21 @@ apis:
       function: owner_force_reset
     frontend:
       path: /recover
-      file: frontend/src/routes/recover.tsx
+      file: frontend/src/routes/recover/index.tsx
       function: RecoverRoute
-    note: Space recovery changes only the target principal's Node-local HumanAccount binding. Account self-recovery, TOTP, and OIDC recovery remain future scope.
+    note: Space recovery changes only the target principal's Node-local HumanAccount binding. This Owner-approved Space Recovery journey is separate from Account Self-Recovery.
   - id: auth.account_recovery
     method: POST
-    status: future
+    status: supported
     backend:
       path: /auth/recovery/start|/auth/recovery/finish|/auth/recovery/totp/start|/auth/recovery/totp/finish
       file: crates/ugoite-server/src/lib.rs
       function: auth_recovery_start
     frontend:
-      path: /settings/security
+      path: /recover/account|/settings/security
       file: frontend/src/lib/auth-api.ts
       function: recoverPasskey
-    note: Account self-recovery, recovery-code replacement, and TOTP recovery remain outside the v0.1 support contract.
+    note: Account Self-Recovery accepts Account ID + one offline Recovery Code + recovery-only TOTP, then replaces the Node-local credential generation with a new Passkey and rotates all Recovery Codes. It preserves the HumanAccount and Space identity; OIDC linking and administrator recovery remain future scope.
   - id: auth.accounts
     method: GET|POST
     status: future

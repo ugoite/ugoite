@@ -6,9 +6,11 @@ sidebar:
 ---
 
 > v0.1 support boundary: Passkey/WebAuthn bootstrap and login, opaque browser
-> sessions, Space membership/ACL enforcement, authenticated MCP access, and
-> authorized audit reads are supported. OIDC, recovery, device credentials,
-> agent principals, and audit mutation remain future/reference architecture.
+> sessions, recovery-code + recovery-TOTP Account Self-Recovery, Space
+> membership/ACL enforcement, authenticated MCP access, and authorized audit
+> reads are supported. OIDC linking, administrator recovery, device
+> credentials, agent principals, and audit mutation remain future/reference
+> architecture. TOTP is recovery-only.
 
 Ugoite has one production authentication architecture. There is no selectable
 development authentication mode, default credential, fixed password, or shared
@@ -87,8 +89,10 @@ enables an exact comma-separated allowlist.
 
 ## External identity and recovery boundary
 
-OIDC and account self-recovery remain future/reference architecture only; they
-are not available in the v0.1 browser UI or support contract.
+OIDC linking, administrator recovery, account discovery, and operator overrides
+remain future/reference architecture. Account Self-Recovery is available only
+for a HumanAccount with explicitly enrolled recovery TOTP and issued Recovery
+Codes.
 
 OIDC uses Authorization Code with PKCE, discovery, exact issuer/redirect checks,
 state, nonce, and signature validation. The account key is exact issuer plus
@@ -97,10 +101,16 @@ Ugoite resources. A new OIDC account requires an unexpired Ugoite invitation.
 Existing local accounts may accept invitations directly and may link an OIDC
 issuer/subject pair after recent Passkey authentication.
 
-Recovery requires an unused recovery code and TOTP. Attempts are throttled and
-locked after repeated failure. TOTP alone cannot add a Passkey. Successful
-self-recovery registers a replacement Passkey and displays a new set of
-recovery codes once. A separate owner-approved Space access recovery accepts a
+Account Self-Recovery requires the exact Account ID, one currently valid
+offline Recovery Code, and a valid recovery-only TOTP code. Attempts are
+throttled and locked after five consecutive failures for 15 minutes. Neither
+factor works alone. Start only issues a short-lived WebAuthn replacement
+challenge; the code is consumed and all credential authority is replaced only
+when finish succeeds. Successful self-recovery preserves the HumanAccount and
+Space identity, advances credential generation, replaces the account's
+Passkeys, invalidates pre-recovery authentication authority, rotates all
+Recovery Codes, establishes a new browser session, and emits a secret-free
+Node audit event. A separate owner-approved Space access recovery accepts a
 15-minute token whose hash is authoritative; an encrypted bearer is retained
 only for a bounded one-time response window. It is issued by an active human
 Space Owner with a recent Passkey; the target completes a five-minute WebAuthn

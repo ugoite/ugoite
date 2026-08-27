@@ -3,7 +3,7 @@
   "info": {
     "title": "Ugoite Rust Server API",
     "version": "0.1.0",
-    "description": "The generated endpoint inventory is authoritative for the server implementation. v0.1 supports mandatory browser authentication with Passkey/WebAuthn, owner-approved Space access recovery, remote CLI device authentication, opaque sessions, Space membership/ACL enforcement, authenticated MCP access, and authorized audit reads. Account self-recovery, TOTP/OIDC recovery, managed service-account operations, audit CRUD, and remote CLI asset upload remain reference/future scope."
+    "description": "The generated endpoint inventory is authoritative for the server implementation. v0.1 supports mandatory browser authentication with Passkey/WebAuthn, owner-approved Space access recovery, recovery-code + recovery-TOTP Account Self-Recovery, remote CLI device authentication, opaque sessions, Space membership/ACL enforcement, authenticated MCP access, and authorized audit reads. OIDC linking, administrator recovery, managed service-account operations, audit CRUD, and remote CLI asset upload remain reference/future scope. TOTP is recovery-only."
   },
   "x-ugoite-response-signing": {
     "description": "Eligible materialized /api responses carry the reusable HMAC headers below. The signature is lowercase hexadecimal HMAC-SHA256 over the exact delivered body bytes.",
@@ -8715,13 +8715,13 @@
     },
     "/auth/recovery/start": {
       "post": {
-        "summary": "Start recovery with a one-use recovery code and TOTP",
+        "summary": "Start Account Self-Recovery with a valid recovery code and recovery-only TOTP",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JsonValue"
+                "$ref": "#/components/schemas/AccountRecoveryStartRequest"
               }
             }
           }
@@ -8732,7 +8732,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonValue"
+                  "$ref": "#/components/schemas/AccountRecoveryRegistrationStart"
                 }
               }
             },
@@ -8745,7 +8745,7 @@
               }
             }
           },
-          "400": {
+          "401": {
             "description": "Invalid recovery credentials",
             "content": {
               "application/json": {
@@ -8762,19 +8762,29 @@
                 "$ref": "#/components/headers/X-Ugoite-Signature"
               }
             }
+          },
+          "409": {
+            "description": "Recovery is unavailable while a protected Node recovery fence is active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryErrorResponse"
+                }
+              }
+            }
           }
         }
       }
     },
     "/auth/recovery/finish": {
       "post": {
-        "summary": "Register a replacement Passkey after recovery",
+        "summary": "Commit Account Self-Recovery with a replacement Passkey",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JsonValue"
+                "$ref": "#/components/schemas/AccountRecoveryFinishRequest"
               }
             }
           }
@@ -8785,11 +8795,23 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonValue"
+                  "$ref": "#/components/schemas/AccountRecoveryFinishResponse"
                 }
               }
             },
             "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string",
+                  "description": "ugoite_session=<opaque>; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax; Secure when HTTPS"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
               "X-Ugoite-Key-Id": {
                 "$ref": "#/components/headers/X-Ugoite-Key-Id"
               },
@@ -8798,7 +8820,7 @@
               }
             }
           },
-          "400": {
+          "401": {
             "description": "Invalid recovery challenge",
             "content": {
               "application/json": {
@@ -8813,6 +8835,16 @@
               },
               "X-Ugoite-Signature": {
                 "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "409": {
+            "description": "Recovery is unavailable while a protected Node recovery fence is active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryErrorResponse"
+                }
               }
             }
           }
@@ -12041,6 +12073,89 @@
           "delivered",
           "pending"
         ]
+      },
+      "AccountRecoveryStartRequest": {
+        "type": "object",
+        "required": [
+          "account_id",
+          "recovery_code",
+          "totp_code"
+        ],
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recovery_code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "totp_code": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AccountRecoveryRegistrationStart": {
+        "type": "object",
+        "required": [
+          "challenge_id",
+          "public_key"
+        ],
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "public_key": {
+            "$ref": "#/components/schemas/WebAuthnCreationChallengeResponse"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AccountRecoveryFinishRequest": {
+        "type": "object",
+        "required": [
+          "account_id",
+          "challenge_id",
+          "credential"
+        ],
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "challenge_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "credential": {
+            "$ref": "#/components/schemas/WebAuthnRegistrationCredential"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AccountRecoveryFinishResponse": {
+        "type": "object",
+        "required": [
+          "account",
+          "recovery_codes"
+        ],
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/HumanAccount"
+          },
+          "recovery_codes": {
+            "type": "array",
+            "minItems": 8,
+            "maxItems": 8,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
       },
       "OwnerRecoveryApprovalResponse": {
         "type": "object",

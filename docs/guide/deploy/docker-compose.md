@@ -5,7 +5,8 @@ sidebar:
 ---
 
 > Release note: Passkey/WebAuthn account bootstrap and passwordless browser
-> login are supported in v0.1. TOTP/recovery and OIDC remain future scope.
+> login are supported in v0.1. Account Self-Recovery is supported after
+> explicitly enrolling a recovery-only TOTP; OIDC linking remains future scope.
 
 Generate an encryption root and start the source image:
 

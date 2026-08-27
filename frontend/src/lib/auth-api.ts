@@ -238,7 +238,7 @@ export const authApi = {
       }),
     });
   },
-  /** Completes bootstrap; recovery_codes are displayed once and are not a v0.1 recovery workflow. */
+  /** Completes bootstrap; recovery_codes are displayed once as offline backup material. */
   async setup(
     setupSecret: string,
     displayName: string,
@@ -348,7 +348,10 @@ export const authApi = {
     accountId: string,
     recoveryCode: string,
     totpCode: string,
-  ): Promise<{ recovery_codes: string[] }> {
+  ): Promise<{
+    account: { account_id: string; display_name: string };
+    recovery_codes: string[];
+  }> {
     const challenge = await request<ChallengeEnvelope>("/auth/recovery/start", {
       method: "POST",
       body: JSON.stringify({
@@ -358,7 +361,10 @@ export const authApi = {
       }),
     });
     const credential = await createPasskey(challenge);
-    return await request<{ recovery_codes: string[] }>(
+    return await request<{
+      account: { account_id: string; display_name: string };
+      recovery_codes: string[];
+    }>(
       "/auth/recovery/finish",
       {
         method: "POST",

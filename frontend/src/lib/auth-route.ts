@@ -2,6 +2,7 @@ const publicRoutePaths = new Set([
   "/",
   "/login",
   "/recover",
+  "/recover/account",
   "/setup",
   "/about",
   "/spaces/join",

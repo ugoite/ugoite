@@ -100,8 +100,10 @@ ugoite space list
 
 `ugoite auth login` uses browser-approved device authentication with a fresh
 P-256 key and DPoP-bound credentials. Owner-approved Space access recovery is
-available at the browser recovery route. Account self-recovery, OIDC/TOTP,
-agent principals, and remote CLI asset upload remain future scope.
+available at the browser recovery route. Account Self-Recovery is available at
+`/recover/account` after explicitly enrolling a recovery-only TOTP. OIDC
+linking, administrator recovery, agent principals, and remote CLI asset upload
+remain future scope.
 
 ## API and documentation
 

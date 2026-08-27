@@ -69,19 +69,21 @@ export default function SetupRoute() {
             <div class="ui-stack-sm">
               <Show
                 when={recoveryCodes().length > 0}
-                fallback={
-                  <p>Resume setup by registering a second Passkey.</p>
-                }
+                fallback={<p>Resume setup by registering a second Passkey.</p>}
               >
                 <p>
                   Save these bootstrap-only recovery codes now. They are not
-                  shown again, and v0.1 does not support using them for account
-                  recovery.
+                  shown again. Account self-recovery becomes available after you
+                  explicitly set up a recovery authenticator in Security
+                  Settings.
                 </p>
                 <p>
-                  Recovery account ID: <code>{accountId()}</code>
+                  Recovery account ID:{" "}
+                  <code data-testid="recovery-account-id">{accountId()}</code>
                 </p>
-                <pre class="ui-card">{recoveryCodes().join("\n")}</pre>
+                <pre class="ui-card" data-testid="bootstrap-recovery-codes">
+                  {recoveryCodes().join("\n")}
+                </pre>
               </Show>
               <Show
                 when={strengthComplete()}

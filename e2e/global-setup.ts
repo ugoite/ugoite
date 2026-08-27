@@ -3,6 +3,7 @@ import {
   addVirtualAuthenticator,
   removeVirtualAuthenticator,
 } from "./lib/webauthn.ts";
+import { totpCodeAt } from "./lib/totp.ts";
 
 const SETUP_TIMEOUT_MS = 30_000;
 
@@ -107,6 +108,11 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
       "recovery-code screen",
       browserErrors,
     );
+    const accountId = await page.getByTestId("recovery-account-id").innerText();
+    const recoveryCodes =
+      (await page.getByTestId("bootstrap-recovery-codes").innerText())
+        .split(/\s+/)
+        .filter(Boolean);
     await removeVirtualAuthenticator(cdp, firstAuthenticator);
     await addVirtualAuthenticator(cdp);
     const registerSecondPasskey = page.getByRole("button", {
@@ -142,6 +148,32 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     );
     await continueButton.click();
     await expect(page).toHaveURL(/\/spaces$/);
+
+    await page.goto(new URL("/settings/security", baseURL).toString());
+    const setupRecoveryAuthenticator = page.getByRole("button", {
+      name: "Set up or replace recovery authenticator",
+    });
+    await waitForSetupState(
+      page,
+      setupRecoveryAuthenticator,
+      "account recovery settings",
+      browserErrors,
+    );
+    await setupRecoveryAuthenticator.click();
+    const recoverySecret = await page.getByTestId("recovery-secret")
+      .innerText();
+    await page.getByLabel("Current six-digit code").fill(
+      await totpCodeAt(recoverySecret),
+    );
+    await page.getByRole("button", { name: "Confirm TOTP" }).click();
+    await expect(page.getByRole("status")).toHaveText(
+      "Recovery TOTP configured.",
+    );
+    await Deno.mkdir(".auth", { recursive: true });
+    await Deno.writeTextFile(
+      ".auth/account-recovery.json",
+      JSON.stringify({ accountId, recoveryCodes, totpSecret: recoverySecret }),
+    );
 
     const signOut = await page.request.delete(`${baseURL}/api/auth/session`, {
       headers: { Origin: new URL(baseURL).origin },

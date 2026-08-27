@@ -15,6 +15,12 @@ normative security contract includes:
   login is passwordless.
 - Browser cookies contain only an opaque server-side session identifier. Idle
   timeout is 24 hours and absolute timeout is 30 days.
+- Account Self-Recovery is supported for accounts that explicitly enroll a
+  recovery-only TOTP. The exact Account ID, one valid offline Recovery Code,
+  and valid TOTP authorize a short-lived Passkey replacement challenge; finish
+  advances credential generation, replaces Passkeys, rotates Recovery Codes,
+  invalidates pre-recovery authority, creates a new session, and emits a
+  secret-free Node audit event. Neither factor works alone.
 - Initial setup uses an expiring one-use setup secret stored only as a hash and
   establishes the administrator's initial Passkey and browser session.
 - Invitations and membership changes are one-use/concurrency-safe where
@@ -22,13 +28,14 @@ normative security contract includes:
 - Authenticated MCP requests use the same identity and ACL boundary as REST;
   browser cookie sessions are intentionally not accepted by `/mcp`.
 
-The following controls are future/reference design and are not v0.1 product
-promises:
+The following additional boundaries and controls apply to v0.1:
 
-- OIDC authorization-code + PKCE identity linking keyed by issuer and subject.
-- TOTP, recovery-code replacement, and account-level self-recovery. Bootstrap-
-  only recovery-code display does not make account recovery a supported v0.1
-  workflow.
+- OIDC authorization-code + PKCE identity linking keyed by issuer and subject
+  remains future/reference design.
+- TOTP remains a recovery-only factor and is not a normal login method. Recovery
+  Code plaintext is never persistent and is only returned after successful
+  credential replacement. Start does not consume a code; failed attempts use
+  the existing five-attempt, 15-minute temporary lock.
 - Owner-approved Space access recovery is supported separately from account
   self-recovery: only an active human Space Owner with a recent Passkey can
   issue a 15-minute token for an active human principal in that Space. The
