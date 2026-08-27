@@ -71,12 +71,14 @@ current Iceberg `Catalog` trait. Its sole mutable authority is
 ambiguous Head compare-and-swap after later writers publish.
 
 Shared writes require a real Head ETag, exact `if_match` reads, conditional
-initial creation, and conditional whole-object replacement proven by backend
-probes. ETags are opaque tokens. Unsupported backends fail closed for shared
-writes; an explicitly selected single-process mode may serialize in-process
-while retaining every durable byte through OpenDAL. Readers never lock, and no
-lease, heartbeat, TTL, lock file, fencing token, external Catalog, or relational
-database is part of the production architecture.
+initial creation, conditional whole-object replacement, stale rejection, and
+one-winner concurrent CAS proven by backend probes. ETags are opaque tokens.
+Non-local stores remain `SharedReadOnly` until the probe promotes them to
+`SharedVerified`; unsupported or unverified stores fail closed. An explicitly
+selected single-process mode may serialize in-process while retaining every
+durable byte through OpenDAL. Readers never lock, and no lease, heartbeat,
+TTL, lock file, fencing token, external Catalog, or relational database is
+part of the production architecture.
 
 Iceberg requirement/update application, filenames, and I/O use the current
 official Iceberg Rust stack. Ugoite's logical-coordinate FileIO bridge accepts

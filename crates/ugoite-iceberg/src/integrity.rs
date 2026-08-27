@@ -24,6 +24,7 @@ impl RealIntegrityProvider {
     pub async fn from_space(op: &Operator, space_name: &str) -> Result<Self> {
         crate::authorization::Authorizer::new(op.clone())
             .ensure_authoritative_mutation_contract()?;
+        crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{space_name}")).await?;
         let storage = OpendalStorage::from_operator(op);
         Self::from_storage(&storage, space_name).await
     }
@@ -134,6 +135,7 @@ async fn load_hmac_material_with_storage<S: StorageBackend + ?Sized>(
 
 pub async fn load_hmac_material(op: &Operator, space_name: &str) -> Result<(String, Vec<u8>)> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{space_name}")).await?;
     let storage = OpendalStorage::from_operator(op);
     load_hmac_material_with_storage(&storage, space_name).await
 }
@@ -233,27 +235,24 @@ pub async fn load_response_hmac_material(
     op: &Operator,
     space_name: &str,
 ) -> Result<(String, Vec<u8>)> {
+    let safe_space_name = validate_response_hmac_space_id(space_name)?;
     let storage = OpendalStorage::from_operator(op);
-    if crate::authorization::Authorizer::new(op.clone())
-        .ensure_authoritative_mutation_contract()
-        .is_ok()
-    {
-        load_response_hmac_material_with_storage(&storage, space_name).await
-    } else {
-        load_existing_response_hmac_material_with_storage(&storage, space_name).await
+    let path = response_hmac_path(&safe_space_name);
+    if storage.exists(&path).await? {
+        return load_existing_response_hmac_material_with_storage(&storage, &safe_space_name).await;
     }
+    crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{safe_space_name}"))
+        .await?;
+    load_response_hmac_material_with_storage(&storage, &safe_space_name).await
 }
 
 pub async fn load_default_response_hmac_material(op: &Operator) -> Result<(String, Vec<u8>)> {
     let storage = OpendalStorage::from_operator(op);
-    if crate::authorization::Authorizer::new(op.clone())
-        .ensure_authoritative_mutation_contract()
-        .is_ok()
-    {
-        load_default_response_hmac_material_with_storage(&storage).await
-    } else {
-        load_existing_default_response_hmac_material_with_storage(&storage).await
+    if storage.exists(default_response_hmac_path()).await? {
+        return load_existing_default_response_hmac_material_with_storage(&storage).await;
     }
+    ugoite_storage::verify_publication_mutation_contract(op).await?;
+    load_default_response_hmac_material_with_storage(&storage).await
 }
 
 pub async fn build_response_signature(

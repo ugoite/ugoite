@@ -42,8 +42,8 @@ stories:
   - REQ-STO-006
   status: partial
   implementation_notes: Local and S3-compatible operators and connection testing exist. The v0.1 authoritative
-    server mutation contract is local/memory-only because non-local object storage does not yet provide the required
-    atomic multi-object fencing. Changing a storage descriptor does not migrate existing data. Pre-release format
+    server mutation admission is based on runtime exact-read and single-object CAS evidence, including concurrent
+    single-winner behavior. Changing a storage descriptor does not migrate existing data. Pre-release format
     migrations are unsupported.
 - id: STORY-004
   title: Time Travel

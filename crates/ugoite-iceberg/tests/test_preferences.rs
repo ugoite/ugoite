@@ -88,3 +88,23 @@ async fn test_preferences_req_sto_011_patch_roundtrip_uses_hashed_user_path() ->
 
     Ok(())
 }
+
+#[tokio::test]
+async fn concurrent_preference_patches_preserve_both_updates() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let locale_patch = json!({"locale": "ja"});
+    let theme_patch = json!({"ui_theme": "pop"});
+
+    let (locale, theme) = tokio::join!(
+        preferences::patch_user_preferences(&op, "concurrent-user", &locale_patch),
+        preferences::patch_user_preferences(&op, "concurrent-user", &theme_patch,),
+    );
+    locale?;
+    theme?;
+
+    let stored = preferences::get_user_preferences(&op, "concurrent-user").await?;
+    assert_eq!(stored.locale, Some(preferences::LocalePreference::Ja));
+    assert_eq!(stored.ui_theme, Some(preferences::UiThemePreference::Pop));
+
+    Ok(())
+}

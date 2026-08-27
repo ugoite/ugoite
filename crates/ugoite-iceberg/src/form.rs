@@ -69,7 +69,7 @@ pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Resu
         .and_then(|value| value.as_str())
         .ok_or_else(|| invalid_form_input("Form definition missing 'name' field"))?
         .to_string();
-    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    let workspace = iceberg_store::native_mutation_workspace(op, ws_path).await?;
     let known_forms = workspace.list_forms().await?;
     let existing_domain = known_forms
         .iter()

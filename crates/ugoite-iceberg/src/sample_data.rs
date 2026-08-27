@@ -2014,6 +2014,8 @@ async fn create_sample_space_with_progress(
     progress: &mut ProgressReporter,
 ) -> Result<SampleDataSummary> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{}", options.space_id))
+        .await?;
     progress.report(0, "Creating space").await?;
     let service = UgoiteService::from_operator(op.clone(), root_uri);
     let space_uid = service.create_operator_space(&options.space_id).await?;
@@ -2077,6 +2079,8 @@ pub async fn create_sample_space(
     options: &SampleDataOptions,
 ) -> Result<SampleDataSummary> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{}", options.space_id))
+        .await?;
     let plan = resolve_sample_data_plan(options)?;
     let mut progress = ProgressReporter::None;
     create_sample_space_with_progress(op, root_uri, options, &plan, &mut progress).await
@@ -2108,6 +2112,8 @@ pub async fn create_sample_space_job(
     options: &SampleDataOptions,
 ) -> Result<SampleDataJob> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{}", options.space_id))
+        .await?;
     let plan = resolve_sample_data_plan(options)?;
 
     let job = enqueue_sample_space_job(op, options, &plan).await?;
@@ -2140,6 +2146,8 @@ pub async fn create_sample_space_job_and_wait(
     options: &SampleDataOptions,
 ) -> Result<SampleDataJob> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{}", options.space_id))
+        .await?;
     let plan = resolve_sample_data_plan(options)?;
     let job = enqueue_sample_space_job(op, options, &plan).await?;
     let running_job = mark_sample_space_job_running(op, &job).await?;

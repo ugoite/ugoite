@@ -53,7 +53,8 @@ use ugoite_domain::entry::AssetReference;
 use ugoite_domain::form::FieldType;
 use ugoite_domain::id::{validate_asset_id, SpaceId};
 use ugoite_storage::{
-    backend_server_time, DerivedRelationHead, DerivedRelationHeadStore, SpaceCatalogStore,
+    backend_server_time, is_local_operator, DerivedRelationHead, DerivedRelationHeadStore,
+    SpaceCatalogStore,
 };
 use uuid::Uuid;
 use zip::ZipArchive;
@@ -701,7 +702,7 @@ impl Catalog for DerivedRelationCatalog {
 }
 
 pub async fn rebuild_asset_text(op: &Operator, ws_path: &str) -> Result<DerivedRelationHead> {
-    let shared = matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls");
+    let shared = !is_local_operator(op);
     rebuild_asset_text_with_timeout(op, ws_path, shared).await
 }
 
@@ -892,7 +893,7 @@ async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str)
             Err(error) if error.kind() == ErrorKind::ConditionNotMatch => continue,
             Err(error) => return Err(error.into()),
         };
-        let shared_backend = matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls");
+        let shared_backend = !is_local_operator(op);
         let server_now = if shared_backend {
             Some(
                 backend_server_time(
@@ -1085,7 +1086,7 @@ where
         // same admission invariant with one process-local mutex. Shared
         // remote writers are rejected rather than pretending a read-then-write
         // check is atomic.
-        if !matches!(op.info().scheme(), "memory" | "fs" | "file") {
+        if !is_local_operator(op) {
             bail!("AssetText refresh marker admission requires conditional object writes");
         }
         let lock = ASSET_TEXT_REFRESH_LOCAL_ADMISSION.get_or_init(Mutex::default);
@@ -2019,10 +2020,7 @@ fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Durat
                             relation_id,
                         );
                         let maintenance = tokio::time::timeout(GC_OPERATION_TIMEOUT, async {
-                            let head_store = if matches!(
-                                operator.info().scheme(),
-                                "s3" | "gcs" | "oss" | "azdls"
-                            ) {
+                            let head_store = if !is_local_operator(&operator) {
                                 base.shared().await?
                             } else {
                                 base.single_process()
@@ -2145,7 +2143,7 @@ async fn ensure_cleanup_marker(head_store: &DerivedRelationHeadStore, build_id: 
 pub async fn garbage_collect_asset_text(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
     let relation_id = asset_text_definition().relation_id.as_uuid();
     let base = DerivedRelationHeadStore::new(op.clone(), ws_path, relation_id);
-    let head_store = if matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls") {
+    let head_store = if is_shared_backend(op) {
         base.shared().await?
     } else {
         base.single_process()
@@ -2360,7 +2358,7 @@ async fn validate_asset_text_read_boundary(op: &Operator, ws_path: &str) -> Resu
 }
 
 fn is_shared_backend(op: &Operator) -> bool {
-    matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls")
+    !is_local_operator(op)
 }
 
 async fn asset_text_head_store(op: &Operator, ws_path: &str) -> Result<DerivedRelationHeadStore> {

@@ -104,7 +104,8 @@ pub struct BackendHealth {
 #[serde(rename_all = "snake_case")]
 pub enum BackendMode {
     SingleProcess,
-    Shared,
+    SharedReadOnly,
+    SharedVerified,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]

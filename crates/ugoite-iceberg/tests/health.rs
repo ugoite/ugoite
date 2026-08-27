@@ -123,7 +123,7 @@ async fn health_uses_only_reachable_metadata_and_redacts_locations() -> anyhow::
     assert!(!report.backend.shared_write_contract);
     assert_eq!(
         serde_json::to_value(&report.backend)?["probe_status"],
-        "active_probe_unavailable"
+        "capability_declaration"
     );
     Ok(())
 }

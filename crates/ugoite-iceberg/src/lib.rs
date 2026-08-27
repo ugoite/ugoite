@@ -91,11 +91,11 @@ use ugoite_domain::form::{
 use ugoite_domain::id::{validate_checkpoint_name, FormId, RevisionId, SpaceId};
 
 use crate::logical_storage::{logical_space_uid, logical_uri};
-use ugoite_storage::{operator_from_uri, SpaceCatalogStore};
+use ugoite_storage::{is_local_operator, operator_from_uri, SpaceCatalogStore};
 use uuid::Uuid;
 
 pub(crate) fn is_shared_backend(operator: &Operator) -> bool {
-    matches!(operator.info().scheme(), "s3" | "gcs" | "oss" | "azdls")
+    !is_local_operator(operator)
 }
 
 /// Read an object against the exact version observed by `stat`.

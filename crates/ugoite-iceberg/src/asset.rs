@@ -108,6 +108,7 @@ pub async fn save_asset_with_media_type(
     media_type: &str,
 ) -> Result<AssetReference> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::iceberg_store::ensure_mutation_admitted(op, ws_path).await?;
     if content.len() > MAX_ASSET_BYTES {
         anyhow::bail!("asset exceeds the {MAX_ASSET_BYTES}-byte size limit");
     }
@@ -338,7 +339,7 @@ pub async fn delete_asset(
         )
         .into());
     }
-    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    let workspace = crate::iceberg_store::native_mutation_workspace(op, ws_path).await?;
     let publication = crate::publication_context(
         format!("asset-delete:{asset_id}"),
         "asset.delete",

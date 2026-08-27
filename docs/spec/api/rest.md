@@ -6,12 +6,12 @@ title: REST API
 checked-in OpenAPI snapshot and generated frontend path registry are verified in
 CI.
 
-The v0.1 server mutation boundary is local/memory-backed Space storage. S3-
-compatible and other non-local operators remain available for supported
-connection/configuration and derived CAS paths, but authoritative REST
-mutations fail closed until a backend-level atomic multi-object fencing
-contract is implemented. The stable error code is
-`STORAGE_MUTATION_UNAVAILABLE`.
+The v0.1 server admits authoritative mutations on local/memory-backed Space
+storage and on non-local operators only after the storage boundary verifies
+exact reads, create-if-absent, conditional replacement, stale-revision
+rejection, and a single winner under concurrent CAS. Unsupported, unavailable,
+or unverified operators fail closed with the stable error code
+`STORAGE_MUTATION_UNAVAILABLE`; they are not silently treated as writable.
 
 > Release boundary: v0.1 supports mandatory browser authentication with
 > Passkey/WebAuthn, opaque sessions, owner-approved Space access recovery,

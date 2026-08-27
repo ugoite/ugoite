@@ -287,12 +287,6 @@ impl std::fmt::Debug for SpaceCatalog {
 
 impl SpaceCatalog {
     pub fn new(store: SpaceCatalogStore, space_id: SpaceId) -> Result<Self> {
-        if store.write_mode() == CatalogWriteMode::Shared && !store.supports_shared_writes() {
-            return Err(Error::new(
-                ErrorKind::FeatureUnsupported,
-                "shared SpaceCatalog writes require ETag-bound reads and conditional writes",
-            ));
-        }
         let logical_space_uid = logical_space_uid(space_id);
         let file_io = FileIOBuilder::new(Arc::new(LogicalStorageFactory::new(
             store.operator().clone(),
@@ -319,7 +313,7 @@ impl SpaceCatalog {
         self.store.mutation_permit().map(|_| ()).map_err(|_| {
             ugoite_core::error::AppError::dependency_unavailable(
                 ugoite_core::error::ErrorCode::StorageMutationUnavailable,
-                "non-local Space mutations are unavailable in v0.1 until the storage backend provides an atomic multi-object fencing contract",
+                "authoritative Space mutations require a verified exact-read and single-Head-CAS storage contract",
             )
             .into()
         })
@@ -560,7 +554,8 @@ impl SpaceCatalog {
         let capability = self.store.backend_capabilities();
         let mode = match self.store.write_mode() {
             CatalogWriteMode::SingleProcess => BackendMode::SingleProcess,
-            CatalogWriteMode::Shared => BackendMode::Shared,
+            CatalogWriteMode::SharedReadOnly => BackendMode::SharedReadOnly,
+            CatalogWriteMode::SharedVerified => BackendMode::SharedVerified,
         };
         BackendHealth {
             mode,
@@ -568,13 +563,18 @@ impl SpaceCatalog {
             read_with_if_match: capability.read_with_if_match,
             write_with_if_match: capability.write_with_if_match,
             write_with_if_not_exists: capability.write_with_if_not_exists,
-            shared_write_contract: capability.shared_write_contract,
+            // Capability bits describe what the provider advertises. The
+            // health contract reports mutation admission, which is only true
+            // after the behavioral probe has promoted a shared store.
+            shared_write_contract: capability.shared_write_contract
+                && self.store.write_mode().is_verified(),
             probe_status: match mode {
-                BackendMode::Shared => BackendProbeStatus::ActiveProbeVerified,
+                BackendMode::SharedVerified => BackendProbeStatus::ActiveProbeVerified,
+                BackendMode::SharedReadOnly => BackendProbeStatus::ActiveProbeUnavailable,
                 // No durable per-store probe history exists for the
                 // single-process contract, and health intentionally does not
                 // write one merely to answer this request.
-                BackendMode::SingleProcess => BackendProbeStatus::ActiveProbeUnavailable,
+                BackendMode::SingleProcess => BackendProbeStatus::CapabilityDeclaration,
             },
         }
     }
@@ -4650,7 +4650,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn direct_non_local_catalog_table_writes_fail_before_metadata_io() -> AnyResult<()> {
+    async fn direct_unverified_non_local_catalog_writes_fail_before_metadata_io() -> AnyResult<()> {
         let operator = operator_from_uri("s3://ugoite-test-bucket/catalog-table-boundary")?;
         let store = SpaceCatalogStore::new(operator, "spaces/catalog-table-boundary")?;
         let space_id = SpaceId::from(Uuid::from_u128(18_526));
@@ -4670,10 +4670,10 @@ mod tests {
                     .build(),
             )
             .await
-            .expect_err("direct Catalog table writes must fail closed");
+            .expect_err("direct unverified Catalog table writes must fail closed");
         assert!(error
             .to_string()
-            .contains("non-local Space mutations are unavailable"));
+            .contains("verified exact-read and single-Head-CAS storage contract"));
         Ok(())
     }
 

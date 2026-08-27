@@ -2355,7 +2355,7 @@ fn extract_sql_query(value: &Value) -> Option<String> {
 }
 
 pub async fn reindex_all(op: &Operator, ws_path: &str) -> Result<()> {
-    if matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls") {
+    if !ugoite_storage::is_local_operator(op) {
         crate::derived_relation::rebuild_asset_text_shared(op, ws_path).await?;
     } else {
         crate::derived_relation::rebuild_asset_text(op, ws_path).await?;
@@ -2503,7 +2503,7 @@ pub async fn get_space_stats(op: &Operator, ws_path: &str) -> Result<Value> {
 
 pub async fn update_entry_index(op: &Operator, ws_path: &str, entry_id: &str) -> Result<()> {
     let _ = entry_id;
-    if matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls") {
+    if !ugoite_storage::is_local_operator(op) {
         crate::derived_relation::rebuild_asset_text_shared(op, ws_path).await?;
     } else {
         crate::derived_relation::rebuild_asset_text(op, ws_path).await?;
