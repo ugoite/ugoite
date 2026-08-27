@@ -19,6 +19,7 @@ vi.mock("~/lib/auth-api", () => ({
     loginWithPasskey: vi.fn(),
     loginWithOidc: vi.fn(),
   },
+  oidcIssuerLabel: (issuer: string) => new URL(issuer).host,
 }));
 
 describe("/login continuation", () => {
@@ -52,11 +53,40 @@ describe("/login continuation", () => {
     );
   });
 
-  it("does not expose future OIDC login in the v0.1 browser flow", async () => {
+  it("shows configured OIDC login after the Passkey primary action", async () => {
+    vi.mocked(authApi.getConfig).mockResolvedValue({
+      status: "active",
+      nodeId: "node",
+      issuer: "http://localhost:3000",
+      rpId: "localhost",
+      passkey: true,
+      oidc: true,
+    });
+    vi.mocked(authApi.listOidcProviders).mockResolvedValue([{
+      provider_id: "provider-1",
+      issuer: "https://issuer.example/tenant-a",
+      client_id: "client",
+    }]);
+    render(() => <LoginRoute />);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Continue with issuer.example",
+      }),
+    );
+
+    expect(authApi.loginWithOidc).toHaveBeenCalledWith(
+      "provider-1",
+      undefined,
+      "/spaces/demo/dashboard?tab=recent",
+    );
+  });
+
+  it("does not expose OIDC when no provider is configured", async () => {
     render(() => <LoginRoute />);
 
     await screen.findByRole("button", { name: "Sign in with a passkey" });
-    expect(screen.queryByText("Sign in with https://issuer.example"))
+    expect(screen.queryByText("Continue with issuer.example"))
       .toBeNull();
     expect(authApi.loginWithOidc).not.toHaveBeenCalled();
   });

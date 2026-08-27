@@ -17,9 +17,11 @@ The remaining architectural work is product capability, not stack migration:
 
 - browser-local Space persistence;
 - optional synchronization/relay semantics;
-- production Passkey enrollment/login and optional invited OIDC;
+- production Passkey enrollment/login and invitation-gated OIDC;
 - sponsored Agent Principals and append-only authorization audit history;
 - channel-specific release communication and support rollout after a published
   version.
 
-These items are future scope and must remain labeled as such.
+Browser-local persistence and optional synchronization remain future scope and
+must remain labeled as such. Passkey and invitation-gated OIDC are supported
+authentication surfaces in the current release boundary.

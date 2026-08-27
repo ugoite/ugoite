@@ -8,8 +8,8 @@ sidebar:
 
 > Release note: browser authentication with Passkey/WebAuthn, opaque sessions,
 > Space membership/ACL enforcement, and authenticated MCP access are supported
-> in v0.1. Recovery, OIDC, device credentials, and agent principals remain
-> future scope.
+> in v0.1. Invitation-gated OIDC authentication/account linking is also
+> supported. Agent principals remain future scope.
 
 Choose the deployment shape before changing individual environment variables.
 All supported shapes run the same Rust server. They keep Space storage

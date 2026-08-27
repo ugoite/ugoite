@@ -3,8 +3,9 @@ title: "Success metrics"
 ---
 
 Authentication metrics below include supported v0.1 browser Passkey/WebAuthn
-bootstrap and passwordless login, Account Self-Recovery, and remote device
-login. OIDC linking and administrator recovery remain planned indicators only.
+bootstrap and passwordless login, invitation-gated OIDC account creation and
+linking, Account Self-Recovery, and remote device login. Administrator recovery
+remains a planned indicator only.
 
 Metrics must distinguish the current server-backed product from the
 browser-local North Star and must not treat planned features as shipped.

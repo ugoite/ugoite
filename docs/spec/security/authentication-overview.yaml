@@ -2,7 +2,21 @@ version: 0.3
 status: implemented
 updated: "2026-06-29"
 node_identity:
-  human_authentication: [passkey]
+  human_authentication: [passkey, oidc]
+  oidc:
+    flow: authorization_code
+    pkce: S256
+    scopes: [openid]
+    identity_key: [issuer, subject]
+    invitation_required_for_new_accounts: true
+    profile_claims_update_account: false
+    upstream_tokens_are_api_credentials: false
+    provider_lifecycle: [create, list, disable]
+    disabled_provider_rejects_in_flight_attempts: true
+    federated_session: opaque_browser_session
+    linking_requires: recent_passkey
+    unlinking_requires: recent_passkey
+    first_passkey_bootstrap: invitation_creation_session_only
   browser_session: {
     kind: opaque_server_side,
     idle_hours: 24,

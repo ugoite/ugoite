@@ -26,6 +26,7 @@ vi.mock("~/lib/auth-api", () => ({
     listOidcProviders: vi.fn(),
     registerInvitation: vi.fn(),
   },
+  oidcIssuerLabel: (issuer: string) => new URL(issuer).host,
 }));
 
 describe("/spaces/join", () => {

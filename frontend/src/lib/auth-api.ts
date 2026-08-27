@@ -23,6 +23,22 @@ export type OidcProvider = {
   client_id: string;
 };
 
+export type OidcLink = {
+  method_id: string;
+  issuer: string;
+  created_at: string;
+  last_used_at?: string | null;
+};
+
+export const oidcIssuerLabel = (issuer: string): string => {
+  try {
+    const url = new URL(issuer);
+    return `${url.host}${url.pathname === "/" ? "" : url.pathname}`;
+  } catch {
+    return issuer;
+  }
+};
+
 type ChallengeEnvelope = {
   challenge_id: string;
   public_key: {
@@ -191,7 +207,17 @@ export const authApi = {
     };
   },
   async listOidcProviders(): Promise<OidcProvider[]> {
-    return await request("/auth/oidc/providers", { method: "GET" });
+    return await request<OidcProvider[]>("/auth/oidc/providers", {
+      method: "GET",
+    });
+  },
+  async listOidcLinks(): Promise<OidcLink[]> {
+    return await request<OidcLink[]>("/auth/oidc/links", { method: "GET" });
+  },
+  async unlinkOidc(methodId: string): Promise<void> {
+    await request(`/auth/oidc/links/${encodeURIComponent(methodId)}`, {
+      method: "DELETE",
+    });
   },
   loginWithOidc(
     providerId: string,
@@ -303,6 +329,20 @@ export const authApi = {
     });
     const credential = await createPasskey(challenge);
     await request("/auth/passkeys/finish", {
+      method: "POST",
+      body: JSON.stringify({
+        challenge_id: challenge.challenge_id,
+        credential,
+      }),
+    });
+  },
+  async addBootstrapPasskey(): Promise<void> {
+    const challenge = await request<ChallengeEnvelope>(
+      "/auth/passkeys/bootstrap/start",
+      { method: "POST", body: "{}" },
+    );
+    const credential = await createPasskey(challenge);
+    await request("/auth/passkeys/bootstrap/finish", {
       method: "POST",
       body: JSON.stringify({
         challenge_id: challenge.challenge_id,

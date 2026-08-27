@@ -24,14 +24,18 @@ vi.mock("~/lib/auth-api", () => ({
     listSessions: vi.fn(),
     listDevices: vi.fn(),
     listOidcProviders: vi.fn(),
+    listOidcLinks: vi.fn(),
     addPasskey: vi.fn(),
     revokePasskey: vi.fn(),
     revokeSession: vi.fn(),
     revokeDevice: vi.fn(),
     linkOidc: vi.fn(),
+    unlinkOidc: vi.fn(),
+    addBootstrapPasskey: vi.fn(),
     startTotpEnrollment: vi.fn(),
     finishTotpEnrollment: vi.fn(),
   },
+  oidcIssuerLabel: (issuer: string) => issuer.replace(/^https?:\/\//, ""),
 }));
 
 vi.mock("~/components/AuditLogViewer", () => ({
@@ -49,11 +53,14 @@ describe("SecuritySettingsRoute", () => {
     vi.mocked(authApi.listSessions).mockResolvedValue([]);
     vi.mocked(authApi.listDevices).mockResolvedValue([]);
     vi.mocked(authApi.listOidcProviders).mockResolvedValue([]);
+    vi.mocked(authApi.listOidcLinks).mockResolvedValue([]);
     vi.mocked(authApi.addPasskey).mockResolvedValue(undefined);
     vi.mocked(authApi.revokePasskey).mockResolvedValue(undefined);
     vi.mocked(authApi.revokeSession).mockResolvedValue(undefined);
     vi.mocked(authApi.revokeDevice).mockResolvedValue(undefined);
     vi.mocked(authApi.linkOidc).mockImplementation(() => undefined);
+    vi.mocked(authApi.unlinkOidc).mockResolvedValue(undefined);
+    vi.mocked(authApi.addBootstrapPasskey).mockResolvedValue(undefined);
     vi.mocked(authApi.startTotpEnrollment).mockResolvedValue({
       secret: "secret",
       otpauth_uri: "otpauth://totp/test",
@@ -189,6 +196,44 @@ describe("SecuritySettingsRoute", () => {
     await screen.findByRole("alert");
     expect(screen.getByRole("alert")).toHaveTextContent(
       "この操作を行う権限がありません。",
+    );
+  });
+
+  it("lists OIDC links and keeps linking actions behind the security settings", async () => {
+    vi.mocked(authApi.listOidcProviders).mockResolvedValue([]);
+    vi.mocked(authApi.listOidcLinks).mockResolvedValue([{
+      method_id: "method-1",
+      issuer: "https://id.example/tenant-a",
+      created_at: "2026-01-01T00:00:00Z",
+      last_used_at: null,
+    }]);
+
+    render(() => <SecuritySettingsRoute />);
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(screen.getByText("External sign-ins")).toBeInTheDocument();
+    expect(screen.getByText("id.example/tenant-a", { exact: false }))
+      .toBeInTheDocument();
+    (screen.getByRole("button", { name: "Unlink" }) as HTMLButtonElement)
+      .click();
+    await waitFor(() =>
+      expect(authApi.unlinkOidc).toHaveBeenCalledWith("method-1")
+    );
+  });
+
+  it("offers the first-Passkey bootstrap only on the invitation callback journey", async () => {
+    searchParams.bootstrap = "1";
+    vi.mocked(authApi.addBootstrapPasskey).mockResolvedValue(undefined);
+
+    render(() => <SecuritySettingsRoute />);
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    (
+      screen.getByRole("button", { name: "Register first Passkey" }) as
+        HTMLButtonElement
+    ).click();
+    await waitFor(() =>
+      expect(authApi.addBootstrapPasskey).toHaveBeenCalledTimes(1)
     );
   });
 });

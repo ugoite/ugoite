@@ -5,8 +5,9 @@ sidebar:
 ---
 
 > Release note: Node account bootstrap, Passkey, and opaque browser session
-> details on this page describe supported v0.1 server behavior. Recovery,
-> OIDC, device credentials, and agent details remain future/reference material.
+> details on this page describe supported v0.1 server behavior. OIDC provider
+> lifecycle and account linking are API-backed; agent details remain
+> future/reference material.
 
 ```bash
 export UGOITE_NODE_SECRET_KEY="$(head -c 32 /dev/urandom | base64)"
