@@ -77,6 +77,15 @@ There is no durable Run status or separate Change index in this history surface.
 A future Undo operation is represented by new append-only publications whose
 descriptors point at the Changes they selectively inverse.
 
+## Asset visibility and retention
+
+Asset deletion uses the same publication protocol. After checking current
+references against the exact Head, the writer creates an immutable `asset.delete`
+publication and makes it visible with the single Head CAS. Asset visibility is
+derived by walking publications reachable from that Head; no command receipt or
+Asset lifecycle sidecar is authoritative. Physical Asset bytes are retained in
+v1, and automatic purge is not part of this protocol.
+
 The Catalog Head owns the complete active Pin map. A Pin contains a
 `PublicationRef` (generation, logical publication URI, and publication checksum),
 plus creator and creation time. Creating or deleting a Pin is a metadata-only Head
@@ -161,7 +170,7 @@ evidence. Failed-attempt and orphan candidates remain empty unless durable
 attempt coordinates exist: object-list inference is forbidden.
 
 `ugoite-core` owns domain validation, authorization meaning, use-case
-orchestration, domain commands, Change/Revert planning, receipts, checkpoints,
-and errors. It neither
+orchestration, domain commands, Change/Revert planning, commit results,
+checkpoints, and errors. It neither
 constructs nor inspects OpenDAL, Iceberg, Arrow, Parquet, DataFusion, or SQL
 parser objects.

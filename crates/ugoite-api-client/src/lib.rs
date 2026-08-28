@@ -983,6 +983,27 @@ pub fn prepare_request(
         }
     };
 
+    if matches!(operation, "pin.create" | "pin.delete") {
+        if let Some(value) = args.get("idempotency_key").filter(|value| !value.is_null()) {
+            let value = value.as_str().ok_or_else(|| {
+                ApiProtocolError::invalid_arguments(
+                    operation,
+                    "argument `idempotency_key` must be a string when provided",
+                )
+            })?;
+            if value.trim().is_empty() {
+                return Err(ApiProtocolError::invalid_arguments(
+                    operation,
+                    "argument `idempotency_key` must not be empty",
+                ));
+            }
+            headers.push(Header {
+                name: "idempotency-key".to_string(),
+                value: value.to_string(),
+            });
+        }
+    }
+
     if matches!(
         operation,
         "entry.delete" | "sql.delete" | "asset.delete" | "access.put" | "ugoite.apply"
@@ -1714,20 +1735,44 @@ mod tests {
 
         let pin = prepare_request(
             "pin.create",
-            &json!({"space_id": "demo"}),
+            &json!({"space_id": "demo", "idempotency_key": "pin-attempt-1"}),
             Some(&json!({"name": "release-current"})),
         )
         .expect("pin create request");
         assert_eq!(pin.method, HttpMethod::Post);
         assert_eq!(pin.path, "/spaces/demo/pins");
+        assert_eq!(
+            pin.headers,
+            vec![
+                Header {
+                    name: "content-type".into(),
+                    value: "application/json".into(),
+                },
+                Header {
+                    name: "idempotency-key".into(),
+                    value: "pin-attempt-1".into(),
+                }
+            ]
+        );
 
         let delete = prepare_request(
             "pin.delete",
-            &json!({"space_id": "demo", "pin_name": "release-current"}),
+            &json!({
+                "space_id": "demo",
+                "pin_name": "release-current",
+                "idempotency_key": "pin-attempt-1"
+            }),
             None,
         )
         .expect("pin delete request");
         assert_eq!(delete.path, "/spaces/demo/pins/release-current");
+        assert_eq!(
+            delete.headers,
+            vec![Header {
+                name: "idempotency-key".into(),
+                value: "pin-attempt-1".into(),
+            }]
+        );
 
         let revert = prepare_request(
             "change.revert",

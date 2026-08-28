@@ -310,22 +310,23 @@ impl IcebergWorkspace {
         name: &str,
         created_by_principal_id: &str,
         created_at_micros: i64,
+        command_id: &str,
     ) -> Result<ugoite_domain::pin::PinEntry> {
         self.space_catalog
             .as_ref()
             .context("Pin operations require the OpenDAL-backed SpaceCatalog")?
             .new_attempt()
-            .create_pin(name, created_by_principal_id, created_at_micros)
+            .create_pin(name, created_by_principal_id, created_at_micros, command_id)
             .await
             .map_err(|error| anyhow!(error.to_string()))
     }
 
-    pub async fn delete_pin(&self, name: &str) -> Result<()> {
+    pub async fn delete_pin(&self, name: &str, command_id: &str) -> Result<()> {
         self.space_catalog
             .as_ref()
             .context("Pin operations require the OpenDAL-backed SpaceCatalog")?
             .new_attempt()
-            .delete_pin(name)
+            .delete_pin(name, command_id)
             .await
             .map_err(|error| anyhow!(error.to_string()))
     }
@@ -1784,20 +1785,22 @@ impl IcebergWorkspace {
             .map_err(Into::into)
     }
 
-    pub(crate) async fn garbage_collect_deleted_asset_blobs(&self) -> Result<usize> {
-        self.space_catalog
-            .as_ref()
-            .context("Asset lifecycle requires the OpenDAL-backed SpaceCatalog")?
-            .garbage_collect_deleted_asset_blobs()
-            .await
-            .map_err(Into::into)
-    }
-
     async fn mark_asset_deleted(&self, asset_id: &str) -> Result<()> {
         self.space_catalog
             .as_ref()
             .context("Asset lifecycle requires the OpenDAL-backed SpaceCatalog")?
             .mark_asset_deleted(asset_id)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn recover_existing_publication(
+        &self,
+    ) -> Result<Option<space_catalog::PublicationOutcome>> {
+        self.space_catalog
+            .as_ref()
+            .context("publication recovery requires the OpenDAL-backed SpaceCatalog")?
+            .recover_existing_publication()
             .await
             .map_err(Into::into)
     }
@@ -2552,7 +2555,6 @@ impl SpaceCommitCoordinator {
             .with_publication_context(self.publication.clone())
             .bind_exact_head()
             .await?;
-        catalog.claim_command_receipt().await?;
         let catalog = Arc::new(catalog);
         Ok(IcebergWorkspace {
             catalog: catalog.clone(),
@@ -2565,31 +2567,38 @@ impl SpaceCommitCoordinator {
         })
     }
 
-    async fn publication_receipt(&self) -> Result<Option<space_catalog::PublicationReceipt>> {
+    async fn publication_outcome(&self) -> Result<Option<space_catalog::PublicationOutcome>> {
         let catalog = self
             .workspace
             .space_catalog
             .as_ref()
             .context("coordinator is missing its SpaceCatalog")?;
         for _ in 0..MAX_PUBLICATION_ATTEMPTS {
-            match catalog.publication_receipt(&self.publication).await {
+            match catalog.publication_outcome(&self.publication).await {
                 Ok(receipt) => return Ok(receipt),
                 Err(error) if error.to_string().contains("Catalog Head changed") => continue,
                 Err(error) => return Err(error.into()),
             }
         }
         Err(anyhow!(
-            "Catalog Head changed while resolving the command receipt"
+            "Catalog Head changed while resolving the command outcome"
         ))
     }
 
     pub async fn create_form(&self, form: &FormDefinition) -> Result<()> {
         self.ensure_authoritative_mutation_contract()?;
         for _ in 0..MAX_PUBLICATION_ATTEMPTS {
-            if self.publication_receipt().await?.is_some() {
+            if self.publication_outcome().await?.is_some() {
                 return Ok(());
             }
-            match self.attempt_workspace().await?.create_form(form).await {
+            let attempt = self.attempt_workspace().await?;
+            match attempt.recover_existing_publication().await {
+                Ok(Some(_)) => return Ok(()),
+                Ok(None) => {}
+                Err(error) if is_publication_conflict(&error) => continue,
+                Err(error) => return Err(error),
+            }
+            match attempt.create_form(form).await {
                 Ok(()) => return Ok(()),
                 Err(error) if is_publication_conflict(&error) => continue,
                 Err(error) => return Err(error),
@@ -2601,10 +2610,17 @@ impl SpaceCommitCoordinator {
     pub async fn evolve_form(&self, changes: &FormChangeSet) -> Result<FormDefinition> {
         self.ensure_authoritative_mutation_contract()?;
         for _ in 0..MAX_PUBLICATION_ATTEMPTS {
-            if self.publication_receipt().await?.is_some() {
+            if self.publication_outcome().await?.is_some() {
                 return self.workspace.load_form(changes.form_id).await;
             }
-            match self.attempt_workspace().await?.evolve_form(changes).await {
+            let attempt = self.attempt_workspace().await?;
+            match attempt.recover_existing_publication().await {
+                Ok(Some(_)) => return self.workspace.load_form(changes.form_id).await,
+                Ok(None) => {}
+                Err(error) if is_publication_conflict(&error) => continue,
+                Err(error) => return Err(error),
+            }
+            match attempt.evolve_form(changes).await {
                 Ok(form) => return Ok(form),
                 Err(error) if is_publication_conflict(&error) => continue,
                 Err(error) => return Err(error),
@@ -2640,7 +2656,7 @@ impl SpaceCommitCoordinator {
                 "Change ID must equal the publication command ID for every revision"
             ));
         }
-        if let Some(receipt) = self.publication_receipt().await? {
+        if let Some(receipt) = self.publication_outcome().await? {
             return Ok(CommitReceipt {
                 command_id: receipt.command_id,
                 catalog_generation: receipt.catalog_generation,
@@ -2660,7 +2676,7 @@ impl SpaceCommitCoordinator {
             });
         }
         for _ in 0..MAX_PUBLICATION_ATTEMPTS {
-            if let Some(receipt) = self.publication_receipt().await? {
+            if let Some(receipt) = self.publication_outcome().await? {
                 return Ok(CommitReceipt {
                     command_id: receipt.command_id,
                     catalog_generation: receipt.catalog_generation,
@@ -2680,6 +2696,30 @@ impl SpaceCommitCoordinator {
                 });
             }
             let attempt = self.attempt_workspace().await?;
+            let recovered = match attempt.recover_existing_publication().await {
+                Ok(recovered) => recovered,
+                Err(error) if is_publication_conflict(&error) => continue,
+                Err(error) => return Err(error),
+            };
+            if let Some(publication) = recovered {
+                return Ok(CommitReceipt {
+                    command_id: publication.command_id,
+                    catalog_generation: publication.catalog_generation,
+                    snapshot_id: publication
+                        .snapshot_id
+                        .context("revision publication did not create an Iceberg snapshot")?,
+                    committed_revision_ids: revisions
+                        .iter()
+                        .map(|revision| revision.revision_id)
+                        .collect(),
+                    committed_at_micros: revisions
+                        .iter()
+                        .map(|revision| revision.committed_at_micros)
+                        .max()
+                        .unwrap_or_default(),
+                    data_file_count: 0,
+                });
+            }
             let new_entry_ids = revisions
                 .iter()
                 .filter(|revision| {
@@ -2712,7 +2752,7 @@ impl SpaceCommitCoordinator {
                 Err(error) => return Err(error),
             };
             let publication = self
-                .publication_receipt()
+                .publication_outcome()
                 .await?
                 .context("successful append is missing its Catalog publication")?;
             receipt.command_id = publication.command_id;
@@ -2733,11 +2773,11 @@ impl SpaceCommitCoordinator {
         relation_scopes: &BTreeMap<String, ugoite_core::query::EntryScope>,
     ) -> Result<()> {
         self.ensure_authoritative_mutation_contract()?;
-        if self.publication_receipt().await?.is_some() {
+        if self.publication_outcome().await?.is_some() {
             return Ok(());
         }
         for _ in 0..MAX_PUBLICATION_ATTEMPTS {
-            if self.publication_receipt().await?.is_some() {
+            if self.publication_outcome().await?.is_some() {
                 return Ok(());
             }
             let attempt = self.attempt_workspace().await?;
@@ -2746,15 +2786,6 @@ impl SpaceCommitCoordinator {
                     return Err(anyhow!("Asset '{}' is already unavailable", asset_id));
                 }
                 Ok(false) => {}
-                Err(error)
-                    if error
-                        .to_string()
-                        .contains("Asset deletion publication is still in progress") =>
-                {
-                    // A same-command retry may resume a durable Publishing
-                    // marker. Other commands are rejected by the marker's
-                    // exact command identity when publication begins.
-                }
                 Err(error) => return Err(error),
             }
             let all_current_scopes = attempt

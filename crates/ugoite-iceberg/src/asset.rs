@@ -369,6 +369,8 @@ pub async fn delete_asset(
         }
         return Err(error);
     }
-    op.delete(&path).await?;
+    // Asset deletion is logical: the immutable publication reachable from
+    // Catalog Head makes the asset unavailable. Physical bytes are retained
+    // in v1; no automatic purge is part of the publication protocol.
     Ok(())
 }

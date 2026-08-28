@@ -5397,6 +5397,9 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/SpaceId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
           }
         ],
         "requestBody": {
@@ -5447,6 +5450,9 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
           }
         ],
         "responses": {
@@ -11907,6 +11913,17 @@
           "type": "string",
           "minLength": 43,
           "maxLength": 43
+        }
+      },
+      "IdempotencyKeyHeader": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "description": "Stable key for retrying the same Pin mutation after an ambiguous response. A missing key uses the server request ID.",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
         }
       },
       "HardDelete": {
