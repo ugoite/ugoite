@@ -357,10 +357,22 @@ fn rejected_state(error: KonaseError) -> StepResult {
 }
 
 fn rejected_with_state(state: KonaseState, error: KonaseError) -> StepResult {
-    StepResult {
+    let result = StepResult {
         state,
         effects: Vec::new(),
         error: Some(error),
+    };
+    if serialized_size(&result)
+        .map(|size| size <= MAX_STATE_JSON_BYTES)
+        .unwrap_or(false)
+    {
+        result
+    } else {
+        StepResult {
+            state: KonaseState::default(),
+            effects: Vec::new(),
+            error: result.error,
+        }
     }
 }
 

@@ -12,6 +12,12 @@ pub use ugoite_konase as konase;
 const MAX_KONASE_REQUEST_BYTES: usize = 256 * 1024;
 
 pub fn invoke_json(input: &str) -> String {
+    if input.len() > MAX_KONASE_REQUEST_BYTES
+        && input.contains("\"action\"")
+        && input.contains("konase.")
+    {
+        return konase_error("request exceeds the Konase input limit");
+    }
     if let Ok(request) = serde_json::from_str::<serde_json::Value>(input) {
         if let Some(action) = request.get("action").and_then(serde_json::Value::as_str) {
             if action.starts_with("domain.") {
