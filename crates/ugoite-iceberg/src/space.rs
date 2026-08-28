@@ -8,6 +8,7 @@ use opendal::{ErrorKind, Operator};
 use rand::TryRng;
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
+use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use std::time::Duration;
@@ -1543,33 +1544,78 @@ fn validate_remote_storage_uri(uri: &str) -> Result<()> {
 
 fn is_blocked_storage_host(host: &str) -> bool {
     let normalized = host
-        .trim_matches('[')
-        .trim_matches(']')
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .trim_end_matches('.')
         .to_ascii_lowercase();
-    if matches!(normalized.as_str(), "localhost" | "0.0.0.0" | "::1") {
+    if normalized == "localhost" {
         return true;
     }
-    if normalized.starts_with("127.")
-        || normalized.starts_with("10.")
-        || normalized.starts_with("192.168.")
-        || normalized.starts_with("169.254.")
-    {
-        return true;
+    normalized
+        .parse::<IpAddr>()
+        .is_ok_and(is_blocked_storage_address)
+}
+
+fn is_blocked_storage_address(address: IpAddr) -> bool {
+    match address {
+        IpAddr::V4(address) => is_blocked_ipv4_address(address),
+        IpAddr::V6(address) => {
+            address.is_loopback()
+                || address.is_unspecified()
+                || address.is_unique_local()
+                || address.is_unicast_link_local()
+                || address.to_ipv4().is_some_and(is_blocked_ipv4_address)
+        }
     }
-    if let Some(second_octet) = normalized
-        .strip_prefix("172.")
-        .and_then(|rest| rest.split('.').next())
-        .and_then(|value| value.parse::<u8>().ok())
-    {
-        return (16..=31).contains(&second_octet);
-    }
-    false
+}
+
+fn is_blocked_ipv4_address(address: Ipv4Addr) -> bool {
+    address.is_loopback()
+        || address.is_private()
+        || address.is_link_local()
+        || address.is_unspecified()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::net::TcpListener;
+
+    #[test]
+    fn storage_endpoints_reject_private_link_local_and_mapped_addresses() {
+        for endpoint in [
+            "http://127.0.0.1:9000",
+            "http://10.0.0.1:9000",
+            "http://172.16.0.1:9000",
+            "http://192.168.1.1:9000",
+            "http://169.254.1.1:9000",
+            "http://[::]:9000",
+            "http://[::1]:9000",
+            "http://[fc00::1]:9000",
+            "http://[fd12:3456:789a::1]:9000",
+            "http://[fe80::1]:9000",
+            "http://[::ffff:127.0.0.1]:9000",
+            "http://[::ffff:10.0.0.1]:9000",
+            "http://[::ffff:169.254.1.1]:9000",
+        ] {
+            assert!(
+                validate_storage_endpoint(Some(endpoint)).is_err(),
+                "storage endpoint must be blocked: {endpoint}"
+            );
+        }
+    }
+
+    #[test]
+    fn storage_endpoints_allow_public_ip_forms() -> Result<()> {
+        for endpoint in [
+            "http://192.0.2.1:9000",
+            "http://[2001:db8::1]:9000",
+            "https://s3.example.test",
+        ] {
+            assert_eq!(validate_storage_endpoint(Some(endpoint))?, Some(endpoint));
+        }
+        Ok(())
+    }
 
     #[tokio::test]
     async fn storage_connection_probe_times_out_without_external_service() -> Result<()> {

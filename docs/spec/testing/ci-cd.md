@@ -29,6 +29,14 @@ Root task composition:
 
 Hosted CI schedules the `ci-rust-check`, `ci-rust-test`, `ci-web`, and `artifacts` lanes in parallel, then the `ci-required` aggregator preserves the required status-check context. The three quality lanes run only `mise run ci:lane:rust-check`, `mise run ci:lane:rust-test`, and `mise run ci:lane:web`; they do not duplicate repository validation commands in GitHub Actions. The artifact lane runs only `mise run ci:artifacts` and owns Playwright/BuildKit setup plus verified artifact upload.
 
+The Rust test lane opts into the MinIO integration tests with
+`UGOITE_MINIO_REQUIRED=true` and supplies `UGOITE_MINIO_ENDPOINT`,
+`UGOITE_MINIO_BUCKET`, `AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY` for its
+pinned disposable service. The integration tests remain optional for local
+development when the opt-in variable is absent; when it is present, missing or
+empty MinIO endpoint/bucket configuration fails the test instead of silently
+skipping the release-gate coverage.
+
 Rust-compiling lanes restore the Rust registry/git dependency cache without caching `target/`; `ci-rust-check` is the sole Cargo dependency archive writer, while `ci-rust-test`, `ci-web`, and `artifacts` are restore-only. `ci-web` is the sole Deno archive writer; `artifacts` may restore it, but does not write it. sccache owns compiler artifact reuse in all Rust-compiling lanes: it is read-only for pull requests and merge queues and writes only on successful `main` pushes. Playwright browser and BuildKit caches remain separately keyed and are refreshed only after successful pushes to `main`. Successful `main` runs upload the verified artifact set using the logical names `ugoite-docsite-pages`, `ugoite-runtime-image`, `ugoite-cli-linux`, `ugoite-helm-chart`, and `ugoite-artifact-manifest`.
 
 The hosted runtime image uses Dockerfile's `runtime-prebuilt` target. It copies the canonical frontend and Rust release outputs into the image instead of compiling them again inside Docker. E2E tasks require the already loaded `ugoite:e2e` image and never invoke an image build. The default Dockerfile target remains a portable source build for direct Docker and Compose use.
