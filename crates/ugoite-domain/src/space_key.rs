@@ -1,5 +1,6 @@
 use std::fmt;
 
+use serde::{Deserialize, Deserializer, Serialize};
 use url::Url;
 use uuid::Uuid;
 
@@ -8,8 +9,18 @@ use uuid::Uuid;
 /// `SpaceKey` deliberately models a logical object name rather than a URI or
 /// a filesystem path.  It rejects every representation that could make the
 /// same object address ambiguous across local filesystems and object stores.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct SpaceKey(String);
+
+impl<'de> Deserialize<'de> for SpaceKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::parse(&value).map_err(serde::de::Error::custom)
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SpaceKeyError {
@@ -121,10 +132,26 @@ impl fmt::Display for SpaceKey {
 }
 
 /// A portable URI for a Space-relative coordinate.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct SpaceUri {
     space_uid: Uuid,
     key: SpaceKey,
+}
+
+impl<'de> Deserialize<'de> for SpaceUri {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            space_uid: Uuid,
+            key: SpaceKey,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.space_uid, wire.key).map_err(serde::de::Error::custom)
+    }
 }
 
 impl SpaceUri {
@@ -228,6 +255,21 @@ mod tests {
         assert_eq!(SpaceUri::parse(&encoded).unwrap().to_string(), encoded);
         assert!(SpaceUri::parse(&format!("{encoded}?backend=s3")).is_err());
         assert!(SpaceUri::parse(&format!("ugoite://{}/../meta.json", uid())).is_err());
+    }
+
+    #[test]
+    fn serde_rejects_unvalidated_space_coordinates() {
+        let invalid_key = serde_json::json!({
+            "space_uid": uid(),
+            "key": "../meta.json"
+        });
+        assert!(serde_json::from_value::<SpaceUri>(invalid_key).is_err());
+
+        let invalid_identity = serde_json::json!({
+            "space_uid": Uuid::from_u128(1),
+            "key": "meta.json"
+        });
+        assert!(serde_json::from_value::<SpaceUri>(invalid_identity).is_err());
     }
 
     #[test]

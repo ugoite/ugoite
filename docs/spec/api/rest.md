@@ -91,6 +91,28 @@ checkpoints. It never scans Entry rows, lists objects to infer authority or
 orphans, or repairs storage; physical locations are redacted from its normal
 response.
 
+Knowledge history and active publication coordinates are exposed through the
+portable Catalog boundary:
+
+- `GET /spaces/{space_id}/changes` returns committed Change descriptors rebuilt
+  from the reachable immutable publication chain.
+- `GET /spaces/{space_id}/pins` returns the complete active Pin map from Catalog
+  Head.
+- `POST /spaces/{space_id}/pins` creates a named Pin for the exact current Head.
+- `DELETE /spaces/{space_id}/pins/{pin_name}` removes that name through a new
+  Head publication.
+- `POST /spaces/{space_id}/apply` applies portable create/update operations;
+  one soft-remove operation is accepted only with the same exact Entry intent
+  and human-approval binding as the dedicated delete route.
+- `POST /spaces/{space_id}/changes/{change_id}/revert` appends a selective
+  inverse and returns a conflict instead of overwriting later edits.
+- `POST /spaces/{space_id}/runs/{run_id}/undo` appends inverses for the
+  still-unreverted Changes correlated to that Run; Run status is not stored.
+
+Pins are metadata-only maintenance publications and are not user-content
+Changes. Change IDs, publication checksums, and logical publication URIs are
+opaque coordinates; clients must not infer physical object paths from them.
+
 Named checkpoints also provide immutable Entry reads: append `?checkpoint=<name>`
 to Entry, history, or revision reads, and include the same checkpoint plus the
 source `revision_id` in `POST /spaces/{space_id}/entries/{entry_id}/restore` to

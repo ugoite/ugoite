@@ -55,6 +55,16 @@ publication chain instead of blindly repeating the logical mutation. REST,
 Memory, pointer-manifest, external-catalog, and object-list reconstruction modes
 are not production architecture.
 
+User-visible Knowledge publications also carry one immutable `ChangeDescriptor`.
+The publication `command_id` is the Change ID, so history is reconstructed
+from the reachable publication chain without a second Change index. `RunId` is
+correlation metadata only; it has no durable status record. The active Pin map is
+part of the Catalog Head and each Pin stores a `PublicationRef` to the exact
+immutable publication it names. Pin reads therefore use the Head, never object
+listing or a separate checkpoint registry. Selective revert is append-only: it
+plans a new Change from field-level before/after/current comparisons and never
+rewinds Head.
+
 DerivedRelations use independent Relation Heads under `_ugoite/derived`, with
 official Iceberg metadata and Parquet files in replaceable materialization
 prefixes. They do not mutate the main Catalog Head, create Form revisions, or

@@ -58,7 +58,9 @@ use ugoite_iceberg::{
         ResourceRef,
     },
     form, saved_sql,
-    service::{SpacePermission, UgoiteService, MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS},
+    service::{
+        ApplyOperation, SpacePermission, UgoiteService, MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS,
+    },
     space,
 };
 use ugoite_identity::{
@@ -839,6 +841,15 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             "/spaces/{space_id}/entries/{entry_id}/restore",
             post(restore_entry),
         )
+        .route("/spaces/{space_id}/pins", get(list_pins).post(create_pin))
+        .route("/spaces/{space_id}/pins/{pin_name}", delete(delete_pin))
+        .route("/spaces/{space_id}/changes", get(list_changes))
+        .route(
+            "/spaces/{space_id}/changes/{change_id}/revert",
+            post(revert_change),
+        )
+        .route("/spaces/{space_id}/runs/{run_id}/undo", post(undo_run))
+        .route("/spaces/{space_id}/apply", post(apply_operations))
         .route(
             "/spaces/{space_id}/forms",
             get(list_forms).post(upsert_form),
@@ -8285,6 +8296,361 @@ async fn create_entry(
         StatusCode::CREATED,
         Json(json!({"id": entry_id, "revision_id": created["revision_id"]})),
     ))
+}
+
+async fn list_pins(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    Ok(Json(
+        state
+            .service
+            .list_pins(&space_id)
+            .await
+            .map_err(ApiError::from_core)?,
+    ))
+}
+
+async fn list_changes(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    Ok(Json(
+        state
+            .service
+            .list_changes(&space_id)
+            .await
+            .map_err(ApiError::from_core)?,
+    ))
+}
+
+#[derive(Default, Deserialize)]
+struct ChangeRevertRequest {
+    run_id: Option<String>,
+    message: Option<String>,
+}
+
+async fn revert_change(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path((space_id, change_id)): Path<(String, String)>,
+    Json(payload): Json<ChangeRevertRequest>,
+) -> ApiResult<Json<Value>> {
+    if change_id.trim().is_empty() {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "change_id must not be blank",
+        ));
+    }
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let change_id_for_write = change_id.clone();
+    let run_id = payload.run_id.clone();
+    let message = payload.message.clone();
+    let result = with_authorized_service_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Update,
+        None,
+        move |principal_id, _principals| async move {
+            service
+                .revert_change(
+                    &space_id_for_write,
+                    &change_id_for_write,
+                    &principal_id.to_string(),
+                    run_id.as_deref(),
+                    message.as_deref(),
+                )
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
+    Ok(Json(result))
+}
+
+async fn undo_run(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path((space_id, run_id)): Path<(String, String)>,
+) -> ApiResult<Json<Value>> {
+    if run_id.trim().is_empty() {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "run_id must not be blank",
+        ));
+    }
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let run_id_for_write = run_id.clone();
+    let result = with_authorized_service_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Update,
+        None,
+        move |principal_id, _principals| async move {
+            service
+                .undo_run(
+                    &space_id_for_write,
+                    &run_id_for_write,
+                    &principal_id.to_string(),
+                )
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
+    Ok(Json(result))
+}
+
+#[derive(Deserialize)]
+struct ApplyRequest {
+    operations: Vec<ApplyOperation>,
+    run_id: Option<String>,
+    message: Option<String>,
+}
+
+async fn apply_operations(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    Json(payload): Json<ApplyRequest>,
+) -> ApiResult<Json<Value>> {
+    let remove_entry_id = match payload.operations.as_slice() {
+        [ApplyOperation::Remove { id }] => Some(id.clone()),
+        operations
+            if operations
+                .iter()
+                .any(|operation| matches!(operation, ApplyOperation::Remove { .. })) =>
+        {
+            return Err(ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({
+                    "code": "INVALID_INPUT",
+                    "message": "apply remove must be submitted as one operation so its human approval is bound to the exact Entry"
+                }),
+            ));
+        }
+        _ => None,
+    };
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let run_id = payload.run_id.clone();
+    let message = payload.message.clone();
+    let operations = payload.operations;
+    if let Some(entry_id) = remove_entry_id {
+        validate_id(&entry_id, "entry_id")?;
+        let approval_mutation = json!({
+            "target_id": entry_id,
+            "hard_delete": false,
+        });
+        let (principal_id, approval) = require_dangerous_resource_action(
+            &state,
+            &space_id,
+            &identity,
+            "entry.delete",
+            Action::Delete,
+            ResourceKind::Entry,
+            &entry_id,
+            &approval_mutation,
+        )
+        .await?;
+        let mutation_actor = identity
+            .token_actor_principal_id
+            .unwrap_or(principal_id)
+            .to_string();
+        let principal_ids = authorization_principal_ids(&identity, principal_id);
+        if let Some(pending) = approval {
+            let audit_approval = pending.approval.clone();
+            let approved_service = service.clone();
+            let approved_space_id = space_id_for_write.clone();
+            let approved_run_id = run_id.clone();
+            let approved_message = message.clone();
+            let approved_actor = mutation_actor.clone();
+            let approved_principal_ids = principal_ids.clone();
+            let result =
+                execute_approved_mutation(&state, &space_id, &identity, pending, move |_| {
+                    Box::pin(async move {
+                        approved_service
+                            .apply_operations(
+                                &approved_space_id,
+                                operations,
+                                &approved_actor,
+                                &approved_principal_ids,
+                                approved_run_id.as_deref(),
+                                approved_message.as_deref(),
+                            )
+                            .await
+                    })
+                })
+                .await;
+            let (_, mutation) = match result {
+                Ok(value) => value,
+                Err(error) => {
+                    let phase = human_approval_failure_phase(&error);
+                    append_human_approval_audit_with_subject(
+                        &state,
+                        &space_id,
+                        Some(&audit_approval),
+                        Some(principal_id),
+                        phase,
+                        "error",
+                        "error",
+                        identity.request_id,
+                    )
+                    .await
+                    .map_err(ApiError::from_core)?;
+                    return Err(if error.to_string().starts_with("human approval ") {
+                        invalid_human_approval_credential()
+                    } else {
+                        approval_binding_error(error)
+                    });
+                }
+            };
+            return match mutation {
+                Ok(value) => {
+                    append_human_approval_audit_with_subject(
+                        &state,
+                        &space_id,
+                        Some(&audit_approval),
+                        Some(principal_id),
+                        "mutation_succeeded",
+                        "success",
+                        "success",
+                        identity.request_id,
+                    )
+                    .await
+                    .map_err(ApiError::from_core)?;
+                    Ok(Json(value))
+                }
+                Err(error) => {
+                    append_human_approval_audit_with_subject(
+                        &state,
+                        &space_id,
+                        Some(&audit_approval),
+                        Some(principal_id),
+                        "mutation_failed",
+                        "error",
+                        mutation_outcome(&error),
+                        identity.request_id,
+                    )
+                    .await
+                    .map_err(ApiError::from_core)?;
+                    Err(ApiError::from_core(error))
+                }
+            };
+        }
+        let result = with_authorized_service_mutation(
+            &state,
+            &space_id,
+            &identity,
+            Action::Delete,
+            Some(ResourceRef {
+                kind: ResourceKind::Entry,
+                id: entry_id,
+                parent: None,
+            }),
+            move |principal_id, principal_ids| async move {
+                service
+                    .apply_operations(
+                        &space_id_for_write,
+                        operations,
+                        &principal_id.to_string(),
+                        &principal_ids,
+                        run_id.as_deref(),
+                        message.as_deref(),
+                    )
+                    .await
+                    .map_err(ApiError::from_core)
+            },
+        )
+        .await?;
+        return Ok(Json(result));
+    }
+    let result = with_authorized_service_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Update,
+        None,
+        move |principal_id, principals| async move {
+            service
+                .apply_operations(
+                    &space_id_for_write,
+                    operations,
+                    &principal_id.to_string(),
+                    &principals,
+                    run_id.as_deref(),
+                    message.as_deref(),
+                )
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
+    Ok(Json(result))
+}
+
+#[derive(Deserialize)]
+struct PinCreate {
+    name: String,
+}
+
+async fn create_pin(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    Json(payload): Json<PinCreate>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let name = payload.name.clone();
+    let pin = with_authorized_service_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Update,
+        None,
+        move |principal_id, _principals| async move {
+            service
+                .create_pin(&space_id_for_write, &name, &principal_id.to_string())
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(pin)))
+}
+
+async fn delete_pin(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path((space_id, pin_name)): Path<(String, String)>,
+) -> ApiResult<Json<Value>> {
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let pin_name_for_write = pin_name.clone();
+    with_authorized_service_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Update,
+        None,
+        move |_principal_id, _principals| async move {
+            service
+                .delete_pin(&space_id_for_write, &pin_name_for_write)
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
+    Ok(Json(json!({"name": pin_name, "status": "deleted"})))
 }
 
 async fn list_entries(

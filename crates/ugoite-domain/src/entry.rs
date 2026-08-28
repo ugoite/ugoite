@@ -177,6 +177,9 @@ pub struct EntryRevision {
     pub revision_id: RevisionId,
     pub parent_revision_id: Option<RevisionId>,
     pub entry_version: u64,
+    /// The immutable Knowledge Change that published this revision. It is
+    /// resolved to semantic metadata through the reachable Publication chain.
+    pub change_id: String,
     pub expected_version: Option<u64>,
     pub operation: EntryOperation,
     pub committed_at_micros: i64,
@@ -198,6 +201,7 @@ pub struct EntryRevisionDraft {
     pub form_id: FormId,
     pub entry_id: EntryId,
     pub revision_id: RevisionId,
+    pub change_id: String,
     pub operation: EntryOperation,
     pub committed_at_micros: i64,
     pub author_id: String,
@@ -237,6 +241,7 @@ impl EntryRevisionDraft {
             revision_id: self.revision_id,
             parent_revision_id,
             entry_version,
+            change_id: self.change_id,
             expected_version,
             operation: self.operation,
             committed_at_micros: self.committed_at_micros,
@@ -263,6 +268,7 @@ impl EntryRevision {
             return Err(RevisionError::WrongFormVersion);
         }
         if self.entry_version == 0
+            || self.change_id.trim().is_empty()
             || self.author_id.trim().is_empty()
             || self.source_kind.trim().is_empty()
         {

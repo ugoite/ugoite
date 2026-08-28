@@ -3,6 +3,7 @@ use common::setup_operator;
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
+use ugoite_domain::change::ChangeCommand;
 use ugoite_iceberg::asset;
 use ugoite_iceberg::entry;
 use ugoite_iceberg::form;
@@ -20,6 +21,65 @@ async fn ensure_entry_form(op: &opendal::Operator, ws_path: &str) -> anyhow::Res
         "allow_extra_attributes": "allow_columns",
     });
     form::upsert_form(op, ws_path, &form_def).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn explicit_change_command_identity_reaches_entry_history() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "explicit-change-entry", "/tmp").await?;
+    let ws_path = "spaces/explicit-change-entry";
+    ensure_entry_form(&op, ws_path).await?;
+    let integrity = FakeIntegrityProvider;
+
+    let create_change = ChangeCommand {
+        change_id: "change-create-entry".into(),
+        run_id: Some(ugoite_domain::change::RunId::new("run-1")?),
+        actor_principal_id: "author".into(),
+        message: Some("create entry".into()),
+        reverts_change_id: None,
+        created_at_micros: 1,
+    };
+    entry::create_entry_with_scopes_and_change(
+        &op,
+        ws_path,
+        "entry-1",
+        "---\nform: Entry\nBody: first\n---\n# Entry",
+        "author",
+        &integrity,
+        None,
+        Some(create_change),
+    )
+    .await?;
+    let created = entry::get_entry_content(&op, ws_path, "entry-1").await?;
+
+    let update_change = ChangeCommand {
+        change_id: "change-update-entry".into(),
+        run_id: Some(ugoite_domain::change::RunId::new("run-1")?),
+        actor_principal_id: "author".into(),
+        message: Some("update entry".into()),
+        reverts_change_id: None,
+        created_at_micros: 2,
+    };
+    entry::update_entry_authorized_with_change(
+        &op,
+        ws_path,
+        "entry-1",
+        "---\nform: Entry\nBody: second\n---\n# Entry",
+        Some(&created.revision_id),
+        "author",
+        &integrity,
+        None,
+        Some(update_change),
+    )
+    .await?;
+
+    let history = entry::get_entry_history(&op, ws_path, "entry-1").await?;
+    let history = history["revisions"]
+        .as_array()
+        .expect("history is an array");
+    assert_eq!(history[0]["change_id"], "change-create-entry");
+    assert_eq!(history[1]["change_id"], "change-update-entry");
     Ok(())
 }
 

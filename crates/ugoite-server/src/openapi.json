@@ -5173,6 +5173,306 @@
         }
       }
     },
+    "/spaces/{space_id}/apply": {
+      "post": {
+        "summary": "Apply portable Knowledge operations",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/spaces/{space_id}/changes": {
+      "get": {
+        "summary": "List committed Knowledge Changes",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/spaces/{space_id}/changes/{change_id}/revert": {
+      "post": {
+        "summary": "Append a selective inverse for a committed Change",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          },
+          {
+            "name": "change_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeRevertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Change cannot be selectively reverted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/spaces/{space_id}/runs/{run_id}/undo": {
+      "post": {
+        "summary": "Undo the committed Changes correlated to a Run",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunUndoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/spaces/{space_id}/pins": {
+      "get": {
+        "summary": "List active Head-owned Pins",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a Head-owned Pin",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PinCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/spaces/{space_id}/pins/{pin_name}": {
+      "delete": {
+        "summary": "Delete a Head-owned Pin",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          },
+          {
+            "name": "pin_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/spaces/{space_id}/forms": {
       "get": {
         "summary": "List forms",
@@ -12254,6 +12554,131 @@
           }
         },
         "additionalProperties": true
+      },
+      "PinCreate": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "additionalProperties": false
+      },
+      "ChangeRevertRequest": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApplyRequest": {
+        "type": "object",
+        "required": [
+          "operations"
+        ],
+        "properties": {
+          "operations": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ApplyCreate"
+                },
+                {
+                  "$ref": "#/components/schemas/ApplyUpdate"
+                },
+                {
+                  "$ref": "#/components/schemas/ApplyRemove"
+                }
+              ]
+            }
+          },
+          "run_id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "additionalProperties": false
+      },
+      "RunUndoRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "ApplyCreate": {
+        "type": "object",
+        "required": [
+          "kind",
+          "markdown"
+        ],
+        "properties": {
+          "kind": {
+            "const": "create"
+          },
+          "id": {
+            "type": "string"
+          },
+          "markdown": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApplyUpdate": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "version_token",
+          "markdown"
+        ],
+        "properties": {
+          "kind": {
+            "const": "update"
+          },
+          "id": {
+            "type": "string"
+          },
+          "version_token": {
+            "type": "string"
+          },
+          "markdown": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApplyRemove": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id"
+        ],
+        "properties": {
+          "kind": {
+            "const": "remove"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "JsonValue": {
         "description": "Arbitrary JSON value for endpoints whose DTO-specific schema is not yet generated.",

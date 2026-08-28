@@ -447,6 +447,7 @@ pub async fn create_sql<I: IntegrityProvider>(
 
     let revision = entry::RevisionRow {
         revision_id: revision_id.clone(),
+        change_id: revision_id.clone(),
         entry_id: sql_id.to_string(),
         parent_revision_id: None,
         timestamp,
@@ -534,6 +535,7 @@ pub async fn update_sql<I: IntegrityProvider>(
 
     let revision = entry::RevisionRow {
         revision_id: revision_id.clone(),
+        change_id: revision_id.clone(),
         entry_id: sql_id.to_string(),
         parent_revision_id: row.parent_revision_id.clone(),
         timestamp,
@@ -582,6 +584,7 @@ pub async fn delete_sql(op: &Operator, ws_path: &str, sql_id: &str, actor: &str)
     let entry_version = row.entry_version;
     let tombstone = entry::RevisionRow {
         revision_id: row.revision_id.clone(),
+        change_id: row.revision_id.clone(),
         entry_id: sql_id.to_string(),
         parent_revision_id: row.parent_revision_id.clone(),
         timestamp: delete_ts,

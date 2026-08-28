@@ -37,6 +37,7 @@ fn fixture(entry_count: usize, revisions_per_entry: usize) -> (FormDefinition, V
                 form_id,
                 entry_id: EntryId::from(Uuid::from_u128(10_000 + entry as u128)),
                 revision_id: RevisionId::from(Uuid::from_u128(1_000_000 + revisions.len() as u128)),
+                change_id: format!("change-{}", 1_000_000 + revisions.len()),
                 parent_revision_id: None,
                 entry_version: version as u64,
                 expected_version: (version > 1).then_some((version - 1) as u64),

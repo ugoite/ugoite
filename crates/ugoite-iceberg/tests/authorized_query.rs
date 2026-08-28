@@ -52,6 +52,7 @@ fn revision(form: &FormDefinition, entry: u128, revision: u128, title: &str) -> 
         form_id: form.id,
         entry_id: EntryId::from(Uuid::from_u128(entry)),
         revision_id: Uuid::from_u128(revision).into(),
+        change_id: format!("change-{revision}"),
         parent_revision_id: None,
         entry_version: 1,
         expected_version: None,

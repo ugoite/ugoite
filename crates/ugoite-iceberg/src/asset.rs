@@ -340,7 +340,7 @@ pub async fn delete_asset(
         .into());
     }
     let workspace = crate::iceberg_store::native_mutation_workspace(op, ws_path).await?;
-    let publication = crate::publication_context(
+    let publication = crate::system_publication_context(
         format!("asset-delete:{asset_id}"),
         "asset.delete",
         &serde_json::json!({"asset_id": asset_id}),

@@ -104,8 +104,11 @@ pub async fn ensure_form_tables(
     crate::authorization::ensure_authorization_write_fence().await?;
     let workspace = native_mutation_workspace(operator, workspace_path).await?;
     if !workspace.has_form(form.id).await? {
-        let command =
-            crate::publication_context(format!("form-create:{}", form.id), "form.create", &form)?;
+        let command = crate::system_publication_context(
+            format!("form-create:{}", form.id),
+            "form.create",
+            &form,
+        )?;
         workspace.commit(command)?.create_form(&form).await?;
     }
     Ok(())

@@ -14,9 +14,12 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use ugoite_domain::change::ChangeDescriptor;
 use ugoite_domain::checkpoint::{CheckpointTable, SpaceCheckpoint};
 use ugoite_domain::id::{validate_asset_id, FormId, SpaceId};
-use ugoite_domain::space_key::SpaceUri;
+use ugoite_domain::pin::PinEntry;
+use ugoite_domain::publication_ref::PublicationRef;
+use ugoite_domain::space_key::{SpaceKey, SpaceUri};
 use ugoite_storage::{
     CatalogMutationPermit, CatalogWriteMode, ExactCatalogHead, SpaceCatalogStore,
 };
@@ -34,12 +37,31 @@ const SPACE_FORMAT_VERSION: u32 = 1;
 const MAX_HEAD_BYTES: usize = 1 << 20;
 const SMALL_FILE_THRESHOLD_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_DELETED_ASSET_BLOBS_PER_PASS: usize = 1_024;
+const MAX_PIN_NAME_BYTES: usize = 128;
+
+fn validate_pin_name(name: &str) -> Result<()> {
+    if name.trim().is_empty()
+        || name.len() > MAX_PIN_NAME_BYTES
+        || name.contains('/')
+        || name.contains('\\')
+        || name == "."
+        || name == ".."
+    {
+        return Err(Error::new(
+            ErrorKind::DataInvalid,
+            "pin name is empty, too long, or contains a path component",
+        ));
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PublicationContext {
-    pub command_id: String,
-    pub command_kind: String,
-    pub command_digest: String,
+    pub(crate) command_id: String,
+    pub(crate) command_kind: String,
+    pub(crate) command_digest: String,
+    /// Semantic metadata for a user-visible Knowledge mutation.
+    pub(crate) change: Option<ChangeDescriptor>,
 }
 
 /// Durable outcome of a single command publication.  This deliberately
@@ -130,7 +152,11 @@ impl CommandReceiptRecord {
 }
 
 impl PublicationContext {
-    pub fn new(command_id: impl Into<String>, command_kind: impl Into<String>) -> Self {
+    pub fn command_id(&self) -> &str {
+        &self.command_id
+    }
+
+    pub(crate) fn new(command_id: impl Into<String>, command_kind: impl Into<String>) -> Self {
         let command_id = command_id.into();
         let command_kind = command_kind.into();
         let command_digest = checksum(format!("{command_id}:{command_kind}").as_bytes());
@@ -138,12 +164,13 @@ impl PublicationContext {
             command_id,
             command_kind,
             command_digest,
+            change: None,
         }
     }
 
     /// Uses the digest of the domain command coordinated by the caller. A
     /// retry must reuse all three values; otherwise it is a different attempt.
-    pub fn with_command_digest(
+    pub(crate) fn with_command_digest(
         command_id: impl Into<String>,
         command_kind: impl Into<String>,
         command_digest: impl Into<String>,
@@ -152,11 +179,43 @@ impl PublicationContext {
             command_id: command_id.into(),
             command_kind: command_kind.into(),
             command_digest: command_digest.into(),
+            change: None,
         }
+    }
+
+    pub(crate) fn with_change_descriptor(
+        mut self,
+        change: ChangeDescriptor,
+    ) -> std::result::Result<Self, ugoite_domain::change::ChangeValidationError> {
+        change.validate()?;
+        self.change = Some(change);
+        Ok(self)
     }
 
     fn generated() -> Self {
         Self::new(Uuid::new_v4().to_string(), "iceberg-catalog")
+    }
+
+    pub(crate) fn validate(&self) -> Result<()> {
+        if self.command_id.trim().is_empty() || self.command_kind.trim().is_empty() {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "publication command identity must not be empty",
+            ));
+        }
+        if let Some(change) = &self.change {
+            change
+                .validate()
+                .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?;
+        } else if !matches!(self.command_kind.as_str(), "pin.create" | "pin.delete")
+            && !self.command_kind.starts_with("test.")
+        {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "Knowledge publication requires a Change descriptor",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -272,6 +331,14 @@ pub struct SpaceCatalog {
     /// operation so validation and publication cannot silently switch to a
     /// newer base Head between the two steps.
     bound_attempt: Option<Arc<PublicationAttempt>>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PublishedChange {
+    pub change_id: String,
+    pub generation: u64,
+    pub change: ChangeDescriptor,
+    pub publication: PublicationRef,
 }
 
 impl std::fmt::Debug for SpaceCatalog {
@@ -393,8 +460,356 @@ impl SpaceCatalog {
                 "Catalog Head belongs to a different Space or namespace",
             ));
         }
+        validate_head_pins(&head, self.logical_space_uid)?;
         self.validate_head_publication(&head).await?;
         Ok(Some((head, exact)))
+    }
+
+    async fn publication_ref_for_head(&self, head: &CatalogHead) -> Result<PublicationRef> {
+        let publication_path = head.publication_location.as_deref().ok_or_else(|| {
+            Error::new(
+                ErrorKind::DataInvalid,
+                "Catalog Head has no publication location",
+            )
+        })?;
+        let publication = decode_publication(
+            &self
+                .store
+                .read_publication(publication_path)
+                .await
+                .map_err(storage_error)?,
+        )?;
+        validate_publication_matches_head(&publication, head)?;
+        let prefix = if self.store.space_root().is_empty() {
+            String::new()
+        } else {
+            format!("{}/", self.store.space_root())
+        };
+        let key = publication_path.strip_prefix(&prefix).ok_or_else(|| {
+            Error::new(
+                ErrorKind::DataInvalid,
+                "Catalog publication is outside the bound Space",
+            )
+        })?;
+        let uri = SpaceUri::new(
+            self.logical_space_uid,
+            SpaceKey::parse(key)
+                .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?,
+        )
+        .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?;
+        PublicationRef::new(publication.generation, uri, publication.checksum)
+            .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))
+    }
+
+    /// Active Pins are read exactly from Catalog Head. Storage listing is not
+    /// involved and the returned map is therefore a complete current view.
+    pub async fn list_pins(&self) -> Result<BTreeMap<String, PinEntry>> {
+        let Some((head, _)) = self.exact_head().await? else {
+            return Ok(BTreeMap::new());
+        };
+        self.validate_pin_references(&head).await?;
+        Ok(head.pins)
+    }
+
+    /// Reconstruct committed Changes from the reachable immutable publication
+    /// chain. This is intentionally a history read, not a secondary index.
+    pub async fn list_changes(&self) -> Result<Vec<PublishedChange>> {
+        let (mut head, _) = self
+            .exact_head()
+            .await?
+            .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
+        let mut path = head.publication_location.clone().ok_or_else(|| {
+            Error::new(
+                ErrorKind::DataInvalid,
+                "Catalog Head has no publication location",
+            )
+        })?;
+        let mut visited = BTreeSet::new();
+        let mut changes = Vec::new();
+        loop {
+            if !visited.insert(path.clone()) {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog publication chain contains a cycle",
+                ));
+            }
+            let publication = decode_publication(
+                &self
+                    .store
+                    .read_publication(&path)
+                    .await
+                    .map_err(storage_error)?,
+            )?;
+            validate_publication_matches_head(&publication, &head)?;
+            if let Some(change) = publication.change.clone() {
+                let publication_uri = self.publication_uri(&path)?;
+                changes.push(PublishedChange {
+                    change_id: publication.command_id.clone(),
+                    generation: publication.generation,
+                    change,
+                    publication: PublicationRef::new(
+                        publication.generation,
+                        publication_uri,
+                        publication.checksum,
+                    )
+                    .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?,
+                });
+            }
+            let (previous_generation, previous_path, previous_checksum) = match (
+                publication.previous_generation,
+                publication.previous_publication,
+                publication.previous_head_checksum,
+            ) {
+                (None, None, None) if publication.generation == 0 => break,
+                (Some(generation), Some(path), Some(checksum))
+                    if generation + 1 == publication.generation =>
+                {
+                    (generation, path, checksum)
+                }
+                _ => {
+                    return Err(Error::new(
+                        ErrorKind::DataInvalid,
+                        "Catalog publication chain is incomplete or corrupt",
+                    ));
+                }
+            };
+            let previous = decode_publication(
+                &self
+                    .store
+                    .read_publication(&previous_path)
+                    .await
+                    .map_err(storage_error)?,
+            )?;
+            if previous.generation != previous_generation
+                || previous.next_head_checksum != previous_checksum
+            {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog publication predecessor is corrupt",
+                ));
+            }
+            head = previous.next_head;
+            path = previous_path;
+        }
+        changes.reverse();
+        Ok(changes)
+    }
+
+    fn publication_uri(&self, publication_path: &str) -> Result<SpaceUri> {
+        let prefix = if self.store.space_root().is_empty() {
+            String::new()
+        } else {
+            format!("{}/", self.store.space_root())
+        };
+        let key = publication_path.strip_prefix(&prefix).ok_or_else(|| {
+            Error::new(
+                ErrorKind::DataInvalid,
+                "Catalog publication is outside the bound Space",
+            )
+        })?;
+        SpaceUri::new(
+            self.logical_space_uid,
+            SpaceKey::parse(key)
+                .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?,
+        )
+        .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))
+    }
+
+    async fn validate_pin_references(&self, head: &CatalogHead) -> Result<()> {
+        let mut remaining = head
+            .pins
+            .values()
+            .map(|pin| {
+                (
+                    pin.coordinate.generation,
+                    pin.coordinate.publication_uri.to_string(),
+                    pin.coordinate.publication_checksum.clone(),
+                )
+            })
+            .collect::<BTreeSet<_>>();
+        let mut cursor = head.clone();
+        let mut path = head.publication_location.clone().ok_or_else(|| {
+            Error::new(
+                ErrorKind::DataInvalid,
+                "Catalog Head has no publication location",
+            )
+        })?;
+        let mut visited = BTreeSet::new();
+        loop {
+            if !visited.insert(path.clone()) {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog publication chain contains a cycle",
+                ));
+            }
+            let publication = decode_publication(
+                &self
+                    .store
+                    .read_publication(&path)
+                    .await
+                    .map_err(storage_error)?,
+            )?;
+            validate_publication_matches_head(&publication, &cursor)?;
+            let coordinate = (
+                publication.generation,
+                self.publication_uri(&path)?.to_string(),
+                publication.checksum.clone(),
+            );
+            remaining.remove(&coordinate);
+            let (previous_generation, previous_path, previous_checksum) = match (
+                publication.previous_generation,
+                publication.previous_publication,
+                publication.previous_head_checksum,
+            ) {
+                (None, None, None) if publication.generation == 0 => break,
+                (Some(generation), Some(path), Some(checksum))
+                    if generation + 1 == publication.generation =>
+                {
+                    (generation, path, checksum)
+                }
+                _ => {
+                    return Err(Error::new(
+                        ErrorKind::DataInvalid,
+                        "Catalog publication chain is incomplete or corrupt",
+                    ));
+                }
+            };
+            let previous = decode_publication(
+                &self
+                    .store
+                    .read_publication(&previous_path)
+                    .await
+                    .map_err(storage_error)?,
+            )?;
+            if previous.generation != previous_generation
+                || previous.next_head_checksum != previous_checksum
+            {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog publication predecessor is corrupt",
+                ));
+            }
+            cursor = previous.next_head;
+            path = previous_path;
+        }
+        if remaining.is_empty() {
+            Ok(())
+        } else {
+            Err(Error::new(
+                ErrorKind::DataInvalid,
+                "Catalog Head contains a Pin to an unreachable publication",
+            ))
+        }
+    }
+
+    pub async fn create_pin(
+        &self,
+        name: &str,
+        created_by_principal_id: &str,
+        created_at_micros: i64,
+    ) -> Result<PinEntry> {
+        validate_pin_name(name)?;
+        if created_by_principal_id.trim().is_empty() {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "pin creator must not be empty",
+            ));
+        }
+        self.ensure_authoritative_mutation_contract()
+            .map_err(storage_error)?;
+        self.claim_mutation()?;
+        let _write_guard = if self.store.write_mode() == CatalogWriteMode::SingleProcess {
+            Some(self.store.single_process_serializer().lock_owned().await)
+        } else {
+            None
+        };
+        let (head, exact) = self
+            .exact_head()
+            .await?
+            .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
+        if head.pins.contains_key(name) {
+            return Err(Error::new(ErrorKind::DataInvalid, "pin already exists"));
+        }
+        let pin = PinEntry {
+            coordinate: self.publication_ref_for_head(&head).await?,
+            created_at_micros,
+            created_by_principal_id: created_by_principal_id.to_owned(),
+        };
+        pin.validate()
+            .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?;
+        let mut next = head.next_generation();
+        next.pins.insert(name.to_owned(), pin.clone());
+        let publication = PublicationContext::new(Uuid::new_v4().to_string(), "pin.create");
+        let attempt = PublicationAttempt::from_exact(&publication, Some((head, exact)));
+        let result = self
+            .publish_new_head(
+                &attempt,
+                next,
+                PublicationUpdate {
+                    affected_table: TableCoordinates {
+                        namespace: self.namespace.as_ref().clone(),
+                        table: "_ugoite_pins".to_owned(),
+                    },
+                    base_metadata_location: None,
+                    new_metadata_location: format!("pin://{name}"),
+                    base_snapshot_id: None,
+                    base_schema_id: None,
+                    new_snapshot_id: None,
+                    new_schema_id: 0,
+                },
+            )
+            .await;
+        match result {
+            Ok(()) => Ok(pin),
+            Err(_error) if self.resolve_unknown_outcome(&attempt).await? => Ok(pin),
+            Err(error) => Err(error),
+        }
+    }
+
+    pub async fn delete_pin(&self, name: &str) -> Result<()> {
+        validate_pin_name(name)?;
+        self.ensure_authoritative_mutation_contract()
+            .map_err(storage_error)?;
+        self.claim_mutation()?;
+        let _write_guard = if self.store.write_mode() == CatalogWriteMode::SingleProcess {
+            Some(self.store.single_process_serializer().lock_owned().await)
+        } else {
+            None
+        };
+        let (head, exact) = self
+            .exact_head()
+            .await?
+            .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
+        if !head.pins.contains_key(name) {
+            return Err(Error::new(ErrorKind::DataInvalid, "pin not found"));
+        }
+        let mut next = head.next_generation();
+        next.pins.remove(name);
+        let publication = PublicationContext::new(Uuid::new_v4().to_string(), "pin.delete");
+        let attempt = PublicationAttempt::from_exact(&publication, Some((head, exact)));
+        let result = self
+            .publish_new_head(
+                &attempt,
+                next,
+                PublicationUpdate {
+                    affected_table: TableCoordinates {
+                        namespace: self.namespace.as_ref().clone(),
+                        table: "_ugoite_pins".to_owned(),
+                    },
+                    base_metadata_location: None,
+                    new_metadata_location: format!("pin://{name}"),
+                    base_snapshot_id: None,
+                    base_schema_id: None,
+                    new_snapshot_id: None,
+                    new_schema_id: 0,
+                },
+            )
+            .await;
+        match result {
+            Ok(()) => Ok(()),
+            Err(_error) if self.resolve_unknown_outcome(&attempt).await? => Ok(()),
+            Err(error) => Err(error),
+        }
     }
 
     /// Captures the one exact Catalog Head currently visible to this reader.
@@ -464,6 +879,7 @@ impl SpaceCatalog {
                 self.unavailable_head_health(checkpoint_names, "catalog_head_identity_mismatch")
             );
         }
+        let pin_issue = validate_head_pins(&head, self.logical_space_uid).err();
         let publication_issue = self
             .validate_publication_chain_for_health(&head)
             .await
@@ -484,7 +900,8 @@ impl SpaceCatalog {
             checkpoints.push(self.checkpoint_health(name).await);
         }
 
-        let status = if publication_issue.is_some()
+        let status = if pin_issue.is_some()
+            || publication_issue.is_some()
             || tables
                 .iter()
                 .any(|table| table.status == HealthStatus::Degraded)
@@ -504,7 +921,9 @@ impl SpaceCatalog {
                 etag: exact.etag,
                 generation: Some(head.generation),
                 form_registry_generation: Some(head.form_registry_generation),
-                issue: publication_issue.map(|code| health_issue(code, "publication")),
+                issue: pin_issue
+                    .map(|_| health_issue("catalog_head_pin_invalid", "catalog_head"))
+                    .or_else(|| publication_issue.map(|code| health_issue(code, "publication"))),
             },
             tables,
             checkpoints,
@@ -3056,6 +3475,7 @@ impl SpaceCatalog {
             command_id: attempt.publication.command_id.clone(),
             command_kind: attempt.publication.command_kind.clone(),
             command_digest: attempt.publication.command_digest.clone(),
+            change: attempt.publication.change.clone(),
             affected_table: update.affected_table,
             base_metadata_location: update.base_metadata_location,
             new_metadata_location: update.new_metadata_location,
@@ -3738,6 +4158,7 @@ struct CatalogHead {
     generation: u64,
     form_registry_generation: u64,
     tables: BTreeMap<String, TableReference>,
+    pins: BTreeMap<String, PinEntry>,
     publication_location: Option<String>,
     publication_command_id: Option<String>,
     checksum: String,
@@ -3752,6 +4173,7 @@ impl CatalogHead {
             generation: 0,
             form_registry_generation: 0,
             tables: BTreeMap::new(),
+            pins: BTreeMap::new(),
             publication_location: None,
             publication_command_id: None,
             checksum: String::new(),
@@ -3828,6 +4250,7 @@ struct PublicationRecord {
     command_id: String,
     command_kind: String,
     command_digest: String,
+    change: Option<ChangeDescriptor>,
     affected_table: TableCoordinates,
     base_metadata_location: Option<String>,
     new_metadata_location: String,
@@ -3999,6 +4422,30 @@ fn validate_publication_matches_head(
             ErrorKind::DataInvalid,
             "Catalog publication does not match Catalog Head",
         ));
+    }
+    Ok(())
+}
+
+fn validate_head_pins(head: &CatalogHead, logical_space_uid: Uuid) -> Result<()> {
+    for (name, pin) in &head.pins {
+        validate_pin_name(name)?;
+        pin.validate()
+            .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?;
+        if pin.coordinate.generation > head.generation
+            || pin.coordinate.publication_uri.space_uid() != logical_space_uid
+            || !pin
+                .coordinate
+                .publication_uri
+                .key()
+                .as_str()
+                .starts_with("_ugoite/catalog/publications/")
+            || SpaceUri::parse(&pin.coordinate.publication_uri.to_string()).is_err()
+        {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "Catalog Head contains an invalid publication Pin",
+            ));
+        }
     }
     Ok(())
 }
@@ -4204,6 +4651,7 @@ mod tests {
             command_id: catalog.publication.command_id.clone(),
             command_kind: catalog.publication.command_kind.clone(),
             command_digest: catalog.publication.command_digest.clone(),
+            change: catalog.publication.change.clone(),
             affected_table: TableCoordinates::from(&table),
             base_metadata_location: None,
             new_metadata_location: "memory:///spaces/interrupted/forms/form/metadata.json"
@@ -5048,6 +5496,7 @@ mod tests {
             command_id: attempt.publication.command_id.clone(),
             command_kind: attempt.publication.command_kind.clone(),
             command_digest: attempt.publication.command_digest.clone(),
+            change: attempt.publication.change.clone(),
             affected_table: TableCoordinates {
                 namespace: head.namespace.clone(),
                 table: format!("_asset_delete_{asset_id}"),

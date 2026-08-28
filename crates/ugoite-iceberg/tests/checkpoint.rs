@@ -54,6 +54,7 @@ fn revision_for_entry(
         form_id: form.id,
         entry_id: Uuid::from_u128(entry).into(),
         revision_id: Uuid::from_u128(20 + entry * 100 + u128::from(version)).into(),
+        change_id: format!("change-{entry}-{version}"),
         parent_revision_id: (version > 1)
             .then(|| Uuid::from_u128(20 + entry * 100 + u128::from(version - 1)).into()),
         entry_version: version,
