@@ -17,10 +17,15 @@ crates/ugoite-konase owns:
 - serializable Events and Effects;
 - the replaceable AgentRuntime contract.
 
+`ugoite-konase-rig` implements that contract with Rig's sans-IO `AgentRun`.
+It creates a fresh run per Job, pauses at model and MCP boundaries, and drops
+the run at completion. Rig types and conversation state remain inside the
+adapter; neither is persisted in Konase state or exposed through WASM.
+
 The step function is deterministic. It never starts an async runtime and
 never performs network, filesystem, storage, or model-provider I/O. A host
-executes StartJob, CallMcp, AskConfirmation, and Emit effects and sends the
-result back as an Event.
+executes StartJob, CallModel, CallMcp, AskConfirmation, and Emit effects and
+sends the result back as an Event.
 
 ugoite-wasm exposes the same semantics through konase.version, konase.new,
 konase.step, and konase.context. The WASM adapter does not perform network
@@ -34,9 +39,10 @@ observations and explicitly selected resource contents; it does not define an
 append-only transcript contract. Meaningful Knowledge outcomes continue to use
 Ugoite's existing Space and Change/Run/Undo semantics.
 
-## Planned adapters
+## Planned host adapters
 
-The Rig adapter, Agent Plugins loader, native MCP transport, CLI TUI, browser
-Host, and Konase UI are subsequent delivery slices. They must implement the
-contracts above without leaking provider/framework types into the Konase or
-Ugoite public/domain contracts.
+The CLI model/MCP host, browser Host, and Konase UI are subsequent delivery
+slices. Agent Plugins, native MCP transport abstractions, and other provider
+frameworks remain outside this MVP. They must implement the contracts above
+without leaking provider/framework types into the Konase or Ugoite
+public/domain contracts.
