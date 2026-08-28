@@ -12,11 +12,11 @@ mod engine;
 pub use agent_runtime::{AgentAction, AgentRuntime, AgentRuntimeError, AgentRuntimeInput};
 pub use context::{ContextBuildRequest, ContextBuilder, ContextLimits};
 pub use engine::{
-    step, AgentProgress, Capability, ConfirmationRequest, ConfirmationResult, ContextCapsule,
-    EffectKind, HostError, Job, JobOutcome, JobRequest, JobSpec, JobStatus, KonaseEffect,
-    KonaseError, KonaseEvent, KonaseOutput, KonaseState, McpRequest, McpResult, Observation,
-    ObservationKind, PendingEffect, ResourceContent, ResourceReference, SessionStatus, StepResult,
-    UserRequest, Work, WorkStatus, MAX_STATE_OBSERVATIONS,
+    normalize_state, step, AgentProgress, Capability, ConfirmationRequest, ConfirmationResult,
+    ContextCapsule, EffectKind, HostError, Job, JobOutcome, JobRequest, JobSpec, JobStatus,
+    KonaseEffect, KonaseError, KonaseEvent, KonaseOutput, KonaseState, McpRequest, McpResult,
+    Observation, ObservationKind, PendingEffect, ResourceContent, ResourceReference, SessionStatus,
+    StepResult, UserRequest, Work, WorkStatus, MAX_STATE_JSON_BYTES, MAX_STATE_OBSERVATIONS,
 };
 
 /// Version for portable Konase JSON semantics, independent of Ugoite REST.

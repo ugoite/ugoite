@@ -2,6 +2,9 @@ use crate::{Capability, Observation, ResourceContent};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+const MAX_CONTEXT_SCHEMA_BYTES: usize = 16 * 1024;
+const MAX_CAPABILITY_NAME_CHARS: usize = 256;
+
 /// Explicit limits keep a model context proportional to the current bounded
 /// view, not to the total Work transcript.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -27,6 +30,24 @@ impl Default for ContextLimits {
             max_resource_references: 16,
             max_capabilities: 32,
             max_safety_hints: 8,
+        }
+    }
+}
+
+impl ContextLimits {
+    fn bounded(self) -> Self {
+        let defaults = Self::default();
+        Self {
+            max_observations: self.max_observations.min(defaults.max_observations),
+            max_resources: self.max_resources.min(defaults.max_resources),
+            max_summary_chars: self.max_summary_chars.min(defaults.max_summary_chars),
+            max_fact_chars: self.max_fact_chars.min(defaults.max_fact_chars),
+            max_facts: self.max_facts.min(defaults.max_facts),
+            max_resource_references: self
+                .max_resource_references
+                .min(defaults.max_resource_references),
+            max_capabilities: self.max_capabilities.min(defaults.max_capabilities),
+            max_safety_hints: self.max_safety_hints.min(defaults.max_safety_hints),
         }
     }
 }
@@ -58,7 +79,9 @@ pub struct ContextBuilder {
 
 impl ContextBuilder {
     pub fn new(limits: ContextLimits) -> Self {
-        Self { limits }
+        Self {
+            limits: limits.bounded(),
+        }
     }
 
     pub fn limits(&self) -> &ContextLimits {
@@ -77,13 +100,14 @@ impl ContextBuilder {
             expected_response_schema,
             limits,
         } = request;
-        let limits = limits.unwrap_or_else(|| self.limits.clone());
+        let limits = limits.unwrap_or_else(|| self.limits.clone()).bounded();
 
         let observations = observations
             .into_iter()
             .rev()
             .take(limits.max_observations)
             .map(|mut observation| {
+                observation.id = truncate(&observation.id, MAX_CAPABILITY_NAME_CHARS);
                 observation.summary = truncate(&observation.summary, limits.max_summary_chars);
                 observation.facts = observation
                     .facts
@@ -119,15 +143,26 @@ impl ContextBuilder {
                 .then_with(|| left.description.cmp(&right.description))
         });
         available_capabilities.truncate(limits.max_capabilities);
+        for capability in &mut available_capabilities {
+            capability.name = truncate(&capability.name, MAX_CAPABILITY_NAME_CHARS);
+            capability.description = truncate(&capability.description, limits.max_summary_chars);
+        }
 
         let selected_resource_contents = selected_resource_contents
             .into_iter()
             .take(limits.max_resources)
             .map(|mut resource| {
+                resource.uri = truncate(&resource.uri, limits.max_summary_chars);
                 resource.content = truncate(&resource.content, limits.max_summary_chars);
                 resource
             })
             .collect();
+
+        let expected_response_schema = expected_response_schema.filter(|schema| {
+            serde_json::to_vec(schema)
+                .map(|serialized| serialized.len() <= MAX_CONTEXT_SCHEMA_BYTES)
+                .unwrap_or(false)
+        });
 
         crate::ContextCapsule {
             work_goal: truncate(&work_goal, limits.max_summary_chars),
@@ -230,5 +265,64 @@ mod tests {
         let small = serde_json::to_vec(&builder.build(make_request(100))).unwrap();
         let large = serde_json::to_vec(&builder.build(make_request(1_000))).unwrap();
         assert_eq!(small, large);
+    }
+
+    #[test]
+    fn caller_limits_and_context_fields_remain_hard_bounded() {
+        let oversized = "x".repeat(10_000);
+        let request = ContextBuildRequest {
+            work_goal: oversized.clone(),
+            job_goal: oversized.clone(),
+            current_strategy_summary: Some(oversized.clone()),
+            observations: (0..20).map(observation).collect(),
+            available_capabilities: (0..40)
+                .map(|id| Capability {
+                    name: format!("capability-{id}-{oversized}"),
+                    description: oversized.clone(),
+                })
+                .collect(),
+            selected_resource_contents: (0..10)
+                .map(|id| ResourceContent {
+                    uri: format!("ugoite://entry/{id}-{oversized}"),
+                    content: oversized.clone(),
+                })
+                .collect(),
+            safety_hints: (0..20).map(|_| oversized.clone()).collect(),
+            expected_response_schema: Some(serde_json::json!({
+                "schema": "x".repeat(MAX_CONTEXT_SCHEMA_BYTES)
+            })),
+            limits: Some(ContextLimits {
+                max_observations: usize::MAX,
+                max_resources: usize::MAX,
+                max_summary_chars: usize::MAX,
+                max_fact_chars: usize::MAX,
+                max_facts: usize::MAX,
+                max_resource_references: usize::MAX,
+                max_capabilities: usize::MAX,
+                max_safety_hints: usize::MAX,
+            }),
+        };
+
+        let context = ContextBuilder::default().build(request);
+        let defaults = ContextLimits::default();
+        assert_eq!(
+            context.relevant_observations.len(),
+            defaults.max_observations
+        );
+        assert_eq!(
+            context.selected_resource_contents.len(),
+            defaults.max_resources
+        );
+        assert_eq!(
+            context.available_capabilities.len(),
+            defaults.max_capabilities
+        );
+        assert_eq!(context.safety_hints.len(), defaults.max_safety_hints);
+        assert!(context.expected_response_schema.is_none());
+        assert!(context.work_goal.chars().count() <= defaults.max_summary_chars);
+        assert!(context
+            .available_capabilities
+            .iter()
+            .all(|capability| capability.name.chars().count() <= MAX_CAPABILITY_NAME_CHARS));
     }
 }
