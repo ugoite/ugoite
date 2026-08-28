@@ -1,0 +1,6 @@
+[test-groups.minio]
+max-threads = 1
+
+[[profile.default.overrides]]
+filter = 'binary(minio_s3)'
+test-group = 'minio'
