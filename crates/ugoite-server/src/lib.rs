@@ -13568,4 +13568,266 @@ mod authentication_regression_tests {
         assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
         Ok(())
     }
+
+    fn knowledge_markdown(title: &str, body: &str) -> String {
+        format!("---\nform: Entry\n---\n# {title}\n\n## Body\n{body}")
+    }
+
+    fn json_request(method: Method, uri: String, payload: Value) -> Request<Body> {
+        Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(payload.to_string()))
+            .expect("JSON request")
+    }
+
+    async fn response_json(
+        response: axum::response::Response,
+    ) -> anyhow::Result<(StatusCode, Value)> {
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        Ok((status, serde_json::from_slice(&body)?))
+    }
+
+    #[tokio::test]
+    async fn issue_2037_public_apply_uses_opaque_version_tokens() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-public-knowledge-apply-{}",
+            Uuid::now_v7()
+        ))?;
+        let principal_id = Uuid::from_u128(20370);
+        let space_id = state
+            .service
+            .create_space_for_principal("public-knowledge-apply", principal_id, "Route test")
+            .await?
+            .to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = Router::new()
+            .route("/spaces/{space_id}/apply", post(apply_operations))
+            .layer(Extension(content_identity(principal_id, space_uid)))
+            .with_state(state);
+
+        let create_response = route
+            .clone()
+            .oneshot(json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{
+                        "kind": "create",
+                        "id": "apply-entry",
+                        "markdown": knowledge_markdown("Apply entry", "created")
+                    }],
+                    "run_id": "run-2037",
+                    "message": "public apply contract"
+                }),
+            ))
+            .await?;
+        let (status, create_body) = response_json(create_response).await?;
+        assert_eq!(status, StatusCode::OK, "{create_body}");
+        assert_eq!(create_body["run_id"], "run-2037");
+        let version_token = create_body["operations"][0]["revision_id"]
+            .as_str()
+            .expect("opaque version token")
+            .to_owned();
+        assert!(!version_token.is_empty());
+
+        let update_response = route
+            .oneshot(json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{
+                        "kind": "update",
+                        "id": "apply-entry",
+                        "version_token": version_token,
+                        "markdown": knowledge_markdown("Apply entry", "updated")
+                    }],
+                    "run_id": "run-2037"
+                }),
+            ))
+            .await?;
+        let (status, update_body) = response_json(update_response).await?;
+        assert_eq!(status, StatusCode::OK, "{update_body}");
+        assert_eq!(update_body["operations"][0]["kind"], "update");
+        assert!(update_body["operations"][0]["revision_id"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty()));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn issue_2037_apply_remove_requires_the_exact_public_approval_intent(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-public-knowledge-approval-{}",
+            Uuid::now_v7()
+        ))?;
+        state.initialize_node().await?;
+        let issuer_account_id = Uuid::from_u128(20371);
+        let issuer_principal_id = Uuid::from_u128(20372);
+        let actor_account_id = Uuid::from_u128(20373);
+        let actor_principal_id = Uuid::from_u128(20374);
+        let issuer_credential_id = Uuid::from_u128(20375);
+        let actor_credential_id = Uuid::from_u128(20376);
+        let space_id = state
+            .service
+            .create_space_for_principal("public-knowledge-approval", issuer_principal_id, "Owner")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        Authorizer::new(state.service.operator().clone())
+            .add_human_member(
+                &space_id,
+                issuer_principal_id,
+                SpacePrincipal {
+                    principal_id: actor_principal_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "Approval actor".into(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Owner,
+            )
+            .await?;
+        state
+            .identity
+            .seed_test_human_approval_credentials(
+                space_uid,
+                issuer_principal_id,
+                issuer_account_id,
+                actor_principal_id,
+                actor_account_id,
+                issuer_credential_id,
+                actor_credential_id,
+            )
+            .await?;
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        state
+            .service
+            .create_entry(
+                &space_id,
+                "approval-entry",
+                &knowledge_markdown("Approval entry", "to remove"),
+                &issuer_principal_id.to_string(),
+            )
+            .await?;
+
+        let mut issuer_identity = content_identity(issuer_account_id, space_uid);
+        issuer_identity.account_id = issuer_account_id;
+        issuer_identity.request_identity.subject = AuthenticatedSubject::HumanAccount {
+            account_id: issuer_account_id,
+        };
+        issuer_identity.request_identity.actor = Actor::Human {
+            account_id: issuer_account_id,
+        };
+        issuer_identity.request_identity.credential_id = issuer_credential_id;
+        issuer_identity.token_principal_id = None;
+        issuer_identity.token_actor_principal_id = None;
+        issuer_identity.token_space_uid = None;
+        issuer_identity.token_actions = None;
+        let issue_route = Router::new()
+            .route("/spaces/{space_id}/approvals", post(issue_human_approval))
+            .layer(Extension(issuer_identity))
+            .with_state(state.clone());
+        let approval_response = issue_route
+            .oneshot(json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/approvals"),
+                json!({
+                    "operation": "entry.delete",
+                    "mutation": {"target_id": "approval-entry", "hard_delete": false},
+                    "actor_credential_id": actor_credential_id,
+                    "expires_in_seconds": 60
+                }),
+            ))
+            .await?;
+        let (status, approval_body) = response_json(approval_response).await?;
+        assert_eq!(status, StatusCode::CREATED, "{approval_body}");
+        assert_eq!(approval_body["operation"], "entry.delete");
+        let approval_token = approval_body["approval_token"]
+            .as_str()
+            .expect("opaque approval token")
+            .to_owned();
+        assert_eq!(
+            approval_body["intent_hash"].as_str().map(str::len),
+            Some(64)
+        );
+
+        let mut actor_identity = content_identity(actor_account_id, space_uid);
+        actor_identity.account_id = actor_account_id;
+        actor_identity.request_identity.subject = AuthenticatedSubject::HumanAccount {
+            account_id: actor_account_id,
+        };
+        actor_identity.request_identity.actor = Actor::Human {
+            account_id: actor_account_id,
+        };
+        actor_identity.request_identity.credential_id = actor_credential_id;
+        actor_identity.request_identity.authentication_method =
+            RequestAuthenticationMethod::DeviceProof;
+        actor_identity.request_identity.assurance = AssuranceLevel::Possession;
+        actor_identity.token_principal_id = Some(actor_principal_id);
+        actor_identity.token_actor_principal_id = Some(actor_principal_id);
+        actor_identity.token_space_uid = Some(space_uid);
+        actor_identity.token_actions =
+            Some(["read", "delete"].into_iter().map(str::to_string).collect());
+        actor_identity.human_approval_token = Some(approval_token);
+        let apply_route = Router::new()
+            .route("/spaces/{space_id}/apply", post(apply_operations))
+            .layer(Extension(actor_identity))
+            .with_state(state);
+
+        let mismatch_response = apply_route
+            .clone()
+            .oneshot(json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({"operations": [{"kind": "remove", "id": "different-entry"}]}),
+            ))
+            .await?;
+        let (status, mismatch_body) = response_json(mismatch_response).await?;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{mismatch_body}");
+        assert_eq!(mismatch_body["code"], "HUMAN_APPROVAL_INVALID");
+        assert!(mismatch_body["message"].as_str().is_some());
+
+        let matching_response = apply_route
+            .oneshot(json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({"operations": [{"kind": "remove", "id": "approval-entry"}]}),
+            ))
+            .await?;
+        let (status, matching_body) = response_json(matching_response).await?;
+        assert_eq!(status, StatusCode::OK, "{matching_body}");
+        assert_eq!(
+            matching_body["operations"][0],
+            json!({
+                "kind": "remove",
+                "id": "approval-entry"
+            })
+        );
+        Ok(())
+    }
 }

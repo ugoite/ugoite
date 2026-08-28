@@ -950,6 +950,55 @@ fn openapi_human_approval_is_server_derived_and_single_use() {
 }
 
 #[test]
+fn issue_2037_openapi_publishes_the_public_knowledge_contract() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let paths = &snapshot["paths"];
+
+    for path in [
+        "/spaces/{space_id}/changes",
+        "/spaces/{space_id}/changes/{change_id}/revert",
+        "/spaces/{space_id}/runs/{run_id}/undo",
+        "/spaces/{space_id}/apply",
+        "/spaces/{space_id}/pins",
+        "/spaces/{space_id}/pins/{pin_name}",
+    ] {
+        assert!(paths.get(path).is_some(), "missing public route {path}");
+    }
+
+    assert_eq!(
+        paths["/spaces/{space_id}/changes/{change_id}/revert"]["post"]["responses"]["409"]
+            ["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/ErrorResponse"
+    );
+
+    let apply = &paths["/spaces/{space_id}/apply"]["post"]["requestBody"];
+    assert_eq!(
+        apply["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/ApplyRequest"
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["ApplyRequest"]["additionalProperties"],
+        false
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["ApplyUpdate"]["properties"]["version_token"]["type"],
+        "string"
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["RunUndoRequest"]["additionalProperties"],
+        false
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["ChangeRevertRequest"]["additionalProperties"],
+        false
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["PinCreate"]["additionalProperties"],
+        false
+    );
+}
+
+#[test]
 /// REQ-INT-003
 fn openapi_publishes_response_signing_headers_and_unsigned_boundary() {
     let snapshot = ugoite_server::openapi_snapshot();
