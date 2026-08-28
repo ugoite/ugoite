@@ -204,7 +204,12 @@ async fn pins_are_head_owned_publication_references() -> anyhow::Result<()> {
     create_form(&workspace, &form).await?;
 
     let pin = workspace
-        .create_pin("before-import", "principal:owner", 42)
+        .create_pin(
+            "before-import",
+            "principal:owner",
+            42,
+            "pin-create-before-import",
+        )
         .await?;
     assert_eq!(pin.created_by_principal_id, "principal:owner");
     assert_eq!(pin.coordinate.generation, 0);
@@ -214,9 +219,42 @@ async fn pins_are_head_owned_publication_references() -> anyhow::Result<()> {
         .to_string()
         .starts_with("ugoite://"));
 
+    let replayed_pin = workspace
+        .create_pin(
+            "before-import",
+            "principal:owner",
+            99,
+            "pin-create-before-import",
+        )
+        .await?;
+    assert_eq!(replayed_pin, pin);
+
+    let first_create = workspace.clone();
+    let second_create = workspace.clone();
+    let (first_create, second_create) = tokio::join!(
+        first_create.create_pin("concurrent", "principal:owner", 42, "pin-create-concurrent",),
+        second_create.create_pin("concurrent", "principal:owner", 42, "pin-create-concurrent",)
+    );
+    assert!(first_create.is_ok());
+    assert!(second_create.is_ok());
+
     let pins = workspace.list_pins().await?;
     assert_eq!(pins.get("before-import"), Some(&pin));
-    workspace.delete_pin("before-import").await?;
+    assert!(pins.contains_key("concurrent"));
+    workspace
+        .delete_pin("before-import", "pin-delete-before-import")
+        .await?;
+    workspace
+        .delete_pin("before-import", "pin-delete-before-import")
+        .await?;
+    let first_delete = workspace.clone();
+    let second_delete = workspace.clone();
+    let (first_delete, second_delete) = tokio::join!(
+        first_delete.delete_pin("concurrent", "pin-delete-concurrent"),
+        second_delete.delete_pin("concurrent", "pin-delete-concurrent")
+    );
+    assert!(first_delete.is_ok());
+    assert!(second_delete.is_ok());
     assert!(workspace.list_pins().await?.is_empty());
 
     let revision = EntryRevision {
@@ -1049,14 +1087,23 @@ async fn append_recovery_adopts_existing_publication_without_rewriting_iceberg(
         "recovery must not write another Parquet/manifest/metadata object"
     );
     assert_eq!(workspace.read_revisions(form.id).await?, vec![revision]);
-    let receipt: serde_json::Value = serde_json::from_slice(
+    let publication_json: serde_json::Value = serde_json::from_slice(&publication_before)?;
+    let head_json: serde_json::Value = serde_json::from_slice(
         &store
-            .read_command_receipt(&recovered.command_id)
+            .read_exact_head()
             .await?
-            .expect("command receipt")
-            .0,
+            .expect("Head after recovery")
+            .bytes,
     )?;
-    assert_eq!(receipt["state"], "committed");
+    assert_eq!(head_json, publication_json["next_head"]);
+    assert!(
+        !operator
+            .exists(&format!(
+                "spaces/append-publication-recovery/_ugoite/catalog/command-receipts/{}.json",
+                recovered.command_id
+            ))
+            .await?
+    );
     Ok(())
 }
 

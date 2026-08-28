@@ -1431,6 +1431,7 @@ impl UgoiteService {
         space_id: &str,
         name: &str,
         created_by_principal_id: &str,
+        command_id: &str,
     ) -> Result<Value> {
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
@@ -1441,12 +1442,17 @@ impl UgoiteService {
         .await?;
         Ok(serde_json::to_value(
             workspace
-                .create_pin(name, created_by_principal_id, Utc::now().timestamp_micros())
+                .create_pin(
+                    name,
+                    created_by_principal_id,
+                    Utc::now().timestamp_micros(),
+                    command_id,
+                )
                 .await?,
         )?)
     }
 
-    pub async fn delete_pin(&self, space_id: &str, name: &str) -> Result<()> {
+    pub async fn delete_pin(&self, space_id: &str, name: &str, command_id: &str) -> Result<()> {
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
         let workspace = iceberg_store::native_mutation_workspace(
@@ -1454,7 +1460,7 @@ impl UgoiteService {
             &self.workspace_path(space_id),
         )
         .await?;
-        workspace.delete_pin(name).await
+        workspace.delete_pin(name, command_id).await
     }
 
     /// Returns read-only Catalog Head and Iceberg metadata evidence for one
@@ -3209,20 +3215,6 @@ impl UgoiteService {
             &self.workspace_path(space_id),
         )
         .await
-    }
-
-    /// Retries physical cleanup for Assets whose authoritative tombstone is
-    /// already committed.  A failed delete must remain recoverable without
-    /// replaying Catalog history, so server startup and explicit index
-    /// maintenance call this bounded sweeper.
-    pub async fn garbage_collect_deleted_asset_blobs(&self, space_id: &str) -> Result<usize> {
-        self.validate_complete_space(space_id).await?;
-        let workspace = iceberg_store::native_mutation_workspace(
-            &self.operator,
-            &self.workspace_path(space_id),
-        )
-        .await?;
-        workspace.garbage_collect_deleted_asset_blobs().await
     }
 
     /// Rehydrates derived GC after a server restart. Derived cleanup is

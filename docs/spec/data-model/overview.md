@@ -134,10 +134,11 @@ allocates a stable Asset ID and writes `assets/{asset_id}`; the response is an
 `size_bytes`, and `sha256`. A Form owns any reference through an
 `asset_reference` field or a typed list of those values. Byte reads require an
 explicit containing Form/Entry context; the exact-ID operation cannot
-reconstruct logical name or media type. Deletion publishes an Asset lifecycle
-marker through the Catalog Head CAS before removing the byte, so a concurrent
-reference commit or deletion conflicts rather than leaving a current reference
-to missing bytes.
+reconstruct logical name or media type. Deletion validates current references
+against the exact Catalog Head and publishes an immutable `asset.delete`
+publication. Asset reads treat that publication as unavailable only while it is
+reachable from the authoritative Head; physical bytes are retained and no
+automatic purge is part of v1.
 
 Entry content and revisions carry checksums and HMAC signatures generated from
 Space-local integrity material. Response-signing material may also be written

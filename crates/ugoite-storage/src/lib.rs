@@ -1070,7 +1070,6 @@ const DERIVED_TERMINAL_CLAIM_RETENTION: Duration = Duration::from_secs(7 * 24 * 
 const MAX_DERIVED_GC_LIST_ENTRIES: usize = 100_000;
 #[cfg(test)]
 const MAX_DERIVED_TERMINAL_TOMBSTONES_PER_PASS: usize = 1_024;
-const MAX_ASSET_LIFECYCLE_SCAN_ENTRIES: usize = 100_000;
 
 struct AbortOnDrop(Option<tokio::task::JoinHandle<()>>);
 
@@ -4423,10 +4422,6 @@ impl SpaceCatalogStore {
         self.catalog_path(&format!("publications/{generation}-{command_id}.json"))
     }
 
-    pub fn command_receipt_path(&self, command_id: &str) -> String {
-        self.catalog_path(&format!("command-receipts/{command_id}.json"))
-    }
-
     /// Durable named checkpoints are immutable Space objects. They are not
     /// Catalog authority and never participate in Head publication.
     pub fn checkpoint_path(&self, name: &str) -> String {
@@ -4508,35 +4503,6 @@ impl SpaceCatalogStore {
         }
     }
 
-    async fn replace_exact_object(
-        &self,
-        path: &str,
-        etag: Option<&str>,
-        bytes: Vec<u8>,
-    ) -> Result<()> {
-        match self.write_mode {
-            CatalogWriteMode::SharedReadOnly | CatalogWriteMode::SharedVerified => {
-                self.operator
-                    .write_options(
-                        path,
-                        bytes,
-                        WriteOptions {
-                            if_match: Some(
-                                etag.context("shared exact object replacement requires an ETag")?
-                                    .to_string(),
-                            ),
-                            ..Default::default()
-                        },
-                    )
-                    .await?;
-            }
-            CatalogWriteMode::SingleProcess => {
-                self.operator.write(path, bytes).await?;
-            }
-        }
-        Ok(())
-    }
-
     pub async fn create_head(&self, permit: &CatalogMutationPermit, bytes: Vec<u8>) -> Result<()> {
         self.require_mutation_permit(permit)?;
         match self.write_mode {
@@ -4592,124 +4558,6 @@ impl SpaceCatalogStore {
         Ok(())
     }
 
-    /// Creates the deterministic lifecycle marker for one Asset.  The marker
-    /// is deliberately outside Catalog Head: Head size must not grow with the
-    /// number of deleted blobs.  `if_not_exists` also makes two deletion
-    /// attempts contend at the storage boundary.
-    pub async fn create_asset_lifecycle_marker(
-        &self,
-        permit: &CatalogMutationPermit,
-        asset_id: &str,
-        bytes: Vec<u8>,
-    ) -> Result<()> {
-        self.require_mutation_permit(permit)?;
-        Self::validate_catalog_component(asset_id, "Asset lifecycle identifier")?;
-        let path = self.catalog_path(&format!("asset-lifecycle/{asset_id}"));
-        self.operator
-            .write_options(
-                &path,
-                bytes,
-                WriteOptions {
-                    if_not_exists: true,
-                    ..Default::default()
-                },
-            )
-            .await?;
-        Ok(())
-    }
-
-    pub async fn read_asset_lifecycle_marker(
-        &self,
-        asset_id: &str,
-    ) -> Result<Option<(Vec<u8>, Option<String>)>> {
-        Self::validate_catalog_component(asset_id, "Asset lifecycle identifier")
-            .map_err(|error| opendal::Error::new(ErrorKind::ConfigInvalid, error.to_string()))?;
-        self.read_exact_object(&self.catalog_path(&format!("asset-lifecycle/{asset_id}")))
-            .await
-    }
-
-    pub async fn replace_asset_lifecycle_marker(
-        &self,
-        permit: &CatalogMutationPermit,
-        asset_id: &str,
-        etag: Option<&str>,
-        bytes: Vec<u8>,
-    ) -> Result<()> {
-        self.require_mutation_permit(permit)?;
-        Self::validate_catalog_component(asset_id, "Asset lifecycle identifier")?;
-        self.replace_exact_object(
-            &self.catalog_path(&format!("asset-lifecycle/{asset_id}")),
-            etag,
-            bytes,
-        )
-        .await
-    }
-
-    pub async fn delete_asset_lifecycle_marker(
-        &self,
-        permit: &CatalogMutationPermit,
-        asset_id: &str,
-    ) -> Result<()> {
-        self.require_mutation_permit(permit)?;
-        Self::validate_catalog_component(asset_id, "Asset lifecycle identifier")?;
-        let path = self.catalog_path(&format!("asset-lifecycle/{asset_id}"));
-        match self.operator.delete(&path).await {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error.into()),
-        }
-    }
-
-    /// Lists the durable Asset lifecycle records used by the physical-blob
-    /// sweeper.  The Catalog Head remains the authority for deletion state;
-    /// this bounded listing only discovers committed tombstones whose object
-    /// cleanup may have been interrupted after the authoritative commit.
-    pub async fn list_asset_lifecycle_markers(&self) -> Result<Vec<(String, Vec<u8>)>> {
-        let prefix = self.catalog_path("asset-lifecycle/");
-        let mut lister = self.operator.lister_with(&prefix).recursive(false).await?;
-        let mut examined = 0usize;
-        let mut markers = Vec::new();
-        while let Some(entry) = lister.try_next().await? {
-            examined = examined.saturating_add(1);
-            if examined > MAX_ASSET_LIFECYCLE_SCAN_ENTRIES {
-                return Err(anyhow!(
-                    "Asset lifecycle marker prefix exceeds the {MAX_ASSET_LIFECYCLE_SCAN_ENTRIES}-entry safety bound"
-                ));
-            }
-            if entry.metadata().mode() != EntryMode::FILE {
-                continue;
-            }
-            let Some(asset_id) = entry.path().rsplit('/').next().filter(|id| !id.is_empty()) else {
-                continue;
-            };
-            let bytes = match self.read_exact_object_bytes(entry.path()).await {
-                Ok(bytes) => bytes,
-                Err(error) if error.kind() == ErrorKind::NotFound => continue,
-                Err(error) => return Err(error.into()),
-            };
-            markers.push((asset_id.to_string(), bytes));
-        }
-        Ok(markers)
-    }
-
-    /// Deletes only the exact Asset object key.  Callers must first establish
-    /// that its durable lifecycle marker is committed; this operation is a
-    /// repair step and never decides whether an Asset is logically deleted.
-    pub async fn delete_asset_blob(
-        &self,
-        permit: &CatalogMutationPermit,
-        asset_id: &str,
-    ) -> Result<()> {
-        self.require_mutation_permit(permit)?;
-        Self::validate_catalog_component(asset_id, "Asset identifier")?;
-        let path = self.space_path(&format!("assets/{asset_id}"));
-        match self.operator.delete(&path).await {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error.into()),
-        }
-    }
-
     pub async fn create_publication(
         &self,
         permit: &CatalogMutationPermit,
@@ -4738,50 +4586,6 @@ impl SpaceCatalogStore {
             counter.fetch_add(1, Ordering::Relaxed);
         }
         self.read_exact_object_bytes(path).await
-    }
-
-    pub async fn create_command_receipt(
-        &self,
-        permit: &CatalogMutationPermit,
-        command_id: &str,
-        bytes: Vec<u8>,
-    ) -> Result<()> {
-        self.require_mutation_permit(permit)?;
-        Self::validate_catalog_component(command_id, "command identifier")?;
-        self.operator
-            .write_options(
-                &self.command_receipt_path(command_id),
-                bytes,
-                WriteOptions {
-                    if_not_exists: true,
-                    ..Default::default()
-                },
-            )
-            .await?;
-        Ok(())
-    }
-
-    pub async fn read_command_receipt(
-        &self,
-        command_id: &str,
-    ) -> Result<Option<(Vec<u8>, Option<String>)>> {
-        Self::validate_catalog_component(command_id, "command identifier")
-            .map_err(|error| opendal::Error::new(ErrorKind::ConfigInvalid, error.to_string()))?;
-        self.read_exact_object(&self.command_receipt_path(command_id))
-            .await
-    }
-
-    pub async fn replace_command_receipt(
-        &self,
-        permit: &CatalogMutationPermit,
-        command_id: &str,
-        etag: Option<&str>,
-        bytes: Vec<u8>,
-    ) -> Result<()> {
-        self.require_mutation_permit(permit)?;
-        Self::validate_catalog_component(command_id, "command identifier")?;
-        self.replace_exact_object(&self.command_receipt_path(command_id), etag, bytes)
-            .await
     }
 
     pub async fn create_checkpoint(
@@ -5677,28 +5481,7 @@ mod tests {
             .await
             .is_err());
         assert!(remote
-            .create_asset_lifecycle_marker(&permit, "asset", b"marker".to_vec())
-            .await
-            .is_err());
-        assert!(remote
-            .replace_asset_lifecycle_marker(&permit, "asset", None, b"marker".to_vec())
-            .await
-            .is_err());
-        assert!(remote
-            .delete_asset_lifecycle_marker(&permit, "asset")
-            .await
-            .is_err());
-        assert!(remote.delete_asset_blob(&permit, "asset").await.is_err());
-        assert!(remote
             .create_publication(&permit, "publication.json", b"publication".to_vec())
-            .await
-            .is_err());
-        assert!(remote
-            .create_command_receipt(&permit, "command", b"receipt".to_vec())
-            .await
-            .is_err());
-        assert!(remote
-            .replace_command_receipt(&permit, "command", None, b"receipt".to_vec())
             .await
             .is_err());
         assert!(remote

@@ -67,9 +67,6 @@ pub async fn run(cmd: IndexCmd) -> Result<()> {
             tokio::time::timeout(INDEX_RUN_TIMEOUT, async {
                 service.reindex(&space_id).await?;
                 service.garbage_collect_asset_text_builds(&space_id).await?;
-                service
-                    .garbage_collect_deleted_asset_blobs(&space_id)
-                    .await?;
                 Ok::<(), anyhow::Error>(())
             })
             .await

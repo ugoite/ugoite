@@ -34,10 +34,8 @@ use std::{
     future::Future,
     net::IpAddr,
     pin::Pin,
-    sync::Arc,
     time::Duration,
 };
-use tokio::sync::Semaphore;
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     request_id::{MakeRequestId, PropagateRequestIdLayer, RequestId, SetRequestIdLayer},
@@ -94,7 +92,6 @@ const SECURITY_HEADERS_CSP: &str = "default-src 'self'; base-uri 'self'; object-
 const HSTS_VALUE: &str = "max-age=31536000; includeSubDomains";
 const MAX_SIGNED_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_STARTUP_REFRESH_REARM_RETRIES: usize = 8;
-const MAX_STARTUP_DERIVED_MAINTENANCE_CONCURRENCY: usize = 8;
 const RESPONSE_KEY_ID_HEADER: HeaderName = HeaderName::from_static("x-ugoite-key-id");
 const RESPONSE_SIGNATURE_HEADER: HeaderName = HeaderName::from_static("x-ugoite-signature");
 const OIDC_STATE_COOKIE: &str = "ugoite_oidc_state";
@@ -556,8 +553,6 @@ impl AppState {
                 bootstrap.expires_at, bootstrap.setup_url
             );
         }
-        let maintenance_permits =
-            Arc::new(Semaphore::new(MAX_STARTUP_DERIVED_MAINTENANCE_CONCURRENCY));
         // Claim-backed Space creation is the explicit recovery boundary. Run
         // it before strict enumeration so a crash-left pending bootstrap does
         // not prevent the server from reaching its listener on restart.
@@ -572,20 +567,10 @@ impl AppState {
             reconcile_human_approval_audit_outbox(self, space_id).await?;
         }
         for space_id in space_ids {
-            // Rehydrate relation-local maintenance on every server start. A
-            // previous process may have left durable garbage markers after the
-            // grace timer was lost; bound the number of concurrent full
-            // listings/rebuilds so a large node cannot stampede its backend.
+            // Rehydrate relation-local maintenance on every server start.
             let maintenance_service = self.service.clone();
             let maintenance_space_id = space_id.clone();
-            let maintenance_permits = maintenance_permits.clone();
             tokio::spawn(async move {
-                let Ok(_permit) = maintenance_permits.acquire_owned().await else {
-                    return;
-                };
-                let _ = maintenance_service
-                    .garbage_collect_deleted_asset_blobs(&maintenance_space_id)
-                    .await;
                 let _ = maintenance_service
                     .rearm_asset_text_gc(&maintenance_space_id)
                     .await;
@@ -716,6 +701,35 @@ struct RequestIdentityContext {
     human_approval_token: Option<String>,
     human_approval_header_invalid: bool,
     request_id: Uuid,
+}
+
+fn publication_command_id(
+    headers: &HeaderMap,
+    operation: &str,
+    fallback_request_id: Uuid,
+) -> ApiResult<String> {
+    let key = headers
+        .get("idempotency-key")
+        .map(|value| {
+            value
+                .to_str()
+                .map(|value| value.trim().to_owned())
+                .map_err(|_| {
+                    ApiError::new(StatusCode::BAD_REQUEST, "Idempotency-Key must be ASCII")
+                })
+        })
+        .transpose()?
+        .unwrap_or_else(|| fallback_request_id.to_string());
+    if key.is_empty() || key.len() > 256 {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "Idempotency-Key must contain 1 to 256 characters",
+        ));
+    }
+    Ok(format!(
+        "{operation}-{}",
+        hex::encode(Sha256::digest(key.as_bytes()))
+    ))
 }
 
 fn protected_routes(state: AppState) -> Router<AppState> {
@@ -8606,11 +8620,13 @@ async fn create_pin(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path(space_id): Path<String>,
+    headers: HeaderMap,
     Json(payload): Json<PinCreate>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
     let name = payload.name.clone();
+    let command_id = publication_command_id(&headers, "pin-create", identity.request_id)?;
     let pin = with_authorized_service_mutation(
         &state,
         &space_id,
@@ -8619,7 +8635,12 @@ async fn create_pin(
         None,
         move |principal_id, _principals| async move {
             service
-                .create_pin(&space_id_for_write, &name, &principal_id.to_string())
+                .create_pin(
+                    &space_id_for_write,
+                    &name,
+                    &principal_id.to_string(),
+                    &command_id,
+                )
                 .await
                 .map_err(ApiError::from_core)
         },
@@ -8632,10 +8653,12 @@ async fn delete_pin(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, pin_name)): Path<(String, String)>,
+    headers: HeaderMap,
 ) -> ApiResult<Json<Value>> {
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
     let pin_name_for_write = pin_name.clone();
+    let command_id = publication_command_id(&headers, "pin-delete", identity.request_id)?;
     with_authorized_service_mutation(
         &state,
         &space_id,
@@ -8644,7 +8667,7 @@ async fn delete_pin(
         None,
         move |_principal_id, _principals| async move {
             service
-                .delete_pin(&space_id_for_write, &pin_name_for_write)
+                .delete_pin(&space_id_for_write, &pin_name_for_write, &command_id)
                 .await
                 .map_err(ApiError::from_core)
         },

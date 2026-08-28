@@ -70,8 +70,18 @@ async fn read_and_delete_use_the_exact_asset_id_key() -> anyhow::Result<()> {
 
     asset::delete_asset(&op, ws_path, &reference.asset_id, &BTreeMap::new()).await?;
     assert!(
-        !op.exists(&format!("{ws_path}/assets/{}", reference.asset_id))
+        op.exists(&format!("{ws_path}/assets/{}", reference.asset_id))
             .await?
+    );
+    let error = asset::read_asset(&op, ws_path, &reference.asset_id)
+        .await
+        .expect_err("logically deleted assets must not be readable");
+    assert_eq!(
+        error
+            .downcast_ref::<ugoite_core::error::AppError>()
+            .expect("asset reads should preserve the typed not-found error")
+            .code(),
+        ErrorCode::AssetNotFound
     );
     Ok(())
 }
@@ -249,7 +259,7 @@ async fn asset_deletion_and_reference_creation_share_the_catalog_head_boundary(
         b"first"
     );
 
-    // Deletion marker wins first: a later Entry publication must conflict at
+    // The deletion publication wins first: a later Entry publication must conflict at
     // the same Catalog Head boundary instead of creating a dangling reference.
     let second = asset::save_asset(&op, ws_path, "second.bin", b"second").await?;
     asset::delete_asset(&op, ws_path, &second.asset_id, &scopes).await?;
@@ -350,7 +360,7 @@ async fn asset_reference_races_are_deterministic_at_the_validation_boundary() ->
         .is_err());
 
     // The deletion has validated against Head N. The reference publishes
-    // Head N+1 before deletion creates its marker; deletion then loses its
+    // Head N+1 before deletion creates its publication; deletion then loses its
     // stale CAS and the bytes remain.
     let second = asset::save_asset(&op, ws_path, "second.bin", b"second").await?;
     let second_json = serde_json::to_string(&second)?;
@@ -392,7 +402,7 @@ async fn asset_reference_races_are_deterministic_at_the_validation_boundary() ->
 }
 
 #[tokio::test]
-async fn asset_lifecycle_markers_keep_catalog_head_bounded() -> anyhow::Result<()> {
+async fn asset_deletions_keep_catalog_head_bounded() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "asset-lifecycle-bounded", "/tmp").await?;
     let ws_path = "spaces/asset-lifecycle-bounded";
@@ -748,12 +758,12 @@ async fn asset_text_search_finds_an_authorized_match_after_ten_thousand_entries(
 }
 
 #[tokio::test]
-async fn deleted_asset_blob_is_reclaimed_by_the_durable_sweeper() -> anyhow::Result<()> {
+async fn deleted_asset_blob_is_retained_after_logical_deletion() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    let service = UgoiteService::from_operator(op.clone(), "memory://asset-gc");
+    let service = UgoiteService::from_operator(op.clone(), "memory://asset-retention");
     let owner = Uuid::from_u128(401);
     let space_id = service
-        .create_space_for_principal("asset-gc", owner, "Owner")
+        .create_space_for_principal("asset-retention", owner, "Owner")
         .await?
         .to_string();
     let reference =
@@ -761,15 +771,18 @@ async fn deleted_asset_blob_is_reclaimed_by_the_durable_sweeper() -> anyhow::Res
     service.delete_asset(&space_id, &reference.asset_id).await?;
 
     let path = format!("spaces/{space_id}/assets/{}", reference.asset_id);
-    op.write(&path, b"orphan-after-crash".to_vec()).await?;
     assert!(op.exists(&path).await?);
-
-    assert_eq!(
-        service
-            .garbage_collect_deleted_asset_blobs(&space_id)
-            .await?,
-        1
+    assert!(
+        !op.exists(&format!(
+            "spaces/{space_id}/_ugoite/catalog/asset-lifecycle/{}",
+            reference.asset_id
+        ))
+        .await?
     );
-    assert!(!op.exists(&path).await?);
+    assert!(
+        asset::read_asset(&op, &format!("spaces/{space_id}"), &reference.asset_id)
+            .await
+            .is_err()
+    );
     Ok(())
 }
