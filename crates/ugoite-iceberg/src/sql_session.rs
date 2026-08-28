@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::index;
 use crate::saved_sql;
-use crate::SpaceCheckpoint;
+use crate::{PublicationRef, SpaceCheckpoint};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
 
@@ -25,7 +25,7 @@ pub struct SqlSessionAuthorization<'a> {
 }
 
 /// Use-time authorization inputs. The query policy must be rebuilt from the
-/// immutable checkpoint and current authorization state by the caller; the
+/// immutable publication and current authorization state by the caller; the
 /// persisted policy is compared with it only as derived metadata.
 #[derive(Clone, Copy)]
 pub struct SqlSessionExecutionAuthorization<'a> {
@@ -131,11 +131,11 @@ fn session_sql(meta: &Value) -> Result<&str> {
         .ok_or_else(|| anyhow!("SQL session missing sql"))
 }
 
-fn session_checkpoint(meta: &Value) -> Result<SpaceCheckpoint> {
+fn session_publication(meta: &Value) -> Result<PublicationRef> {
     serde_json::from_value(
-        meta.get("checkpoint")
+        meta.get("publication")
             .cloned()
-            .ok_or_else(|| anyhow!("SQL session is missing its SpaceCheckpoint"))?,
+            .ok_or_else(|| anyhow!("SQL session is missing its PublicationRef"))?,
     )
     .map_err(Into::into)
 }
@@ -168,7 +168,7 @@ fn session_query_policy(meta: &Value) -> Result<index::SqlSessionQueryPolicy> {
 #[derive(Clone)]
 pub struct SqlSessionExecutionInputs {
     pub sql: String,
-    pub checkpoint: SpaceCheckpoint,
+    pub publication: PublicationRef,
 }
 
 /// Reads the durable query coordinate, not the stored derived policy.
@@ -180,7 +180,7 @@ pub async fn get_session_execution_inputs(
     let meta = load_session_meta(op, ws_path, session_id).await?;
     Ok(SqlSessionExecutionInputs {
         sql: session_sql(&meta)?.to_string(),
-        checkpoint: session_checkpoint(&meta)?,
+        publication: session_publication(&meta)?,
     })
 }
 
@@ -265,6 +265,11 @@ async fn execute_session_page_authorized_by_form(
         return Err(AppError::expired(ErrorCode::SqlSessionExpired, "SQL session expired").into());
     }
     validate_session_execution_authorization(&meta, authorization)?;
+    let publication = session_publication(&meta)?;
+    let checkpoint = crate::iceberg_store::native_workspace(op, ws_path)
+        .await?
+        .resolve_publication(&publication)
+        .await?;
     index::execute_sql_query_authorized_by_form_page_at_checkpoint(
         op,
         ws_path,
@@ -272,7 +277,7 @@ async fn execute_session_page_authorized_by_form(
         authorization.query_policy,
         index::AuthorizedSqlSessionPage {
             parameters: session_parameters(&meta)?,
-            checkpoint: session_checkpoint(&meta)?,
+            checkpoint,
             offset,
             limit,
         },
@@ -325,10 +330,9 @@ pub async fn create_sql_session_authorized_for_principals_by_form_with_parameter
         .into());
     }
     let bound_parameters = index::datafusion_parameters(&parameters, &parameter_types)?;
-    let checkpoint = crate::iceberg_store::native_workspace(op, ws_path)
-        .await?
-        .capture_checkpoint()
-        .await?;
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    let publication = workspace.current_publication().await?;
+    let checkpoint = workspace.resolve_publication(&publication).await?;
     let query_policy = index::sql_session_query_policy_at_checkpoint(
         op,
         ws_path,
@@ -345,6 +349,7 @@ pub async fn create_sql_session_authorized_for_principals_by_form_with_parameter
         parameter_types,
         authorization.authorization,
         bound_parameters,
+        publication,
         checkpoint,
         query_policy,
         &saved_sql_entry_scope,
@@ -364,6 +369,7 @@ pub async fn create_sql_session_authorized_for_principals_with_frozen_policy_and
     parameter_types: BTreeMap<String, String>,
     authorization: SqlSessionAuthorization<'_>,
     bound_parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    publication: PublicationRef,
     checkpoint: SpaceCheckpoint,
     query_policy: index::SqlSessionQueryPolicy,
     saved_sql_entry_scope: &EntryScope,
@@ -371,6 +377,17 @@ pub async fn create_sql_session_authorized_for_principals_with_frozen_policy_and
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     crate::iceberg_store::ensure_mutation_admitted(op, ws_path).await?;
     authorization.require_principals()?;
+    let resolved_checkpoint = crate::iceberg_store::native_workspace(op, ws_path)
+        .await?
+        .resolve_publication(&publication)
+        .await?;
+    if resolved_checkpoint != checkpoint {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "SQL session publication does not match its immutable table coordinates",
+        )
+        .into());
+    }
     index::validate_sql_session_query_at_checkpoint(
         op,
         ws_path,
@@ -414,7 +431,7 @@ pub async fn create_sql_session_authorized_for_principals_with_frozen_policy_and
         "created_at": now.to_rfc3339(),
         "expires_at": (now + SESSION_LIFETIME).to_rfc3339(),
         "error": Value::Null,
-        "checkpoint": checkpoint,
+        "publication": publication,
         "query_policy": query_policy,
         "pagination": {
             "strategy": "offset",
@@ -467,7 +484,10 @@ pub async fn get_sql_session_count_authorized_by_form(
         session_sql(&meta)?,
         authorization.query_policy,
         session_parameters(&meta)?,
-        session_checkpoint(&meta)?,
+        crate::iceberg_store::native_workspace(op, ws_path)
+            .await?
+            .resolve_publication(&session_publication(&meta)?)
+            .await?,
     )
     .await
     .map_err(session_query_error)

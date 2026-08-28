@@ -38,26 +38,32 @@ export const spaceApi = {
     return await auditApi.listSpace(id, query);
   },
 
-  async createCheckpoint(
+  async createPin(
     id: string,
     name: string,
   ): Promise<{
-    name: string;
-    space_id: string;
-    catalog_generation: number;
-    coordinate_checksum: string;
+    coordinate: {
+      generation: number;
+      publication_uri: {
+        space_uid: string;
+        key: string;
+      };
+      publication_checksum: string;
+    };
+    created_at_micros: number;
+    created_by_principal_id: string;
   }> {
-    return await protocolFetch("space.checkpoint_create", { space_id: id }, {
+    return await protocolFetch("pin.create", { space_id: id }, {
       name,
     });
   },
 
-  async diffCheckpoints(
+  async diffPins(
     id: string,
     from: string,
     to: string,
   ): Promise<Record<string, unknown>> {
-    return await protocolFetch("space.checkpoint_diff", {
+    return await protocolFetch("space.pin_diff", {
       space_id: id,
       from,
       to,

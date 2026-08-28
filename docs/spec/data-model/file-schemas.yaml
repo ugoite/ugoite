@@ -2,7 +2,7 @@ version: '0.4'
 updated: 2026-08-13
 schemas:
   derived_relation_head:
-    description: Relation-local visibility coordinate for the current immutable Iceberg build. It is not Catalog or checkpoint authority.
+    description: Relation-local visibility coordinate for the current immutable Iceberg build. It is not Catalog or PublicationRef authority.
     path: spaces/{id}/_ugoite/derived/relations/{relation_id}/head.json
     schema:
       type: object
@@ -278,7 +278,7 @@ schemas:
         checksum: {type: string}
   iceberg_catalog_publication:
     description: Immutable Head-publication evidence linked from the current Catalog Head.
-    path: spaces/{id}/_ugoite/catalog/publications/{generation}-{command_id}.json
+    path: spaces/{id}/_ugoite/catalog/publications/{generation}-{encoded_command_id}.json
     schema:
       type: object
       required: [generation, previous_generation, previous_publication, previous_head_checksum, command_id, command_kind, command_digest, affected_table, base_metadata_location, new_metadata_location, base_snapshot_id, base_schema_id, new_snapshot_id, new_schema_id, next_head_checksum, next_head, checksum]
@@ -320,7 +320,7 @@ schemas:
       - status
       - created_at
       - expires_at
-      - checkpoint
+      - publication
       - query_policy
       - pagination
       - count
@@ -348,10 +348,15 @@ schemas:
           type:
           - string
           - 'null'
-        checkpoint:
+        publication:
           type: object
+          required: [generation, publication_uri, publication_checksum]
+          properties:
+            generation: {type: integer}
+            publication_uri: {type: object}
+            publication_checksum: {type: string}
         query_policy:
-          description: Derived checkpoint-pinned single-Form, column, and sparse Entry-denial policy cache. It is never execution or Catalog authority; every use rebuilds and compares it from the immutable checkpoint and current authorization state, and it does not list every readable Entry.
+          description: Derived publication-pinned single-Form, column, and sparse Entry-denial policy cache. It is never execution or Catalog authority; every use rebuilds and compares it from the immutable publication and current authorization state, and it does not list every readable Entry.
           type: object
         pagination:
           type: object

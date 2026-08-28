@@ -3,7 +3,7 @@ title: 'SQL sessions'
 ---
 
 The implementation persists query metadata through OpenDAL and re-evaluates
-results from one fixed Iceberg checkpoint. It does not require an RDB, queue,
+results from one fixed immutable publication. It does not require an RDB, queue,
 or shared filesystem beyond the configured storage operator.
 
 ## Session metadata
@@ -30,16 +30,13 @@ The file contains:
   "created_at": "2026-03-11T10:10:00Z",
   "expires_at": "2026-03-11T10:20:00Z",
   "error": null,
-  "checkpoint": {
-    "format_version": 1,
-    "space_id": "space-main",
-    "catalog_generation": 42,
-    "catalog_head_checksum": "sha256:…",
-    "publication_location": "catalog/publications/42.json",
-    "publication_checksum": "sha256:…",
-    "form_registry_generation": 7,
-    "tables": [],
-    "coordinate_checksum": "sha256:…"
+  "publication": {
+    "generation": 42,
+    "publication_uri": {
+      "space_uid": "019c1234-5678-7abc-8def-0123456789ab",
+      "key": "_ugoite/catalog/publications/42-command.json"
+    },
+    "publication_checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
   "query_policy": {
     "forms": [{
@@ -63,15 +60,15 @@ The file contains:
 ```
 
 Rows are not stored in the session directory. Creation parses and validates the
-single Form relation before it opens a checkpoint, then freezes that Form's
-checkpoint metadata, columns, system columns, and provider-side Entry scope.
+single Form relation before it resolves a publication, then freezes that Form's
+publication metadata, columns, system columns, and provider-side Entry scope.
 When every principal has Space read access, the scope records only Entry-level
 denials as `all_except`; it never enumerates every readable Entry in metadata.
 Any explicit or sparse scope is capped at the session's 1,000-row hard limit
 and is rejected before session metadata is written when it exceeds that bound.
 `query_policy` is derived metadata, never execution authority. Status, count,
 and paged-row requests reparse the stored SQL, resolve the one Form from the
-checkpoint's immutable metadata, and rebuild its scope, columns, and system
+publication's immutable metadata, and rebuild its scope, columns, and system
 columns from the current authorization state before comparing that expected
 policy with the stored cache. DataFusion receives the rebuilt policy, never a
 policy accepted solely from OpenDAL metadata. The principal set and a canonical

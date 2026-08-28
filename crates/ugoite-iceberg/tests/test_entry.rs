@@ -494,6 +494,71 @@ async fn checkpoint_restore_appends_current_head_with_provenance() -> anyhow::Re
 }
 
 #[tokio::test]
+async fn publication_pin_restore_appends_with_publication_provenance() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "publication-restore", "/tmp").await?;
+    let ws_path = "spaces/publication-restore";
+    ensure_entry_form(&op, ws_path).await?;
+    let integrity = FakeIntegrityProvider;
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "publication-entry",
+        "---\nform: Entry\n---\n# Before pin\n\n## Body\nOriginal",
+        "author",
+        &integrity,
+    )
+    .await?;
+    let original = entry::get_entry_content(&op, ws_path, "publication-entry").await?;
+    let workspace = iceberg_store::native_workspace(&op, ws_path).await?;
+    let pin = workspace
+        .create_pin("before", "author", 1, "publication-pin")
+        .await?;
+
+    entry::update_entry(
+        &op,
+        ws_path,
+        "publication-entry",
+        "---\nform: Entry\n---\n# After pin\n\n## Body\nChanged",
+        Some(&original.revision_id),
+        "author",
+        &integrity,
+    )
+    .await?;
+
+    let restored = entry::restore_entry_from_publication_authorized(
+        &op,
+        ws_path,
+        "publication-entry",
+        &original.revision_id,
+        &pin.coordinate,
+        "restorer",
+        &integrity,
+        None,
+    )
+    .await?;
+    assert_eq!(
+        restored["source_publication"],
+        serde_json::to_value(&pin.coordinate)?
+    );
+
+    let revision = entry::get_entry_revision(
+        &op,
+        ws_path,
+        "publication-entry",
+        restored["revision_id"].as_str().expect("revision ID"),
+    )
+    .await?;
+    assert_eq!(revision["source_kind"], "publication_restore");
+    assert_eq!(
+        revision["extension_metadata"]["restore_source_publication"],
+        serde_json::to_value(&pin.coordinate)?
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn entry_ids_are_global_across_forms_and_tombstones() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "global-entry-ids", "/tmp").await?;

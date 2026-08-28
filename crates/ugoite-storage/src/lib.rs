@@ -4419,7 +4419,11 @@ impl SpaceCatalogStore {
     }
 
     pub fn publication_path(&self, generation: u64, command_id: &str) -> String {
-        self.catalog_path(&format!("publications/{generation}-{command_id}.json"))
+        // Command IDs are semantic values and may contain URI-like characters
+        // such as `:`. Encode them before using them as a portable publication
+        // key; the record itself retains the original command ID.
+        let command_key = hex::encode(command_id.as_bytes());
+        self.catalog_path(&format!("publications/{generation}-{command_key}.json"))
     }
 
     /// Durable named checkpoints are immutable Space objects. They are not
@@ -5104,6 +5108,20 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use uuid::Uuid;
+
+    #[test]
+    fn publication_paths_encode_uri_like_command_ids() -> Result<()> {
+        let store = SpaceCatalogStore::new(
+            Operator::new(Memory::default())?,
+            "spaces/publication-paths",
+        )?;
+        let path = store.publication_path(7, "form-create:019c");
+        assert_eq!(
+            path,
+            "spaces/publication-paths/_ugoite/catalog/publications/7-666f726d2d6372656174653a30313963.json"
+        );
+        Ok(())
+    }
 
     #[tokio::test]
     async fn publication_store_memory_contract_is_backend_neutral() -> Result<()> {

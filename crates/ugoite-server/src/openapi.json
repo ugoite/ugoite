@@ -1672,150 +1672,9 @@
         }
       }
     },
-    "/spaces/{space_id}/checkpoints": {
-      "post": {
-        "summary": "Create an immutable named checkpoint",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/SpaceId"
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": "Checkpoint created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonValue"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "400": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "403": {
-            "description": "Space management permission required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "409": {
-            "description": "Checkpoint name already exists",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "422": {
-            "description": "Invalid checkpoint name or unavailable Catalog evidence",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CheckpointCreateRequest"
-              }
-            }
-          }
-        }
-      }
-    },
-    "/spaces/{space_id}/checkpoints/diff": {
+    "/spaces/{space_id}/pins/diff": {
       "get": {
-        "summary": "Diff logical Entry revisions between named checkpoints",
+        "summary": "Diff logical Entry revisions between named Pins",
         "parameters": [
           {
             "$ref": "#/components/parameters/SpaceId"
@@ -1839,7 +1698,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Logical Entry changes at the two checkpoints",
+            "description": "Logical Entry changes at the two Pins",
             "content": {
               "application/json": {
                 "schema": {
@@ -1904,7 +1763,7 @@
             }
           },
           "404": {
-            "description": "Checkpoint not found",
+            "description": "Pin or publication not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -1922,7 +1781,7 @@
             }
           },
           "422": {
-            "description": "Checkpoint integrity failure",
+            "description": "Pin or publication integrity failure",
             "content": {
               "application/json": {
                 "schema": {
@@ -4221,7 +4080,7 @@
             "$ref": "#/components/parameters/EntryId"
           },
           {
-            "$ref": "#/components/parameters/Checkpoint"
+            "$ref": "#/components/parameters/Pin"
           }
         ],
         "responses": {
@@ -4704,7 +4563,7 @@
             "$ref": "#/components/parameters/EntryId"
           },
           {
-            "$ref": "#/components/parameters/Checkpoint"
+            "$ref": "#/components/parameters/Pin"
           }
         ],
         "responses": {
@@ -4866,7 +4725,7 @@
             "$ref": "#/components/parameters/RevisionId"
           },
           {
-            "$ref": "#/components/parameters/Checkpoint"
+            "$ref": "#/components/parameters/Pin"
           }
         ],
         "responses": {
@@ -11895,11 +11754,11 @@
           ]
         }
       },
-      "Checkpoint": {
-        "name": "checkpoint",
+      "Pin": {
+        "name": "pin",
         "in": "query",
         "required": false,
-        "description": "Read the Entry or history from this immutable named checkpoint.",
+        "description": "Read the Entry or history from this immutable Head-owned Pin.",
         "schema": {
           "type": "string"
         }
@@ -12487,22 +12346,9 @@
           "revision_id": {
             "type": "string"
           },
-          "checkpoint": {
+          "pin": {
             "type": "string",
-            "description": "Resolve revision_id from this immutable named checkpoint before appending the restore."
-          }
-        },
-        "additionalProperties": false
-      },
-      "CheckpointCreateRequest": {
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "Immutable caller-supplied checkpoint name."
+            "description": "Resolve revision_id from this immutable Head-owned Pin before appending the restore."
           }
         },
         "additionalProperties": false

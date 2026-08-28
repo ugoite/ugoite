@@ -898,6 +898,33 @@ fn openapi_publishes_read_only_space_health() {
 }
 
 #[test]
+fn issue_2038_openapi_uses_head_owned_pins_for_immutable_knowledge_reads() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    assert!(snapshot["paths"]["/spaces/{space_id}/pins/diff"].is_object());
+    assert!(snapshot["paths"]["/spaces/{space_id}/checkpoints"].is_null());
+    for path in [
+        "/spaces/{space_id}/entries/{entry_id}",
+        "/spaces/{space_id}/entries/{entry_id}/history",
+        "/spaces/{space_id}/entries/{entry_id}/history/{revision_id}",
+    ] {
+        let parameters = snapshot["paths"][path]["get"]["parameters"]
+            .as_array()
+            .expect("entry read parameters");
+        assert!(parameters
+            .iter()
+            .any(|parameter| { parameter["$ref"] == "#/components/parameters/Pin" }));
+    }
+    assert_eq!(
+        snapshot["components"]["schemas"]["EntryRestoreRequest"]["properties"]["pin"]["type"],
+        "string"
+    );
+    assert!(
+        snapshot["components"]["schemas"]["EntryRestoreRequest"]["properties"]["checkpoint"]
+            .is_null()
+    );
+}
+
+#[test]
 fn openapi_human_approval_is_server_derived_and_single_use() {
     let snapshot = ugoite_server::openapi_snapshot();
     let request = snapshot

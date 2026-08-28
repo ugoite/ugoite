@@ -25,7 +25,7 @@ use crate::{
     },
     entry, form, iceberg_store, index, preferences, saved_sql, search, space, sql_session,
 };
-use crate::{CheckpointIntegrityError, CheckpointUnavailable, SpaceCheckpoint};
+use crate::{CheckpointIntegrityError, CheckpointUnavailable, PublicationRef, SpaceCheckpoint};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
 use ugoite_domain::change::{ChangeCommand, RunId};
@@ -2033,6 +2033,51 @@ impl UgoiteService {
             .await
     }
 
+    pub async fn entry_history_at_pin(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        pin_name: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let publication = self.load_named_pin(space_id, pin_name).await?;
+                let scopes = self
+                    .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                let mut history = entry::get_entry_history_at_publication(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    entry_id,
+                    &publication,
+                    scopes.as_ref(),
+                )
+                .await
+                .map_err(map_checkpoint_error)?;
+                history["access_policy_history"] = serde_json::to_value(
+                    state
+                        .policy_history
+                        .get(
+                            &ResourceRef {
+                                kind: ResourceKind::Entry,
+                                id: entry_id.to_string(),
+                                parent: None,
+                            }
+                            .key(),
+                        )
+                        .cloned()
+                        .unwrap_or_default(),
+                )?;
+                Ok(history)
+            })
+            .await
+    }
+
     pub async fn entry_revision(
         &self,
         space_id: &str,
@@ -2153,6 +2198,54 @@ impl UgoiteService {
                     entry_id,
                     revision_id,
                     &checkpoint,
+                    scopes.as_ref(),
+                )
+                .await
+                .map_err(map_checkpoint_error)?;
+                revision["access_policy_history"] = serde_json::to_value(
+                    state
+                        .policy_history
+                        .get(
+                            &ResourceRef {
+                                kind: ResourceKind::Entry,
+                                id: entry_id.to_string(),
+                                parent: None,
+                            }
+                            .key(),
+                        )
+                        .cloned()
+                        .unwrap_or_default(),
+                )?;
+                Ok(revision)
+            })
+            .await
+    }
+
+    pub async fn entry_revision_at_pin(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        revision_id: &str,
+        pin_name: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        validate_storage_id(validate_revision_id(revision_id))?;
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let publication = self.load_named_pin(space_id, pin_name).await?;
+                let scopes = self
+                    .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                let mut revision = entry::get_entry_revision_at_publication(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    entry_id,
+                    revision_id,
+                    &publication,
                     scopes.as_ref(),
                 )
                 .await
@@ -2312,6 +2405,54 @@ impl UgoiteService {
         Ok(result)
     }
 
+    pub async fn restore_entry_from_pin_authorized_for_principals(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        revision_id: &str,
+        pin_name: &str,
+        author: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.ensure_mutation_admitted(space_id).await?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        validate_storage_id(validate_revision_id(revision_id))?;
+        let (state, _authorization_lease) = {
+            let (state, lease) = Authorizer::new(self.operator.clone())
+                .acquire_state_lease(space_id)
+                .await?;
+            self.require_action_for_principals_in_state(
+                &state,
+                entry_id,
+                ResourceKind::Entry,
+                Action::Update,
+                principal_ids,
+            )?;
+            (state, lease)
+        };
+        let publication = self.load_named_pin(space_id, pin_name).await?;
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        let scopes = self
+            .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
+            .await?;
+        let result = entry::restore_entry_from_publication_authorized(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            revision_id,
+            &publication,
+            author,
+            &integrity,
+            scopes.as_ref(),
+        )
+        .await
+        .map_err(map_checkpoint_error)?;
+        self.schedule_asset_text_refresh(space_id);
+        Ok(result)
+    }
+
     pub async fn entry_at_checkpoint_authorized_for_principals(
         &self,
         space_id: &str,
@@ -2336,6 +2477,36 @@ impl UgoiteService {
                     &self.workspace_path(space_id),
                     entry_id,
                     &checkpoint,
+                    scopes.as_ref(),
+                )
+                .await
+                .map_err(map_checkpoint_error)
+            })
+            .await
+    }
+
+    pub async fn entry_at_pin_authorized_for_principals(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        pin_name: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let publication = self.load_named_pin(space_id, pin_name).await?;
+                let scopes = self
+                    .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                entry::get_entry_at_publication(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    entry_id,
+                    &publication,
                     scopes.as_ref(),
                 )
                 .await
@@ -2389,6 +2560,51 @@ impl UgoiteService {
         Ok(diff)
     }
 
+    pub async fn diff_pins_authorized_for_principals(
+        &self,
+        space_id: &str,
+        from_name: &str,
+        to_name: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        let authorizer = Authorizer::new(self.operator.clone());
+        let mut diff = authorizer
+            .with_state_lock(space_id, |state| async move {
+                let from = self.load_named_pin(space_id, from_name).await?;
+                let to = self.load_named_pin(space_id, to_name).await?;
+                let scopes = self
+                    .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                let workspace =
+                    iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id))
+                        .await?;
+                let diff = workspace
+                    .diff_publications_with_scopes(&from, &to, scopes.as_ref())
+                    .await
+                    .map_err(map_checkpoint_error)?;
+                Ok::<Value, anyhow::Error>(serde_json::to_value(diff)?)
+            })
+            .await?;
+        if let Some(changes) = diff.get_mut("changes").and_then(Value::as_array_mut) {
+            for change in changes {
+                let external_id = ["to", "from"].into_iter().find_map(|side| {
+                    change
+                        .get(side)
+                        .and_then(|revision| revision.get("entry"))
+                        .and_then(|entry| entry.get("external_id"))
+                        .and_then(Value::as_str)
+                        .filter(|external_id| !external_id.is_empty())
+                });
+                if let Some(external_id) = external_id {
+                    change["entry_id"] = Value::String(external_id.to_string());
+                }
+            }
+        }
+        Ok(diff)
+    }
+
     async fn load_named_checkpoint(
         &self,
         space_id: &str,
@@ -2399,6 +2615,15 @@ impl UgoiteService {
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
         workspace
             .load_checkpoint(checkpoint_name)
+            .await
+            .map_err(map_checkpoint_error)
+    }
+
+    async fn load_named_pin(&self, space_id: &str, pin_name: &str) -> Result<PublicationRef> {
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        workspace
+            .resolve_pin(pin_name)
             .await
             .map_err(map_checkpoint_error)
     }
@@ -3034,7 +3259,8 @@ impl UgoiteService {
         }
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
-        let checkpoint = workspace.capture_checkpoint().await?;
+        let publication = workspace.current_publication().await?;
+        let checkpoint = workspace.resolve_publication(&publication).await?;
         let entry_scope = sql_session_entry_scope(&state, principal_ids)?;
         let saved_sql_entry_scope = Self::saved_sql_entry_scope_for_state(&state, principal_ids)?;
         let query_policy = index::sql_session_query_policy_at_checkpoint(
@@ -3059,6 +3285,7 @@ impl UgoiteService {
             parameter_types,
             authorization,
             bound_parameters,
+            publication,
             checkpoint,
             query_policy,
             &saved_sql_entry_scope,
@@ -3103,7 +3330,7 @@ impl UgoiteService {
             .await
     }
 
-    /// Rebuilds the execution policy from immutable checkpoint metadata and
+    /// Rebuilds the execution policy from immutable publication metadata and
     /// the current authorization state. Durable session policy JSON is only a
     /// cache: every use compares it against this independently derived value.
     async fn sql_session_current_execution_authorization(
@@ -3122,12 +3349,19 @@ impl UgoiteService {
         let relation = index::sql_session_page_relation(&inputs.sql)
             .map_err(sql_session_metadata_authorization_error)?;
         let entry_scope = sql_session_entry_scope(state, principal_ids)?;
+        let workspace = iceberg_store::native_workspace(&self.operator, &workspace_path)
+            .await
+            .map_err(sql_session_metadata_authorization_error)?;
+        let checkpoint = workspace
+            .resolve_publication(&inputs.publication)
+            .await
+            .map_err(sql_session_metadata_authorization_error)?;
         let query_policy = index::sql_session_query_policy_at_checkpoint(
             &self.operator,
             &workspace_path,
             &relation,
             entry_scope,
-            &inputs.checkpoint,
+            &checkpoint,
         )
         .await
         .map_err(sql_session_metadata_authorization_error)?;

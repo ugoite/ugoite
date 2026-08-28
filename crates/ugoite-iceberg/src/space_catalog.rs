@@ -37,6 +37,7 @@ const SPACE_FORMAT_VERSION: u32 = 1;
 const MAX_HEAD_BYTES: usize = 1 << 20;
 const SMALL_FILE_THRESHOLD_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_PIN_NAME_BYTES: usize = 128;
+const MAX_PIN_COUNT: usize = 1024;
 
 fn validate_pin_name(name: &str) -> Result<()> {
     if name.trim().is_empty()
@@ -379,6 +380,15 @@ impl SpaceCatalog {
             .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))
     }
 
+    pub(crate) async fn current_publication(&self) -> Result<PublicationRef> {
+        let (head, _) = self
+            .exact_head()
+            .await?
+            .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
+        self.validate_pin_references(&head).await?;
+        self.publication_ref_for_head(&head).await
+    }
+
     /// Active Pins are read exactly from Catalog Head. Storage listing is not
     /// involved and the returned map is therefore a complete current view.
     pub async fn list_pins(&self) -> Result<BTreeMap<String, PinEntry>> {
@@ -387,6 +397,24 @@ impl SpaceCatalog {
         };
         self.validate_pin_references(&head).await?;
         Ok(head.pins)
+    }
+
+    /// Resolves one active Pin from the authoritative Head.  The returned
+    /// value is still only the portable publication coordinate; callers must
+    /// resolve that coordinate before opening any immutable table metadata.
+    pub async fn get_pin(&self, name: &str) -> Result<PinEntry> {
+        validate_pin_name(name)?;
+        let Some((head, _)) = self.exact_head().await? else {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "Catalog Head is missing",
+            ));
+        };
+        self.validate_pin_references(&head).await?;
+        head.pins
+            .get(name)
+            .cloned()
+            .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "pin not found"))
     }
 
     /// Reconstruct committed Changes from the reachable immutable publication
@@ -494,6 +522,9 @@ impl SpaceCatalog {
     }
 
     async fn validate_pin_references(&self, head: &CatalogHead) -> Result<()> {
+        if head.pins.is_empty() {
+            return Ok(());
+        }
         let mut remaining = head
             .pins
             .values()
@@ -525,7 +556,7 @@ impl SpaceCatalog {
                     .store
                     .read_publication(&path)
                     .await
-                    .map_err(storage_error)?,
+                    .map_err(pin_reference_target_error)?,
             )?;
             validate_publication_matches_head(&publication, &cursor)?;
             let coordinate = (
@@ -557,7 +588,7 @@ impl SpaceCatalog {
                     .store
                     .read_publication(&previous_path)
                     .await
-                    .map_err(storage_error)?,
+                    .map_err(pin_reference_target_error)?,
             )?;
             if previous.generation != previous_generation
                 || previous.next_head_checksum != previous_checksum
@@ -578,6 +609,139 @@ impl SpaceCatalog {
                 "Catalog Head contains a Pin to an unreachable publication",
             ))
         }
+    }
+
+    /// Resolves a portable PublicationRef through the authoritative Head and
+    /// returns the same immutable table coordinates that a checkpoint reader
+    /// needs.  The temporary SpaceCheckpoint is never persisted: the
+    /// PublicationRef and its reachable publication are the sole selection
+    /// authority.
+    pub(crate) async fn resolve_publication_checkpoint(
+        &self,
+        coordinate: &PublicationRef,
+    ) -> anyhow::Result<SpaceCheckpoint> {
+        coordinate
+            .validate()
+            .map_err(|error| crate::CheckpointIntegrityError::new(error.to_string()))?;
+        if coordinate.publication_uri.space_uid() != self.logical_space_uid
+            || !coordinate
+                .publication_uri
+                .key()
+                .as_str()
+                .starts_with("_ugoite/catalog/publications/")
+        {
+            return Err(crate::CheckpointIntegrityError::new(
+                "publication reference belongs to another Space or is not a Catalog publication",
+            )
+            .into());
+        }
+        let target_path = self.publication_path(&coordinate.publication_uri)?;
+        let (mut head, _) = self
+            .exact_head()
+            .await?
+            .ok_or_else(|| crate::CheckpointUnavailable::new("Catalog Head"))?;
+        let mut path = head
+            .publication_location
+            .clone()
+            .ok_or_else(|| crate::CheckpointUnavailable::new("Catalog publication chain"))?;
+        let mut visited = BTreeSet::new();
+        let mut selected = None;
+        loop {
+            if !visited.insert(path.clone()) {
+                return Err(crate::CheckpointIntegrityError::new(
+                    "Catalog publication chain contains a cycle",
+                )
+                .into());
+            }
+            let publication = decode_publication(
+                &self
+                    .store
+                    .read_publication(&path)
+                    .await
+                    .map_err(checkpoint_target_error)?,
+            )?;
+            validate_publication_matches_head(&publication, &head)
+                .map_err(|error| crate::CheckpointIntegrityError::new(error.to_string()))?;
+            if path == target_path {
+                if publication.generation != coordinate.generation
+                    || publication.checksum != coordinate.publication_checksum
+                {
+                    return Err(crate::CheckpointIntegrityError::new(
+                        "publication reference does not match immutable publication evidence",
+                    )
+                    .into());
+                }
+                let mut tables = Vec::with_capacity(head.tables.len());
+                for reference in head.tables.values() {
+                    tables.push(self.capture_checkpoint_table(reference).await?);
+                }
+                tables.sort_by(|left, right| left.form_id.cmp(&right.form_id));
+                selected = Some(SpaceCheckpoint::new(
+                    self.space_id,
+                    head.generation,
+                    head.checksum,
+                    path.clone(),
+                    publication.checksum.clone(),
+                    head.form_registry_generation,
+                    tables,
+                ));
+            }
+
+            let (previous_generation, previous_path, previous_checksum) = match (
+                publication.previous_generation,
+                publication.previous_publication,
+                publication.previous_head_checksum,
+            ) {
+                (None, None, None) if publication.generation == 0 => {
+                    break;
+                }
+                (Some(generation), Some(path), Some(checksum))
+                    if generation + 1 == publication.generation =>
+                {
+                    (generation, path, checksum)
+                }
+                _ => {
+                    return Err(crate::CheckpointIntegrityError::new(
+                        "Catalog publication chain is incomplete or corrupt",
+                    )
+                    .into());
+                }
+            };
+            let previous = decode_publication(
+                &self
+                    .store
+                    .read_publication(&previous_path)
+                    .await
+                    .map_err(checkpoint_target_error)?,
+            )?;
+            if previous.generation != previous_generation
+                || previous.next_head_checksum != previous_checksum
+            {
+                return Err(crate::CheckpointIntegrityError::new(
+                    "Catalog publication predecessor is corrupt",
+                )
+                .into());
+            }
+            head = previous.next_head;
+            path = previous_path;
+        }
+        selected.ok_or_else(|| crate::CheckpointUnavailable::new("unreachable publication").into())
+    }
+
+    fn publication_path(&self, uri: &SpaceUri) -> anyhow::Result<String> {
+        let key = uri.key().as_str();
+        if !key.starts_with("_ugoite/catalog/publications/") {
+            return Err(crate::CheckpointIntegrityError::new(
+                "publication URI is outside the Catalog publication prefix",
+            )
+            .into());
+        }
+        let prefix = if self.store.space_root().is_empty() {
+            String::new()
+        } else {
+            format!("{}/", self.store.space_root())
+        };
+        Ok(format!("{prefix}{key}"))
     }
 
     pub async fn create_pin(
@@ -617,6 +781,7 @@ impl SpaceCatalog {
             .exact_head()
             .await?
             .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
+        self.validate_pin_references(&head).await?;
         if head.pins.contains_key(name) {
             if self.publication_outcome(&publication).await?.is_some() {
                 return self.active_pin(name).await;
@@ -682,6 +847,7 @@ impl SpaceCatalog {
             .exact_head()
             .await?
             .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
+        self.validate_pin_references(&head).await?;
         if !head.pins.contains_key(name) {
             if self.publication_outcome(&publication).await?.is_some() {
                 return Ok(());
@@ -3039,6 +3205,12 @@ fn is_asset_delete_publication(publication: &PublicationRecord, asset_id: &str) 
 }
 
 fn validate_head_pins(head: &CatalogHead, logical_space_uid: Uuid) -> Result<()> {
+    if head.pins.len() > MAX_PIN_COUNT {
+        return Err(Error::new(
+            ErrorKind::DataInvalid,
+            "Catalog Head contains too many publication Pins",
+        ));
+    }
     for (name, pin) in &head.pins {
         validate_pin_name(name)?;
         pin.validate()
@@ -3073,6 +3245,14 @@ fn exact_head_matches(
 
 fn storage_error(error: impl std::fmt::Display) -> Error {
     Error::new(ErrorKind::Unexpected, error.to_string())
+}
+
+fn pin_reference_target_error(error: opendal::Error) -> Error {
+    if error.kind() == opendal::ErrorKind::NotFound {
+        Error::new(ErrorKind::DataInvalid, "Pin publication target unavailable")
+    } else {
+        storage_error(error)
+    }
 }
 
 fn json_error(error: serde_json::Error) -> Error {

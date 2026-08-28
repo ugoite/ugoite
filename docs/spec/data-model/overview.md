@@ -111,7 +111,7 @@ projection for case-insensitive substring matches. It returns Entries, applies
 authorization before AssetText joins, and degrades to native Entry search when
 the derived relation is unavailable. There is still no persistent inverted
 index or relevance ranking. AssetText is an Iceberg-backed DerivedRelation, not
-a Form, checkpoint coordinate, ACL authority, or second history store.
+a Form, publication coordinate, ACL authority, or second history store.
 
 `ugoite index stats` reports AssetText derived health. `ugoite index run` and
 `ugoite index run --component asset-text` rebuild it by scanning current
@@ -121,7 +121,7 @@ authoritative Entry references; object listing is not a source set.
 
 Saved SQL is represented through the reserved SQL metadata Form. A query session
 writes `sql_sessions/{session_id}/meta.json` with one reproducible
-`SpaceCheckpoint`; row and count requests use that coordinate and bounded
+`PublicationRef`; row and count requests resolve that coordinate and use bounded
 deterministic pagination. Session metadata remains derived state, not an
 alternate Catalog or result store. See
 [sql-sessions.md](sql-sessions.md).

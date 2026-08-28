@@ -152,7 +152,10 @@ async fn assert_checkpoint_unavailable_after_delete(
         .read_revision_view_at_checkpoint(&checkpoint, form.id, RevisionView::Current)
         .await
         .expect_err("a missing immutable checkpoint target must be explicit");
-    assert!(error.downcast_ref::<CheckpointUnavailable>().is_some());
+    assert!(
+        error.downcast_ref::<CheckpointUnavailable>().is_some(),
+        "missing target error: {error:?}"
+    );
     Ok(())
 }
 
@@ -211,6 +214,87 @@ async fn checkpoint_pins_one_head_and_uses_static_iceberg_coordinates() -> anyho
             .read_revision_view(form.id, RevisionView::LatestIncludingTombstones)
             .await?,
         vec![second]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn publication_selection_uses_pin_coordinates_and_rejects_missing_publications(
+) -> anyhow::Result<()> {
+    let warehouse = "memory://publication-pin-selection";
+    let space = 41_u128;
+    let workspace =
+        IcebergWorkspace::memory_for_tests(SpaceId::from(Uuid::from_u128(space)), warehouse)
+            .await?;
+    let form = form();
+    create_form(&workspace, &form).await?;
+    let first = revision(&form, 1, "before pin");
+    append(&workspace, &form, first.clone()).await?;
+
+    let before = workspace
+        .create_pin("before", "human:owner", 1, "pin-before")
+        .await?;
+    append(&workspace, &form, revision(&form, 2, "after pin")).await?;
+    let after = workspace
+        .create_pin("after", "human:owner", 2, "pin-after")
+        .await?;
+
+    assert_eq!(workspace.resolve_pin("before").await?, before.coordinate);
+    assert_eq!(workspace.resolve_pin("after").await?, after.coordinate);
+    let error = workspace
+        .resolve_pin("missing")
+        .await
+        .expect_err("a missing Pin must be reported as unavailable");
+    assert!(error.downcast_ref::<CheckpointUnavailable>().is_some());
+    assert_eq!(
+        workspace
+            .read_revision_view_at_publication(
+                &before.coordinate,
+                form.id,
+                RevisionView::LatestIncludingTombstones,
+            )
+            .await?,
+        vec![first]
+    );
+    let diff = workspace
+        .diff_publications(&before.coordinate, &after.coordinate)
+        .await?;
+    assert_eq!(diff.changes.len(), 1);
+
+    let mut corrupt = before.coordinate.clone();
+    corrupt.publication_checksum = "0".repeat(64);
+    let error = workspace
+        .read_revision_view_at_publication(
+            &corrupt,
+            form.id,
+            RevisionView::LatestIncludingTombstones,
+        )
+        .await
+        .expect_err("a coordinate checksum mismatch must fail closed");
+    assert!(error.downcast_ref::<CheckpointIntegrityError>().is_some());
+
+    operator_from_uri(warehouse)?
+        .delete(&object_path(
+            &before.coordinate.publication_uri.to_string(),
+            space,
+        ))
+        .await?;
+    let error = workspace
+        .read_revision_view_at_publication(
+            &before.coordinate,
+            form.id,
+            RevisionView::LatestIncludingTombstones,
+        )
+        .await
+        .expect_err("a missing publication in the reachable chain must fail closed");
+    assert!(error.downcast_ref::<CheckpointUnavailable>().is_some());
+    let error = workspace
+        .resolve_pin("after")
+        .await
+        .expect_err("a corrupt predecessor must invalidate every reachable Pin");
+    assert!(
+        error.downcast_ref::<CheckpointUnavailable>().is_some(),
+        "pin resolution error: {error:?}"
     );
     Ok(())
 }

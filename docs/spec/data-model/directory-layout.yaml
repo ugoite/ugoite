@@ -40,7 +40,7 @@ space_layout:
     - path: spaces/{space_id}/_ugoite/catalog/head.json
       kind: file
       schema: iceberg_catalog_head
-    - path_glob: spaces/{space_id}/_ugoite/catalog/publications/{generation}-{command_id}.json
+    - path_glob: spaces/{space_id}/_ugoite/catalog/publications/{generation}-{encoded_command_id}.json
       kind: file
       schema: iceberg_catalog_publication
       notes:

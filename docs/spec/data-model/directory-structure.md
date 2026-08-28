@@ -21,7 +21,6 @@ spaces/
       catalog/
         head.json
         publications/
-      checkpoints/
       derived/
         relations/{relation_id}/
           head.json
@@ -107,7 +106,7 @@ coordinates, the complete active Pin map, checksum, and current publication
 coordinate. A process opens a Space by reading this Head exactly with its OpenDAL
 ETag and loading only the referenced immutable Iceberg metadata.
 
-`_ugoite/catalog/publications/<generation>-<command-id>.json` records the
+`_ugoite/catalog/publications/<generation>-<encoded-command-id>.json` records the
 complete next Head, its checksum, the preceding Head and publication
 coordinates, command identity/digest, optional immutable Change metadata, and
 affected-table Iceberg coordinates.
@@ -116,13 +115,11 @@ objects never reconstructs catalog state or publication order. Missing/corrupt
 Head or reachable publication evidence is an explicit failure; old pointer
 manifests and layout readers are unsupported rather than migrated.
 
-`_ugoite/checkpoints/<name>.json` is an optional immutable named
-`SpaceCheckpoint`, written through the same OpenDAL Space boundary. It records
-one exact Head generation and the referenced Iceberg metadata/snapshot
-coordinates; it is not Catalog authority and cannot alter the Head. Reusing a
-name fails rather than replacing the saved read coordinate. Missing checkpoint
-objects or referenced immutable metadata are explicit unavailable-checkpoint
-errors. Snapshot expiration and a Ugoite retention engine are not implemented.
+Pins are stored inline in `_ugoite/catalog/head.json`. Each active name carries
+only a `PublicationRef` (generation, logical publication URI, and publication
+checksum) plus creator metadata. A Pin is valid only when that exact
+publication is reachable from the current Head; no separate coordinate file or
+coordinate registry is consulted.
 
 Revision rows contain stable entry/revision identity, optimistic version and
 parent lineage, operation/tombstone state, commit time, original creator

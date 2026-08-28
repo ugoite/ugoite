@@ -35,6 +35,7 @@ pub use space_catalog::{PublicationContext, PublishedChange};
 pub use ugoite_domain::checkpoint::{
     CheckpointChange, CheckpointChangeKind, CheckpointDiff, CheckpointTable, SpaceCheckpoint,
 };
+pub use ugoite_domain::publication_ref::PublicationRef;
 
 use anyhow::{anyhow, bail, Context, Result};
 use arrow_array::builder::{
@@ -293,6 +294,136 @@ impl IcebergWorkspace {
             .list_pins()
             .await
             .map_err(|error| anyhow!(error.to_string()))
+    }
+
+    /// Returns the exact current publication coordinate.  The coordinate is
+    /// portable and may be retained by a caller or stored in a Pin; it is not
+    /// a copy of the Catalog Head or of any table metadata.
+    pub async fn current_publication(&self) -> Result<PublicationRef> {
+        self.space_catalog
+            .as_ref()
+            .context("Publication selection requires the OpenDAL-backed SpaceCatalog")?
+            .current_publication()
+            .await
+            .map_err(|error| anyhow!(error.to_string()))
+    }
+
+    /// Resolves an active Head-owned Pin to its immutable publication
+    /// coordinate.  Publication resolution subsequently verifies that the
+    /// coordinate is still reachable from the current Head.
+    pub async fn resolve_pin(&self, name: &str) -> Result<PublicationRef> {
+        let pin = match self
+            .space_catalog
+            .as_ref()
+            .context("Pin selection requires the OpenDAL-backed SpaceCatalog")?
+            .get_pin(name)
+            .await
+        {
+            Ok(pin) => pin,
+            Err(error) => {
+                let detail = error.to_string();
+                if detail.contains("pin not found")
+                    || detail.contains("publication target unavailable")
+                    || detail.to_ascii_lowercase().contains("not found")
+                {
+                    return Err(CheckpointUnavailable::new("named Pin").into());
+                }
+                if error.kind() == iceberg::ErrorKind::DataInvalid {
+                    return Err(CheckpointIntegrityError::new(detail).into());
+                }
+                return Err(anyhow!(detail));
+            }
+        };
+        Ok(pin.coordinate)
+    }
+
+    /// Resolves a PublicationRef to an in-memory immutable view.  This value
+    /// is deliberately not persisted; it is an adapter-local description used
+    /// while the publication-selected read is executing.
+    pub async fn resolve_publication(
+        &self,
+        publication: &PublicationRef,
+    ) -> Result<SpaceCheckpoint> {
+        self.space_catalog
+            .as_ref()
+            .context("Publication selection requires the OpenDAL-backed SpaceCatalog")?
+            .resolve_publication_checkpoint(publication)
+            .await
+    }
+
+    /// Reads an immutable revision view selected by a PublicationRef.  The
+    /// reference is resolved through the current authoritative chain before
+    /// any Iceberg metadata is opened.
+    pub async fn read_revision_view_at_publication(
+        &self,
+        publication: &PublicationRef,
+        form_id: FormId,
+        view: RevisionView,
+    ) -> Result<Vec<EntryRevision>> {
+        let checkpoint = self.resolve_publication(publication).await?;
+        self.read_revision_view_at_checkpoint(&checkpoint, form_id, view)
+            .await
+    }
+
+    pub async fn read_revision_view_at_publication_with_scope(
+        &self,
+        publication: &PublicationRef,
+        form_id: FormId,
+        entry_scope: EntryScope,
+        view: RevisionView,
+    ) -> Result<Vec<EntryRevision>> {
+        let checkpoint = self.resolve_publication(publication).await?;
+        self.read_revision_view_at_checkpoint_with_scope(&checkpoint, form_id, entry_scope, view)
+            .await
+    }
+
+    pub async fn forms_at_publication(
+        &self,
+        publication: &PublicationRef,
+    ) -> Result<Vec<FormDefinition>> {
+        let checkpoint = self.resolve_publication(publication).await?;
+        self.forms_at_checkpoint(&checkpoint).await
+    }
+
+    pub async fn form_at_publication(
+        &self,
+        publication: &PublicationRef,
+        relation: &str,
+    ) -> Result<FormDefinition> {
+        let checkpoint = self.resolve_publication(publication).await?;
+        self.form_at_checkpoint(&checkpoint, relation).await
+    }
+
+    pub async fn form_history_at_publication(
+        &self,
+        publication: &PublicationRef,
+        form_id: FormId,
+    ) -> Result<Vec<FormDefinition>> {
+        let checkpoint = self.resolve_publication(publication).await?;
+        self.form_history_at_checkpoint(&checkpoint, form_id).await
+    }
+
+    /// Compares logical Entry revisions selected by two immutable publication
+    /// coordinates.  Neither coordinate is allowed to select a detached or
+    /// corrupt publication.
+    pub async fn diff_publications(
+        &self,
+        from: &PublicationRef,
+        to: &PublicationRef,
+    ) -> Result<CheckpointDiff> {
+        self.diff_publications_with_scopes(from, to, None).await
+    }
+
+    pub async fn diff_publications_with_scopes(
+        &self,
+        from: &PublicationRef,
+        to: &PublicationRef,
+        form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
+    ) -> Result<CheckpointDiff> {
+        let from = self.resolve_publication(from).await?;
+        let to = self.resolve_publication(to).await?;
+        self.diff_checkpoints_with_scopes(&from, &to, form_scopes)
+            .await
     }
 
     pub async fn list_changes(&self) -> Result<Vec<space_catalog::PublishedChange>> {
