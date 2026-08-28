@@ -73,8 +73,11 @@ fn invoke_konase(request: serde_json::Value) -> String {
                 serde_json::from_value::<ugoite_konase::KonaseState>(state)
                     .map_err(|error| error.to_string())
                     .and_then(|state| {
-                        serde_json::to_value(ugoite_konase::normalize_state(state))
-                            .map_err(|error| error.to_string())
+                        serde_json::to_value(
+                            ugoite_konase::normalize_state(state)
+                                .map_err(|error| error.to_string())?,
+                        )
+                        .map_err(|error| error.to_string())
                     })
             }
             "konase.step" => {
@@ -99,15 +102,19 @@ fn invoke_konase(request: serde_json::Value) -> String {
                         .ok_or_else(|| "event is required".to_string())?,
                 )
                 .map_err(|error| error.to_string())?;
-                serde_json::to_value(ugoite_konase::step(state, event))
-                    .map_err(|error| error.to_string())
+                let result = serde_json::to_value(ugoite_konase::step(state, event))
+                    .map_err(|error| error.to_string())?;
+                ensure_json_size(&result, ugoite_konase::MAX_STATE_JSON_BYTES)?;
+                Ok(result)
             }
             "konase.context" => {
                 ensure_json_size(&payload, ugoite_konase::MAX_STATE_JSON_BYTES)?;
                 let input = serde_json::from_value::<ugoite_konase::ContextBuildRequest>(payload)
                     .map_err(|error| error.to_string())?;
                 let context = ugoite_konase::ContextBuilder::default().build(input);
-                serde_json::to_value(context).map_err(|error| error.to_string())
+                let context = serde_json::to_value(context).map_err(|error| error.to_string())?;
+                ensure_json_size(&context, ugoite_konase::MAX_STATE_JSON_BYTES)?;
+                Ok(context)
             }
             _ => Err(format!("unsupported Konase action: {action}")),
         }
@@ -432,8 +439,8 @@ mod tests {
             }
         });
         let loaded: Value = serde_json::from_str(&super::invoke_json(&loaded.to_string())).unwrap();
-        assert_eq!(loaded["ok"], true, "{loaded}");
-        assert_eq!(loaded["value"]["work"]["id"].as_str().unwrap().len(), 256);
+        assert_eq!(loaded["ok"], false, "{loaded}");
+        assert_eq!(loaded["error"]["kind"], "konase_protocol");
 
         let too_large = serde_json::json!({
             "action": "konase.context",

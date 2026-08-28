@@ -302,10 +302,17 @@ pub struct StepResult {
 
 /// Apply one event without performing a host operation.
 pub fn step(state: KonaseState, event: KonaseEvent) -> StepResult {
-    let mut state = normalize_state(state);
+    let mut state = match normalize_state(state) {
+        Ok(state) => state,
+        Err(error) => return rejected_state(error),
+    };
     let original_state = state.clone();
     let mut effects = Vec::new();
-    let result = match normalize_event(event) {
+    let event = match normalize_event(event) {
+        Ok(event) => event,
+        Err(error) => return rejected_with_state(original_state, error),
+    };
+    let result = match event {
         KonaseEvent::UserSubmitted(request) => submit(&mut state, request, &mut effects),
         KonaseEvent::AgentProgress(progress) => progress_event(&mut state, progress, &mut effects),
         KonaseEvent::JobCompleted(outcome) => complete_job(&mut state, outcome, &mut effects),
@@ -317,11 +324,26 @@ pub fn step(state: KonaseState, event: KonaseEvent) -> StepResult {
     };
 
     match result {
-        Ok(()) => StepResult {
-            state,
-            effects,
-            error: None,
-        },
+        Ok(()) => {
+            let result = StepResult {
+                state,
+                effects,
+                error: None,
+            };
+            match serialized_size(&result) {
+                Ok(size) if size <= MAX_STATE_JSON_BYTES => result,
+                Ok(_) => rejected_with_state(
+                    original_state,
+                    KonaseError::new(
+                        "output_too_large",
+                        "Konase transition output exceeds the protocol limit",
+                    ),
+                ),
+                Err(error) => {
+                    rejected_with_state(original_state, KonaseError::new("serialization", error))
+                }
+            }
+        }
         Err(error) => StepResult {
             state: original_state,
             effects: Vec::new(),
@@ -330,9 +352,22 @@ pub fn step(state: KonaseState, event: KonaseEvent) -> StepResult {
     }
 }
 
+fn rejected_state(error: KonaseError) -> StepResult {
+    rejected_with_state(KonaseState::default(), error)
+}
+
+fn rejected_with_state(state: KonaseState, error: KonaseError) -> StepResult {
+    StepResult {
+        state,
+        effects: Vec::new(),
+        error: Some(error),
+    }
+}
+
 /// Normalize state loaded from an untrusted adapter into the fixed-size
 /// representation used by the control plane.
-pub fn normalize_state(mut state: KonaseState) -> KonaseState {
+pub fn normalize_state(mut state: KonaseState) -> Result<KonaseState, KonaseError> {
+    validate_state(&state)?;
     state.work = state.work.map(normalize_work);
     state.job = state.job.map(normalize_job);
     state.observations = state
@@ -346,7 +381,14 @@ pub fn normalize_state(mut state: KonaseState) -> KonaseState {
     }
     state.pending_effect = state.pending_effect.map(normalize_pending_effect);
     state.last_output = state.last_output.map(normalize_output);
-    state
+    let size = serialized_size(&state).map_err(|error| KonaseError::new("serialization", error))?;
+    if size > MAX_STATE_JSON_BYTES {
+        return Err(KonaseError::new(
+            "state_too_large",
+            "Konase state exceeds the protocol limit",
+        ));
+    }
+    Ok(state)
 }
 
 fn submit(
@@ -696,8 +738,324 @@ fn waiting_for_host(state: &KonaseState) -> Result<(), KonaseError> {
     Ok(())
 }
 
-fn normalize_event(event: KonaseEvent) -> KonaseEvent {
+fn validate_state(state: &KonaseState) -> Result<(), KonaseError> {
+    if state.observations.len() > MAX_STATE_OBSERVATIONS {
+        return Err(KonaseError::new(
+            "state_too_large",
+            "Konase state contains too many observations",
+        ));
+    }
+    if let Some(work) = &state.work {
+        validate_identifier("work.id", &work.id)?;
+        validate_text("work.goal", &work.goal, MAX_GOAL_CHARS)?;
+        if let Some(outcome) = &work.last_outcome {
+            validate_job_outcome(outcome)?;
+        }
+    }
+    if let Some(job) = &state.job {
+        validate_job_spec(&job.spec)?;
+        if let Some(summary) = &job.strategy_summary {
+            validate_text("job.strategy_summary", summary, MAX_STATE_SUMMARY_CHARS)?;
+        }
+    }
+    for observation in &state.observations {
+        validate_observation(observation)?;
+    }
+    if let Some(pending) = &state.pending_effect {
+        validate_pending_effect(pending)?;
+    }
+    if let Some(output) = &state.last_output {
+        validate_output(output)?;
+    }
+
+    match state.status {
+        SessionStatus::Idle => {
+            if state.work.is_some() || state.job.is_some() || state.pending_effect.is_some() {
+                return invalid_state("idle state must not contain active execution data");
+            }
+        }
+        SessionStatus::Working => {
+            let (Some(work), Some(job)) = (&state.work, &state.job) else {
+                return invalid_state("working state requires a Work and Job");
+            };
+            if work.status != WorkStatus::Working {
+                return invalid_state("working state requires a working Work");
+            }
+            if job.spec.work_id != work.id {
+                return invalid_state("Job does not belong to the active Work");
+            }
+            match (&job.status, &state.pending_effect) {
+                (JobStatus::Pending, Some(PendingEffect::StartJob))
+                | (JobStatus::Running, None)
+                | (JobStatus::WaitingForHost, Some(PendingEffect::CallMcp { .. }))
+                | (JobStatus::WaitingForHost, Some(PendingEffect::AskConfirmation { .. })) => {}
+                _ => return invalid_state("Job status and pending effect are inconsistent"),
+            }
+        }
+        SessionStatus::Completed => {
+            if state
+                .work
+                .as_ref()
+                .is_none_or(|work| work.status != WorkStatus::Completed)
+                || state
+                    .job
+                    .as_ref()
+                    .is_none_or(|job| job.status != JobStatus::Completed)
+                || state.pending_effect.is_some()
+            {
+                return invalid_state("completed state contains non-terminal execution data");
+            }
+        }
+        SessionStatus::Failed => {
+            if state
+                .work
+                .as_ref()
+                .is_none_or(|work| work.status != WorkStatus::Failed)
+                || state
+                    .job
+                    .as_ref()
+                    .is_none_or(|job| job.status != JobStatus::Failed)
+                || state.pending_effect.is_some()
+            {
+                return invalid_state("failed state contains non-terminal execution data");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_event(event: &KonaseEvent) -> Result<(), KonaseError> {
     match event {
+        KonaseEvent::UserSubmitted(request) => {
+            validate_identifier("work_id", &request.work_id)?;
+            validate_identifier("job_id", &request.job_id)?;
+            validate_text("goal", &request.goal, MAX_GOAL_CHARS)?;
+            validate_capabilities(&request.available_capabilities)?;
+            validate_hints(&request.safety_hints)?;
+            validate_schema(&request.expected_response_schema)?;
+        }
+        KonaseEvent::AgentProgress(progress) => {
+            validate_identifier("job_id", &progress.job_id)?;
+            if let Some(summary) = &progress.strategy_summary {
+                validate_text("strategy_summary", summary, MAX_STATE_SUMMARY_CHARS)?;
+            }
+            if let Some(observation) = &progress.observation {
+                validate_observation(observation)?;
+            }
+            validate_effect_kind(&progress.action)?;
+        }
+        KonaseEvent::JobCompleted(outcome) => validate_job_outcome(outcome)?,
+        KonaseEvent::McpCompleted(result) => validate_mcp_result(result)?,
+        KonaseEvent::ConfirmationCompleted(result) => {
+            validate_identifier("confirmation.request_id", &result.request_id)?;
+        }
+        KonaseEvent::HostFailed(error) => validate_host_error(error)?,
+    }
+    Ok(())
+}
+
+fn validate_job_spec(spec: &JobSpec) -> Result<(), KonaseError> {
+    validate_identifier("job.id", &spec.id)?;
+    validate_identifier("job.work_id", &spec.work_id)?;
+    validate_text("job.goal", &spec.goal, MAX_GOAL_CHARS)?;
+    validate_schema(&spec.expected_response_schema)
+}
+
+fn validate_job_outcome(outcome: &JobOutcome) -> Result<(), KonaseError> {
+    validate_identifier("outcome.job_id", &outcome.job_id)?;
+    validate_text("outcome.summary", &outcome.summary, MAX_STATE_SUMMARY_CHARS)
+}
+
+fn validate_observation(observation: &Observation) -> Result<(), KonaseError> {
+    validate_identifier("observation.id", &observation.id)?;
+    validate_text(
+        "observation.summary",
+        &observation.summary,
+        MAX_STATE_SUMMARY_CHARS,
+    )?;
+    if observation.facts.len() > MAX_STATE_FACTS {
+        return invalid_state("observation contains too many facts");
+    }
+    for (key, value) in &observation.facts {
+        validate_identifier("observation.fact.key", key)?;
+        validate_text("observation.fact.value", value, MAX_STATE_FACT_CHARS)?;
+    }
+    if observation.resource_references.len() > MAX_STATE_RESOURCE_REFERENCES {
+        return invalid_state("observation contains too many resource references");
+    }
+    for reference in &observation.resource_references {
+        validate_resource_reference(reference)?;
+    }
+    Ok(())
+}
+
+fn validate_resource_reference(reference: &ResourceReference) -> Result<(), KonaseError> {
+    validate_text("resource.uri", &reference.uri, MAX_STATE_SUMMARY_CHARS)?;
+    if let Some(label) = &reference.label {
+        validate_identifier("resource.label", label)?;
+    }
+    Ok(())
+}
+
+fn validate_capabilities(capabilities: &[Capability]) -> Result<(), KonaseError> {
+    if capabilities.len() > 32 {
+        return invalid_state("request contains too many capabilities");
+    }
+    for capability in capabilities {
+        validate_identifier("capability.name", &capability.name)?;
+        validate_text(
+            "capability.description",
+            &capability.description,
+            MAX_STATE_SUMMARY_CHARS,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_hints(hints: &[String]) -> Result<(), KonaseError> {
+    if hints.len() > 8 {
+        return invalid_state("request contains too many safety hints");
+    }
+    for hint in hints {
+        validate_text("safety_hint", hint, MAX_STATE_SUMMARY_CHARS)?;
+    }
+    Ok(())
+}
+
+fn validate_schema(schema: &Option<Value>) -> Result<(), KonaseError> {
+    if let Some(schema) = schema {
+        let size =
+            serialized_size(schema).map_err(|error| KonaseError::new("serialization", error))?;
+        if size > MAX_SCHEMA_BYTES {
+            return invalid_state("response schema exceeds the protocol limit");
+        }
+    }
+    Ok(())
+}
+
+fn validate_effect_kind(action: &EffectKind) -> Result<(), KonaseError> {
+    match action {
+        EffectKind::CallMcp(request) => validate_mcp_request(request),
+        EffectKind::AskConfirmation(request) => validate_confirmation_request(request),
+        EffectKind::Complete(outcome) => validate_job_outcome(outcome),
+        EffectKind::None => Ok(()),
+    }
+}
+
+fn validate_mcp_request(request: &McpRequest) -> Result<(), KonaseError> {
+    validate_identifier("mcp.request_id", &request.request_id)?;
+    validate_identifier("mcp.server", &request.server)?;
+    validate_identifier("mcp.operation", &request.operation)?;
+    if request.arguments.len() > MAX_MCP_ARGUMENTS {
+        return invalid_state("MCP request contains too many arguments");
+    }
+    for (key, value) in &request.arguments {
+        validate_identifier("mcp.argument.key", key)?;
+        if serialized_size(value).map_err(|error| KonaseError::new("serialization", error))?
+            > MAX_MCP_VALUE_BYTES
+        {
+            return invalid_state("MCP argument exceeds the protocol limit");
+        }
+    }
+    Ok(())
+}
+
+fn validate_mcp_result(result: &McpResult) -> Result<(), KonaseError> {
+    validate_identifier("mcp.result.request_id", &result.request_id)?;
+    validate_identifier("mcp.result.operation", &result.operation)?;
+    if let Some(observation) = &result.observation {
+        validate_observation(observation)?;
+    }
+    if result.resources.len() > MAX_STATE_RESOURCE_REFERENCES {
+        return invalid_state("MCP result contains too many resource references");
+    }
+    for resource in &result.resources {
+        validate_resource_reference(resource)?;
+    }
+    if let Some(error) = &result.error {
+        validate_text("mcp.result.error", error, MAX_ERROR_MESSAGE_CHARS)?;
+    }
+    Ok(())
+}
+
+fn validate_confirmation_request(request: &ConfirmationRequest) -> Result<(), KonaseError> {
+    validate_identifier("confirmation.request_id", &request.request_id)?;
+    validate_text(
+        "confirmation.reason",
+        &request.reason,
+        MAX_ERROR_MESSAGE_CHARS,
+    )?;
+    validate_identifier("confirmation.operation", &request.operation)
+}
+
+fn validate_host_error(error: &HostError) -> Result<(), KonaseError> {
+    validate_text("host_error.kind", &error.kind, MAX_ERROR_KIND_CHARS)?;
+    validate_text(
+        "host_error.message",
+        &error.message,
+        MAX_ERROR_MESSAGE_CHARS,
+    )?;
+    if let Some(request_id) = &error.request_id {
+        validate_identifier("host_error.request_id", request_id)?;
+    }
+    Ok(())
+}
+
+fn validate_pending_effect(pending: &PendingEffect) -> Result<(), KonaseError> {
+    match pending {
+        PendingEffect::StartJob => Ok(()),
+        PendingEffect::CallMcp { request_id } | PendingEffect::AskConfirmation { request_id } => {
+            validate_identifier("pending.request_id", request_id)
+        }
+    }
+}
+
+fn validate_output(output: &KonaseOutput) -> Result<(), KonaseError> {
+    match output {
+        KonaseOutput::WorkStarted { work_id, job_id } => {
+            validate_identifier("output.work_id", work_id)?;
+            validate_identifier("output.job_id", job_id)
+        }
+        KonaseOutput::ObservationRecorded { observation_id } => {
+            validate_identifier("output.observation_id", observation_id)
+        }
+        KonaseOutput::McpCompleted { request_id, .. }
+        | KonaseOutput::ConfirmationRequired { request_id }
+        | KonaseOutput::ConfirmationResolved { request_id, .. } => {
+            validate_identifier("output.request_id", request_id)
+        }
+        KonaseOutput::JobCompleted(outcome) => validate_job_outcome(outcome),
+        KonaseOutput::HostFailed(error) => validate_host_error(error),
+    }
+}
+
+fn validate_identifier(field: &str, value: &str) -> Result<(), KonaseError> {
+    validate_text(field, value, MAX_IDENTIFIER_CHARS)
+}
+
+fn validate_text(field: &str, value: &str, max_chars: usize) -> Result<(), KonaseError> {
+    if value.chars().count() > max_chars {
+        return Err(KonaseError::new(
+            "input_too_large",
+            format!("{field} exceeds the {max_chars}-character limit"),
+        ));
+    }
+    Ok(())
+}
+
+fn invalid_state(message: &str) -> Result<(), KonaseError> {
+    Err(KonaseError::new("invalid_state", message))
+}
+
+fn serialized_size<T: Serialize>(value: &T) -> Result<usize, String> {
+    serde_json::to_vec(value)
+        .map(|serialized| serialized.len())
+        .map_err(|error| error.to_string())
+}
+
+fn normalize_event(event: KonaseEvent) -> Result<KonaseEvent, KonaseError> {
+    validate_event(&event)?;
+    Ok(match event {
         KonaseEvent::UserSubmitted(request) => {
             KonaseEvent::UserSubmitted(normalize_user_request(request))
         }
@@ -717,7 +1075,7 @@ fn normalize_event(event: KonaseEvent) -> KonaseEvent {
             })
         }
         KonaseEvent::HostFailed(error) => KonaseEvent::HostFailed(normalize_host_error(error)),
-    }
+    })
 }
 
 fn normalize_user_request(mut request: UserRequest) -> UserRequest {
@@ -1177,7 +1535,7 @@ mod tests {
     }
 
     #[test]
-    fn loaded_state_is_normalized_before_transition() {
+    fn loaded_state_rejects_oversized_identity_before_transition() {
         let oversized = "x".repeat(MAX_GOAL_CHARS * 2);
         let state = KonaseState {
             status: SessionStatus::Completed,
@@ -1198,25 +1556,16 @@ mod tests {
             last_output: None,
         };
 
-        let normalized = step(
+        let result = step(
             state,
             KonaseEvent::JobCompleted(JobOutcome {
                 job_id: "missing".into(),
                 summary: "ignored".into(),
                 meaningful: false,
             }),
-        )
-        .state;
-        let work = normalized.work.unwrap();
-        assert_eq!(work.id.chars().count(), MAX_IDENTIFIER_CHARS);
-        assert_eq!(work.goal.chars().count(), MAX_GOAL_CHARS);
-        assert_eq!(
-            work.last_outcome.unwrap().summary.chars().count(),
-            MAX_STATE_SUMMARY_CHARS
         );
-        assert_eq!(
-            normalized.observations[0].id.chars().count(),
-            MAX_IDENTIFIER_CHARS
-        );
+        assert_eq!(result.state, KonaseState::default());
+        assert_eq!(result.effects, Vec::new());
+        assert_eq!(result.error.unwrap().kind, "input_too_large");
     }
 }
