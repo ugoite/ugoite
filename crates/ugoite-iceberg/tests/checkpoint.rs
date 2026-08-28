@@ -189,20 +189,13 @@ async fn checkpoint_pins_one_head_and_uses_static_iceberg_coordinates() -> anyho
         form.id
     );
 
-    workspace
-        .save_checkpoint("before-update", &checkpoint)
-        .await?;
-    let stored = workspace.load_checkpoint("before-update").await?;
-    assert_eq!(stored.name.as_deref(), Some("before-update"));
-    assert_eq!(stored.coordinate_checksum, checkpoint.coordinate_checksum);
-
     let second = revision(&form, 2, "after checkpoint");
     append(&workspace, &form, second.clone()).await?;
 
     assert_eq!(
         workspace
             .read_revision_view_at_checkpoint(
-                &stored,
+                &checkpoint,
                 form.id,
                 RevisionView::LatestIncludingTombstones,
             )
@@ -309,7 +302,7 @@ async fn checkpoint_diff_reports_logical_entry_changes() -> anyhow::Result<()> {
     let form = form();
     create_form(&workspace, &form).await?;
     append(&workspace, &form, revision(&form, 1, "first")).await?;
-    let before = workspace.capture_checkpoint().await?;
+    let before = workspace.current_publication().await?;
 
     append(
         &workspace,
@@ -317,8 +310,8 @@ async fn checkpoint_diff_reports_logical_entry_changes() -> anyhow::Result<()> {
         revision_for_entry(&form, 12, 1, "new entry"),
     )
     .await?;
-    let after_add = workspace.capture_checkpoint().await?;
-    let added = workspace.diff_checkpoints(&before, &after_add).await?;
+    let after_add = workspace.current_publication().await?;
+    let added = workspace.diff_publications(&before, &after_add).await?;
     assert_eq!(added.changes.len(), 1);
     assert_eq!(
         added.changes[0].kind,
@@ -328,9 +321,9 @@ async fn checkpoint_diff_reports_logical_entry_changes() -> anyhow::Result<()> {
     assert!(added.changes[0].to.is_some());
 
     append(&workspace, &form, revision(&form, 2, "updated")).await?;
-    let after_update = workspace.capture_checkpoint().await?;
+    let after_update = workspace.current_publication().await?;
     let updated = workspace
-        .diff_checkpoints(&after_add, &after_update)
+        .diff_publications(&after_add, &after_update)
         .await?;
     assert_eq!(updated.changes.len(), 1);
     assert_eq!(
@@ -345,9 +338,9 @@ async fn checkpoint_diff_reports_logical_entry_changes() -> anyhow::Result<()> {
     deleted.entry.deleted_by = Some("human:owner".into());
     deleted.values.clear();
     append(&workspace, &form, deleted).await?;
-    let after_delete = workspace.capture_checkpoint().await?;
+    let after_delete = workspace.current_publication().await?;
     let deleted_diff = workspace
-        .diff_checkpoints(&after_update, &after_delete)
+        .diff_publications(&after_update, &after_delete)
         .await?;
     assert_eq!(deleted_diff.changes.len(), 1);
     assert_eq!(
@@ -359,9 +352,9 @@ async fn checkpoint_diff_reports_logical_entry_changes() -> anyhow::Result<()> {
     restored.operation = EntryOperation::Restore;
     restored.entry.restored_from = Some(restored.parent_revision_id.expect("parent"));
     append(&workspace, &form, restored).await?;
-    let after_restore = workspace.capture_checkpoint().await?;
+    let after_restore = workspace.current_publication().await?;
     let restored_diff = workspace
-        .diff_checkpoints(&after_delete, &after_restore)
+        .diff_publications(&after_delete, &after_restore)
         .await?;
     assert_eq!(restored_diff.changes.len(), 1);
     assert_eq!(
@@ -372,48 +365,12 @@ async fn checkpoint_diff_reports_logical_entry_changes() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn named_checkpoints_are_immutable() -> anyhow::Result<()> {
-    let workspace = IcebergWorkspace::memory_for_tests(
-        SpaceId::from(Uuid::from_u128(4)),
-        "memory://checkpoint-immutable-name",
-    )
-    .await?;
-    let form = form();
-    create_form(&workspace, &form).await?;
-    append(&workspace, &form, revision(&form, 1, "first")).await?;
-    let first = workspace.capture_checkpoint().await?;
-    workspace.save_checkpoint("fixed-name", &first).await?;
-
-    workspace
-        .save_checkpoint("fixed-name", &first)
-        .await
-        .expect_err("reusing a checkpoint name must fail");
-
-    append(&workspace, &form, revision(&form, 2, "second")).await?;
-    let second = workspace.capture_checkpoint().await?;
-    workspace
-        .save_checkpoint("fixed-name", &second)
-        .await
-        .expect_err("a different checkpoint must not replace a named checkpoint");
-
-    let stored = workspace.load_checkpoint("fixed-name").await?;
-    assert_eq!(stored.coordinate_checksum, first.coordinate_checksum);
-    Ok(())
-}
-
-#[tokio::test]
 async fn checkpoint_reports_missing_and_tampered_coordinates_explicitly() -> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(3)),
         "memory://checkpoint-errors",
     )
     .await?;
-    let missing = workspace
-        .load_checkpoint("not-saved")
-        .await
-        .expect_err("missing durable checkpoint must not fall back to Head");
-    assert!(missing.downcast_ref::<CheckpointUnavailable>().is_some());
-
     let form = form();
     create_form(&workspace, &form).await?;
     append(&workspace, &form, revision(&form, 1, "immutable")).await?;
@@ -446,48 +403,29 @@ async fn checkpoint_reports_missing_and_tampered_coordinates_explicitly() -> any
 }
 
 #[tokio::test]
-async fn checkpoint_rejects_tampered_snapshot_and_schema_before_persistence_or_load(
-) -> anyhow::Result<()> {
+async fn checkpoint_rejects_tampered_snapshot_and_schema() -> anyhow::Result<()> {
     let warehouse = "memory://checkpoint-coordinate-validation";
     let (workspace, _, checkpoint) = checkpoint_with_one_revision(warehouse, 29).await?;
 
-    for (name, mutate) in [
-        (
-            "snapshot",
-            (|checkpoint: &mut ugoite_iceberg::SpaceCheckpoint| {
-                checkpoint.tables[0].snapshot_id =
-                    checkpoint.tables[0].snapshot_id.map(|id| id + 1);
-            }) as fn(&mut ugoite_iceberg::SpaceCheckpoint),
-        ),
-        (
-            "schema",
-            (|checkpoint: &mut ugoite_iceberg::SpaceCheckpoint| {
-                checkpoint.tables[0].schema_id += 1;
-            }) as fn(&mut ugoite_iceberg::SpaceCheckpoint),
-        ),
+    for mutate in [
+        (|checkpoint: &mut ugoite_iceberg::SpaceCheckpoint| {
+            checkpoint.tables[0].snapshot_id = checkpoint.tables[0].snapshot_id.map(|id| id + 1);
+        }) as fn(&mut ugoite_iceberg::SpaceCheckpoint),
+        (|checkpoint: &mut ugoite_iceberg::SpaceCheckpoint| {
+            checkpoint.tables[0].schema_id += 1;
+        }) as fn(&mut ugoite_iceberg::SpaceCheckpoint),
     ] {
         let mut tampered = checkpoint.clone();
         mutate(&mut tampered);
         tampered.coordinate_checksum = tampered.computed_coordinate_checksum();
         let error = workspace
-            .save_checkpoint(&format!("tampered-{name}"), &tampered)
-            .await
-            .expect_err("tampered table coordinates must not become durable");
-        assert!(error.downcast_ref::<CheckpointIntegrityError>().is_some());
-
-        let load_name = format!("raw-tampered-{name}");
-        tampered.name = Some(load_name.clone());
-        let space_root = format!("test/space_{}", checkpoint.space_id.as_uuid().simple());
-        operator_from_uri(warehouse)?
-            .write(
-                &format!("{space_root}/_ugoite/checkpoints/{load_name}.json"),
-                serde_json::to_vec(&tampered)?,
+            .read_revision_view_at_checkpoint(
+                &tampered,
+                checkpoint.tables[0].form_id,
+                RevisionView::Current,
             )
-            .await?;
-        let error = workspace
-            .load_checkpoint(&load_name)
             .await
-            .expect_err("tampered durable coordinates must fail while loading");
+            .expect_err("tampered table coordinates must fail before query planning");
         assert!(error.downcast_ref::<CheckpointIntegrityError>().is_some());
     }
     Ok(())
@@ -508,18 +446,6 @@ async fn checkpoint_missing_immutable_targets_are_unavailable() -> anyhow::Resul
     )
     .await?;
 
-    let warehouse = "memory://checkpoint-missing-named";
-    let (workspace, _, checkpoint) = checkpoint_with_one_revision(warehouse, 32).await?;
-    workspace.save_checkpoint("removed", &checkpoint).await?;
-    let space_root = format!("test/space_{}", checkpoint.space_id.as_uuid().simple());
-    operator_from_uri(warehouse)?
-        .delete(&format!("{space_root}/_ugoite/checkpoints/removed.json"))
-        .await?;
-    let error = workspace
-        .load_checkpoint("removed")
-        .await
-        .expect_err("a deleted named checkpoint must be unavailable");
-    assert!(error.downcast_ref::<CheckpointUnavailable>().is_some());
     Ok(())
 }
 

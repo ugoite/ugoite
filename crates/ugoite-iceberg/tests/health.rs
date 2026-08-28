@@ -84,18 +84,13 @@ async fn health_uses_only_reachable_metadata_and_redacts_locations() -> anyhow::
         )?)?
         .append_revisions(form.id, vec![revision(&form)])
         .await?;
-    let checkpoint = workspace.capture_checkpoint().await?;
-    workspace.save_checkpoint("healthy", &checkpoint).await?;
-
     let head_path = format!(
         "test/space_{}/_ugoite/catalog/head.json",
         space_id.as_uuid().simple()
     );
     let operator = operator_from_uri(warehouse)?;
     let before = operator.read(&head_path).await?.to_vec();
-    let report = workspace
-        .health_report(&["healthy".into(), "missing".into()])
-        .await?;
+    let report = workspace.health_report(&["missing".into()]).await?;
     let after = operator.read(&head_path).await?.to_vec();
 
     assert_eq!(before, after, "health must not mutate Catalog Head");
@@ -114,8 +109,8 @@ async fn health_uses_only_reachable_metadata_and_redacts_locations() -> anyhow::
     assert!(report.tables[0].total_record_count.unwrap_or_default() >= 1);
     assert!(report.tables[0].file_size_distribution.is_some());
     assert!(report.tables[0].metadata_location_redacted);
-    assert_eq!(report.checkpoints[0].status, HealthStatus::Healthy);
-    assert_eq!(report.checkpoints[1].status, HealthStatus::Degraded);
+    assert_eq!(report.checkpoints.len(), 1);
+    assert_eq!(report.checkpoints[0].status, HealthStatus::Degraded);
     let json = serde_json::to_string(&report)?;
     let value: serde_json::Value = serde_json::from_str(&json)?;
     assert!(value.pointer("/tables/0/metadata_location").is_none());

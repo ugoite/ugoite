@@ -2094,7 +2094,7 @@ fn entry_value_from_checkpoint_revision(
 
 /// Reads the latest visible Entry state from a retained checkpoint. The
 /// checkpoint itself supplies both the Form schema and the Iceberg snapshot.
-pub async fn get_entry_at_checkpoint(
+pub(crate) async fn get_entry_at_checkpoint(
     op: &Operator,
     ws_path: &str,
     entry_id: &str,
@@ -2141,7 +2141,7 @@ pub async fn get_entry_at_publication(
     get_entry_at_checkpoint(op, ws_path, entry_id, &checkpoint, form_scopes).await
 }
 
-pub async fn get_entry_history_at_checkpoint(
+pub(crate) async fn get_entry_history_at_checkpoint(
     op: &Operator,
     ws_path: &str,
     entry_id: &str,
@@ -2192,7 +2192,7 @@ pub async fn get_entry_history_at_publication(
     get_entry_history_at_checkpoint(op, ws_path, entry_id, &checkpoint, form_scopes).await
 }
 
-pub async fn get_entry_revision_at_checkpoint(
+pub(crate) async fn get_entry_revision_at_checkpoint(
     op: &Operator,
     ws_path: &str,
     entry_id: &str,
@@ -2416,41 +2416,6 @@ async fn restore_entry_from_resolved_authorized<I: IntegrityProvider>(
         .expect("restore response is an object")
         .insert(source_output_key.to_owned(), source_output);
     Ok(response)
-}
-
-#[allow(clippy::too_many_arguments)]
-pub async fn restore_entry_from_checkpoint_authorized<I: IntegrityProvider>(
-    op: &Operator,
-    ws_path: &str,
-    entry_id: &str,
-    revision_id: &str,
-    checkpoint: &SpaceCheckpoint,
-    author: &str,
-    integrity: &I,
-    form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
-) -> Result<Value> {
-    restore_entry_from_resolved_authorized(
-        op,
-        ws_path,
-        entry_id,
-        revision_id,
-        checkpoint,
-        author,
-        integrity,
-        form_scopes,
-        "checkpoint_restore",
-        "restore_source_checkpoint",
-        json!({
-            "name": checkpoint.name,
-            "coordinate_checksum": checkpoint.coordinate_checksum,
-        }),
-        "source_checkpoint",
-        json!({
-            "name": checkpoint.name,
-            "coordinate_checksum": checkpoint.coordinate_checksum,
-        }),
-    )
-    .await
 }
 
 #[allow(clippy::too_many_arguments)]

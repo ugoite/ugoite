@@ -893,65 +893,6 @@ impl IcebergWorkspace {
             .await
     }
 
-    /// Persists a named immutable checkpoint through the Space's OpenDAL
-    /// boundary. Reusing a name fails rather than silently replacing history.
-    pub async fn save_checkpoint(&self, name: &str, checkpoint: &SpaceCheckpoint) -> Result<()> {
-        self.space_catalog
-            .as_ref()
-            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
-            .ensure_authoritative_mutation_contract()?;
-        crate::authorization::ensure_authorization_write_fence().await?;
-        validate_checkpoint_name(name)?;
-        self.validate_checkpoint(checkpoint)?;
-        self.space_catalog
-            .as_ref()
-            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
-            .validate_checkpoint_evidence(checkpoint)
-            .await?;
-        self.space_catalog
-            .as_ref()
-            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
-            .validate_checkpoint_tables(checkpoint)
-            .await?;
-        let mut stored = checkpoint.clone();
-        stored.name = Some(name.to_string());
-        self.space_catalog
-            .as_ref()
-            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
-            .create_checkpoint(name, &stored)
-            .await
-    }
-
-    /// Loads a durable checkpoint by name. A missing object is represented by
-    /// [`CheckpointUnavailable`], never by an empty or current-head fallback.
-    pub async fn load_checkpoint(&self, name: &str) -> Result<SpaceCheckpoint> {
-        validate_checkpoint_name(name)?;
-        let checkpoint = self
-            .space_catalog
-            .as_ref()
-            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
-            .read_checkpoint(name)
-            .await?;
-        if checkpoint.name.as_deref() != Some(name) {
-            return Err(CheckpointIntegrityError::new(
-                "stored checkpoint name does not match its object name",
-            )
-            .into());
-        }
-        self.validate_checkpoint(&checkpoint)?;
-        self.space_catalog
-            .as_ref()
-            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
-            .validate_checkpoint_evidence(&checkpoint)
-            .await?;
-        self.space_catalog
-            .as_ref()
-            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
-            .validate_checkpoint_tables(&checkpoint)
-            .await?;
-        Ok(checkpoint)
-    }
-
     /// Reads a revision view from checkpoint-recorded immutable metadata.
     /// Snapshot-bearing tables use Iceberg's static snapshot provider; a table
     /// with no snapshots still uses Iceberg's static metadata provider.

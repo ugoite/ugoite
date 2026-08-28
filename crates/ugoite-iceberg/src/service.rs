@@ -25,13 +25,13 @@ use crate::{
     },
     entry, form, iceberg_store, index, preferences, saved_sql, search, space, sql_session,
 };
-use crate::{CheckpointIntegrityError, CheckpointUnavailable, PublicationRef, SpaceCheckpoint};
+use crate::{CheckpointIntegrityError, CheckpointUnavailable, PublicationRef};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
 use ugoite_domain::change::{ChangeCommand, RunId};
 use ugoite_domain::id::{
-    validate_asset_id, validate_checkpoint_name, validate_entry_id, validate_form_name,
-    validate_revision_id, validate_space_id, validate_sql_id, validate_sql_session_id, FormId,
+    validate_asset_id, validate_entry_id, validate_form_name, validate_revision_id,
+    validate_space_id, validate_sql_id, validate_sql_session_id, FormId,
 };
 use ugoite_domain::identity::Action;
 use ugoite_storage::{
@@ -1475,35 +1475,6 @@ impl UgoiteService {
         )?)
     }
 
-    pub async fn create_named_checkpoint(
-        &self,
-        space_id: &str,
-        checkpoint_name: &str,
-    ) -> Result<Value> {
-        self.ensure_mutation_admitted(space_id).await?;
-        self.validate_complete_space(space_id).await?;
-        validate_storage_id(validate_checkpoint_name(checkpoint_name))?;
-        let workspace = iceberg_store::native_mutation_workspace(
-            &self.operator,
-            &self.workspace_path(space_id),
-        )
-        .await?;
-        let checkpoint = workspace
-            .capture_checkpoint()
-            .await
-            .map_err(map_checkpoint_error)?;
-        workspace
-            .save_checkpoint(checkpoint_name, &checkpoint)
-            .await
-            .map_err(map_checkpoint_error)?;
-        Ok(json!({
-            "name": checkpoint_name,
-            "space_id": checkpoint.space_id,
-            "catalog_generation": checkpoint.catalog_generation,
-            "coordinate_checksum": checkpoint.coordinate_checksum,
-        }))
-    }
-
     pub async fn patch_space(&self, space_id: &str, patch: &Value) -> Result<Value> {
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
@@ -1986,53 +1957,6 @@ impl UgoiteService {
             .await
     }
 
-    pub async fn entry_history_at_checkpoint(
-        &self,
-        space_id: &str,
-        entry_id: &str,
-        checkpoint_name: &str,
-        principal_ids: &[Uuid],
-    ) -> Result<Value> {
-        require_nonempty_authorized_principals(principal_ids)?;
-        self.validate_complete_space(space_id).await?;
-        validate_storage_id(validate_entry_id(entry_id))?;
-        let authorizer = Authorizer::new(self.operator.clone());
-        authorizer
-            .with_state_lock(space_id, |state| async move {
-                let checkpoint = self
-                    .load_named_checkpoint(space_id, checkpoint_name)
-                    .await?;
-                let scopes = self
-                    .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
-                    .await?;
-                let mut history = entry::get_entry_history_at_checkpoint(
-                    &self.operator,
-                    &self.workspace_path(space_id),
-                    entry_id,
-                    &checkpoint,
-                    scopes.as_ref(),
-                )
-                .await
-                .map_err(map_checkpoint_error)?;
-                history["access_policy_history"] = serde_json::to_value(
-                    state
-                        .policy_history
-                        .get(
-                            &ResourceRef {
-                                kind: ResourceKind::Entry,
-                                id: entry_id.to_string(),
-                                parent: None,
-                            }
-                            .key(),
-                        )
-                        .cloned()
-                        .unwrap_or_default(),
-                )?;
-                Ok(history)
-            })
-            .await
-    }
-
     pub async fn entry_history_at_pin(
         &self,
         space_id: &str,
@@ -2152,56 +2076,6 @@ impl UgoiteService {
                     )
                     .await?,
                 )?;
-                revision["access_policy_history"] = serde_json::to_value(
-                    state
-                        .policy_history
-                        .get(
-                            &ResourceRef {
-                                kind: ResourceKind::Entry,
-                                id: entry_id.to_string(),
-                                parent: None,
-                            }
-                            .key(),
-                        )
-                        .cloned()
-                        .unwrap_or_default(),
-                )?;
-                Ok(revision)
-            })
-            .await
-    }
-
-    pub async fn entry_revision_at_checkpoint(
-        &self,
-        space_id: &str,
-        entry_id: &str,
-        revision_id: &str,
-        checkpoint_name: &str,
-        principal_ids: &[Uuid],
-    ) -> Result<Value> {
-        require_nonempty_authorized_principals(principal_ids)?;
-        self.validate_complete_space(space_id).await?;
-        validate_storage_id(validate_entry_id(entry_id))?;
-        validate_storage_id(validate_revision_id(revision_id))?;
-        let authorizer = Authorizer::new(self.operator.clone());
-        authorizer
-            .with_state_lock(space_id, |state| async move {
-                let checkpoint = self
-                    .load_named_checkpoint(space_id, checkpoint_name)
-                    .await?;
-                let scopes = self
-                    .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
-                    .await?;
-                let mut revision = entry::get_entry_revision_at_checkpoint(
-                    &self.operator,
-                    &self.workspace_path(space_id),
-                    entry_id,
-                    revision_id,
-                    &checkpoint,
-                    scopes.as_ref(),
-                )
-                .await
-                .map_err(map_checkpoint_error)?;
                 revision["access_policy_history"] = serde_json::to_value(
                     state
                         .policy_history
@@ -2349,62 +2223,6 @@ impl UgoiteService {
         Ok(result)
     }
 
-    pub async fn restore_entry_from_checkpoint_authorized_for_principals(
-        &self,
-        space_id: &str,
-        entry_id: &str,
-        revision_id: &str,
-        checkpoint_name: &str,
-        author: &str,
-        principal_ids: &[Uuid],
-    ) -> Result<Value> {
-        require_nonempty_authorized_principals(principal_ids)?;
-        self.ensure_mutation_admitted(space_id).await?;
-        self.validate_complete_space(space_id).await?;
-        validate_storage_id(validate_entry_id(entry_id))?;
-        validate_storage_id(validate_revision_id(revision_id))?;
-        let (state, _authorization_lease) = {
-            let (state, lease) = Authorizer::new(self.operator.clone())
-                .acquire_state_lease(space_id)
-                .await?;
-            if !principal_ids.is_empty() {
-                self.require_action_for_principals_in_state(
-                    &state,
-                    entry_id,
-                    ResourceKind::Entry,
-                    Action::Update,
-                    principal_ids,
-                )?;
-            }
-            (Some(state), Some(lease))
-        };
-        let checkpoint = self
-            .load_named_checkpoint(space_id, checkpoint_name)
-            .await?;
-        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
-        let scopes = self
-            .checkpoint_form_scopes_for_state(
-                space_id,
-                state.as_ref().expect("authorized state is present"),
-                principal_ids,
-            )
-            .await?;
-        let result = entry::restore_entry_from_checkpoint_authorized(
-            &self.operator,
-            &self.workspace_path(space_id),
-            entry_id,
-            revision_id,
-            &checkpoint,
-            author,
-            &integrity,
-            scopes.as_ref(),
-        )
-        .await
-        .map_err(map_checkpoint_error)?;
-        self.schedule_asset_text_refresh(space_id);
-        Ok(result)
-    }
-
     pub async fn restore_entry_from_pin_authorized_for_principals(
         &self,
         space_id: &str,
@@ -2453,38 +2271,6 @@ impl UgoiteService {
         Ok(result)
     }
 
-    pub async fn entry_at_checkpoint_authorized_for_principals(
-        &self,
-        space_id: &str,
-        entry_id: &str,
-        checkpoint_name: &str,
-        principal_ids: &[Uuid],
-    ) -> Result<Value> {
-        require_nonempty_authorized_principals(principal_ids)?;
-        self.validate_complete_space(space_id).await?;
-        validate_storage_id(validate_entry_id(entry_id))?;
-        let authorizer = Authorizer::new(self.operator.clone());
-        authorizer
-            .with_state_lock(space_id, |state| async move {
-                let checkpoint = self
-                    .load_named_checkpoint(space_id, checkpoint_name)
-                    .await?;
-                let scopes = self
-                    .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
-                    .await?;
-                entry::get_entry_at_checkpoint(
-                    &self.operator,
-                    &self.workspace_path(space_id),
-                    entry_id,
-                    &checkpoint,
-                    scopes.as_ref(),
-                )
-                .await
-                .map_err(map_checkpoint_error)
-            })
-            .await
-    }
-
     pub async fn entry_at_pin_authorized_for_principals(
         &self,
         space_id: &str,
@@ -2513,51 +2299,6 @@ impl UgoiteService {
                 .map_err(map_checkpoint_error)
             })
             .await
-    }
-
-    pub async fn diff_checkpoints_authorized_for_principals(
-        &self,
-        space_id: &str,
-        from_name: &str,
-        to_name: &str,
-        principal_ids: &[Uuid],
-    ) -> Result<Value> {
-        require_nonempty_authorized_principals(principal_ids)?;
-        self.validate_complete_space(space_id).await?;
-        let authorizer = Authorizer::new(self.operator.clone());
-        let mut diff = authorizer
-            .with_state_lock(space_id, |state| async move {
-                let from = self.load_named_checkpoint(space_id, from_name).await?;
-                let to = self.load_named_checkpoint(space_id, to_name).await?;
-                let scopes = self
-                    .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
-                    .await?;
-                let workspace =
-                    iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id))
-                        .await?;
-                let diff = workspace
-                    .diff_checkpoints_with_scopes(&from, &to, scopes.as_ref())
-                    .await
-                    .map_err(map_checkpoint_error)?;
-                Ok::<Value, anyhow::Error>(serde_json::to_value(diff)?)
-            })
-            .await?;
-        if let Some(changes) = diff.get_mut("changes").and_then(Value::as_array_mut) {
-            for change in changes {
-                let external_id = ["to", "from"].into_iter().find_map(|side| {
-                    change
-                        .get(side)
-                        .and_then(|revision| revision.get("entry"))
-                        .and_then(|entry| entry.get("external_id"))
-                        .and_then(Value::as_str)
-                        .filter(|external_id| !external_id.is_empty())
-                });
-                if let Some(external_id) = external_id {
-                    change["entry_id"] = Value::String(external_id.to_string());
-                }
-            }
-        }
-        Ok(diff)
     }
 
     pub async fn diff_pins_authorized_for_principals(
@@ -2603,20 +2344,6 @@ impl UgoiteService {
             }
         }
         Ok(diff)
-    }
-
-    async fn load_named_checkpoint(
-        &self,
-        space_id: &str,
-        checkpoint_name: &str,
-    ) -> Result<SpaceCheckpoint> {
-        validate_storage_id(validate_checkpoint_name(checkpoint_name))?;
-        let workspace =
-            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
-        workspace
-            .load_checkpoint(checkpoint_name)
-            .await
-            .map_err(map_checkpoint_error)
     }
 
     async fn load_named_pin(&self, space_id: &str, pin_name: &str) -> Result<PublicationRef> {
@@ -4449,29 +4176,6 @@ mod tests {
             .await
             .expect_err("low-level preferences writer must fail before any remote write"),
         );
-        let checkpoint = SpaceCheckpoint::new(
-            ugoite_domain::id::SpaceId::from(Uuid::now_v7()),
-            0,
-            String::new(),
-            String::new(),
-            String::new(),
-            0,
-            Vec::new(),
-        );
-        assert_unavailable(
-            crate::entry::restore_entry_from_checkpoint_authorized(
-                service.operator(),
-                "spaces/remote-space",
-                "entry-1",
-                "revision-1",
-                &checkpoint,
-                "author",
-                &crate::integrity::FakeIntegrityProvider,
-                None,
-            )
-            .await
-            .expect_err("checkpoint restore must fail before any remote write"),
-        );
         assert_unavailable(
             crate::integrity::load_hmac_material(service.operator(), "remote-space")
                 .await
@@ -4515,12 +4219,6 @@ mod tests {
                     "remote-digest",
                 ))
                 .expect_err("coordinator creation must fail before any remote write"),
-        );
-        assert_unavailable(
-            workspace
-                .save_checkpoint("remote-checkpoint", &checkpoint)
-                .await
-                .expect_err("checkpoint save must fail before any remote write"),
         );
         Ok(())
     }

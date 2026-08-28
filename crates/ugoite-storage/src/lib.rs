@@ -4592,32 +4592,6 @@ impl SpaceCatalogStore {
         self.read_exact_object_bytes(path).await
     }
 
-    pub async fn create_checkpoint(
-        &self,
-        permit: &CatalogMutationPermit,
-        name: &str,
-        bytes: Vec<u8>,
-    ) -> Result<()> {
-        self.require_mutation_permit(permit)?;
-        Self::validate_catalog_component(name, "checkpoint name")?;
-        if !self.operator.info().capability().write_with_if_not_exists {
-            return Err(anyhow!(
-                "immutable checkpoint creation requires OpenDAL if_not_exists support"
-            ));
-        }
-        self.operator
-            .write_options(
-                &self.checkpoint_path(name),
-                bytes,
-                WriteOptions {
-                    if_not_exists: true,
-                    ..Default::default()
-                },
-            )
-            .await?;
-        Ok(())
-    }
-
     pub async fn read_checkpoint(&self, name: &str) -> opendal::Result<Vec<u8>> {
         Self::validate_catalog_component(name, "checkpoint name")
             .map_err(|error| opendal::Error::new(ErrorKind::ConfigInvalid, error.to_string()))?;
@@ -5500,10 +5474,6 @@ mod tests {
             .is_err());
         assert!(remote
             .create_publication(&permit, "publication.json", b"publication".to_vec())
-            .await
-            .is_err());
-        assert!(remote
-            .create_checkpoint(&permit, "checkpoint", b"checkpoint".to_vec())
             .await
             .is_err());
         assert!(remote.mutation_permit().is_err());

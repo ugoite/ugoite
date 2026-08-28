@@ -1611,67 +1611,6 @@ impl SpaceCatalog {
             .build()?)
     }
 
-    /// Validates every immutable Iceberg coordinate before a checkpoint is
-    /// made durable or returned to a caller. Publication evidence establishes
-    /// which metadata locations belong to the Head; this verifies that each
-    /// saved snapshot and schema coordinate still exactly matches that
-    /// metadata rather than deferring discovery until query execution.
-    pub(crate) async fn validate_checkpoint_tables(
-        &self,
-        checkpoint: &SpaceCheckpoint,
-    ) -> anyhow::Result<()> {
-        for coordinate in &checkpoint.tables {
-            self.validate_checkpoint_table(coordinate).await?;
-        }
-        Ok(())
-    }
-
-    async fn validate_checkpoint_table(&self, coordinate: &CheckpointTable) -> anyhow::Result<()> {
-        let metadata = TableMetadata::read_from(&self.file_io, &coordinate.metadata_location)
-            .await
-            .map_err(checkpoint_metadata_error)?;
-        if metadata.uuid().to_string() != coordinate.table_uuid {
-            return Err(crate::CheckpointIntegrityError::new(
-                "Iceberg table UUID does not match the checkpoint",
-            )
-            .into());
-        }
-        if metadata.current_schema_id() != coordinate.schema_id {
-            return Err(crate::CheckpointIntegrityError::new(
-                "Iceberg schema ID does not match the checkpoint",
-            )
-            .into());
-        }
-        if metadata.current_snapshot_id() != coordinate.snapshot_id {
-            return Err(crate::CheckpointIntegrityError::new(
-                "Iceberg snapshot ID does not match the checkpoint",
-            )
-            .into());
-        }
-        Ok(())
-    }
-
-    pub(crate) async fn create_checkpoint(
-        &self,
-        name: &str,
-        checkpoint: &SpaceCheckpoint,
-    ) -> anyhow::Result<()> {
-        let bytes = serde_json::to_vec(checkpoint)?;
-        let permit = self.mutation_permit()?;
-        self.store.create_checkpoint(&permit, name, bytes).await?;
-        Ok(())
-    }
-
-    pub(crate) async fn read_checkpoint(&self, name: &str) -> anyhow::Result<SpaceCheckpoint> {
-        let bytes = self
-            .store
-            .read_checkpoint(name)
-            .await
-            .map_err(checkpoint_target_error)?;
-        serde_json::from_slice(&bytes)
-            .map_err(|error| crate::CheckpointIntegrityError::new(error.to_string()).into())
-    }
-
     /// Re-establishes the immutable publication -> canonical Head chain that
     /// authorizes checkpoint coordinates. The coordinate checksum detects
     /// corruption, but only this evidence prevents a rewritten checkpoint
