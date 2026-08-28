@@ -17,6 +17,7 @@ const MAX_ERROR_MESSAGE_CHARS: usize = 2_048;
 const MAX_MCP_ARGUMENTS: usize = 32;
 const MAX_MCP_VALUE_BYTES: usize = 8 * 1024;
 const MAX_SCHEMA_BYTES: usize = 16 * 1024;
+const MAX_STATE_ERROR_RESERVE_BYTES: usize = 4 * 1024;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Work {
@@ -353,22 +354,10 @@ fn rejected_state(error: KonaseError) -> StepResult {
 }
 
 fn rejected_with_state(state: KonaseState, error: KonaseError) -> StepResult {
-    let result = StepResult {
+    StepResult {
         state,
         effects: Vec::new(),
         error: Some(error),
-    };
-    if serialized_size(&result)
-        .map(|size| size <= MAX_STATE_JSON_BYTES)
-        .unwrap_or(false)
-    {
-        result
-    } else {
-        StepResult {
-            state: KonaseState::default(),
-            effects: Vec::new(),
-            error: result.error,
-        }
     }
 }
 
@@ -390,7 +379,7 @@ pub fn normalize_state(mut state: KonaseState) -> Result<KonaseState, KonaseErro
     state.pending_effect = state.pending_effect.map(normalize_pending_effect);
     state.last_output = state.last_output.map(normalize_output);
     let size = serialized_size(&state).map_err(|error| KonaseError::new("serialization", error))?;
-    if size > MAX_STATE_JSON_BYTES {
+    if size > MAX_STATE_JSON_BYTES - MAX_STATE_ERROR_RESERVE_BYTES {
         return Err(KonaseError::new(
             "state_too_large",
             "Konase state exceeds the protocol limit",
