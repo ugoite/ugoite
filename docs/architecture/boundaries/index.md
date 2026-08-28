@@ -16,3 +16,5 @@ evolve independently.
   operation protocol.
 - [Frontend client boundary](frontend-client-boundary.md) explains what the
   browser owns and what it delegates to the server/WASM boundary.
+- [Konase control-plane boundary](konase.md) defines the client-side Work/Job
+  state machine and its host-effect boundary.

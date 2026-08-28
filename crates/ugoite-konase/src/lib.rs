@@ -1,0 +1,23 @@
+//! Portable, client-side control-plane semantics for Konase.
+//!
+//! This crate intentionally owns no UI, async runtime, network, filesystem,
+//! storage, or model-provider implementation. Hosts execute the serializable
+//! effects returned by the step function and send resulting events back into
+//! the same deterministic state transition function.
+
+mod agent_runtime;
+mod context;
+mod engine;
+
+pub use agent_runtime::{AgentAction, AgentRuntime, AgentRuntimeError, AgentRuntimeInput};
+pub use context::{ContextBuildRequest, ContextBuilder, ContextLimits};
+pub use engine::{
+    step, AgentProgress, Capability, ConfirmationRequest, ConfirmationResult, ContextCapsule,
+    EffectKind, HostError, Job, JobOutcome, JobRequest, JobSpec, JobStatus, KonaseEffect,
+    KonaseError, KonaseEvent, KonaseOutput, KonaseState, McpRequest, McpResult, Observation,
+    ObservationKind, PendingEffect, ResourceContent, ResourceReference, SessionStatus, StepResult,
+    UserRequest, Work, WorkStatus, MAX_STATE_OBSERVATIONS,
+};
+
+/// Version for portable Konase JSON semantics, independent of Ugoite REST.
+pub const KONASE_PROTOCOL_VERSION: u32 = 1;

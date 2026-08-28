@@ -79,3 +79,9 @@ table commit is the mutation atomicity boundary; Ugoite does not claim
 cross-Form transactions.
 
 The current browser is server-backed. The target architecture adds a browser-local runtime and optional synchronization without making the server the mandatory owner of data.
+
+The client-side Konase slice is layered above the portable core. Its
+deterministic state machine returns host effects for model, MCP, and
+confirmation boundaries; it does not perform those operations itself. The
+initial WASM actions are a JSON adapter for this state machine, not a browser
+local persistence implementation.

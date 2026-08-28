@@ -67,6 +67,7 @@ executable contract, not a beginner-first tutorial.
 | `ugoite-storage`    | OpenDAL-backed storage mechanics                                     |
 | `ugoite-iceberg`    | Catalog-backed Form tables, batch append, query, and publication Pins |
 | `ugoite-core`       | application service and persistence behavior                         |
+| `ugoite-konase`     | client-side Work/Job control semantics and serializable host effects  |
 | `ugoite-server`     | REST/MCP/auth/static-hosting adapter                                 |
 | `ugoite-cli`        | local and remote command adapter                                     |
 | `ugoite-wasm`       | JSON/C ABI over portable Rust crates                                 |

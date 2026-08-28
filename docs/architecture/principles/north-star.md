@@ -23,6 +23,8 @@ boundary; no hosted database is required to own or recover the content.
   persistence.
 - The WASM crate exposes portable domain/API protocol logic, not a local storage
   engine.
+- The Konase crate exposes portable client-side Work/Job control semantics, not
+  a model runtime or durable agent database.
 
 ## Persistence architecture
 
