@@ -35,7 +35,9 @@ The Rust test lane opts into the MinIO integration tests with
 pinned disposable service. The integration tests remain optional for local
 development when the opt-in variable is absent; when it is present, missing or
 empty MinIO endpoint/bucket configuration fails the test instead of silently
-skipping the release-gate coverage.
+skipping the release-gate coverage. The repository nextest configuration puts
+the storage and Iceberg MinIO test binaries in one single-threaded test group
+so they cannot contend for the disposable service during the workspace run.
 
 Rust-compiling lanes restore the Rust registry/git dependency cache without caching `target/`; `ci-rust-check` is the sole Cargo dependency archive writer, while `ci-rust-test`, `ci-web`, and `artifacts` are restore-only. `ci-web` is the sole Deno archive writer; `artifacts` may restore it, but does not write it. sccache owns compiler artifact reuse in all Rust-compiling lanes: it is read-only for pull requests and merge queues and writes only on successful `main` pushes. Playwright browser and BuildKit caches remain separately keyed and are refreshed only after successful pushes to `main`. Successful `main` runs upload the verified artifact set using the logical names `ugoite-docsite-pages`, `ugoite-runtime-image`, `ugoite-cli-linux`, `ugoite-helm-chart`, and `ugoite-artifact-manifest`.
 
