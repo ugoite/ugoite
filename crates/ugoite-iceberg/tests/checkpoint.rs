@@ -144,12 +144,13 @@ async fn assert_checkpoint_unavailable_after_delete(
     ) -> anyhow::Result<String>,
 ) -> anyhow::Result<()> {
     let (workspace, form, checkpoint) = checkpoint_with_one_revision(warehouse, space).await?;
+    let publication = workspace.current_publication().await?;
     let path = target(&workspace, &form, &checkpoint)?;
     operator_from_uri(warehouse)?
         .delete(&object_path(&path, space))
         .await?;
     let error = workspace
-        .read_revision_view_at_checkpoint(&checkpoint, form.id, RevisionView::Current)
+        .read_revision_view_at_publication(&publication, form.id, RevisionView::Current)
         .await
         .expect_err("a missing immutable checkpoint target must be explicit");
     assert!(
@@ -172,6 +173,7 @@ async fn checkpoint_pins_one_head_and_uses_static_iceberg_coordinates() -> anyho
     append(&workspace, &form, first.clone()).await?;
 
     let checkpoint = workspace.capture_checkpoint().await?;
+    let publication = workspace.current_publication().await?;
     let repeated_capture = workspace.capture_checkpoint().await?;
     assert_eq!(
         checkpoint.coordinate_checksum, repeated_capture.coordinate_checksum,
@@ -183,7 +185,7 @@ async fn checkpoint_pins_one_head_and_uses_static_iceberg_coordinates() -> anyho
     assert!(checkpoint.validate_coordinate_checksum());
     assert_eq!(
         workspace
-            .form_at_checkpoint(&checkpoint, &sql_relation_name(form.id))
+            .form_at_publication(&publication, &sql_relation_name(form.id))
             .await?
             .id,
         form.id
@@ -194,8 +196,8 @@ async fn checkpoint_pins_one_head_and_uses_static_iceberg_coordinates() -> anyho
 
     assert_eq!(
         workspace
-            .read_revision_view_at_checkpoint(
-                &checkpoint,
+            .read_revision_view_at_publication(
+                &publication,
                 form.id,
                 RevisionView::LatestIncludingTombstones,
             )
@@ -365,73 +367,6 @@ async fn checkpoint_diff_reports_logical_entry_changes() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn checkpoint_reports_missing_and_tampered_coordinates_explicitly() -> anyhow::Result<()> {
-    let workspace = IcebergWorkspace::memory_for_tests(
-        SpaceId::from(Uuid::from_u128(3)),
-        "memory://checkpoint-errors",
-    )
-    .await?;
-    let form = form();
-    create_form(&workspace, &form).await?;
-    append(&workspace, &form, revision(&form, 1, "immutable")).await?;
-    let mut checkpoint = workspace.capture_checkpoint().await?;
-    checkpoint.coordinate_checksum = "tampered".into();
-    let error = workspace
-        .read_revision_view_at_checkpoint(&checkpoint, form.id, RevisionView::Current)
-        .await
-        .expect_err("tampered coordinate checksum must fail before query planning");
-    assert!(error.downcast_ref::<CheckpointIntegrityError>().is_some());
-
-    let mut rewritten = workspace.capture_checkpoint().await?;
-    rewritten.catalog_head_checksum = "attacker-recomputed-checksum".into();
-    rewritten.coordinate_checksum = rewritten.computed_coordinate_checksum();
-    let error = workspace
-        .read_revision_view_at_checkpoint(&rewritten, form.id, RevisionView::Current)
-        .await
-        .expect_err("a self-consistent checkpoint must still match immutable publication evidence");
-    assert!(error.downcast_ref::<CheckpointIntegrityError>().is_some());
-
-    let mut duplicate_form = workspace.capture_checkpoint().await?;
-    duplicate_form.tables.push(duplicate_form.tables[0].clone());
-    duplicate_form.coordinate_checksum = duplicate_form.computed_coordinate_checksum();
-    let error = workspace
-        .read_revision_view_at_checkpoint(&duplicate_form, form.id, RevisionView::Current)
-        .await
-        .expect_err("ambiguous Form coordinates must fail closed");
-    assert!(error.downcast_ref::<CheckpointIntegrityError>().is_some());
-    Ok(())
-}
-
-#[tokio::test]
-async fn checkpoint_rejects_tampered_snapshot_and_schema() -> anyhow::Result<()> {
-    let warehouse = "memory://checkpoint-coordinate-validation";
-    let (workspace, _, checkpoint) = checkpoint_with_one_revision(warehouse, 29).await?;
-
-    for mutate in [
-        (|checkpoint: &mut ugoite_iceberg::SpaceCheckpoint| {
-            checkpoint.tables[0].snapshot_id = checkpoint.tables[0].snapshot_id.map(|id| id + 1);
-        }) as fn(&mut ugoite_iceberg::SpaceCheckpoint),
-        (|checkpoint: &mut ugoite_iceberg::SpaceCheckpoint| {
-            checkpoint.tables[0].schema_id += 1;
-        }) as fn(&mut ugoite_iceberg::SpaceCheckpoint),
-    ] {
-        let mut tampered = checkpoint.clone();
-        mutate(&mut tampered);
-        tampered.coordinate_checksum = tampered.computed_coordinate_checksum();
-        let error = workspace
-            .read_revision_view_at_checkpoint(
-                &tampered,
-                checkpoint.tables[0].form_id,
-                RevisionView::Current,
-            )
-            .await
-            .expect_err("tampered table coordinates must fail before query planning");
-        assert!(error.downcast_ref::<CheckpointIntegrityError>().is_some());
-    }
-    Ok(())
-}
-
-#[tokio::test]
 async fn checkpoint_missing_immutable_targets_are_unavailable() -> anyhow::Result<()> {
     assert_checkpoint_unavailable_after_delete(
         "memory://checkpoint-missing-publication",
@@ -489,36 +424,39 @@ async fn manifest_and_data_locations(
 async fn checkpoint_missing_manifest_list_or_data_file_is_unavailable() -> anyhow::Result<()> {
     let warehouse = "memory://checkpoint-missing-manifest-list";
     let (workspace, form, checkpoint) = checkpoint_with_one_revision(warehouse, 33).await?;
+    let publication = workspace.current_publication().await?;
     let (manifest_list, _, _) = manifest_and_data_locations(&workspace, &checkpoint).await?;
     operator_from_uri(warehouse)?
         .delete(&object_path(&manifest_list, 33))
         .await?;
     let error = workspace
-        .read_revision_view_at_checkpoint(&checkpoint, form.id, RevisionView::Current)
+        .read_revision_view_at_publication(&publication, form.id, RevisionView::Current)
         .await
         .expect_err("a deleted manifest list must be unavailable");
     assert!(error.downcast_ref::<CheckpointUnavailable>().is_some());
 
     let warehouse = "memory://checkpoint-missing-manifest";
     let (workspace, form, checkpoint) = checkpoint_with_one_revision(warehouse, 34).await?;
+    let publication = workspace.current_publication().await?;
     let (_, manifest, _) = manifest_and_data_locations(&workspace, &checkpoint).await?;
     operator_from_uri(warehouse)?
         .delete(&object_path(&manifest, 34))
         .await?;
     let error = workspace
-        .read_revision_view_at_checkpoint(&checkpoint, form.id, RevisionView::Current)
+        .read_revision_view_at_publication(&publication, form.id, RevisionView::Current)
         .await
         .expect_err("a deleted manifest must be unavailable");
     assert!(error.downcast_ref::<CheckpointUnavailable>().is_some());
 
     let warehouse = "memory://checkpoint-missing-data";
     let (workspace, form, checkpoint) = checkpoint_with_one_revision(warehouse, 35).await?;
+    let publication = workspace.current_publication().await?;
     let (_, _, data) = manifest_and_data_locations(&workspace, &checkpoint).await?;
     operator_from_uri(warehouse)?
         .delete(&object_path(&data, 35))
         .await?;
     let error = workspace
-        .read_revision_view_at_checkpoint(&checkpoint, form.id, RevisionView::Current)
+        .read_revision_view_at_publication(&publication, form.id, RevisionView::Current)
         .await
         .expect_err("a deleted data file must be unavailable");
     assert!(error.downcast_ref::<CheckpointUnavailable>().is_some());

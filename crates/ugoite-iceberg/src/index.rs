@@ -102,11 +102,11 @@ impl AssetTextSearchBudget {
 ///
 /// Keeping the bound parameters, checkpoint, and page together makes the
 /// session's reproducible query coordinate explicit at its execution boundary.
-pub struct AuthorizedSqlSessionPage {
-    pub parameters: HashMap<String, datafusion::scalar::ScalarValue>,
-    pub checkpoint: SpaceCheckpoint,
-    pub offset: usize,
-    pub limit: usize,
+pub(crate) struct AuthorizedSqlSessionPage {
+    pub(crate) parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    pub(crate) checkpoint: SpaceCheckpoint,
+    pub(crate) offset: usize,
+    pub(crate) limit: usize,
 }
 
 /// Durable, derived authorization policy for one SQL session. It is stored
@@ -1672,7 +1672,7 @@ pub async fn execute_sql_query_authorized_by_form_page_with_parameters(
     .await
 }
 
-pub async fn execute_sql_query_authorized_by_form_page_at_checkpoint(
+pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint(
     op: &Operator,
     ws_path: &str,
     sql_query: &str,
@@ -1691,7 +1691,7 @@ pub async fn execute_sql_query_authorized_by_form_page_at_checkpoint(
 
 /// Executes a count-only session plan. It shares the frozen policy and
 /// checkpoint used for pages but never materializes a sentinel page row.
-pub async fn execute_sql_query_authorized_by_form_count_at_checkpoint(
+pub(crate) async fn execute_sql_query_authorized_by_form_count_at_checkpoint(
     op: &Operator,
     ws_path: &str,
     sql_query: &str,
@@ -1710,7 +1710,7 @@ pub async fn execute_sql_query_authorized_by_form_count_at_checkpoint(
 
 /// Validates a SQL session query at creation against only frozen policy and
 /// checkpoint inputs. The live Form registry is deliberately absent.
-pub async fn validate_sql_session_query_at_checkpoint(
+pub(crate) async fn validate_sql_session_query_at_checkpoint(
     op: &Operator,
     ws_path: &str,
     sql_query: &str,
@@ -1732,7 +1732,7 @@ pub async fn validate_sql_session_query_at_checkpoint(
 /// in a checkpoint. A persisted session policy is derived metadata, never
 /// Catalog or execution authority; callers recreate and compare it at every
 /// use before executing with the rebuilt value.
-pub async fn sql_session_query_policy_at_checkpoint(
+pub(crate) async fn sql_session_query_policy_at_checkpoint(
     op: &Operator,
     ws_path: &str,
     relation: &str,

@@ -636,10 +636,14 @@ impl SpaceCatalog {
             .into());
         }
         let target_path = self.publication_path(&coordinate.publication_uri)?;
-        let (mut head, _) = self
-            .exact_head()
-            .await?
-            .ok_or_else(|| crate::CheckpointUnavailable::new("Catalog Head"))?;
+        let (mut head, _) = match self.exact_head().await {
+            Ok(Some(head)) => head,
+            Ok(None) => return Err(crate::CheckpointUnavailable::new("Catalog Head").into()),
+            Err(error) if error.to_string().contains("NotFound") => {
+                return Err(crate::CheckpointUnavailable::new("Catalog Head publication").into());
+            }
+            Err(error) => return Err(anyhow::Error::new(error)),
+        };
         let mut path = head
             .publication_location
             .clone()
@@ -742,6 +746,21 @@ impl SpaceCatalog {
             format!("{}/", self.store.space_root())
         };
         Ok(format!("{prefix}{key}"))
+    }
+
+    pub(crate) fn publication_ref_for_checkpoint(
+        &self,
+        checkpoint: &SpaceCheckpoint,
+    ) -> anyhow::Result<PublicationRef> {
+        let publication_uri = self
+            .publication_uri(&checkpoint.publication_location)
+            .map_err(|error| crate::CheckpointIntegrityError::new(error.to_string()))?;
+        PublicationRef::new(
+            checkpoint.catalog_generation,
+            publication_uri,
+            checkpoint.publication_checksum.clone(),
+        )
+        .map_err(|error| crate::CheckpointIntegrityError::new(error.to_string()).into())
     }
 
     pub async fn create_pin(
@@ -2536,9 +2555,10 @@ fn checkpoint_table_matches_reference(
 }
 
 fn checkpoint_target_error(error: opendal::Error) -> anyhow::Error {
-    match error.kind() {
-        opendal::ErrorKind::NotFound => crate::CheckpointUnavailable::new(error.to_string()).into(),
-        _ => anyhow::Error::new(error).context("read checkpoint target"),
+    if error.kind() == opendal::ErrorKind::NotFound || error.to_string().contains("NotFound") {
+        crate::CheckpointUnavailable::new(error.to_string()).into()
+    } else {
+        anyhow::Error::new(error).context("read checkpoint target")
     }
 }
 

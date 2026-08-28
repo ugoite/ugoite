@@ -896,7 +896,7 @@ impl IcebergWorkspace {
     /// Reads a revision view from checkpoint-recorded immutable metadata.
     /// Snapshot-bearing tables use Iceberg's static snapshot provider; a table
     /// with no snapshots still uses Iceberg's static metadata provider.
-    pub async fn read_revision_view_at_checkpoint(
+    pub(crate) async fn read_revision_view_at_checkpoint(
         &self,
         checkpoint: &SpaceCheckpoint,
         form_id: FormId,
@@ -914,7 +914,7 @@ impl IcebergWorkspace {
     /// Reads a checkpoint-pinned revision view after applying the trusted
     /// provider-side Entry scope. Full history is allowed here only because
     /// the caller supplies the scope before rows leave DataFusion.
-    pub async fn read_revision_view_at_checkpoint_with_scope(
+    pub(crate) async fn read_revision_view_at_checkpoint_with_scope(
         &self,
         checkpoint: &SpaceCheckpoint,
         form_id: FormId,
@@ -946,20 +946,9 @@ impl IcebergWorkspace {
         .map_err(checkpoint_query_error)
     }
 
-    /// Compares the latest logical revision at two immutable checkpoints.
-    /// Iceberg revision IDs and payload rows define the result; manifest or
-    /// data-file differences are intentionally not presented as domain events.
-    pub async fn diff_checkpoints(
-        &self,
-        from: &SpaceCheckpoint,
-        to: &SpaceCheckpoint,
-    ) -> Result<CheckpointDiff> {
-        self.diff_checkpoints_with_scopes(from, to, None).await
-    }
-
     /// Authorized variant of [`Self::diff_checkpoints`]. The map is keyed by
     /// stable Form ID so a display-name rename cannot widen or lose the scope.
-    pub async fn diff_checkpoints_with_scopes(
+    pub(crate) async fn diff_checkpoints_with_scopes(
         &self,
         from: &SpaceCheckpoint,
         to: &SpaceCheckpoint,
@@ -1085,7 +1074,7 @@ impl IcebergWorkspace {
     /// checkpoint. This deliberately never consults the live Form registry:
     /// callers that retain a checkpoint must retain its relation names and
     /// column surface as well.
-    pub async fn forms_at_checkpoint(
+    pub(crate) async fn forms_at_checkpoint(
         &self,
         checkpoint: &SpaceCheckpoint,
     ) -> Result<Vec<FormDefinition>> {
@@ -1109,7 +1098,7 @@ impl IcebergWorkspace {
     /// Resolves exactly one Form from immutable checkpoint metadata. SQL
     /// session creation uses this after parsing the relation, rather than
     /// loading every Form definition or any Entry rows.
-    pub async fn form_at_checkpoint(
+    pub(crate) async fn form_at_checkpoint(
         &self,
         checkpoint: &SpaceCheckpoint,
         relation: &str,
@@ -1145,7 +1134,7 @@ impl IcebergWorkspace {
         Ok(form)
     }
 
-    pub async fn form_history_at_checkpoint(
+    pub(crate) async fn form_history_at_checkpoint(
         &self,
         checkpoint: &SpaceCheckpoint,
         form_id: FormId,
