@@ -27,6 +27,13 @@ JavaScript owns `fetch`, cookies, UI state, and route navigation. WASM owns
 portable request/response protocol logic. The current browser has no complete
 local Space storage adapter.
 
+## Konase
+
+ugoite-konase is a portable client-side control plane used by native and WASM
+adapters. Its deterministic step function returns serializable host effects
+and does not perform I/O. Konase state and bounded observations are disposable;
+durable Knowledge remains in the existing Space and Change/Run/Undo boundaries.
+
 ## Storage
 
 `ugoite-storage` supplies the operator abstraction used by core. Storage

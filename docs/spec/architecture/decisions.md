@@ -109,3 +109,16 @@ and is not exposed to Saved SQL, SQL Sessions, or authorization.
 The first producer uses replace-all full rebuilds. Persistent substring
 inverted indexes, cross-relation transactions, OCR, and a mandatory external
 job queue are separate future work.
+
+## ADR-013 - Konase is a client-side effect-driven control plane
+
+**Accepted current slice.** ugoite-konase owns Work, Job, Observation,
+Context Capsule, and deterministic Event/Effect transitions. It performs no
+network, filesystem, storage, async runtime, or provider I/O. Native and WASM
+hosts execute serializable effects and return results as events.
+
+Konase state and raw model context are disposable client state. Meaningful
+Knowledge outcomes continue through the existing Ugoite Space and
+Change/Run/Undo semantics. Provider/framework implementations, Agent Plugins,
+MCP transport, CLI UI, and browser UI remain replaceable adapters and are not
+part of this slice.

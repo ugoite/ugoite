@@ -6,6 +6,7 @@ members = [
     "crates/ugoite-iceberg",
     "crates/ugoite-identity",
     "crates/ugoite-core",
+    "crates/ugoite-konase",
     "crates/ugoite-server",
     "crates/ugoite-cli",
     "crates/ugoite-wasm",

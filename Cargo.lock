@@ -6278,6 +6278,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ugoite-konase"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ugoite-server"
 version = "0.1.0"
 dependencies = [
@@ -6340,6 +6348,7 @@ dependencies = [
  "serde_json",
  "ugoite-api-client",
  "ugoite-domain",
+ "ugoite-konase",
 ]
 
 [[package]]

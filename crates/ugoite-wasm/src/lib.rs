@@ -7,18 +7,141 @@
 
 pub use ugoite_api_client as api_client;
 pub use ugoite_domain as domain;
+pub use ugoite_konase as konase;
+
+const MAX_PROTOCOL_REQUEST_BYTES: usize = 256 * 1024;
 
 pub fn invoke_json(input: &str) -> String {
+    if input.len() > MAX_PROTOCOL_REQUEST_BYTES {
+        return protocol_input_too_large_error();
+    }
     if let Ok(request) = serde_json::from_str::<serde_json::Value>(input) {
-        if request
-            .get("action")
-            .and_then(serde_json::Value::as_str)
-            .is_some_and(|action| action.starts_with("domain."))
-        {
-            return invoke_domain(request);
+        if let Some(action) = request.get("action").and_then(serde_json::Value::as_str) {
+            if action.starts_with("domain.") {
+                return invoke_domain(request);
+            }
+            if action.starts_with("konase.") {
+                return invoke_konase(request);
+            }
         }
     }
     ugoite_api_client::invoke_json(input)
+}
+
+fn protocol_input_too_large_error() -> String {
+    serde_json::json!({
+        "ok": false,
+        "error": {
+            "kind": "input_too_large",
+            "message": "JSON protocol input exceeds the 256 KiB limit",
+        },
+    })
+    .to_string()
+}
+
+fn konase_error(message: &str) -> String {
+    serde_json::json!({
+        "ok": false,
+        "error": {"kind": "konase_protocol", "message": message},
+    })
+    .to_string()
+}
+
+fn ensure_json_size(value: &serde_json::Value, max_bytes: usize) -> Result<(), String> {
+    let size = serde_json::to_vec(value)
+        .map_err(|error| error.to_string())?
+        .len();
+    if size > max_bytes {
+        return Err(format!("JSON value exceeds the {max_bytes}-byte limit"));
+    }
+    Ok(())
+}
+
+fn invoke_konase(request: serde_json::Value) -> String {
+    let result = (|| -> Result<serde_json::Value, String> {
+        let action = request
+            .get("action")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "action is required".to_string())?;
+        let payload = request
+            .get("value")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        match action {
+            "konase.version" => Ok(serde_json::json!({
+                "protocol_version": ugoite_konase::KONASE_PROTOCOL_VERSION,
+            })),
+            "konase.new" => {
+                if payload.is_null() {
+                    return serde_json::to_value(ugoite_konase::KonaseState::default())
+                        .map_err(|error| error.to_string());
+                }
+                let state = payload
+                    .get("state")
+                    .cloned()
+                    .ok_or_else(|| "konase.new accepts no value or a state object".to_string())?;
+                ensure_json_size(&state, ugoite_konase::MAX_STATE_JSON_BYTES)?;
+                serde_json::from_value::<ugoite_konase::KonaseState>(state)
+                    .map_err(|error| error.to_string())
+                    .and_then(|state| {
+                        serde_json::to_value(
+                            ugoite_konase::normalize_state(state)
+                                .map_err(|error| error.to_string())?,
+                        )
+                        .map_err(|error| error.to_string())
+                    })
+            }
+            "konase.step" => {
+                ensure_json_size(&payload, MAX_PROTOCOL_REQUEST_BYTES)?;
+                let state = serde_json::from_value(
+                    payload
+                        .get("state")
+                        .cloned()
+                        .ok_or_else(|| "state is required".to_string())?,
+                )
+                .map_err(|error| error.to_string())?;
+                ensure_json_size(
+                    payload
+                        .get("state")
+                        .ok_or_else(|| "state is required".to_string())?,
+                    ugoite_konase::MAX_STATE_JSON_BYTES,
+                )?;
+                let event = serde_json::from_value(
+                    payload
+                        .get("event")
+                        .cloned()
+                        .ok_or_else(|| "event is required".to_string())?,
+                )
+                .map_err(|error| error.to_string())?;
+                let result = serde_json::to_value(ugoite_konase::step(state, event))
+                    .map_err(|error| error.to_string())?;
+                ensure_json_size(&result, ugoite_konase::MAX_STATE_JSON_BYTES)?;
+                Ok(result)
+            }
+            "konase.context" => {
+                ensure_json_size(&payload, ugoite_konase::MAX_STATE_JSON_BYTES)?;
+                let input = serde_json::from_value::<ugoite_konase::ContextBuildRequest>(payload)
+                    .map_err(|error| error.to_string())?;
+                let context = ugoite_konase::ContextBuilder::default().build(input);
+                let context = serde_json::to_value(context).map_err(|error| error.to_string())?;
+                ensure_json_size(&context, ugoite_konase::MAX_STATE_JSON_BYTES)?;
+                Ok(context)
+            }
+            _ => Err(format!("unsupported Konase action: {action}")),
+        }
+    })();
+
+    let envelope = match result {
+        Ok(value) => serde_json::json!({"ok": true, "value": value}),
+        Err(message) => serde_json::json!({
+            "ok": false,
+            "error": {"kind": "konase_protocol", "message": message},
+        }),
+    };
+    if ensure_json_size(&envelope, ugoite_konase::MAX_STATE_JSON_BYTES).is_err() {
+        return konase_error("Konase protocol output exceeds the size limit");
+    }
+    envelope.to_string()
 }
 
 fn invoke_domain(request: serde_json::Value) -> String {
@@ -263,5 +386,86 @@ mod tests {
         assert_eq!(response["value"]["expected_version"], Value::Null);
         assert_eq!(response["value"]["parent_revision_id"], Value::Null);
         assert_eq!(response["value"]["entry"]["updated_by"], "human:owner");
+    }
+
+    #[test]
+    fn konase_protocol_creates_deterministic_state_and_steps_without_io() {
+        let new_response =
+            serde_json::from_str::<Value>(&super::invoke_json(r#"{"action":"konase.new"}"#))
+                .unwrap();
+        assert_eq!(new_response["ok"], true);
+        assert_eq!(new_response["value"]["status"], "idle");
+
+        let step_request = serde_json::json!({
+            "action": "konase.step",
+            "value": {
+                "state": new_response["value"],
+                "event": {
+                    "user_submitted": {
+                        "work_id": "work-1",
+                        "job_id": "job-1",
+                        "goal": "find notes",
+                        "available_capabilities": [{
+                            "name": "ugoite.search",
+                            "description": "search knowledge"
+                        }],
+                        "safety_hints": ["save only after confirmation"]
+                    }
+                }
+            }
+        })
+        .to_string();
+        let first = super::invoke_json(&step_request);
+        let second = super::invoke_json(&step_request);
+        assert_eq!(first, second);
+        let response: Value = serde_json::from_str(&first).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"]["state"]["status"], "working");
+        assert_eq!(
+            response["value"]["effects"][0]["start_job"]["job"]["id"],
+            "job-1"
+        );
+    }
+
+    #[test]
+    fn konase_protocol_rejects_unknown_actions_and_keeps_network_out_of_wasm() {
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(r#"{"action":"konase.unknown"}"#)).unwrap();
+        assert_eq!(response["ok"], false);
+        assert_eq!(response["error"]["kind"], "konase_protocol");
+    }
+
+    #[test]
+    fn konase_protocol_normalizes_loaded_state_and_rejects_oversized_requests() {
+        let oversized = "x".repeat(ugoite_konase::MAX_STATE_JSON_BYTES - 256);
+        let loaded = serde_json::json!({
+            "action": "konase.new",
+            "value": {
+                "state": {
+                    "status": "completed",
+                    "work": {
+                        "id": oversized,
+                        "goal": "goal",
+                        "status": "completed",
+                        "job_count": 1
+                    }
+                }
+            }
+        });
+        let loaded: Value = serde_json::from_str(&super::invoke_json(&loaded.to_string())).unwrap();
+        assert_eq!(loaded["ok"], false, "{loaded}");
+        assert_eq!(loaded["error"]["kind"], "konase_protocol");
+
+        let too_large = serde_json::json!({
+            "action": "konase.context",
+            "value": {
+                "work_goal": "x".repeat(ugoite_konase::MAX_STATE_JSON_BYTES),
+                "job_goal": "job"
+            }
+        });
+        let too_large: Value =
+            serde_json::from_str(&super::invoke_json(&too_large.to_string())).unwrap();
+        assert_eq!(too_large["ok"], false);
+        assert_eq!(too_large["error"]["kind"], "konase_protocol");
     }
 }
