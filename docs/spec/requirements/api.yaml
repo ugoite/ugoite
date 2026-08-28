@@ -293,7 +293,7 @@ requirements:
   - SPEC-STORIES-EXPERIMENTAL
   id: REQ-API-008
   title: SQL session query API
-  description: The API creates SQL query sessions and exposes status, count, and paged rows. Session metadata persists one SpaceCheckpoint; result rows are evaluated from that fixed coordinate. No stream endpoint is shipped.
+  description: The API creates SQL query sessions and exposes status, count, and paged rows. Session metadata persists one PublicationRef; result rows are evaluated from that fixed coordinate. No stream endpoint is shipped.
   related_spec:
   - api/rest.md#endpoints
   priority: high

@@ -800,8 +800,7 @@ fn protected_routes(state: AppState) -> Router<AppState> {
         .route("/spaces", get(list_spaces).post(create_space))
         .route("/spaces/{space_id}", get(get_space).patch(patch_space))
         .route("/spaces/{space_id}/health", get(space_health))
-        .route("/spaces/{space_id}/checkpoints", post(create_checkpoint))
-        .route("/spaces/{space_id}/checkpoints/diff", get(checkpoint_diff))
+        .route("/spaces/{space_id}/pins/diff", get(pin_diff))
         .route("/spaces/{space_id}/audit", get(list_audit_events))
         .route("/spaces/{space_id}/test-connection", post(test_connection))
         .route(
@@ -7738,55 +7737,23 @@ async fn space_health(
 }
 
 #[derive(Deserialize)]
-struct CheckpointCreate {
-    name: String,
-}
-
-async fn create_checkpoint(
-    State(state): State<AppState>,
-    Extension(identity): Extension<RequestIdentityContext>,
-    Path(space_id): Path<String>,
-    Json(payload): Json<CheckpointCreate>,
-) -> ApiResult<(StatusCode, Json<Value>)> {
-    require_recent_passkey(&identity)?;
-    let name = payload.name;
-    let service = state.service.clone();
-    let mutation_space_id = space_id.clone();
-    let value = with_authorized_mutation(
-        &state,
-        &space_id,
-        &identity,
-        Action::Share,
-        None,
-        move |_principal_id, _principals| async move {
-            service
-                .create_named_checkpoint(&mutation_space_id, &name)
-                .await
-                .map_err(ApiError::from_core)
-        },
-    )
-    .await?;
-    Ok((StatusCode::CREATED, Json(value)))
-}
-
-#[derive(Deserialize)]
-struct CheckpointDiffQuery {
+struct PinDiffQuery {
     from: String,
     to: String,
 }
 
-async fn checkpoint_diff(
+async fn pin_diff(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path(space_id): Path<String>,
-    Query(query): Query<CheckpointDiffQuery>,
+    Query(query): Query<PinDiffQuery>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
     state
         .service
-        .diff_checkpoints_authorized_for_principals(&space_id, &query.from, &query.to, &principals)
+        .diff_pins_authorized_for_principals(&space_id, &query.from, &query.to, &principals)
         .await
         .map(Json)
         .map_err(ApiError::from_core)
@@ -8623,6 +8590,7 @@ async fn create_pin(
     headers: HeaderMap,
     Json(payload): Json<PinCreate>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
+    require_recent_passkey(&identity)?;
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
     let name = payload.name.clone();
@@ -8631,7 +8599,7 @@ async fn create_pin(
         &state,
         &space_id,
         &identity,
-        Action::Update,
+        Action::Share,
         None,
         move |principal_id, _principals| async move {
             service
@@ -8655,6 +8623,7 @@ async fn delete_pin(
     Path((space_id, pin_name)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Value>> {
+    require_recent_passkey(&identity)?;
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
     let pin_name_for_write = pin_name.clone();
@@ -8663,7 +8632,7 @@ async fn delete_pin(
         &state,
         &space_id,
         &identity,
-        Action::Update,
+        Action::Share,
         None,
         move |_principal_id, _principals| async move {
             service
@@ -8758,15 +8727,10 @@ async fn get_entry(
     validate_id(&entry_id, "entry_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
-    let mut value = if let Some(checkpoint) = query.checkpoint.as_deref() {
+    let mut value = if let Some(pin) = query.pin.as_deref() {
         state
             .service
-            .entry_at_checkpoint_authorized_for_principals(
-                &space_id,
-                &entry_id,
-                checkpoint,
-                &principals,
-            )
+            .entry_at_pin_authorized_for_principals(&space_id, &entry_id, pin, &principals)
             .await
             .map_err(ApiError::from_core)?
     } else {
@@ -8784,7 +8748,7 @@ async fn get_entry(
 
 #[derive(Default, Deserialize)]
 struct EntryReadQuery {
-    checkpoint: Option<String>,
+    pin: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -8985,10 +8949,10 @@ async fn entry_history(
     validate_id(&entry_id, "entry_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
-    let history = if let Some(checkpoint) = query.checkpoint.as_deref() {
+    let history = if let Some(pin) = query.pin.as_deref() {
         state
             .service
-            .entry_history_at_checkpoint(&space_id, &entry_id, checkpoint, &principals)
+            .entry_history_at_pin(&space_id, &entry_id, pin, &principals)
             .await
             .map_err(ApiError::from_core)?
     } else {
@@ -9012,16 +8976,10 @@ async fn entry_revision(
     validate_id(&revision_id, "revision_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
-    let mut revision = if let Some(checkpoint) = query.checkpoint.as_deref() {
+    let mut revision = if let Some(pin) = query.pin.as_deref() {
         state
             .service
-            .entry_revision_at_checkpoint(
-                &space_id,
-                &entry_id,
-                &revision_id,
-                checkpoint,
-                &principals,
-            )
+            .entry_revision_at_pin(&space_id, &entry_id, &revision_id, pin, &principals)
             .await
             .map_err(ApiError::from_core)?
     } else {
@@ -9068,7 +9026,7 @@ async fn entry_revision(
 struct RestoreEntry {
     revision_id: String,
     #[serde(default)]
-    checkpoint: Option<String>,
+    pin: Option<String>,
 }
 
 async fn restore_entry(
@@ -9080,7 +9038,7 @@ async fn restore_entry(
     validate_id(&entry_id, "entry_id")?;
     validate_id(&payload.revision_id, "revision_id")?;
     let revision_id = payload.revision_id.clone();
-    let checkpoint = payload.checkpoint.clone();
+    let pin = payload.pin.clone();
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
     let entry_id_for_write = entry_id.clone();
@@ -9095,13 +9053,13 @@ async fn restore_entry(
             parent: None,
         }),
         |principal_id, principals| async move {
-            if let Some(checkpoint) = checkpoint.as_deref() {
+            if let Some(pin) = pin.as_deref() {
                 service
-                    .restore_entry_from_checkpoint_authorized_for_principals(
+                    .restore_entry_from_pin_authorized_for_principals(
                         &space_id_for_write,
                         &entry_id_for_write,
                         &revision_id,
-                        checkpoint,
+                        pin,
                         &principal_id.to_string(),
                         &principals,
                     )

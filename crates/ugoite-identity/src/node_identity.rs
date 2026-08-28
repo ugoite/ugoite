@@ -7699,13 +7699,8 @@ mod tests {
                 "drill-owner",
             )
             .await?;
-        space
-            .create_named_checkpoint("drill-space", "before-backup")
-            .await?;
         let entries_before = space.list_entries("drill-space").await?;
-        let health_before = space
-            .space_health("drill-space", &["before-backup".to_string()])
-            .await?;
+        let health_before = space.space_health("drill-space", &[]).await?;
 
         let secret: Arc<[u8]> = Arc::from([0x42; 32]);
         let identity = filesystem_identity(&source_control, secret.clone())?;
@@ -7786,11 +7781,12 @@ mod tests {
                 .await?,
             entry
         );
-        let health_after = restored_space
-            .space_health("drill-space", &["before-backup".to_string()])
-            .await?;
+        let health_after = restored_space.space_health("drill-space", &[]).await?;
         assert_eq!(health_after["status"], health_before["status"]);
-        assert_eq!(health_after["checkpoints"][0]["status"], "healthy");
+        assert!(health_after["checkpoints"]
+            .as_array()
+            .expect("health report includes checkpoint diagnostics")
+            .is_empty());
 
         let wrong_secret: Arc<[u8]> = Arc::from([0x24; 32]);
         let wrong_identity = filesystem_identity(&source_control, wrong_secret)?;

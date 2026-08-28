@@ -71,7 +71,7 @@ apis:
     command: ugoite entry get
     file: crates/ugoite-cli/src/commands/entry.rs
     function: run
-  notes: An optional checkpoint query reads the immutable Entry state at a named checkpoint.
+  notes: An optional pin query reads the immutable Entry state at a Head-owned Pin.
 - id: entry.update
   method: PUT
   status: implemented
@@ -122,7 +122,7 @@ apis:
   ugoite_core:
     file: crates/ugoite-iceberg/src/service.rs
     function: entry_history
-  notes: An optional checkpoint query reads only the history visible at that named checkpoint.
+  notes: An optional pin query reads only the history visible at that Head-owned Pin.
 - id: entry.revision
   method: GET
   status: implemented
@@ -137,7 +137,7 @@ apis:
   ugoite_core:
     file: crates/ugoite-iceberg/src/service.rs
     function: entry_revision
-  notes: An optional checkpoint query resolves the revision from the immutable checkpoint.
+  notes: An optional pin query resolves the revision from the immutable publication selected by that Pin.
 - id: entry.restore
   method: POST
   status: implemented
@@ -152,4 +152,4 @@ apis:
   ugoite_core:
     file: crates/ugoite-iceberg/src/service.rs
     function: restore_entry
-  notes: The request may provide a checkpoint name; restore then appends a fresh revision with source provenance.
+  notes: The request may provide a Pin name; restore then appends a fresh revision with source publication provenance.

@@ -35,6 +35,7 @@ pub use space_catalog::{PublicationContext, PublishedChange};
 pub use ugoite_domain::checkpoint::{
     CheckpointChange, CheckpointChangeKind, CheckpointDiff, CheckpointTable, SpaceCheckpoint,
 };
+pub use ugoite_domain::publication_ref::PublicationRef;
 
 use anyhow::{anyhow, bail, Context, Result};
 use arrow_array::builder::{
@@ -293,6 +294,136 @@ impl IcebergWorkspace {
             .list_pins()
             .await
             .map_err(|error| anyhow!(error.to_string()))
+    }
+
+    /// Returns the exact current publication coordinate.  The coordinate is
+    /// portable and may be retained by a caller or stored in a Pin; it is not
+    /// a copy of the Catalog Head or of any table metadata.
+    pub async fn current_publication(&self) -> Result<PublicationRef> {
+        self.space_catalog
+            .as_ref()
+            .context("Publication selection requires the OpenDAL-backed SpaceCatalog")?
+            .current_publication()
+            .await
+            .map_err(|error| anyhow!(error.to_string()))
+    }
+
+    /// Resolves an active Head-owned Pin to its immutable publication
+    /// coordinate.  Publication resolution subsequently verifies that the
+    /// coordinate is still reachable from the current Head.
+    pub async fn resolve_pin(&self, name: &str) -> Result<PublicationRef> {
+        let pin = match self
+            .space_catalog
+            .as_ref()
+            .context("Pin selection requires the OpenDAL-backed SpaceCatalog")?
+            .get_pin(name)
+            .await
+        {
+            Ok(pin) => pin,
+            Err(error) => {
+                let detail = error.to_string();
+                if detail.contains("pin not found")
+                    || detail.contains("publication target unavailable")
+                    || detail.to_ascii_lowercase().contains("not found")
+                {
+                    return Err(CheckpointUnavailable::new("named Pin").into());
+                }
+                if error.kind() == iceberg::ErrorKind::DataInvalid {
+                    return Err(CheckpointIntegrityError::new(detail).into());
+                }
+                return Err(anyhow!(detail));
+            }
+        };
+        Ok(pin.coordinate)
+    }
+
+    /// Resolves a PublicationRef to an in-memory immutable view.  This value
+    /// is deliberately not persisted; it is an adapter-local description used
+    /// while the publication-selected read is executing.
+    pub async fn resolve_publication(
+        &self,
+        publication: &PublicationRef,
+    ) -> Result<SpaceCheckpoint> {
+        self.space_catalog
+            .as_ref()
+            .context("Publication selection requires the OpenDAL-backed SpaceCatalog")?
+            .resolve_publication_checkpoint(publication)
+            .await
+    }
+
+    /// Reads an immutable revision view selected by a PublicationRef.  The
+    /// reference is resolved through the current authoritative chain before
+    /// any Iceberg metadata is opened.
+    pub async fn read_revision_view_at_publication(
+        &self,
+        publication: &PublicationRef,
+        form_id: FormId,
+        view: RevisionView,
+    ) -> Result<Vec<EntryRevision>> {
+        let checkpoint = self.resolve_publication(publication).await?;
+        self.read_revision_view_at_checkpoint(&checkpoint, form_id, view)
+            .await
+    }
+
+    pub async fn read_revision_view_at_publication_with_scope(
+        &self,
+        publication: &PublicationRef,
+        form_id: FormId,
+        entry_scope: EntryScope,
+        view: RevisionView,
+    ) -> Result<Vec<EntryRevision>> {
+        let checkpoint = self.resolve_publication(publication).await?;
+        self.read_revision_view_at_checkpoint_with_scope(&checkpoint, form_id, entry_scope, view)
+            .await
+    }
+
+    pub async fn forms_at_publication(
+        &self,
+        publication: &PublicationRef,
+    ) -> Result<Vec<FormDefinition>> {
+        let checkpoint = self.resolve_publication(publication).await?;
+        self.forms_at_checkpoint(&checkpoint).await
+    }
+
+    pub async fn form_at_publication(
+        &self,
+        publication: &PublicationRef,
+        relation: &str,
+    ) -> Result<FormDefinition> {
+        let checkpoint = self.resolve_publication(publication).await?;
+        self.form_at_checkpoint(&checkpoint, relation).await
+    }
+
+    pub async fn form_history_at_publication(
+        &self,
+        publication: &PublicationRef,
+        form_id: FormId,
+    ) -> Result<Vec<FormDefinition>> {
+        let checkpoint = self.resolve_publication(publication).await?;
+        self.form_history_at_checkpoint(&checkpoint, form_id).await
+    }
+
+    /// Compares logical Entry revisions selected by two immutable publication
+    /// coordinates.  Neither coordinate is allowed to select a detached or
+    /// corrupt publication.
+    pub async fn diff_publications(
+        &self,
+        from: &PublicationRef,
+        to: &PublicationRef,
+    ) -> Result<CheckpointDiff> {
+        self.diff_publications_with_scopes(from, to, None).await
+    }
+
+    pub async fn diff_publications_with_scopes(
+        &self,
+        from: &PublicationRef,
+        to: &PublicationRef,
+        form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
+    ) -> Result<CheckpointDiff> {
+        let from = self.resolve_publication(from).await?;
+        let to = self.resolve_publication(to).await?;
+        self.diff_checkpoints_with_scopes(&from, &to, form_scopes)
+            .await
     }
 
     pub async fn list_changes(&self) -> Result<Vec<space_catalog::PublishedChange>> {
@@ -762,69 +893,10 @@ impl IcebergWorkspace {
             .await
     }
 
-    /// Persists a named immutable checkpoint through the Space's OpenDAL
-    /// boundary. Reusing a name fails rather than silently replacing history.
-    pub async fn save_checkpoint(&self, name: &str, checkpoint: &SpaceCheckpoint) -> Result<()> {
-        self.space_catalog
-            .as_ref()
-            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
-            .ensure_authoritative_mutation_contract()?;
-        crate::authorization::ensure_authorization_write_fence().await?;
-        validate_checkpoint_name(name)?;
-        self.validate_checkpoint(checkpoint)?;
-        self.space_catalog
-            .as_ref()
-            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
-            .validate_checkpoint_evidence(checkpoint)
-            .await?;
-        self.space_catalog
-            .as_ref()
-            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
-            .validate_checkpoint_tables(checkpoint)
-            .await?;
-        let mut stored = checkpoint.clone();
-        stored.name = Some(name.to_string());
-        self.space_catalog
-            .as_ref()
-            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
-            .create_checkpoint(name, &stored)
-            .await
-    }
-
-    /// Loads a durable checkpoint by name. A missing object is represented by
-    /// [`CheckpointUnavailable`], never by an empty or current-head fallback.
-    pub async fn load_checkpoint(&self, name: &str) -> Result<SpaceCheckpoint> {
-        validate_checkpoint_name(name)?;
-        let checkpoint = self
-            .space_catalog
-            .as_ref()
-            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
-            .read_checkpoint(name)
-            .await?;
-        if checkpoint.name.as_deref() != Some(name) {
-            return Err(CheckpointIntegrityError::new(
-                "stored checkpoint name does not match its object name",
-            )
-            .into());
-        }
-        self.validate_checkpoint(&checkpoint)?;
-        self.space_catalog
-            .as_ref()
-            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
-            .validate_checkpoint_evidence(&checkpoint)
-            .await?;
-        self.space_catalog
-            .as_ref()
-            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
-            .validate_checkpoint_tables(&checkpoint)
-            .await?;
-        Ok(checkpoint)
-    }
-
     /// Reads a revision view from checkpoint-recorded immutable metadata.
     /// Snapshot-bearing tables use Iceberg's static snapshot provider; a table
     /// with no snapshots still uses Iceberg's static metadata provider.
-    pub async fn read_revision_view_at_checkpoint(
+    pub(crate) async fn read_revision_view_at_checkpoint(
         &self,
         checkpoint: &SpaceCheckpoint,
         form_id: FormId,
@@ -842,7 +914,7 @@ impl IcebergWorkspace {
     /// Reads a checkpoint-pinned revision view after applying the trusted
     /// provider-side Entry scope. Full history is allowed here only because
     /// the caller supplies the scope before rows leave DataFusion.
-    pub async fn read_revision_view_at_checkpoint_with_scope(
+    pub(crate) async fn read_revision_view_at_checkpoint_with_scope(
         &self,
         checkpoint: &SpaceCheckpoint,
         form_id: FormId,
@@ -874,20 +946,9 @@ impl IcebergWorkspace {
         .map_err(checkpoint_query_error)
     }
 
-    /// Compares the latest logical revision at two immutable checkpoints.
-    /// Iceberg revision IDs and payload rows define the result; manifest or
-    /// data-file differences are intentionally not presented as domain events.
-    pub async fn diff_checkpoints(
-        &self,
-        from: &SpaceCheckpoint,
-        to: &SpaceCheckpoint,
-    ) -> Result<CheckpointDiff> {
-        self.diff_checkpoints_with_scopes(from, to, None).await
-    }
-
     /// Authorized variant of [`Self::diff_checkpoints`]. The map is keyed by
     /// stable Form ID so a display-name rename cannot widen or lose the scope.
-    pub async fn diff_checkpoints_with_scopes(
+    pub(crate) async fn diff_checkpoints_with_scopes(
         &self,
         from: &SpaceCheckpoint,
         to: &SpaceCheckpoint,
@@ -1013,7 +1074,7 @@ impl IcebergWorkspace {
     /// checkpoint. This deliberately never consults the live Form registry:
     /// callers that retain a checkpoint must retain its relation names and
     /// column surface as well.
-    pub async fn forms_at_checkpoint(
+    pub(crate) async fn forms_at_checkpoint(
         &self,
         checkpoint: &SpaceCheckpoint,
     ) -> Result<Vec<FormDefinition>> {
@@ -1037,7 +1098,7 @@ impl IcebergWorkspace {
     /// Resolves exactly one Form from immutable checkpoint metadata. SQL
     /// session creation uses this after parsing the relation, rather than
     /// loading every Form definition or any Entry rows.
-    pub async fn form_at_checkpoint(
+    pub(crate) async fn form_at_checkpoint(
         &self,
         checkpoint: &SpaceCheckpoint,
         relation: &str,
@@ -1073,7 +1134,7 @@ impl IcebergWorkspace {
         Ok(form)
     }
 
-    pub async fn form_history_at_checkpoint(
+    pub(crate) async fn form_history_at_checkpoint(
         &self,
         checkpoint: &SpaceCheckpoint,
         form_id: FormId,

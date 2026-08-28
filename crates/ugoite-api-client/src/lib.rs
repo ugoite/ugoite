@@ -37,8 +37,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "pin.list",
     "pin.create",
     "pin.delete",
-    "space.checkpoint_create",
-    "space.checkpoint_diff",
+    "space.pin_diff",
     "space.patch",
     "space.test_connection",
     "space.members.list",
@@ -453,27 +452,18 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
-            "space.checkpoint_diff" => (
-                OperationSpec::get("Failed to diff checkpoints"),
+            "space.pin_diff" => (
+                OperationSpec::get("Failed to diff publication pins"),
                 vec![
                     "spaces".into(),
                     required_string(operation, args, "space_id")?,
-                    "checkpoints".into(),
+                    "pins".into(),
                     "diff".into(),
                 ],
                 vec![
                     ("from".into(), required_string(operation, args, "from")?),
                     ("to".into(), required_string(operation, args, "to")?),
                 ],
-            ),
-            "space.checkpoint_create" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to create checkpoint"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "checkpoints".into(),
-                ],
-                vec![],
             ),
             "space.patch" => (
                 OperationSpec::json(HttpMethod::Patch, "Failed to patch space"),
@@ -602,8 +592,8 @@ pub fn prepare_request(
             }
             "entry.get" => {
                 let mut query = Vec::new();
-                if let Some(checkpoint) = optional_string(operation, args, "checkpoint")? {
-                    query.push(("checkpoint".into(), checkpoint));
+                if let Some(pin) = optional_string(operation, args, "pin")? {
+                    query.push(("pin".into(), pin));
                 }
                 (
                     OperationSpec::get("Failed to get entry"),
@@ -653,8 +643,8 @@ pub fn prepare_request(
             }
             "entry.history" => {
                 let mut query = Vec::new();
-                if let Some(checkpoint) = optional_string(operation, args, "checkpoint")? {
-                    query.push(("checkpoint".into(), checkpoint));
+                if let Some(pin) = optional_string(operation, args, "pin")? {
+                    query.push(("pin".into(), pin));
                 }
                 (
                     OperationSpec::get("Failed to get entry history"),
@@ -670,8 +660,8 @@ pub fn prepare_request(
             }
             "entry.revision" => {
                 let mut query = Vec::new();
-                if let Some(checkpoint) = optional_string(operation, args, "checkpoint")? {
-                    query.push(("checkpoint".into(), checkpoint));
+                if let Some(pin) = optional_string(operation, args, "pin")? {
+                    query.push(("pin".into(), pin));
                 }
                 (
                     OperationSpec::get("Failed to get entry revision"),
@@ -1316,15 +1306,10 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to delete publication pin",
             RequestBodyKind::None,
         ),
-        "space.checkpoint_diff" => (
+        "space.pin_diff" => (
             HttpMethod::Get,
-            "Failed to diff checkpoints",
+            "Failed to diff publication pins",
             RequestBodyKind::None,
-        ),
-        "space.checkpoint_create" => (
-            HttpMethod::Post,
-            "Failed to create checkpoint",
-            RequestBodyKind::Json,
         ),
         "space.patch" => (
             HttpMethod::Patch,
@@ -1774,6 +1759,37 @@ mod tests {
             }]
         );
 
+        let diff = prepare_request(
+            "space.pin_diff",
+            &json!({
+                "space_id": "demo",
+                "from": "release-before",
+                "to": "release-current"
+            }),
+            None,
+        )
+        .expect("pin diff request");
+        assert_eq!(diff.method, HttpMethod::Get);
+        assert_eq!(
+            diff.path,
+            "/spaces/demo/pins/diff?from=release-before&to=release-current"
+        );
+
+        let entry = prepare_request(
+            "entry.get",
+            &json!({
+                "space_id": "demo",
+                "entry_id": "entry-1",
+                "pin": "release-before"
+            }),
+            None,
+        )
+        .expect("pinned entry request");
+        assert_eq!(
+            entry.path,
+            "/spaces/demo/entries/entry-1?pin=release-before"
+        );
+
         let revert = prepare_request(
             "change.revert",
             &json!({"space_id": "demo", "change_id": "change-1"}),
@@ -2194,14 +2210,14 @@ mod tests {
             arguments.insert("entry_id".into(), json!("entry-1"));
         }
         if matches!(operation, "entry.get" | "entry.history" | "entry.revision") {
-            arguments.insert("checkpoint".into(), json!("before-upgrade"));
+            arguments.insert("pin".into(), json!("release-current"));
         }
         if operation == "entry.revision" {
             arguments.insert("revision_id".into(), json!("revision-1"));
         }
-        if operation == "space.checkpoint_diff" {
-            arguments.insert("from".into(), json!("before-upgrade"));
-            arguments.insert("to".into(), json!("after-upgrade"));
+        if operation == "space.pin_diff" {
+            arguments.insert("from".into(), json!("release-before"));
+            arguments.insert("to".into(), json!("release-current"));
         }
         if operation == "entry.options" {
             arguments.insert("form".into(), json!("Meeting"));

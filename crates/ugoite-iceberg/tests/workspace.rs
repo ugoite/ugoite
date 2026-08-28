@@ -541,7 +541,7 @@ async fn sql_relation_and_saved_query_survive_form_rename() -> anyhow::Result<()
     create_form(&workspace, &form).await?;
     let relation = sql_relation_name(form.id);
     let saved_sql = format!("SELECT * FROM \"{relation}\" ORDER BY _ugoite_id");
-    let before = workspace.capture_checkpoint().await?;
+    let before_publication = workspace.current_publication().await?;
 
     evolve_form(
         &workspace,
@@ -555,12 +555,19 @@ async fn sql_relation_and_saved_query_survive_form_rename() -> anyhow::Result<()
     )
     .await?;
     let after = workspace.capture_checkpoint().await?;
+    let after_publication = workspace.current_publication().await?;
     assert_eq!(
-        workspace.form_at_checkpoint(&before, &relation).await?.name,
+        workspace
+            .form_at_publication(&before_publication, &relation)
+            .await?
+            .name,
         "Task"
     );
     assert_eq!(
-        workspace.form_at_checkpoint(&after, &relation).await?.name,
+        workspace
+            .form_at_publication(&after_publication, &relation)
+            .await?
+            .name,
         "Work item"
     );
 
@@ -1323,9 +1330,9 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
         .values
         .contains_key(&FieldId::new(101).unwrap()));
 
-    let checkpoint = workspace.capture_checkpoint().await?;
+    let publication = workspace.current_publication().await?;
     let checkpoint_current = workspace
-        .read_revision_view_at_checkpoint(&checkpoint, form.id, RevisionView::Current)
+        .read_revision_view_at_publication(&publication, form.id, RevisionView::Current)
         .await?;
     assert_eq!(checkpoint_current, explicit_snapshot);
     let metadata_after_read = table

@@ -57,28 +57,50 @@ apis:
       command: ugoite space get
       file: crates/ugoite-cli/src/commands/space.rs
       function: run
-  - id: space.checkpoint_create
-    method: POST
-    status: implemented
-    backend:
-      path: /spaces/{space_id}/checkpoints
-      file: crates/ugoite-server/src/lib.rs
-      function: create_checkpoint
-    ugoite_core:
-      file: crates/ugoite-iceberg/src/service.rs
-      function: create_named_checkpoint
-    notes: Captures one immutable Catalog coordinate and persists it under the caller-supplied name.
-  - id: space.checkpoint_diff
+  - id: pin.list
     method: GET
     status: implemented
     backend:
-      path: /spaces/{space_id}/checkpoints/diff
+      path: /spaces/{space_id}/pins
       file: crates/ugoite-server/src/lib.rs
-      function: checkpoint_diff
+      function: list_pins
     ugoite_core:
       file: crates/ugoite-iceberg/src/service.rs
-      function: diff_checkpoints_authorized_for_principals
-    notes: Compares logical Entry revisions between two durable named checkpoints; it does not expose manifest or data-file differences.
+      function: list_pins
+    notes: Returns the complete active Pin map from the authoritative Catalog Head.
+  - id: pin.create
+    method: POST
+    status: implemented
+    backend:
+      path: /spaces/{space_id}/pins
+      file: crates/ugoite-server/src/lib.rs
+      function: create_pin
+    ugoite_core:
+      file: crates/ugoite-iceberg/src/service.rs
+      function: create_pin
+    notes: Captures the exact current Catalog Head as a named Pin.
+  - id: pin.delete
+    method: DELETE
+    status: implemented
+    backend:
+      path: /spaces/{space_id}/pins/{pin_name}
+      file: crates/ugoite-server/src/lib.rs
+      function: delete_pin
+    ugoite_core:
+      file: crates/ugoite-iceberg/src/service.rs
+      function: delete_pin
+    notes: Removes one active Pin through a new Catalog Head publication.
+  - id: space.pin_diff
+    method: GET
+    status: implemented
+    backend:
+      path: /spaces/{space_id}/pins/diff
+      file: crates/ugoite-server/src/lib.rs
+      function: pin_diff
+    ugoite_core:
+      file: crates/ugoite-iceberg/src/service.rs
+      function: diff_pins_authorized_for_principals
+    notes: Compares logical Entry revisions between two active Pins; it does not expose manifest or data-file differences.
   - id: space.patch
     method: PATCH
     status: implemented

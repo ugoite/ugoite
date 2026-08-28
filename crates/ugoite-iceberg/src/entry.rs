@@ -2,7 +2,7 @@ use crate::form;
 use crate::iceberg_store;
 use crate::index;
 use crate::integrity::IntegrityProvider;
-use crate::{IcebergWorkspace, RevisionView, SpaceCheckpoint};
+use crate::{IcebergWorkspace, PublicationRef, RevisionView, SpaceCheckpoint};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use opendal::Operator;
@@ -2094,7 +2094,7 @@ fn entry_value_from_checkpoint_revision(
 
 /// Reads the latest visible Entry state from a retained checkpoint. The
 /// checkpoint itself supplies both the Form schema and the Iceberg snapshot.
-pub async fn get_entry_at_checkpoint(
+pub(crate) async fn get_entry_at_checkpoint(
     op: &Operator,
     ws_path: &str,
     entry_id: &str,
@@ -2125,7 +2125,23 @@ pub async fn get_entry_at_checkpoint(
     entry_value_from_checkpoint_revision(entry_id, revision_form, revision)
 }
 
-pub async fn get_entry_history_at_checkpoint(
+/// Reads the latest visible Entry state from an immutable publication selected
+/// by its portable coordinate.  Publication resolution validates the
+/// checksum and reachability before the checkpoint-shaped in-memory adapter is
+/// constructed.
+pub async fn get_entry_at_publication(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    publication: &PublicationRef,
+    form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
+) -> Result<Value> {
+    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    let checkpoint = workspace.resolve_publication(publication).await?;
+    get_entry_at_checkpoint(op, ws_path, entry_id, &checkpoint, form_scopes).await
+}
+
+pub(crate) async fn get_entry_history_at_checkpoint(
     op: &Operator,
     ws_path: &str,
     entry_id: &str,
@@ -2164,7 +2180,19 @@ pub async fn get_entry_history_at_checkpoint(
     }))
 }
 
-pub async fn get_entry_revision_at_checkpoint(
+pub async fn get_entry_history_at_publication(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    publication: &PublicationRef,
+    form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
+) -> Result<Value> {
+    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    let checkpoint = workspace.resolve_publication(publication).await?;
+    get_entry_history_at_checkpoint(op, ws_path, entry_id, &checkpoint, form_scopes).await
+}
+
+pub(crate) async fn get_entry_revision_at_checkpoint(
     op: &Operator,
     ws_path: &str,
     entry_id: &str,
@@ -2224,8 +2252,22 @@ pub async fn get_entry_revision_at_checkpoint(
     })?)
 }
 
+pub async fn get_entry_revision_at_publication(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    revision_id: &str,
+    publication: &PublicationRef,
+    form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
+) -> Result<Value> {
+    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    let checkpoint = workspace.resolve_publication(publication).await?;
+    get_entry_revision_at_checkpoint(op, ws_path, entry_id, revision_id, &checkpoint, form_scopes)
+        .await
+}
+
 #[allow(clippy::too_many_arguments)]
-pub async fn restore_entry_from_checkpoint_authorized<I: IntegrityProvider>(
+async fn restore_entry_from_resolved_authorized<I: IntegrityProvider>(
     op: &Operator,
     ws_path: &str,
     entry_id: &str,
@@ -2234,6 +2276,11 @@ pub async fn restore_entry_from_checkpoint_authorized<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
     form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
+    source_kind: &str,
+    source_extension_key: &str,
+    source_extension: Value,
+    source_output_key: &str,
+    source_output: Value,
 ) -> Result<Value> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let workspace = iceberg_store::native_mutation_workspace(op, ws_path).await?;
@@ -2314,6 +2361,16 @@ pub async fn restore_entry_from_checkpoint_authorized<I: IntegrityProvider>(
     let relation_scopes = form_scopes
         .and_then(|scopes| scopes.get(&current_form.id).cloned())
         .map(|scope| BTreeMap::from([(form_name.to_ascii_lowercase(), scope)]));
+    let mut extension_metadata = Map::new();
+    extension_metadata.insert(source_extension_key.to_owned(), source_extension);
+    extension_metadata.insert(
+        "restore_source_revision_id".to_owned(),
+        Value::String(revision_id.to_owned()),
+    );
+    extension_metadata.insert(
+        "restore_author".to_owned(),
+        Value::String(author.to_owned()),
+    );
     let restore_revision = RevisionRow {
         revision_id: new_revision_id.clone(),
         change_id: new_revision_id.clone(),
@@ -2332,16 +2389,9 @@ pub async fn restore_entry_from_checkpoint_authorized<I: IntegrityProvider>(
         state: Some(row),
         entry_version,
         operation: "restore".to_string(),
-        source_kind: "checkpoint_restore".to_string(),
+        source_kind: source_kind.to_owned(),
         source_id: Some(revision_id.to_string()),
-        extension_metadata: json!({
-            "restore_source_checkpoint": {
-                "name": checkpoint.name,
-                "coordinate_checksum": checkpoint.coordinate_checksum,
-            },
-            "restore_source_revision_id": revision_id,
-            "restore_author": author,
-        }),
+        extension_metadata: Value::Object(extension_metadata),
     };
     append_revision_row_for_form_authorized(
         op,
@@ -2352,19 +2402,51 @@ pub async fn restore_entry_from_checkpoint_authorized<I: IntegrityProvider>(
         relation_scopes.as_ref(),
     )
     .await?;
-    Ok(json!({
+    let mut response = json!({
         "revision_id": new_revision_id,
         "restored_from": revision_id,
-        "source_checkpoint": {
-            "name": checkpoint.name,
-            "coordinate_checksum": checkpoint.coordinate_checksum,
-        },
         "source_revision_id": revision_id,
         "author": source.author_id,
         "updated_by": author,
         "deleted_by": null,
         "timestamp": timestamp,
-    }))
+    });
+    response
+        .as_object_mut()
+        .expect("restore response is an object")
+        .insert(source_output_key.to_owned(), source_output);
+    Ok(response)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn restore_entry_from_publication_authorized<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    revision_id: &str,
+    publication: &PublicationRef,
+    author: &str,
+    integrity: &I,
+    form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
+) -> Result<Value> {
+    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    let checkpoint = workspace.resolve_publication(publication).await?;
+    restore_entry_from_resolved_authorized(
+        op,
+        ws_path,
+        entry_id,
+        revision_id,
+        &checkpoint,
+        author,
+        integrity,
+        form_scopes,
+        "publication_restore",
+        "restore_source_publication",
+        serde_json::to_value(publication)?,
+        "source_publication",
+        serde_json::to_value(publication)?,
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]

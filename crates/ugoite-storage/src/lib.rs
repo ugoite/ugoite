@@ -4419,7 +4419,11 @@ impl SpaceCatalogStore {
     }
 
     pub fn publication_path(&self, generation: u64, command_id: &str) -> String {
-        self.catalog_path(&format!("publications/{generation}-{command_id}.json"))
+        // Command IDs are semantic values and may contain URI-like characters
+        // such as `:`. Encode them before using them as a portable publication
+        // key; the record itself retains the original command ID.
+        let command_key = hex::encode(command_id.as_bytes());
+        self.catalog_path(&format!("publications/{generation}-{command_key}.json"))
     }
 
     /// Durable named checkpoints are immutable Space objects. They are not
@@ -4586,32 +4590,6 @@ impl SpaceCatalogStore {
             counter.fetch_add(1, Ordering::Relaxed);
         }
         self.read_exact_object_bytes(path).await
-    }
-
-    pub async fn create_checkpoint(
-        &self,
-        permit: &CatalogMutationPermit,
-        name: &str,
-        bytes: Vec<u8>,
-    ) -> Result<()> {
-        self.require_mutation_permit(permit)?;
-        Self::validate_catalog_component(name, "checkpoint name")?;
-        if !self.operator.info().capability().write_with_if_not_exists {
-            return Err(anyhow!(
-                "immutable checkpoint creation requires OpenDAL if_not_exists support"
-            ));
-        }
-        self.operator
-            .write_options(
-                &self.checkpoint_path(name),
-                bytes,
-                WriteOptions {
-                    if_not_exists: true,
-                    ..Default::default()
-                },
-            )
-            .await?;
-        Ok(())
     }
 
     pub async fn read_checkpoint(&self, name: &str) -> opendal::Result<Vec<u8>> {
@@ -5105,6 +5083,20 @@ mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use uuid::Uuid;
 
+    #[test]
+    fn publication_paths_encode_uri_like_command_ids() -> Result<()> {
+        let store = SpaceCatalogStore::new(
+            Operator::new(Memory::default())?,
+            "spaces/publication-paths",
+        )?;
+        let path = store.publication_path(7, "form-create:019c");
+        assert_eq!(
+            path,
+            "spaces/publication-paths/_ugoite/catalog/publications/7-666f726d2d6372656174653a30313963.json"
+        );
+        Ok(())
+    }
+
     #[tokio::test]
     async fn publication_store_memory_contract_is_backend_neutral() -> Result<()> {
         let operator = Operator::new(Memory::default())?;
@@ -5482,10 +5474,6 @@ mod tests {
             .is_err());
         assert!(remote
             .create_publication(&permit, "publication.json", b"publication".to_vec())
-            .await
-            .is_err());
-        assert!(remote
-            .create_checkpoint(&permit, "checkpoint", b"checkpoint".to_vec())
             .await
             .is_err());
         assert!(remote.mutation_permit().is_err());

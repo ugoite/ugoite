@@ -402,7 +402,7 @@ async fn deleted_entry_history_revision_and_restore_remain_reachable() -> anyhow
 }
 
 #[tokio::test]
-async fn checkpoint_restore_appends_current_head_with_provenance() -> anyhow::Result<()> {
+async fn publication_restore_appends_current_head_with_provenance() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "checkpoint-restore", "/tmp").await?;
     let ws_path = "spaces/checkpoint-restore";
@@ -420,7 +420,7 @@ async fn checkpoint_restore_appends_current_head_with_provenance() -> anyhow::Re
     .await?;
     let original = entry::get_entry_content(&op, ws_path, "checkpoint-entry").await?;
     let workspace = iceberg_store::native_workspace(&op, ws_path).await?;
-    let checkpoint = workspace.capture_checkpoint().await?;
+    let publication = workspace.current_publication().await?;
     let form_id = workspace
         .list_forms()
         .await?
@@ -429,11 +429,11 @@ async fn checkpoint_restore_appends_current_head_with_provenance() -> anyhow::Re
         .expect("form")
         .id;
     let entry_uuid = Uuid::new_v5(&Uuid::NAMESPACE_URL, b"checkpoint-entry").into();
-    let scoped_history = entry::get_entry_history_at_checkpoint(
+    let scoped_history = entry::get_entry_history_at_publication(
         &op,
         ws_path,
         "checkpoint-entry",
-        &checkpoint,
+        &publication,
         Some(&BTreeMap::from([(
             form_id,
             EntryScope::Only(BTreeSet::from([entry_uuid])),
@@ -456,12 +456,12 @@ async fn checkpoint_restore_appends_current_head_with_provenance() -> anyhow::Re
     )
     .await?;
 
-    let restored = entry::restore_entry_from_checkpoint_authorized(
+    let restored = entry::restore_entry_from_publication_authorized(
         &op,
         ws_path,
         "checkpoint-entry",
         &original.revision_id,
-        &checkpoint,
+        &publication,
         "restorer",
         &integrity,
         None,
@@ -482,14 +482,79 @@ async fn checkpoint_restore_appends_current_head_with_provenance() -> anyhow::Re
         restored["revision_id"].as_str().expect("revision ID"),
     )
     .await?;
-    assert_eq!(revision["source_kind"], "checkpoint_restore");
+    assert_eq!(revision["source_kind"], "publication_restore");
     assert_eq!(revision["source_id"], original.revision_id);
     assert_eq!(
-        revision["extension_metadata"]["restore_source_revision_id"],
-        original.revision_id
+        revision["extension_metadata"]["restore_source_publication"],
+        serde_json::to_value(&publication)?
     );
     assert_eq!(revision["author"], "author");
     assert_eq!(revision["updated_by"], "restorer");
+    Ok(())
+}
+
+#[tokio::test]
+async fn publication_pin_restore_appends_with_publication_provenance() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "publication-restore", "/tmp").await?;
+    let ws_path = "spaces/publication-restore";
+    ensure_entry_form(&op, ws_path).await?;
+    let integrity = FakeIntegrityProvider;
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "publication-entry",
+        "---\nform: Entry\n---\n# Before pin\n\n## Body\nOriginal",
+        "author",
+        &integrity,
+    )
+    .await?;
+    let original = entry::get_entry_content(&op, ws_path, "publication-entry").await?;
+    let workspace = iceberg_store::native_workspace(&op, ws_path).await?;
+    let pin = workspace
+        .create_pin("before", "author", 1, "publication-pin")
+        .await?;
+
+    entry::update_entry(
+        &op,
+        ws_path,
+        "publication-entry",
+        "---\nform: Entry\n---\n# After pin\n\n## Body\nChanged",
+        Some(&original.revision_id),
+        "author",
+        &integrity,
+    )
+    .await?;
+
+    let restored = entry::restore_entry_from_publication_authorized(
+        &op,
+        ws_path,
+        "publication-entry",
+        &original.revision_id,
+        &pin.coordinate,
+        "restorer",
+        &integrity,
+        None,
+    )
+    .await?;
+    assert_eq!(
+        restored["source_publication"],
+        serde_json::to_value(&pin.coordinate)?
+    );
+
+    let revision = entry::get_entry_revision(
+        &op,
+        ws_path,
+        "publication-entry",
+        restored["revision_id"].as_str().expect("revision ID"),
+    )
+    .await?;
+    assert_eq!(revision["source_kind"], "publication_restore");
+    assert_eq!(
+        revision["extension_metadata"]["restore_source_publication"],
+        serde_json::to_value(&pin.coordinate)?
+    );
     Ok(())
 }
 

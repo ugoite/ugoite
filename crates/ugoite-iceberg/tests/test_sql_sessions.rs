@@ -518,8 +518,8 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
 }
 
 #[tokio::test]
-/// REQ-API-008: production service calls retain a frozen checkpoint policy.
-async fn sql_sessions_service_freezes_checkpoint_scope_and_policy() -> anyhow::Result<()> {
+/// REQ-API-008: production service calls retain a frozen publication policy.
+async fn sql_sessions_service_freezes_publication_scope_and_policy() -> anyhow::Result<()> {
     let op = setup_operator()?;
     let service = UgoiteService::from_operator(op, "memory://sql-session-service");
     let owner = Uuid::from_u128(44);
@@ -579,6 +579,8 @@ async fn sql_sessions_service_freezes_checkpoint_scope_and_policy() -> anyhow::R
         )
         .await?;
     let session_id = session["id"].as_str().expect("session ID");
+    assert!(session.get("publication").is_some());
+    assert!(session.get("checkpoint").is_none());
     assert_eq!(
         session["query_policy"]["forms"][0]["entry_scope"],
         serde_json::json!({"all_except": []})

@@ -285,14 +285,23 @@ impl IcebergWorkspace {
         let mut authorized_scans = BTreeSet::new();
         let mut duplicate_head_checks = Vec::new();
 
-        if let Some(checkpoint) = &policy.checkpoint {
+        let checkpoint = if let Some(checkpoint) = &policy.checkpoint {
             self.validate_checkpoint(checkpoint)?;
-            self.space_catalog
+            let catalog = self
+                .space_catalog
                 .as_ref()
-                .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
-                .validate_checkpoint_evidence(checkpoint)
-                .await?;
-        }
+                .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?;
+            let publication = catalog.publication_ref_for_checkpoint(checkpoint)?;
+            let resolved = catalog.resolve_publication_checkpoint(&publication).await?;
+            if resolved.coordinate_checksum != checkpoint.coordinate_checksum {
+                return Err(anyhow!(
+                    "authorized query coordinate is not reachable from the Catalog Head"
+                ));
+            }
+            Some(resolved)
+        } else {
+            None
+        };
 
         for (form_id, form_policy) in &policy.forms {
             validate_relation(&form_policy.relation)?;
@@ -302,7 +311,7 @@ impl IcebergWorkspace {
                     form_policy.relation
                 );
             }
-            let (form, table, expected_snapshot_id) = match &policy.checkpoint {
+            let (form, table, expected_snapshot_id) = match &checkpoint {
                 Some(checkpoint) => {
                     let coordinate = checkpoint
                         .tables
