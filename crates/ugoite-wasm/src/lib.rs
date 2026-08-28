@@ -9,14 +9,11 @@ pub use ugoite_api_client as api_client;
 pub use ugoite_domain as domain;
 pub use ugoite_konase as konase;
 
-const MAX_KONASE_REQUEST_BYTES: usize = 256 * 1024;
+const MAX_PROTOCOL_REQUEST_BYTES: usize = 256 * 1024;
 
 pub fn invoke_json(input: &str) -> String {
-    if input.len() > MAX_KONASE_REQUEST_BYTES
-        && input.contains("\"action\"")
-        && input.contains("konase.")
-    {
-        return konase_error("request exceeds the Konase input limit");
+    if input.len() > MAX_PROTOCOL_REQUEST_BYTES {
+        return protocol_input_too_large_error();
     }
     if let Ok(request) = serde_json::from_str::<serde_json::Value>(input) {
         if let Some(action) = request.get("action").and_then(serde_json::Value::as_str) {
@@ -24,14 +21,22 @@ pub fn invoke_json(input: &str) -> String {
                 return invoke_domain(request);
             }
             if action.starts_with("konase.") {
-                if input.len() > MAX_KONASE_REQUEST_BYTES {
-                    return konase_error("request exceeds the Konase input limit");
-                }
                 return invoke_konase(request);
             }
         }
     }
     ugoite_api_client::invoke_json(input)
+}
+
+fn protocol_input_too_large_error() -> String {
+    serde_json::json!({
+        "ok": false,
+        "error": {
+            "kind": "input_too_large",
+            "message": "JSON protocol input exceeds the 256 KiB limit",
+        },
+    })
+    .to_string()
 }
 
 fn konase_error(message: &str) -> String {
@@ -87,7 +92,7 @@ fn invoke_konase(request: serde_json::Value) -> String {
                     })
             }
             "konase.step" => {
-                ensure_json_size(&payload, MAX_KONASE_REQUEST_BYTES)?;
+                ensure_json_size(&payload, MAX_PROTOCOL_REQUEST_BYTES)?;
                 let state = serde_json::from_value(
                     payload
                         .get("state")
@@ -126,14 +131,17 @@ fn invoke_konase(request: serde_json::Value) -> String {
         }
     })();
 
-    match result {
-        Ok(value) => serde_json::json!({"ok": true, "value": value}).to_string(),
+    let envelope = match result {
+        Ok(value) => serde_json::json!({"ok": true, "value": value}),
         Err(message) => serde_json::json!({
             "ok": false,
             "error": {"kind": "konase_protocol", "message": message},
-        })
-        .to_string(),
+        }),
+    };
+    if ensure_json_size(&envelope, ugoite_konase::MAX_STATE_JSON_BYTES).is_err() {
+        return konase_error("Konase protocol output exceeds the size limit");
     }
+    envelope.to_string()
 }
 
 fn invoke_domain(request: serde_json::Value) -> String {

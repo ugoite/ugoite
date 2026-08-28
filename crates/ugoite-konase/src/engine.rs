@@ -344,11 +344,7 @@ pub fn step(state: KonaseState, event: KonaseEvent) -> StepResult {
                 }
             }
         }
-        Err(error) => StepResult {
-            state: original_state,
-            effects: Vec::new(),
-            error: Some(error),
-        },
+        Err(error) => rejected_with_state(original_state, error),
     }
 }
 
