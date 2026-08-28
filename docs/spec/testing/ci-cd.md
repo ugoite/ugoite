@@ -29,15 +29,13 @@ Root task composition:
 
 Hosted CI schedules the `ci-rust-check`, `ci-rust-test`, `ci-web`, and `artifacts` lanes in parallel, then the `ci-required` aggregator preserves the required status-check context. The three quality lanes run only `mise run ci:lane:rust-check`, `mise run ci:lane:rust-test`, and `mise run ci:lane:web`; they do not duplicate repository validation commands in GitHub Actions. The artifact lane runs only `mise run ci:artifacts` and owns Playwright/BuildKit setup plus verified artifact upload.
 
-The Rust test lane opts into the MinIO integration tests with
-`UGOITE_MINIO_REQUIRED=true` and supplies `UGOITE_MINIO_ENDPOINT`,
-`UGOITE_MINIO_BUCKET`, `AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY` for its
-pinned disposable service. The integration tests remain optional for local
-development when the opt-in variable is absent; when it is present, missing or
-empty MinIO endpoint/bucket configuration fails the test instead of silently
-skipping the release-gate coverage. The repository nextest configuration puts
-the storage and Iceberg MinIO test binaries in one single-threaded test group
-so they cannot contend for the disposable service during the workspace run.
+The required Rust suite covers the memory and filesystem implementations. The
+optional `crates/ugoite-storage/tests/s3_contract.rs` integration test runs only
+when both `UGOITE_S3_TEST_ENDPOINT` and `UGOITE_S3_TEST_BUCKET` are configured;
+it invokes `OpendalPublicationStore::verify_contract` against that explicitly
+selected deployment backend. This test is intended for manual or release
+validation and is not part of required CI. Runtime startup continues to verify
+the backend selected by the deployment before shared publication is admitted.
 
 Rust-compiling lanes restore the Rust registry/git dependency cache without caching `target/`; `ci-rust-check` is the sole Cargo dependency archive writer, while `ci-rust-test`, `ci-web`, and `artifacts` are restore-only. `ci-web` is the sole Deno archive writer; `artifacts` may restore it, but does not write it. sccache owns compiler artifact reuse in all Rust-compiling lanes: it is read-only for pull requests and merge queues and writes only on successful `main` pushes. Playwright browser and BuildKit caches remain separately keyed and are refreshed only after successful pushes to `main`. Successful `main` runs upload the verified artifact set using the logical names `ugoite-docsite-pages`, `ugoite-runtime-image`, `ugoite-cli-linux`, `ugoite-helm-chart`, and `ugoite-artifact-manifest`.
 
