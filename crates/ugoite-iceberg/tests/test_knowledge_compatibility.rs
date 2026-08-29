@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
+use tempfile::tempdir;
+use ugoite_domain::entry::FieldValue;
 use ugoite_iceberg::service::UgoiteService;
 use ugoite_iceberg::{iceberg_store, RevisionView};
 
@@ -59,7 +61,9 @@ async fn v01_knowledge_fixture_is_semantically_recoverable() -> Result<()> {
         fixture.space.expected_current_entry_count
     );
 
-    let service = UgoiteService::new("memory://v01-knowledge-compatibility")?;
+    let space_root = tempdir()?;
+    let root_uri = format!("file://{}", space_root.path().display());
+    let service = UgoiteService::new_without_background_refresh(&root_uri)?;
     service.create_space(&fixture.space.slug).await?;
 
     let form = service
@@ -93,7 +97,7 @@ async fn v01_knowledge_fixture_is_semantically_recoverable() -> Result<()> {
     .await?;
     let before_update = workspace.current_publication().await?;
     let parent_revision = update_parent_revision.context("fixture update entry was not created")?;
-    service
+    let updated = service
         .update_entry(
             &fixture.space.slug,
             &fixture.space.update.entry_id,
@@ -106,10 +110,24 @@ async fn v01_knowledge_fixture_is_semantically_recoverable() -> Result<()> {
             "fixture-owner",
         )
         .await?;
+    let updated_revision = updated["revision_id"]
+        .as_str()
+        .map(str::to_owned)
+        .context("fixture update did not return a revision")?;
     let after_update = workspace.current_publication().await?;
     assert!(before_update.generation < after_update.generation);
 
-    let mut entries = service.list_entries(&fixture.space.slug).await?;
+    drop(workspace);
+    drop(service);
+
+    let reopened = UgoiteService::new_without_background_refresh(&root_uri)?;
+    let reopened_workspace = iceberg_store::native_workspace(
+        reopened.operator(),
+        &reopened.workspace_path(&fixture.space.slug),
+    )
+    .await?;
+
+    let mut entries = reopened.list_entries(&fixture.space.slug).await?;
     entries.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
     assert_eq!(entries.len(), fixture.space.expected_current_entry_count);
     for expected in &fixture.space.entries {
@@ -138,7 +156,7 @@ async fn v01_knowledge_fixture_is_semantically_recoverable() -> Result<()> {
         );
     }
 
-    let history = service
+    let history = reopened
         .entry_history(&fixture.space.slug, &fixture.space.update.entry_id)
         .await?;
     let revisions = history["revisions"]
@@ -159,16 +177,47 @@ async fn v01_knowledge_fixture_is_semantically_recoverable() -> Result<()> {
         .collect::<Vec<_>>();
     assert_eq!(operations, fixture.space.update.expected_history_operations);
 
-    let form = workspace
+    assert_eq!(revisions[0]["revision_id"], parent_revision);
+    assert_eq!(revisions[1]["revision_id"], updated_revision);
+
+    let historical_revision = reopened
+        .entry_revision(
+            &fixture.space.slug,
+            &fixture.space.update.entry_id,
+            &parent_revision,
+        )
+        .await?;
+    assert!(historical_revision["markdown"]
+        .as_str()
+        .unwrap_or_default()
+        .contains(&fixture.space.entries[1].body));
+    let current_revision = reopened
+        .entry_revision(
+            &fixture.space.slug,
+            &fixture.space.update.entry_id,
+            &updated_revision,
+        )
+        .await?;
+    assert!(current_revision["markdown"]
+        .as_str()
+        .unwrap_or_default()
+        .contains(&fixture.space.update.body));
+
+    let form = reopened_workspace
         .list_forms()
         .await?
         .into_iter()
         .find(|candidate| candidate.name == fixture.space.form_name)
         .context("fixture form was not present in the publication catalog")?;
-    let before_entries = workspace
+    let body_field = form
+        .fields
+        .iter()
+        .find(|field| field.name == fixture.space.form_field)
+        .context("fixture field was not present in the publication catalog")?;
+    let before_entries = reopened_workspace
         .read_revision_view_at_publication(&before_update, form.id, RevisionView::Current)
         .await?;
-    let after_entries = workspace
+    let after_entries = reopened_workspace
         .read_revision_view_at_publication(&after_update, form.id, RevisionView::Current)
         .await?;
     assert_eq!(
@@ -179,9 +228,27 @@ async fn v01_knowledge_fixture_is_semantically_recoverable() -> Result<()> {
         after_entries.len(),
         fixture.space.expected_current_entry_count
     );
-    let checkpoint = workspace.resolve_publication(&after_update).await?;
+    let before_entry = before_entries
+        .iter()
+        .find(|entry| entry.entry.external_id == fixture.space.update.entry_id)
+        .context("fixture entry was not present before its update")?;
+    assert_eq!(
+        before_entry.values.get(&body_field.id),
+        Some(&FieldValue::String(fixture.space.entries[1].body.clone()))
+    );
+    let after_entry = after_entries
+        .iter()
+        .find(|entry| entry.entry.external_id == fixture.space.update.entry_id)
+        .context("fixture entry was not present after its update")?;
+    assert_eq!(
+        after_entry.values.get(&body_field.id),
+        Some(&FieldValue::String(fixture.space.update.body.clone()))
+    );
+    let checkpoint = reopened_workspace
+        .resolve_publication(&after_update)
+        .await?;
     assert_eq!(checkpoint.catalog_generation, after_update.generation);
-    assert!(workspace
+    assert!(reopened_workspace
         .forms_at_publication(&after_update)
         .await?
         .iter()

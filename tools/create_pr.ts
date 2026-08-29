@@ -1,3 +1,5 @@
+import { validateKnowledgeCompatibilityReview } from "./knowledge_compatibility.ts";
+
 const args = [...Deno.args];
 
 function take(flag: string): string {
@@ -27,13 +29,9 @@ for (
 if (!/(?:close:\s*#\d+|closes\s+#\d+)/i.test(body)) {
   throw new Error("PR body must close a related issue");
 }
-const compatibilityMatch = body.match(
-  /##\s*Knowledge Compatibility Review\s*\n+([\s\S]*?)(?:\n##\s|$)/i,
-);
-if (!compatibilityMatch || !/- \[x\]/i.test(compatibilityMatch[1])) {
-  throw new Error(
-    "Knowledge Compatibility Review must include one checked classification",
-  );
+const compatibilityErrors = validateKnowledgeCompatibilityReview(body);
+if (compatibilityErrors.length > 0) {
+  throw new Error(compatibilityErrors.join("\n"));
 }
 
 const result = await new Deno.Command("gh", {

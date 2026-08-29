@@ -17,6 +17,12 @@
       "workflow": ".github/workflows/codeql.yml",
       "job_id": "required-check",
       "events": ["push", "pull_request", "merge_group"]
+    },
+    {
+      "context": "knowledge-compatibility-required",
+      "workflow": ".github/workflows/pr-require-close-issue.yml",
+      "job_id": "require-close-issue-link",
+      "events": ["pull_request"]
     }
   ],
   "excluded_from_required_status_checks": [

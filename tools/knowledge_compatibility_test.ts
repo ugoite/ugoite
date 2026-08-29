@@ -1,13 +1,27 @@
 import { assertEquals } from "@std/assert/equals";
+import { validateKnowledgeCompatibilityReview } from "./knowledge_compatibility.ts";
 
 const contract = await Deno.readTextFile(
   "docs/spec/versions/v0.1-knowledge-compatibility.md",
 );
 const template = await Deno.readTextFile(".github/pull_request_template.md");
 const validator = await Deno.readTextFile("tools/create_pr.ts");
+const compatibilityValidator = await Deno.readTextFile(
+  "tools/knowledge_compatibility.ts",
+);
 const workflow = await Deno.readTextFile(
   ".github/workflows/pr-require-close-issue.yml",
 );
+const requiredStatusChecks = JSON.parse(
+  await Deno.readTextFile(".github/required-status-checks.json"),
+) as {
+  required_status_checks?: Array<{
+    context?: string;
+    workflow?: string;
+    job_id?: string;
+    events?: string[];
+  }>;
+};
 
 function requireText(source: string, expected: string, owner: string): void {
   assertEquals(
@@ -20,11 +34,36 @@ function requireText(source: string, expected: string, owner: string): void {
 // REQ-OPS-043
 Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
   requireText(template, "Knowledge Compatibility Review", "PR template");
-  requireText(template, "- [ ]", "PR template");
+  requireText(
+    template,
+    "No effect on the v0.1 Knowledge semantic contract",
+    "PR template",
+  );
+  requireText(template, "Preserving implementation change", "PR template");
+  requireText(template, "Breaking semantic change", "PR template");
   for (const source of [validator, workflow]) {
     requireText(source, "Knowledge Compatibility Review", "PR validator");
-    requireText(source, "\\[x\\]", "PR validator");
   }
+  requireText(
+    compatibilityValidator,
+    "select exactly one valid classification",
+    "PR validator",
+  );
+  requireText(validator, "knowledge_compatibility.ts", "PR validator");
+  requireText(
+    workflow,
+    "select exactly one valid classification",
+    "PR validator",
+  );
+  const requiredStatus = requiredStatusChecks.required_status_checks?.find(
+    (check) => check.context === "knowledge-compatibility-required",
+  );
+  assertEquals(
+    requiredStatus?.workflow,
+    ".github/workflows/pr-require-close-issue.yml",
+  );
+  assertEquals(requiredStatus?.job_id, "require-close-issue-link");
+  assertEquals(requiredStatus?.events, ["pull_request"]);
   requireText(
     contract,
     "Every pull request that can affect Space ownership",
@@ -35,6 +74,39 @@ Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
     "breaking semantic change",
     "compatibility contract",
   );
+});
+
+Deno.test("Knowledge Compatibility Review validates one classification and evidence", () => {
+  const preserving = `
+## Knowledge Compatibility Review
+
+- [x] Preserving implementation change; the canonical fixture and focused tests remain passing.
+Evidence: fixture and reopened Space assertions pass.
+`;
+  assertEquals(validateKnowledgeCompatibilityReview(preserving), []);
+
+  const noEffect = `
+## Knowledge Compatibility Review
+
+- [x] No effect on the v0.1 Knowledge semantic contract.
+`;
+  assertEquals(validateKnowledgeCompatibilityReview(noEffect), []);
+
+  const multiple = `
+## Knowledge Compatibility Review
+
+- [x] No effect on the v0.1 Knowledge semantic contract.
+- [x] Preserving implementation change; the canonical fixture and focused tests remain passing.
+Evidence: fixture passes.
+`;
+  assertEquals(validateKnowledgeCompatibilityReview(multiple).length, 1);
+
+  const missingEvidence = `
+## Knowledge Compatibility Review
+
+- [x] Preserving implementation change; the canonical fixture and focused tests remain passing.
+`;
+  assertEquals(validateKnowledgeCompatibilityReview(missingEvidence).length, 1);
 });
 
 // REQ-STO-014
