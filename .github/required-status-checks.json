@@ -19,7 +19,7 @@
       "events": ["push", "pull_request", "merge_group"]
     },
     {
-      "context": "knowledge-compatibility-required",
+      "context": "require-close-issue-link",
       "workflow": ".github/workflows/pr-require-close-issue.yml",
       "job_id": "require-close-issue-link",
       "events": ["pull_request"]

@@ -15,7 +15,6 @@ permissions:
 
 jobs:
   require-close-issue-link:
-    name: knowledge-compatibility-required
     runs-on: ubuntu-slim
     if: ${{ !github.event.pull_request.draft && github.event.pull_request.user.login != 'dependabot[bot]' }}
     steps:

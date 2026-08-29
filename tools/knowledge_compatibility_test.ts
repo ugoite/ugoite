@@ -56,7 +56,7 @@ Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
     "PR validator",
   );
   const requiredStatus = requiredStatusChecks.required_status_checks?.find(
-    (check) => check.context === "knowledge-compatibility-required",
+    (check) => check.context === "require-close-issue-link",
   );
   assertEquals(
     requiredStatus?.workflow,
