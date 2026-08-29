@@ -697,9 +697,23 @@ pub fn publication_context_for_change<T: Serialize>(
     payload: &T,
 ) -> Result<PublicationContext> {
     command.validate()?;
-    publication_context(command.change_id.clone(), command_kind, payload)?
-        .with_change_descriptor(command.descriptor())
-        .map_err(|error| anyhow!(error.to_string()))
+    publication_context(
+        command.change_id.clone(),
+        command_kind,
+        &ChangePublicationDigest { command, payload },
+    )?
+    .with_change_descriptor(command.descriptor())
+    .map_err(|error| anyhow!(error.to_string()))
+}
+
+/// The immutable command digest must cover both the domain payload and the
+/// Change metadata that is stored in the publication. Otherwise reusing a
+/// command ID with the same payload but a different actor, Run, or message
+/// could be mistaken for an idempotent replay.
+#[derive(Serialize)]
+struct ChangePublicationDigest<'a, T: Serialize> {
+    command: &'a ChangeCommand,
+    payload: &'a T,
 }
 
 pub(crate) fn system_publication_context<T: Serialize>(
@@ -4886,6 +4900,31 @@ mod invariant_tests {
         assert!(error
             .to_string()
             .contains("multiple revisions share a maximum entry_version"));
+        Ok(())
+    }
+
+    #[test]
+    fn change_publication_digest_binds_change_metadata() -> Result<()> {
+        let payload = serde_json::json!({"entry_id": "entry-1", "value": "same"});
+        let command = ChangeCommand {
+            change_id: "change-identity".into(),
+            run_id: Some(ugoite_domain::change::RunId::new("run-1")?),
+            actor_principal_id: "principal:one".into(),
+            message: Some("original".into()),
+            reverts_change_id: None,
+            created_at_micros: 1,
+        };
+        let same = publication_context_for_change(&command, "entry.append", &payload)?;
+
+        let mut changed = command.clone();
+        changed.actor_principal_id = "principal:two".into();
+        let changed_actor = publication_context_for_change(&changed, "entry.append", &payload)?;
+        assert_ne!(same.command_digest, changed_actor.command_digest);
+
+        changed.actor_principal_id = command.actor_principal_id;
+        changed.message = Some("different".into());
+        let changed_message = publication_context_for_change(&changed, "entry.append", &payload)?;
+        assert_ne!(same.command_digest, changed_message.command_digest);
         Ok(())
     }
 }
