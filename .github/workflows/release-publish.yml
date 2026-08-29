@@ -3,470 +3,44 @@ name: Release Publish
 on:
   workflow_dispatch:
     inputs:
-      release_tag:
-        description: Existing v<SemVer> tag and GitHub Release to publish or republish
+      candidate_run_id:
+        description: GitHub Actions run ID that uploaded the verified candidate bundle
+        required: true
+        type: string
+      candidate_id:
+        description: SHA-256 ID printed by the candidate workflow
         required: true
         type: string
 
 permissions: {}
 
 jobs:
-  prepare:
-    runs-on: ubuntu-24.04
-    if: github.event_name == 'workflow_dispatch'
-    permissions:
-      contents: read
-    outputs:
-      release_tag: ${{ steps.resolve.outputs.release_tag }}
-      version: ${{ steps.resolve.outputs.version }}
-      release_sha: ${{ steps.resolve.outputs.release_sha }}
-      prerelease: ${{ steps.resolve.outputs.prerelease }}
-      channel: ${{ steps.resolve.outputs.channel }}
-      aliases_json: ${{ steps.resolve.outputs.aliases_json }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.release_tag }}
-          persist-credentials: false
-          fetch-depth: 0
-
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          install: true
-          cache: false
-
-      - name: Resolve trusted release metadata
-        id: resolve
-        env:
-          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import re
-          import subprocess
-          import sys
-
-          def fail(message: str) -> None:
-              print(message, file=sys.stderr)
-              raise SystemExit(1)
-
-          candidate_tag = os.environ["INPUT_RELEASE_TAG"].strip()
-          if not re.fullmatch(r"v\d+\.\d+\.\d+(?:-(?:alpha|beta)\.\d+)?", candidate_tag):
-              fail(f"release tag must be v<SemVer>, got {candidate_tag!r}")
-
-          release_json = subprocess.run(
-              ["gh", "release", "view", candidate_tag, "--json", "tagName,targetCommitish,isPrerelease"],
-              check=True,
-              text=True,
-              capture_output=True,
-          ).stdout
-          release = json.loads(release_json)
-          if release["tagName"] != candidate_tag:
-              fail(f"GitHub Release tag mismatch: expected {candidate_tag}, got {release['tagName']}")
-
-          tag_sha = subprocess.run(
-              ["git", "rev-list", "-n", "1", candidate_tag],
-              check=True,
-              text=True,
-              capture_output=True,
-          ).stdout.strip()
-          subprocess.run(["mise", "run", "validate:release"], check=True)
-          version = subprocess.run(
-              ["mise", "run", "print:version"],
-              check=True,
-              text=True,
-              capture_output=True,
-          ).stdout.strip()
-          if candidate_tag != f"v{version}":
-              fail(f"checked-in version {version} does not match release tag {candidate_tag}")
-
-          metadata = json.loads(
-              subprocess.run(
-                  ["deno", "run", "-A", "tools/release.ts", "release-metadata"],
-                  check=True,
-                  text=True,
-                  capture_output=True,
-              ).stdout
-          )
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-              handle.write(f"release_tag={candidate_tag}\n")
-              handle.write(f"version={metadata['version']}\n")
-              handle.write(f"release_sha={tag_sha}\n")
-              handle.write(f"prerelease={'true' if metadata['prerelease'] else 'false'}\n")
-              handle.write(f"channel={metadata['channel']}\n")
-              handle.write(f"aliases_json={json.dumps(metadata['aliases'])}\n")
-          PY
-
-  build-cli:
-    needs:
-      - prepare
-    if: needs.prepare.outputs.release_tag != ''
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          - runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-          - runner: macos-13
-            target: x86_64-apple-darwin
-          - runner: macos-14
-            target: aarch64-apple-darwin
-    runs-on: ${{ matrix.runner }}
-    permissions:
-      contents: read
-      attestations: write
-      id-token: write
-    concurrency:
-      group: release-cli-${{ needs.prepare.outputs.release_tag }}-${{ matrix.target }}
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.prepare.outputs.release_sha }}
-          persist-credentials: false
-
-      - name: Set Deno cache directory
-        run: echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
-
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          install: true
-          cache: true
-
-      - name: Resolve Deno version
-        id: deno-version
-        run: echo "version=$(deno --version | awk 'NR==1 { print $2 }')" >>"$GITHUB_OUTPUT"
-
-      - name: Restore Deno cache
-        id: deno-cache-restore
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/deno-cache
-          key: deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-${{ hashFiles('deno.lock') }}
-          restore-keys: |
-            deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-
-
-      - name: Install Rust CI components
-        run: rustup component add rustfmt clippy
-
-      - name: Restore Rust cache
-        id: rust-cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b # v2.9.2
-        with:
-          workspaces: ". -> target/rust"
-          cache-bin: "false"
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-
-      - name: Build native CLI binary
-        run: cargo build -p ugoite-cli --release --locked
-
-      - name: Package CLI archive
-        env:
-          UGOITE_CLI_TARGET: ${{ matrix.target }}
-          UGOITE_CLI_BINARY_PATH: target/rust/release/ugoite
-        run: mise run package:cli:target
-
-      - name: Verify CLI archive
-        env:
-          UGOITE_CLI_TARGET: ${{ matrix.target }}
-        run: mise run verify:cli:target
-
-      - name: Upload CLI release artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: cli-${{ matrix.target }}
-          path: target/artifacts/cli/*
-          if-no-files-found: error
-          compression-level: 0
-
-      - name: Attest CLI archive provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: target/artifacts/cli/*.tar.gz
-
-      - name: Save Deno cache
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.runner != 'ubuntu-24.04'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/deno-cache
-          key: ${{ steps.deno-cache-restore.outputs.cache-primary-key }}
-
-  build-npm-helm:
-    needs:
-      - prepare
-    if: needs.prepare.outputs.release_tag != ''
+  promote:
     runs-on: ubuntu-24.04
     permissions:
-      contents: read
-      attestations: write
-      id-token: write
-    concurrency:
-      group: release-npm-helm-${{ needs.prepare.outputs.release_tag }}
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.prepare.outputs.release_sha }}
-          persist-credentials: false
-
-      - name: Set Deno cache directory
-        run: echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
-
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          install: true
-          cache: true
-
-      - name: Resolve Deno version
-        id: deno-version
-        run: echo "version=$(deno --version | awk 'NR==1 { print $2 }')" >>"$GITHUB_OUTPUT"
-
-      - name: Restore Deno cache
-        id: deno-cache-restore
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/deno-cache
-          key: deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-${{ hashFiles('deno.lock') }}
-          restore-keys: |
-            deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 20
-          registry-url: https://npm.pkg.github.com
-          scope: '@ugoite'
-
-      - name: Package Helm chart
-        run: mise run package:helm
-
-      - name: Verify Helm chart
-        run: mise run verify:helm:release
-
-      - name: Package npm installer
-        run: mise run package:npm
-
-      - name: Verify npm installer
-        run: mise run verify:npm
-
-      - name: Upload Helm artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: helm-chart
-          path: target/artifacts/helm/*
-          if-no-files-found: error
-          compression-level: 0
-
-      - name: Upload npm artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: npm-installer
-          path: target/artifacts/npm/*
-          if-no-files-found: error
-          compression-level: 0
-
-      - name: Attest npm package provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: target/artifacts/npm/*.tgz
-
-  publish-image:
-    needs:
-      - prepare
-    if: needs.prepare.outputs.release_tag != ''
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-    concurrency:
-      group: release-image-${{ needs.prepare.outputs.release_tag }}
-      cancel-in-progress: false
-    outputs:
-      image_digest: ${{ steps.manifest.outputs.image_digest }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.prepare.outputs.release_sha }}
-          persist-credentials: false
-
-      - name: Set Deno cache directory
-        run: echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
-
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          install: true
-          cache: true
-
-      - name: Resolve Deno version
-        id: deno-version
-        run: echo "version=$(deno --version | awk 'NR==1 { print $2 }')" >>"$GITHUB_OUTPUT"
-
-      - name: Restore Deno cache
-        id: deno-cache-restore
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/deno-cache
-          key: deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-${{ hashFiles('deno.lock') }}
-          restore-keys: |
-            deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-
-
-      - name: Install Rust build prerequisites
-        run: rustup target add wasm32-unknown-unknown
-
-      - name: Restore Rust cache
-        id: rust-cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b # v2.9.2
-        with:
-          workspaces: ". -> target/rust"
-          cache-bin: "false"
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-
-      - name: Build release inputs
-        run: |
-          mise run build:wasm:release
-          mise run build:frontend
-          mise run build:rust:release
-
-      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-
-      - name: Reuse matching versioned image on rerun
-        id: existing-image
-        env:
-          IMAGE: ghcr.io/${{ github.repository }}:${{ needs.prepare.outputs.version }}
-          RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
-        run: |
-          pull_log="$(mktemp)"
-          if ! docker pull "${IMAGE}" >"${pull_log}" 2>&1; then
-            if ! grep -Eiq 'manifest unknown|name unknown' "${pull_log}"; then
-              cat "${pull_log}" >&2
-              rm -f "${pull_log}"
-              exit 1
-            fi
-            rm -f "${pull_log}"
-            echo "found=false" >>"${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          rm -f "${pull_log}"
-          manifest_log="$(mktemp)"
-          if ! manifest_output="$(docker buildx imagetools inspect "${IMAGE}" 2>"${manifest_log}")"; then
-            cat "${manifest_log}" >&2
-            rm -f "${manifest_log}"
-            exit 1
-          fi
-          rm -f "${manifest_log}"
-          for platform in linux/amd64 linux/arm64; do
-            if ! grep -Fq "${platform}" <<<"${manifest_output}"; then
-              echo "existing ${IMAGE} is missing published platform ${platform}" >&2
-              exit 1
-            fi
-          done
-          revision="$(docker image inspect "${IMAGE}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
-          if [[ "${revision}" != "${RELEASE_SHA}" ]]; then
-            echo "existing ${IMAGE} has source revision ${revision}, expected ${RELEASE_SHA}" >&2
-            exit 1
-          fi
-          echo "found=true" >>"${GITHUB_OUTPUT}"
-          echo "Reusing versioned image ${IMAGE} from ${RELEASE_SHA}"
-
-      - name: Publish versioned multi-arch image
-        if: steps.existing-image.outputs.found != 'true'
-        id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          target: runtime-prebuilt
-          provenance: true
-          sbom: true
-          push: true
-          cache-from: type=gha,scope=ugoite-runtime-release
-          cache-to: type=gha,scope=ugoite-runtime-release,mode=min
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ needs.prepare.outputs.release_sha }}
-            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ needs.prepare.outputs.version }}
-
-      - name: Add release channel aliases
-        env:
-          ALIASES_JSON: ${{ needs.prepare.outputs.aliases_json }}
-          VERSION: ${{ needs.prepare.outputs.version }}
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import subprocess
-
-          aliases = json.loads(os.environ["ALIASES_JSON"])
-          version = os.environ["VERSION"]
-          source = f"ghcr.io/{os.environ['GITHUB_REPOSITORY']}:{version}"
-          for alias in aliases:
-              subprocess.run(
-                  [
-                      "docker",
-                      "buildx",
-                      "imagetools",
-                      "create",
-                      "--tag",
-                      f"ghcr.io/{os.environ['GITHUB_REPOSITORY']}:{alias}",
-                      source,
-                  ],
-                  check=True,
-              )
-          PY
-
-      - name: Record published image digest
-        id: manifest
-        env:
-          VERSION: ${{ needs.prepare.outputs.version }}
-        run: |
-          digest="$(docker buildx imagetools inspect ghcr.io/${GITHUB_REPOSITORY}:${VERSION} --format '{{json .Manifest.Digest}}' | tr -d '\"')"
-          echo "image_digest=${digest}" >>"$GITHUB_OUTPUT"
-
-      - name: Save Deno cache
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/deno-cache
-          key: ${{ steps.deno-cache-restore.outputs.cache-primary-key }}
-
-  publish-release-assets:
-    needs:
-      - prepare
-      - build-cli
-      - build-npm-helm
-      - publish-image
-    if: needs.prepare.outputs.release_tag != ''
-    runs-on: ubuntu-24.04
-    permissions:
+      actions: read
       contents: write
       packages: write
-    concurrency:
-      group: release-assets-${{ needs.prepare.outputs.release_tag }}
-      cancel-in-progress: false
     outputs:
-      chart_digest: ${{ steps.publish-chart.outputs.chart_digest }}
-      release_manifest_path: ${{ steps.manifest.outputs.manifest_path }}
+      version: ${{ steps.resolve.outputs.version }}
+      source_sha: ${{ steps.resolve.outputs.source_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.prepare.outputs.release_sha }}
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          path: ${{ runner.temp }}/artifacts
+          name: ugoite-release-candidate
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+          path: target/artifacts
+
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          install: true
+          cache: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -474,330 +48,46 @@ jobs:
           registry-url: https://npm.pkg.github.com
           scope: '@ugoite'
 
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          install: true
-          cache: false
-
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Publish Helm OCI chart
-        id: publish-chart
+      - name: Resolve candidate identity
+        id: resolve
         run: |
-          chart_path="$(echo "${RUNNER_TEMP}"/artifacts/helm-chart/*.tgz)"
-          chart_ref="oci://ghcr.io/${GITHUB_REPOSITORY_OWNER}/charts/ugoite"
-          chart_probe_log="$(mktemp)"
-          if helm show chart "${chart_ref}" --version "${{ needs.prepare.outputs.version }}" >"${chart_probe_log}" 2>&1; then
-            rm -f "${chart_probe_log}"
-            existing_dir="$(mktemp -d)"
-            helm pull "${chart_ref}" --version "${{ needs.prepare.outputs.version }}" --destination "${existing_dir}"
-            existing_path="${existing_dir}/ugoite-${{ needs.prepare.outputs.version }}.tgz"
-            python3 - "${chart_path}" "${existing_path}" <<'PY'
-          import sys
-          import tarfile
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
 
-          def contents(path):
-              with tarfile.open(path, "r:gz") as archive:
-                  return sorted(
-                      (member.name, archive.extractfile(member).read())
-                      for member in archive.getmembers()
-                      if member.isfile()
-                  )
+          manifest = json.loads(pathlib.Path("target/artifacts/candidate-manifest.json").read_text())
+          if manifest.get("verification", {}).get("release_grade") != "passed":
+              raise SystemExit("candidate is not release-grade verified")
+          if not re.fullmatch(r"[0-9a-f]{40}", manifest.get("source_sha", "")):
+              raise SystemExit("candidate source SHA is not immutable")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"version={manifest['version']}\n")
+              output.write(f"source_sha={manifest['source_sha']}\n")
+          PY
 
-          if contents(sys.argv[1]) != contents(sys.argv[2]):
-              raise SystemExit("published Helm chart does not match this release artifact")
-            PY
-            echo "Helm chart ${chart_ref}:${{ needs.prepare.outputs.version }} is already published and matches"
-          elif grep -Eiq 'manifest unknown|name unknown|not found' "${chart_probe_log}"; then
-            rm -f "${chart_probe_log}"
-            helm push "${chart_path}" oci://ghcr.io/${GITHUB_REPOSITORY_OWNER}/charts
-          else
-            cat "${chart_probe_log}" >&2
-            rm -f "${chart_probe_log}"
-            exit 1
-          fi
-          digest="$(helm show chart "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER}/charts/ugoite" --version "${{ needs.prepare.outputs.version }}" | sha256sum | awk '{print $1}')"
-          echo "chart_digest=${digest}" >>"$GITHUB_OUTPUT"
-
-      - name: Publish GitHub Packages npm installer
+      - name: Verify exact candidate before publication
         env:
-          NPM_PACKAGE: '@ugoite/ugoite'
-          NPM_VERSION: ${{ needs.prepare.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: mise run release:verify-candidate -- --candidate target/artifacts/candidate-manifest.json --candidate-id "${{ inputs.candidate_id }}"
+
+      - name: Promote exact candidate bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
           NODE_AUTH_TOKEN: ${{ github.token }}
-        run: |
-          tag="${{ needs.prepare.outputs.channel }}"
-          if [[ "${tag}" == "stable" ]]; then
-            tag="latest"
-          fi
-          package_path="$(echo "${RUNNER_TEMP}"/artifacts/npm-installer/*.tgz)"
-          npm_probe_log="$(mktemp)"
-          if npm view "${NPM_PACKAGE}@${NPM_VERSION}" version >"${npm_probe_log}" 2>&1; then
-            rm -f "${npm_probe_log}"
-            existing_dir="$(mktemp -d)"
-            npm pack "${NPM_PACKAGE}@${NPM_VERSION}" --pack-destination "${existing_dir}" >/dev/null
-            existing_path="${existing_dir}/$(basename "${package_path}")"
-            python3 - "${package_path}" "${existing_path}" <<'PY'
-          import sys
-          import tarfile
-
-          def contents(path):
-              with tarfile.open(path, "r:gz") as archive:
-                  return sorted(
-                      (member.name, archive.extractfile(member).read())
-                      for member in archive.getmembers()
-                      if member.isfile()
-                  )
-
-          if contents(sys.argv[1]) != contents(sys.argv[2]):
-              raise SystemExit("published npm package does not match this release artifact")
-            PY
-            echo "npm package ${NPM_PACKAGE}@${NPM_VERSION} is already published and matches"
-          elif grep -Eiq 'E404|404 Not Found|not found' "${npm_probe_log}"; then
-            rm -f "${npm_probe_log}"
-            npm publish "${package_path}" --tag "${tag}"
-          else
-            cat "${npm_probe_log}" >&2
-            rm -f "${npm_probe_log}"
-            exit 1
-          fi
-          npm dist-tag add "${NPM_PACKAGE}@${NPM_VERSION}" "${tag}"
-
-      - name: Stage release Compose asset
-        run: |
-          mkdir -p target/release-publish
-          cp docker-compose.release.yaml target/release-publish/docker-compose.release.yaml
-          (
-            cd target/release-publish
-            sha256sum docker-compose.release.yaml >docker-compose.release.yaml.sha256
-          )
-
-      - name: Upload CLI assets to GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
-          ARTIFACT_ROOT: ${{ runner.temp }}/artifacts
-        run: |
-          python3 - <<'PY'
-          import json
-          import hashlib
-          import os
-          import pathlib
-          import shutil
-          import subprocess
-          import tarfile
-          import tempfile
-
-          release_tag = os.environ["RELEASE_TAG"]
-          root = pathlib.Path(os.environ["ARTIFACT_ROOT"])
-          assets = sorted(root.glob("cli-*/*")) + [
-              pathlib.Path("target/release-publish/docker-compose.release.yaml"),
-              pathlib.Path("target/release-publish/docker-compose.release.yaml.sha256"),
-          ]
-          existing = json.loads(
-              subprocess.run(
-                  ["gh", "release", "view", release_tag, "--json", "assets"],
-                  check=True,
-                  text=True,
-                  capture_output=True,
-              ).stdout
-          )["assets"]
-          existing_names = {asset["name"] for asset in existing}
-
-          def archive_contents(path):
-              with tarfile.open(path, "r:gz") as archive:
-                  return sorted(
-                      (member.name, archive.extractfile(member).read())
-                      for member in archive.getmembers()
-                      if member.isfile()
-                  )
-
-          def checksum(path):
-              return pathlib.Path(path).read_text(encoding="utf-8").split()[0]
-
-          for archive in [asset for asset in assets if asset.name.endswith(".tar.gz")]:
-              checksum_asset = pathlib.Path(f"{archive}.sha256")
-              archive_exists = archive.name in existing_names
-              checksum_exists = checksum_asset.name in existing_names
-              if archive_exists:
-                  with tempfile.TemporaryDirectory() as directory:
-                      patterns = ["--pattern", archive.name]
-                      if checksum_exists:
-                          patterns += ["--pattern", checksum_asset.name]
-                      subprocess.run(
-                          ["gh", "release", "download", release_tag, *patterns, "--dir", directory],
-                          check=True,
-                      )
-                      existing_archive = pathlib.Path(directory) / archive.name
-                      if archive_contents(archive) != archive_contents(existing_archive):
-                          raise SystemExit(f"published release asset {archive.name} does not match this release artifact")
-                      shutil.copyfile(existing_archive, archive)
-                      if checksum_exists:
-                          existing_checksum = pathlib.Path(directory) / checksum_asset.name
-                          if checksum(existing_checksum) != hashlib.sha256(existing_archive.read_bytes()).hexdigest():
-                              raise SystemExit(f"published checksum {checksum_asset.name} does not match its archive")
-                          shutil.copyfile(existing_checksum, checksum_asset)
-                      else:
-                          checksum_asset.write_text(
-                              f"{hashlib.sha256(existing_archive.read_bytes()).hexdigest()}  {archive.name}\n",
-                              encoding="utf-8",
-                          )
-              elif checksum_exists:
-                  with tempfile.TemporaryDirectory() as directory:
-                      subprocess.run(
-                          ["gh", "release", "download", release_tag, "--pattern", checksum_asset.name, "--dir", directory],
-                          check=True,
-                      )
-                      existing_checksum = pathlib.Path(directory) / checksum_asset.name
-                      if checksum(existing_checksum) != hashlib.sha256(archive.read_bytes()).hexdigest():
-                          raise SystemExit(f"published checksum {checksum_asset.name} does not match this release artifact")
-                      shutil.copyfile(existing_checksum, checksum_asset)
-
-          for asset in assets:
-              if asset.name not in existing_names:
-                  subprocess.run(
-                      ["gh", "release", "upload", release_tag, str(asset)],
-                      check=True,
-                  )
-                  continue
-              with tempfile.TemporaryDirectory() as directory:
-                  subprocess.run(
-                      [
-                          "gh",
-                          "release",
-                          "download",
-                          release_tag,
-                          "--pattern",
-                          asset.name,
-                          "--dir",
-                          directory,
-                      ],
-                      check=True,
-                  )
-                  existing_path = pathlib.Path(directory) / asset.name
-                  if not existing_path.is_file() or existing_path.read_bytes() != asset.read_bytes():
-                      raise SystemExit(f"published release asset {asset.name} does not match this release artifact")
-                  print(f"Release asset {asset.name} is already published and matches")
-          PY
-
-      - name: Write release manifest
-        id: manifest
-        env:
-          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
-          VERSION: ${{ needs.prepare.outputs.version }}
-          RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
-          IMAGE_DIGEST: ${{ needs.publish-image.outputs.image_digest }}
-          CHART_DIGEST: ${{ steps.publish-chart.outputs.chart_digest }}
-          ARTIFACT_ROOT: ${{ runner.temp }}/artifacts
-        run: |
-          python3 - <<'PY'
-          import hashlib
-          import json
-          import os
-          import pathlib
-
-          root = pathlib.Path(os.environ["ARTIFACT_ROOT"])
-          files = []
-          release_files = sorted(root.glob("cli-*/*")) + [
-              pathlib.Path("target/release-publish/docker-compose.release.yaml"),
-              pathlib.Path("target/release-publish/docker-compose.release.yaml.sha256"),
-          ]
-          for path in release_files:
-              digest = hashlib.sha256(path.read_bytes()).hexdigest()
-              files.append({"name": path.name, "sha256": digest, "size": path.stat().st_size})
-
-          sums = [f"{file['sha256']}  {file['name']}" for file in files if not file["name"].endswith(".sha256")]
-          sums_path = pathlib.Path("target") / "release-publish" / "SHA256SUMS"
-          sums_path.parent.mkdir(parents=True, exist_ok=True)
-          sums_path.write_text("\n".join(sorted(sums)) + "\n", encoding="utf-8")
-
-          manifest = {
-              "schema_version": 1,
-              "release_tag": os.environ["RELEASE_TAG"],
-              "version": os.environ["VERSION"],
-              "source_sha": os.environ["RELEASE_SHA"],
-              "files": files,
-              "image": {
-                  "repository": f"ghcr.io/{os.environ['GITHUB_REPOSITORY']}",
-                  "digest": os.environ["IMAGE_DIGEST"],
-              },
-              "helm_chart": {
-                  "repository": f"oci://ghcr.io/{os.environ['GITHUB_REPOSITORY_OWNER']}/charts/ugoite",
-                  "digest": os.environ["CHART_DIGEST"],
-              },
-          }
-          manifest_path = pathlib.Path("target") / "release-publish" / "release-manifest.json"
-          manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-              handle.write(f"manifest_path={manifest_path}\n")
-          PY
-
-      - name: Upload release manifest assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import pathlib
-          import subprocess
-          import tempfile
-
-          release_tag = os.environ["RELEASE_TAG"]
-          assets = [
-              pathlib.Path("target/release-publish/SHA256SUMS"),
-              pathlib.Path("target/release-publish/release-manifest.json"),
-          ]
-          existing = json.loads(
-              subprocess.run(
-                  ["gh", "release", "view", release_tag, "--json", "assets"],
-                  check=True,
-                  text=True,
-                  capture_output=True,
-              ).stdout
-          )["assets"]
-          existing_names = {asset["name"] for asset in existing}
-          for asset in assets:
-              if asset.name not in existing_names:
-                  subprocess.run(
-                      ["gh", "release", "upload", release_tag, str(asset)],
-                      check=True,
-                  )
-                  continue
-              with tempfile.TemporaryDirectory() as directory:
-                  subprocess.run(
-                      [
-                          "gh",
-                          "release",
-                          "download",
-                          release_tag,
-                          "--pattern",
-                          asset.name,
-                          "--dir",
-                          directory,
-                      ],
-                      check=True,
-                  )
-                  existing_path = pathlib.Path(directory) / asset.name
-                  if not existing_path.is_file() or existing_path.read_bytes() != asset.read_bytes():
-                      raise SystemExit(f"published release asset {asset.name} does not match this release artifact")
-                  print(f"Release asset {asset.name} is already published and matches")
-          PY
+          UGOITE_PROMOTION_DEFER_ALIASES: "true"
+        run: mise run release:promote -- --candidate target/artifacts/candidate-manifest.json --candidate-id "${{ inputs.candidate_id }}"
 
   verify-published-quickstarts:
-    needs:
-      - prepare
-      - publish-release-assets
-    if: >-
-      ${{
-        always() &&
-        needs.prepare.outputs.release_tag != '' &&
-        needs.publish-release-assets.result == 'success'
-      }}
+    needs: promote
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -806,10 +96,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.prepare.outputs.release_sha }}
+          ref: ${{ needs.promote.outputs.source_sha }}
           persist-credentials: false
 
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           install: true
           cache: true
@@ -820,85 +110,101 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Install Playwright browsers once
+      - name: Install Playwright browsers
         run: deno task e2e:install:browsers
 
       - name: Verify published container quick start
-        id: container-quickstart
-        continue-on-error: true
         env:
           UGOITE_IMAGE_REPOSITORY: ghcr.io/${{ github.repository }}
           UGOITE_RELEASE_TOKEN: ${{ github.token }}
-          UGOITE_RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
-          UGOITE_RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
-          UGOITE_VERSION: ${{ needs.prepare.outputs.version }}
+          UGOITE_RELEASE_SHA: ${{ needs.promote.outputs.source_sha }}
+          UGOITE_RELEASE_TAG: v${{ needs.promote.outputs.version }}
+          UGOITE_VERSION: ${{ needs.promote.outputs.version }}
         run: bash scripts/verify-release-container-quickstart.sh
 
       - name: Verify published CLI quick start
-        id: cli-quickstart
-        continue-on-error: true
         env:
           UGOITE_RELEASE_TOKEN: ${{ github.token }}
-          UGOITE_RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
-          UGOITE_RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
-          UGOITE_VERSION: ${{ needs.prepare.outputs.version }}
+          UGOITE_RELEASE_SHA: ${{ needs.promote.outputs.source_sha }}
+          UGOITE_RELEASE_TAG: v${{ needs.promote.outputs.version }}
+          UGOITE_VERSION: ${{ needs.promote.outputs.version }}
         run: bash scripts/verify-release-cli-quickstart.sh
-
-      - name: Fail if a published quick start failed
-        if: always()
-        env:
-          CONTAINER_OUTCOME: ${{ steps.container-quickstart.outcome }}
-          CLI_OUTCOME: ${{ steps.cli-quickstart.outcome }}
-        run: |
-          if [[ "${CONTAINER_OUTCOME}" != "success" || "${CLI_OUTCOME}" != "success" ]]; then
-            echo "container quick start: ${CONTAINER_OUTCOME}"
-            echo "CLI quick start: ${CLI_OUTCOME}"
-            exit 1
-          fi
 
   publish-channel-release-notes:
     needs:
-      - prepare
-      - publish-release-assets
+      - promote
       - verify-published-quickstarts
-    if: >-
-      ${{
-        needs.prepare.outputs.release_tag != '' &&
-        needs.publish-release-assets.result == 'success' &&
-        needs.verify-published-quickstarts.result == 'success'
-      }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.prepare.outputs.release_sha }}
+          ref: ${{ needs.promote.outputs.source_sha }}
           persist-credentials: false
 
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           install: true
           cache: false
 
-      - name: Publish repository-owned channel release notes
+      - name: Publish repository-owned stable release notes
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
-          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
-          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_TAG: v${{ needs.promote.outputs.version }}
+          RELEASE_VERSION: ${{ needs.promote.outputs.version }}
         run: |
           set -euo pipefail
           body_file="$(mktemp)"
           notes_file="$(mktemp)"
-          cleanup() {
-            rm -f "${body_file}" "${notes_file}"
-          }
-          trap cleanup EXIT
+          trap 'rm -f "${body_file}" "${notes_file}"' EXIT
           gh release view "${RELEASE_TAG}" --json body --jq .body >"${body_file}"
-          deno run -A tools/release-notes.ts compose \
-            --channel "${RELEASE_CHANNEL}" \
-            --version "${RELEASE_VERSION}" \
-            --body-file "${body_file}" \
-            --output "${notes_file}"
+          deno run -A tools/release-notes.ts compose --channel stable --version "${RELEASE_VERSION}" --body-file "${body_file}" --output "${notes_file}"
           gh release edit "${RELEASE_TAG}" --notes-file "${notes_file}"
+
+  promote-aliases:
+    needs:
+      - promote
+      - verify-published-quickstarts
+      - publish-channel-release-notes
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.promote.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ugoite-release-candidate
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+          path: target/artifacts
+
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          install: true
+          cache: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          registry-url: https://npm.pkg.github.com
+          scope: '@ugoite'
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Update mutable aliases only after publication verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: mise run release:promote:aliases -- --candidate target/artifacts/candidate-manifest.json --candidate-id "${{ inputs.candidate_id }}"

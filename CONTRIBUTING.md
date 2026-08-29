@@ -63,20 +63,15 @@ Describe the behavior change, link an issue, list focused validation, and call o
 
 ## Release flow
 
-Canonical release versions are synchronized across:
+`version.txt` is the canonical prepared version. `mise run version:sync`
+updates its Cargo, npm, Helm, and lockfile projections; `mise run version:check`
+verifies them. `mise run release:prepare compatible` advances a pre-1.0 patch,
+while `mise run release:prepare breaking` advances the pre-1.0 compatibility
+epoch. These commands never create tags, releases, or registry artifacts.
 
-- `Cargo.toml` `[workspace.package].version`
-- `version.txt`
-- `.release-please-manifest.json`
-- `packages/ugoite/package.json`
-- `charts/ugoite/Chart.yaml`
-- `charts/ugoite/values.yaml`
-
-`mise run validate:release` verifies that contract locally. A release is an
-explicit operator promotion: after the required PR has merged, create the
-exact `v<version>` tag and a matching GitHub Release on the intended commit,
-then dispatch `.github/workflows/release-publish.yml` with that tag. The
-workflow verifies the release and publishes every non-docsite artifact from
-the tag's exact commit. Ordinary pushes to `main` do not run release
-automation, so repository release publication does not depend on an
-organization-wide permission for Actions to create pull requests.
+After the release PR merges, `release-candidate.yml` builds and verifies the
+exact main SHA and stores a candidate manifest plus artifacts. Promotion takes
+that manifest and candidate ID through `mise run release:promote`; it publishes
+the exact verified bytes without rebuilding or repackaging, and is safe to
+rerun when immutable publication content matches. Ordinary pushes to `main`
+do not run release automation.

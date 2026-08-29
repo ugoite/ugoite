@@ -150,13 +150,13 @@ Prefer package-manager or release-archive installation. The optional npm
 installer verifies release checksums before installing a binary. Do not present
 `curl | sh` as the recommended installation path.
 
-Release versions are synchronized across Cargo, `version.txt`, the root
-release manifest, the scoped GitHub Packages installer, and Helm metadata. An
-operator creates the exact `v<version>` tag and matching GitHub Release after
-the promotion commit, then dispatches `.github/workflows/release-publish.yml`;
-the workflow verifies that tag and publishes versioned non-docsite artifacts
-from its exact commit. Ordinary pushes to `main` do not invoke release
-automation.
+`version.txt` is the canonical prepared product version. Run `mise run version:sync`
+and `mise run version:check` for its Cargo, npm, Helm, and lockfile projections.
+Ordinary pushes do not update release metadata. An
+operator prepares a compatible or breaking version, merges that release PR,
+dispatches `.github/workflows/release-candidate.yml`, and promotes the exact
+verified candidate with `.github/workflows/release-publish.yml`. Promotion does
+not rebuild or repackage candidate bytes.
 
 ## License
 
