@@ -193,7 +193,7 @@ export class KonaseHost {
     if (!start) throw new Error("Konase did not start a Job");
 
     const runtime = new BrowserAgentRuntime();
-    let action = runtime.start(start.job, start.context, capabilities);
+    let action = runtime.start(start.job, start.context);
     state = await this.progress(state, jobId, action);
     let undoAvailable = false;
 
@@ -280,10 +280,9 @@ class BrowserAgentRuntime {
   start(
     job: JobSpec,
     context: ContextCapsule,
-    capabilities: Capability[],
   ): AgentAction {
     this.jobId = job.id;
-    this.tools = capabilities.flatMap((capability) => {
+    this.tools = context.available_capabilities.flatMap((capability) => {
       if (!capability.input_schema) return [];
       return [{
         name: capability.name,
