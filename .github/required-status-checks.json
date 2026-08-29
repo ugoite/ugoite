@@ -22,7 +22,7 @@
       "context": "require-close-issue-link",
       "workflow": ".github/workflows/pr-require-close-issue.yml",
       "job_id": "require-close-issue-link",
-      "events": ["pull_request"]
+      "events": ["pull_request", "merge_group"]
     }
   ],
   "excluded_from_required_status_checks": [
