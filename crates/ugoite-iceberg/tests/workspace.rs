@@ -306,6 +306,98 @@ async fn pins_are_head_owned_publication_references() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn publication_coordinates_are_portable_for_uri_like_command_ids() -> anyhow::Result<()> {
+    let space_id = SpaceId::from(Uuid::now_v7());
+    let workspace =
+        IcebergWorkspace::memory_for_tests(space_id, "memory://iceberg-portable-coordinate")
+            .await?;
+    let form = form();
+    create_form(&workspace, &form).await?;
+    let pin = workspace
+        .create_pin(
+            "before-history",
+            "principal:owner",
+            1,
+            "pin-create-before-history",
+        )
+        .await?;
+
+    let change_id = "change:history/1";
+    let revision = EntryRevision {
+        form_id: form.id,
+        entry_id: Uuid::from_u128(3_011).into(),
+        revision_id: Uuid::from_u128(3_012).into(),
+        change_id: change_id.into(),
+        parent_revision_id: None,
+        entry_version: 1,
+        expected_version: None,
+        operation: EntryOperation::Upsert,
+        committed_at_micros: 2,
+        author_id: "principal:owner".into(),
+        form_version: form.version,
+        source_kind: "test".into(),
+        source_id: None,
+        entry: EntryMetadata {
+            external_id: "portable-coordinate-entry".into(),
+            updated_by: "principal:owner".into(),
+            ..EntryMetadata::default()
+        },
+        values: BTreeMap::from([(
+            FieldId::new(100).unwrap(),
+            FieldValue::String("portable".into()),
+        )]),
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    };
+    let command = ChangeCommand {
+        change_id: change_id.into(),
+        run_id: None,
+        actor_principal_id: "principal:owner".into(),
+        message: Some("portable coordinate regression".into()),
+        reverts_change_id: None,
+        created_at_micros: 2,
+    };
+    workspace
+        .commit(publication_context_for_change(
+            &command,
+            "test.entry.append",
+            &revision,
+        )?)?
+        .append_revisions(form.id, vec![revision])
+        .await?;
+
+    let changes = workspace.list_changes().await?;
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].change_id, change_id);
+    let coordinate = &changes[0].publication;
+    coordinate.validate()?;
+    let coordinate_text = coordinate.publication_uri.to_string();
+    assert_eq!(
+        SpaceUri::parse(&coordinate_text)?,
+        coordinate.publication_uri
+    );
+    assert!(coordinate
+        .publication_uri
+        .key()
+        .as_str()
+        .starts_with("_ugoite/catalog/publications/"));
+    assert!(coordinate_text.starts_with("ugoite://"));
+    assert!(!coordinate_text.contains("memory://"));
+    assert!(!coordinate_text.contains("file://"));
+    assert!(!coordinate_text.contains("change:"));
+
+    let pins = workspace.list_pins().await?;
+    assert_eq!(pins.get("before-history"), Some(&pin));
+    let pin_coordinate = &pins["before-history"].coordinate;
+    pin_coordinate.validate()?;
+    assert_eq!(
+        SpaceUri::parse(&pin_coordinate.publication_uri.to_string())?,
+        pin_coordinate.publication_uri
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn revert_change_appends_a_selective_inverse_without_rewinding_head() -> anyhow::Result<()> {
     let space_id = SpaceId::from(Uuid::now_v7());
     let workspace =

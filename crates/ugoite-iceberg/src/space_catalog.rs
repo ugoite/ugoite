@@ -359,25 +359,7 @@ impl SpaceCatalog {
                 .map_err(storage_error)?,
         )?;
         validate_publication_matches_head(&publication, head)?;
-        let prefix = if self.store.space_root().is_empty() {
-            String::new()
-        } else {
-            format!("{}/", self.store.space_root())
-        };
-        let key = publication_path.strip_prefix(&prefix).ok_or_else(|| {
-            Error::new(
-                ErrorKind::DataInvalid,
-                "Catalog publication is outside the bound Space",
-            )
-        })?;
-        let uri = SpaceUri::new(
-            self.logical_space_uid,
-            SpaceKey::parse(key)
-                .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?,
-        )
-        .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?;
-        PublicationRef::new(publication.generation, uri, publication.checksum)
-            .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))
+        self.publication_ref_for_record(publication_path, &publication)
     }
 
     pub(crate) async fn current_publication(&self) -> Result<PublicationRef> {
@@ -447,18 +429,13 @@ impl SpaceCatalog {
                     .map_err(storage_error)?,
             )?;
             validate_publication_matches_head(&publication, &head)?;
+            let publication_ref = self.publication_ref_for_record(&path, &publication)?;
             if let Some(change) = publication.change.clone() {
-                let publication_uri = self.publication_uri(&path)?;
                 changes.push(PublishedChange {
                     change_id: publication.command_id.clone(),
                     generation: publication.generation,
                     change,
-                    publication: PublicationRef::new(
-                        publication.generation,
-                        publication_uri,
-                        publication.checksum,
-                    )
-                    .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?,
+                    publication: publication_ref,
                 });
             }
             let (previous_generation, previous_path, previous_checksum) = match (
@@ -521,6 +498,34 @@ impl SpaceCatalog {
         .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))
     }
 
+    /// Converts one committed publication from its canonical storage key into
+    /// the domain coordinate exposed by every public adapter. The path check
+    /// keeps semantic command IDs out of storage keys and makes malformed or
+    /// detached publication records fail closed before serialization.
+    fn publication_ref_for_record(
+        &self,
+        publication_path: &str,
+        publication: &PublicationRecord,
+    ) -> Result<PublicationRef> {
+        if publication_path
+            != self
+                .store
+                .publication_path(publication.generation, &publication.command_id)
+        {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "Catalog publication is not at its canonical storage coordinate",
+            ));
+        }
+        let publication_uri = self.publication_uri(publication_path)?;
+        PublicationRef::new(
+            publication.generation,
+            publication_uri,
+            publication.checksum.clone(),
+        )
+        .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))
+    }
+
     async fn validate_pin_references(&self, head: &CatalogHead) -> Result<()> {
         if head.pins.is_empty() {
             return Ok(());
@@ -559,10 +564,11 @@ impl SpaceCatalog {
                     .map_err(pin_reference_target_error)?,
             )?;
             validate_publication_matches_head(&publication, &cursor)?;
+            let publication_ref = self.publication_ref_for_record(&path, &publication)?;
             let coordinate = (
-                publication.generation,
-                self.publication_uri(&path)?.to_string(),
-                publication.checksum.clone(),
+                publication_ref.generation,
+                publication_ref.publication_uri.to_string(),
+                publication_ref.publication_checksum,
             );
             remaining.remove(&coordinate);
             let (previous_generation, previous_path, previous_checksum) = match (
@@ -2490,6 +2496,7 @@ impl SpaceCatalog {
                 .map_err(storage_error)?,
         )?;
         validate_publication_matches_head(&publication, head)?;
+        self.publication_ref_for_record(publication_path, &publication)?;
         for reference in head.tables.values() {
             validate_logical_location(
                 &reference.metadata_location,
