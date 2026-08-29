@@ -1,51 +1,19 @@
 name: Release Publish
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing v<SemVer> tag to republish after validating the matching GitHub Release
+        description: Existing v<SemVer> tag and GitHub Release to publish or republish
         required: true
         type: string
 
 permissions: {}
 
 jobs:
-  release-please:
-    if: github.event_name == 'push'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-      pull-requests: write
-    outputs:
-      release_created: ${{ steps.normalize.outputs.release_created }}
-      release_tag: ${{ steps.normalize.outputs.release_tag }}
-      release_sha: ${{ steps.normalize.outputs.release_sha }}
-    steps:
-      - name: Run Release Please
-        id: release
-        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
-        with:
-          config-file: .github/release-please-config.json
-          manifest-file: .release-please-manifest.json
-
-      - name: Normalize release outputs
-        id: normalize
-        run: |
-          {
-            echo "release_created=${{ steps.release.outputs.release_created || steps.release.outputs['.--release_created'] || 'false' }}"
-            echo "release_tag=${{ steps.release.outputs.tag_name || steps.release.outputs['.--tag_name'] }}"
-            echo "release_sha=${{ steps.release.outputs.sha || steps.release.outputs['.--sha'] }}"
-          } >>"$GITHUB_OUTPUT"
-
   prepare:
     runs-on: ubuntu-24.04
-    needs:
-      - release-please
-    if: always() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created == 'true')
+    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
     outputs:
@@ -58,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.release_tag || github.sha }}
+          ref: ${{ inputs.release_tag }}
           persist-credentials: false
           fetch-depth: 0
 
@@ -70,10 +38,7 @@ jobs:
       - name: Resolve trusted release metadata
         id: resolve
         env:
-          EVENT_NAME: ${{ github.event_name }}
           INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
-          ACTION_RELEASE_TAG: ${{ needs.release-please.outputs.release_tag }}
-          ACTION_RELEASE_SHA: ${{ needs.release-please.outputs.release_sha }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
@@ -87,12 +52,7 @@ jobs:
               print(message, file=sys.stderr)
               raise SystemExit(1)
 
-          event_name = os.environ["EVENT_NAME"]
-          candidate_tag = (
-              os.environ["INPUT_RELEASE_TAG"].strip()
-              if event_name == "workflow_dispatch"
-              else os.environ["ACTION_RELEASE_TAG"].strip()
-          )
+          candidate_tag = os.environ["INPUT_RELEASE_TAG"].strip()
           if not re.fullmatch(r"v\d+\.\d+\.\d+(?:-(?:alpha|beta)\.\d+)?", candidate_tag):
               fail(f"release tag must be v<SemVer>, got {candidate_tag!r}")
 
@@ -112,10 +72,6 @@ jobs:
               text=True,
               capture_output=True,
           ).stdout.strip()
-          release_sha = os.environ["ACTION_RELEASE_SHA"].strip() or tag_sha
-          if tag_sha != release_sha:
-              fail(f"tag {candidate_tag} resolves to {tag_sha}, expected {release_sha}")
-
           subprocess.run(["mise", "run", "validate:release"], check=True)
           version = subprocess.run(
               ["mise", "run", "print:version"],
@@ -162,6 +118,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
+      attestations: write
       id-token: write
     concurrency:
       group: release-cli-${{ needs.prepare.outputs.release_tag }}-${{ matrix.target }}
@@ -245,6 +202,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      attestations: write
       id-token: write
     concurrency:
       group: release-npm-helm-${{ needs.prepare.outputs.release_tag }}

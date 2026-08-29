@@ -150,10 +150,13 @@ Prefer package-manager or release-archive installation. The optional npm
 installer verifies release checksums before installing a binary. Do not present
 `curl | sh` as the recommended installation path.
 
-Release versions are synchronized across Cargo, the scoped GitHub Packages
-installer, and Helm metadata. Pushes to `main` update Release Please metadata
-only; merging the Release Please PR publishes versioned non-docsite artifacts
-from `.github/workflows/release-publish.yml`.
+Release versions are synchronized across Cargo, `version.txt`, the root
+release manifest, the scoped GitHub Packages installer, and Helm metadata. An
+operator creates the exact `v<version>` tag and matching GitHub Release after
+the promotion commit, then dispatches `.github/workflows/release-publish.yml`;
+the workflow verifies that tag and publishes versioned non-docsite artifacts
+from its exact commit. Ordinary pushes to `main` do not invoke release
+automation.
 
 ## License
 
