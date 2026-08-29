@@ -33,6 +33,9 @@ ugoite-konase is a portable client-side control plane used by native and WASM
 adapters. Its deterministic step function returns serializable host effects
 and does not perform I/O. Konase state and bounded observations are disposable;
 durable Knowledge remains in the existing Space and Change/Run/Undo boundaries.
+The browser Host and native CLI each execute one Job at a time and discard
+their runtime state after completion; the browser has no persistent chat or
+browser-local Space store.
 
 ## Storage
 

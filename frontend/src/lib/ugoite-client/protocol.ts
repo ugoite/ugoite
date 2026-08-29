@@ -169,6 +169,21 @@ const invokeProtocol = async <T>(command: unknown): Promise<T> => {
   }
 };
 
+export type KonaseProtocolAction =
+  | "konase.version"
+  | "konase.new"
+  | "konase.step"
+  | "konase.context";
+
+/** Invoke the portable Konase control-plane protocol in Rust/WASM. */
+export const invokeKonase = async <T = unknown>(
+  action: KonaseProtocolAction,
+  value?: unknown,
+): Promise<T> =>
+  await invokeProtocol<T>(
+    value === undefined ? { action } : { action, value },
+  );
+
 export const getWasmSupportedOperations = async (): Promise<
   UgoiteApiOperation[]
 > => await invokeProtocol<UgoiteApiOperation[]>({ action: "operations" });

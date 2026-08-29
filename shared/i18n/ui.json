@@ -862,7 +862,23 @@
     "sqlPage.run": "Run",
     "sqlPage.variableDescription": "Variable {name}",
     "sqlPage.booleanRequired": "{name} must be true or false",
-    "sqlPage.numberRequired": "{name} must be a number"
+    "sqlPage.numberRequired": "{name} must be a number",
+    "konase.title": "Konase",
+    "konase.promptPlaceholder": "Ask Konase to find or update your notes...",
+    "konase.submit": "Run",
+    "konase.running": "Working...",
+    "konase.credentialsHint": "Credentials stay in memory for this page and are sent only to the configured model and Ugoite MCP endpoint.",
+    "konase.modelKey": "Model API key",
+    "konase.mcpToken": "Ugoite MCP access token",
+    "konase.connect": "Connect",
+    "konase.hostRequired": "Configure a Browser Host with a model and MCP credential to use Konase.",
+    "konase.model": "Model",
+    "konase.mcp": "MCP: {operation}",
+    "konase.complete": "Completed",
+    "konase.undo": "Undo",
+    "konase.undoing": "Undoing...",
+    "konase.undone": "Work undone",
+    "konase.error": "Konase could not complete the Work."
   },
   "ja": {
     "nav.home": "ホーム",
@@ -1727,6 +1743,22 @@
     "sqlPage.run": "実行",
     "sqlPage.variableDescription": "変数 {name}",
     "sqlPage.booleanRequired": "{name} は true または false を指定してください",
-    "sqlPage.numberRequired": "{name} は数値を指定してください"
+    "sqlPage.numberRequired": "{name} は数値を指定してください",
+    "konase.title": "Konase",
+    "konase.promptPlaceholder": "メモの検索や更新を Konase に依頼...",
+    "konase.submit": "実行",
+    "konase.running": "処理中...",
+    "konase.credentialsHint": "Credential はこのページのメモリ上だけで保持し、設定した Model と Ugoite MCP endpoint にのみ送信します。",
+    "konase.modelKey": "Model API key",
+    "konase.mcpToken": "Ugoite MCP access token",
+    "konase.connect": "接続",
+    "konase.hostRequired": "Konase を使うには、Model と MCP credential を持つ Browser Host を設定してください。",
+    "konase.model": "Model",
+    "konase.mcp": "MCP: {operation}",
+    "konase.complete": "完了",
+    "konase.undo": "取り消す",
+    "konase.undoing": "取り消し中...",
+    "konase.undone": "Work を取り消しました",
+    "konase.error": "Konase が Work を完了できませんでした。"
   }
 }

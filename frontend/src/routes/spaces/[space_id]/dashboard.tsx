@@ -2,6 +2,7 @@ import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { CreateFormDialog } from "~/components/create-dialogs";
 import { UiIcon } from "~/components/UiIcon";
+import { KonasePanel } from "~/components/konase/KonasePanel";
 import { createEntryStore } from "~/lib/entry-store";
 import { getDocsiteHref } from "~/lib/docsite-links";
 import { t } from "~/lib/i18n";
@@ -83,6 +84,8 @@ export default function SpaceDashboardRoute() {
           <UiIcon name="plus" /> {t("dashboard.newEntry")}
         </button>
       </div>
+
+      <KonasePanel />
 
       <Show when={forms.error}>
         <section class="surface emptyState" role="alert">
