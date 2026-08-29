@@ -1,4 +1,4 @@
-use crate::ContextBuilder;
+use crate::{AgentAction, ContextBuilder, ModelMessage, ModelRequest, ModelTool, ModelToolCall};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -18,6 +18,10 @@ const MAX_MCP_ARGUMENTS: usize = 32;
 const MAX_MCP_VALUE_BYTES: usize = 8 * 1024;
 const MAX_SCHEMA_BYTES: usize = 16 * 1024;
 const MAX_STATE_ERROR_RESERVE_BYTES: usize = 4 * 1024;
+const MAX_MODEL_HISTORY: usize = 32;
+const MAX_MODEL_CONTENT_CHARS: usize = 8 * 1024;
+const MAX_MODEL_TOOLS: usize = 32;
+const MAX_MODEL_TOOL_CALLS: usize = 16;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Work {
@@ -144,7 +148,8 @@ pub struct AgentProgress {
     pub strategy_summary: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub observation: Option<Observation>,
-    pub action: EffectKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<AgentAction>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -192,15 +197,6 @@ pub struct HostError {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum EffectKind {
-    CallMcp(McpRequest),
-    AskConfirmation(ConfirmationRequest),
-    Complete(JobOutcome),
-    None,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
 pub enum KonaseEvent {
     UserSubmitted(UserRequest),
     AgentProgress(AgentProgress),
@@ -214,6 +210,7 @@ pub enum KonaseEvent {
 #[serde(rename_all = "snake_case")]
 pub enum KonaseEffect {
     StartJob(Box<JobRequest>),
+    CallModel(ModelRequest),
     CallMcp(McpRequest),
     AskConfirmation(ConfirmationRequest),
     Emit(KonaseOutput),
@@ -229,6 +226,7 @@ pub struct JobRequest {
 #[serde(rename_all = "snake_case")]
 pub enum PendingEffect {
     StartJob,
+    CallModel { request_id: String },
     CallMcp { request_id: String },
     AskConfirmation { request_id: String },
 }
@@ -469,8 +467,9 @@ fn progress_event(
     effects: &mut Vec<KonaseEffect>,
 ) -> Result<(), KonaseError> {
     let job_id = progress.job_id.clone();
+    let has_action = progress.action.is_some();
     {
-        let job = active_job(state, &job_id)?;
+        let job = progress_job(state, &job_id, has_action)?;
         job.status = JobStatus::Running;
         job.strategy_summary = progress.strategy_summary;
     }
@@ -481,13 +480,19 @@ fn progress_event(
         effects.push(KonaseEffect::Emit(output));
     }
     match progress.action {
-        EffectKind::CallMcp(request) => {
+        Some(AgentAction::CallModel(request)) => {
+            let request_id = request.request_id.clone();
+            current_job(state, &job_id)?.status = JobStatus::WaitingForHost;
+            state.pending_effect = Some(PendingEffect::CallModel { request_id });
+            effects.push(KonaseEffect::CallModel(request));
+        }
+        Some(AgentAction::CallMcp(request)) => {
             let request_id = request.request_id.clone();
             current_job(state, &job_id)?.status = JobStatus::WaitingForHost;
             state.pending_effect = Some(PendingEffect::CallMcp { request_id });
             effects.push(KonaseEffect::CallMcp(request));
         }
-        EffectKind::AskConfirmation(request) => {
+        Some(AgentAction::AskConfirmation(request)) => {
             let request_id = request.request_id.clone();
             current_job(state, &job_id)?.status = JobStatus::WaitingForHost;
             state.pending_effect = Some(PendingEffect::AskConfirmation { request_id });
@@ -498,8 +503,8 @@ fn progress_event(
             effects.push(KonaseEffect::AskConfirmation(request));
             effects.push(KonaseEffect::Emit(output));
         }
-        EffectKind::Complete(outcome) => complete_job(state, outcome, effects)?,
-        EffectKind::None => {
+        Some(AgentAction::Complete(outcome)) => complete_job(state, outcome, effects)?,
+        None => {
             state.pending_effect = None;
         }
     }
@@ -618,11 +623,13 @@ fn host_failed(
         ));
     }
     match (&state.pending_effect, error.request_id.as_deref()) {
-        (Some(PendingEffect::CallMcp { request_id }), Some(actual))
+        (Some(PendingEffect::CallModel { request_id }), Some(actual))
+        | (Some(PendingEffect::CallMcp { request_id }), Some(actual))
         | (Some(PendingEffect::AskConfirmation { request_id }), Some(actual))
             if request_id == actual => {}
         (Some(PendingEffect::StartJob), None) | (None, None) => {}
-        (Some(PendingEffect::CallMcp { .. }), None)
+        (Some(PendingEffect::CallModel { .. }), None)
+        | (Some(PendingEffect::CallMcp { .. }), None)
         | (Some(PendingEffect::AskConfirmation { .. }), None)
         | (Some(PendingEffect::StartJob), Some(_))
         | (None, Some(_)) => {
@@ -631,7 +638,8 @@ fn host_failed(
                 "host failure does not match the pending effect",
             ))
         }
-        (Some(PendingEffect::CallMcp { .. }), Some(_))
+        (Some(PendingEffect::CallModel { .. }), Some(_))
+        | (Some(PendingEffect::CallMcp { .. }), Some(_))
         | (Some(PendingEffect::AskConfirmation { .. }), Some(_)) => {
             return Err(KonaseError::new(
                 "unexpected_host_failure",
@@ -720,6 +728,41 @@ fn active_job<'a>(state: &'a mut KonaseState, job_id: &str) -> Result<&'a mut Jo
     }
 }
 
+/// Accept the next runtime decision after a host has completed a model or
+/// other host effect. Model results are intentionally runtime inputs rather
+/// than Konase events, so the following AgentProgress carries the next action
+/// and advances the waiting Job to its next pending effect.
+fn progress_job<'a>(
+    state: &'a mut KonaseState,
+    job_id: &str,
+    has_action: bool,
+) -> Result<&'a mut Job, KonaseError> {
+    if state
+        .job
+        .as_ref()
+        .is_some_and(|job| matches!(job.status, JobStatus::Completed | JobStatus::Failed))
+    {
+        return Err(KonaseError::new(
+            "terminal_job",
+            "event references a terminal Job",
+        ));
+    }
+    ensure_working_session(state)?;
+    let job = current_job(state, job_id)?;
+    match job.status {
+        JobStatus::Pending | JobStatus::Running => Ok(job),
+        JobStatus::WaitingForHost if has_action => Ok(job),
+        JobStatus::WaitingForHost => Err(KonaseError::new(
+            "job_waiting_for_host",
+            "runtime progress must carry the next action while a host effect is pending",
+        )),
+        JobStatus::Completed | JobStatus::Failed => Err(KonaseError::new(
+            "terminal_job",
+            "event references a terminal Job",
+        )),
+    }
+}
+
 fn waiting_for_host(state: &KonaseState) -> Result<(), KonaseError> {
     ensure_working_session(state)?;
     if state
@@ -784,6 +827,7 @@ fn validate_state(state: &KonaseState) -> Result<(), KonaseError> {
             match (&job.status, &state.pending_effect) {
                 (JobStatus::Pending, Some(PendingEffect::StartJob))
                 | (JobStatus::Running, None)
+                | (JobStatus::WaitingForHost, Some(PendingEffect::CallModel { .. }))
                 | (JobStatus::WaitingForHost, Some(PendingEffect::CallMcp { .. }))
                 | (JobStatus::WaitingForHost, Some(PendingEffect::AskConfirmation { .. })) => {}
                 _ => return invalid_state("Job status and pending effect are inconsistent"),
@@ -839,7 +883,9 @@ fn validate_event(event: &KonaseEvent) -> Result<(), KonaseError> {
             if let Some(observation) = &progress.observation {
                 validate_observation(observation)?;
             }
-            validate_effect_kind(&progress.action)?;
+            if let Some(action) = &progress.action {
+                validate_agent_action(action)?;
+            }
         }
         KonaseEvent::JobCompleted(outcome) => validate_job_outcome(outcome)?,
         KonaseEvent::McpCompleted(result) => validate_mcp_result(result)?,
@@ -930,13 +976,79 @@ fn validate_schema(schema: &Option<Value>) -> Result<(), KonaseError> {
     Ok(())
 }
 
-fn validate_effect_kind(action: &EffectKind) -> Result<(), KonaseError> {
+fn validate_agent_action(action: &AgentAction) -> Result<(), KonaseError> {
     match action {
-        EffectKind::CallMcp(request) => validate_mcp_request(request),
-        EffectKind::AskConfirmation(request) => validate_confirmation_request(request),
-        EffectKind::Complete(outcome) => validate_job_outcome(outcome),
-        EffectKind::None => Ok(()),
+        AgentAction::CallModel(request) => validate_model_request(request),
+        AgentAction::CallMcp(request) => validate_mcp_request(request),
+        AgentAction::AskConfirmation(request) => validate_confirmation_request(request),
+        AgentAction::Complete(outcome) => validate_job_outcome(outcome),
     }
+}
+
+fn validate_model_request(request: &ModelRequest) -> Result<(), KonaseError> {
+    validate_identifier("model.request_id", &request.request_id)?;
+    validate_text("model.prompt", &request.prompt, MAX_MODEL_CONTENT_CHARS)?;
+    if request.history.len() > MAX_MODEL_HISTORY {
+        return invalid_state("model request contains too much history");
+    }
+    for message in &request.history {
+        validate_model_message(message)?;
+    }
+    if request.tools.len() > MAX_MODEL_TOOLS {
+        return invalid_state("model request contains too many tools");
+    }
+    for tool in &request.tools {
+        validate_model_tool(tool)?;
+    }
+    Ok(())
+}
+
+fn validate_model_message(message: &ModelMessage) -> Result<(), KonaseError> {
+    match message {
+        ModelMessage::System { content }
+        | ModelMessage::User { content }
+        | ModelMessage::Tool { content, .. } => {
+            validate_text("model.message.content", content, MAX_MODEL_CONTENT_CHARS)?;
+        }
+        ModelMessage::Assistant {
+            content,
+            tool_calls,
+        } => {
+            validate_text("model.message.content", content, MAX_MODEL_CONTENT_CHARS)?;
+            if tool_calls.len() > MAX_MODEL_TOOL_CALLS {
+                return invalid_state("model message contains too many tool calls");
+            }
+            for call in tool_calls {
+                validate_model_tool_call(call)?;
+            }
+        }
+    }
+    if let ModelMessage::Tool { call_id, name, .. } = message {
+        validate_identifier("model.message.call_id", call_id)?;
+        validate_identifier("model.message.name", name)?;
+    }
+    Ok(())
+}
+
+fn validate_model_tool(tool: &ModelTool) -> Result<(), KonaseError> {
+    validate_identifier("model.tool.name", &tool.name)?;
+    validate_text(
+        "model.tool.description",
+        &tool.description,
+        MAX_MODEL_CONTENT_CHARS,
+    )?;
+    validate_schema(&Some(tool.input_schema.clone()))
+}
+
+fn validate_model_tool_call(call: &ModelToolCall) -> Result<(), KonaseError> {
+    validate_identifier("model.tool_call.id", &call.id)?;
+    validate_identifier("model.tool_call.name", &call.name)?;
+    if serialized_size(&call.arguments).map_err(|error| KonaseError::new("serialization", error))?
+        > MAX_MCP_VALUE_BYTES
+    {
+        return invalid_state("model tool call arguments exceed the protocol limit");
+    }
+    Ok(())
 }
 
 fn validate_mcp_request(request: &McpRequest) -> Result<(), KonaseError> {
@@ -1001,7 +1113,9 @@ fn validate_host_error(error: &HostError) -> Result<(), KonaseError> {
 fn validate_pending_effect(pending: &PendingEffect) -> Result<(), KonaseError> {
     match pending {
         PendingEffect::StartJob => Ok(()),
-        PendingEffect::CallMcp { request_id } | PendingEffect::AskConfirmation { request_id } => {
+        PendingEffect::CallModel { request_id }
+        | PendingEffect::CallMcp { request_id }
+        | PendingEffect::AskConfirmation { request_id } => {
             validate_identifier("pending.request_id", request_id)
         }
     }
@@ -1097,19 +1211,84 @@ fn normalize_agent_progress(mut progress: AgentProgress) -> AgentProgress {
         .strategy_summary
         .map(|summary| bound(summary, MAX_STATE_SUMMARY_CHARS));
     progress.observation = progress.observation.map(normalize_observation);
-    progress.action = normalize_effect_kind(progress.action);
+    progress.action = progress.action.map(normalize_agent_action);
     progress
 }
 
-fn normalize_effect_kind(action: EffectKind) -> EffectKind {
+fn normalize_agent_action(action: AgentAction) -> AgentAction {
     match action {
-        EffectKind::CallMcp(request) => EffectKind::CallMcp(normalize_mcp_request(request)),
-        EffectKind::AskConfirmation(request) => {
-            EffectKind::AskConfirmation(normalize_confirmation_request(request))
+        AgentAction::CallModel(request) => AgentAction::CallModel(normalize_model_request(request)),
+        AgentAction::CallMcp(request) => AgentAction::CallMcp(normalize_mcp_request(request)),
+        AgentAction::AskConfirmation(request) => {
+            AgentAction::AskConfirmation(normalize_confirmation_request(request))
         }
-        EffectKind::Complete(outcome) => EffectKind::Complete(normalize_job_outcome(outcome)),
-        EffectKind::None => EffectKind::None,
+        AgentAction::Complete(outcome) => AgentAction::Complete(normalize_job_outcome(outcome)),
     }
+}
+
+fn normalize_model_request(mut request: ModelRequest) -> ModelRequest {
+    request.request_id = bound(request.request_id, MAX_IDENTIFIER_CHARS);
+    request.prompt = bound(request.prompt, MAX_MODEL_CONTENT_CHARS);
+    request.history = request
+        .history
+        .into_iter()
+        .take(MAX_MODEL_HISTORY)
+        .map(normalize_model_message)
+        .collect();
+    request.tools = request
+        .tools
+        .into_iter()
+        .take(MAX_MODEL_TOOLS)
+        .map(normalize_model_tool)
+        .collect();
+    request
+}
+
+fn normalize_model_message(message: ModelMessage) -> ModelMessage {
+    match message {
+        ModelMessage::System { content } => ModelMessage::System {
+            content: bound(content, MAX_MODEL_CONTENT_CHARS),
+        },
+        ModelMessage::User { content } => ModelMessage::User {
+            content: bound(content, MAX_MODEL_CONTENT_CHARS),
+        },
+        ModelMessage::Assistant {
+            content,
+            tool_calls,
+        } => ModelMessage::Assistant {
+            content: bound(content, MAX_MODEL_CONTENT_CHARS),
+            tool_calls: tool_calls
+                .into_iter()
+                .take(MAX_MODEL_TOOL_CALLS)
+                .map(normalize_model_tool_call)
+                .collect(),
+        },
+        ModelMessage::Tool {
+            call_id,
+            name,
+            content,
+        } => ModelMessage::Tool {
+            call_id: bound(call_id, MAX_IDENTIFIER_CHARS),
+            name: bound(name, MAX_IDENTIFIER_CHARS),
+            content: bound(content, MAX_MODEL_CONTENT_CHARS),
+        },
+    }
+}
+
+fn normalize_model_tool(mut tool: ModelTool) -> ModelTool {
+    tool.name = bound(tool.name, MAX_IDENTIFIER_CHARS);
+    tool.description = bound(tool.description, MAX_MODEL_CONTENT_CHARS);
+    tool.input_schema = bound_value(Some(tool.input_schema), MAX_SCHEMA_BYTES)
+        .unwrap_or_else(|| Value::Object(Default::default()));
+    tool
+}
+
+fn normalize_model_tool_call(mut call: ModelToolCall) -> ModelToolCall {
+    call.id = bound(call.id, MAX_IDENTIFIER_CHARS);
+    call.name = bound(call.name, MAX_IDENTIFIER_CHARS);
+    call.arguments = bound_value(Some(call.arguments), MAX_MCP_VALUE_BYTES)
+        .unwrap_or_else(|| Value::Object(Default::default()));
+    call
 }
 
 fn normalize_mcp_request(mut request: McpRequest) -> McpRequest {
@@ -1192,6 +1371,9 @@ fn normalize_job_outcome(mut outcome: JobOutcome) -> JobOutcome {
 fn normalize_pending_effect(pending: PendingEffect) -> PendingEffect {
     match pending {
         PendingEffect::StartJob => PendingEffect::StartJob,
+        PendingEffect::CallModel { request_id } => PendingEffect::CallModel {
+            request_id: bound(request_id, MAX_IDENTIFIER_CHARS),
+        },
         PendingEffect::CallMcp { request_id } => PendingEffect::CallMcp {
             request_id: bound(request_id, MAX_IDENTIFIER_CHARS),
         },
@@ -1380,12 +1562,12 @@ mod tests {
                 job_id: "job-1".into(),
                 strategy_summary: Some("search then read one resource".into()),
                 observation: None,
-                action: EffectKind::CallMcp(McpRequest {
+                action: Some(AgentAction::CallMcp(McpRequest {
                     request_id: "mcp-1".into(),
                     server: "ugoite".into(),
                     operation: "ugoite.search".into(),
                     arguments: BTreeMap::new(),
-                }),
+                })),
             }),
         );
         assert!(matches!(
@@ -1434,7 +1616,7 @@ mod tests {
                     job_id: "job-1".into(),
                     strategy_summary: None,
                     observation: Some(observation(&format!("observation-{id}"))),
-                    action: EffectKind::None,
+                    action: None,
                 }),
             )
             .state;
@@ -1479,7 +1661,7 @@ mod tests {
                 job_id: "job-1".into(),
                 strategy_summary: Some("stale".into()),
                 observation: Some(observation("stale-observation")),
-                action: EffectKind::None,
+                action: None,
             }),
         );
 
@@ -1500,12 +1682,12 @@ mod tests {
                 job_id: "job-1".into(),
                 strategy_summary: None,
                 observation: None,
-                action: EffectKind::CallMcp(McpRequest {
+                action: Some(AgentAction::CallMcp(McpRequest {
                     request_id: "mcp-1".into(),
                     server: "ugoite".into(),
                     operation: "ugoite.search".into(),
                     arguments: BTreeMap::new(),
-                }),
+                })),
             }),
         );
         let rejected = step(

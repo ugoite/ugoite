@@ -7,6 +7,7 @@ members = [
     "crates/ugoite-identity",
     "crates/ugoite-core",
     "crates/ugoite-konase",
+    "crates/ugoite-konase-rig",
     "crates/ugoite-server",
     "crates/ugoite-cli",
     "crates/ugoite-wasm",

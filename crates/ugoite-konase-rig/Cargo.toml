@@ -1,0 +1,10 @@
+[package]
+name = "ugoite-konase-rig"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rig-agent = { version = "0.42", default-features = false }
+serde_json = "1.0"
+ugoite-konase = { path = "../ugoite-konase" }
