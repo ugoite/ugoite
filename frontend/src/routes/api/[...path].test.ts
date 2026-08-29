@@ -98,4 +98,33 @@ describe("api proxy route", () => {
     expect(headers.get("x-ugoite-human-approval")).toBe("a".repeat(43));
     expect(headers.get("x-secret-test-header")).toBeNull();
   });
+
+  it("forwards the stateless MCP protocol headers to the backend", async () => {
+    vi.stubEnv("BACKEND_URL", "http://127.0.0.1:8000");
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { POST } = await import("./[...path]");
+
+    await POST(
+      makeEvent("http://127.0.0.1:3000/api/mcp", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer browser-mcp-token",
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          "mcp-method": "tools/call",
+          "mcp-name": "ugoite.search",
+          "mcp-protocol-version": "2026-07-28",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0" }),
+      }),
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    const headers = new Headers(init.headers);
+    expect(headers.get("authorization")).toBe("Bearer browser-mcp-token");
+    expect(headers.get("mcp-method")).toBe("tools/call");
+    expect(headers.get("mcp-name")).toBe("ugoite.search");
+    expect(headers.get("mcp-protocol-version")).toBe("2026-07-28");
+  });
 });
