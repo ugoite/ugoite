@@ -144,19 +144,19 @@ export class BrowserMcpHost implements McpHost {
     const capabilities = tools.flatMap((value) => {
       if (!isRecord(value) || typeof value.name !== "string") return [];
       if (!matchesCapability(value.name)) return [];
+      if (!isRecord(value.inputSchema)) return [];
       return [{
         name: value.name,
         description: typeof value.description === "string"
           ? value.description
           : "",
-        input_schema: isRecord(value.inputSchema)
-          ? value.inputSchema
-          : undefined,
+        input_schema: value.inputSchema,
       }];
     });
     capabilities.push({
       name: "resources/read",
       description: "Read the full content of an opaque Ugoite resource URI",
+      input_schema: resourcesReadSchema(),
     });
     return capabilities;
   }
@@ -207,6 +207,13 @@ export class BrowserMcpHost implements McpHost {
 
 const matchesCapability = (name: string) =>
   name === "ugoite.search" || name === "ugoite.save" || name === "ugoite.undo";
+
+const resourcesReadSchema = (): Record<string, unknown> => ({
+  type: "object",
+  properties: { uri: { type: "string" } },
+  required: ["uri"],
+  additionalProperties: false,
+});
 
 const readContent = (value: unknown): string => {
   if (!Array.isArray(value)) return "";

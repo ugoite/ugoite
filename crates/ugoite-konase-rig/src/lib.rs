@@ -255,10 +255,15 @@ impl AgentRuntime for RigAgentRuntime {
         let tools = context
             .available_capabilities
             .iter()
-            .map(|capability| ModelTool {
-                name: capability.name.clone(),
-                description: capability.description.clone(),
-                input_schema: serde_json::json!({"type": "object"}),
+            .filter_map(|capability| {
+                capability
+                    .input_schema
+                    .clone()
+                    .map(|input_schema| ModelTool {
+                        name: capability.name.clone(),
+                        description: capability.description.clone(),
+                        input_schema,
+                    })
             })
             .collect::<Vec<_>>();
         let prompt = serde_json::to_string(&context)
@@ -368,11 +373,33 @@ mod tests {
             available_capabilities: vec![Capability {
                 name: "ugoite.search".into(),
                 description: "search entries".into(),
+                input_schema: Some(serde_json::json!({
+                    "type": "object",
+                    "properties": {"q": {"type": "string"}},
+                    "required": ["q"]
+                })),
             }],
             selected_resource_contents: vec![],
             safety_hints: vec![],
             expected_response_schema: None,
         }
+    }
+
+    #[test]
+    fn capability_schema_reaches_model_request_unchanged() {
+        let mut runtime = RigAgentRuntime::default();
+        let AgentAction::CallModel(request) = runtime.start(job(), context()).unwrap() else {
+            panic!("expected initial model call");
+        };
+
+        assert_eq!(
+            request.tools[0].input_schema,
+            serde_json::json!({
+                "type": "object",
+                "properties": {"q": {"type": "string"}},
+                "required": ["q"]
+            })
+        );
     }
 
     #[test]

@@ -37,6 +37,7 @@ class ScriptedMcp implements McpHost {
           type: "object",
           properties: { uri: { type: "string" } },
           required: ["uri"],
+          additionalProperties: false,
         },
       },
     ];
@@ -109,10 +110,22 @@ describe("Konase browser host", () => {
 
     expect(turn.outcome.summary).toBe("WebAssembly memo confirmed");
     expect(mcp.operations).toEqual(["ugoite.search", "resources/read"]);
-    expect(model.requests[0].tools[0].input_schema).toEqual({
+    expect(
+      model.requests[0].tools.find((tool) => tool.name === "ugoite.search")
+        ?.input_schema,
+    ).toEqual({
       type: "object",
       properties: { q: { type: "string" } },
       required: ["q"],
+    });
+    expect(
+      model.requests[0].tools.find((tool) => tool.name === "resources/read")
+        ?.input_schema,
+    ).toEqual({
+      type: "object",
+      properties: { uri: { type: "string" } },
+      required: ["uri"],
+      additionalProperties: false,
     });
     expect(progress).toEqual([
       "model",
