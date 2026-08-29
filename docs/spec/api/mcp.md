@@ -13,11 +13,15 @@ The stable surface is deliberately narrow:
   loaded only when a resource is read.
 - `ugoite.save` creates an Entry without `id` or updates one opaque Entry with
   `id`.
+- `ugoite.undo` reverses all changes made by the current Konase Work through
+  the existing Run undo semantic operation. Its empty model-facing argument
+  object is unchanged; the Host supplies the Work Run ID in
+  `_meta["ugoite/runId"]` for both `ugoite.save` and `ugoite.undo`.
 - `ugoite.delete` performs only an authorized soft delete.
 
 Tools are filtered before `tools/list`: read-only credentials see search,
-write credentials additionally see save, and delete is shown only to an
-approved human device credential with effective Delete authority. Tool
+write credentials additionally see save and undo, and delete is shown only to
+an approved human device credential with effective Delete authority. Tool
 descriptions and schemas contain no Form, revision, Iceberg, bucket, path, or
 storage details.
 

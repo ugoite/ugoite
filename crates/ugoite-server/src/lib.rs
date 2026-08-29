@@ -10610,13 +10610,15 @@ mod authentication_regression_tests {
             .as_object()
             .cloned()
             .expect("MCP test params are objects");
-        params.insert(
-            "_meta".to_string(),
-            json!({
-                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
-                "io.modelcontextprotocol/clientCapabilities": {}
-            }),
-        );
+        let mut meta = params
+            .remove("_meta")
+            .and_then(|value| value.as_object().cloned())
+            .unwrap_or_default();
+        meta.entry("io.modelcontextprotocol/protocolVersion".to_string())
+            .or_insert_with(|| json!("2026-07-28"));
+        meta.entry("io.modelcontextprotocol/clientCapabilities".to_string())
+            .or_insert_with(|| json!({}));
+        params.insert("_meta".to_string(), Value::Object(meta));
         let mut builder = Request::post(uri)
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json, text/event-stream")
@@ -10806,7 +10808,12 @@ mod authentication_regression_tests {
             .collect::<Vec<_>>();
         assert_eq!(
             tool_names,
-            ["ugoite.search", "ugoite.save", "ugoite.delete"]
+            [
+                "ugoite.search",
+                "ugoite.save",
+                "ugoite.undo",
+                "ugoite.delete"
+            ]
         );
 
         let (status, body) = mcp_call(
@@ -10815,7 +10822,7 @@ mod authentication_regression_tests {
             "Bearer",
             "tools/call",
             Some("ugoite.save"),
-            json!({"name":"ugoite.save","arguments":{"content":"---\nform: Entry\n---\n# MCP Created\n\n## Body\ncreated by MCP"}}),
+            json!({"name":"ugoite.save","arguments":{"content":"---\nform: Entry\n---\n# MCP Created\n\n## Body\ncreated by MCP"},"_meta":{"ugoite/runId":"konase-work-1"}}),
             None,
         )
         .await;
@@ -10835,7 +10842,7 @@ mod authentication_regression_tests {
             "Bearer",
             "tools/call",
             Some("ugoite.save"),
-            json!({"name":"ugoite.save","arguments":{"id":entry_id,"content":"---\nform: Entry\n---\n# MCP Updated\n\n## Body\nupdated by MCP"}}),
+            json!({"name":"ugoite.save","arguments":{"id":entry_id,"content":"---\nform: Entry\n---\n# MCP Updated\n\n## Body\nupdated by MCP"},"_meta":{"ugoite/runId":"konase-work-1"}}),
             None,
         )
         .await;
@@ -10855,6 +10862,26 @@ mod authentication_regression_tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert!(body["result"]["contents"].is_array());
+
+        let (status, body) = mcp_call(
+            router.clone(),
+            &token,
+            "Bearer",
+            "tools/call",
+            Some("ugoite.undo"),
+            json!({"name":"ugoite.undo","arguments":{},"_meta":{"ugoite/runId":"konase-work-1"}}),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body["result"]["structuredContent"]["run_id"],
+            "konase-work-1"
+        );
+        assert_eq!(
+            body["result"]["structuredContent"]["reverted_change_count"],
+            2
+        );
 
         let proof = mcp_dpop_proof(&signing_key, &jwk, &token);
         let (status, body) = mcp_call(

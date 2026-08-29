@@ -17,6 +17,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
+use ugoite_domain::change::{ChangeCommand, RunId};
 use ugoite_domain::id::validate_decoded_identifier;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -589,6 +590,8 @@ async fn authorize_method(
                 || !has_action(state, auth, Action::Delete).await)
         {
             return None;
+        } else if name == "ugoite.undo" && !has_action(state, auth, Action::Update).await {
+            return Some(insufficient_scope(state, auth.scheme, &["update"]));
         }
     }
     None
@@ -740,6 +743,9 @@ async fn tools_list(state: &AppState, auth: &AuthContext) -> Result<Value, Respo
     {
         tools.push(json!({"name":"ugoite.save","description":"Create an Entry or update one opaque Entry by id.","inputSchema":{"type":"object","properties":{"id":{"type":"string"},"content":{"type":"string"}},"required":["content"],"additionalProperties":false},"outputSchema":save_output_schema(),"annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":false}}));
     }
+    if has_action(state, auth, Action::Update).await {
+        tools.push(json!({"name":"ugoite.undo","description":"Undo all Entry changes made by the current Konase Work.","inputSchema":{"type":"object","properties":{},"additionalProperties":false},"outputSchema":undo_output_schema(),"annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":false}}));
+    }
     if auth.claims.principal_type != "agent"
         && auth.claims.actor_principal_id.is_none()
         && has_action(state, auth, Action::Delete).await
@@ -762,6 +768,9 @@ fn save_output_schema() -> Value {
 }
 fn delete_output_schema() -> Value {
     json!({"type":"object","properties":{"id":{"type":"string"},"uri":{"type":"string","format":"uri"},"status":{"type":"string","enum":["deleted"]},"_untrusted_content":{"const":true}},"required":["id","uri","status","_untrusted_content"],"additionalProperties":false})
+}
+fn undo_output_schema() -> Value {
+    json!({"type":"object","properties":{"run_id":{"type":"string"},"reverted_change_count":{"type":"integer","minimum":0},"_untrusted_content":{"const":true}},"required":["run_id","reverted_change_count","_untrusted_content"],"additionalProperties":false})
 }
 
 async fn resources_read(
@@ -1064,7 +1073,12 @@ async fn tools_call(
         return rebind_tool_failure(search(state, auth, arguments).await, &request.id).await;
     }
     if name == "ugoite.save" {
-        return rebind_tool_failure(save(state, auth, arguments).await, &request.id).await;
+        let run_id = request_run_id(request)?;
+        return rebind_tool_failure(save(state, auth, arguments, &run_id).await, &request.id).await;
+    }
+    if name == "ugoite.undo" {
+        let run_id = request_run_id(request)?;
+        return rebind_tool_failure(undo(state, auth, &run_id).await, &request.id).await;
     }
     if name == "ugoite.delete" {
         return rebind_tool_failure(delete(state, auth, arguments).await, &request.id).await;
@@ -1076,6 +1090,29 @@ async fn tools_call(
         "Invalid request target",
         json!({"code":"UNKNOWN_TOOL"}),
     ))
+}
+
+#[allow(clippy::result_large_err)]
+fn request_run_id(request: &RpcRequest) -> Result<RunId, Response> {
+    let Some(run_id) = request
+        .params
+        .get("_meta")
+        .and_then(Value::as_object)
+        .and_then(|meta| meta.get("ugoite/runId"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return Err(tool_error(
+            "INVALID_METADATA",
+            "A Konase Work Run ID is required in request metadata",
+        ));
+    };
+    RunId::new(run_id.to_owned()).map_err(|_| {
+        tool_error(
+            "INVALID_METADATA",
+            "A Konase Work Run ID is invalid in request metadata",
+        )
+    })
 }
 
 async fn rebind_tool_failure(
@@ -1188,6 +1225,7 @@ async fn save(
     state: &AppState,
     auth: &AuthContext,
     arguments: &serde_json::Map<String, Value>,
+    run_id: &RunId,
 ) -> Result<Value, Response> {
     if arguments.get("id").is_some_and(|value| !value.is_string()) {
         return Err(tool_error("INVALID_ARGUMENT", "Save arguments are invalid"));
@@ -1200,6 +1238,7 @@ async fn save(
             .map_err(|_| tool_error("INVALID_ARGUMENT", "Save arguments are invalid"))?;
         let content = input.content.clone();
         let id_for_write = id.clone();
+        let run_id = run_id.clone();
         let entry = with_authorized_service_mutation(
             state,
             &auth.space_id,
@@ -1212,15 +1251,24 @@ async fn save(
             }),
             |principal_id, principals| async move {
                 let mutation_actor = actor_principal_id.unwrap_or(principal_id).to_string();
+                let change = ChangeCommand {
+                    change_id: Uuid::now_v7().to_string(),
+                    run_id: Some(run_id),
+                    actor_principal_id: mutation_actor.clone(),
+                    message: Some("Konase Work".into()),
+                    reverts_change_id: None,
+                    created_at_micros: chrono::Utc::now().timestamp_micros(),
+                };
                 state
                     .service
-                    .update_entry_authorized_for_principals(
+                    .update_entry_authorized_for_principals_with_change(
                         &auth.space_id,
                         &id_for_write,
                         &content,
                         None,
                         &mutation_actor,
                         &principals,
+                        Some(change),
                     )
                     .await
                     .map_err(ApiError::from_core)
@@ -1233,6 +1281,7 @@ async fn save(
         let id = Uuid::now_v7().to_string();
         let id_for_write = id.clone();
         let content = input.content.clone();
+        let run_id = run_id.clone();
         let entry = with_authorized_service_mutation(
             state,
             &auth.space_id,
@@ -1241,14 +1290,23 @@ async fn save(
             None,
             |principal_id, principals| async move {
                 let mutation_actor = actor_principal_id.unwrap_or(principal_id).to_string();
+                let change = ChangeCommand {
+                    change_id: Uuid::now_v7().to_string(),
+                    run_id: Some(run_id),
+                    actor_principal_id: mutation_actor.clone(),
+                    message: Some("Konase Work".into()),
+                    reverts_change_id: None,
+                    created_at_micros: chrono::Utc::now().timestamp_micros(),
+                };
                 state
                     .service
-                    .create_entry_authorized_for_principals(
+                    .create_entry_authorized_for_principals_with_change(
                         &auth.space_id,
                         &id_for_write,
                         &content,
                         &mutation_actor,
                         &principals,
+                        Some(change),
                     )
                     .await
                     .map_err(ApiError::from_core)
@@ -1263,6 +1321,46 @@ async fn save(
     Ok(
         json!({"resultType":"complete","isError":false,"structuredContent":payload,"content":[{"type":"text","text":serde_json::to_string(&payload).unwrap_or_default()},{"type":"resource_link","uri":uri,"name":sanitize_mcp_string(entry.get("title").and_then(Value::as_str).unwrap_or(&id)),"description":"Read the affected Entry.","mimeType":"application/json"}],"ttlMs":5000,"cacheScope":"private"}),
     )
+}
+
+async fn undo(state: &AppState, auth: &AuthContext, run_id: &RunId) -> Result<Value, Response> {
+    let service = state.service.clone();
+    let space_id = auth.space_id.clone();
+    let space_id_for_write = space_id.clone();
+    let run_id = run_id.clone();
+    with_authorized_service_mutation(
+        state,
+        &space_id,
+        &auth.identity,
+        Action::Update,
+        None,
+        move |principal_id, _principals| async move {
+            service
+                .undo_run(
+                    &space_id_for_write,
+                    run_id.as_str(),
+                    &principal_id.to_string(),
+                )
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await
+    .map(|result| {
+        let mut payload = result;
+        if let Some(object) = payload.as_object_mut() {
+            object.insert("_untrusted_content".into(), Value::Bool(true));
+        }
+        json!({
+            "resultType":"complete",
+            "isError":false,
+            "structuredContent":payload,
+            "content":[{"type":"text","text":serde_json::to_string(&payload).unwrap_or_default()}],
+            "ttlMs":5000,
+            "cacheScope":"private"
+        })
+    })
+    .map_err(|_| tool_error("UNDO_FAILED", "The Konase Work could not be undone"))
 }
 
 async fn delete(
@@ -1678,7 +1776,10 @@ mod tests {
         )
         .await
         .expect("writer tools");
-        assert_eq!(names(&writer), vec!["ugoite.search", "ugoite.save"]);
+        assert_eq!(
+            names(&writer),
+            vec!["ugoite.search", "ugoite.save", "ugoite.undo"]
+        );
 
         let deleter = tools_list(
             &state,
@@ -1694,7 +1795,12 @@ mod tests {
         .expect("delete-capable tools");
         assert_eq!(
             names(&deleter),
-            vec!["ugoite.search", "ugoite.save", "ugoite.delete"]
+            vec![
+                "ugoite.search",
+                "ugoite.save",
+                "ugoite.undo",
+                "ugoite.delete"
+            ]
         );
 
         let agent = test_auth(
@@ -1705,7 +1811,10 @@ mod tests {
             None,
         );
         let agent_tools = tools_list(&state, &agent).await.expect("agent tools");
-        assert_eq!(names(&agent_tools), vec!["ugoite.search", "ugoite.save"]);
+        assert_eq!(
+            names(&agent_tools),
+            vec!["ugoite.search", "ugoite.save", "ugoite.undo"]
+        );
         assert!(delete(
             &state,
             &agent,
@@ -1726,7 +1835,7 @@ mod tests {
             .expect("delegated tools");
         assert_eq!(
             names(&delegated_tools),
-            vec!["ugoite.search", "ugoite.save"]
+            vec!["ugoite.search", "ugoite.save", "ugoite.undo"]
         );
         assert!(delete(
             &state,
