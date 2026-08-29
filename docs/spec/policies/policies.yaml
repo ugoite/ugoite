@@ -259,10 +259,14 @@ policies:
   title: Compatibility Through Explicit Evolution
   summary: Manage change using explicit deprecation and migration guidance across layers.
   description: |
-    This policy manages change through visible migration, deprecation, and
-    compatibility guidance rather than silent breakage between layers. It
-    protects user portability and durable automation by making evolution
-    explicit for APIs, storage, frontend behavior, and operator workflows.
+    This policy manages change through visible evolution rather than silent
+    breakage between layers. For the v0.1 Foundation Freeze, the protected
+    compatibility boundary is semantic: operator-owned Space recoverability,
+    unique catalog authority, append-only Knowledge history, and thin adapter
+    boundaries must survive later implementations. Physical encodings, crate
+    APIs, and UI internals are not frozen by that promise. Changes that can
+    affect the semantic boundary require the v0.1 Knowledge Compatibility
+    Review and canonical fixture evidence before merge.
   linked_philosophies:
   - PHIL-001
   - PHIL-003
@@ -276,6 +280,7 @@ policies:
   - SPEC-ARCH-FUTURE
   - SPEC-API-OPENAPI
   - SPEC-DM-DIRECTORY
+  - SPEC-VERSIONS-KNOWLEDGE-COMPAT
 - id: POL-015
   title: MCP as Governed AI Operator Surface
   summary: Position MCP as the AI-facing operator surface with explicit scope and trust boundaries.
@@ -293,3 +298,22 @@ policies:
   linked_specifications:
   - SPEC-API-MCP
   - SPEC-API-SURFACES
+- id: POL-016
+  title: v0.1 Knowledge Compatibility Floor
+  summary: Preserve v0.1 Knowledge meaning while allowing implementation evolution.
+  description: |
+    The v0.1 Knowledge compatibility floor freezes ownership, authority,
+    append-only history, and adapter authority semantics. It does not freeze
+    the physical Catalog Head encoding, Iceberg object layout, crate APIs, or
+    frontend internals. A breaking semantic change requires an explicit
+    compatibility review and must preserve the canonical v0.1 Knowledge
+    fixture or establish a new versioned contract before it can merge.
+  linked_philosophies:
+  - PHIL-001
+  - PHIL-003
+  linked_requirements:
+  - REQCAT-OPS
+  - REQCAT-STORAGE
+  linked_specifications:
+  - SPEC-VERSIONS-KNOWLEDGE-COMPAT
+  - SPEC-ARCH-SPACE-CATALOG

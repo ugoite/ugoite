@@ -17,6 +17,10 @@ Tests are organized around the shared Rust core and thin adapters.
 - A focused docsite-navigation Playwright lane validates the built Starlight
   artifact, repository-level docs SSOT wiring, and GitHub Pages base-path
   navigation without paying the full backend/runtime-image startup cost.
+- The v0.1 Knowledge compatibility fixture under
+  `crates/ugoite-iceberg/tests/fixtures/` is exercised through the authoritative
+  Space, publication, and history reader paths. It is a semantic oracle rather
+  than a byte-for-byte snapshot of Iceberg internals.
 - `xtask` checks OpenAPI drift, architectural dependency rules, and stale current-stack documentation.
 
 Requirement IDs embedded in test names/source provide traceability. A requirement without a current test reference is labeled `untraced`; deleted paths are not retained as evidence.
@@ -29,5 +33,9 @@ semantic tasks for parallel runners, but they must not implement repository
 validation independently of Mise.
 
 Use focused crate/package tests while developing, then run `mise run ci` or the merge/release gates as appropriate.
+
+Changes that can affect Space ownership, authority, publication reachability,
+history reconstruction, or adapter authority must also carry the Knowledge
+Compatibility Review required by the v0.1 compatibility floor.
 
 For CLI-only work, start with `mise run test:cli` so you can iterate on `ugoite-cli` without running the full workspace suite.

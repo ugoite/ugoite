@@ -6,6 +6,12 @@ Ugoite MCP v1 is a small, authenticated semantic facade at `POST /mcp`.
 It is stateless and uses MCP protocol revision `2026-07-28`; clients do not
 send `initialize`, use `Mcp-Session-Id`, or select a Space by internal ID.
 
+MCP v1 is a separately versioned semantic contract. Its stable tool/resource
+surface is governed independently from the v0.1 Knowledge compatibility floor:
+MCP evolution must not change Space ownership, Catalog authority, or
+append-only history semantics, and a storage encoding change must not silently
+change the meaning of an MCP v1 operation.
+
 The stable surface is deliberately narrow:
 
 - `ugoite.search` returns five sanitized summaries by default and at most 25

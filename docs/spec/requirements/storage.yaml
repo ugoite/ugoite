@@ -232,6 +232,29 @@ requirements:
   priority: high
   status: implemented
   verification: untraced
+
+- set_id: REQCAT-STORAGE
+  source_file: requirements/storage.yaml
+  scope: Storage architecture, data persistence, and portability requirements.
+  linked_policies:
+  - POL-001
+  - POL-014
+  - POL-016
+  linked_specifications:
+  - SPEC-VERSIONS-KNOWLEDGE-COMPAT
+  - SPEC-ARCH-SPACE-CATALOG
+  - SPEC-DM-DIRECTORY
+  id: REQ-STO-014
+  title: v0.1 Knowledge Semantic Compatibility Fixture
+  description: The canonical v0.1 Knowledge fixture must remain semantically readable through the authoritative Space, publication, and append-only history paths. The fixture does not freeze physical storage encoding or require a pre-v1 migration reader.
+  related_spec:
+  - ../versions/v0.1-knowledge-compatibility.md
+  - architecture/space-catalog.md
+  priority: high
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-iceberg/tests/test_knowledge_compatibility.rs
 - set_id: REQCAT-STORAGE
   source_file: requirements/storage.yaml
   scope: Storage architecture, data persistence, and portability requirements.

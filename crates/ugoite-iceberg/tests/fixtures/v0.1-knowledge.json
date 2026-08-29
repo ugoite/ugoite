@@ -1,0 +1,31 @@
+{
+  "fixture_version": 1,
+  "release": "v0.1",
+  "space": {
+    "slug": "v01-knowledge-compatibility",
+    "form_name": "Entry",
+    "form_field": "Body",
+    "entries": [
+      {
+        "id": "portable-knowledge",
+        "title": "Portable Knowledge",
+        "body": "Knowledge stays in the operator-owned Space.",
+        "author": "fixture-owner"
+      },
+      {
+        "id": "append-only-history",
+        "title": "Append-only History",
+        "body": "The first durable value.",
+        "author": "fixture-owner"
+      }
+    ],
+    "update": {
+      "entry_id": "append-only-history",
+      "title": "Append-only History",
+      "body": "The second durable value.",
+      "expected_history_operations": ["upsert", "upsert"],
+      "expected_history_length": 2
+    },
+    "expected_current_entry_count": 2
+  }
+}

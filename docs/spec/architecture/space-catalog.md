@@ -5,7 +5,9 @@ title: 'SpaceCatalog publication contract'
 This is the single durable-control-plane contract for a Ugoite Space. It is
 intentionally destructive before the first release: the internal pre-release
 Space format version is unchanged, while legacy layouts and catalog modes are
-unsupported rather than migrated.
+unsupported rather than migrated. The v0.1 compatibility floor freezes the
+authority and history semantics described here; it does not permanently freeze
+the current physical encoding.
 
 The Catalog Head layout, upstream physical boundary, single mutation
 coordinator, Pin-selected revision reads, authorization-aware DataFusion
@@ -23,7 +25,8 @@ boundary. Ugoite does not require PostgreSQL, SQLite, a SQL Catalog, Hive
 Metastore, or any other hosted durable service. The server exposes a Space; it
 does not own one.
 
-The only mutable catalog root is `_ugoite/catalog/head.json`. Immutable
+The only mutable catalog root is currently encoded as
+`_ugoite/catalog/head.json`. Immutable
 publication records live at `_ugoite/catalog/publications/<generation>-<encoded-command-id>.json`.
 Only records reachable from Head through `previous_publication` are authoritative.
 Object listing never establishes current state or order.

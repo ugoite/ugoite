@@ -43,9 +43,17 @@ edits, deleted fields, removed Forms, and incompatible types produce explicit
 conflicts. It never rewinds Head or resurrects a schema. Multi-Form atomicity,
 automatic asset purging, and retention/expiration are not implied by this model.
 
-## Compatibility
+## Knowledge compatibility
 
-Protocol versions and OpenAPI snapshots require tests and explicit documentation.
-The current internal pre-release Space format version remains unchanged during
-the destructive architecture transition: superseded layouts fail explicitly
-instead of acquiring migration readers or compatibility flags.
+The [v0.1 Knowledge compatibility floor](../versions/v0.1-knowledge-compatibility.md)
+freezes semantic recoverability, not a physical file layout. Later versions
+must preserve Space ownership, a unique current-state authority, append-only
+publication/history semantics, and adapter boundaries. The current
+`_ugoite/catalog/head.json` is one encoding of that authority, not a permanent
+wire format.
+
+Protocol versions and OpenAPI snapshots require tests and explicit
+documentation. The canonical v0.1 semantic fixture is the compatibility oracle;
+it must remain readable as implementations evolve. The current internal
+pre-release Space format remains intentionally destructive: superseded layouts
+fail explicitly instead of acquiring migration readers or compatibility flags.

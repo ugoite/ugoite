@@ -34,7 +34,7 @@ users/{sha256(user_id)}/
   preferences.json
 ```
 
-See [directory-structure.md](directory-structure.md) and [directory-layout.yaml](https://github.com/ugoite/ugoite/blob/main/docs/spec/data-model/directory-layout.yaml) for the exact repository-owned paths. Iceberg-internal filenames are deliberately not specified.
+See [directory-structure.md](directory-structure.md) and [directory-layout.yaml](https://github.com/ugoite/ugoite/blob/main/docs/spec/data-model/directory-layout.yaml) for the current repository-owned paths. These paths describe the current encoding, not the v0.1 semantic compatibility floor; Iceberg-internal filenames are deliberately not specified.
 
 ## Spaces
 

@@ -28,6 +28,7 @@ jobs:
             const requiredSections = [
               "## Summary",
               "## Related Issue (required)",
+              "## Knowledge Compatibility Review",
               "## Testing",
             ];
 
@@ -46,6 +47,12 @@ jobs:
             const issueLinkPattern = /(?:^|\n)\s*(?:close:\s*#\d+|closes\s+#\d+)\s*(?:\n|$)/i;
             if (!issueLinkPattern.test(body)) {
               errors.push("Related Issue must include either `close: #123` or `closes #123`.");
+            }
+
+            const compatibilityMatch = body.match(/##\s*Knowledge Compatibility Review\s*\n+([\s\S]*?)(?:\n##\s|$)/i);
+            const compatibilityText = compatibilityMatch?.[1]?.trim() ?? "";
+            if (!/- \[x\]/i.test(compatibilityText)) {
+              errors.push("Knowledge Compatibility Review must include one checked classification.");
             }
 
             const testingMatch = body.match(/##\s*Testing\s*\n+([\s\S]*?)(?:\n##\s|$)/i);
