@@ -10476,6 +10476,45 @@ mod authentication_regression_tests {
         }
     }
 
+    fn reversible_knowledge_identity(
+        principal_id: Uuid,
+        space_uid: Uuid,
+    ) -> RequestIdentityContext {
+        let mut identity = content_identity(principal_id, space_uid);
+        identity.token_actions = Some(
+            ["read", "create", "update", "delete", "share"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+        );
+        identity
+    }
+
+    fn local_knowledge_identity(principal_id: Uuid, space_uid: Uuid) -> RequestIdentityContext {
+        let mut identity = reversible_knowledge_identity(principal_id, space_uid);
+        identity.token_principal_id = None;
+        identity.token_actor_principal_id = None;
+        identity.token_space_uid = None;
+        identity.token_actions = None;
+        identity
+    }
+
+    fn reversible_knowledge_route(state: AppState, identity: RequestIdentityContext) -> Router {
+        Router::new()
+            .route("/spaces/{space_id}/changes", get(list_changes))
+            .route(
+                "/spaces/{space_id}/changes/{change_id}/revert",
+                post(revert_change),
+            )
+            .route("/spaces/{space_id}/runs/{run_id}/undo", post(undo_run))
+            .route("/spaces/{space_id}/apply", post(apply_operations))
+            .route("/spaces/{space_id}/pins", get(list_pins).post(create_pin))
+            .route("/spaces/{space_id}/pins/{pin_name}", delete(delete_pin))
+            .route("/spaces/{space_id}/entries/{entry_id}", get(get_entry))
+            .layer(Extension(identity))
+            .with_state(state)
+    }
+
     fn assert_publication_coordinate(value: &Value, space_uid: Uuid) {
         let publication_uri = &value["publication_uri"];
         assert_eq!(publication_uri["space_uid"], json!(space_uid));
@@ -10496,6 +10535,13 @@ mod authentication_regression_tests {
                 && checksum
                     .chars()
                     .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())));
+    }
+
+    fn assert_opaque_version_token(value: &str) {
+        assert!(!value.trim().is_empty());
+        assert!(!value.contains("://"));
+        assert!(!value.contains("change:"));
+        assert!(!value.contains("spaces/"));
     }
 
     #[tokio::test]
@@ -13687,6 +13733,530 @@ mod authentication_regression_tests {
         Ok((status, serde_json::from_slice(&body)?))
     }
 
+    async fn route_json(
+        route: Router,
+        request: Request<Body>,
+    ) -> anyhow::Result<(StatusCode, Value)> {
+        response_json(route.oneshot(request).await?).await
+    }
+
+    #[tokio::test]
+    async fn issue_2037_authenticated_rest_revert_is_append_only_and_conflict_safe(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-issue-2037-revert-{}",
+            Uuid::now_v7()
+        ))?;
+        let principal_id = Uuid::from_u128(20377);
+        let space_id = state
+            .service
+            .create_space_for_principal("issue-2037-revert", principal_id, "Route test")
+            .await?
+            .to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = reversible_knowledge_route(
+            state,
+            reversible_knowledge_identity(principal_id, space_uid),
+        );
+
+        let create = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{
+                        "kind": "create",
+                        "id": "revert-entry",
+                        "markdown": knowledge_markdown("Revert entry", "created")
+                    }],
+                    "run_id": "run-2037-revert-create",
+                    "message": "create before selective revert"
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(create.0, StatusCode::OK, "{}", create.1);
+        let create_revision = create.1["operations"][0]["revision_id"]
+            .as_str()
+            .expect("create revision token")
+            .to_owned();
+        assert_opaque_version_token(&create_revision);
+
+        let update = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{
+                        "kind": "update",
+                        "id": "revert-entry",
+                        "version_token": create_revision,
+                        "markdown": knowledge_markdown("Revert entry", "target update")
+                    }],
+                    "run_id": "run-2037-revert-target",
+                    "message": "target selective update"
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(update.0, StatusCode::OK, "{}", update.1);
+
+        let (status, changes_body) = route_json(
+            route.clone(),
+            Request::get(format!("/spaces/{space_id}/changes")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{changes_body}");
+        let changes = changes_body.as_array().expect("change listing array");
+        let target = changes
+            .iter()
+            .find(|change| change["change"]["message"] == "target selective update")
+            .expect("target update is listed");
+        let target_change_id = target["change_id"]
+            .as_str()
+            .expect("opaque target change id")
+            .to_owned();
+        for change in changes {
+            assert_publication_coordinate(&change["publication"], space_uid);
+        }
+
+        let (status, revert_body) = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/changes/{target_change_id}/revert"),
+                json!({}),
+            ),
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{revert_body}");
+        assert_eq!(revert_body["reverts_change_id"], target_change_id);
+        let inverse_revision = revert_body["revision_ids"][0]
+            .as_str()
+            .expect("selective inverse revision token")
+            .to_owned();
+        assert_opaque_version_token(&inverse_revision);
+
+        let (status, current_entry) = route_json(
+            route.clone(),
+            Request::get(format!("/spaces/{space_id}/entries/revert-entry")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{current_entry}");
+        assert!(current_entry["markdown"]
+            .as_str()
+            .is_some_and(|markdown| markdown.contains("created")));
+
+        let later_update = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{
+                        "kind": "update",
+                        "id": "revert-entry",
+                        "version_token": inverse_revision,
+                        "markdown": knowledge_markdown("Revert entry", "changed later")
+                    }],
+                    "run_id": "run-2037-revert-later",
+                    "message": "later change after inverse"
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(later_update.0, StatusCode::OK, "{}", later_update.1);
+
+        let (status, conflict_body) = route_json(
+            route,
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/changes/{target_change_id}/revert"),
+                json!({}),
+            ),
+        )
+        .await?;
+        assert_eq!(status, StatusCode::CONFLICT, "{conflict_body}");
+        assert_eq!(conflict_body["code"], "REVISION_CONFLICT");
+        assert!(conflict_body["message"].as_str().is_some());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn issue_2037_authenticated_rest_run_undo_is_idempotent_and_resumable(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-issue-2037-run-undo-{}",
+            Uuid::now_v7()
+        ))?;
+        let principal_id = Uuid::from_u128(20378);
+        let space_id = state
+            .service
+            .create_space_for_principal("issue-2037-run-undo", principal_id, "Route test")
+            .await?
+            .to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = reversible_knowledge_route(
+            state,
+            reversible_knowledge_identity(principal_id, space_uid),
+        );
+
+        let create = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{
+                        "kind": "create",
+                        "id": "undo-entry",
+                        "markdown": knowledge_markdown("Undo entry", "created")
+                    }],
+                    "run_id": "run-2037-undo",
+                    "message": "run create"
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(create.0, StatusCode::OK, "{}", create.1);
+        let create_revision = create.1["operations"][0]["revision_id"]
+            .as_str()
+            .expect("create revision token")
+            .to_owned();
+        assert_opaque_version_token(&create_revision);
+        let update = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{
+                        "kind": "update",
+                        "id": "undo-entry",
+                        "version_token": create_revision,
+                        "markdown": knowledge_markdown("Undo entry", "updated")
+                    }],
+                    "run_id": "run-2037-undo",
+                    "message": "run update"
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(update.0, StatusCode::OK, "{}", update.1);
+
+        let (status, first_undo) = route_json(
+            route.clone(),
+            Request::post(format!("/spaces/{space_id}/runs/run-2037-undo/undo"))
+                .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{first_undo}");
+        assert_eq!(first_undo["run_id"], "run-2037-undo");
+        assert_eq!(first_undo["reverted_change_count"], 2);
+        assert_eq!(first_undo["inverses"].as_array().map(Vec::len), Some(2));
+
+        let (status, resumed_undo) = route_json(
+            route.clone(),
+            Request::post(format!("/spaces/{space_id}/runs/run-2037-undo/undo"))
+                .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{resumed_undo}");
+        assert_eq!(resumed_undo["run_id"], "run-2037-undo");
+        assert_eq!(resumed_undo["reverted_change_count"], 0);
+        assert_eq!(resumed_undo["inverses"].as_array().map(Vec::len), Some(0));
+
+        let (status, changes_body) = route_json(
+            route,
+            Request::get(format!("/spaces/{space_id}/changes")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{changes_body}");
+        let changes = changes_body.as_array().expect("change listing array");
+        let original_change_ids = changes
+            .iter()
+            .filter(|change| {
+                change["change"]["run_id"] == "run-2037-undo"
+                    && change["change"]["reverts_change_id"].is_null()
+            })
+            .filter_map(|change| change["change_id"].as_str())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(original_change_ids.len(), 2);
+        for original_change_id in original_change_ids {
+            assert!(changes
+                .iter()
+                .any(|change| { change["change"]["reverts_change_id"] == original_change_id }));
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn issue_2037_authenticated_rest_apply_supports_create_update_remove(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-issue-2037-apply-crud-{}",
+            Uuid::now_v7()
+        ))?;
+        state.initialize_node().await?;
+        let principal_id = Uuid::from_u128(20379);
+        let space_id = state
+            .service
+            .create_space_for_principal("issue-2037-apply-crud", principal_id, "Route test")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        state
+            .identity
+            .seed_test_recovery_accounts(&[(principal_id, space_uid, principal_id)])
+            .await?;
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let route =
+            reversible_knowledge_route(state, local_knowledge_identity(principal_id, space_uid));
+
+        let create = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{
+                        "kind": "create",
+                        "id": "apply-crud-entry",
+                        "markdown": knowledge_markdown("Apply CRUD", "created")
+                    }],
+                    "run_id": "run-2037-apply-crud",
+                    "message": "apply create"
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(create.0, StatusCode::OK, "{}", create.1);
+        let create_revision = create.1["operations"][0]["revision_id"]
+            .as_str()
+            .expect("create revision token")
+            .to_owned();
+        assert_opaque_version_token(&create_revision);
+
+        let update = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{
+                        "kind": "update",
+                        "id": "apply-crud-entry",
+                        "version_token": create_revision,
+                        "markdown": knowledge_markdown("Apply CRUD", "updated")
+                    }],
+                    "run_id": "run-2037-apply-crud",
+                    "message": "apply update"
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(update.0, StatusCode::OK, "{}", update.1);
+
+        let (status, remove) = route_json(
+            route,
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{"kind": "remove", "id": "apply-crud-entry"}],
+                    "run_id": "run-2037-apply-crud",
+                    "message": "apply remove"
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{remove}");
+        assert_eq!(
+            remove["operations"][0],
+            json!({
+                "kind": "remove",
+                "id": "apply-crud-entry"
+            })
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn issue_2037_authenticated_rest_pins_read_exact_immutable_state_and_delete(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-issue-2037-pins-{}",
+            Uuid::now_v7()
+        ))?;
+        state.initialize_node().await?;
+        let principal_id = Uuid::from_u128(20380);
+        let space_id = state
+            .service
+            .create_space_for_principal("issue-2037-pins", principal_id, "Route test")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        state
+            .identity
+            .seed_test_recovery_accounts(&[(principal_id, space_uid, principal_id)])
+            .await?;
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let route =
+            reversible_knowledge_route(state, local_knowledge_identity(principal_id, space_uid));
+
+        let create = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{
+                        "kind": "create",
+                        "id": "pinned-entry",
+                        "markdown": knowledge_markdown("Pinned entry", "before update")
+                    }]
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(create.0, StatusCode::OK, "{}", create.1);
+        let create_revision = create.1["operations"][0]["revision_id"]
+            .as_str()
+            .expect("create revision token")
+            .to_owned();
+        assert_opaque_version_token(&create_revision);
+
+        let mut pin_request = json_request(
+            Method::POST,
+            format!("/spaces/{space_id}/pins"),
+            json!({"name": "before-update"}),
+        );
+        pin_request.headers_mut().insert(
+            "idempotency-key",
+            HeaderValue::from_static("issue-2037-pin-create"),
+        );
+        let pin = route_json(route.clone(), pin_request).await?;
+        assert_eq!(pin.0, StatusCode::OK, "{}", pin.1);
+        assert_publication_coordinate(&pin.1["coordinate"], space_uid);
+
+        let update = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{
+                        "kind": "update",
+                        "id": "pinned-entry",
+                        "version_token": create_revision,
+                        "markdown": knowledge_markdown("Pinned entry", "after update")
+                    }]
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(update.0, StatusCode::OK, "{}", update.1);
+
+        let (status, pins_body) = route_json(
+            route.clone(),
+            Request::get(format!("/spaces/{space_id}/pins")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{pins_body}");
+        assert_eq!(
+            pins_body["before-update"]["coordinate"],
+            pin.1["coordinate"]
+        );
+        assert_publication_coordinate(&pins_body["before-update"]["coordinate"], space_uid);
+
+        let (status, current) = route_json(
+            route.clone(),
+            Request::get(format!("/spaces/{space_id}/entries/pinned-entry")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{current}");
+        assert!(current["markdown"]
+            .as_str()
+            .is_some_and(|markdown| markdown.contains("after update")));
+        let (status, pinned) = route_json(
+            route.clone(),
+            Request::get(format!(
+                "/spaces/{space_id}/entries/pinned-entry?pin=before-update"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{pinned}");
+        assert!(pinned["markdown"]
+            .as_str()
+            .is_some_and(|markdown| markdown.contains("before update")));
+
+        let (status, deleted) = route_json(
+            route.clone(),
+            Request::delete(format!("/spaces/{space_id}/pins/before-update"))
+                .header("idempotency-key", "issue-2037-pin-delete")
+                .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{deleted}");
+        assert_eq!(
+            deleted,
+            json!({"name": "before-update", "status": "deleted"})
+        );
+        let (status, pins_after_delete) = route_json(
+            route,
+            Request::get(format!("/spaces/{space_id}/pins")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{pins_after_delete}");
+        assert!(pins_after_delete.get("before-update").is_none());
+        Ok(())
+    }
+
     #[tokio::test]
     async fn issue_2037_public_apply_uses_opaque_version_tokens() -> anyhow::Result<()> {
         let state = AppState::new_for_tests(format!(
@@ -13739,7 +14309,7 @@ mod authentication_regression_tests {
             .as_str()
             .expect("opaque version token")
             .to_owned();
-        assert!(!version_token.is_empty());
+        assert_opaque_version_token(&version_token);
 
         let update_response = route
             .oneshot(json_request(
