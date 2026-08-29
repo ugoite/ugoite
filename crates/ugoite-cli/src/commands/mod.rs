@@ -4,6 +4,7 @@ pub mod config;
 pub mod entry;
 pub mod form;
 pub mod index;
+pub mod konase;
 pub mod search;
 pub mod space;
 pub mod sql;

@@ -11,8 +11,11 @@ path = "src/main.rs"
 [dependencies]
 ugoite_iceberg = { package = "ugoite-iceberg", path = "../ugoite-iceberg" }
 ugoite-api-client = { path = "../ugoite-api-client" }
+ugoite-konase = { path = "../ugoite-konase" }
+ugoite-konase-rig = { path = "../ugoite-konase-rig" }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1.52", features = ["rt-multi-thread", "macros"] }
+async-trait = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 anyhow = "1.0"
@@ -25,6 +28,7 @@ keyring = { version = "3", default-features = false, features = ["apple-native",
 uuid = { version = "1.23", features = ["v7", "serde"] }
 chrono = "0.4"
 url = "2.5"
+rmcp = { version = "3.1", default-features = false, features = ["client", "transport-streamable-http-client-reqwest"] }
 
 [dev-dependencies]
 tempfile = "3"

@@ -45,6 +45,8 @@ enum Commands {
     Sql(commands::sql::SqlCmd),
     /// Indexer operations
     Index(commands::index::IndexCmd),
+    /// Start the Konase assistant
+    Konase(commands::konase::KonaseCmd),
     /// Create a new space (deprecated: use `space create` instead)
     /// Create a new space
     #[command(
@@ -116,6 +118,7 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Search(cmd) => commands::search::run(cmd).await,
         Commands::Sql(cmd) => commands::sql::run(cmd).await,
         Commands::Index(cmd) => commands::index::run(cmd).await,
+        Commands::Konase(cmd) => commands::konase::run(cmd).await,
         Commands::CreateSpace {
             root_path,
             space_id,

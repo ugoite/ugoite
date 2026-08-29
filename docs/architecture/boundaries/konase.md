@@ -39,10 +39,15 @@ observations and explicitly selected resource contents; it does not define an
 append-only transcript contract. Meaningful Knowledge outcomes continue to use
 Ugoite's existing Space and Change/Run/Undo semantics.
 
-## Planned host adapters
+## Host adapter status
 
-The CLI model/MCP host, browser Host, and Konase UI are subsequent delivery
-slices. Agent Plugins, native MCP transport abstractions, and other provider
-frameworks remain outside this MVP. They must implement the contracts above
-without leaking provider/framework types into the Konase or Ugoite
-public/domain contracts.
+The native CLI now provides the first host path: it connects to the
+authenticated Ugoite MCP endpoint with the official rmcp client and uses one
+configured model provider. The read-only path exposes `ugoite.search` and
+`resources/read`; it creates a fresh Rig run for each Job and keeps provider
+and transport types inside the CLI/adapter boundary.
+
+The browser Host and Konase UI are subsequent delivery slices. Agent Plugins,
+native MCP transport abstractions, and other provider frameworks remain
+outside this MVP. They must implement the contracts above without leaking
+provider/framework types into the Konase or Ugoite public/domain contracts.

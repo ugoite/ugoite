@@ -170,6 +170,8 @@ pub struct McpResult {
     pub observation: Option<Observation>,
     #[serde(default)]
     pub resources: Vec<ResourceReference>,
+    #[serde(default)]
+    pub resource_contents: Vec<ResourceContent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -1081,10 +1083,29 @@ fn validate_mcp_result(result: &McpResult) -> Result<(), KonaseError> {
     for resource in &result.resources {
         validate_resource_reference(resource)?;
     }
+    if result.resource_contents.len() > MAX_STATE_RESOURCE_REFERENCES {
+        return invalid_state("MCP result contains too many resource contents");
+    }
+    for content in &result.resource_contents {
+        validate_resource_content(content)?;
+    }
     if let Some(error) = &result.error {
         validate_text("mcp.result.error", error, MAX_ERROR_MESSAGE_CHARS)?;
     }
     Ok(())
+}
+
+fn validate_resource_content(content: &ResourceContent) -> Result<(), KonaseError> {
+    validate_text(
+        "resource_content.uri",
+        &content.uri,
+        MAX_STATE_SUMMARY_CHARS,
+    )?;
+    validate_text(
+        "resource_content.content",
+        &content.content,
+        MAX_MODEL_CONTENT_CHARS,
+    )
 }
 
 fn validate_confirmation_request(request: &ConfirmationRequest) -> Result<(), KonaseError> {
@@ -1317,10 +1338,22 @@ fn normalize_mcp_result(mut result: McpResult) -> McpResult {
         .map(normalize_resource_reference)
         .take(MAX_STATE_RESOURCE_REFERENCES)
         .collect();
+    result.resource_contents = result
+        .resource_contents
+        .into_iter()
+        .map(normalize_resource_content)
+        .take(MAX_STATE_RESOURCE_REFERENCES)
+        .collect();
     result.error = result
         .error
         .map(|error| bound(error, MAX_ERROR_MESSAGE_CHARS));
     result
+}
+
+fn normalize_resource_content(mut content: ResourceContent) -> ResourceContent {
+    content.uri = bound(content.uri, MAX_STATE_SUMMARY_CHARS);
+    content.content = bound(content.content, MAX_MODEL_CONTENT_CHARS);
+    content
 }
 
 fn normalize_confirmation_request(mut request: ConfirmationRequest) -> ConfirmationRequest {
@@ -1582,6 +1615,7 @@ mod tests {
                 success: true,
                 observation: Some(observation("observation-1")),
                 resources: vec![],
+                resource_contents: vec![],
                 error: None,
             }),
         );
