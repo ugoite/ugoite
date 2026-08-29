@@ -1,24 +1,48 @@
 # Ugoite
 
-Ugoite is a local-first knowledge-space system built around operator-owned
-files.
+Ugoite is a private, portable Knowledge Space for humans and AI. Knowledge
+stays in an operator-owned Space; a server, browser session, model provider, or
+generated experience does not become its owner.
 
-> A private, portable knowledge space you can run with Docker, automate from the
-> CLI, and keep on infrastructure you control.
+> Knowledge persists. Work may disappear. Knowledge can become tools.
 
 The repository-level [`docs/`](docs/index.md) directory is the single source of
 truth for product, operator, architecture, and specification documentation. The
 Starlight site renders those files directly; this README intentionally stays
 small so it cannot drift into a second manual.
 
-## Start
+## What makes Ugoite different
 
-- [Container quick start](docs/guide/start/container-quickstart.md)
-- [Local development](docs/guide/develop/local-dev-auth-login.md)
-- [CLI guide](docs/guide/automate/cli.md)
-- [Architecture](docs/architecture/index.md)
-- [REST and OpenAPI](docs/spec/api/rest.md)
-- [Executable specification](docs/spec/index.md)
+- **Own your Knowledge.** Knowledge lives in your Space and remains portable
+  across the runtimes that work with it.
+- **Let humans and agents work with it.** The CLI, browser, MCP, and Konase
+  operate on the same Space-owned Knowledge through shared semantics.
+- **Turn Knowledge into tools.** The same Knowledge can eventually become
+  purpose-built views and task-specific applications without moving into a
+  second system of record.
+
+## Current reality
+
+- CLI core mode is the shipped direct-local path for an operator-owned Space.
+- The browser is currently server-backed. Browser-local persistence and
+  optional synchronization are planned, not shipped.
+- Konase currently provides a portable client-side Work/Job control plane.
+  Temporary context, model interaction, and execution progress are Work, not
+  durable Knowledge authority.
+- Knowledge-to-tools is a North Star capability. v0.1 does not ship a View DSL,
+  renderer, low-code editor, general application builder, or arbitrary code
+  runtime.
+
+## Start / Operate / Develop / Verify
+
+- **Operate:** [Container quick start](docs/guide/start/container-quickstart.md)
+  and [operations](docs/guide/operate/server/operations.md)
+- **Develop:** [Local development](docs/guide/develop/local-dev-auth-login.md)
+- **Automate:** [CLI guide](docs/guide/automate/cli.md),
+  [REST and OpenAPI](docs/spec/api/rest.md), and the current
+  [MCP surface](docs/spec/api/mcp.md)
+- **Understand:** [Architecture](docs/architecture/index.md)
+- **Verify:** [Executable specification](docs/spec/index.md)
 
 For repository development, install [mise](https://mise.jdx.dev/) and run:
 

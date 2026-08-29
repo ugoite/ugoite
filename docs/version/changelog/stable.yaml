@@ -23,5 +23,5 @@ release_notes:
   - Release notes no longer imply that unpublished artifacts or split frontend/backend images exist.
   planned:
   - A completed operator-supported release with its published artifacts and verified quick starts.
-  - Production passkey/TOTP login, managed service accounts, audit APIs, and browser-local optional sync.
+  - Managed Agent Principals/service-account automation, audit CRUD, and browser-local optional sync.
 updated: '2026-06-23'

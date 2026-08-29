@@ -117,8 +117,10 @@ Context Capsule, and deterministic Event/Effect transitions. It performs no
 network, filesystem, storage, async runtime, or provider I/O. Native and WASM
 hosts execute serializable effects and return results as events.
 
-Konase state and raw model context are disposable client state. Meaningful
-Knowledge outcomes continue through the existing Ugoite Space and
-Change/Run/Undo semantics. Provider/framework implementations, Agent Plugins,
-MCP transport, CLI UI, and browser UI remain replaceable adapters and are not
-part of this slice.
+Konase state, agent memory, and raw model context are disposable client state.
+Meaningful Knowledge outcomes continue through the existing Ugoite Space and
+Change/Run/Undo semantics. A future View or Application Definition may be
+Space-owned Knowledge, but its renderer and runtime state remain replaceable
+Experience. Provider/framework implementations, Agent Plugins, MCP transport,
+CLI UI, and browser UI remain replaceable adapters and are not part of this
+slice.

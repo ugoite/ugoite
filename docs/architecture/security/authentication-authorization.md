@@ -19,9 +19,9 @@ API key.
 ## Trust boundaries
 
 Node Identity authenticates a human account on one node with a Passkey. Space
-Authorization stores UUIDv7 human and agent
-principals, owner/editor/viewer membership, additive resource grants, and Space
-audit history below the portable Space directory. Authenticated MCP clients use
+Authorization stores UUIDv7 human principals, owner/editor/viewer membership,
+additive resource grants, and Space audit history below the portable Space
+directory. Agent Principals are future scope. Authenticated MCP clients use
 short-lived, node-, audience-, Space-, action-, and sender-constrained access
 credentials; CLI/device credentials and agent credentials are future designs.
 

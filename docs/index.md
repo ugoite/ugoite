@@ -1,8 +1,8 @@
 ---
 title: Ugoite
-description: A private, portable knowledge space you can run with Docker, automate from the CLI, and keep on infrastructure you control.
+description: A private, portable Knowledge Space for humans and AI, built around operator-owned Spaces.
 hero:
-  tagline: A private, portable knowledge space built around operator-owned files.
+  tagline: Knowledge persists. Work may disappear. Knowledge can become tools.
   actions:
     - text: Container quick start
       link: docs/guide/start/container-quickstart/
@@ -18,9 +18,39 @@ sidebar:
   order: 1
 ---
 
-Ugoite keeps authoritative entries and revisions in portable Space directories.
-Search indexes, SQL sessions, and other acceleration structures are derived data
-that can be rebuilt.
+Ugoite is a private, portable Knowledge Space for humans and AI. Knowledge lives
+in an operator-owned Space, where it remains recoverable and independent of any
+server, browser session, model provider, or generated experience.
+
+The product promise has three parts: durable Knowledge belongs to the operator;
+human and agent Work can use that Knowledge without owning it; and the same
+Knowledge can eventually become purpose-built tools without being copied into a
+second system of record.
+
+## What you can own
+
+Authoritative Entries, Forms, Assets, saved SQL, Changes, and portable history
+live in a Space. Search indexes, SQL sessions, and other acceleration structures
+are derived data that can be rebuilt. Node accounts and sessions are separate
+node-local control state, not a replacement for Space ownership.
+
+## What humans and AI can do
+
+The local CLI, REST, browser, MCP, and Konase use shared Ugoite semantics. The
+current Konase implementation provides a client-side Work/Job control plane;
+temporary context, model interaction, and execution progress can disappear.
+Meaningful results become durable only through the normal Space mutation and
+Change/Run/Undo rules.
+
+## Where Ugoite is going
+
+:::note[Target, not a v0.1 feature]
+Knowledge can become portable, inspectable views and task-specific tools. The
+current v0.1 release establishes the authority boundary only: browser-local
+persistence, optional synchronization, View/Application definitions, and
+renderers remain future work. No general application builder or arbitrary code
+runtime is shipped.
+:::
 
 ## Choose a path
 

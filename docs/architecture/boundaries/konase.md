@@ -4,9 +4,10 @@ sidebar:
   order: 4
 ---
 
-Konase is a client-side control plane layered above Ugoite's portable
-application behavior. The first delivery unit is intentionally UI- and
-transport-free.
+Konase is a portable client-side Work runtime layered above Ugoite's shared
+application behavior. It lets humans and agents work with user-owned
+Knowledge without becoming its owner. The first delivery unit is intentionally
+UI- and transport-free.
 
 ## Current implementation
 
@@ -36,11 +37,21 @@ capabilities such as `resources/read` provide an explicit schema as well.
 
 ## Durability boundary
 
-Konase state, raw model context, pending effects, and execution observations
-are disposable client state. The Context Builder uses bounded recent
+Konase state, agent memory, raw model context, pending effects, and execution
+observations are disposable Work. The Context Builder uses bounded recent
 observations and explicitly selected resource contents; it does not define an
-append-only transcript contract. Meaningful Knowledge outcomes continue to use
-Ugoite's existing Space and Change/Run/Undo semantics.
+append-only transcript contract. A Work result is not durable merely because a
+model produced it.
+
+When a user or host decides that a result should persist, it is promoted through
+Ugoite's normal Knowledge mutation path. MCP save/delete and Work-scoped undo
+therefore use the existing Space and Change/Run/Undo semantics. Konase does not
+own a second transcript, database, authorization policy, or recovery path.
+
+Konase may eventually help propose a reusable View or task-specific tool. The
+definition, if saved, is ordinary Space-owned Knowledge; a separate adapter
+renders it, and rendered/runtime state remains disposable Experience. This is a
+future capability, not a shipped application builder.
 
 ## Host adapter status
 

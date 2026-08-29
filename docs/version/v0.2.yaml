@@ -1,8 +1,9 @@
 version: "0.2"
 status: planned
 summary: >
-  Next release stream focused on user-controlled experiences and broader
-  AI-assisted workflows beyond today's small stable MCP v1 facade.
+  Planned product realization of Knowledge-to-tools: portable, inspectable
+  user-controlled Experiences and bounded AI-assisted workflows built on the
+  v0.1 authority model, beyond today's small stable MCP v1 facade.
 milestones:
   - id: user-controlled-view
     status: planned

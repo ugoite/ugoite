@@ -37,6 +37,10 @@ support, and product claims stay aligned with the implementation.
   exposed; audit-event mutation/CRUD remains unavailable;
 - browser-local persistence, offline-first editing, and sync are not
   implemented;
+- portable View/Application Definitions, Knowledge-to-tools renderers, and
+  general application-builder behavior are not implemented. v0.1 freezes their
+  authority boundary but does not ship a View DSL, low-code editor, arbitrary
+  code runtime, app-specific database, or parallel authorization authority;
 - Passkey/WebAuthn login, opaque browser sessions, Space membership/ACL
   enforcement, owner-approved Space access recovery, recovery-code +
   recovery-TOTP Account Self-Recovery, Remote CLI device authentication,
