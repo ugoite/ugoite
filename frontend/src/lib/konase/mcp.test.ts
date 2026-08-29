@@ -37,6 +37,32 @@ const mcpRequest = (
 });
 
 describe("BrowserMcpHost", () => {
+  it("uses the canonical root MCP endpoint when no endpoint override is supplied", async () => {
+    const fetcher: typeof fetch = async (input) => {
+      expect(String(input)).toBe("/mcp");
+      return new Response(JSON.stringify({ result: { tools: [] } }), {
+        status: 200,
+      });
+    };
+    const host = new BrowserMcpHost({
+      accessToken: "test-token",
+      fetcher,
+    });
+
+    await expect(host.capabilities()).resolves.toEqual([
+      {
+        name: "resources/read",
+        description: "Read the full content of an opaque Ugoite resource URI",
+        input_schema: {
+          type: "object",
+          properties: { uri: { type: "string" } },
+          required: ["uri"],
+          additionalProperties: false,
+        },
+      },
+    ]);
+  });
+
   it("preserves listed schemas and gives resources/read an explicit schema", async () => {
     const host = new BrowserMcpHost({
       accessToken: "test-token",

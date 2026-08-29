@@ -63,11 +63,13 @@ each Work's writes to one Ugoite Run ID through MCP request metadata. It
 creates a fresh Rig run for each Job and keeps provider and transport types
 inside the CLI/adapter boundary.
 
-The browser Host and Konase UI now provide the same one-Job path. The Host
-keeps model credentials and the authenticated MCP access token in page memory,
-executes model/MCP effects, and uses the existing `ugoite/runId` metadata for
-Work-scoped writes and undo. It does not persist chat history or browser-local
-Space data. Agent Plugins, native MCP transport abstractions, and other
-provider frameworks remain outside this MVP. They must implement the
-contracts above without leaking provider/framework types into the Konase or
-Ugoite public/domain contracts.
+The browser Host and Konase UI now provide the same one-Job path. The panel
+starts a browser-approved MCP device credential for the current Space, checks
+the returned Space UID, and resolves the MCP endpoint from protected-resource
+metadata. The credential, model key, and browser signing key stay in page
+memory only. The Host executes model/MCP effects and uses the existing
+`ugoite/runId` metadata for Work-scoped writes and undo. It does not persist
+chat history or browser-local Space data. Agent Plugins, native MCP transport
+abstractions, and other provider frameworks remain outside this MVP. They must
+implement the contracts above without leaking provider/framework types into
+the Konase or Ugoite public/domain contracts.

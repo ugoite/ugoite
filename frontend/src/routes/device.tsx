@@ -7,6 +7,7 @@ type PendingMcpAuthorization = {
   device_name: string;
   requested_actions: string[];
   resource: string | null;
+  requested_space_uid?: string | null;
 };
 
 export default function DeviceApprovalRoute() {
@@ -44,16 +45,24 @@ export default function DeviceApprovalRoute() {
         setUnsupported(true);
         return;
       }
-      setPending({
+      const pendingRequest: PendingMcpAuthorization = {
         device_name: String(payload.device_name),
         requested_actions: Array.isArray(payload.requested_actions)
           ? payload.requested_actions.map(String)
           : [],
         resource: payload.resource === null ? null : String(payload.resource),
-      });
+        requested_space_uid: payload.requested_space_uid == null
+          ? null
+          : String(payload.requested_space_uid),
+      };
+      setPending(pendingRequest);
       const values = await spaceApi.list();
       setSpaces(values);
-      setSpaceId(values[0]?.id ?? "");
+      setSpaceId(
+        values.find((space) =>
+          space.space_uid === pendingRequest.requested_space_uid
+        )?.id ?? values[0]?.id ?? "",
+      );
     } catch (cause) {
       setError(
         formatUserFacingError(cause, "spacesPage.failedLoad", "space.list"),
@@ -130,8 +139,9 @@ export default function DeviceApprovalRoute() {
               {(request) => (
                 <form class="ui-stack-sm" onSubmit={approve}>
                   <p>
-                    Approve <strong>{request().device_name}</strong>{" "}
-                    for {request().resource ? "MCP" : "CLI"} actions: {request().requested_actions.join(", ")}.
+                    Approve <strong>{request().device_name}</strong> for{" "}
+                    {request().resource ? "MCP" : "CLI"} actions:{" "}
+                    {request().requested_actions.join(", ")}.
                   </p>
                   <label class="ui-stack-sm">
                     <span>Space</span>

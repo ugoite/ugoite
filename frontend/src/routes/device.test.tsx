@@ -33,7 +33,10 @@ describe("/device", () => {
         resource: null,
       }),
     });
-    vi.mocked(spaceApi.list).mockResolvedValue([{ id: "space-1", name: "Docs" }]);
+    vi.mocked(spaceApi.list).mockResolvedValue([{
+      id: "space-1",
+      name: "Docs",
+    }]);
 
     render(() => <DeviceApprovalRoute />);
 
@@ -59,12 +62,18 @@ describe("/device", () => {
           device_name: "MCP client",
           requested_actions: ["read"],
           resource,
+          requested_space_uid: "space-uid-2",
         }),
       })
       .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
     vi.mocked(spaceApi.list).mockResolvedValue([{
       id: "space-1",
       name: "Docs",
+      space_uid: "space-uid-1",
+    }, {
+      id: "space-2",
+      name: "Current Space",
+      space_uid: "space-uid-2",
     }]);
 
     render(() => <DeviceApprovalRoute />);
@@ -78,6 +87,11 @@ describe("/device", () => {
         expect.objectContaining({ method: "POST" }),
       )
     );
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+      user_code: "ABCD",
+      space_id: "space-2",
+      granted_actions: ["read"],
+    });
     expect(
       await screen.findByText("MCP access approved. Return to the MCP client."),
     )

@@ -53,7 +53,7 @@ export class BrowserMcpHost implements McpHost {
       throw new Error("MCP access token is required");
     }
     this.accessToken = options.accessToken;
-    this.endpoint = options.endpoint ?? "/api/mcp";
+    this.endpoint = options.endpoint ?? "/mcp";
     this.fetcher = options.fetcher ?? fetch;
   }
 

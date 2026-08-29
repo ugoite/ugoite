@@ -85,7 +85,7 @@ export default function SpaceDashboardRoute() {
         </button>
       </div>
 
-      <KonasePanel />
+      <KonasePanel spaceId={spaceId()} />
 
       <Show when={forms.error}>
         <section class="surface emptyState" role="alert">
