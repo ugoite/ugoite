@@ -18,6 +18,7 @@ class ScriptedModel implements ModelHost {
 
 class ScriptedMcp implements McpHost {
   readonly operations: string[] = [];
+  readonly calls: Array<{ operation: string; workId: string }> = [];
 
   async capabilities() {
     return [
@@ -40,11 +41,30 @@ class ScriptedMcp implements McpHost {
           additionalProperties: false,
         },
       },
+      {
+        name: "ugoite.save",
+        description: "Save an Entry",
+        input_schema: {
+          type: "object",
+          properties: { content: { type: "string" } },
+          required: ["content"],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "ugoite.undo",
+        description: "Undo Work changes",
+        input_schema: {
+          type: "object",
+          additionalProperties: false,
+        },
+      },
     ];
   }
 
-  async callMcp(request: McpRequest, _workId: string): Promise<McpResult> {
+  async callMcp(request: McpRequest, workId: string): Promise<McpResult> {
     this.operations.push(request.operation);
+    this.calls.push({ operation: request.operation, workId });
     const search = request.operation === "ugoite.search";
     return {
       request_id: request.request_id,
@@ -135,5 +155,37 @@ describe("Konase browser host", () => {
       "model",
       "complete",
     ]);
+  });
+
+  it("makes a successful save undoable and reuses its Work ID for undo", async () => {
+    const model = new ScriptedModel([
+      {
+        request_id: "",
+        tool_calls: [{
+          id: "save-call",
+          name: "ugoite.save",
+          arguments: { content: "---\nform: Entry\n---\n# Saved" },
+        }],
+      },
+      { request_id: "", text: "Entry saved", tool_calls: [] },
+    ]);
+    const mcp = new ScriptedMcp();
+    const progress: string[] = [];
+    const host = new KonaseHost({
+      model,
+      mcp,
+      onProgress: (event) => progress.push(event.kind),
+    });
+
+    const turn = await host.submit("Save this Entry");
+    const undo = await host.undo(turn.workId);
+
+    expect(turn.undoAvailable).toBe(true);
+    expect(undo.success).toBe(true);
+    expect(mcp.calls).toEqual([
+      { operation: "ugoite.save", workId: turn.workId },
+      { operation: "ugoite.undo", workId: turn.workId },
+    ]);
+    expect(progress).toContain("undo");
   });
 });
