@@ -32,7 +32,7 @@ trait ModelHost {
 
 #[async_trait]
 trait McpHost {
-    async fn call_mcp(&mut self, request: McpRequest) -> Result<McpResult>;
+    async fn call_mcp(&mut self, request: McpRequest, work_id: &str) -> Result<McpResult>;
     async fn capabilities(&self) -> Vec<Capability>;
 }
 
@@ -258,6 +258,18 @@ struct RmcpMcpHost {
     capabilities: Vec<Capability>,
 }
 
+fn work_meta(work_id: &str) -> RequestMetaObject {
+    let mut meta = RequestMetaObject::with_client_context(
+        ProtocolVersion::V_2026_07_28,
+        Implementation::new("ugoite-cli", env!("CARGO_PKG_VERSION")),
+        ClientCapabilities::default(),
+    );
+    meta.0
+         .0
+        .insert("ugoite/runId".into(), Value::String(work_id.to_owned()));
+    meta
+}
+
 impl RmcpMcpHost {
     async fn connect(base_url: &str) -> Result<Self> {
         let session = crate::commands::auth::active_session(base_url)
@@ -289,7 +301,12 @@ impl RmcpMcpHost {
                     .description
                     .map_or_else(String::new, |value| value.into_owned()),
             })
-            .filter(|capability| capability.name == "ugoite.search")
+            .filter(|capability| {
+                matches!(
+                    capability.name.as_str(),
+                    "ugoite.search" | "ugoite.save" | "ugoite.undo"
+                )
+            })
             .collect::<Vec<_>>();
         capabilities.push(Capability {
             name: "resources/read".into(),
@@ -302,9 +319,23 @@ impl RmcpMcpHost {
     }
 }
 
+fn write_tool_request(
+    request: McpRequest,
+    work_id: &str,
+) -> Result<(String, CallToolRequestParams)> {
+    if !matches!(request.operation.as_str(), "ugoite.save" | "ugoite.undo") {
+        bail!("unsupported MCP write operation {}", request.operation);
+    }
+    let operation = request.operation;
+    let mut params = CallToolRequestParams::new(operation.clone())
+        .with_arguments(request.arguments.into_iter().collect());
+    params.set_meta(work_meta(work_id));
+    Ok((operation, params))
+}
+
 #[async_trait]
 impl McpHost for RmcpMcpHost {
-    async fn call_mcp(&mut self, request: McpRequest) -> Result<McpResult> {
+    async fn call_mcp(&mut self, request: McpRequest, work_id: &str) -> Result<McpResult> {
         if request.operation == "resources/read" {
             let uri = request
                 .arguments
@@ -313,7 +344,7 @@ impl McpHost for RmcpMcpHost {
                 .ok_or_else(|| anyhow!("resources/read requires a string uri"))?;
             let result = self
                 .client
-                .read_resource(ReadResourceRequestParams::new(uri))
+                .read_resource(ReadResourceRequestParams::new(uri).with_meta(work_meta(work_id)))
                 .await
                 .context("read MCP resource")?;
             let resource_contents = result
@@ -337,15 +368,43 @@ impl McpHost for RmcpMcpHost {
                 error: None,
             });
         }
-        if request.operation != "ugoite.search" {
-            bail!("unsupported read-only MCP operation {}", request.operation);
+        if matches!(request.operation.as_str(), "ugoite.save" | "ugoite.undo") {
+            let request_id = request.request_id.clone();
+            let (operation, params) = write_tool_request(request, work_id)?;
+            let result = self
+                .client
+                .call_tool(params)
+                .await
+                .context("undo Ugoite Work")?;
+            let text = result
+                .content
+                .iter()
+                .filter_map(|content| match content {
+                    ContentBlock::Text(content) => Some(content.text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let success = result.is_error != Some(true);
+            return Ok(McpResult {
+                request_id,
+                operation,
+                success,
+                observation: None,
+                resources: vec![],
+                resource_contents: vec![],
+                error: (!success).then_some(text),
+            });
         }
+        if request.operation != "ugoite.search" {
+            bail!("unsupported MCP operation {}", request.operation);
+        }
+        let mut params = CallToolRequestParams::new("ugoite.search")
+            .with_arguments(request.arguments.into_iter().collect());
+        params.set_meta(work_meta(work_id));
         let result = self
             .client
-            .call_tool(
-                CallToolRequestParams::new("ugoite.search")
-                    .with_arguments(request.arguments.into_iter().collect()),
-            )
+            .call_tool(params)
             .await
             .context("call Ugoite search tool")?;
         let text = result
@@ -407,8 +466,8 @@ pub async fn run(cmd: KonaseCmd) -> Result<()> {
             if prompt.trim().is_empty() {
                 bail!("Konase prompt must not be empty");
             }
-            let outcome = run_turn(&mut model, &mut mcp, &prompt, &capabilities).await?;
-            println!("{}", outcome.summary);
+            let turn = run_turn(&mut model, &mut mcp, &prompt, &capabilities).await?;
+            println!("{}", turn.outcome.summary);
         }
         None => {
             let interactive = io::stdin().is_terminal();
@@ -416,6 +475,7 @@ pub async fn run(cmd: KonaseCmd) -> Result<()> {
                 println!("Konase");
             }
             let mut input = String::new();
+            let mut last_work_id: Option<String> = None;
             loop {
                 if interactive {
                     print!("> ");
@@ -429,12 +489,44 @@ pub async fn run(cmd: KonaseCmd) -> Result<()> {
                 if prompt.is_empty() {
                     continue;
                 }
-                let outcome = run_turn(&mut model, &mut mcp, prompt, &capabilities).await?;
-                println!("{}", outcome.summary);
+                if prompt == "u" {
+                    let Some(work_id) = last_work_id.take() else {
+                        println!("取り消せる Work はありません。");
+                        continue;
+                    };
+                    let result = mcp
+                        .call_mcp(
+                            McpRequest {
+                                request_id: format!("undo-{}", Uuid::now_v7()),
+                                server: "ugoite".into(),
+                                operation: "ugoite.undo".into(),
+                                arguments: Default::default(),
+                            },
+                            &work_id,
+                        )
+                        .await?;
+                    if !result.success {
+                        bail!(result.error.unwrap_or_else(|| "Undo failed".into()));
+                    }
+                    println!("✓ 取り消しました");
+                    continue;
+                }
+                let turn = run_turn(&mut model, &mut mcp, prompt, &capabilities).await?;
+                println!("{}", turn.outcome.summary);
+                last_work_id = turn.undo_available.then_some(turn.work_id);
+                if last_work_id.is_some() {
+                    println!("[u] 取り消す");
+                }
             }
         }
     }
     Ok(())
+}
+
+struct TurnOutcome {
+    outcome: JobOutcome,
+    work_id: String,
+    undo_available: bool,
 }
 
 async fn run_turn<M: ModelHost, C: McpHost>(
@@ -442,7 +534,7 @@ async fn run_turn<M: ModelHost, C: McpHost>(
     mcp: &mut C,
     prompt: &str,
     capabilities: &[Capability],
-) -> Result<JobOutcome> {
+) -> Result<TurnOutcome> {
     let work_id = format!("work-{}", Uuid::now_v7());
     let job_id = format!("job-{}", Uuid::now_v7());
     let mut state = step(
@@ -452,7 +544,9 @@ async fn run_turn<M: ModelHost, C: McpHost>(
             job_id: job_id.clone(),
             goal: prompt.into(),
             available_capabilities: capabilities.to_vec(),
-            safety_hints: vec!["This read-only MVP must not save or delete entries".into()],
+            safety_hints: vec![
+                "Use Ugoite MCP for requested reads and writes; the Host binds writes to this Work and supports undo".into(),
+            ],
             expected_response_schema: None,
         }),
     )
@@ -500,6 +594,7 @@ async fn run_turn<M: ModelHost, C: McpHost>(
     }
     state = start_effect.state;
     let mut action = first_action;
+    let mut undo_available = false;
     loop {
         action = match action {
             AgentAction::CallModel(request) => {
@@ -508,7 +603,8 @@ async fn run_turn<M: ModelHost, C: McpHost>(
             }
             AgentAction::CallMcp(request) => {
                 println!("{}", request.operation);
-                let result = mcp.call_mcp(request).await?;
+                undo_available |= request.operation == "ugoite.save";
+                let result = mcp.call_mcp(request, &work_id).await?;
                 let mcp_effect = step(
                     state,
                     ugoite_konase::KonaseEvent::McpCompleted(result.clone()),
@@ -532,10 +628,14 @@ async fn run_turn<M: ModelHost, C: McpHost>(
                 if let Some(error) = result.error {
                     bail!("Konase completion rejected: {}", error.message);
                 }
-                return Ok(outcome);
+                return Ok(TurnOutcome {
+                    outcome,
+                    work_id,
+                    undo_available,
+                });
             }
             AgentAction::AskConfirmation(_) => {
-                bail!("confirmation is outside the read-only CLI MVP")
+                bail!("confirmation is outside the CLI MVP")
             }
         };
         let progress = step(
@@ -552,7 +652,11 @@ async fn run_turn<M: ModelHost, C: McpHost>(
         }
         state = progress.state;
         if let AgentAction::Complete(outcome) = action {
-            return Ok(outcome);
+            return Ok(TurnOutcome {
+                outcome,
+                work_id,
+                undo_available,
+            });
         }
     }
 }
@@ -577,12 +681,48 @@ mod tests {
 
     struct ScriptedMcp {
         operations: Vec<String>,
+        work_ids: Vec<String>,
+    }
+
+    #[test]
+    fn write_tool_requests_keep_model_arguments_and_bind_the_work_id() {
+        for (operation, arguments) in [
+            (
+                "ugoite.save",
+                json!({"content":"---\nform: Entry\n---\n# Saved"}),
+            ),
+            ("ugoite.undo", json!({})),
+        ] {
+            let request = McpRequest {
+                request_id: "request-1".into(),
+                server: "ugoite".into(),
+                operation: operation.into(),
+                arguments: arguments
+                    .as_object()
+                    .cloned()
+                    .unwrap()
+                    .into_iter()
+                    .collect(),
+            };
+            let (name, params) = write_tool_request(request, "work-1").unwrap();
+            assert_eq!(name, operation);
+            assert_eq!(params.name, operation);
+            assert_eq!(
+                params.arguments.unwrap(),
+                arguments.as_object().cloned().unwrap()
+            );
+            assert_eq!(
+                params.meta.unwrap().0 .0.get("ugoite/runId"),
+                Some(&Value::String("work-1".into()))
+            );
+        }
     }
 
     #[async_trait]
     impl McpHost for ScriptedMcp {
-        async fn call_mcp(&mut self, request: McpRequest) -> Result<McpResult> {
+        async fn call_mcp(&mut self, request: McpRequest, work_id: &str) -> Result<McpResult> {
             self.operations.push(request.operation.clone());
+            self.work_ids.push(work_id.to_owned());
             let is_search = request.operation == "ugoite.search";
             Ok(McpResult {
                 request_id: request.request_id,
@@ -653,7 +793,10 @@ mod tests {
                 },
             ],
         };
-        let mut mcp = ScriptedMcp { operations: vec![] };
+        let mut mcp = ScriptedMcp {
+            operations: vec![],
+            work_ids: vec![],
+        };
         let capabilities = mcp.capabilities().await;
         let outcome = run_turn(
             &mut model,
@@ -663,7 +806,9 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(outcome.summary, "WebAssemblyのメモを確認しました。");
+        assert_eq!(outcome.outcome.summary, "WebAssemblyのメモを確認しました。");
         assert_eq!(mcp.operations, ["ugoite.search", "resources/read"]);
+        assert_eq!(mcp.work_ids.len(), 2);
+        assert_eq!(mcp.work_ids[0], mcp.work_ids[1]);
     }
 }

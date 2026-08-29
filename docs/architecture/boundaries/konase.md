@@ -43,9 +43,11 @@ Ugoite's existing Space and Change/Run/Undo semantics.
 
 The native CLI now provides the first host path: it connects to the
 authenticated Ugoite MCP endpoint with the official rmcp client and uses one
-configured model provider. The read-only path exposes `ugoite.search` and
-`resources/read`; it creates a fresh Rig run for each Job and keeps provider
-and transport types inside the CLI/adapter boundary.
+configured model provider. It exposes `ugoite.search`, lazy
+`resources/read`, `ugoite.save`, and Work-scoped `ugoite.undo`; the Host binds
+each Work's writes to one Ugoite Run ID through MCP request metadata. It
+creates a fresh Rig run for each Job and keeps provider and transport types
+inside the CLI/adapter boundary.
 
 The browser Host and Konase UI are subsequent delivery slices. Agent Plugins,
 native MCP transport abstractions, and other provider frameworks remain
