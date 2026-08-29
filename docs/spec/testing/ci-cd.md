@@ -9,7 +9,7 @@ The required build/test gate is `.github/workflows/ci.yml`. Separate workflows r
 | pull request to `main` | validation, canonical build/package steps, a focused docsite-navigation E2E lane, artifact verification, and E2E smoke |
 | merge queue to `main` | same merge gate as pull requests against the queued head |
 | push to `main` | merge gate plus shared-cache refresh and verified artifact upload |
-| merge of the Release Please PR to `main` | Release Please creates `v<version>` and the `Release Publish` workflow validates/publishes the non-docsite release artifacts |
+| manual `Release Publish` dispatch | validates an operator-selected existing `v<version>` GitHub Release and publishes the non-docsite release artifacts from its exact tag |
 
 Root task composition:
 
@@ -41,7 +41,33 @@ Rust-compiling lanes restore the Rust registry/git dependency cache without cach
 
 The hosted runtime image uses Dockerfile's `runtime-prebuilt` target. It copies the canonical frontend and Rust release outputs into the image instead of compiling them again inside Docker. E2E tasks require the already loaded `ugoite:e2e` image and never invoke an image build. The default Dockerfile target remains a portable source build for direct Docker and Compose use.
 
-After publication, `Release Publish` runs both release quick-start verifiers against the exact prepared version and source SHA. The release also uploads `docker-compose.release.yaml`, its checksum, and a manifest containing the prepared source SHA and published image digest. The container verifier checks that manifest, downloads that published Compose definition, pulls the versioned GHCR image, and starts it with `--no-build`; it does not build or load another image for verification. The CLI verifier uses the published checksum-verified installer and retains the local Space create/list assertions.
+## Release promotion contract
+
+`Release Publish` is intentionally a manual promotion workflow. A push to
+`main` runs the normal CI and artifact gates, but it does not ask GitHub
+Actions to create a release pull request. The promotion authority remains the
+operator and the repository history: after the intended promotion commit has
+passed the required PR checks, the operator creates the exact `v<version>` tag
+and a matching GitHub Release, then dispatches `Release Publish` with that tag.
+
+The first promotion is explicitly pinned to `0.1.0` by the synchronized
+`version.txt`, Cargo workspace, npm package, Helm metadata, and root release
+manifest. The `prepare` job verifies that the selected GitHub Release has the
+requested tag, resolves that tag to one commit, checks the canonical version,
+and exposes that commit as `release_sha`. Every build and publication job
+checks out `release_sha`, so the artifact set cannot silently come from the
+branch tip at dispatch time. The workflow can be rerun for the same validated
+tag; it is not a second versioning or release-creation path.
+
+The workflow keeps a top-level `permissions: {}` boundary and grants only the
+job-scoped permissions needed by the existing artifact publication and
+verification steps. Repository or organization settings that allow Actions to
+create or approve pull requests are not required for this release path.
+
+Detailed provenance evidence, chart descriptor relationships, and planner-ref
+recovery are release-hardening follow-ups rather than v0.1 promotion gates.
+
+After publication, `Release Publish` runs both release quick-start verifiers against the exact prepared version and source SHA. The release also uploads `docker-compose.release.yaml`, its checksum, and a manifest containing the prepared source SHA and published image digest. The container verifier checks that manifest, downloads that published Compose definition, pulls the versioned GHCR image, and starts it with `--no-build`; it does not build or load another image for verification. The CLI verifier uses the published checksum-verified installer and retains the local Space create/list assertions. Existing image and archive provenance remains enabled where the publishing actions support it; a structured cross-artifact evidence ledger is not a v0.1 gate.
 
 Only after the artifact and quick-start gates succeed, `Release Publish` renders `docs/version/changelog/<channel>.yaml` into the GitHub Release body. The repository-owned section uses a versioned start/end marker so reruns replace the channel section and preserve GitHub's generated commit summary without duplication. Invalid, mismatched, or incomplete channel sources fail before the release body is changed.
 

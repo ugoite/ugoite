@@ -137,8 +137,8 @@ requirements:
   linked_policies: *id001
   linked_specifications: *id002
   id: REQ-OPS-009
-  title: Release Metadata Bootstrap
-  description: Release Please metadata and the public installer package must keep compatible bootstrap versions and paths.
+  title: Deterministic Release Promotion
+  description: An operator-selected release tag must keep canonical metadata and published installer paths synchronized with the exact tagged source commit.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operate/server/operations.md
