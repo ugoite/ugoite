@@ -741,7 +741,7 @@ async fn tools_list(state: &AppState, auth: &AuthContext) -> Result<Value, Respo
     if has_action(state, auth, Action::Create).await
         || has_action(state, auth, Action::Update).await
     {
-        tools.push(json!({"name":"ugoite.save","description":"Create an Entry or update one opaque Entry by id.","inputSchema":{"type":"object","properties":{"id":{"type":"string"},"content":{"type":"string"}},"required":["content"],"additionalProperties":false},"outputSchema":save_output_schema(),"annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":false}}));
+        tools.push(json!({"name":"ugoite.save","description":"Save a Knowledge Entry. For a new Entry, plain Markdown is canonicalized to the built-in Entry form; when updating an existing Entry, provide complete Entry Markdown with the same form frontmatter.","inputSchema":save_input_schema(),"outputSchema":save_output_schema(),"annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":false}}));
     }
     if has_action(state, auth, Action::Update).await {
         tools.push(json!({"name":"ugoite.undo","description":"Undo all Entry changes made by the current Konase Work.","inputSchema":{"type":"object","properties":{},"additionalProperties":false},"outputSchema":undo_output_schema(),"annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":false}}));
@@ -759,6 +759,23 @@ async fn tools_list(state: &AppState, auth: &AuthContext) -> Result<Value, Respo
 
 fn search_schema() -> Value {
     json!({"type":"object","properties":{"q":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":25,"default":5},"cursor":{"type":"string"}},"required":["q"],"additionalProperties":false})
+}
+fn save_input_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "string",
+                "description": "Opaque Entry id. Omit this field to create a new generic Entry."
+            },
+            "content": {
+                "type": "string",
+                "description": "Markdown to save. For a new Entry, plain Markdown is accepted and stored in the built-in Entry form's Body field. A leading H1 is used as the title; use complete Entry Markdown with form frontmatter when selecting a different Form. Updates must keep the existing Entry's form frontmatter."
+            }
+        },
+        "required": ["content"],
+        "additionalProperties": false
+    })
 }
 fn search_output_schema() -> Value {
     json!({"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"summary":{"type":"string"},"uri":{"type":"string","format":"uri"}},"required":["title","summary","uri"],"additionalProperties":false}},"nextCursor":{"type":["string","null"]}},"required":["items","nextCursor"],"additionalProperties":false})
@@ -1275,12 +1292,12 @@ async fn save(
             },
         )
         .await
-        .map_err(|_| tool_error("VALIDATION_FAILED", "The Entry could not be updated"))?;
+        .map_err(|error| mcp_save_error(error, "updated"))?;
         (id, "updated", entry)
     } else {
         let id = Uuid::now_v7().to_string();
         let id_for_write = id.clone();
-        let content = input.content.clone();
+        let content = canonicalize_new_entry_content(&input.content);
         let run_id = run_id.clone();
         let entry = with_authorized_service_mutation(
             state,
@@ -1313,7 +1330,7 @@ async fn save(
             },
         )
         .await
-        .map_err(|_| tool_error("VALIDATION_FAILED", "The Entry could not be created"))?;
+        .map_err(|error| mcp_save_error(error, "created"))?;
         (id, "created", entry)
     };
     let uri = format!("ugoite://entry/{id}");
@@ -1321,6 +1338,71 @@ async fn save(
     Ok(
         json!({"resultType":"complete","isError":false,"structuredContent":payload,"content":[{"type":"text","text":serde_json::to_string(&payload).unwrap_or_default()},{"type":"resource_link","uri":uri,"name":sanitize_mcp_string(entry.get("title").and_then(Value::as_str).unwrap_or(&id)),"description":"Read the affected Entry.","mimeType":"application/json"}],"ttlMs":5000,"cacheScope":"private"}),
     )
+}
+
+fn canonicalize_new_entry_content(content: &str) -> String {
+    if starts_with_frontmatter(content) {
+        return content.to_owned();
+    }
+
+    let mut canonical = String::from("---\nform: Entry\n---\n");
+    if contains_body_section(content) {
+        canonical.push_str(content);
+    } else if let Some((title, body)) = split_leading_title(content) {
+        canonical.push_str(title);
+        canonical.push_str("\n\n## Body\n");
+        canonical.push_str(body);
+    } else {
+        canonical.push_str("## Body\n");
+        canonical.push_str(content);
+    }
+    canonical
+}
+
+fn starts_with_frontmatter(content: &str) -> bool {
+    let mut lines = content.lines();
+    lines.next().is_some_and(|line| line.trim() == "---") && lines.any(|line| line.trim() == "---")
+}
+
+fn split_leading_title(content: &str) -> Option<(&str, &str)> {
+    let (title, body) = content.split_once('\n').unwrap_or((content, ""));
+    let title = title.strip_suffix('\r').unwrap_or(title);
+    title
+        .strip_prefix("# ")
+        .map(|_| (title, body.strip_prefix('\n').unwrap_or(body)))
+}
+
+fn contains_body_section(content: &str) -> bool {
+    content.lines().any(|line| line.trim() == "## Body")
+}
+
+fn mcp_save_error(error: ApiError, operation: &str) -> Response {
+    let code = error.detail.get("code").and_then(Value::as_str);
+    let message = error.detail.get("message").and_then(Value::as_str);
+    let detail = error.detail.get("detail").cloned();
+
+    match code {
+        Some(code @ ("INVALID_INPUT" | "FORM_VALIDATION_FAILED" | "UNKNOWN_FORM_FIELDS")) => {
+            tool_error_with_detail(code, message.unwrap_or("Entry content is invalid"), detail)
+        }
+        Some("FORM_NOT_FOUND") => {
+            tool_error("FORM_NOT_FOUND", "The requested Entry form is unavailable")
+        }
+        Some("ENTRY_NOT_FOUND") => tool_error("TARGET_UNAVAILABLE", "The Entry is unavailable"),
+        Some("REVISION_CONFLICT") => tool_error(
+            "REVISION_CONFLICT",
+            "The Entry changed; read it again before retrying",
+        ),
+        Some("FORBIDDEN") => tool_error("FORBIDDEN", "The Entry is not available"),
+        _ => tool_error(
+            "SAVE_FAILED",
+            if operation == "updated" {
+                "The Entry could not be updated"
+            } else {
+                "The Entry could not be created"
+            },
+        ),
+    }
 }
 
 async fn undo(state: &AppState, auth: &AuthContext, run_id: &RunId) -> Result<Value, Response> {
@@ -1410,11 +1492,18 @@ async fn delete(
 }
 
 fn tool_error(code: &str, message: &str) -> Response {
-    let payload = json!({
+    tool_error_with_detail(code, message, None)
+}
+
+fn tool_error_with_detail(code: &str, message: &str, detail: Option<Value>) -> Response {
+    let mut payload = json!({
         "code": code,
-        "message": message,
+        "message": sanitize_mcp_string(message),
         "_untrusted_content": true
     });
+    if let Some(detail) = detail {
+        payload["detail"] = sanitize_mcp_value(&detail);
+    }
     rpc_result(
         Value::Null,
         json!({
@@ -1909,6 +1998,117 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn save_accepts_plain_markdown_for_new_generic_entries() {
+        let state = AppState::new_for_tests(format!("memory://mcp-save-plain-{}", Uuid::now_v7()))
+            .expect("test state");
+        let owner = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("mcp-save-plain", owner, "MCP test owner")
+            .await
+            .expect("test Space");
+        let auth = test_auth(space_uid, owner, &["read", "create"], "human", None);
+        let run_id = RunId::new("mcp-save-plain-run".to_string()).expect("run id");
+        let arguments = serde_json::Map::from_iter([(
+            String::from("content"),
+            json!("# Summary\n\nPlain Markdown saved by the model."),
+        )]);
+
+        let result = save(&state, &auth, &arguments, &run_id)
+            .await
+            .expect("plain Markdown save");
+        assert_eq!(result["structuredContent"]["status"], "created");
+        let entry_id = result["structuredContent"]["id"]
+            .as_str()
+            .expect("created Entry id")
+            .to_string();
+
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!("entry"),
+            method: "resources/read".to_string(),
+            params: json!({"uri": format!("ugoite://entry/{entry_id}")}),
+        };
+        let resource = resources_read(&state, &auth, &request)
+            .await
+            .expect("saved Entry resource");
+        let projection: Value = serde_json::from_str(
+            resource["contents"][0]["text"]
+                .as_str()
+                .expect("resource text"),
+        )
+        .expect("Entry projection");
+        assert_eq!(projection["form"], "Entry");
+        assert_eq!(projection["title"], "Summary");
+        assert!(projection["content"]
+            .as_str()
+            .expect("Entry content")
+            .contains("## Body Plain Markdown saved by the model."));
+    }
+
+    #[tokio::test]
+    async fn save_returns_semantic_validation_details() {
+        let state = AppState::new_for_tests(format!("memory://mcp-save-errors-{}", Uuid::now_v7()))
+            .expect("test state");
+        let owner = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("mcp-save-errors", owner, "MCP test owner")
+            .await
+            .expect("test Space");
+        let space_id = space_uid.to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Strict",
+                    "fields": {"Required": {"type": "string", "required": true}}
+                }),
+            )
+            .await
+            .expect("test Form");
+        let auth = test_auth(space_uid, owner, &["read", "create"], "human", None);
+        let run_id = RunId::new("mcp-save-errors-run".to_string()).expect("run id");
+
+        let missing_form = serde_json::Map::from_iter([(
+            String::from("content"),
+            json!("---\ntags:\n  - model\n---\n# Missing form"),
+        )]);
+        let response = save(&state, &auth, &missing_form, &run_id)
+            .await
+            .expect_err("missing form must fail");
+        let body = response_json(response).await;
+        let payload = &body["result"]["structuredContent"];
+        assert_eq!(payload["code"], "INVALID_INPUT");
+        assert_eq!(payload["message"], "Form is required for entry creation");
+
+        let unknown_field = serde_json::Map::from_iter([(
+            String::from("content"),
+            json!("---\nform: Strict\n---\n# Unknown\n\n## Unexpected\nvalue"),
+        )]);
+        let response = save(&state, &auth, &unknown_field, &run_id)
+            .await
+            .expect_err("unknown field must fail");
+        let body = response_json(response).await;
+        let payload = &body["result"]["structuredContent"];
+        assert_eq!(payload["code"], "UNKNOWN_FORM_FIELDS");
+        assert_eq!(payload["detail"]["fields"][0], "Unexpected");
+
+        let missing_required = serde_json::Map::from_iter([(
+            String::from("content"),
+            json!("---\nform: Strict\n---\n# Missing required field"),
+        )]);
+        let response = save(&state, &auth, &missing_required, &run_id)
+            .await
+            .expect_err("missing required field must fail");
+        let body = response_json(response).await;
+        let payload = &body["result"]["structuredContent"];
+        assert_eq!(payload["code"], "FORM_VALIDATION_FAILED");
+        assert_eq!(payload["detail"]["warnings"][0]["field"], "Required");
+    }
+
+    #[tokio::test]
     async fn authenticated_search_cursors_reject_tampering_and_binding_changes() {
         static CURSOR_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         let _lock = CURSOR_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
@@ -2028,6 +2228,11 @@ mod tests {
         let search = search_schema();
         assert_eq!(search["properties"]["limit"]["default"], Value::from(5));
         assert_eq!(search["properties"]["limit"]["maximum"], Value::from(25));
+        let save = save_input_schema();
+        assert!(save["properties"]["content"]["description"]
+            .as_str()
+            .expect("save content description")
+            .contains("plain Markdown is accepted"));
         assert_eq!(
             save_output_schema()["properties"]["status"]["enum"][0],
             "created"
@@ -2036,6 +2241,27 @@ mod tests {
             delete_output_schema()["properties"]["status"]["enum"][0],
             "deleted"
         );
+    }
+
+    #[test]
+    fn new_entry_markdown_is_canonicalized_at_the_mcp_boundary() {
+        assert_eq!(
+            canonicalize_new_entry_content("# Summary\n\nPlain body"),
+            "---\nform: Entry\n---\n# Summary\n\n## Body\nPlain body"
+        );
+        assert_eq!(
+            canonicalize_new_entry_content("# Summary\n\n## Body\nPlain body"),
+            "---\nform: Entry\n---\n# Summary\n\n## Body\nPlain body"
+        );
+        let complete = "---\nform: Note\n---\n# Note\n\n## Body\nBody";
+        assert_eq!(canonicalize_new_entry_content(complete), complete);
+    }
+
+    async fn response_json(response: Response) -> Value {
+        let body = to_bytes(response.into_body(), 2 * 1024 * 1024)
+            .await
+            .expect("MCP error response body");
+        serde_json::from_slice(&body).expect("MCP error response JSON")
     }
 
     #[test]

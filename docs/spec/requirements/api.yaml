@@ -504,9 +504,17 @@ requirements:
 
     semantic facade: `ugoite.search`, `ugoite.save`, and `ugoite.delete` when
 
-    authorized, plus lazy stable Entry/Form resources. Storage-specific routes,
+    authorized, plus lazy stable Entry/Form resources. The model-facing save
 
-    prompts, SQL, and revision tools remain future work.
+    contract MUST accept plain Markdown for a new generic Entry by
+
+    canonicalizing it to the built-in Entry Form without weakening normal Entry
+
+    validation. Save validation failures MUST remain semantic and actionable,
+
+    while storage-specific routes, prompts, SQL, and revision tools remain
+
+    future work.
 
     '
   related_spec:
