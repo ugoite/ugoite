@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
+use ugoite_cli::commands::auth::active_session_for;
 use ugoite_cli::config::{
     auth_session_path, base_url, clear_auth_session, config_path, effective_format_for_stdout,
     load_auth_session, load_config, normalize_space_root, operator_for_path, parse_space_path,
@@ -201,6 +202,7 @@ fn test_cli_req_ops_015_auth_session_helpers_cover_unreadable_and_error_paths() 
         refresh_token: "refresh-token".to_string(),
         expires_at: 1_900_000_000,
         base_url: "https://example.test".to_string(),
+        resource: None,
         space_uid: uuid::Uuid::nil(),
     };
     let session_path = auth_session_path();
@@ -246,6 +248,44 @@ fn test_cli_req_ops_015_auth_session_helpers_cover_unreadable_and_error_paths() 
         clear_err_text.contains("directory") || clear_err_text.contains("operation not permitted"),
         "unexpected clear-auth-session error: {clear_err_text}"
     );
+}
+
+/// REQ-SEC-012: auth sessions must not be silently reused across protected-resource targets.
+#[test]
+fn test_cli_req_sec_012_auth_session_target_is_explicit() {
+    let _guard = env_lock().lock().expect("env lock");
+    let _env = EnvState::capture();
+    EnvState::clear_known_vars();
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config_path = temp.path().join("cli-config.json");
+    std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
+    let resource = "https://ugoite.example/mcp".to_string();
+    save_auth_session(&AuthSession {
+        credential_id: uuid::Uuid::nil(),
+        device_name: "mcp-device".to_string(),
+        public_key_jwk: serde_json::json!({}),
+        private_key_pkcs8: Some("private-key".to_string()),
+        access_token: "mcp-access-token".to_string(),
+        refresh_token: "mcp-refresh-token".to_string(),
+        expires_at: i64::MAX,
+        base_url: "https://example.test".to_string(),
+        resource: Some(resource.clone()),
+        space_uid: uuid::Uuid::nil(),
+    })
+    .expect("save MCP auth session");
+
+    let runtime = tokio::runtime::Runtime::new().expect("create test runtime");
+    let error = runtime
+        .block_on(active_session_for("https://example.test", None))
+        .expect_err("REST operation must not reuse an MCP credential");
+    assert!(error.to_string().contains("ugoite auth login"));
+
+    let session = runtime
+        .block_on(active_session_for("https://example.test", Some(&resource)))
+        .expect("matching MCP target")
+        .expect("saved MCP session");
+    assert_eq!(session.resource.as_deref(), Some(resource.as_str()));
 }
 
 /// REQ-OPS-006: local file roots must stay portable while unsupported remote URIs fail explicitly.

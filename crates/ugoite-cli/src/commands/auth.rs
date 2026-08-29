@@ -5,7 +5,7 @@ use crate::config::{
 use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::Utc;
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 use p256::{
     ecdsa::{signature::Signer, Signature, SigningKey},
     elliptic_curve::rand_core::OsRng,
@@ -18,6 +18,14 @@ use url::Url;
 use uuid::Uuid;
 
 pub const DEFAULT_DEVICE_ACTIONS: &str = "read,create,update";
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum AuthLoginTarget {
+    /// The issuer-audience credential used by REST CLI operations.
+    Rest,
+    /// The protected-resource credential used by the CLI Konase MCP host.
+    Mcp,
+}
 
 #[derive(Args)]
 pub struct AuthCmd {
@@ -41,6 +49,10 @@ pub enum AuthSubCmd {
             default_value = DEFAULT_DEVICE_ACTIONS
         )]
         actions: Vec<String>,
+        /// Credential target. MCP discovers the protected resource metadata;
+        /// its raw resource URL is not needed on the command line.
+        #[arg(long = "for", value_enum, default_value_t = AuthLoginTarget::Rest)]
+        target: AuthLoginTarget,
     },
     /// Revoke local access by deleting the local device credential.
     Logout,
@@ -55,6 +67,7 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
                 "device_name": session.device_name,
                 "space_uid": session.space_uid,
                 "access_token_expires_at": session.expires_at,
+                "credential_target": if session.resource.is_some() { "mcp" } else { "rest" },
                 "private_key_storage": if session.private_key_pkcs8.is_some() { "owner_only_file" } else { "os_keychain" },
             })).unwrap_or_else(|| json!({"paired": false}));
             print_json(&profile);
@@ -63,6 +76,7 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
             device_name,
             space_uid,
             actions,
+            target,
         } => {
             let config = load_config();
             if config.mode == EndpointMode::Core {
@@ -70,7 +84,11 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
             }
             let base = validated_base_url(&config)?
                 .ok_or_else(|| anyhow!("remote endpoint is missing"))?;
-            login(&base, &device_name, space_uid, actions).await?;
+            let resource = match target {
+                AuthLoginTarget::Rest => None,
+                AuthLoginTarget::Mcp => Some(mcp_resource(&base).await?),
+            };
+            login(&base, &device_name, space_uid, actions, resource).await?;
         }
         AuthSubCmd::Logout => {
             if let Some(session) = load_auth_session() {
@@ -91,20 +109,25 @@ async fn login(
     device_name: &str,
     space_uid: Option<Uuid>,
     actions: Vec<String>,
+    resource: Option<String>,
 ) -> Result<()> {
     let signing_key = SigningKey::random(&mut OsRng);
     let public_key_jwk = public_jwk(&signing_key);
+    let device_payload = oauth_payload(
+        json!({
+            "device_name": device_name,
+            "public_key_jwk": public_key_jwk,
+            "space_uid": space_uid,
+            "requested_actions": actions,
+        }),
+        resource.as_deref(),
+    );
     let response = reqwest::Client::new()
         .post(format!(
             "{}/oauth/device/authorization",
             base.trim_end_matches('/')
         ))
-        .json(&json!({
-            "device_name": device_name,
-            "public_key_jwk": public_key_jwk,
-            "space_uid": space_uid,
-            "requested_actions": actions,
-        }))
+        .json(&device_payload)
         .send()
         .await
         .context("start device authorization")?;
@@ -134,11 +157,14 @@ async fn login(
         let assertion = client_assertion(&signing_key, &public_key_jwk, &token_url)?;
         let response = client
             .post(&token_url)
-            .json(&json!({
-                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-                "device_code": device_code,
-                "client_assertion": assertion,
-            }))
+            .json(&oauth_payload(
+                json!({
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                    "device_code": device_code,
+                    "client_assertion": assertion,
+                }),
+                resource.as_deref(),
+            ))
             .send()
             .await
             .context("poll device authorization")?;
@@ -175,6 +201,7 @@ async fn login(
             .to_string(),
         expires_at: Utc::now().timestamp() + token["expires_in"].as_i64().unwrap_or(300),
         base_url: base.to_string(),
+        resource,
         space_uid: token["space_uid"]
             .as_str()
             .ok_or_else(|| anyhow!("token response omitted space_uid"))?
@@ -220,12 +247,55 @@ pub fn canonical_dpop_htu(uri: &str) -> Result<String> {
     Ok(url.to_string())
 }
 
+/// Discover the exact protected resource advertised by the configured server.
+/// The API-mode proxy keeps this request on the configured endpoint while the
+/// server supplies its canonical public issuer.
+pub async fn mcp_resource(base_url: &str) -> Result<String> {
+    let metadata_url = format!(
+        "{}/.well-known/oauth-protected-resource",
+        base_url.trim_end_matches('/')
+    );
+    let response = reqwest::Client::new()
+        .get(&metadata_url)
+        .send()
+        .await
+        .context("discover MCP protected resource")?;
+    let status = response.status();
+    let metadata: Value = response
+        .json()
+        .await
+        .context("decode MCP resource metadata")?;
+    if !status.is_success() {
+        bail!("MCP resource discovery failed: {metadata}");
+    }
+    metadata["resource"]
+        .as_str()
+        .filter(|resource| !resource.trim().is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| anyhow!("MCP resource metadata omitted resource"))
+}
+
 pub async fn active_session(base_url: &str) -> Result<Option<AuthSession>> {
+    active_session_for(base_url, None).await
+}
+
+pub async fn active_session_for(
+    base_url: &str,
+    resource: Option<&str>,
+) -> Result<Option<AuthSession>> {
     let Some(mut session) = load_auth_session() else {
         return Ok(None);
     };
     if session.base_url.trim_end_matches('/') != base_url.trim_end_matches('/') {
         bail!("saved CLI credential belongs to a different server; run `ugoite auth login`");
+    }
+    if session.resource.as_deref() != resource {
+        let login_command = if resource.is_some() {
+            "ugoite auth login --for mcp"
+        } else {
+            "ugoite auth login"
+        };
+        bail!("saved CLI credential targets a different protected resource; run `{login_command}`");
     }
     if session.expires_at > Utc::now().timestamp() + 30 {
         return Ok(Some(session));
@@ -235,11 +305,14 @@ pub async fn active_session(base_url: &str) -> Result<Option<AuthSession>> {
     let assertion = client_assertion(&key, &session.public_key_jwk, &token_url)?;
     let response = reqwest::Client::new()
         .post(&token_url)
-        .json(&json!({
-            "grant_type": "refresh_token",
-            "refresh_token": session.refresh_token,
-            "client_assertion": assertion,
-        }))
+        .json(&oauth_payload(
+            json!({
+                "grant_type": "refresh_token",
+                "refresh_token": session.refresh_token,
+                "client_assertion": assertion,
+            }),
+            resource,
+        ))
         .send()
         .await
         .context("refresh CLI access token")?;
@@ -259,6 +332,13 @@ pub async fn active_session(base_url: &str) -> Result<Option<AuthSession>> {
     session.expires_at = Utc::now().timestamp() + payload["expires_in"].as_i64().unwrap_or(300);
     save_auth_session(&session)?;
     Ok(Some(session))
+}
+
+fn oauth_payload(mut payload: Value, resource: Option<&str>) -> Value {
+    if let Some(resource) = resource {
+        payload["resource"] = Value::String(resource.to_owned());
+    }
+    payload
 }
 
 fn client_assertion(key: &SigningKey, jwk: &Value, audience: &str) -> Result<String> {
@@ -300,7 +380,81 @@ fn public_jwk(key: &SigningKey) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::canonical_dpop_htu;
+    use super::{
+        active_session_for, canonical_dpop_htu, load_auth_session, login, mcp_resource,
+        oauth_payload, public_jwk, save_auth_session,
+    };
+    use base64::Engine as _;
+    use p256::pkcs8::EncodePrivateKey;
+    use serde_json::json;
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::{mpsc, Mutex, OnceLock};
+    use std::thread;
+    use std::time::Duration;
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn read_request(stream: &mut TcpStream) -> String {
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("set request read timeout");
+        let mut request = Vec::new();
+        let mut content_length = 0_usize;
+        let mut body_start = None;
+        loop {
+            let mut buffer = [0_u8; 1024];
+            let read = stream.read(&mut buffer).expect("read request");
+            assert!(read > 0, "request ended before its body was received");
+            request.extend_from_slice(&buffer[..read]);
+            if body_start.is_none() {
+                if let Some(position) = request.windows(4).position(|window| window == b"\r\n\r\n")
+                {
+                    let end = position + 4;
+                    body_start = Some(end);
+                    let headers = String::from_utf8_lossy(&request[..end]);
+                    for line in headers.lines() {
+                        let mut parts = line.splitn(2, ':');
+                        if let (Some(name), Some(value)) = (parts.next(), parts.next()) {
+                            if name.eq_ignore_ascii_case("content-length") {
+                                content_length = value.trim().parse().expect("content length");
+                            }
+                        }
+                    }
+                }
+            }
+            if body_start.is_some_and(|start| request.len() >= start + content_length) {
+                return String::from_utf8(request).expect("UTF-8 HTTP request");
+            }
+        }
+    }
+
+    fn spawn_http_server(
+        responses: Vec<(&'static str, String)>,
+    ) -> (String, mpsc::Receiver<String>, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let address = listener.local_addr().expect("test server address");
+        let (sender, receiver) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            for (status, body) in responses {
+                let (mut stream, _) = listener.accept().expect("accept test request");
+                sender
+                    .send(read_request(&mut stream))
+                    .expect("send captured request");
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream
+                    .write_all(response.as_bytes())
+                    .expect("write test response");
+            }
+        });
+        (format!("http://{address}"), receiver, handle)
+    }
 
     #[test]
     fn dpop_htu_excludes_query_and_fragment() {
@@ -316,5 +470,159 @@ mod tests {
             canonical_dpop_htu("https://node.example:8443/api/").unwrap(),
             "https://node.example:8443/api/"
         );
+    }
+
+    #[test]
+    fn rest_oauth_payload_omits_resource() {
+        let payload = oauth_payload(json!({"grant_type": "refresh_token"}), None);
+        assert_eq!(payload, json!({"grant_type": "refresh_token"}));
+    }
+
+    #[test]
+    fn mcp_oauth_payload_carries_resource() {
+        let payload = oauth_payload(
+            json!({"grant_type": "refresh_token"}),
+            Some("https://ugoite.example/mcp"),
+        );
+        assert_eq!(payload["resource"], "https://ugoite.example/mcp");
+    }
+
+    #[test]
+    fn mcp_login_carries_resource_through_discovery_device_and_exchange() {
+        let _guard = env_lock().lock().expect("env lock");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config_path = temp.path().join("cli-config.json");
+        let previous_path = std::env::var_os("UGOITE_CLI_CONFIG_PATH");
+        std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
+
+        let resource = "http://ugoite.example/mcp";
+        let credential_id = uuid::Uuid::now_v7();
+        let (base_url, requests, server) = spawn_http_server(vec![
+            ("200 OK", json!({"resource": resource}).to_string()),
+            (
+                "201 Created",
+                json!({
+                    "device_code": "device-code",
+                    "user_code": "ABCD-EFGH",
+                    "verification_uri": "http://127.0.0.1/device",
+                    "expires_in": 600,
+                    "interval": 1
+                })
+                .to_string(),
+            ),
+            (
+                "200 OK",
+                json!({
+                    "credential_id": credential_id,
+                    "access_token": "mcp-access-token",
+                    "refresh_token": "mcp-refresh-token",
+                    "expires_in": 300,
+                    "space_uid": uuid::Uuid::nil()
+                })
+                .to_string(),
+            ),
+        ]);
+        let discovered = tokio::runtime::Runtime::new()
+            .expect("create test runtime")
+            .block_on(mcp_resource(&base_url))
+            .expect("discover MCP resource");
+        assert_eq!(discovered, resource);
+        tokio::runtime::Runtime::new()
+            .expect("create test runtime")
+            .block_on(login(
+                &base_url,
+                "test-device",
+                Some(uuid::Uuid::nil()),
+                vec!["read".to_string()],
+                Some(discovered),
+            ))
+            .expect("complete MCP login");
+        server.join().expect("join test server");
+        let requests = requests.into_iter().collect::<Vec<_>>();
+        assert_eq!(requests.len(), 3);
+        assert!(requests[0].starts_with("GET /.well-known/oauth-protected-resource HTTP/1.1"));
+        for request in &requests[1..] {
+            let body = request.split_once("\r\n\r\n").expect("request body").1;
+            let body: serde_json::Value = serde_json::from_str(body).expect("JSON request body");
+            assert_eq!(body["resource"], resource);
+        }
+        assert_eq!(
+            load_auth_session()
+                .expect("saved MCP session")
+                .resource
+                .as_deref(),
+            Some(resource)
+        );
+        if let Some(session) = load_auth_session() {
+            if session.private_key_pkcs8.is_none() {
+                let _ = keyring::Entry::new("ugoite-cli", &session.credential_id.to_string())
+                    .and_then(|entry| entry.delete_credential());
+            }
+        }
+
+        if let Some(path) = previous_path {
+            std::env::set_var("UGOITE_CLI_CONFIG_PATH", path);
+        } else {
+            std::env::remove_var("UGOITE_CLI_CONFIG_PATH");
+        }
+    }
+
+    #[test]
+    fn mcp_refresh_carries_the_saved_resource() {
+        let _guard = env_lock().lock().expect("env lock");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config_path = temp.path().join("cli-config.json");
+        let previous_path = std::env::var_os("UGOITE_CLI_CONFIG_PATH");
+        std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
+
+        let signing_key = super::SigningKey::random(&mut super::OsRng);
+        let public_key_jwk = public_jwk(&signing_key);
+        let private_key = super::URL_SAFE_NO_PAD.encode(
+            signing_key
+                .to_pkcs8_der()
+                .expect("encode private key")
+                .as_bytes(),
+        );
+        let resource = "https://ugoite.example/mcp";
+        let (base_url, requests, server) = spawn_http_server(vec![(
+            "200 OK",
+            json!({
+                "access_token": "refreshed-mcp-access-token",
+                "refresh_token": "rotated-mcp-refresh-token",
+                "expires_in": 300
+            })
+            .to_string(),
+        )]);
+        save_auth_session(&super::AuthSession {
+            credential_id: uuid::Uuid::nil(),
+            device_name: "mcp-device".to_string(),
+            public_key_jwk,
+            private_key_pkcs8: Some(private_key),
+            access_token: "expired-mcp-access-token".to_string(),
+            refresh_token: "mcp-refresh-token".to_string(),
+            expires_at: 0,
+            base_url: base_url.clone(),
+            resource: Some(resource.to_string()),
+            space_uid: uuid::Uuid::nil(),
+        })
+        .expect("save expired MCP session");
+        let session = tokio::runtime::Runtime::new()
+            .expect("create test runtime")
+            .block_on(active_session_for(&base_url, Some(resource)))
+            .expect("refresh MCP session")
+            .expect("saved MCP session");
+        server.join().expect("join test server");
+        let request = requests.into_iter().next().expect("refresh request");
+        let body = request.split_once("\r\n\r\n").expect("request body").1;
+        let body: serde_json::Value = serde_json::from_str(body).expect("JSON request body");
+        assert_eq!(body["resource"], resource);
+        assert_eq!(session.access_token, "refreshed-mcp-access-token");
+        assert_eq!(session.resource.as_deref(), Some(resource));
+
+        if let Some(path) = previous_path {
+            std::env::set_var("UGOITE_CLI_CONFIG_PATH", path);
+        } else {
+            std::env::remove_var("UGOITE_CLI_CONFIG_PATH");
+        }
     }
 }

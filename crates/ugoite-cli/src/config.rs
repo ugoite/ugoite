@@ -37,6 +37,7 @@ pub struct AuthSession {
     pub refresh_token: String,
     pub expires_at: i64,
     pub base_url: String,
+    pub resource: Option<String>,
     pub space_uid: uuid::Uuid,
 }
 
