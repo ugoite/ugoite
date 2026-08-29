@@ -8,7 +8,8 @@ sidebar:
 
 Ugoite keeps node identity separate from portable Space authorization. Human
 accounts and browser/CLI sessions belong to a node; Space memberships, ACLs,
-agent principals, and authorization history travel with the Space.
+and authorization history travel with the Space. Agent Principals remain future
+scope.
 
 > Release note: Agent/service-account workflows in this reference group are
 > future capability and are not supported v0.1 product operations.

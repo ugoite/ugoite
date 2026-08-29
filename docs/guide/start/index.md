@@ -6,9 +6,10 @@ sidebar:
   order: 1
 ---
 
-This is the beginner path. It explains the one idea that shapes everything in
+This is the beginner path. It explains the idea that shapes everything in
 Ugoite—the operator-owned **Space**—then gets a server running and walks through
-the first browser Entry.
+the first browser Entry. The browser is currently server-backed; the Space,
+rather than the browser session, remains the Knowledge authority.
 
 ## Follow this order
 

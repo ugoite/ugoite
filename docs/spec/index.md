@@ -8,9 +8,11 @@ sidebar:
 **Updated:** 2026-06-29\
 **Implementation status:** Rust/Deno v0.1 stream in progress
 
-Ugoite is a local-first knowledge-space system based on three principles: **Low
-Cost**, **Easy**, and **Freedom**. Operator-owned Space directories are
-authoritative; indexes and query sessions are derived.
+Ugoite is a private, portable Knowledge Space for humans and AI. Its foundation
+is expressed as three boundaries: **Knowledge persists**, **Work may
+disappear**, and **Knowledge can become tools**. Operator-owned Space
+directories are authoritative; indexes, query sessions, and runtime state are
+derived or disposable.
 
 ## Current boundary
 
@@ -31,6 +33,9 @@ authoritative; indexes and query sessions are derived.
   generic OAuth client compatibility, audit CRUD, and remote CLI
   asset upload remain future or limited capability. TOTP is a recovery-only
   factor and is not a normal login method.
+- View/Application Definitions, renderers, low-code composition, and
+  Knowledge-to-tools runtime behavior are future scope. v0.1 freezes their
+  authority boundary but does not ship an application builder.
 
 ## Read the specification map
 

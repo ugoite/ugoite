@@ -10,7 +10,7 @@ stories:
     so_that: we can collaborate on shared knowledge.
     acceptance_criteria:
       - Every client requires authenticated user login for the target space
-      - Future primary login may use passkey/WebAuthn without passwords
+      - Primary login uses Passkey/WebAuthn without passwords
       - Admin can issue one-time invite token for first-time registration
       - Invitation-gated OIDC account linking is supported and can provision the invited HumanAccount
       - Space creator is initial admin and can delegate admin privileges

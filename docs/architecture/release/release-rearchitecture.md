@@ -13,12 +13,12 @@ The repository has completed the current Rust-centered consolidation:
 - one root `mise.toml` command surface;
 - generated OpenAPI and architecture checks in CI.
 
-The remaining architectural work is product capability, not stack migration:
+The remaining architectural work is future product capability, not stack
+migration:
 
 - browser-local Space persistence;
 - optional synchronization/relay semantics;
-- production Passkey enrollment/login and invitation-gated OIDC;
-- sponsored Agent Principals and append-only authorization audit history;
+- sponsored Agent Principals and their scoped automation boundary;
 - channel-specific release communication and support rollout after a published
   version.
 

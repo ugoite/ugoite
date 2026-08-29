@@ -23,7 +23,7 @@ export default defineConfig({
     starlight({
       title: "Ugoite",
       description:
-        "Documentation for Ugoite, a local-first knowledge-space system built around operator-owned files.",
+        "Documentation for Ugoite, a private, portable Knowledge Space built around operator-owned Spaces.",
       social: [
         {
           icon: "github",

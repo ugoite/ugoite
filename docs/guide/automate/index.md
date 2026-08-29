@@ -1,6 +1,6 @@
 ---
 title: "Automate Ugoite"
-description: Use the CLI and scoped Agent Principals without turning a Space into a service database.
+description: Use the CLI and understand future scoped automation without turning a Space into a service database.
 sidebar:
   label: "Overview"
   order: 1

@@ -17,8 +17,8 @@ the task calls for it.
   variables that shape a deployment in [Deploy Ugoite](deploy/index.md).
 - **Operate:** keep a running node healthy, manage identities, and protect the
   authoritative Space data in [Operate Ugoite](operate/index.md).
-- **Automate:** use the local or server-backed CLI and Agent Principals from
-  [Automate Ugoite](automate/index.md).
+- **Automate:** use the local or server-backed CLI from
+  [Automate Ugoite](automate/index.md); Agent Principals remain future scope.
 - **Develop:** run Ugoite from source and complete local authentication in
   [Develop Ugoite](develop/index.md).
 - **Troubleshoot:** follow the shortest diagnostic path in

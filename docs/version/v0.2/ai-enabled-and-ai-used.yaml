@@ -3,8 +3,8 @@ version: "0.2"
 status: planned
 title: "AI-Enabled & AI-Used"
 goal: >
-  Complete MCP integration and AI workflow features including vector search,
-  voice-to-schema, and computational entries.
+  Expand AI-assisted workflows within explicit authorization, portability, and
+  Knowledge / Work / Experience boundaries.
 phases:
   - id: design
     status: planned
@@ -15,7 +15,7 @@ phases:
         done: false
       - description: "Design voice-to-schema audio upload and AI transcription workflow"
         done: false
-      - description: "Design computational entries with embedded JavaScript execution"
+      - description: "Evaluate bounded computational workflows without assuming arbitrary code execution"
         done: false
   - id: implementation
     status: planned
@@ -28,7 +28,7 @@ phases:
         done: false
       - description: "Implement voice memo asset with transcription workflow"
         done: false
-      - description: "Implement interactive code block execution in editor"
+      - description: "Implement only explicitly approved bounded computation, if its threat model and portability contract are complete"
         done: false
   - id: testing
     status: planned

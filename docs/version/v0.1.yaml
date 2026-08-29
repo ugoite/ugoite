@@ -1,7 +1,7 @@
 version: '0.1'
 status: in_progress
-summary: 'Foundational releases through user-management and release preparation, aligned with local-first and thin-adapter
-  architecture constraints.
+summary: 'Foundation release: operator-owned Knowledge, portable append-only history, and thin adapters, with release
+  completion still in progress. Future Work and Experience capabilities must not become a second Knowledge authority.
 
   '
 milestones:
