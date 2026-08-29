@@ -38,6 +38,10 @@ impl fmt::Display for RunId {
 }
 
 /// The semantic metadata stored with one Knowledge publication.
+///
+/// `actor_principal_id` is historical, opaque provenance. It is not a
+/// credential, grant, or Node-local account authority, so a portable Space may
+/// retain an identifier that is not resolvable on another Node.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ChangeDescriptor {
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -70,12 +70,14 @@ fresh attempt and reruns the domain validation before publishing.
 
 Knowledge mutations attach a `ChangeDescriptor` to their immutable publication.
 The command's `change_id` is the publication `command_id`; the descriptor records
-the authenticated actor, optional message, optional history-only `RunId`, and an
-optional `reverts_change_id`. `GET /spaces/{space_id}/changes` walks only the
-reachable publication chain and returns committed Changes in chronological order.
-There is no durable Run status or separate Change index in this history surface.
-A future Undo operation is represented by new append-only publications whose
-descriptors point at the Changes they selectively inverse.
+the authenticated actor as historical, opaque provenance, optional message,
+optional history-only `RunId`, and an optional `reverts_change_id`. The actor ID
+is not a credential or portable authorization authority. `GET
+/spaces/{space_id}/changes` walks only the reachable publication chain and
+returns committed Changes in chronological order. There is no durable Run status
+or separate Change index in this history surface. Undo is represented by new
+append-only publications whose descriptors point at the Changes they selectively
+inverse; it never rewinds Head or restores schema state.
 
 ## Asset visibility and retention
 
