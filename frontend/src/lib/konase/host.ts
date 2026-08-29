@@ -214,7 +214,7 @@ export class KonaseHost {
         action = runtime.resumeMcp(mcpResult);
       } else if (action.kind === "complete") {
         this.emitProgress({ kind: "complete", summary: action.summary });
-        state = await this.progress(state, jobId, action);
+        await this.progress(state, jobId, action);
         return {
           outcome: {
             job_id: action.job_id,
