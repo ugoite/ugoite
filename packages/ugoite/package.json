@@ -1,6 +1,6 @@
 {
   "name": "@ugoite/ugoite",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "description": "Public installer package for the released Ugoite CLI",
   "license": "MIT",
