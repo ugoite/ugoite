@@ -12,7 +12,16 @@ The stable surface is deliberately narrow:
   when requested, with stable `ugoite://entry/{id}` resource links. Entry bodies are
   loaded only when a resource is read.
 - `ugoite.save` creates an Entry without `id` or updates one opaque Entry with
-  `id`.
+  `id`. A new Entry may use plain Markdown: the MCP semantic facade
+  canonicalizes it to the built-in `Entry` Form's `Body` field, using a leading
+  H1 as the title. Complete Entry Markdown with `form` frontmatter remains
+  supported for new Entries that select another Form. Updates must keep the
+  existing Entry's Form frontmatter.
+- Save validation failures are returned as semantic tool errors. For example,
+  `INVALID_INPUT` identifies missing Entry/Form structure,
+  `UNKNOWN_FORM_FIELDS` identifies unsupported sections, and
+  `FORM_VALIDATION_FAILED` identifies missing or invalid Form fields. These
+  errors include safe validation detail without exposing storage layout.
 - `ugoite.undo` reverses all changes made by the current Konase Work through
   the existing Run undo semantic operation. Its empty model-facing argument
   object is unchanged; the Host supplies the Work Run ID in
@@ -22,8 +31,9 @@ The stable surface is deliberately narrow:
 Tools are filtered before `tools/list`: read-only credentials see search,
 write credentials additionally see save and undo, and delete is shown only to
 an approved human device credential with effective Delete authority. Tool
-descriptions and schemas contain no Form, revision, Iceberg, bucket, path, or
-storage details.
+descriptions and schemas contain no storage-specific Form, revision, Iceberg,
+bucket, path, or storage details; they describe only the semantic Entry/Form
+behavior needed by the model.
 
 Resources are lazy and use stable opaque URIs:
 

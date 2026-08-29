@@ -11269,7 +11269,7 @@ mod authentication_regression_tests {
             "Bearer",
             "tools/call",
             Some("ugoite.save"),
-            json!({"name":"ugoite.save","arguments":{"content":"---\nform: Entry\n---\n# MCP Created\n\n## Body\ncreated by MCP"},"_meta":{"ugoite/runId":"konase-work-1"}}),
+            json!({"name":"ugoite.save","arguments":{"content":"# MCP Created\n\ncreated by MCP"},"_meta":{"ugoite/runId":"konase-work-1"}}),
             None,
         )
         .await;
@@ -11309,6 +11309,17 @@ mod authentication_regression_tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert!(body["result"]["contents"].is_array());
+        let projection: Value = serde_json::from_str(
+            body["result"]["contents"][0]["text"]
+                .as_str()
+                .expect("Entry resource text"),
+        )?;
+        assert_eq!(projection["form"], "Entry");
+        assert_eq!(projection["title"], "MCP Updated");
+        assert!(projection["content"]
+            .as_str()
+            .expect("Entry content")
+            .contains("## Body updated by MCP"));
 
         let (status, body) = mcp_call(
             router.clone(),
