@@ -1,4 +1,4 @@
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { t } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import {
@@ -6,19 +6,24 @@ import {
   type KonaseProgress,
   type KonaseTurn,
 } from "~/lib/konase/host";
+import { authorizeBrowserMcp } from "~/lib/konase/browser-mcp-auth";
 import { BrowserMcpHost } from "~/lib/konase/mcp";
 import { OpenAiModelHost } from "~/lib/konase/model";
+import { spaceApi } from "~/lib/ugoite-client";
 
 type KonasePanelProps = {
-  host?: KonaseHost;
+  spaceId: string;
 };
 
 /** Small browser surface for the same disposable Work used by the CLI. */
 export function KonasePanel(props: KonasePanelProps) {
   const [configuredHost, setConfiguredHost] = createSignal<KonaseHost>();
-  const activeHost = () => props.host ?? configuredHost();
+  const [configuredSpaceId, setConfiguredSpaceId] = createSignal<string>();
+  const activeHost = () =>
+    configuredSpaceId() === props.spaceId ? configuredHost() : undefined;
   const [modelApiKey, setModelApiKey] = createSignal("");
-  const [mcpAccessToken, setMcpAccessToken] = createSignal("");
+  const [approvalUrl, setApprovalUrl] = createSignal<string>();
+  const [connecting, setConnecting] = createSignal(false);
   const [prompt, setPrompt] = createSignal("");
   const [running, setRunning] = createSignal(false);
   const [undoing, setUndoing] = createSignal(false);
@@ -27,6 +32,24 @@ export function KonasePanel(props: KonasePanelProps) {
   const [undone, setUndone] = createSignal(false);
   const [error, setError] = createSignal<string>();
   let unsubscribe: (() => void) | undefined;
+  let pendingSpaceId: string | undefined;
+
+  createEffect(() => {
+    const currentSpaceId = props.spaceId;
+    if (pendingSpaceId && pendingSpaceId !== currentSpaceId) {
+      setApprovalUrl(undefined);
+    }
+    if (configuredSpaceId() && configuredSpaceId() !== props.spaceId) {
+      unsubscribe?.();
+      unsubscribe = undefined;
+      setConfiguredHost(undefined);
+      setConfiguredSpaceId(undefined);
+      setApprovalUrl(undefined);
+      setTurn(undefined);
+      setUndone(false);
+      setSteps([]);
+    }
+  });
 
   const subscribe = (host: KonaseHost) => {
     unsubscribe?.();
@@ -34,24 +57,43 @@ export function KonasePanel(props: KonasePanelProps) {
       setSteps((current) => [...current, progressLabel(progress)]);
     });
   };
+  onCleanup(() => unsubscribe?.());
 
-  onMount(() => {
-    if (props.host) subscribe(props.host);
-    onCleanup(() => unsubscribe?.());
-  });
-
-  const configure = (event: SubmitEvent) => {
+  const configure = async (event: SubmitEvent) => {
     event.preventDefault();
+    if (connecting()) return;
+    const requestedSpaceId = props.spaceId;
+    pendingSpaceId = requestedSpaceId;
+    setConnecting(true);
+    setApprovalUrl(undefined);
+    setError(undefined);
     try {
+      const space = await spaceApi.get(requestedSpaceId);
+      const spaceUid = space.space_uid?.trim();
+      if (!spaceUid) {
+        throw new Error("Current Space metadata did not include a Space UID");
+      }
+      const credential = await authorizeBrowserMcp({
+        spaceUid,
+        deviceName: `Ugoite Browser Konase (${requestedSpaceId})`,
+        onApprovalRequired: ({ verificationUriComplete }) =>
+          setApprovalUrl(verificationUriComplete),
+      });
+      if (props.spaceId !== requestedSpaceId) return;
       const host = new KonaseHost({
         model: new OpenAiModelHost({ apiKey: modelApiKey() }),
-        mcp: new BrowserMcpHost({ accessToken: mcpAccessToken() }),
+        mcp: new BrowserMcpHost(credential),
       });
       setConfiguredHost(host);
+      setConfiguredSpaceId(props.spaceId);
       subscribe(host);
-      setError(undefined);
     } catch (cause) {
-      setError(formatUserFacingError(cause, "konase.error"));
+      if (props.spaceId === requestedSpaceId) {
+        setError(formatUserFacingError(cause, "konase.error"));
+      }
+    } finally {
+      if (pendingSpaceId === requestedSpaceId) pendingSpaceId = undefined;
+      setConnecting(false);
     }
   };
 
@@ -116,23 +158,23 @@ export function KonasePanel(props: KonasePanelProps) {
                 onInput={(event) => setModelApiKey(event.currentTarget.value)}
               />
             </label>
-            <label>
-              {t("konase.mcpToken")}
-              <input
-                type="password"
-                value={mcpAccessToken()}
-                autocomplete="off"
-                onInput={(event) =>
-                  setMcpAccessToken(event.currentTarget.value)}
-              />
-            </label>
             <button
               class="btn"
               type="submit"
-              disabled={!modelApiKey().trim() || !mcpAccessToken().trim()}
+              disabled={connecting() || !modelApiKey().trim()}
             >
-              {t("konase.connect")}
+              {connecting() ? t("konase.connecting") : t("konase.connect")}
             </button>
+            <Show when={approvalUrl()}>
+              {(url) => (
+                <p class="ui-muted" role="status">
+                  {t("konase.approvalRequired")}{"  "}
+                  <a href={url()} target="_blank" rel="noopener noreferrer">
+                    {t("konase.openApproval")}
+                  </a>
+                </p>
+              )}
+            </Show>
           </form>
         }
       >
