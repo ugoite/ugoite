@@ -70,6 +70,7 @@ Deno.test("REQ-OPS-043: repository-native release tasks and split workflows are 
   ) assertEquals(mise.includes(`[tasks."${task}"]`), true, task);
   const candidate = await readText(".github/workflows/release-candidate.yml");
   const publish = await readText(".github/workflows/release-publish.yml");
+  const releaseTool = await readText("tools/release.ts");
   for (const text of [candidate, publish]) {
     assertEquals(text.includes("permissions: {}"), true);
     assertEquals(text.includes("source_sha"), true);
@@ -78,6 +79,12 @@ Deno.test("REQ-OPS-043: repository-native release tasks and split workflows are 
   assertEquals(candidate.includes("candidate-manifest.json"), true);
   assertEquals(candidate.includes("docker-compose.release.yaml"), true);
   assertEquals(
+    candidate.includes(
+      "candidate-${{ needs.preflight.outputs.source_short }}-${{ github.run_id }}",
+    ),
+    true,
+  );
+  assertEquals(
     publish.includes("run-id: ${{ inputs.candidate_run_id }}"),
     true,
   );
@@ -85,6 +92,20 @@ Deno.test("REQ-OPS-043: repository-native release tasks and split workflows are 
   assertEquals(publish.includes("mise run release:promote"), true);
   assertEquals(publish.includes("verify-published-quickstarts:"), true);
   assertEquals(publish.includes("publish-channel-release-notes:"), true);
+  assertEquals(publish.includes("release:promote:aliases"), true);
+  assertEquals(publish.includes("UGOITE_PROMOTION_DEFER_ALIASES"), false);
+  const promoteStart = releaseTool.indexOf(
+    "async function promote(candidate: VerifiedCandidate)",
+  );
+  const aliasesStart = releaseTool.indexOf(
+    "async function promoteAliases(candidate: VerifiedCandidate)",
+  );
+  assertEquals(promoteStart >= 0 && aliasesStart > promoteStart, true);
+  assertEquals(
+    releaseTool.slice(promoteStart, aliasesStart).includes("promoteAliases"),
+    false,
+  );
+  assertEquals(releaseTool.includes("candidateDraftTag(candidate)"), true);
   assertEquals(
     /cargo build|npm pack|helm package|docker\/build-push-action|mise run build:/
       .test(publish),

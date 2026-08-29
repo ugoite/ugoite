@@ -66,10 +66,11 @@ exact manifest bytes; the manifest does not contain that ID.
 candidate artifact, and invokes `release:verify-candidate` before promotion.
 The promotion job contains no compile, build, pack, package, or repackage step.
 It publishes the exact CLI archives, npm tarball, Helm archive, release Compose
-assets, and container digest from the manifest. Missing identities are published, matching
-identities are verified and skipped, and mismatches abort. Immutable
-versioned identities are verified before the GitHub Release is finalized;
-mutable aliases are updated only in a final step after quick-start checks.
+assets, and container digest from the manifest. Missing identities are
+published, matching identities are verified and skipped, and mismatches abort.
+Immutable versioned identities are verified before the GitHub Release is
+finalized; mutable aliases are updated by a separate final job after
+quick-start checks.
 
 Candidate verification and publication verification are separate. The former
 checks staged bytes; the latter downloads published assets and runs the public

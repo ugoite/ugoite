@@ -83,7 +83,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           NODE_AUTH_TOKEN: ${{ github.token }}
-          UGOITE_PROMOTION_DEFER_ALIASES: "true"
         run: mise run release:promote -- --candidate target/artifacts/candidate-manifest.json --candidate-id "${{ inputs.candidate_id }}"
 
   verify-published-quickstarts:

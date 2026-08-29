@@ -62,9 +62,10 @@ building or packaging anything.
 the verified candidate as its only release subject. Promotion uses the exact CLI
 archives, npm tarball, Helm archive, release Compose assets, and container
 digest recorded by the manifest. It does not compile, package, or repackage
-them. It publishes immutable versioned identities first, verifies them,
-finalizes the GitHub Release, and only then allows mutable aliases such as
-`latest` to be updated.
+them. It publishes immutable versioned identities first, verifies them, and
+finalizes the stable GitHub Release. After the published quick-start checks, the
+separate `mise run release:promote:aliases` task updates mutable aliases such as
+`latest`.
 
 Each publication is idempotent: a missing identity is published, a matching
 identity is verified and skipped, and a different identity aborts. An immutable

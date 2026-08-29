@@ -195,7 +195,7 @@ jobs:
           push: true
           provenance: true
           sbom: true
-          tags: ghcr.io/${{ github.repository }}:sha-${{ needs.preflight.outputs.source_short }}
+          tags: ghcr.io/${{ github.repository }}:candidate-${{ needs.preflight.outputs.source_short }}-${{ github.run_id }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.preflight.outputs.source_sha }}
@@ -204,7 +204,7 @@ jobs:
       - name: Record candidate image digest
         id: digest
         run: |
-          digest="$(docker buildx imagetools inspect ghcr.io/${GITHUB_REPOSITORY}:sha-${{ needs.preflight.outputs.source_short }} --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          digest="$(docker buildx imagetools inspect ghcr.io/${GITHUB_REPOSITORY}:candidate-${{ needs.preflight.outputs.source_short }}-${{ github.run_id }} --format '{{json .Manifest.Digest}}' | tr -d '"')"
           test -n "${digest}"
           echo "image_digest=${digest}" >>"${GITHUB_OUTPUT}"
 
@@ -318,7 +318,7 @@ jobs:
           UGOITE_SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
           UGOITE_CI_RUN_ID: ${{ github.run_id }}
           UGOITE_CONTAINER_REPOSITORY: ghcr.io/${{ github.repository }}
-          UGOITE_CONTAINER_TAG: sha-${{ needs.preflight.outputs.source_short }}
+          UGOITE_CONTAINER_TAG: candidate-${{ needs.preflight.outputs.source_short }}-${{ github.run_id }}
           UGOITE_CONTAINER_DIGEST: ${{ needs.build-container.outputs.image_digest }}
         run: |
           mise run release:candidate

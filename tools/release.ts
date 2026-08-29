@@ -421,18 +421,19 @@ async function promote(candidate: VerifiedCandidate): Promise<void> {
     return;
   }
   const version = candidate.manifest.version;
-  const tag = `v${version}`;
-  await ensureDraftRelease(tag, candidate.manifest.source_sha);
-  await publishCliAssets(candidate);
+  const stableTag = `v${version}`;
+  const draftTag = candidateDraftTag(candidate);
+  await ensureDraftRelease(draftTag, candidate.manifest.source_sha);
+  await publishCliAssets(candidate, draftTag);
   await publishNpm(candidate);
   await publishHelm(candidate);
   await publishContainer(candidate);
-  await publishReleaseLedgerAssets(candidate);
-  await run("gh", ["release", "edit", tag, "--draft=false"]);
-  if (Deno.env.get("UGOITE_PROMOTION_DEFER_ALIASES") !== "true") {
-    await promoteAliases(candidate);
-  }
-  console.log(`promoted ${candidate.candidateId} as ${tag}`);
+  await publishReleaseLedgerAssets(candidate, draftTag);
+  await ensureStableRelease(stableTag, candidate.manifest.source_sha);
+  await publishCliAssets(candidate, stableTag);
+  await publishReleaseLedgerAssets(candidate, stableTag);
+  await run("gh", ["release", "edit", stableTag, "--draft=false"]);
+  console.log(`promoted ${candidate.candidateId} as ${stableTag}`);
 }
 
 async function promoteAliases(candidate: VerifiedCandidate): Promise<void> {
@@ -441,8 +442,7 @@ async function promoteAliases(candidate: VerifiedCandidate): Promise<void> {
   );
   const config = image?.config ?? {};
   const repository = config.repository;
-  const sourceTag = config.tag;
-  if (!repository || !sourceTag) {
+  if (!repository || !config.tag) {
     throw new Error("candidate image repository and tag are required");
   }
   await run("docker", [
@@ -509,18 +509,69 @@ async function ensureDraftRelease(
   ]);
 }
 
-async function publishCliAssets(candidate: VerifiedCandidate): Promise<void> {
+async function ensureStableRelease(
+  tag: string,
+  sourceSha: string,
+): Promise<void> {
+  const existing = await tryRun("gh", [
+    "release",
+    "view",
+    tag,
+    "--json",
+    "tagName,targetCommitish,isDraft",
+  ]);
+  if (existing.success) {
+    const release = JSON.parse(existing.stdout) as {
+      tagName?: string;
+      targetCommitish?: string;
+      isDraft?: boolean;
+    };
+    if (release.tagName !== tag) {
+      throw new Error(`GitHub Release tag mismatch for ${tag}`);
+    }
+    if (release.targetCommitish && release.targetCommitish !== sourceSha) {
+      const resolved = await tryRun("git", [
+        "rev-parse",
+        `${release.targetCommitish}^{commit}`,
+      ]);
+      if (!resolved.success || resolved.stdout.trim() !== sourceSha) {
+        throw new Error(
+          `GitHub Release ${tag} does not target candidate source ${sourceSha}`,
+        );
+      }
+    }
+    return;
+  }
+  if (!isMissing(existing.stderr)) throw new Error(existing.stderr);
+  await run("gh", [
+    "release",
+    "create",
+    tag,
+    "--title",
+    `Ugoite ${tag}`,
+    "--target",
+    sourceSha,
+    "--notes",
+    "Verified Ugoite release candidate.",
+  ]);
+}
+
+async function publishCliAssets(
+  candidate: VerifiedCandidate,
+  tag: string,
+): Promise<void> {
   const assets = candidate.manifest.artifacts
     .filter((artifact) => artifact.kind === "cli")
     .flatMap((artifact) => artifact.files)
     .map((file) =>
       safeCandidatePath(dirname(candidate.manifestPath), file.path)
     );
-  await publishReleaseFiles(`v${candidate.manifest.version}`, assets);
+  await publishReleaseFiles(tag, assets);
 }
 
 async function publishReleaseLedgerAssets(
   candidate: VerifiedCandidate,
+  tag: string,
 ): Promise<void> {
   const directory = dirname(candidate.manifestPath);
   const idPath = pathJoin(directory, "candidate-id.txt");
@@ -562,12 +613,18 @@ async function publishReleaseLedgerAssets(
     `${JSON.stringify(publicManifest, null, 2)}\n`,
   );
   await Deno.writeTextFile(idPath, `${candidate.candidateId}\n`);
-  await publishReleaseFiles(`v${candidate.manifest.version}`, [
+  await publishReleaseFiles(tag, [
     candidate.manifestPath,
     publicManifestPath,
     idPath,
     ...releaseAssets,
   ]);
+}
+
+function candidateDraftTag(candidate: VerifiedCandidate): string {
+  const shortSource = candidate.manifest.source_sha.slice(0, 12);
+  const shortCandidate = candidate.candidateId.slice(-12);
+  return `candidate-${shortSource}-${shortCandidate}`;
 }
 
 async function publishReleaseFiles(
@@ -641,7 +698,6 @@ async function publishNpm(candidate: VerifiedCandidate): Promise<void> {
     await run("npm", ["publish", tarballPath, "--tag", "latest"]);
   }
   await verifyPublishedNpm(packageName, version, tarballPath);
-  await run("npm", ["dist-tag", "add", `${packageName}@${version}`, "latest"]);
 }
 
 async function verifyPublishedNpm(
