@@ -319,6 +319,20 @@ impl RmcpMcpHost {
     }
 }
 
+fn write_tool_request(
+    request: McpRequest,
+    work_id: &str,
+) -> Result<(String, CallToolRequestParams)> {
+    if !matches!(request.operation.as_str(), "ugoite.save" | "ugoite.undo") {
+        bail!("unsupported MCP write operation {}", request.operation);
+    }
+    let operation = request.operation;
+    let mut params = CallToolRequestParams::new(operation.clone())
+        .with_arguments(request.arguments.into_iter().collect());
+    params.set_meta(work_meta(work_id));
+    Ok((operation, params))
+}
+
 #[async_trait]
 impl McpHost for RmcpMcpHost {
     async fn call_mcp(&mut self, request: McpRequest, work_id: &str) -> Result<McpResult> {
@@ -354,10 +368,9 @@ impl McpHost for RmcpMcpHost {
                 error: None,
             });
         }
-        if request.operation == "ugoite.undo" {
-            let mut params = CallToolRequestParams::new("ugoite.undo")
-                .with_arguments(request.arguments.into_iter().collect());
-            params.set_meta(work_meta(work_id));
+        if matches!(request.operation.as_str(), "ugoite.save" | "ugoite.undo") {
+            let request_id = request.request_id.clone();
+            let (operation, params) = write_tool_request(request, work_id)?;
             let result = self
                 .client
                 .call_tool(params)
@@ -374,8 +387,8 @@ impl McpHost for RmcpMcpHost {
                 .join("\n");
             let success = result.is_error != Some(true);
             return Ok(McpResult {
-                request_id: request.request_id,
-                operation: request.operation,
+                request_id,
+                operation,
                 success,
                 observation: None,
                 resources: vec![],
@@ -669,6 +682,40 @@ mod tests {
     struct ScriptedMcp {
         operations: Vec<String>,
         work_ids: Vec<String>,
+    }
+
+    #[test]
+    fn write_tool_requests_keep_model_arguments_and_bind_the_work_id() {
+        for (operation, arguments) in [
+            (
+                "ugoite.save",
+                json!({"content":"---\nform: Entry\n---\n# Saved"}),
+            ),
+            ("ugoite.undo", json!({})),
+        ] {
+            let request = McpRequest {
+                request_id: "request-1".into(),
+                server: "ugoite".into(),
+                operation: operation.into(),
+                arguments: arguments
+                    .as_object()
+                    .cloned()
+                    .unwrap()
+                    .into_iter()
+                    .collect(),
+            };
+            let (name, params) = write_tool_request(request, "work-1").unwrap();
+            assert_eq!(name, operation);
+            assert_eq!(params.name, operation);
+            assert_eq!(
+                params.arguments.unwrap(),
+                arguments.as_object().cloned().unwrap()
+            );
+            assert_eq!(
+                params.meta.unwrap().0 .0.get("ugoite/runId"),
+                Some(&Value::String("work-1".into()))
+            );
+        }
     }
 
     #[async_trait]
