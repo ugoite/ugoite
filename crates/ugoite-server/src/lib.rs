@@ -10412,6 +10412,7 @@ mod authentication_regression_tests {
     use sha2::{Digest, Sha256};
     use tower::ServiceExt;
     use ugoite_identity::node_identity::{token_hash, RecoveryAuditOutboxRecord};
+    use ugoite_storage::SpaceUri;
 
     fn token_claims(sub: Uuid, actor_principal_id: Option<Uuid>) -> AccessTokenClaims {
         AccessTokenClaims {
@@ -10473,6 +10474,94 @@ mod authentication_regression_tests {
             human_approval_header_invalid: false,
             request_id: Uuid::now_v7(),
         }
+    }
+
+    fn assert_publication_coordinate(value: &Value, space_uid: Uuid) {
+        let publication_uri = &value["publication_uri"];
+        assert_eq!(publication_uri["space_uid"], json!(space_uid));
+        let key = publication_uri["key"]
+            .as_str()
+            .expect("serialized PublicationRef must contain a SpaceUri key");
+        assert!(key.starts_with("_ugoite/catalog/publications/"));
+        assert!(!key.starts_with("spaces/"));
+        let coordinate = format!("ugoite://{space_uid}/{key}");
+        let parsed = SpaceUri::parse(&coordinate).expect("public publication URI");
+        assert_eq!(parsed.to_string(), coordinate);
+        assert!(!coordinate.contains("memory://"));
+        assert!(!coordinate.contains("file://"));
+        assert!(!coordinate.contains("change:"));
+        assert!(value["publication_checksum"]
+            .as_str()
+            .is_some_and(|checksum| checksum.len() == 64
+                && checksum
+                    .chars()
+                    .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())));
+    }
+
+    #[tokio::test]
+    async fn issue_2042_authenticated_changes_and_pins_return_portable_coordinates(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-publication-coordinates-{}",
+            Uuid::now_v7()
+        ))?;
+        let principal_id = Uuid::from_u128(20420);
+        let space_id = state
+            .service
+            .create_space_for_principal("public-coordinates", principal_id, "Route test")
+            .await?
+            .to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        state
+            .service
+            .create_pin(
+                &space_id,
+                "before-history",
+                &principal_id.to_string(),
+                "pin-create-public-coordinates",
+            )
+            .await?;
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = Router::new()
+            .route("/spaces/{space_id}/pins", get(list_pins))
+            .route("/spaces/{space_id}/changes", get(list_changes))
+            .layer(Extension(content_identity(principal_id, space_uid)))
+            .with_state(state);
+
+        let changes_response = route
+            .clone()
+            .oneshot(Request::get(format!("/spaces/{space_id}/changes")).body(Body::empty())?)
+            .await?;
+        assert_eq!(changes_response.status(), StatusCode::OK);
+        let changes_body = axum::body::to_bytes(changes_response.into_body(), usize::MAX).await?;
+        let changes: Value = serde_json::from_slice(&changes_body)?;
+        let changes = changes.as_array().expect("changes response array");
+        assert!(
+            !changes.is_empty(),
+            "form creation must be a published change"
+        );
+        for change in changes {
+            assert_publication_coordinate(&change["publication"], space_uid);
+        }
+
+        let pins_response = route
+            .oneshot(Request::get(format!("/spaces/{space_id}/pins")).body(Body::empty())?)
+            .await?;
+        assert_eq!(pins_response.status(), StatusCode::OK);
+        let pins_body = axum::body::to_bytes(pins_response.into_body(), usize::MAX).await?;
+        let pins: Value = serde_json::from_slice(&pins_body)?;
+        assert_publication_coordinate(&pins["before-history"]["coordinate"], space_uid);
+        Ok(())
     }
 
     #[test]
