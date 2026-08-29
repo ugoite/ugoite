@@ -10511,6 +10511,10 @@ mod authentication_regression_tests {
             .route("/spaces/{space_id}/pins", get(list_pins).post(create_pin))
             .route("/spaces/{space_id}/pins/{pin_name}", delete(delete_pin))
             .route("/spaces/{space_id}/entries/{entry_id}", get(get_entry))
+            .route(
+                "/spaces/{space_id}/entries/{entry_id}/history",
+                get(entry_history),
+            )
             .layer(Extension(identity))
             .with_state(state)
     }
@@ -10539,9 +10543,49 @@ mod authentication_regression_tests {
 
     fn assert_opaque_version_token(value: &str) {
         assert!(!value.trim().is_empty());
+        assert_eq!(value, value.trim());
+        assert!(value.chars().all(|character| !character.is_control()));
         assert!(!value.contains("://"));
         assert!(!value.contains("change:"));
         assert!(!value.contains("spaces/"));
+    }
+
+    fn assert_complete_pin_response(value: &Value, space_uid: Uuid, principal_id: Uuid) {
+        let fields = value
+            .as_object()
+            .expect("Pin response object")
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            fields,
+            ["coordinate", "created_at_micros", "created_by_principal_id"]
+                .into_iter()
+                .map(str::to_string)
+                .collect()
+        );
+        assert_eq!(
+            value["created_by_principal_id"],
+            json!(principal_id.to_string())
+        );
+        assert!(value["created_at_micros"]
+            .as_i64()
+            .is_some_and(|created_at| created_at > 0));
+
+        let coordinate_fields = value["coordinate"]
+            .as_object()
+            .expect("Pin coordinate object")
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            coordinate_fields,
+            ["generation", "publication_uri", "publication_checksum"]
+                .into_iter()
+                .map(str::to_string)
+                .collect()
+        );
+        assert_publication_coordinate(&value["coordinate"], space_uid);
     }
 
     #[tokio::test]
@@ -10828,6 +10872,274 @@ mod authentication_regression_tests {
             "{signing_input}.{}",
             URL_SAFE_NO_PAD.encode(signature.to_bytes())
         )
+    }
+
+    struct ProductionRestClient {
+        route: Router,
+        key: SigningKey,
+        jwk: Value,
+        token: String,
+        issuer: String,
+    }
+
+    impl ProductionRestClient {
+        async fn json(
+            &self,
+            method: Method,
+            path: &str,
+            payload: Option<Value>,
+        ) -> anyhow::Result<(StatusCode, Value)> {
+            let mut request = if let Some(payload) = payload {
+                json_request(method.clone(), path.to_owned(), payload)
+            } else {
+                Request::builder()
+                    .method(method.clone())
+                    .uri(path)
+                    .body(Body::empty())?
+            };
+            request.headers_mut().insert(
+                header::AUTHORIZATION,
+                HeaderValue::from_str(&format!("DPoP {}", self.token))?,
+            );
+            request.headers_mut().insert(
+                "dpop",
+                HeaderValue::from_str(&rest_dpop_proof(
+                    &self.key,
+                    &self.jwk,
+                    &self.token,
+                    &self.issuer,
+                    method.as_str(),
+                    path,
+                ))?,
+            );
+            route_json(self.route.clone(), request).await
+        }
+    }
+
+    fn rest_dpop_proof(
+        key: &SigningKey,
+        jwk: &Value,
+        token: &str,
+        issuer: &str,
+        method: &str,
+        path: &str,
+    ) -> String {
+        let header = URL_SAFE_NO_PAD.encode(
+            serde_json::to_vec(&json!({"alg":"ES256","typ":"dpop+jwt","jwk":jwk}))
+                .expect("DPoP header"),
+        );
+        let payload = URL_SAFE_NO_PAD.encode(
+            serde_json::to_vec(&json!({
+                "htm": method,
+                "htu": format!("{}{}", issuer.trim_end_matches('/'), path),
+                "ath": URL_SAFE_NO_PAD.encode(Sha256::digest(token.as_bytes())),
+                "iat": chrono::Utc::now().timestamp(),
+                "jti": Uuid::now_v7()
+            }))
+            .expect("DPoP payload"),
+        );
+        let signing_input = format!("{header}.{payload}");
+        let signature: Signature = key.sign(signing_input.as_bytes());
+        format!(
+            "{signing_input}.{}",
+            URL_SAFE_NO_PAD.encode(signature.to_bytes())
+        )
+    }
+
+    async fn production_rest_fixture(
+        slug: &str,
+        principal_id: Uuid,
+    ) -> anyhow::Result<(ProductionRestClient, String, Uuid)> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-issue-2075-production-auth-{}",
+            Uuid::now_v7()
+        ))?;
+        state.initialize_node().await?;
+        let space_id = state
+            .service
+            .create_space_for_principal(slug, principal_id, "Production auth test")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        state
+            .identity
+            .seed_test_recovery_accounts(&[(principal_id, space_uid, principal_id)])
+            .await?;
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+
+        let (signing_key, jwk) = agent_test_key();
+        let actions = ["read", "create", "update", "delete", "share"]
+            .into_iter()
+            .map(str::to_string)
+            .collect::<BTreeSet<_>>();
+        let (issuer, node_id) = state.identity.issuer_metadata().await?;
+        let device = state
+            .identity
+            .start_device_authorization(
+                "REST recovery contract",
+                jwk.clone(),
+                Some(space_uid),
+                actions.clone(),
+                Some(issuer.clone()),
+            )
+            .await?;
+        state
+            .identity
+            .approve_device_authorization(
+                device["user_code"].as_str().expect("user code"),
+                principal_id,
+                principal_id,
+                space_uid,
+                actions,
+            )
+            .await?;
+        let (credential, _, _, _) = state
+            .identity
+            .exchange_device_code(device["device_code"].as_str().expect("device code"))
+            .await?;
+        let now = chrono::Utc::now().timestamp();
+        let claims = AccessTokenClaims {
+            iss: issuer.clone(),
+            node_id,
+            sub: principal_id,
+            principal_type: "human".to_string(),
+            actor_principal_id: None,
+            aud: issuer.clone(),
+            space_uid,
+            granted_actions: ["read", "create", "update", "delete", "share"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            actor_chain: vec![principal_id],
+            exp: now + 300,
+            iat: now,
+            jti: Uuid::now_v7(),
+            credential_id: credential.credential_id,
+            credential_generation: Some(credential.credential_generation),
+            cnf: Confirmation {
+                jkt: oauth::jwk_thumbprint(&jwk)?,
+            },
+        };
+        let token = state.identity.issue_access_credential(claims).await?;
+        Ok((
+            ProductionRestClient {
+                route: app(state),
+                key: signing_key,
+                jwk,
+                token,
+                issuer,
+            },
+            space_id,
+            space_uid,
+        ))
+    }
+
+    #[tokio::test]
+    async fn issue_2075_rest_recovery_uses_production_authentication_boundary() -> anyhow::Result<()>
+    {
+        let principal_id = Uuid::from_u128(20751);
+        let (client, space_id, _space_uid) =
+            production_rest_fixture("issue-2075-production-auth", principal_id).await?;
+        let apply_path = format!("/spaces/{space_id}/apply");
+
+        let create = client
+            .json(
+                Method::POST,
+                &apply_path,
+                Some(json!({
+                    "operations": [{
+                        "kind": "create",
+                        "id": "production-auth-entry",
+                        "markdown": knowledge_markdown("Production auth", "created")
+                    }],
+                    "run_id": "run-2075-production-auth",
+                    "message": "production auth create"
+                })),
+            )
+            .await?;
+        assert_eq!(create.0, StatusCode::OK, "{}", create.1);
+        let create_revision = create.1["operations"][0]["revision_id"]
+            .as_str()
+            .expect("production-auth create revision")
+            .to_owned();
+        assert_opaque_version_token(&create_revision);
+
+        let update = client
+            .json(
+                Method::POST,
+                &apply_path,
+                Some(json!({
+                    "operations": [{
+                        "kind": "update",
+                        "id": "production-auth-entry",
+                        "version_token": create_revision,
+                        "markdown": knowledge_markdown("Production auth", "updated")
+                    }],
+                    "run_id": "run-2075-production-auth",
+                    "message": "production auth update"
+                })),
+            )
+            .await?;
+        assert_eq!(update.0, StatusCode::OK, "{}", update.1);
+
+        let entry_path = format!("/spaces/{space_id}/entries/production-auth-entry");
+        let (status, current_entry) = client.json(Method::GET, &entry_path, None).await?;
+        assert_eq!(status, StatusCode::OK, "{current_entry}");
+        assert!(current_entry["markdown"]
+            .as_str()
+            .is_some_and(|markdown| markdown.contains("updated")));
+        let history_path = format!("{entry_path}/history");
+        let (status, history) = client.json(Method::GET, &history_path, None).await?;
+        assert_eq!(status, StatusCode::OK, "{history}");
+        assert_eq!(history["revisions"].as_array().map(Vec::len), Some(2));
+        assert_eq!(history["revisions"][0]["operation"], "upsert");
+        assert_eq!(history["revisions"][1]["operation"], "upsert");
+
+        let changes_path = format!("/spaces/{space_id}/changes");
+        let (status, changes) = client.json(Method::GET, &changes_path, None).await?;
+        assert_eq!(status, StatusCode::OK, "{changes}");
+        let target_change_id = changes
+            .as_array()
+            .expect("production-auth changes")
+            .iter()
+            .find(|change| change["change"]["message"] == "production auth update")
+            .and_then(|change| change["change_id"].as_str())
+            .expect("production-auth update Change")
+            .to_owned();
+
+        let revert_path = format!("{changes_path}/{target_change_id}/revert");
+        let (status, revert) = client
+            .json(Method::POST, &revert_path, Some(json!({})))
+            .await?;
+        assert_eq!(status, StatusCode::OK, "{revert}");
+        assert_eq!(revert["reverts_change_id"], target_change_id);
+
+        let (status, changes_after_revert) = client.json(Method::GET, &changes_path, None).await?;
+        assert_eq!(status, StatusCode::OK, "{changes_after_revert}");
+        assert!(changes_after_revert
+            .as_array()
+            .expect("changes after production-auth revert")
+            .iter()
+            .any(|change| change["change"]["reverts_change_id"] == target_change_id));
+
+        let undo_path = format!("/spaces/{space_id}/runs/run-2075-production-auth/undo");
+        let (status, undo) = client.json(Method::POST, &undo_path, None).await?;
+        assert_eq!(status, StatusCode::OK, "{undo}");
+        assert_eq!(undo["reverted_change_count"], 1);
+
+        let (status, final_entry) = client.json(Method::GET, &entry_path, None).await?;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{final_entry}");
+        Ok(())
     }
 
     #[tokio::test]
@@ -13850,6 +14162,29 @@ mod authentication_regression_tests {
             .to_owned();
         assert_opaque_version_token(&inverse_revision);
 
+        let (status, changes_after_revert) = route_json(
+            route.clone(),
+            Request::get(format!("/spaces/{space_id}/changes")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{changes_after_revert}");
+        let changes_after_revert = changes_after_revert
+            .as_array()
+            .expect("change listing after selective revert");
+        let original = changes_after_revert
+            .iter()
+            .find(|change| change["change_id"] == target_change_id)
+            .expect("original Change remains reachable after revert");
+        assert_eq!(original["change"]["message"], "target selective update");
+        assert!(original["change"]["reverts_change_id"].is_null());
+        assert_publication_coordinate(&original["publication"], space_uid);
+        let inverse = changes_after_revert
+            .iter()
+            .find(|change| change["change_id"] == revert_body["change_id"])
+            .expect("inverse Change is reachable after selective revert");
+        assert_eq!(inverse["change"]["reverts_change_id"], target_change_id);
+        assert_publication_coordinate(&inverse["publication"], space_uid);
+
         let (status, current_entry) = route_json(
             route.clone(),
             Request::get(format!("/spaces/{space_id}/entries/revert-entry")).body(Body::empty())?,
@@ -14015,6 +14350,204 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
+    async fn issue_2075_authenticated_rest_run_undo_recovers_after_partial_failure(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-issue-2075-run-undo-partial-{}",
+            Uuid::now_v7()
+        ))?;
+        let principal_id = Uuid::from_u128(20752);
+        let space_id = state
+            .service
+            .create_space_for_principal("issue-2075-run-undo-partial", principal_id, "Route test")
+            .await?
+            .to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = reversible_knowledge_route(
+            state,
+            reversible_knowledge_identity(principal_id, space_uid),
+        );
+
+        let run_id = "run-2075-partial";
+        let initial = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [
+                        {
+                            "kind": "create",
+                            "id": "partial-a",
+                            "markdown": knowledge_markdown("Partial A", "original A")
+                        },
+                        {
+                            "kind": "create",
+                            "id": "partial-b",
+                            "markdown": knowledge_markdown("Partial B", "original B")
+                        }
+                    ],
+                    "run_id": run_id,
+                    "message": "partial run create"
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(initial.0, StatusCode::OK, "{}", initial.1);
+        let entry_a_revision = initial.1["operations"][0]["revision_id"]
+            .as_str()
+            .expect("Entry A revision token")
+            .to_owned();
+        assert_opaque_version_token(&entry_a_revision);
+
+        let external = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{
+                        "kind": "update",
+                        "id": "partial-a",
+                        "version_token": entry_a_revision,
+                        "markdown": knowledge_markdown("Partial A", "changed externally")
+                    }],
+                    "run_id": "run-2075-external",
+                    "message": "external change blocks undo"
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(external.0, StatusCode::OK, "{}", external.1);
+        let external_revision = external.1["operations"][0]["revision_id"]
+            .as_str()
+            .expect("external revision token")
+            .to_owned();
+        assert_opaque_version_token(&external_revision);
+
+        let (status, failed_undo) = route_json(
+            route.clone(),
+            Request::post(format!("/spaces/{space_id}/runs/{run_id}/undo")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::CONFLICT, "{failed_undo}");
+        assert_eq!(failed_undo["code"], "REVISION_CONFLICT");
+        assert!(failed_undo["message"].as_str().is_some());
+
+        let (status, entry_a_after_failure) = route_json(
+            route.clone(),
+            Request::get(format!("/spaces/{space_id}/entries/partial-a")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{entry_a_after_failure}");
+        assert!(entry_a_after_failure["markdown"]
+            .as_str()
+            .is_some_and(|markdown| markdown.contains("changed externally")));
+        let (status, entry_b_after_failure) = route_json(
+            route.clone(),
+            Request::get(format!("/spaces/{space_id}/entries/partial-b")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{entry_b_after_failure}");
+
+        let (status, changes_after_failure) = route_json(
+            route.clone(),
+            Request::get(format!("/spaces/{space_id}/changes")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{changes_after_failure}");
+        let changes_after_failure = changes_after_failure
+            .as_array()
+            .expect("reachable changes after partial Run Undo");
+        let original_change_ids = changes_after_failure
+            .iter()
+            .filter(|change| {
+                change["change"]["run_id"] == run_id
+                    && change["change"]["reverts_change_id"].is_null()
+            })
+            .filter_map(|change| change["change_id"].as_str().map(str::to_owned))
+            .collect::<Vec<_>>();
+        assert_eq!(original_change_ids.len(), 2);
+        let newest_original_change_id = changes_after_failure
+            .iter()
+            .filter(|change| {
+                change["change"]["run_id"] == run_id
+                    && change["change"]["reverts_change_id"].is_null()
+            })
+            .max_by_key(|change| change["generation"].as_u64().unwrap_or_default())
+            .and_then(|change| change["change_id"].as_str())
+            .expect("newest original Change");
+        assert!(changes_after_failure.iter().any(|change| {
+            change["change"]["run_id"] == run_id
+                && change["change"]["reverts_change_id"] == newest_original_change_id
+        }));
+
+        let restore = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{
+                        "kind": "update",
+                        "id": "partial-a",
+                        "version_token": external_revision,
+                        "markdown": knowledge_markdown("Partial A", "original A")
+                    }],
+                    "run_id": "run-2075-conflict-resolution",
+                    "message": "restore the expected reachable value"
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(restore.0, StatusCode::OK, "{}", restore.1);
+
+        let (status, resumed_undo) = route_json(
+            route.clone(),
+            Request::post(format!("/spaces/{space_id}/runs/{run_id}/undo")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{resumed_undo}");
+        assert_eq!(resumed_undo["run_id"], run_id);
+        assert_eq!(resumed_undo["reverted_change_count"], 1);
+        assert_eq!(resumed_undo["inverses"].as_array().map(Vec::len), Some(1));
+
+        for entry_id in ["partial-a", "partial-b"] {
+            let (status, body) = route_json(
+                route.clone(),
+                Request::get(format!("/spaces/{space_id}/entries/{entry_id}"))
+                    .body(Body::empty())?,
+            )
+            .await?;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{entry_id}: {body}");
+        }
+        let (status, final_changes) = route_json(
+            route,
+            Request::get(format!("/spaces/{space_id}/changes")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{final_changes}");
+        let final_changes = final_changes.as_array().expect("final reachable changes");
+        for original_change_id in original_change_ids {
+            assert!(final_changes
+                .iter()
+                .any(|change| { change["change"]["reverts_change_id"] == original_change_id }));
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn issue_2037_authenticated_rest_apply_supports_create_update_remove(
     ) -> anyhow::Result<()> {
         let state = AppState::new_for_tests(format!(
@@ -14071,6 +14604,40 @@ mod authentication_regression_tests {
             .to_owned();
         assert_opaque_version_token(&create_revision);
 
+        let (status, created_entry) = route_json(
+            route.clone(),
+            Request::get(format!("/spaces/{space_id}/entries/apply-crud-entry"))
+                .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{created_entry}");
+        assert!(created_entry["markdown"]
+            .as_str()
+            .is_some_and(|markdown| markdown.contains("created")));
+        assert_eq!(created_entry["revision_id"], create_revision);
+        let (status, created_history) = route_json(
+            route.clone(),
+            Request::get(format!(
+                "/spaces/{space_id}/entries/apply-crud-entry/history"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{created_history}");
+        assert_eq!(created_history["entry_id"], "apply-crud-entry");
+        assert_eq!(
+            created_history["revisions"].as_array().map(Vec::len),
+            Some(1)
+        );
+        assert_eq!(
+            created_history["revisions"][0]["revision_id"],
+            create_revision
+        );
+        assert_eq!(created_history["revisions"][0]["operation"], "upsert");
+        assert!(created_history["revisions"][0]["change_id"]
+            .as_str()
+            .is_some_and(|change_id| !change_id.is_empty()));
+
         let update = route_json(
             route.clone(),
             json_request(
@@ -14090,9 +14657,48 @@ mod authentication_regression_tests {
         )
         .await?;
         assert_eq!(update.0, StatusCode::OK, "{}", update.1);
+        let update_revision = update.1["operations"][0]["revision_id"]
+            .as_str()
+            .expect("update revision token")
+            .to_owned();
+        assert_opaque_version_token(&update_revision);
+
+        let (status, updated_entry) = route_json(
+            route.clone(),
+            Request::get(format!("/spaces/{space_id}/entries/apply-crud-entry"))
+                .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{updated_entry}");
+        assert!(updated_entry["markdown"]
+            .as_str()
+            .is_some_and(|markdown| markdown.contains("updated")));
+        assert_eq!(updated_entry["revision_id"], update_revision);
+        let (status, updated_history) = route_json(
+            route.clone(),
+            Request::get(format!(
+                "/spaces/{space_id}/entries/apply-crud-entry/history"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{updated_history}");
+        assert_eq!(
+            updated_history["revisions"].as_array().map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(
+            updated_history["revisions"][0]["revision_id"],
+            create_revision
+        );
+        assert_eq!(
+            updated_history["revisions"][1]["revision_id"],
+            update_revision
+        );
+        assert_eq!(updated_history["revisions"][1]["operation"], "upsert");
 
         let (status, remove) = route_json(
-            route,
+            route.clone(),
             json_request(
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
@@ -14112,6 +14718,39 @@ mod authentication_regression_tests {
                 "id": "apply-crud-entry"
             })
         );
+
+        let (status, deleted_entry) = route_json(
+            route.clone(),
+            Request::get(format!("/spaces/{space_id}/entries/apply-crud-entry"))
+                .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{deleted_entry}");
+        let (status, deleted_history) = route_json(
+            route,
+            Request::get(format!(
+                "/spaces/{space_id}/entries/apply-crud-entry/history"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{deleted_history}");
+        assert_eq!(
+            deleted_history["revisions"].as_array().map(Vec::len),
+            Some(3)
+        );
+        assert_eq!(
+            deleted_history["revisions"][0]["revision_id"],
+            create_revision
+        );
+        assert_eq!(
+            deleted_history["revisions"][1]["revision_id"],
+            update_revision
+        );
+        assert_eq!(deleted_history["revisions"][2]["operation"], "delete");
+        assert!(deleted_history["revisions"][2]["deleted_by"]
+            .as_str()
+            .is_some_and(|actor| actor == principal_id.to_string()));
         Ok(())
     }
 
@@ -14181,7 +14820,7 @@ mod authentication_regression_tests {
         );
         let pin = route_json(route.clone(), pin_request).await?;
         assert_eq!(pin.0, StatusCode::OK, "{}", pin.1);
-        assert_publication_coordinate(&pin.1["coordinate"], space_uid);
+        assert_complete_pin_response(&pin.1, space_uid, principal_id);
 
         let update = route_json(
             route.clone(),
@@ -14211,7 +14850,7 @@ mod authentication_regression_tests {
             pins_body["before-update"]["coordinate"],
             pin.1["coordinate"]
         );
-        assert_publication_coordinate(&pins_body["before-update"]["coordinate"], space_uid);
+        assert_complete_pin_response(&pins_body["before-update"], space_uid, principal_id);
 
         let (status, current) = route_json(
             route.clone(),
