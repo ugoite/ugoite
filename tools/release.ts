@@ -423,16 +423,22 @@ async function promote(candidate: VerifiedCandidate): Promise<void> {
   const version = candidate.manifest.version;
   const stableTag = `v${version}`;
   const draftTag = candidateDraftTag(candidate);
+  const releaseAssets = await prepareReleaseAssets(candidate);
+  const releaseFiles = [
+    ...candidateCliAssetPaths(candidate),
+    candidate.manifestPath,
+    ...releaseAssets,
+  ];
   await ensureDraftRelease(draftTag, candidate.manifest.source_sha);
-  await publishCliAssets(candidate, draftTag);
+  await publishReleaseFiles(draftTag, releaseFiles);
   await publishNpm(candidate);
   await publishHelm(candidate);
   await publishContainer(candidate);
-  await publishReleaseLedgerAssets(candidate, draftTag);
-  await ensureStableRelease(stableTag, candidate.manifest.source_sha);
-  await publishCliAssets(candidate, stableTag);
-  await publishReleaseLedgerAssets(candidate, stableTag);
-  await run("gh", ["release", "edit", stableTag, "--draft=false"]);
+  await ensureStableRelease(
+    stableTag,
+    candidate.manifest.source_sha,
+    releaseFiles,
+  );
   console.log(`promoted ${candidate.candidateId} as ${stableTag}`);
 }
 
@@ -459,7 +465,7 @@ async function promoteAliases(candidate: VerifiedCandidate): Promise<void> {
     `@ugoite/ugoite@${candidate.manifest.version}`,
     "latest",
   ]);
-  console.log(`updated mutable aliases from ${sourceTag}`);
+  console.log(`updated mutable aliases from ${repository}`);
 }
 
 async function ensureDraftRelease(
@@ -512,6 +518,7 @@ async function ensureDraftRelease(
 async function ensureStableRelease(
   tag: string,
   sourceSha: string,
+  releaseFiles: string[],
 ): Promise<void> {
   const existing = await tryRun("gh", [
     "release",
@@ -540,39 +547,38 @@ async function ensureStableRelease(
         );
       }
     }
-    return;
+  } else {
+    if (!isMissing(existing.stderr)) throw new Error(existing.stderr);
+    await run("gh", [
+      "release",
+      "create",
+      tag,
+      "--title",
+      `Ugoite ${tag}`,
+      "--target",
+      sourceSha,
+      "--notes",
+      "Verified Ugoite release candidate.",
+      ...releaseFiles,
+    ]);
   }
-  if (!isMissing(existing.stderr)) throw new Error(existing.stderr);
-  await run("gh", [
-    "release",
-    "create",
-    tag,
-    "--title",
-    `Ugoite ${tag}`,
-    "--target",
-    sourceSha,
-    "--notes",
-    "Verified Ugoite release candidate.",
-  ]);
+  await publishReleaseFiles(tag, releaseFiles);
+  await run("gh", ["release", "edit", tag, "--draft=false"]);
 }
 
-async function publishCliAssets(
-  candidate: VerifiedCandidate,
-  tag: string,
-): Promise<void> {
+function candidateCliAssetPaths(candidate: VerifiedCandidate): string[] {
   const assets = candidate.manifest.artifacts
     .filter((artifact) => artifact.kind === "cli")
     .flatMap((artifact) => artifact.files)
     .map((file) =>
       safeCandidatePath(dirname(candidate.manifestPath), file.path)
     );
-  await publishReleaseFiles(tag, assets);
+  return assets;
 }
 
-async function publishReleaseLedgerAssets(
+async function prepareReleaseAssets(
   candidate: VerifiedCandidate,
-  tag: string,
-): Promise<void> {
+): Promise<string[]> {
   const directory = dirname(candidate.manifestPath);
   const idPath = pathJoin(directory, "candidate-id.txt");
   const publicManifestPath = pathJoin(directory, "release-manifest.json");
@@ -613,12 +619,7 @@ async function publishReleaseLedgerAssets(
     `${JSON.stringify(publicManifest, null, 2)}\n`,
   );
   await Deno.writeTextFile(idPath, `${candidate.candidateId}\n`);
-  await publishReleaseFiles(tag, [
-    candidate.manifestPath,
-    publicManifestPath,
-    idPath,
-    ...releaseAssets,
-  ]);
+  return [publicManifestPath, idPath, ...releaseAssets];
 }
 
 function candidateDraftTag(candidate: VerifiedCandidate): string {

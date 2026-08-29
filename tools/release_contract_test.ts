@@ -105,6 +105,17 @@ Deno.test("REQ-OPS-043: repository-native release tasks and split workflows are 
     releaseTool.slice(promoteStart, aliasesStart).includes("promoteAliases"),
     false,
   );
+  const promoteBody = releaseTool.slice(promoteStart, aliasesStart);
+  assertEquals(
+    promoteBody.indexOf("publishContainer(candidate)") <
+      promoteBody.indexOf("ensureStableRelease("),
+    true,
+  );
+  const aliasesBody = releaseTool.slice(
+    aliasesStart,
+    releaseTool.indexOf("async function ensureDraftRelease"),
+  );
+  assertEquals(aliasesBody.includes("sourceTag"), false);
   assertEquals(releaseTool.includes("candidateDraftTag(candidate)"), true);
   assertEquals(
     /cargo build|npm pack|helm package|docker\/build-push-action|mise run build:/
