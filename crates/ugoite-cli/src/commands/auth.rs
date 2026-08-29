@@ -247,32 +247,86 @@ pub fn canonical_dpop_htu(uri: &str) -> Result<String> {
     Ok(url.to_string())
 }
 
-/// Discover the exact protected resource advertised by the configured server.
-/// The API-mode proxy keeps this request on the configured endpoint while the
-/// server supplies its canonical public issuer.
-pub async fn mcp_resource(base_url: &str) -> Result<String> {
-    let metadata_url = format!(
-        "{}/.well-known/oauth-protected-resource",
-        base_url.trim_end_matches('/')
-    );
-    let response = reqwest::Client::new()
-        .get(&metadata_url)
-        .send()
-        .await
-        .context("discover MCP protected resource")?;
-    let status = response.status();
-    let metadata: Value = response
-        .json()
-        .await
-        .context("decode MCP resource metadata")?;
-    if !status.is_success() {
-        bail!("MCP resource discovery failed: {metadata}");
+pub struct McpTarget {
+    pub resource: String,
+    pub endpoint: String,
+}
+
+/// Discover the exact protected resource and HTTP endpoint advertised by the
+/// configured server. API-mode frontends proxy the well-known request and MCP
+/// endpoint under `/api`; the integrated static server exposes those two MCP
+/// routes at the public root, so an `/api` base also tries that root fallback.
+pub async fn mcp_target(base_url: &str) -> Result<McpTarget> {
+    let base_url = base_url.trim_end_matches('/');
+    let mut candidates = vec![base_url.to_string()];
+    if let Some(root_url) = api_base_root(base_url) {
+        if root_url != base_url {
+            candidates.push(root_url);
+        }
     }
-    metadata["resource"]
-        .as_str()
-        .filter(|resource| !resource.trim().is_empty())
-        .map(str::to_owned)
-        .ok_or_else(|| anyhow!("MCP resource metadata omitted resource"))
+
+    let client = reqwest::Client::new();
+    let mut failures = Vec::new();
+    for candidate in candidates {
+        let metadata_url = format!("{candidate}/.well-known/oauth-protected-resource");
+        let response = match client.get(&metadata_url).send().await {
+            Ok(response) => response,
+            Err(error) => {
+                failures.push(format!("{metadata_url}: {error}"));
+                continue;
+            }
+        };
+        let status = response.status();
+        let body = match response.text().await {
+            Ok(body) => body,
+            Err(error) => {
+                failures.push(format!("{metadata_url}: {error}"));
+                continue;
+            }
+        };
+        if !status.is_success() {
+            failures.push(format!("{metadata_url}: HTTP {status} ({body})"));
+            continue;
+        }
+        let metadata: Value = match serde_json::from_str(&body) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                failures.push(format!("{metadata_url}: {error}"));
+                continue;
+            }
+        };
+        let Some(resource) = metadata["resource"]
+            .as_str()
+            .filter(|resource| !resource.trim().is_empty())
+        else {
+            failures.push(format!("{metadata_url}: metadata omitted resource"));
+            continue;
+        };
+        return Ok(McpTarget {
+            resource: resource.to_owned(),
+            endpoint: format!("{candidate}/mcp"),
+        });
+    }
+
+    bail!("MCP resource discovery failed: {}", failures.join("; "));
+}
+
+pub async fn mcp_resource(base_url: &str) -> Result<String> {
+    Ok(mcp_target(base_url).await?.resource)
+}
+
+fn api_base_root(base_url: &str) -> Option<String> {
+    let mut url = Url::parse(base_url).ok()?;
+    let path = url.path().trim_end_matches('/');
+    let root_path = path.strip_suffix("/api")?.to_string();
+    url.set_path(if root_path.is_empty() {
+        "/"
+    } else {
+        &root_path
+    });
+    url.set_query(None);
+    url.set_fragment(None);
+    Some(url.to_string().trim_end_matches('/').to_string())
 }
 
 pub async fn active_session(base_url: &str) -> Result<Option<AuthSession>> {
@@ -381,8 +435,8 @@ fn public_jwk(key: &SigningKey) -> Value {
 #[cfg(test)]
 mod tests {
     use super::{
-        active_session_for, canonical_dpop_htu, load_auth_session, login, mcp_resource,
-        oauth_payload, public_jwk, save_auth_session,
+        active_session_for, api_base_root, canonical_dpop_htu, load_auth_session, login,
+        mcp_resource, mcp_target, oauth_payload, public_jwk, save_auth_session,
     };
     use base64::Engine as _;
     use p256::pkcs8::EncodePrivateKey;
@@ -488,6 +542,19 @@ mod tests {
     }
 
     #[test]
+    fn api_base_root_strips_only_the_api_suffix() {
+        assert_eq!(
+            api_base_root("https://ugoite.example/api"),
+            Some("https://ugoite.example".to_string())
+        );
+        assert_eq!(
+            api_base_root("https://ugoite.example/console/api/"),
+            Some("https://ugoite.example/console".to_string())
+        );
+        assert_eq!(api_base_root("https://ugoite.example/console"), None);
+    }
+
+    #[test]
     fn mcp_login_carries_resource_through_discovery_device_and_exchange() {
         let _guard = env_lock().lock().expect("env lock");
         let temp = tempfile::tempdir().expect("tempdir");
@@ -565,6 +632,28 @@ mod tests {
         } else {
             std::env::remove_var("UGOITE_CLI_CONFIG_PATH");
         }
+    }
+
+    #[test]
+    fn mcp_target_falls_back_to_integrated_server_root_for_api_base() {
+        let resource = "http://ugoite.example/mcp";
+        let (base_url, requests, server) = spawn_http_server(vec![
+            (
+                "404 Not Found",
+                json!({"detail": "API route not found"}).to_string(),
+            ),
+            ("200 OK", json!({"resource": resource}).to_string()),
+        ]);
+        let target = tokio::runtime::Runtime::new()
+            .expect("create test runtime")
+            .block_on(mcp_target(&format!("{base_url}/api")))
+            .expect("discover MCP target");
+        server.join().expect("join test server");
+        let requests = requests.into_iter().collect::<Vec<_>>();
+        assert!(requests[0].starts_with("GET /api/.well-known/oauth-protected-resource HTTP/1.1"));
+        assert!(requests[1].starts_with("GET /.well-known/oauth-protected-resource HTTP/1.1"));
+        assert_eq!(target.resource, resource);
+        assert_eq!(target.endpoint, format!("{base_url}/mcp"));
     }
 
     #[test]
