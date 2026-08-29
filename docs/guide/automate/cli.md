@@ -46,7 +46,18 @@ ugoite space list /path/to/workspace
 `ugoite auth logout` is local logout: it deletes the local credentials and
 private key. Server-side device-grant revocation is a separate operation. MCP
 credentials use `{issuer}/mcp` as resource and audience; REST and MCP
-credentials cannot cross-use. Remote CLI asset upload remains future scope.
+credentials cannot cross-use. Use the explicit MCP target when pairing the
+Konase host; the CLI discovers the server's protected-resource metadata, so the
+raw resource URL is not needed:
+
+```bash
+ugoite auth login --for mcp
+ugoite konase --prompt "Find the latest project note"
+```
+
+`ugoite auth login` and `ugoite auth login --for mcp` create different
+credential targets. Run the matching login command if a saved credential is for
+the other target. Remote CLI asset upload remains future scope.
 
 ## Spaces and entries
 

@@ -34,6 +34,18 @@ fn default_device_login_actions_exclude_unapproved_dangerous_actions() {
         .any(|action| action == "delete" || action == "share"));
 }
 
+#[test]
+fn auth_login_help_exposes_named_mcp_target() {
+    let output = Command::new(ugoite_bin())
+        .args(["auth", "login", "--help"])
+        .output()
+        .expect("failed to execute process");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("--for <TARGET>"), "stdout:\n{stdout}");
+    assert!(stdout.contains("mcp"), "stdout:\n{stdout}");
+}
+
 /// REQ-OPS-018: top-level help must show a task-oriented quick-start path.
 #[test]
 fn test_help_req_ops_018_shows_task_oriented_quick_start() {

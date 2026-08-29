@@ -292,15 +292,17 @@ fn resources_read_schema() -> Value {
 
 impl RmcpMcpHost {
     async fn connect(base_url: &str) -> Result<Self> {
-        let session = crate::commands::auth::active_session(base_url)
+        let target = crate::commands::auth::mcp_target(base_url).await?;
+        let session = crate::commands::auth::active_session_for(base_url, Some(&target.resource))
             .await?
-            .ok_or_else(|| anyhow!("`ugoite konase` requires `ugoite auth login`"))?;
+            .ok_or_else(|| {
+                anyhow!(
+                    "`ugoite konase` requires an MCP credential; run `ugoite auth login --for mcp`"
+                )
+            })?;
         let transport = StreamableHttpClientTransport::from_config(
-            StreamableHttpClientTransportConfig::with_uri(format!(
-                "{}/mcp",
-                base_url.trim_end_matches('/')
-            ))
-            .auth_header(session.access_token),
+            StreamableHttpClientTransportConfig::with_uri(target.endpoint)
+                .auth_header(session.access_token),
         );
         let client = ClientInfo::default()
             .serve_with_lifecycle(

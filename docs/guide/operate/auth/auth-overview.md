@@ -148,7 +148,10 @@ refresh credentials rotate on every use and expire after 30 days.
 The default actions are `read,create,update`; delete and share are never added
 implicitly. REST CLI authorization requests omit `resource` and receive a token
 whose audience is the Node issuer. MCP requests use exactly `{issuer}/mcp` for
-both resource and audience, and the two credential types cannot cross-use.
+both resource and audience, and the two credential types cannot cross-use. The
+native Konase host uses the MCP target; pair it with
+`ugoite auth login --for mcp`. The CLI discovers the protected-resource
+metadata and preserves that target on device-code exchange and refresh.
 
 Access tokens are opaque random values; the Node control store saves only their
 hashes and server-side issuer, Node, Space, action, actor-chain, expiry,
