@@ -146,6 +146,11 @@ impl ContextBuilder {
         for capability in &mut available_capabilities {
             capability.name = truncate(&capability.name, MAX_CAPABILITY_NAME_CHARS);
             capability.description = truncate(&capability.description, limits.max_summary_chars);
+            capability.input_schema = capability.input_schema.take().filter(|schema| {
+                serde_json::to_vec(schema)
+                    .map(|serialized| serialized.len() <= MAX_CONTEXT_SCHEMA_BYTES)
+                    .unwrap_or(false)
+            });
         }
 
         let selected_resource_contents = selected_resource_contents
@@ -215,6 +220,11 @@ mod tests {
             available_capabilities: vec![Capability {
                 name: "ugoite.search".into(),
                 description: "Search entries".into(),
+                input_schema: Some(serde_json::json!({
+                    "type": "object",
+                    "properties": {"q": {"type": "string"}},
+                    "required": ["q"]
+                })),
             }],
             selected_resource_contents: vec![ResourceContent {
                 uri: "ugoite://entry/19".into(),
@@ -241,6 +251,14 @@ mod tests {
             ["observation-17", "observation-18", "observation-19"]
         );
         assert_eq!(context.selected_resource_contents.len(), 1);
+        assert_eq!(
+            context.available_capabilities[0].input_schema,
+            Some(serde_json::json!({
+                "type": "object",
+                "properties": {"q": {"type": "string"}},
+                "required": ["q"]
+            }))
+        );
         assert_eq!(
             context.selected_resource_contents[0].uri,
             "ugoite://entry/19"
@@ -270,6 +288,7 @@ mod tests {
     #[test]
     fn caller_limits_and_context_fields_remain_hard_bounded() {
         let oversized = "x".repeat(10_000);
+        let oversized_schema = "x".repeat(MAX_CONTEXT_SCHEMA_BYTES);
         let request = ContextBuildRequest {
             work_goal: oversized.clone(),
             job_goal: oversized.clone(),
@@ -279,6 +298,9 @@ mod tests {
                 .map(|id| Capability {
                     name: format!("capability-{id}-{oversized}"),
                     description: oversized.clone(),
+                    input_schema: Some(serde_json::json!({
+                        "schema": oversized_schema.clone()
+                    })),
                 })
                 .collect(),
             selected_resource_contents: (0..10)
@@ -319,6 +341,10 @@ mod tests {
         );
         assert_eq!(context.safety_hints.len(), defaults.max_safety_hints);
         assert!(context.expected_response_schema.is_none());
+        assert!(context
+            .available_capabilities
+            .iter()
+            .all(|capability| capability.input_schema.is_none()));
         assert!(context.work_goal.chars().count() <= defaults.max_summary_chars);
         assert!(context
             .available_capabilities

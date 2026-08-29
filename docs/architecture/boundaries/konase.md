@@ -30,6 +30,9 @@ sends the result back as an Event.
 ugoite-wasm exposes the same semantics through konase.version, konase.new,
 konase.step, and konase.context. The WASM adapter does not perform network
 I/O; browser JavaScript remains responsible for fetch and other host effects.
+Capability metadata includes a bounded, provider-neutral JSON input schema. Host
+adapters preserve the MCP tool contract through this boundary; synthetic host
+capabilities such as `resources/read` provide an explicit schema as well.
 
 ## Durability boundary
 

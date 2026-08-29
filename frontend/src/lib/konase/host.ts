@@ -283,11 +283,14 @@ class BrowserAgentRuntime {
     capabilities: Capability[],
   ): AgentAction {
     this.jobId = job.id;
-    this.tools = capabilities.map((capability) => ({
-      name: capability.name,
-      description: capability.description,
-      input_schema: capability.input_schema ?? { type: "object" },
-    }));
+    this.tools = capabilities.flatMap((capability) => {
+      if (!capability.input_schema) return [];
+      return [{
+        name: capability.name,
+        description: capability.description,
+        input_schema: capability.input_schema,
+      }];
+    });
     return this.nextModel(
       `Job goal: ${job.goal}\nContext: ${JSON.stringify(context)}`,
     );

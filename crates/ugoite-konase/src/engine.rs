@@ -112,6 +112,8 @@ pub struct ResourceContent {
 pub struct Capability {
     pub name: String,
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_schema: Option<Value>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -875,7 +877,7 @@ fn validate_event(event: &KonaseEvent) -> Result<(), KonaseError> {
             validate_text("goal", &request.goal, MAX_GOAL_CHARS)?;
             validate_capabilities(&request.available_capabilities)?;
             validate_hints(&request.safety_hints)?;
-            validate_schema(&request.expected_response_schema)?;
+            validate_schema(&request.expected_response_schema, "response schema")?;
         }
         KonaseEvent::AgentProgress(progress) => {
             validate_identifier("job_id", &progress.job_id)?;
@@ -903,7 +905,7 @@ fn validate_job_spec(spec: &JobSpec) -> Result<(), KonaseError> {
     validate_identifier("job.id", &spec.id)?;
     validate_identifier("job.work_id", &spec.work_id)?;
     validate_text("job.goal", &spec.goal, MAX_GOAL_CHARS)?;
-    validate_schema(&spec.expected_response_schema)
+    validate_schema(&spec.expected_response_schema, "response schema")
 }
 
 fn validate_job_outcome(outcome: &JobOutcome) -> Result<(), KonaseError> {
@@ -953,6 +955,7 @@ fn validate_capabilities(capabilities: &[Capability]) -> Result<(), KonaseError>
             &capability.description,
             MAX_STATE_SUMMARY_CHARS,
         )?;
+        validate_schema(&capability.input_schema, "capability input schema")?;
     }
     Ok(())
 }
@@ -967,12 +970,12 @@ fn validate_hints(hints: &[String]) -> Result<(), KonaseError> {
     Ok(())
 }
 
-fn validate_schema(schema: &Option<Value>) -> Result<(), KonaseError> {
+fn validate_schema(schema: &Option<Value>, field: &str) -> Result<(), KonaseError> {
     if let Some(schema) = schema {
         let size =
             serialized_size(schema).map_err(|error| KonaseError::new("serialization", error))?;
         if size > MAX_SCHEMA_BYTES {
-            return invalid_state("response schema exceeds the protocol limit");
+            return invalid_state(format!("{field} exceeds the protocol limit"));
         }
     }
     Ok(())
@@ -1039,7 +1042,7 @@ fn validate_model_tool(tool: &ModelTool) -> Result<(), KonaseError> {
         &tool.description,
         MAX_MODEL_CONTENT_CHARS,
     )?;
-    validate_schema(&Some(tool.input_schema.clone()))
+    validate_schema(&Some(tool.input_schema.clone()), "model tool input schema")
 }
 
 fn validate_model_tool_call(call: &ModelToolCall) -> Result<(), KonaseError> {
@@ -1175,7 +1178,7 @@ fn validate_text(field: &str, value: &str, max_chars: usize) -> Result<(), Konas
     Ok(())
 }
 
-fn invalid_state(message: &str) -> Result<(), KonaseError> {
+fn invalid_state(message: impl Into<String>) -> Result<(), KonaseError> {
     Err(KonaseError::new("invalid_state", message))
 }
 
@@ -1483,6 +1486,7 @@ fn normalize_resource_reference(mut reference: ResourceReference) -> ResourceRef
 fn normalize_capability(mut capability: Capability) -> Capability {
     capability.name = bound(capability.name, MAX_IDENTIFIER_CHARS);
     capability.description = bound(capability.description, MAX_STATE_SUMMARY_CHARS);
+    capability.input_schema = bound_value(capability.input_schema, MAX_SCHEMA_BYTES);
     capability
 }
 
@@ -1545,6 +1549,11 @@ mod tests {
             available_capabilities: vec![Capability {
                 name: "ugoite.search".into(),
                 description: "search knowledge".into(),
+                input_schema: Some(serde_json::json!({
+                    "type": "object",
+                    "properties": {"q": {"type": "string"}},
+                    "required": ["q"]
+                })),
             }],
             safety_hints: vec!["save only with confirmation".into()],
             expected_response_schema: None,

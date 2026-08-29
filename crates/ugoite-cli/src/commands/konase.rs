@@ -270,6 +270,26 @@ fn work_meta(work_id: &str) -> RequestMetaObject {
     meta
 }
 
+fn capability_from_tool(tool: Tool) -> Capability {
+    let input_schema = tool.schema_as_json_value();
+    Capability {
+        name: tool.name.into_owned(),
+        description: tool
+            .description
+            .map_or_else(String::new, |value| value.into_owned()),
+        input_schema: Some(input_schema),
+    }
+}
+
+fn resources_read_schema() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {"uri": {"type": "string"}},
+        "required": ["uri"],
+        "additionalProperties": false
+    })
+}
+
 impl RmcpMcpHost {
     async fn connect(base_url: &str) -> Result<Self> {
         let session = crate::commands::auth::active_session(base_url)
@@ -295,12 +315,7 @@ impl RmcpMcpHost {
         let mut capabilities = listed
             .tools
             .into_iter()
-            .map(|tool| Capability {
-                name: tool.name.into_owned(),
-                description: tool
-                    .description
-                    .map_or_else(String::new, |value| value.into_owned()),
-            })
+            .map(capability_from_tool)
             .filter(|capability| {
                 matches!(
                     capability.name.as_str(),
@@ -311,6 +326,7 @@ impl RmcpMcpHost {
         capabilities.push(Capability {
             name: "resources/read".into(),
             description: "Read the full content of an opaque Ugoite resource URI".into(),
+            input_schema: Some(resources_read_schema()),
         });
         Ok(Self {
             client,
@@ -718,6 +734,31 @@ mod tests {
         }
     }
 
+    #[test]
+    fn listed_tool_schema_reaches_konase_capability() {
+        let schema = json!({
+            "type": "object",
+            "properties": {"q": {"type": "string"}},
+            "required": ["q"],
+            "additionalProperties": false
+        })
+        .as_object()
+        .cloned()
+        .unwrap();
+        let capability = capability_from_tool(Tool::new("ugoite.search", "Search entries", schema));
+
+        assert_eq!(capability.name, "ugoite.search");
+        assert_eq!(
+            capability.input_schema,
+            Some(json!({
+                "type": "object",
+                "properties": {"q": {"type": "string"}},
+                "required": ["q"],
+                "additionalProperties": false
+            }))
+        );
+    }
+
     #[async_trait]
     impl McpHost for ScriptedMcp {
         async fn call_mcp(&mut self, request: McpRequest, work_id: &str) -> Result<McpResult> {
@@ -755,10 +796,16 @@ mod tests {
                 Capability {
                     name: "ugoite.search".into(),
                     description: "search entries".into(),
+                    input_schema: Some(json!({
+                        "type": "object",
+                        "properties": {"q": {"type": "string"}},
+                        "required": ["q"]
+                    })),
                 },
                 Capability {
                     name: "resources/read".into(),
                     description: "read an entry".into(),
+                    input_schema: Some(resources_read_schema()),
                 },
             ]
         }
