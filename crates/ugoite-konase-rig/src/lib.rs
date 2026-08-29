@@ -436,6 +436,7 @@ mod tests {
                     }],
                 }),
                 resources: vec![],
+                resource_contents: vec![],
                 error: None,
             }))
             .unwrap()
