@@ -41,6 +41,21 @@ ID or remove the local development data intentionally before seeding again.
    [architecture](../../architecture/index.md) and
    [executable specification](../../spec/index.md).
 
+## Place the Rust build cache on another disk
+
+Cargo stores intermediate Rust build artifacts in the configured `build-dir`.
+The repository default follows Cargo's cache home, but Cargo's
+`CARGO_BUILD_BUILD_DIR` environment variable takes precedence when a machine
+needs the cache on another volume. Keep that choice in the developer's shell
+profile (for example, `~/.zprofile` on macOS):
+
+```sh
+export CARGO_BUILD_BUILD_DIR="/path/to/large-disk/ugoite/cargo-build"
+```
+
+`CARGO_TARGET_DIR` controls final build outputs separately and remains the
+repository's shared `target/rust` location.
+
 ## Optional SSH workflow
 
 SSH is optional and is useful for development tools that require a standard

@@ -1,2 +1,5 @@
 [build]
+# Cargo's CARGO_BUILD_BUILD_DIR environment variable may override this
+# default for machine-local cache placement. Keep host-specific paths in a
+# shell profile rather than committing them here.
 build-dir = "{cargo-cache-home}/ugoite/build"
