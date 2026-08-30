@@ -21,7 +21,11 @@ crates/ugoite-konase owns:
 `ugoite-konase-rig` implements that contract with Rig's sans-IO `AgentRun`.
 It creates a fresh run per Job, pauses at model and MCP boundaries, and drops
 the run at completion. Rig types and conversation state remain inside the
-adapter; neither is persisted in Konase state or exposed through WASM.
+adapter; neither is persisted in Konase state or exposed through WASM. When a
+model turn contains multiple tool calls, the adapter validates and queues the
+whole batch, then emits its MCP effects one at a time in model order. It feeds
+all of that batch's results back to Rig together before advancing to the next
+model turn.
 
 The step function is deterministic. It never starts an async runtime and
 never performs network, filesystem, storage, or model-provider I/O. A host

@@ -10,7 +10,7 @@ use rig_agent::completion::{AssistantContent, Message, Usage};
 use rig_agent::core::completion::message::{ToolResultContent, UserContent};
 use rig_agent::core::message::Text;
 use serde_json::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use ugoite_konase::{
     AgentAction, AgentRuntime, AgentRuntimeError, AgentRuntimeInput, ContextCapsule, JobOutcome,
     JobSpec, McpRequest, McpResult, ModelMessage, ModelRequest, ModelResult, ModelTool,
@@ -30,6 +30,14 @@ enum PendingStep {
     },
 }
 
+#[derive(Debug)]
+struct QueuedToolCall {
+    call_id: String,
+    name: String,
+    arguments: BTreeMap<String, Value>,
+    effect: Option<ugoite_konase::CapabilityEffect>,
+}
+
 /// A fresh Rig agent run for the active Konase Job.
 #[derive(Debug, Default)]
 pub struct RigAgentRuntime {
@@ -37,6 +45,8 @@ pub struct RigAgentRuntime {
     job_id: Option<String>,
     tools: Vec<ModelTool>,
     pending: Option<PendingStep>,
+    queued_tools: VecDeque<QueuedToolCall>,
+    tool_results: Vec<UserContent>,
     mcp_sequence: u32,
 }
 
@@ -60,10 +70,29 @@ impl RigAgentRuntime {
         self.job_id = None;
         self.tools.clear();
         self.pending = None;
+        self.queued_tools.clear();
+        self.tool_results.clear();
         self.mcp_sequence = 0;
     }
 
     fn next_action(&mut self) -> Result<AgentAction, AgentRuntimeError> {
+        if let Some(call) = self.queued_tools.pop_front() {
+            self.mcp_sequence = self.mcp_sequence.saturating_add(1);
+            let request_id = format!("{}:mcp:{}", self.active_job_id()?, self.mcp_sequence);
+            self.pending = Some(PendingStep::Tool {
+                request_id: request_id.clone(),
+                call_id: call.call_id,
+                name: call.name.clone(),
+            });
+            return Ok(AgentAction::CallMcp(McpRequest {
+                request_id,
+                server: "ugoite".into(),
+                operation: call.name,
+                arguments: call.arguments,
+                effect: call.effect,
+            }));
+        }
+
         let step = self
             .run
             .as_mut()
@@ -88,47 +117,18 @@ impl RigAgentRuntime {
                 }))
             }
             AgentRunStep::CallTools { calls } => {
-                if calls.len() != 1 {
+                if calls.is_empty() {
                     return Err(Self::error(
-                        "unsupported_tool_batch",
-                        "Rig emitted more than one tool call; Konase hosts one MCP effect at a time",
+                        "invalid_tool_batch",
+                        "Rig emitted an empty tool-call batch",
                     ));
                 }
-                let call = calls.into_iter().next().expect("call count checked");
-                if call.preresolved_result.is_some() {
-                    return Err(Self::error(
-                        "unsupported_tool_result",
-                        "Rig emitted a pre-resolved tool result",
-                    ));
-                }
-                let arguments = call.tool_call.function.arguments;
-                let Value::Object(arguments) = arguments else {
-                    return Err(Self::error(
-                        "invalid_tool_arguments",
-                        "Rig tool arguments must be a JSON object",
-                    ));
-                };
-                let call_id = call.tool_call.id.as_str().to_owned();
-                let name = call.tool_call.function.name;
-                let effect = self
-                    .tools
-                    .iter()
-                    .find(|tool| tool.name == name)
-                    .and_then(|tool| tool.effect);
-                self.mcp_sequence = self.mcp_sequence.saturating_add(1);
-                let request_id = format!("{}:mcp:{}", self.active_job_id()?, self.mcp_sequence);
-                self.pending = Some(PendingStep::Tool {
-                    request_id: request_id.clone(),
-                    call_id,
-                    name: name.clone(),
-                });
-                Ok(AgentAction::CallMcp(McpRequest {
-                    request_id,
-                    server: "ugoite".into(),
-                    operation: name,
-                    arguments: arguments.into_iter().collect(),
-                    effect,
-                }))
+                let queued_tools = calls
+                    .into_iter()
+                    .map(|call| self.validate_tool_call(call))
+                    .collect::<Result<VecDeque<_>, _>>()?;
+                self.queued_tools = queued_tools;
+                self.next_action()
             }
             AgentRunStep::Done(response) => {
                 let job_id = self.active_job_id()?.to_owned();
@@ -232,17 +232,53 @@ impl RigAgentRuntime {
         }
         let content = serde_json::to_string(&result)
             .map_err(|error| Self::error("serialization", error.to_string()))?;
+        self.tool_results.push(UserContent::tool_result(
+            call_id,
+            name,
+            vec![ToolResultContent::text(content)],
+        ));
+        if !self.queued_tools.is_empty() {
+            return self.next_action();
+        }
+
+        let results = std::mem::take(&mut self.tool_results);
         let run = self
             .run
             .as_mut()
             .ok_or_else(|| Self::error("inactive", "Rig runtime has no active AgentRun"))?;
-        run.tool_results(vec![UserContent::tool_result(
-            call_id,
-            name,
-            vec![ToolResultContent::text(content)],
-        )])
-        .map_err(Self::rig_error)?;
+        run.tool_results(results).map_err(Self::rig_error)?;
         self.next_action()
+    }
+
+    fn validate_tool_call(
+        &self,
+        call: rig_agent::agent::run::PendingToolCall,
+    ) -> Result<QueuedToolCall, AgentRuntimeError> {
+        if call.preresolved_result.is_some() {
+            return Err(Self::error(
+                "unsupported_tool_result",
+                "Rig emitted a pre-resolved tool result",
+            ));
+        }
+        let arguments = call.tool_call.function.arguments;
+        let Value::Object(arguments) = arguments else {
+            return Err(Self::error(
+                "invalid_tool_arguments",
+                "Rig tool arguments must be a JSON object",
+            ));
+        };
+        let name = call.tool_call.function.name;
+        let effect = self
+            .tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .and_then(|tool| tool.effect);
+        Ok(QueuedToolCall {
+            call_id: call.tool_call.id.as_str().to_owned(),
+            name,
+            arguments: arguments.into_iter().collect(),
+            effect,
+        })
     }
 }
 
@@ -280,6 +316,8 @@ impl AgentRuntime for RigAgentRuntime {
         self.job_id = Some(job.id);
         self.tools = tools;
         self.pending = None;
+        self.queued_tools.clear();
+        self.tool_results.clear();
         self.mcp_sequence = 0;
         self.next_action()
     }
@@ -436,6 +474,104 @@ mod tests {
         assert_eq!(request.operation, "ugoite.search");
         assert_eq!(request.effect, Some(CapabilityEffect::Read));
         assert_eq!(request.arguments["query"], "WebAssembly");
+    }
+
+    #[test]
+    fn multiple_model_tool_calls_are_executed_in_order_and_results_are_batched() {
+        let mut runtime = RigAgentRuntime::default();
+        let AgentAction::CallModel(model) = runtime.start(job(), context()).unwrap() else {
+            panic!("expected initial model call");
+        };
+        let AgentAction::CallMcp(first) = runtime
+            .resume(AgentRuntimeInput::ModelCompleted(ModelResult {
+                request_id: model.request_id,
+                text: None,
+                tool_calls: vec![
+                    ugoite_konase::ModelToolCall {
+                        id: "call-1".into(),
+                        name: "ugoite.search".into(),
+                        arguments: serde_json::json!({"query": "first"}),
+                    },
+                    ugoite_konase::ModelToolCall {
+                        id: "call-2".into(),
+                        name: "ugoite.search".into(),
+                        arguments: serde_json::json!({"query": "second"}),
+                    },
+                ],
+            }))
+            .unwrap()
+        else {
+            panic!("expected first MCP call");
+        };
+        assert_eq!(first.arguments["query"], "first");
+
+        let first_request_id = first.request_id.clone();
+        let AgentAction::CallMcp(second) = runtime
+            .resume(AgentRuntimeInput::McpCompleted(McpResult {
+                request_id: first_request_id,
+                operation: first.operation.clone(),
+                success: false,
+                observation: None,
+                resources: vec![],
+                resource_contents: vec![],
+                error: Some("first call failed".into()),
+            }))
+            .unwrap()
+        else {
+            panic!("expected second MCP call");
+        };
+        assert_eq!(second.arguments["query"], "second");
+
+        let first_request_id = first.request_id;
+        let second_request_id = second.request_id.clone();
+        let AgentAction::CallModel(next_model) = runtime
+            .resume(AgentRuntimeInput::McpCompleted(McpResult {
+                request_id: second_request_id.clone(),
+                operation: second.operation,
+                success: true,
+                observation: None,
+                resources: vec![],
+                resource_contents: vec![],
+                error: None,
+            }))
+            .unwrap()
+        else {
+            panic!("expected one model call after the whole batch");
+        };
+        assert!(next_model.prompt.contains("first call failed"));
+        assert!(next_model.prompt.contains(&first_request_id));
+        assert!(next_model.prompt.contains(&second_request_id));
+    }
+
+    #[test]
+    fn invalid_tool_call_in_batch_fails_before_emitting_any_mcp_call() {
+        let mut runtime = RigAgentRuntime::default();
+        let AgentAction::CallModel(model) = runtime.start(job(), context()).unwrap() else {
+            panic!("expected initial model call");
+        };
+        let error = runtime
+            .resume(AgentRuntimeInput::ModelCompleted(ModelResult {
+                request_id: model.request_id,
+                text: None,
+                tool_calls: vec![
+                    ugoite_konase::ModelToolCall {
+                        id: "call-1".into(),
+                        name: "ugoite.search".into(),
+                        arguments: serde_json::json!({"query": "valid"}),
+                    },
+                    ugoite_konase::ModelToolCall {
+                        id: "call-2".into(),
+                        name: "ugoite.search".into(),
+                        arguments: serde_json::json!(["not", "an", "object"]),
+                    },
+                ],
+            }))
+            .expect_err("the whole batch must be validated before execution");
+
+        assert_eq!(error.kind, "invalid_tool_arguments");
+        assert!(runtime.pending.is_none());
+        assert!(runtime.queued_tools.is_empty());
+        assert_eq!(runtime.mcp_sequence, 0);
     }
 
     #[test]
