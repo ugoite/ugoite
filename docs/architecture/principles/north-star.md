@@ -64,11 +64,13 @@ conceptual boundary and its failure model.
 
 ## Authority and persistence
 
-`_ugoite/catalog/head.json` is the only authoritative mutable catalog root. It
-is published with an actual OpenDAL ETag compare-and-swap. Immutable,
-checksum-protected publication records under `_ugoite/catalog/publications/`
-link each successful Head generation to the preceding one. Iceberg metadata,
-manifests, and data files remain Iceberg-owned immutable objects.
+The Catalog Head is the only authoritative mutable catalog root. In the current
+encoding it is `_ugoite/catalog/head.json`, published with an actual OpenDAL
+ETag compare-and-swap. The v0.1 compatibility contract freezes this authority
+semantics, not the physical filename or encoding. Immutable, checksum-protected
+publication records under `_ugoite/catalog/publications/` link each successful
+Head generation to the preceding one. Iceberg metadata, manifests, and data
+files remain Iceberg-owned immutable objects.
 
 Readers pin immutable Head and snapshot coordinates and never lock. Writers can
 prepare immutable objects concurrently, but make a mutation visible only by
@@ -123,8 +125,9 @@ application state, or an application-specific authorization authority.
    prefix is the move and recovery unit.
 2. Revisions and publication history are append-only; current state is derived
    and recovery never depends on a hidden database.
-3. Catalog Head is the only authoritative mutable root. Object listing never
-   establishes catalog state or publication order.
+3. The Catalog authority (currently the Catalog Head) is the only authoritative
+   mutable root. Object listing never establishes catalog state or publication
+   order.
 4. Forms own authoritative history. DerivedRelation Heads own only replaceable
    current builds for indexes and projections; they never become Space,
    checkpoint, or authorization authority.

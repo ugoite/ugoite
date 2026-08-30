@@ -8,6 +8,7 @@ on:
       - reopened
       - synchronize
       - ready_for_review
+  merge_group:
 
 permissions:
   contents: read
@@ -16,18 +17,31 @@ permissions:
 jobs:
   require-close-issue-link:
     runs-on: ubuntu-slim
-    if: ${{ !github.event.pull_request.draft && github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ github.event_name == 'merge_group' || (!github.event.pull_request.draft && github.event.pull_request.user.login != 'dependabot[bot]') }}
     steps:
       - name: Validate PR body matches required template
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
-            const body = context.payload.pull_request.body || "";
+            let body = context.payload.pull_request?.body || "";
+            if (!body && context.eventName === "merge_group") {
+              const mergeGroupRef = context.ref || context.payload.merge_group?.head_ref || "";
+              const pullRequestNumber = mergeGroupRef.match(/(?:^|\/)pr-(\d+)(?:-|$)/)?.[1];
+              if (pullRequestNumber) {
+                const response = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pullRequestNumber,
+                });
+                body = response.data.body || "";
+              }
+            }
             const errors = [];
 
             const requiredSections = [
               "## Summary",
               "## Related Issue (required)",
+              "## Knowledge Compatibility Review",
               "## Testing",
             ];
 
@@ -46,6 +60,24 @@ jobs:
             const issueLinkPattern = /(?:^|\n)\s*(?:close:\s*#\d+|closes\s+#\d+)\s*(?:\n|$)/i;
             if (!issueLinkPattern.test(body)) {
               errors.push("Related Issue must include either `close: #123` or `closes #123`.");
+            }
+
+            const compatibilityMatch = body.match(/##\s*Knowledge Compatibility Review\s*\n+([\s\S]*?)(?:\n##\s|$)/i);
+            const compatibilityText = compatibilityMatch?.[1]?.trim() ?? "";
+            const checkedCheckboxes = compatibilityText.match(/^\s*-\s+\[[xX]\]\s+.+$/gm) || [];
+            const checkedClassifications = [
+              /^\s*-\s+\[[xX]\]\s+No effect on the v0\.1 Knowledge semantic contract\.\s*$/im,
+              /^\s*-\s+\[[xX]\]\s+Preserving implementation change; the canonical fixture and focused tests remain passing\.\s*$/im,
+              /^\s*-\s+\[[xX]\]\s+Breaking semantic change; an explicit versioned contract or migration\/re-encoding decision is documented\.\s*$/im,
+            ].filter((pattern) => pattern.test(compatibilityText));
+            if (checkedCheckboxes.length !== 1 || checkedClassifications.length !== 1) {
+              errors.push("Knowledge Compatibility Review must select exactly one valid classification.");
+            }
+            if (checkedClassifications.length === 1 && checkedClassifications[0].source.includes("Preserving") && !/^\s*Evidence:\s*\S.+$/im.test(compatibilityText)) {
+              errors.push("Preserving changes must include non-empty Evidence: notes.");
+            }
+            if (checkedClassifications.length === 1 && checkedClassifications[0].source.includes("Breaking") && !/^\s*Decision:\s*\S.+$/im.test(compatibilityText)) {
+              errors.push("Breaking changes must include non-empty Decision: notes.");
             }
 
             const testingMatch = body.match(/##\s*Testing\s*\n+([\s\S]*?)(?:\n##\s|$)/i);

@@ -24,6 +24,7 @@ philosophies:
       - POL-007
       - POL-012
       - POL-014
+      - POL-016
 
   - id: PHIL-002
     title: Serverless-Oriented Minimal Node Topology
@@ -64,6 +65,7 @@ philosophies:
       - POL-012
       - POL-013
       - POL-014
+      - POL-016
 
   - id: PHIL-004
     title: Give AI Freedom Inside Trusted Constraints

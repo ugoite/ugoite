@@ -12,5 +12,6 @@ Machine-readable status lives under `docs/version/`; these pages explain the pro
 A task marked done means its described implementation exists. Planned capabilities must not be inferred from a version heading or roadmap file.
 
 - [v0.1 release stream](v0.1.md)
+- [v0.1 Knowledge compatibility floor](v0.1-knowledge-compatibility.md)
 - [v0.2 roadmap](v0.2.md)
 - [channel changelogs](changelog.md)

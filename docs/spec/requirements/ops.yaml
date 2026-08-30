@@ -189,6 +189,29 @@ requirements:
   priority: medium
   status: planned
   verification: untraced
+
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-008
+  - POL-013
+  - POL-014
+  - POL-016
+  linked_specifications:
+  - SPEC-VERSIONS-KNOWLEDGE-COMPAT
+  - SPEC-TESTING-STRATEGY
+  id: REQ-OPS-043
+  title: Knowledge Compatibility Review Gate
+  description: Pull requests that can affect v0.1 Space ownership, authority, append-only history, adapter authority, or the canonical fixture must include a checked Knowledge Compatibility Review classification before merge.
+  related_spec:
+  - ../versions/v0.1-knowledge-compatibility.md
+  - testing/strategy.md
+  priority: high
+  status: implemented
+  verification: traced
+  tests:
+  - file: tools/knowledge_compatibility_test.ts
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
