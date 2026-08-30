@@ -28,7 +28,7 @@ async function writeArtifact(
   };
 }
 
-Deno.test("REQ-OPS-043: version.txt is the only prepared-version authority", async () => {
+Deno.test("REQ-OPS-044: version.txt is the only prepared-version authority", async () => {
   const version = (await readText("version.txt")).trim();
   const cargo = await readText("Cargo.toml");
   const packageJson = JSON.parse(
@@ -56,7 +56,7 @@ Deno.test("REQ-OPS-043: version.txt is the only prepared-version authority", asy
   }
 });
 
-Deno.test("REQ-OPS-043: repository-native release tasks and split workflows are present", async () => {
+Deno.test("REQ-OPS-044: repository-native release tasks and split workflows are present", async () => {
   const mise = await readText("mise.toml");
   for (
     const task of [
@@ -141,7 +141,7 @@ Deno.test("REQ-OPS-043: repository-native release tasks and split workflows are 
   );
 });
 
-Deno.test("REQ-OPS-043: candidate ID is the exact manifest digest and tampering fails", async () => {
+Deno.test("REQ-OPS-044: candidate ID is the exact manifest digest and tampering fails", async () => {
   const fixtureRoot = await Deno.makeTempDir({
     prefix: "ugoite-candidate-fixture-",
   });
@@ -241,7 +241,7 @@ Deno.test("REQ-OPS-043: candidate ID is the exact manifest digest and tampering 
   );
 });
 
-Deno.test("REQ-OPS-043: candidate writer records every promotion surface", async () => {
+Deno.test("REQ-OPS-044: candidate writer records every promotion surface", async () => {
   const fixtureRoot = await Deno.makeTempDir({
     prefix: "ugoite-candidate-writer-",
   });
