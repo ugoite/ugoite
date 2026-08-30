@@ -393,7 +393,7 @@ impl McpHost for RmcpMcpHost {
                 .client
                 .call_tool(params)
                 .await
-                .context("undo Ugoite Work")?;
+                .with_context(|| format!("call {operation} MCP tool"))?;
             let text = result
                 .content
                 .iter()
@@ -508,25 +508,13 @@ pub async fn run(cmd: KonaseCmd) -> Result<()> {
                     continue;
                 }
                 if prompt == "u" {
-                    let Some(work_id) = last_work_id.take() else {
-                        println!("取り消せる Work はありません。");
-                        continue;
-                    };
-                    let result = mcp
-                        .call_mcp(
-                            McpRequest {
-                                request_id: format!("undo-{}", Uuid::now_v7()),
-                                server: "ugoite".into(),
-                                operation: "ugoite.undo".into(),
-                                arguments: Default::default(),
-                            },
-                            &work_id,
-                        )
-                        .await?;
-                    if !result.success {
-                        bail!(result.error.unwrap_or_else(|| "Undo failed".into()));
+                    match undo_last_work(&mut mcp, &mut last_work_id).await {
+                        Ok(true) => println!("✓ 取り消しました"),
+                        Ok(false) => println!("取り消せる Work はありません。"),
+                        Err(error) => {
+                            eprintln!("Error: {error:#}");
+                        }
                     }
-                    println!("✓ 取り消しました");
                     continue;
                 }
                 let turn = run_turn(&mut model, &mut mcp, prompt, &capabilities).await?;
@@ -539,6 +527,31 @@ pub async fn run(cmd: KonaseCmd) -> Result<()> {
         }
     }
     Ok(())
+}
+
+async fn undo_last_work<C: McpHost>(
+    mcp: &mut C,
+    last_work_id: &mut Option<String>,
+) -> Result<bool> {
+    let Some(work_id) = last_work_id.clone() else {
+        return Ok(false);
+    };
+    let result = mcp
+        .call_mcp(
+            McpRequest {
+                request_id: format!("undo-{}", Uuid::now_v7()),
+                server: "ugoite".into(),
+                operation: "ugoite.undo".into(),
+                arguments: Default::default(),
+            },
+            &work_id,
+        )
+        .await?;
+    if !result.success {
+        bail!(result.error.unwrap_or_else(|| "Undo failed".into()));
+    }
+    *last_work_id = None;
+    Ok(true)
 }
 
 struct TurnOutcome {
@@ -669,7 +682,16 @@ async fn run_turn<M: ModelHost, C: McpHost>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{
+        extract::State,
+        http::{HeaderMap, StatusCode},
+        response::{IntoResponse, Response},
+        routing::post,
+        Json, Router,
+    };
     use serde_json::json;
+    use std::{collections::HashMap, sync::Arc};
+    use tokio::{net::TcpListener, sync::Mutex, task::JoinHandle};
 
     struct ScriptedModel {
         responses: Vec<ModelResult>,
@@ -687,10 +709,12 @@ mod tests {
     struct ScriptedMcp {
         operations: Vec<String>,
         work_ids: Vec<String>,
+        fail_undo: bool,
     }
 
     #[test]
     fn write_tool_requests_keep_model_arguments_and_bind_the_work_id() {
+        let mut run_ids = Vec::new();
         for (operation, arguments) in [
             (
                 "ugoite.save",
@@ -716,11 +740,21 @@ mod tests {
                 params.arguments.unwrap(),
                 arguments.as_object().cloned().unwrap()
             );
-            assert_eq!(
-                params.meta.unwrap().0 .0.get("ugoite/runId"),
-                Some(&Value::String("work-1".into()))
-            );
+            let run_id = params
+                .meta
+                .as_ref()
+                .and_then(|meta| meta.0 .0.get("ugoite/runId"))
+                .cloned();
+            assert_eq!(run_id, Some(Value::String("work-1".into())));
+            run_ids.push(run_id);
         }
+        assert_eq!(
+            run_ids,
+            [
+                Some(Value::String("work-1".into())),
+                Some(Value::String("work-1".into()))
+            ]
+        );
     }
 
     #[test]
@@ -754,10 +788,11 @@ mod tests {
             self.operations.push(request.operation.clone());
             self.work_ids.push(work_id.to_owned());
             let is_search = request.operation == "ugoite.search";
+            let success = !(self.fail_undo && request.operation == "ugoite.undo");
             Ok(McpResult {
                 request_id: request.request_id,
                 operation: request.operation,
-                success: true,
+                success,
                 observation: is_search.then_some(Observation {
                     id: "search-1".into(),
                     kind: ObservationKind::Mcp,
@@ -776,7 +811,7 @@ mod tests {
                     })
                     .into_iter()
                     .collect(),
-                error: None,
+                error: (!success).then_some("undo failed".into()),
             })
         }
 
@@ -832,6 +867,7 @@ mod tests {
         let mut mcp = ScriptedMcp {
             operations: vec![],
             work_ids: vec![],
+            fail_undo: false,
         };
         let capabilities = mcp.capabilities().await;
         let outcome = run_turn(
@@ -846,5 +882,298 @@ mod tests {
         assert_eq!(mcp.operations, ["ugoite.search", "resources/read"]);
         assert_eq!(mcp.work_ids.len(), 2);
         assert_eq!(mcp.work_ids[0], mcp.work_ids[1]);
+    }
+
+    #[tokio::test]
+    async fn failed_undo_keeps_the_same_work_id_for_a_retry() {
+        let mut mcp = ScriptedMcp {
+            operations: vec![],
+            work_ids: vec![],
+            fail_undo: true,
+        };
+        let mut last_work_id = Some("work-1".to_owned());
+
+        let error = undo_last_work(&mut mcp, &mut last_work_id)
+            .await
+            .unwrap_err();
+        assert_eq!(error.to_string(), "undo failed");
+        assert_eq!(last_work_id.as_deref(), Some("work-1"));
+
+        mcp.fail_undo = false;
+        assert!(undo_last_work(&mut mcp, &mut last_work_id).await.unwrap());
+        assert!(last_work_id.is_none());
+        assert_eq!(mcp.operations, ["ugoite.undo", "ugoite.undo"]);
+        assert_eq!(mcp.work_ids, ["work-1", "work-1"]);
+    }
+
+    #[derive(Clone)]
+    struct FakeMcpState {
+        requests: Arc<Mutex<Vec<RecordedMcpRequest>>>,
+        fail_undo: bool,
+    }
+
+    #[derive(Debug)]
+    struct RecordedMcpRequest {
+        body: Value,
+        headers: HashMap<String, String>,
+    }
+
+    async fn fake_mcp(
+        State(state): State<FakeMcpState>,
+        headers: HeaderMap,
+        Json(body): Json<Value>,
+    ) -> Response {
+        let method = body
+            .get("method")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let name = body
+            .pointer("/params/name")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        state.requests.lock().await.push(RecordedMcpRequest {
+            body: body.clone(),
+            headers: headers
+                .iter()
+                .filter_map(|(name, value)| {
+                    Some((name.as_str().to_owned(), value.to_str().ok()?.to_owned()))
+                })
+                .collect(),
+        });
+
+        if state.fail_undo && method == "tools/call" && name == "ugoite.undo" {
+            return (
+                StatusCode::BAD_GATEWAY,
+                "upstream undo failed: storage unavailable",
+            )
+                .into_response();
+        }
+
+        let id = body.get("id").cloned().unwrap_or(Value::Null);
+        let result = match (method.as_str(), name) {
+            ("server/discover", _) => json!({
+                "resultType": "complete",
+                "supportedVersions": ["2026-07-28"],
+                "capabilities": {
+                    "tools": {"listChanged": false},
+                    "resources": {"listChanged": false, "subscribe": false}
+                },
+                "ttlMs": 60000,
+                "cacheScope": "private"
+            }),
+            ("tools/list", _) => json!({
+                "resultType": "complete",
+                "tools": [
+                    {
+                        "name": "ugoite.search",
+                        "description": "Search entries",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {"query": {"type": "string"}},
+                            "additionalProperties": false
+                        }
+                    },
+                    {
+                        "name": "ugoite.save",
+                        "description": "Save an entry",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {"content": {"type": "string"}},
+                            "additionalProperties": false
+                        }
+                    },
+                    {
+                        "name": "ugoite.undo",
+                        "description": "Undo a Work",
+                        "inputSchema": {
+                            "type": "object",
+                            "additionalProperties": false
+                        }
+                    }
+                ]
+            }),
+            ("tools/call", "ugoite.search") => json!({
+                "resultType": "complete",
+                "content": [
+                    {"type": "text", "text": "search result"},
+                    {"type": "resource_link", "uri": "ugoite://entry/1", "name": "Entry 1"}
+                ]
+            }),
+            ("tools/call", "ugoite.save") => json!({
+                "resultType": "complete",
+                "content": [{"type": "text", "text": "saved"}]
+            }),
+            ("tools/call", "ugoite.undo") => json!({
+                "resultType": "complete",
+                "content": [{"type": "text", "text": "undone"}]
+            }),
+            ("resources/read", _) => json!({
+                "resultType": "complete",
+                "contents": [{
+                    "uri": "ugoite://entry/1",
+                    "mimeType": "text/plain",
+                    "text": "entry body"
+                }]
+            }),
+            _ => json!({"resultType": "complete"}),
+        };
+        (
+            StatusCode::OK,
+            Json(json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": result
+            })),
+        )
+            .into_response()
+    }
+
+    async fn spawn_fake_mcp_server(
+        fail_undo: bool,
+    ) -> (String, Arc<Mutex<Vec<RecordedMcpRequest>>>, JoinHandle<()>) {
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let app = Router::new()
+            .route("/mcp", post(fake_mcp))
+            .with_state(FakeMcpState {
+                requests: requests.clone(),
+                fail_undo,
+            });
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (format!("http://{address}/mcp"), requests, task)
+    }
+
+    async fn connect_test_host(endpoint: &str) -> RmcpMcpHost {
+        let transport = StreamableHttpClientTransport::from_config(
+            StreamableHttpClientTransportConfig::with_uri(endpoint),
+        );
+        let client = ClientInfo::default()
+            .serve_with_lifecycle(
+                transport,
+                ClientLifecycleMode::Discover {
+                    preferred_versions: vec![ProtocolVersion::V_2026_07_28],
+                },
+            )
+            .await
+            .unwrap();
+        let listed = client.list_tools(None).await.unwrap();
+        let capabilities = listed.tools.into_iter().map(capability_from_tool).collect();
+        RmcpMcpHost {
+            client,
+            capabilities,
+        }
+    }
+
+    #[tokio::test]
+    async fn real_rmcp_client_completes_stateless_search_read_save_then_undo() {
+        let (endpoint, requests, task) = spawn_fake_mcp_server(false).await;
+        let mut host = connect_test_host(&endpoint).await;
+
+        for (operation, arguments) in [
+            ("ugoite.search", json!({"query": "entry"})),
+            ("resources/read", json!({"uri": "ugoite://entry/1"})),
+            ("ugoite.save", json!({"content": "updated"})),
+            ("ugoite.undo", json!({})),
+        ] {
+            let result = host
+                .call_mcp(
+                    McpRequest {
+                        request_id: format!("request-{operation}"),
+                        server: "ugoite".into(),
+                        operation: operation.into(),
+                        arguments: arguments
+                            .as_object()
+                            .cloned()
+                            .unwrap()
+                            .into_iter()
+                            .collect(),
+                    },
+                    "work-1",
+                )
+                .await
+                .unwrap();
+            assert!(result.success, "{operation} failed: {:?}", result.error);
+        }
+
+        let requests = requests.lock().await;
+        assert_eq!(
+            requests
+                .iter()
+                .map(|request| request.body["method"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            [
+                "server/discover",
+                "tools/list",
+                "tools/call",
+                "resources/read",
+                "tools/call",
+                "tools/call"
+            ]
+        );
+        for request in requests.iter().skip(2) {
+            assert_eq!(
+                request.headers.get("mcp-protocol-version"),
+                Some(&"2026-07-28".into())
+            );
+            assert_eq!(
+                request.headers.get("mcp-method"),
+                request.body["method"].as_str().map(Into::into).as_ref()
+            );
+        }
+        assert_eq!(
+            requests[2].headers.get("mcp-name"),
+            Some(&"ugoite.search".into())
+        );
+        assert_eq!(
+            requests[3].headers.get("mcp-name"),
+            Some(&"ugoite://entry/1".into())
+        );
+        assert_eq!(
+            requests[4].headers.get("mcp-name"),
+            Some(&"ugoite.save".into())
+        );
+        assert_eq!(
+            requests[5].headers.get("mcp-name"),
+            Some(&"ugoite.undo".into())
+        );
+        let save_run_id = requests[4]
+            .body
+            .pointer("/params/_meta/ugoite~1runId")
+            .and_then(Value::as_str);
+        let undo_run_id = requests[5]
+            .body
+            .pointer("/params/_meta/ugoite~1runId")
+            .and_then(Value::as_str);
+        assert_eq!(save_run_id, Some("work-1"));
+        assert_eq!(undo_run_id, save_run_id);
+
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn rmcp_transport_error_keeps_status_and_body_in_the_cli_error_chain() {
+        let (endpoint, _requests, task) = spawn_fake_mcp_server(true).await;
+        let mut host = connect_test_host(&endpoint).await;
+        let error = host
+            .call_mcp(
+                McpRequest {
+                    request_id: "undo-request".into(),
+                    server: "ugoite".into(),
+                    operation: "ugoite.undo".into(),
+                    arguments: Default::default(),
+                },
+                "work-1",
+            )
+            .await
+            .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains("call ugoite.undo MCP tool"));
+        assert!(message.contains("502"));
+        assert!(message.contains("storage unavailable"));
+        task.abort();
     }
 }
