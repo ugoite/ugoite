@@ -14,7 +14,7 @@ UI- and transport-free.
 crates/ugoite-konase owns:
 
 - Work and bounded Job state;
-- structured Observations and bounded Context Capsules;
+- structured Observations and deterministically byte-bounded Context Capsules;
 - serializable Events and Effects;
 - the replaceable AgentRuntime contract.
 
@@ -27,6 +27,14 @@ The step function is deterministic. It never starts an async runtime and
 never performs network, filesystem, storage, or model-provider I/O. A host
 executes StartJob, CallModel, CallMcp, AskConfirmation, and Emit effects and
 sends the result back as an Event.
+
+ContextBuilder bounds the serialized Context Capsule as a whole, in addition
+to its per-field limits. Capability metadata is admitted as an atomic
+`{name, description, input_schema}` payload under its own aggregate budget, so
+normalization never leaves a model-visible capability without its usable
+schema. When a UserSubmitted event creates StartJob, the builder receives the
+remaining byte budget of the complete StepResult, keeping the portable effect
+boundary independent of host/provider payload limits.
 
 ugoite-wasm exposes the same semantics through konase.version, konase.new,
 konase.step, and konase.context. The WASM adapter does not perform network

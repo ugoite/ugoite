@@ -436,17 +436,8 @@ fn submit(
         status: JobStatus::Pending,
         strategy_summary: None,
     };
-    let context = ContextBuilder::default().build(crate::ContextBuildRequest {
-        work_goal: work.goal.clone(),
-        job_goal: job.spec.goal.clone(),
-        current_strategy_summary: None,
-        observations: state.observations.clone(),
-        available_capabilities: request.available_capabilities,
-        selected_resource_contents: vec![],
-        safety_hints: request.safety_hints,
-        expected_response_schema,
-        limits: None,
-    });
+    let work_goal = work.goal.clone();
+    let job_goal = job.spec.goal.clone();
 
     state.status = SessionStatus::Working;
     state.work = Some(work);
@@ -457,12 +448,73 @@ fn submit(
         job_id: request.job_id,
     };
     state.last_output = Some(output.clone());
+
+    let context_request = crate::ContextBuildRequest {
+        work_goal,
+        job_goal,
+        current_strategy_summary: None,
+        observations: state.observations.clone(),
+        available_capabilities: request.available_capabilities,
+        selected_resource_contents: vec![],
+        safety_hints: request.safety_hints,
+        expected_response_schema,
+        limits: None,
+    };
+    let context_budget = start_job_context_budget(state, &job.spec, &output)?;
+    let context = ContextBuilder::default().build_with_byte_budget(context_request, context_budget);
+    let context_size =
+        serialized_size(&context).map_err(|error| KonaseError::new("serialization", error))?;
+    if context_size > context_budget {
+        return Err(KonaseError::new(
+            "start_job_too_large",
+            "normalized StartJob context cannot fit the protocol budget",
+        ));
+    }
     effects.push(KonaseEffect::StartJob(Box::new(JobRequest {
         job: job.spec,
         context,
     })));
     effects.push(KonaseEffect::Emit(output));
     Ok(())
+}
+
+fn start_job_context_budget(
+    state: &KonaseState,
+    job: &JobSpec,
+    output: &KonaseOutput,
+) -> Result<usize, KonaseError> {
+    let empty_context = ContextCapsule {
+        work_goal: String::new(),
+        job_goal: String::new(),
+        current_strategy_summary: None,
+        relevant_observations: Vec::new(),
+        available_capabilities: Vec::new(),
+        selected_resource_contents: Vec::new(),
+        safety_hints: Vec::new(),
+        expected_response_schema: None,
+    };
+    let empty_context_size = serialized_size(&empty_context)
+        .map_err(|error| KonaseError::new("serialization", error))?;
+    let skeleton = StepResult {
+        state: state.clone(),
+        effects: vec![
+            KonaseEffect::StartJob(Box::new(JobRequest {
+                job: job.clone(),
+                context: empty_context,
+            })),
+            KonaseEffect::Emit(output.clone()),
+        ],
+        error: None,
+    };
+    let skeleton_size =
+        serialized_size(&skeleton).map_err(|error| KonaseError::new("serialization", error))?;
+    let fixed_size = skeleton_size.saturating_sub(empty_context_size);
+    MAX_STATE_JSON_BYTES.checked_sub(fixed_size).ok_or_else(|| {
+        KonaseError::new(
+            "start_job_too_large",
+            "state and StartJob envelope exceed the protocol budget",
+        )
+    })
 }
 
 fn progress_event(
@@ -1590,6 +1642,44 @@ mod tests {
             Some(KonaseEffect::StartJob(_))
         ));
         assert!(first.state.observations.is_empty());
+    }
+
+    #[test]
+    fn submitted_start_job_stays_within_the_transition_budget() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "description": "x".repeat(7_000),
+        });
+        let mut request = request();
+        request.available_capabilities = (0..32)
+            .map(|id| Capability {
+                name: format!("capability-{id}"),
+                description: "capability description".into(),
+                input_schema: Some(schema.clone()),
+            })
+            .collect();
+
+        let result = step(KonaseState::default(), KonaseEvent::UserSubmitted(request));
+        assert!(
+            result.error.is_none(),
+            "unexpected error: {:?}",
+            result.error
+        );
+        assert!(serde_json::to_vec(&result).unwrap().len() <= MAX_STATE_JSON_BYTES);
+
+        let Some(KonaseEffect::StartJob(job_request)) = result.effects.first() else {
+            panic!("expected a StartJob effect");
+        };
+        assert!(
+            serde_json::to_vec(&job_request.context).unwrap().len()
+                <= crate::MAX_CONTEXT_JSON_BYTES
+        );
+        assert!(job_request.context.available_capabilities.len() < 32);
+        assert!(job_request
+            .context
+            .available_capabilities
+            .iter()
+            .all(|capability| capability.input_schema.is_some()));
     }
 
     #[test]
