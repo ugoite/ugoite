@@ -10776,6 +10776,15 @@ mod authentication_regression_tests {
         )
     }
 
+    struct McpTestCall<'a> {
+        token: &'a str,
+        scheme: &'a str,
+        method: &'a str,
+        name: Option<&'a str>,
+        params: Value,
+        dpop: Option<&'a str>,
+    }
+
     fn mcp_request_at_uri(
         uri: &str,
         token: &str,
@@ -10785,6 +10794,29 @@ mod authentication_regression_tests {
         params: Value,
         dpop: Option<&str>,
     ) -> Request<Body> {
+        mcp_request_at_uri_with_id(
+            uri,
+            json!(1),
+            McpTestCall {
+                token,
+                scheme,
+                method,
+                name,
+                params,
+                dpop,
+            },
+        )
+    }
+
+    fn mcp_request_at_uri_with_id(uri: &str, id: Value, call: McpTestCall<'_>) -> Request<Body> {
+        let McpTestCall {
+            token,
+            scheme,
+            method,
+            name,
+            params,
+            dpop,
+        } = call;
         let mut params = params
             .as_object()
             .cloned()
@@ -10812,20 +10844,9 @@ mod authentication_regression_tests {
         }
         builder
             .body(Body::from(
-                json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}).to_string(),
+                json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}).to_string(),
             ))
             .expect("MCP test request")
-    }
-
-    fn mcp_request(
-        token: &str,
-        scheme: &str,
-        method: &str,
-        name: Option<&str>,
-        params: Value,
-        dpop: Option<&str>,
-    ) -> Request<Body> {
-        mcp_request_at_uri("/mcp", token, scheme, method, name, params, dpop)
     }
 
     async fn mcp_call(
@@ -10837,8 +10858,28 @@ mod authentication_regression_tests {
         params: Value,
         dpop: Option<&str>,
     ) -> (StatusCode, Value) {
+        mcp_call_with_id(
+            router,
+            json!(1),
+            McpTestCall {
+                token,
+                scheme,
+                method,
+                name,
+                params,
+                dpop,
+            },
+        )
+        .await
+    }
+
+    async fn mcp_call_with_id(
+        router: Router,
+        id: Value,
+        call: McpTestCall<'_>,
+    ) -> (StatusCode, Value) {
         let response = router
-            .oneshot(mcp_request(token, scheme, method, name, params, dpop))
+            .oneshot(mcp_request_at_uri_with_id("/mcp", id, call))
             .await
             .expect("MCP request response");
         let status = response.status();
@@ -11222,6 +11263,49 @@ mod authentication_regression_tests {
             })
             .await?;
         let router = app(state.clone());
+
+        let (status, body) = mcp_call_with_id(
+            router.clone(),
+            json!("missing-run-id"),
+            McpTestCall {
+                token: &token,
+                scheme: "Bearer",
+                method: "tools/call",
+                name: Some("ugoite.save"),
+                params: json!({"name":"ugoite.save","arguments":{"content":"# Missing Run ID"}}),
+                dpop: None,
+            },
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["id"], "missing-run-id");
+        assert_eq!(body["result"]["isError"], true);
+        assert_eq!(
+            body["result"]["structuredContent"]["code"],
+            "INVALID_METADATA"
+        );
+
+        let invalid_run_id = "x".repeat(129);
+        let (status, body) = mcp_call_with_id(
+            router.clone(),
+            json!(2060),
+            McpTestCall {
+                token: &token,
+                scheme: "Bearer",
+                method: "tools/call",
+                name: Some("ugoite.undo"),
+                params: json!({"name":"ugoite.undo","arguments":{},"_meta":{"ugoite/runId":invalid_run_id}}),
+                dpop: None,
+            },
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["id"], 2060);
+        assert_eq!(body["result"]["isError"], true);
+        assert_eq!(
+            body["result"]["structuredContent"]["code"],
+            "INVALID_METADATA"
+        );
 
         let (status, body) = mcp_call(
             router.clone(),

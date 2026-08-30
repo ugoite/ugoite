@@ -1090,11 +1090,17 @@ async fn tools_call(
         return rebind_tool_failure(search(state, auth, arguments).await, &request.id).await;
     }
     if name == "ugoite.save" {
-        let run_id = request_run_id(request)?;
+        let run_id = match request_run_id(request) {
+            Ok(run_id) => run_id,
+            Err(response) => return rebind_tool_failure(Err(response), &request.id).await,
+        };
         return rebind_tool_failure(save(state, auth, arguments, &run_id).await, &request.id).await;
     }
     if name == "ugoite.undo" {
-        let run_id = request_run_id(request)?;
+        let run_id = match request_run_id(request) {
+            Ok(run_id) => run_id,
+            Err(response) => return rebind_tool_failure(Err(response), &request.id).await,
+        };
         return rebind_tool_failure(undo(state, auth, &run_id).await, &request.id).await;
     }
     if name == "ugoite.delete" {
