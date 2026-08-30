@@ -1026,6 +1026,34 @@ fn issue_2037_openapi_publishes_the_public_knowledge_contract() {
 }
 
 #[test]
+fn issue_2029_openapi_documents_storage_connection_contract() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let operation = &snapshot["paths"]["/spaces/{space_id}/test-connection"]["post"];
+
+    assert_eq!(
+        operation["requestBody"]["required"], true,
+        "storage connection request body is required"
+    );
+    assert_eq!(
+        operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/StorageConnectionTestRequest"
+    );
+    assert_eq!(
+        operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/StorageConnectionTestResponse"
+    );
+
+    let request = &snapshot["components"]["schemas"]["StorageConnectionTestRequest"];
+    for properties in [
+        &request["properties"],
+        &request["properties"]["storage_config"]["properties"],
+    ] {
+        assert_eq!(properties["endpoint"]["type"], "string");
+        assert_eq!(properties["endpoint"]["format"], "uri");
+    }
+}
+
+#[test]
 /// REQ-INT-003
 fn openapi_publishes_response_signing_headers_and_unsigned_boundary() {
     let snapshot = ugoite_server::openapi_snapshot();

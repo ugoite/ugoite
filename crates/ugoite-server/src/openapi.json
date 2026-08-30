@@ -2150,7 +2150,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonValue"
+                  "$ref": "#/components/schemas/StorageConnectionTestResponse"
                 }
               }
             },
@@ -2306,7 +2306,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JsonValue"
+                "$ref": "#/components/schemas/StorageConnectionTestRequest"
               }
             }
           }
@@ -12253,6 +12253,11 @@
           "uri": {
             "type": "string"
           },
+          "endpoint": {
+            "type": "string",
+            "format": "uri",
+            "description": "Optional HTTP(S) endpoint override for S3-compatible storage."
+          },
           "storage_config": {
             "type": "object",
             "required": [
@@ -12261,6 +12266,11 @@
             "properties": {
               "uri": {
                 "type": "string"
+              },
+              "endpoint": {
+                "type": "string",
+                "format": "uri",
+                "description": "Optional HTTP(S) endpoint override for S3-compatible storage."
               }
             },
             "additionalProperties": true
