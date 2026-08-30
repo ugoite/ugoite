@@ -67,9 +67,12 @@ The browser Host and Konase UI now provide the same one-Job path. The panel
 starts a browser-approved MCP device credential for the current Space, checks
 the returned Space UID, and resolves the MCP endpoint from protected-resource
 metadata. The credential, model key, and browser signing key stay in page
-memory only. The Host executes model/MCP effects and uses the existing
-`ugoite/runId` metadata for Work-scoped writes and undo. It does not persist
-chat history or browser-local Space data. Agent Plugins, native MCP transport
+memory only. Space navigation invalidates the panel lifetime token, so late
+Work results, errors, progress, and undo completions are discarded by the
+browser adapter instead of mutating the newly rendered Space. Cancellation is
+not required for this boundary. The Host executes model/MCP effects and uses
+the existing `ugoite/runId` metadata for Work-scoped writes and undo. It does
+not persist chat history or browser-local Space data. Agent Plugins, native MCP
 abstractions, and other provider frameworks remain outside this MVP. They must
 implement the contracts above without leaking provider/framework types into
 the Konase or Ugoite public/domain contracts.

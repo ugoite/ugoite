@@ -6,9 +6,94 @@ import { setLocale } from "~/lib/i18n";
 import { KonasePanel } from "./KonasePanel";
 import type { BrowserMcpAuthorizationOptions } from "~/lib/konase/browser-mcp-auth";
 
-const { getSpaceMock, authorizeMock } = vi.hoisted(() => ({
-  getSpaceMock: vi.fn(),
-  authorizeMock: vi.fn(),
+type FakeTurn = {
+  outcome: { job_id: string; summary: string; meaningful: boolean };
+  workId: string;
+  undoAvailable: boolean;
+};
+
+type FakeProgress =
+  | { kind: "model" }
+  | { kind: "complete"; summary: string }
+  | { kind: "undo" };
+
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+};
+
+type FakeKonaseHost = {
+  submitDeferreds: Array<Deferred<FakeTurn>>;
+  undoDeferreds: Array<Deferred<{ success: boolean }>>;
+  listeners: Array<(progress: FakeProgress) => void>;
+  submit(prompt: string): Promise<FakeTurn>;
+  undo(workId: string): Promise<{ success: boolean }>;
+  subscribeProgress(listener: (progress: FakeProgress) => void): () => void;
+  emitProgress(progress: FakeProgress): void;
+};
+
+const { getSpaceMock, authorizeMock, hostInstances, createDeferred } = vi
+  .hoisted(() => {
+    const createDeferred = <T,>(): Deferred<T> => {
+      let resolve!: Deferred<T>["resolve"];
+      let reject!: Deferred<T>["reject"];
+      const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise;
+        reject = rejectPromise;
+      });
+      return { promise, resolve, reject };
+    };
+
+    return {
+      getSpaceMock: vi.fn(),
+      authorizeMock: vi.fn(),
+      hostInstances: [] as FakeKonaseHost[],
+      createDeferred,
+    };
+  });
+
+vi.mock("~/lib/konase/host", () => ({
+  KonaseHost: class {
+    readonly submitDeferreds: Array<Deferred<FakeTurn>> = [];
+    readonly undoDeferreds: Array<Deferred<{ success: boolean }>> = [];
+    readonly listeners: Array<(progress: FakeProgress) => void> = [];
+
+    constructor(_options: unknown) {
+      hostInstances.push(this);
+    }
+
+    submit(_prompt: string): Promise<FakeTurn> {
+      const deferred = createDeferred<FakeTurn>();
+      this.submitDeferreds.push(deferred);
+      return deferred.promise;
+    }
+
+    undo(_workId: string): Promise<{ success: boolean }> {
+      const deferred = createDeferred<{ success: boolean }>();
+      this.undoDeferreds.push(deferred);
+      return deferred.promise;
+    }
+
+    subscribeProgress(listener: (progress: FakeProgress) => void): () => void {
+      this.listeners.push(listener);
+      return () => undefined;
+    }
+
+    emitProgress(progress: FakeProgress): void {
+      for (const listener of this.listeners) listener(progress);
+    }
+  },
+}));
+vi.mock("~/lib/konase/mcp", () => ({
+  BrowserMcpHost: class {
+    constructor(_options: unknown) {}
+  },
+}));
+vi.mock("~/lib/konase/model", () => ({
+  OpenAiModelHost: class {
+    constructor(_options: unknown) {}
+  },
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
@@ -18,11 +103,35 @@ vi.mock("~/lib/konase/browser-mcp-auth", () => ({
   authorizeBrowserMcp: authorizeMock,
 }));
 
+const mockConnection = () => {
+  getSpaceMock.mockImplementation(async (spaceId: string) => ({
+    id: spaceId,
+    space_uid: `${spaceId}-uid`,
+    name: spaceId,
+    created_at: "",
+  }));
+  authorizeMock.mockImplementation(
+    async (options: BrowserMcpAuthorizationOptions) => ({
+      accessToken: `${options.spaceUid}-token`,
+      endpoint: "/mcp",
+      resource: `${location.origin}/mcp`,
+      spaceUid: options.spaceUid,
+    }),
+  );
+};
+
+const fakeTurn = (summary: string): FakeTurn => ({
+  outcome: { job_id: `job-${summary}`, summary, meaningful: true },
+  workId: `work-${summary}`,
+  undoAvailable: true,
+});
+
 describe("KonasePanel Space authority", () => {
   beforeEach(() => {
     setLocale("en");
     getSpaceMock.mockReset();
     authorizeMock.mockReset();
+    hostInstances.length = 0;
   });
 
   it("starts MCP authorization from the rendered Space and drops the host when the Space changes", async () => {
@@ -149,5 +258,172 @@ describe("KonasePanel Space authority", () => {
         .toBeInTheDocument()
     );
     expect(screen.queryByPlaceholderText(/Ask Konase/)).not.toBeInTheDocument();
+  });
+
+  it("drops late completion and progress without touching the new Space state", async () => {
+    mockConnection();
+    const [spaceId, setSpaceId] = createSignal("space-a");
+
+    render(() => (
+      <>
+        <KonasePanel spaceId={spaceId()} />
+        <button type="button" onClick={() => setSpaceId("space-b")}>
+          Switch Space
+        </button>
+      </>
+    ));
+
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+
+    const spaceAHost = hostInstances[0];
+    fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
+      target: { value: "Ask Space A" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(spaceAHost.submitDeferreds).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch Space" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Connect Ugoite MCP" }))
+        .toBeInTheDocument()
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(2));
+    const spaceBHost = hostInstances[1];
+    fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
+      target: { value: "Ask Space B" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(spaceBHost.submitDeferreds).toHaveLength(1));
+
+    spaceAHost.emitProgress({ kind: "complete", summary: "old completion" });
+    spaceAHost.submitDeferreds[0].resolve(fakeTurn("old completion"));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Working..." }))
+        .toBeInTheDocument()
+    );
+    expect(screen.getByPlaceholderText(/Ask Konase/)).toHaveValue(
+      "Ask Space B",
+    );
+    expect(screen.queryByText("old completion")).not.toBeInTheDocument();
+    expect(screen.queryByText("Completed")).not.toBeInTheDocument();
+
+    spaceBHost.submitDeferreds[0].resolve(fakeTurn("Space B completion"));
+    await waitFor(() =>
+      expect(screen.getByText("Space B completion")).toBeInTheDocument()
+    );
+  });
+
+  it("drops late errors from an obsolete Work", async () => {
+    mockConnection();
+    const [spaceId, setSpaceId] = createSignal("space-a");
+
+    render(() => (
+      <>
+        <KonasePanel spaceId={spaceId()} />
+        <button type="button" onClick={() => setSpaceId("space-b")}>
+          Switch Space
+        </button>
+      </>
+    ));
+
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+    const spaceAHost = hostInstances[0];
+    fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
+      target: { value: "Ask Space A" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(spaceAHost.submitDeferreds).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch Space" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Connect Ugoite MCP" }))
+        .toBeInTheDocument()
+    );
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key-b" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(2));
+    fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
+      target: { value: "Ask Space B" },
+    });
+
+    spaceAHost.submitDeferreds[0].reject(new Error("old Work failed"));
+
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText(/Ask Konase/)).toBeInTheDocument()
+    );
+    expect(screen.getByPlaceholderText(/Ask Konase/)).toHaveValue(
+      "Ask Space B",
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("drops late undo completion without changing the new Work controls", async () => {
+    mockConnection();
+    const [spaceId, setSpaceId] = createSignal("space-a");
+
+    render(() => (
+      <>
+        <KonasePanel spaceId={spaceId()} />
+        <button type="button" onClick={() => setSpaceId("space-b")}>
+          Switch Space
+        </button>
+      </>
+    ));
+
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+    const spaceAHost = hostInstances[0];
+    fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
+      target: { value: "Save in Space A" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(spaceAHost.submitDeferreds).toHaveLength(1));
+    spaceAHost.submitDeferreds[0].resolve(fakeTurn("Space A saved"));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument()
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(spaceAHost.undoDeferreds).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch Space" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Connect Ugoite MCP" }))
+        .toBeInTheDocument()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(2));
+    const spaceBHost = hostInstances[1];
+    fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
+      target: { value: "Save in Space B" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(spaceBHost.submitDeferreds).toHaveLength(1));
+    spaceBHost.submitDeferreds[0].resolve(fakeTurn("Space B saved"));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument()
+    );
+
+    spaceAHost.undoDeferreds[0].resolve({ success: true });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument()
+    );
+    expect(screen.queryByText("Undone")).not.toBeInTheDocument();
   });
 });
