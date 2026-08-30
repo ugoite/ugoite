@@ -58,6 +58,11 @@ Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
   requireText(workflow, "readFileSync", "PR validator");
   requireText(workflow, "stripTypeScriptTypes", "PR validator");
   requireText(workflow, "await import(", "PR validator");
+  requireText(
+    workflow,
+    "validateKnowledgeCompatibilityReview(body)",
+    "PR validator",
+  );
   assertEquals(
     workflow.includes("No effect on the v0\\.1 Knowledge semantic contract"),
     false,
