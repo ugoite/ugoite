@@ -30,18 +30,22 @@ sends the result back as an Event.
 
 ContextBuilder bounds the serialized Context Capsule as a whole, in addition
 to its per-field limits. Capability metadata is admitted as an atomic
-`{name, description, input_schema}` payload under its own aggregate budget, so
-normalization never leaves a model-visible capability without its usable
-schema. When a UserSubmitted event creates StartJob, the builder receives the
-remaining byte budget of the complete StepResult, keeping the portable effect
-boundary independent of host/provider payload limits.
+`{name, description, input_schema, effect}` payload under its own aggregate
+budget, so normalization never leaves a model-visible capability without its
+usable schema. `effect` is provider-neutral read/write metadata; it may be
+absent when the host cannot establish the capability's effect. When a
+UserSubmitted event creates StartJob, the builder receives the remaining byte
+budget of the complete StepResult, keeping the portable effect boundary
+independent of host/provider payload limits.
 
-ugoite-wasm exposes the same semantics through konase.version, konase.new,
+ugoite-wasm exposes the same semantics through konase.version (protocol v2), konase.new,
 konase.step, and konase.context. The WASM adapter does not perform network
 I/O; browser JavaScript remains responsible for fetch and other host effects.
 Capability metadata includes a bounded, provider-neutral JSON input schema. Host
 adapters preserve the MCP tool contract through this boundary; synthetic host
-capabilities such as `resources/read` provide an explicit schema as well.
+capabilities such as `resources/read` provide an explicit schema as well. The
+protocol version advances when this portable state schema changes; pre-v1
+internal Konase state is rejected rather than migrated.
 
 ## Durability boundary
 
@@ -56,6 +60,14 @@ Ugoite's normal Knowledge mutation path. MCP save/delete and Work-scoped undo
 therefore use the existing Space and Change/Run/Undo semantics. Konase does not
 own a second transcript, database, authorization policy, or recovery path.
 
+The control plane records the observed Knowledge outcome independently from the
+model's Job outcome. A successful host result for a capability annotated as a
+write produces `saved`; a failed result produces `write_failed`; a completed
+Work without an observed write remains `unchanged`. The model's final text and
+the fact that it requested a tool are not persistence evidence. The CLI and
+browser expose this outcome separately and only make Work-scoped undo available
+after a successful write result.
+
 Konase may eventually help propose a reusable View or task-specific tool. The
 definition, if saved, is ordinary Space-owned Knowledge; a separate adapter
 renders it, and rendered/runtime state remains disposable Experience. This is a
@@ -67,7 +79,8 @@ The native CLI now provides the first host path: it connects to the
 authenticated Ugoite MCP endpoint with the official rmcp client and uses one
 configured model provider. It exposes `ugoite.search`, lazy
 `resources/read`, `ugoite.save`, and Work-scoped `ugoite.undo`; the Host binds
-each Work's writes to one Ugoite Run ID through MCP request metadata. It
+each Work's writes to one Ugoite Run ID through MCP request metadata and maps
+MCP `readOnlyHint` annotations into the provider-neutral capability effect. It
 creates a fresh Rig run for each Job and keeps provider and transport types
 inside the CLI/adapter boundary.
 
@@ -79,8 +92,9 @@ memory only. Space navigation invalidates the panel lifetime token, so late
 Work results, errors, progress, and undo completions are discarded by the
 browser adapter instead of mutating the newly rendered Space. Cancellation is
 not required for this boundary. The Host executes model/MCP effects and uses
-the existing `ugoite/runId` metadata for Work-scoped writes and undo. It does
-not persist chat history or browser-local Space data. Agent Plugins, native MCP
+the existing `ugoite/runId` metadata for Work-scoped writes and undo. It maps
+MCP `readOnlyHint` annotations and reports the same observed Knowledge outcome
+as the CLI. It does not persist chat history or browser-local Space data. Agent Plugins, native MCP
 abstractions, and other provider frameworks remain outside this MVP. They must
 implement the contracts above without leaking provider/framework types into
 the Konase or Ugoite public/domain contracts.

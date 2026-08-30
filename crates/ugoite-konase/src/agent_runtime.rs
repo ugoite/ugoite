@@ -68,6 +68,8 @@ pub struct ModelTool {
     pub name: String,
     pub description: String,
     pub input_schema: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect: Option<crate::CapabilityEffect>,
 }
 
 /// One tool call emitted by a model response.

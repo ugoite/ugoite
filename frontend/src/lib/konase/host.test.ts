@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { KonaseHost } from "./host";
+import { KonaseHost, type Capability } from "./host";
 import type { McpHost, McpRequest, McpResult } from "./mcp";
 import type { ModelHost, ModelRequest, ModelResult } from "./model";
 
@@ -20,7 +20,9 @@ class ScriptedMcp implements McpHost {
   readonly operations: string[] = [];
   readonly calls: Array<{ operation: string; workId: string }> = [];
 
-  async capabilities() {
+  constructor(private readonly failSave = false) {}
+
+  async capabilities(): Promise<Capability[]> {
     return [
       {
         name: "ugoite.search",
@@ -30,6 +32,7 @@ class ScriptedMcp implements McpHost {
           properties: { q: { type: "string" } },
           required: ["q"],
         },
+        effect: "read",
       },
       {
         name: "resources/read",
@@ -40,6 +43,7 @@ class ScriptedMcp implements McpHost {
           required: ["uri"],
           additionalProperties: false,
         },
+        effect: "read",
       },
       {
         name: "ugoite.save",
@@ -50,6 +54,7 @@ class ScriptedMcp implements McpHost {
           required: ["content"],
           additionalProperties: false,
         },
+        effect: "write",
       },
       {
         name: "ugoite.undo",
@@ -58,6 +63,7 @@ class ScriptedMcp implements McpHost {
           type: "object",
           additionalProperties: false,
         },
+        effect: "write",
       },
     ];
   }
@@ -66,10 +72,11 @@ class ScriptedMcp implements McpHost {
     this.operations.push(request.operation);
     this.calls.push({ operation: request.operation, workId });
     const search = request.operation === "ugoite.search";
+    const success = !(this.failSave && request.operation === "ugoite.save");
     return {
       request_id: request.request_id,
       operation: request.operation,
-      success: true,
+      success,
       observation: search
         ? {
           id: "search-1",
@@ -86,6 +93,7 @@ class ScriptedMcp implements McpHost {
       resource_contents: search
         ? []
         : [{ uri: "ugoite://entry/1", content: "WebAssembly memo body" }],
+      error: success ? undefined : "save failed",
     };
   }
 }
@@ -126,9 +134,11 @@ describe("Konase browser host", () => {
       },
     });
 
-    const turn = await host.submit("Find the WebAssembly memo");
+    const turn = await host.submit("Find and save the WebAssembly memo");
 
     expect(turn.outcome.summary).toBe("WebAssembly memo confirmed");
+    expect(turn.knowledge).toBe("unchanged");
+    expect(turn.undoAvailable).toBe(false);
     expect(mcp.operations).toEqual(["ugoite.search", "resources/read"]);
     expect(
       model.requests[0].tools.find((tool) => tool.name === "ugoite.search")
@@ -154,6 +164,7 @@ describe("Konase browser host", () => {
       "mcp:resources/read",
       "model",
       "complete",
+      "knowledge",
     ]);
   });
 
@@ -181,11 +192,35 @@ describe("Konase browser host", () => {
     const undo = await host.undo(turn.workId);
 
     expect(turn.undoAvailable).toBe(true);
+    expect(turn.knowledge).toBe("saved");
     expect(undo.success).toBe(true);
     expect(mcp.calls).toEqual([
       { operation: "ugoite.save", workId: turn.workId },
       { operation: "ugoite.undo", workId: turn.workId },
     ]);
     expect(progress).toContain("undo");
+  });
+
+  it("reports a failed save without offering undo", async () => {
+    const model = new ScriptedModel([
+      {
+        request_id: "",
+        tool_calls: [{
+          id: "save-call",
+          name: "ugoite.save",
+          arguments: { content: "---\nform: Entry\n---\n# Failed" },
+        }],
+      },
+      { request_id: "", text: "Save attempted", tool_calls: [] },
+    ]);
+    const host = new KonaseHost({
+      model,
+      mcp: new ScriptedMcp(true),
+    });
+
+    const turn = await host.submit("Save this Entry");
+
+    expect(turn.knowledge).toBe("write_failed");
+    expect(turn.undoAvailable).toBe(false);
   });
 });

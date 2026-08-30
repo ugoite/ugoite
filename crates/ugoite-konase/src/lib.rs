@@ -18,12 +18,16 @@ pub use context::{
     MAX_CONTEXT_JSON_BYTES,
 };
 pub use engine::{
-    normalize_state, step, AgentProgress, Capability, ConfirmationRequest, ConfirmationResult,
-    ContextCapsule, HostError, Job, JobOutcome, JobRequest, JobSpec, JobStatus, KonaseEffect,
-    KonaseError, KonaseEvent, KonaseOutput, KonaseState, McpRequest, McpResult, Observation,
-    ObservationKind, PendingEffect, ResourceContent, ResourceReference, SessionStatus, StepResult,
-    UserRequest, Work, WorkStatus, MAX_STATE_JSON_BYTES, MAX_STATE_OBSERVATIONS,
+    normalize_state, step, AgentProgress, Capability, CapabilityEffect, ConfirmationRequest,
+    ConfirmationResult, ContextCapsule, HostError, Job, JobOutcome, JobRequest, JobSpec, JobStatus,
+    KnowledgeOutcome, KonaseEffect, KonaseError, KonaseEvent, KonaseOutput, KonaseState,
+    McpRequest, McpResult, Observation, ObservationKind, PendingEffect, ResourceContent,
+    ResourceReference, SessionStatus, StepResult, UserRequest, Work, WorkStatus,
+    MAX_STATE_JSON_BYTES, MAX_STATE_OBSERVATIONS,
 };
 
 /// Version for portable Konase JSON semantics, independent of Ugoite REST.
-pub const KONASE_PROTOCOL_VERSION: u32 = 1;
+///
+/// Version 2 adds the observed Knowledge outcome and capability effect
+/// metadata. Pre-v1 internal state is intentionally not migrated.
+pub const KONASE_PROTOCOL_VERSION: u32 = 2;

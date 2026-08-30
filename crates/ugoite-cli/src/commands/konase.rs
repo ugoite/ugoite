@@ -11,9 +11,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::{self, IsTerminal, Write};
 use ugoite_konase::{
-    step, AgentAction, AgentProgress, AgentRuntime, AgentRuntimeInput, Capability, JobOutcome,
-    McpRequest, McpResult, ModelMessage, ModelRequest, ModelResult, Observation, ObservationKind,
-    ResourceContent, ResourceReference, UserRequest,
+    step, AgentAction, AgentProgress, AgentRuntime, AgentRuntimeInput, Capability,
+    CapabilityEffect, JobOutcome, KnowledgeOutcome, McpRequest, McpResult, ModelMessage,
+    ModelRequest, ModelResult, Observation, ObservationKind, ResourceContent, ResourceReference,
+    UserRequest,
 };
 use ugoite_konase_rig::RigAgentRuntime;
 use uuid::Uuid;
@@ -278,6 +279,15 @@ fn capability_from_tool(tool: Tool) -> Capability {
             .description
             .map_or_else(String::new, |value| value.into_owned()),
         input_schema: Some(input_schema),
+        effect: tool.annotations.and_then(|annotations| {
+            annotations.read_only_hint.map(|read_only| {
+                if read_only {
+                    CapabilityEffect::Read
+                } else {
+                    CapabilityEffect::Write
+                }
+            })
+        }),
     }
 }
 
@@ -329,6 +339,7 @@ impl RmcpMcpHost {
             name: "resources/read".into(),
             description: "Read the full content of an opaque Ugoite resource URI".into(),
             input_schema: Some(resources_read_schema()),
+            effect: Some(CapabilityEffect::Read),
         });
         Ok(Self {
             client,
@@ -486,6 +497,7 @@ pub async fn run(cmd: KonaseCmd) -> Result<()> {
             }
             let turn = run_turn(&mut model, &mut mcp, &prompt, &capabilities).await?;
             println!("{}", turn.outcome.summary);
+            println!("Knowledge: {}", knowledge_label(turn.knowledge));
         }
         None => {
             let interactive = io::stdin().is_terminal();
@@ -519,6 +531,7 @@ pub async fn run(cmd: KonaseCmd) -> Result<()> {
                 }
                 let turn = run_turn(&mut model, &mut mcp, prompt, &capabilities).await?;
                 println!("{}", turn.outcome.summary);
+                println!("Knowledge: {}", knowledge_label(turn.knowledge));
                 last_work_id = turn.undo_available.then_some(turn.work_id);
                 if last_work_id.is_some() {
                     println!("[u] 取り消す");
@@ -543,6 +556,7 @@ async fn undo_last_work<C: McpHost>(
                 server: "ugoite".into(),
                 operation: "ugoite.undo".into(),
                 arguments: Default::default(),
+                effect: Some(CapabilityEffect::Write),
             },
             &work_id,
         )
@@ -558,6 +572,15 @@ struct TurnOutcome {
     outcome: JobOutcome,
     work_id: String,
     undo_available: bool,
+    knowledge: KnowledgeOutcome,
+}
+
+fn knowledge_label(outcome: KnowledgeOutcome) -> &'static str {
+    match outcome {
+        KnowledgeOutcome::Unchanged => "unchanged",
+        KnowledgeOutcome::Saved => "saved",
+        KnowledgeOutcome::WriteFailed => "write failed",
+    }
 }
 
 async fn run_turn<M: ModelHost, C: McpHost>(
@@ -621,8 +644,10 @@ async fn run_turn<M: ModelHost, C: McpHost>(
             }
             AgentAction::CallMcp(request) => {
                 println!("{}", request.operation);
-                undo_available |= request.operation == "ugoite.save";
+                let is_undoable_write = request.effect == Some(CapabilityEffect::Write)
+                    && request.operation == "ugoite.save";
                 let result = mcp.call_mcp(request, &work_id).await?;
+                undo_available |= is_undoable_write && result.success;
                 let mcp_effect = step(
                     state,
                     ugoite_konase::KonaseEvent::McpCompleted(result.clone()),
@@ -650,6 +675,7 @@ async fn run_turn<M: ModelHost, C: McpHost>(
                     outcome,
                     work_id,
                     undo_available,
+                    knowledge: result.state.knowledge,
                 });
             }
             AgentAction::AskConfirmation(_) => {
@@ -674,6 +700,7 @@ async fn run_turn<M: ModelHost, C: McpHost>(
                 outcome,
                 work_id,
                 undo_available,
+                knowledge: state.knowledge,
             });
         }
     }
@@ -709,6 +736,7 @@ mod tests {
     struct ScriptedMcp {
         operations: Vec<String>,
         work_ids: Vec<String>,
+        fail_save: bool,
         fail_undo: bool,
     }
 
@@ -732,6 +760,7 @@ mod tests {
                     .unwrap()
                     .into_iter()
                     .collect(),
+                effect: Some(CapabilityEffect::Write),
             };
             let (name, params) = write_tool_request(request, "work-1").unwrap();
             assert_eq!(name, operation);
@@ -768,7 +797,10 @@ mod tests {
         .as_object()
         .cloned()
         .unwrap();
-        let capability = capability_from_tool(Tool::new("ugoite.search", "Search entries", schema));
+        let capability = capability_from_tool(
+            Tool::new("ugoite.search", "Search entries", schema)
+                .annotate(rmcp::model::ToolAnnotations::new().read_only(true)),
+        );
 
         assert_eq!(capability.name, "ugoite.search");
         assert_eq!(
@@ -780,6 +812,13 @@ mod tests {
                 "additionalProperties": false
             }))
         );
+        assert_eq!(capability.effect, Some(CapabilityEffect::Read));
+
+        let write = capability_from_tool(
+            Tool::new("ugoite.save", "Save an entry", serde_json::Map::new())
+                .annotate(rmcp::model::ToolAnnotations::new().read_only(false)),
+        );
+        assert_eq!(write.effect, Some(CapabilityEffect::Write));
     }
 
     #[async_trait]
@@ -788,7 +827,14 @@ mod tests {
             self.operations.push(request.operation.clone());
             self.work_ids.push(work_id.to_owned());
             let is_search = request.operation == "ugoite.search";
-            let success = !(self.fail_undo && request.operation == "ugoite.undo");
+            let is_save = request.operation == "ugoite.save";
+            let success = !(self.fail_save && is_save
+                || self.fail_undo && request.operation == "ugoite.undo");
+            let error = (!success).then_some(if is_save {
+                "save failed"
+            } else {
+                "undo failed"
+            });
             Ok(McpResult {
                 request_id: request.request_id,
                 operation: request.operation,
@@ -811,7 +857,7 @@ mod tests {
                     })
                     .into_iter()
                     .collect(),
-                error: (!success).then_some("undo failed".into()),
+                error: error.map(Into::into),
             })
         }
 
@@ -825,11 +871,29 @@ mod tests {
                         "properties": {"q": {"type": "string"}},
                         "required": ["q"]
                     })),
+                    effect: Some(CapabilityEffect::Read),
                 },
                 Capability {
                     name: "resources/read".into(),
                     description: "read an entry".into(),
                     input_schema: Some(resources_read_schema()),
+                    effect: Some(CapabilityEffect::Read),
+                },
+                Capability {
+                    name: "ugoite.save".into(),
+                    description: "save an entry".into(),
+                    input_schema: Some(json!({
+                        "type": "object",
+                        "properties": {"content": {"type": "string"}},
+                        "required": ["content"]
+                    })),
+                    effect: Some(CapabilityEffect::Write),
+                },
+                Capability {
+                    name: "ugoite.undo".into(),
+                    description: "undo changes".into(),
+                    input_schema: Some(json!({"type": "object"})),
+                    effect: Some(CapabilityEffect::Write),
                 },
             ]
         }
@@ -867,18 +931,21 @@ mod tests {
         let mut mcp = ScriptedMcp {
             operations: vec![],
             work_ids: vec![],
+            fail_save: false,
             fail_undo: false,
         };
         let capabilities = mcp.capabilities().await;
         let outcome = run_turn(
             &mut model,
             &mut mcp,
-            "WebAssemblyのメモを探して",
+            "WebAssemblyのメモを探して保存して",
             &capabilities,
         )
         .await
         .unwrap();
         assert_eq!(outcome.outcome.summary, "WebAssemblyのメモを確認しました。");
+        assert_eq!(outcome.knowledge, KnowledgeOutcome::Unchanged);
+        assert!(!outcome.undo_available);
         assert_eq!(mcp.operations, ["ugoite.search", "resources/read"]);
         assert_eq!(mcp.work_ids.len(), 2);
         assert_eq!(mcp.work_ids[0], mcp.work_ids[1]);
@@ -889,6 +956,7 @@ mod tests {
         let mut mcp = ScriptedMcp {
             operations: vec![],
             work_ids: vec![],
+            fail_save: false,
             fail_undo: true,
         };
         let mut last_work_id = Some("work-1".to_owned());
@@ -904,6 +972,42 @@ mod tests {
         assert!(last_work_id.is_none());
         assert_eq!(mcp.operations, ["ugoite.undo", "ugoite.undo"]);
         assert_eq!(mcp.work_ids, ["work-1", "work-1"]);
+    }
+
+    #[tokio::test]
+    async fn failed_save_is_reported_as_failed_knowledge_without_undo() {
+        let mut model = ScriptedModel {
+            responses: vec![
+                ModelResult {
+                    request_id: String::new(),
+                    text: None,
+                    tool_calls: vec![ugoite_konase::ModelToolCall {
+                        id: "call-save".into(),
+                        name: "ugoite.save".into(),
+                        arguments: json!({"content": "---\nform: Entry\n---\n# Failed"}),
+                    }],
+                },
+                ModelResult {
+                    request_id: String::new(),
+                    text: Some("保存を試みました。".into()),
+                    tool_calls: vec![],
+                },
+            ],
+        };
+        let mut mcp = ScriptedMcp {
+            operations: vec![],
+            work_ids: vec![],
+            fail_save: true,
+            fail_undo: false,
+        };
+        let capabilities = mcp.capabilities().await;
+        let outcome = run_turn(&mut model, &mut mcp, "保存して", &capabilities)
+            .await
+            .unwrap();
+
+        assert_eq!(outcome.knowledge, KnowledgeOutcome::WriteFailed);
+        assert!(!outcome.undo_available);
+        assert_eq!(mcp.operations, ["ugoite.save"]);
     }
 
     #[derive(Clone)]
@@ -1091,6 +1195,11 @@ mod tests {
                             .unwrap()
                             .into_iter()
                             .collect(),
+                        effect: Some(if operation == "ugoite.undo" {
+                            CapabilityEffect::Write
+                        } else {
+                            CapabilityEffect::Read
+                        }),
                     },
                     "work-1",
                 )
@@ -1165,6 +1274,7 @@ mod tests {
                     server: "ugoite".into(),
                     operation: "ugoite.undo".into(),
                     arguments: Default::default(),
+                    effect: Some(CapabilityEffect::Write),
                 },
                 "work-1",
             )

@@ -110,6 +110,11 @@ impl RigAgentRuntime {
                 };
                 let call_id = call.tool_call.id.as_str().to_owned();
                 let name = call.tool_call.function.name;
+                let effect = self
+                    .tools
+                    .iter()
+                    .find(|tool| tool.name == name)
+                    .and_then(|tool| tool.effect);
                 self.mcp_sequence = self.mcp_sequence.saturating_add(1);
                 let request_id = format!("{}:mcp:{}", self.active_job_id()?, self.mcp_sequence);
                 self.pending = Some(PendingStep::Tool {
@@ -122,6 +127,7 @@ impl RigAgentRuntime {
                     server: "ugoite".into(),
                     operation: name,
                     arguments: arguments.into_iter().collect(),
+                    effect,
                 }))
             }
             AgentRunStep::Done(response) => {
@@ -263,6 +269,7 @@ impl AgentRuntime for RigAgentRuntime {
                         name: capability.name.clone(),
                         description: capability.description.clone(),
                         input_schema,
+                        effect: capability.effect,
                     })
             })
             .collect::<Vec<_>>();
@@ -353,7 +360,9 @@ fn message_to_model(message: Message) -> ModelMessage {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
-    use ugoite_konase::{Capability, Observation, ObservationKind, ResourceReference};
+    use ugoite_konase::{
+        Capability, CapabilityEffect, Observation, ObservationKind, ResourceReference,
+    };
 
     fn job() -> JobSpec {
         JobSpec {
@@ -378,6 +387,7 @@ mod tests {
                     "properties": {"q": {"type": "string"}},
                     "required": ["q"]
                 })),
+                effect: Some(CapabilityEffect::Read),
             }],
             selected_resource_contents: vec![],
             safety_hints: vec![],
@@ -424,6 +434,7 @@ mod tests {
             panic!("expected MCP call");
         };
         assert_eq!(request.operation, "ugoite.search");
+        assert_eq!(request.effect, Some(CapabilityEffect::Read));
         assert_eq!(request.arguments["query"], "WebAssembly");
     }
 

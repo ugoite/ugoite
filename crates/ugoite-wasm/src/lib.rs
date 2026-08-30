@@ -390,6 +390,12 @@ mod tests {
 
     #[test]
     fn konase_protocol_creates_deterministic_state_and_steps_without_io() {
+        let version_response =
+            serde_json::from_str::<Value>(&super::invoke_json(r#"{"action":"konase.version"}"#))
+                .unwrap();
+        assert_eq!(version_response["ok"], true);
+        assert_eq!(version_response["value"]["protocol_version"], 2);
+
         let new_response =
             serde_json::from_str::<Value>(&super::invoke_json(r#"{"action":"konase.new"}"#))
                 .unwrap();

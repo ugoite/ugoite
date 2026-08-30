@@ -311,6 +311,7 @@ mod tests {
                     "properties": {"q": {"type": "string"}},
                     "required": ["q"]
                 })),
+                effect: Some(crate::CapabilityEffect::Read),
             }],
             selected_resource_contents: vec![ResourceContent {
                 uri: "ugoite://entry/19".into(),
@@ -387,6 +388,7 @@ mod tests {
                     input_schema: Some(serde_json::json!({
                         "schema": oversized_schema.clone()
                     })),
+                    effect: None,
                 })
                 .collect(),
             selected_resource_contents: (0..10)
@@ -447,6 +449,7 @@ mod tests {
                     name: format!("capability-{id}"),
                     description: "capability description".into(),
                     input_schema: Some(schema.clone()),
+                    effect: None,
                 })
                 .collect(),
             selected_resource_contents: (0..10)

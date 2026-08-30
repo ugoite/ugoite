@@ -10,11 +10,13 @@ type FakeTurn = {
   outcome: { job_id: string; summary: string; meaningful: boolean };
   workId: string;
   undoAvailable: boolean;
+  knowledge: "unchanged" | "saved" | "write_failed";
 };
 
 type FakeProgress =
   | { kind: "model" }
   | { kind: "complete"; summary: string }
+  | { kind: "knowledge"; outcome: FakeTurn["knowledge"] }
   | { kind: "undo" };
 
 type Deferred<T> = {
@@ -124,6 +126,7 @@ const fakeTurn = (summary: string): FakeTurn => ({
   outcome: { job_id: `job-${summary}`, summary, meaningful: true },
   workId: `work-${summary}`,
   undoAvailable: true,
+  knowledge: "saved",
 });
 
 describe("KonasePanel Space authority", () => {
@@ -207,6 +210,33 @@ describe("KonasePanel Space authority", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Konase could not complete the Work.",
     );
+  });
+
+  it("shows an unchanged Knowledge outcome when the model only answers", async () => {
+    mockConnection();
+    render(() => <KonasePanel spaceId="space-a" />);
+
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+    const host = hostInstances[0];
+    fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
+      target: { value: "Save this" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(host.submitDeferreds).toHaveLength(1));
+    host.submitDeferreds[0].resolve({
+      ...fakeTurn("Model answered"),
+      undoAvailable: false,
+      knowledge: "unchanged",
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText("Knowledge: unchanged")).toBeInTheDocument()
+    );
+    expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
   });
 
   it("does not bind a credential if the Space changes during approval", async () => {

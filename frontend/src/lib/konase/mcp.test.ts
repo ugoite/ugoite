@@ -59,6 +59,7 @@ describe("BrowserMcpHost", () => {
           required: ["uri"],
           additionalProperties: false,
         },
+        effect: "read",
       },
     ]);
   });
@@ -80,6 +81,7 @@ describe("BrowserMcpHost", () => {
                     required: ["q"],
                     additionalProperties: false,
                   },
+                  annotations: { readOnlyHint: true },
                 },
                 {
                   name: "ugoite.save",
@@ -102,6 +104,7 @@ describe("BrowserMcpHost", () => {
           required: ["q"],
           additionalProperties: false,
         },
+        effect: "read",
       },
       {
         name: "resources/read",
@@ -112,6 +115,7 @@ describe("BrowserMcpHost", () => {
           required: ["uri"],
           additionalProperties: false,
         },
+        effect: "read",
       },
     ]);
   });
@@ -125,16 +129,19 @@ describe("BrowserMcpHost", () => {
             name: "ugoite.search",
             description: "Search entries",
             inputSchema: { type: "object" },
+            annotations: { readOnlyHint: true },
           },
           {
             name: "ugoite.save",
             description: "Save an entry",
             inputSchema: { type: "object" },
+            annotations: { readOnlyHint: false },
           },
           {
             name: "ugoite.undo",
             description: "Undo Work changes",
             inputSchema: { type: "object" },
+            annotations: { readOnlyHint: false },
           },
         ],
       },
@@ -162,7 +169,12 @@ describe("BrowserMcpHost", () => {
       fetcher,
     });
 
-    await host.capabilities();
+    await expect(host.capabilities()).resolves.toEqual([
+      expect.objectContaining({ name: "ugoite.search", effect: "read" }),
+      expect.objectContaining({ name: "ugoite.save", effect: "write" }),
+      expect.objectContaining({ name: "ugoite.undo", effect: "write" }),
+      expect.objectContaining({ name: "resources/read", effect: "read" }),
+    ]);
     await host.callMcp(
       mcpRequest("search-1", "ugoite.search", { q: "entry" }),
       workId,
