@@ -1825,6 +1825,40 @@ mod tests {
         );
         assert_eq!(saved.state.knowledge, KnowledgeOutcome::Saved);
 
+        let model_waiting = step(
+            saved.state.clone(),
+            KonaseEvent::AgentProgress(AgentProgress {
+                job_id: "job-1".into(),
+                strategy_summary: None,
+                observation: None,
+                action: Some(AgentAction::CallModel(ModelRequest {
+                    request_id: "model-1".into(),
+                    prompt: "continue".into(),
+                    history: vec![],
+                    tools: vec![],
+                })),
+            }),
+        );
+        let host_failed = step(
+            model_waiting.state,
+            KonaseEvent::HostFailed(HostError {
+                kind: "model_timeout".into(),
+                message: "model request timed out".into(),
+                request_id: Some("model-1".into()),
+            }),
+        );
+        assert_eq!(host_failed.state.status, SessionStatus::Failed);
+        assert_eq!(
+            host_failed.state.work.as_ref().unwrap().status,
+            WorkStatus::Failed
+        );
+        assert_eq!(
+            host_failed.state.job.as_ref().unwrap().status,
+            JobStatus::Failed
+        );
+        assert_eq!(host_failed.state.pending_effect, None);
+        assert_eq!(host_failed.state.knowledge, KnowledgeOutcome::Saved);
+
         let failed_waiting = step(
             saved.state,
             KonaseEvent::AgentProgress(AgentProgress {

@@ -55,6 +55,12 @@ ugoite auth login --for mcp
 ugoite konase --prompt "Find the latest project note"
 ```
 
+Each model request has a finite timeout. The default is 120 seconds; set
+`UGOITE_MODEL_TIMEOUT_SECS` to a positive number of seconds to adjust it. A
+timeout, transport failure, or provider failure marks the current Work as
+failed and reports the observed Knowledge outcome separately. Knowledge saved
+before the failure remains saved, and its Work-scoped undo remains available.
+
 `ugoite auth login` and `ugoite auth login --for mcp` create different
 credential targets. Run the matching login command if a saved credential is for
 the other target. Remote CLI asset upload remains future scope.

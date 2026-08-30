@@ -82,7 +82,12 @@ configured model provider. It exposes `ugoite.search`, lazy
 each Work's writes to one Ugoite Run ID through MCP request metadata and maps
 MCP `readOnlyHint` annotations into the provider-neutral capability effect. It
 creates a fresh Rig run for each Job and keeps provider and transport types
-inside the CLI/adapter boundary.
+inside the CLI/adapter boundary. Each model request is bounded by the
+`UGOITE_MODEL_TIMEOUT_SECS` setting (120 seconds by default). Timeout,
+transport, and provider failures are converted into the existing
+`KonaseEvent::HostFailed` event with the matching model request ID, so the
+Work/Job becomes failed and its pending effect is cleared without discarding
+an already observed Knowledge write or its undo availability.
 
 The browser Host and Konase UI now provide the same one-Job path. The panel
 starts a browser-approved MCP device credential for the current Space, checks

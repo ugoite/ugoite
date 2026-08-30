@@ -9,15 +9,21 @@ use rmcp::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::io::{self, IsTerminal, Write};
+use std::{
+    io::{self, IsTerminal, Write},
+    time::Duration,
+};
 use ugoite_konase::{
     step, AgentAction, AgentProgress, AgentRuntime, AgentRuntimeInput, Capability,
-    CapabilityEffect, JobOutcome, KnowledgeOutcome, McpRequest, McpResult, ModelMessage,
-    ModelRequest, ModelResult, Observation, ObservationKind, ResourceContent, ResourceReference,
-    UserRequest,
+    CapabilityEffect, HostError, JobOutcome, KnowledgeOutcome, KonaseEvent, KonaseState,
+    McpRequest, McpResult, ModelMessage, ModelRequest, ModelResult, Observation, ObservationKind,
+    ResourceContent, ResourceReference, UserRequest,
 };
 use ugoite_konase_rig::RigAgentRuntime;
 use uuid::Uuid;
+
+const DEFAULT_MODEL_TIMEOUT_SECS: u64 = 120;
+const MAX_MODEL_HOST_ERROR_CHARS: usize = 1_800;
 
 #[derive(Args)]
 pub struct KonaseCmd {
@@ -28,7 +34,10 @@ pub struct KonaseCmd {
 
 #[async_trait]
 trait ModelHost {
-    async fn call_model(&mut self, request: ModelRequest) -> Result<ModelResult>;
+    async fn call_model(
+        &mut self,
+        request: ModelRequest,
+    ) -> std::result::Result<ModelResult, HostError>;
 }
 
 #[async_trait]
@@ -43,6 +52,7 @@ struct OpenAiModelHost {
     base_url: String,
     api_key: String,
     model: String,
+    timeout: Duration,
 }
 
 #[derive(Debug, Serialize)]
@@ -131,13 +141,16 @@ impl OpenAiModelHost {
                 .unwrap_or_else(|| "https://api.openai.com/v1".into()),
             api_key,
             model: non_empty_env_value("UGOITE_MODEL_NAME").unwrap_or_else(|| "gpt-4o-mini".into()),
+            timeout: parse_model_timeout(
+                non_empty_env_value("UGOITE_MODEL_TIMEOUT_SECS").as_deref(),
+            )?,
         })
     }
-}
 
-#[async_trait]
-impl ModelHost for OpenAiModelHost {
-    async fn call_model(&mut self, request: ModelRequest) -> Result<ModelResult> {
+    async fn call_model_inner(
+        &self,
+        request: ModelRequest,
+    ) -> std::result::Result<ModelResult, ModelCallError> {
         let mut messages = request
             .history
             .into_iter()
@@ -175,22 +188,32 @@ impl ModelHost for OpenAiModelHost {
             })
             .send()
             .await
-            .context("call model provider")?;
+            .map_err(|error| ModelCallError::Transport(error.to_string()))?;
         let status = response.status();
-        let body: ChatResponse = response.json().await.context("decode model response")?;
         if !status.is_success() {
-            bail!("model provider returned {status}");
+            let body = response
+                .text()
+                .await
+                .map_err(|error| ModelCallError::Transport(error.to_string()))?;
+            return Err(ModelCallError::Provider { status, body });
         }
+        let body: ChatResponse = response
+            .json()
+            .await
+            .map_err(|error| ModelCallError::Response(error.to_string()))?;
         let message = body
             .choices
             .into_iter()
             .next()
-            .ok_or_else(|| anyhow!("model provider returned no choices"))?
+            .ok_or_else(|| ModelCallError::Response("model provider returned no choices".into()))?
             .message;
         let mut tool_calls = Vec::new();
         for call in message.tool_calls {
-            let arguments = serde_json::from_str(&call.function.arguments).with_context(|| {
-                format!("decode model tool arguments for {}", call.function.name)
+            let arguments = serde_json::from_str(&call.function.arguments).map_err(|error| {
+                ModelCallError::Response(format!(
+                    "decode model tool arguments for {}: {error}",
+                    call.function.name
+                ))
             })?;
             tool_calls.push(ugoite_konase::ModelToolCall {
                 id: call.id,
@@ -204,6 +227,82 @@ impl ModelHost for OpenAiModelHost {
             tool_calls,
         })
     }
+}
+
+#[async_trait]
+impl ModelHost for OpenAiModelHost {
+    async fn call_model(
+        &mut self,
+        request: ModelRequest,
+    ) -> std::result::Result<ModelResult, HostError> {
+        let request_id = request.request_id.clone();
+        match tokio::time::timeout(self.timeout, self.call_model_inner(request)).await {
+            Ok(result) => result.map_err(|error| error.into_host_error(request_id)),
+            Err(_) => Err(HostError {
+                kind: "model_timeout".into(),
+                message: format!("model request timed out after {:?}", self.timeout),
+                request_id: Some(request_id),
+            }),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum ModelCallError {
+    Transport(String),
+    Provider {
+        status: reqwest::StatusCode,
+        body: String,
+    },
+    Response(String),
+}
+
+impl ModelCallError {
+    fn into_host_error(self, request_id: String) -> HostError {
+        let (kind, message) = match self {
+            Self::Transport(message) => (
+                "model_transport",
+                format!("model provider request failed: {message}"),
+            ),
+            Self::Provider { status, body } => (
+                "model_provider",
+                format!("model provider returned {status}: {body}"),
+            ),
+            Self::Response(message) => (
+                "model_response",
+                format!("invalid model provider response: {message}"),
+            ),
+        };
+        HostError {
+            kind: kind.into(),
+            message: bound_model_host_error(message),
+            request_id: Some(request_id),
+        }
+    }
+}
+
+fn bound_model_host_error(message: String) -> String {
+    let mut bounded = message
+        .chars()
+        .take(MAX_MODEL_HOST_ERROR_CHARS)
+        .collect::<String>();
+    if bounded.chars().count() == MAX_MODEL_HOST_ERROR_CHARS {
+        bounded.push_str("...");
+    }
+    bounded
+}
+
+fn parse_model_timeout(value: Option<&str>) -> Result<Duration> {
+    let seconds = value
+        .map(str::trim)
+        .map(|value| value.parse::<u64>())
+        .transpose()
+        .map_err(|_| anyhow!("UGOITE_MODEL_TIMEOUT_SECS must be a positive integer"))?
+        .unwrap_or(DEFAULT_MODEL_TIMEOUT_SECS);
+    if seconds == 0 {
+        bail!("UGOITE_MODEL_TIMEOUT_SECS must be a positive integer");
+    }
+    Ok(Duration::from_secs(seconds))
 }
 
 fn chat_message(message: ModelMessage) -> ChatMessage {
@@ -495,9 +594,10 @@ pub async fn run(cmd: KonaseCmd) -> Result<()> {
             if prompt.trim().is_empty() {
                 bail!("Konase prompt must not be empty");
             }
-            let turn = run_turn(&mut model, &mut mcp, &prompt, &capabilities).await?;
-            println!("{}", turn.outcome.summary);
-            println!("Knowledge: {}", knowledge_label(turn.knowledge));
+            let _ = report_turn(
+                run_turn(&mut model, &mut mcp, &prompt, &capabilities).await?,
+                false,
+            );
         }
         None => {
             let interactive = io::stdin().is_terminal();
@@ -529,13 +629,10 @@ pub async fn run(cmd: KonaseCmd) -> Result<()> {
                     }
                     continue;
                 }
-                let turn = run_turn(&mut model, &mut mcp, prompt, &capabilities).await?;
-                println!("{}", turn.outcome.summary);
-                println!("Knowledge: {}", knowledge_label(turn.knowledge));
-                last_work_id = turn.undo_available.then_some(turn.work_id);
-                if last_work_id.is_some() {
-                    println!("[u] 取り消す");
-                }
+                last_work_id = report_turn(
+                    run_turn(&mut model, &mut mcp, prompt, &capabilities).await?,
+                    true,
+                );
             }
         }
     }
@@ -575,6 +672,42 @@ struct TurnOutcome {
     knowledge: KnowledgeOutcome,
 }
 
+enum TurnResult {
+    Completed(TurnOutcome),
+    Failed(TurnFailure),
+}
+
+struct TurnFailure {
+    error: HostError,
+    work_id: String,
+    undo_available: bool,
+    knowledge: KnowledgeOutcome,
+}
+
+fn report_turn(result: TurnResult, show_undo_hint: bool) -> Option<String> {
+    match result {
+        TurnResult::Completed(turn) => {
+            println!("{}", turn.outcome.summary);
+            println!("Knowledge: {}", knowledge_label(turn.knowledge));
+            if show_undo_hint && turn.undo_available {
+                println!("[u] 取り消す");
+            }
+            (show_undo_hint && turn.undo_available).then_some(turn.work_id)
+        }
+        TurnResult::Failed(failure) => {
+            eprintln!(
+                "Model host failed ({}): {}",
+                failure.error.kind, failure.error.message
+            );
+            println!("Knowledge: {}", knowledge_label(failure.knowledge));
+            if show_undo_hint && failure.undo_available {
+                println!("[u] 取り消す");
+            }
+            (show_undo_hint && failure.undo_available).then_some(failure.work_id)
+        }
+    }
+}
+
 fn knowledge_label(outcome: KnowledgeOutcome) -> &'static str {
     match outcome {
         KnowledgeOutcome::Unchanged => "unchanged",
@@ -588,7 +721,7 @@ async fn run_turn<M: ModelHost, C: McpHost>(
     mcp: &mut C,
     prompt: &str,
     capabilities: &[Capability],
-) -> Result<TurnOutcome> {
+) -> Result<TurnResult> {
     let work_id = format!("work-{}", Uuid::now_v7());
     let job_id = format!("job-{}", Uuid::now_v7());
     let initial = step(
@@ -639,7 +772,19 @@ async fn run_turn<M: ModelHost, C: McpHost>(
     loop {
         action = match action {
             AgentAction::CallModel(request) => {
-                let result = model.call_model(request).await?;
+                let request_id = request.request_id.clone();
+                let result = match model.call_model(request).await {
+                    Ok(result) => result,
+                    Err(error) => {
+                        return finish_failed_turn(
+                            state,
+                            work_id,
+                            undo_available,
+                            error,
+                            request_id,
+                        );
+                    }
+                };
                 runtime.resume(AgentRuntimeInput::ModelCompleted(result))?
             }
             AgentAction::CallMcp(request) => {
@@ -671,12 +816,12 @@ async fn run_turn<M: ModelHost, C: McpHost>(
                 if let Some(error) = result.error {
                     bail!("Konase completion rejected: {}", error.message);
                 }
-                return Ok(TurnOutcome {
+                return Ok(TurnResult::Completed(TurnOutcome {
                     outcome,
                     work_id,
                     undo_available,
                     knowledge: result.state.knowledge,
-                });
+                }));
             }
             AgentAction::AskConfirmation(_) => {
                 bail!("confirmation is outside the CLI MVP")
@@ -696,14 +841,36 @@ async fn run_turn<M: ModelHost, C: McpHost>(
         }
         state = progress.state;
         if let AgentAction::Complete(outcome) = action {
-            return Ok(TurnOutcome {
+            return Ok(TurnResult::Completed(TurnOutcome {
                 outcome,
                 work_id,
                 undo_available,
                 knowledge: state.knowledge,
-            });
+            }));
         }
     }
+}
+
+fn finish_failed_turn(
+    state: KonaseState,
+    work_id: String,
+    undo_available: bool,
+    mut error: HostError,
+    request_id: String,
+) -> Result<TurnResult> {
+    if error.request_id.is_none() {
+        error.request_id = Some(request_id);
+    }
+    let failed = step(state, KonaseEvent::HostFailed(error.clone()));
+    if let Some(step_error) = failed.error {
+        bail!("Konase rejected model host failure: {}", step_error.message);
+    }
+    Ok(TurnResult::Failed(TurnFailure {
+        error,
+        work_id,
+        undo_available,
+        knowledge: failed.state.knowledge,
+    }))
 }
 
 #[cfg(test)]
@@ -721,13 +888,16 @@ mod tests {
     use tokio::{net::TcpListener, sync::Mutex, task::JoinHandle};
 
     struct ScriptedModel {
-        responses: Vec<ModelResult>,
+        responses: Vec<std::result::Result<ModelResult, HostError>>,
     }
 
     #[async_trait]
     impl ModelHost for ScriptedModel {
-        async fn call_model(&mut self, request: ModelRequest) -> Result<ModelResult> {
-            let mut response = self.responses.remove(0);
+        async fn call_model(
+            &mut self,
+            request: ModelRequest,
+        ) -> std::result::Result<ModelResult, HostError> {
+            let mut response = self.responses.remove(0)?;
             response.request_id = request.request_id;
             Ok(response)
         }
@@ -903,7 +1073,7 @@ mod tests {
     async fn scripted_search_read_then_answer_completes_the_konase_loop() {
         let mut model = ScriptedModel {
             responses: vec![
-                ModelResult {
+                Ok(ModelResult {
                     request_id: String::new(),
                     text: None,
                     tool_calls: vec![ugoite_konase::ModelToolCall {
@@ -911,8 +1081,8 @@ mod tests {
                         name: "ugoite.search".into(),
                         arguments: json!({"query": "WebAssembly"}),
                     }],
-                },
-                ModelResult {
+                }),
+                Ok(ModelResult {
                     request_id: String::new(),
                     text: Some("1件見つかりました。".into()),
                     tool_calls: vec![ugoite_konase::ModelToolCall {
@@ -920,12 +1090,12 @@ mod tests {
                         name: "resources/read".into(),
                         arguments: json!({"uri": "ugoite://entry/1"}),
                     }],
-                },
-                ModelResult {
+                }),
+                Ok(ModelResult {
                     request_id: String::new(),
                     text: Some("WebAssemblyのメモを確認しました。".into()),
                     tool_calls: vec![],
-                },
+                }),
             ],
         };
         let mut mcp = ScriptedMcp {
@@ -935,14 +1105,16 @@ mod tests {
             fail_undo: false,
         };
         let capabilities = mcp.capabilities().await;
-        let outcome = run_turn(
+        let TurnResult::Completed(outcome) = run_turn(
             &mut model,
             &mut mcp,
             "WebAssemblyのメモを探して保存して",
             &capabilities,
         )
         .await
-        .unwrap();
+        .unwrap() else {
+            panic!("expected completed turn");
+        };
         assert_eq!(outcome.outcome.summary, "WebAssemblyのメモを確認しました。");
         assert_eq!(outcome.knowledge, KnowledgeOutcome::Unchanged);
         assert!(!outcome.undo_available);
@@ -978,7 +1150,7 @@ mod tests {
     async fn failed_save_is_reported_as_failed_knowledge_without_undo() {
         let mut model = ScriptedModel {
             responses: vec![
-                ModelResult {
+                Ok(ModelResult {
                     request_id: String::new(),
                     text: None,
                     tool_calls: vec![ugoite_konase::ModelToolCall {
@@ -986,12 +1158,12 @@ mod tests {
                         name: "ugoite.save".into(),
                         arguments: json!({"content": "---\nform: Entry\n---\n# Failed"}),
                     }],
-                },
-                ModelResult {
+                }),
+                Ok(ModelResult {
                     request_id: String::new(),
                     text: Some("保存を試みました。".into()),
                     tool_calls: vec![],
-                },
+                }),
             ],
         };
         let mut mcp = ScriptedMcp {
@@ -1001,12 +1173,157 @@ mod tests {
             fail_undo: false,
         };
         let capabilities = mcp.capabilities().await;
-        let outcome = run_turn(&mut model, &mut mcp, "保存して", &capabilities)
-            .await
-            .unwrap();
+        let TurnResult::Completed(outcome) =
+            run_turn(&mut model, &mut mcp, "保存して", &capabilities)
+                .await
+                .unwrap()
+        else {
+            panic!("expected completed turn");
+        };
 
         assert_eq!(outcome.knowledge, KnowledgeOutcome::WriteFailed);
         assert!(!outcome.undo_available);
+        assert_eq!(mcp.operations, ["ugoite.save"]);
+    }
+
+    #[test]
+    fn model_timeout_configuration_requires_positive_seconds() {
+        assert_eq!(
+            parse_model_timeout(None).unwrap(),
+            Duration::from_secs(DEFAULT_MODEL_TIMEOUT_SECS)
+        );
+        assert_eq!(
+            parse_model_timeout(Some(" 7 ")).unwrap(),
+            Duration::from_secs(7)
+        );
+        assert!(parse_model_timeout(Some("0")).is_err());
+        assert!(parse_model_timeout(Some("never")).is_err());
+    }
+
+    async fn slow_model_provider() -> Response {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        (
+            StatusCode::OK,
+            Json(json!({
+                "choices": [{
+                    "message": {"content": "late", "tool_calls": []}
+                }]
+            })),
+        )
+            .into_response()
+    }
+
+    async fn unavailable_model_provider() -> Response {
+        (StatusCode::SERVICE_UNAVAILABLE, "provider is busy").into_response()
+    }
+
+    #[tokio::test]
+    async fn slow_model_provider_returns_a_request_scoped_timeout_host_error() {
+        let app = Router::new().route("/chat/completions", post(slow_model_provider));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let mut host = OpenAiModelHost {
+            client: reqwest::Client::new(),
+            base_url: format!("http://{address}"),
+            api_key: "test-key".into(),
+            model: "test-model".into(),
+            timeout: Duration::from_millis(10),
+        };
+
+        let error = host
+            .call_model(ModelRequest {
+                request_id: "request-timeout".into(),
+                prompt: "wait".into(),
+                history: vec![],
+                tools: vec![],
+            })
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.kind, "model_timeout");
+        assert_eq!(error.request_id.as_deref(), Some("request-timeout"));
+        assert!(error.message.contains("timed out"));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn model_provider_failure_returns_a_request_scoped_host_error() {
+        let app = Router::new().route("/chat/completions", post(unavailable_model_provider));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let mut host = OpenAiModelHost {
+            client: reqwest::Client::new(),
+            base_url: format!("http://{address}"),
+            api_key: "test-key".into(),
+            model: "test-model".into(),
+            timeout: Duration::from_secs(1),
+        };
+
+        let error = host
+            .call_model(ModelRequest {
+                request_id: "request-provider-failure".into(),
+                prompt: "try".into(),
+                history: vec![],
+                tools: vec![],
+            })
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.kind, "model_provider");
+        assert_eq!(
+            error.request_id.as_deref(),
+            Some("request-provider-failure")
+        );
+        assert!(error.message.contains("503 Service Unavailable"));
+        assert!(error.message.contains("provider is busy"));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn model_failure_marks_work_failed_without_discarding_saved_knowledge() {
+        let mut model = ScriptedModel {
+            responses: vec![
+                Ok(ModelResult {
+                    request_id: String::new(),
+                    text: None,
+                    tool_calls: vec![ugoite_konase::ModelToolCall {
+                        id: "call-save".into(),
+                        name: "ugoite.save".into(),
+                        arguments: json!({"content": "---\nform: Entry\n---\n# Saved"}),
+                    }],
+                }),
+                Err(HostError {
+                    kind: "model_timeout".into(),
+                    message: "model request timed out after 10ms".into(),
+                    request_id: None,
+                }),
+            ],
+        };
+        let mut mcp = ScriptedMcp {
+            operations: vec![],
+            work_ids: vec![],
+            fail_save: false,
+            fail_undo: false,
+        };
+        let capabilities = mcp.capabilities().await;
+
+        let TurnResult::Failed(failure) = run_turn(&mut model, &mut mcp, "保存して", &capabilities)
+            .await
+            .unwrap()
+        else {
+            panic!("expected failed turn");
+        };
+
+        assert_eq!(failure.error.kind, "model_timeout");
+        assert!(failure.error.request_id.is_some());
+        assert_eq!(failure.knowledge, KnowledgeOutcome::Saved);
+        assert!(failure.undo_available);
         assert_eq!(mcp.operations, ["ugoite.save"]);
     }
 
