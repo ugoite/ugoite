@@ -1,5 +1,6 @@
 import type {
   Capability,
+  CapabilityEffect,
   Observation,
   ResourceContent,
   ResourceReference,
@@ -10,6 +11,7 @@ export type McpRequest = {
   server: string;
   operation: string;
   arguments: Record<string, unknown>;
+  effect?: CapabilityEffect;
 };
 
 export type McpResult = {
@@ -151,12 +153,14 @@ export class BrowserMcpHost implements McpHost {
           ? value.description
           : "",
         input_schema: value.inputSchema,
+        effect: effectFromAnnotations(value.annotations),
       }];
     });
     capabilities.push({
       name: "resources/read",
       description: "Read the full content of an opaque Ugoite resource URI",
       input_schema: resourcesReadSchema(),
+      effect: "read",
     });
     return capabilities;
   }
@@ -207,6 +211,13 @@ export class BrowserMcpHost implements McpHost {
 
 const matchesCapability = (name: string) =>
   name === "ugoite.search" || name === "ugoite.save" || name === "ugoite.undo";
+
+const effectFromAnnotations = (value: unknown): CapabilityEffect | undefined => {
+  if (!isRecord(value)) return undefined;
+  if (value.readOnlyHint === true) return "read";
+  if (value.readOnlyHint === false) return "write";
+  return undefined;
+};
 
 const resourcesReadSchema = (): Record<string, unknown> => ({
   type: "object",

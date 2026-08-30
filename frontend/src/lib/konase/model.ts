@@ -9,6 +9,7 @@ export type ModelTool = {
   name: string;
   description: string;
   input_schema: Record<string, unknown>;
+  effect?: "read" | "write";
 };
 
 export type ModelToolCall = {

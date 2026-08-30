@@ -41,6 +41,25 @@ pub enum WorkStatus {
     Failed,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KnowledgeOutcome {
+    #[default]
+    Unchanged,
+    Saved,
+    WriteFailed,
+}
+
+impl KnowledgeOutcome {
+    fn record_write(self, success: bool) -> Self {
+        if !success || self == Self::WriteFailed {
+            Self::WriteFailed
+        } else {
+            Self::Saved
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct JobSpec {
     pub id: String,
@@ -114,6 +133,15 @@ pub struct Capability {
     pub description: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_schema: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect: Option<CapabilityEffect>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityEffect {
+    Read,
+    Write,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -161,6 +189,8 @@ pub struct McpRequest {
     pub operation: String,
     #[serde(default)]
     pub arguments: BTreeMap<String, Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect: Option<CapabilityEffect>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -230,9 +260,16 @@ pub struct JobRequest {
 #[serde(rename_all = "snake_case")]
 pub enum PendingEffect {
     StartJob,
-    CallModel { request_id: String },
-    CallMcp { request_id: String },
-    AskConfirmation { request_id: String },
+    CallModel {
+        request_id: String,
+    },
+    CallMcp {
+        request_id: String,
+        effect: Option<CapabilityEffect>,
+    },
+    AskConfirmation {
+        request_id: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -248,6 +285,7 @@ pub enum SessionStatus {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct KonaseState {
     pub status: SessionStatus,
+    pub knowledge: KnowledgeOutcome,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub work: Option<Work>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -416,6 +454,7 @@ fn submit(
             .map_or(1, |work| work.job_count.saturating_add(1))
     } else {
         state.observations.clear();
+        state.knowledge = KnowledgeOutcome::Unchanged;
         1
     };
     let expected_response_schema = request.expected_response_schema.clone();
@@ -545,7 +584,10 @@ fn progress_event(
         Some(AgentAction::CallMcp(request)) => {
             let request_id = request.request_id.clone();
             current_job(state, &job_id)?.status = JobStatus::WaitingForHost;
-            state.pending_effect = Some(PendingEffect::CallMcp { request_id });
+            state.pending_effect = Some(PendingEffect::CallMcp {
+                request_id,
+                effect: request.effect,
+            });
             effects.push(KonaseEffect::CallMcp(request));
         }
         Some(AgentAction::AskConfirmation(request)) => {
@@ -593,8 +635,10 @@ fn mcp_completed(
     effects: &mut Vec<KonaseEffect>,
 ) -> Result<(), KonaseError> {
     waiting_for_host(state)?;
-    match state.pending_effect.as_ref() {
-        Some(PendingEffect::CallMcp { request_id }) if request_id == &result.request_id => {}
+    let effect = match state.pending_effect.as_ref() {
+        Some(PendingEffect::CallMcp { request_id, effect }) if request_id == &result.request_id => {
+            *effect
+        }
         _ => {
             return Err(KonaseError::new(
                 "unexpected_mcp_result",
@@ -604,6 +648,9 @@ fn mcp_completed(
                 ),
             ))
         }
+    };
+    if effect == Some(CapabilityEffect::Write) {
+        state.knowledge = state.knowledge.record_write(result.success);
     }
     if let Some(mut observation) = result.observation {
         observation.resource_references.extend(result.resources);
@@ -680,7 +727,7 @@ fn host_failed(
     }
     match (&state.pending_effect, error.request_id.as_deref()) {
         (Some(PendingEffect::CallModel { request_id }), Some(actual))
-        | (Some(PendingEffect::CallMcp { request_id }), Some(actual))
+        | (Some(PendingEffect::CallMcp { request_id, .. }), Some(actual))
         | (Some(PendingEffect::AskConfirmation { request_id }), Some(actual))
             if request_id == actual => {}
         (Some(PendingEffect::StartJob), None) | (None, None) => {}
@@ -1190,7 +1237,7 @@ fn validate_pending_effect(pending: &PendingEffect) -> Result<(), KonaseError> {
     match pending {
         PendingEffect::StartJob => Ok(()),
         PendingEffect::CallModel { request_id }
-        | PendingEffect::CallMcp { request_id }
+        | PendingEffect::CallMcp { request_id, .. }
         | PendingEffect::AskConfirmation { request_id } => {
             validate_identifier("pending.request_id", request_id)
         }
@@ -1462,8 +1509,9 @@ fn normalize_pending_effect(pending: PendingEffect) -> PendingEffect {
         PendingEffect::CallModel { request_id } => PendingEffect::CallModel {
             request_id: bound(request_id, MAX_IDENTIFIER_CHARS),
         },
-        PendingEffect::CallMcp { request_id } => PendingEffect::CallMcp {
+        PendingEffect::CallMcp { request_id, effect } => PendingEffect::CallMcp {
             request_id: bound(request_id, MAX_IDENTIFIER_CHARS),
+            effect,
         },
         PendingEffect::AskConfirmation { request_id } => PendingEffect::AskConfirmation {
             request_id: bound(request_id, MAX_IDENTIFIER_CHARS),
@@ -1606,6 +1654,7 @@ mod tests {
                     "properties": {"q": {"type": "string"}},
                     "required": ["q"]
                 })),
+                effect: Some(CapabilityEffect::Read),
             }],
             safety_hints: vec!["save only with confirmation".into()],
             expected_response_schema: None,
@@ -1656,6 +1705,7 @@ mod tests {
                 name: format!("capability-{id}"),
                 description: "capability description".into(),
                 input_schema: Some(schema.clone()),
+                effect: None,
             })
             .collect();
 
@@ -1699,6 +1749,7 @@ mod tests {
                     server: "ugoite".into(),
                     operation: "ugoite.search".into(),
                     arguments: BTreeMap::new(),
+                    effect: Some(CapabilityEffect::Read),
                 })),
             }),
         );
@@ -1733,6 +1784,75 @@ mod tests {
         );
         assert_eq!(completed.state.status, SessionStatus::Completed);
         assert_eq!(completed.state.work.unwrap().status, WorkStatus::Completed);
+    }
+
+    #[test]
+    fn knowledge_outcome_tracks_observed_write_results() {
+        let mut request = request();
+        request.available_capabilities.push(Capability {
+            name: "ugoite.save".into(),
+            description: "save knowledge".into(),
+            input_schema: Some(serde_json::json!({"type": "object"})),
+            effect: Some(CapabilityEffect::Write),
+        });
+        let started = step(KonaseState::default(), KonaseEvent::UserSubmitted(request));
+        let waiting = step(
+            started.state,
+            KonaseEvent::AgentProgress(AgentProgress {
+                job_id: "job-1".into(),
+                strategy_summary: None,
+                observation: None,
+                action: Some(AgentAction::CallMcp(McpRequest {
+                    request_id: "save-1".into(),
+                    server: "ugoite".into(),
+                    operation: "ugoite.save".into(),
+                    arguments: BTreeMap::new(),
+                    effect: Some(CapabilityEffect::Write),
+                })),
+            }),
+        );
+        let saved = step(
+            waiting.state,
+            KonaseEvent::McpCompleted(McpResult {
+                request_id: "save-1".into(),
+                operation: "ugoite.save".into(),
+                success: true,
+                observation: None,
+                resources: vec![],
+                resource_contents: vec![],
+                error: None,
+            }),
+        );
+        assert_eq!(saved.state.knowledge, KnowledgeOutcome::Saved);
+
+        let failed_waiting = step(
+            saved.state,
+            KonaseEvent::AgentProgress(AgentProgress {
+                job_id: "job-1".into(),
+                strategy_summary: None,
+                observation: None,
+                action: Some(AgentAction::CallMcp(McpRequest {
+                    request_id: "save-2".into(),
+                    server: "ugoite".into(),
+                    operation: "ugoite.save".into(),
+                    arguments: BTreeMap::new(),
+                    effect: Some(CapabilityEffect::Write),
+                })),
+            }),
+        );
+        let failed = step(
+            failed_waiting.state,
+            KonaseEvent::McpCompleted(McpResult {
+                request_id: "save-2".into(),
+                operation: "ugoite.save".into(),
+                success: false,
+                observation: None,
+                resources: vec![],
+                resource_contents: vec![],
+                error: Some("storage unavailable".into()),
+            }),
+        );
+        assert_eq!(failed.state.knowledge, KnowledgeOutcome::WriteFailed);
     }
 
     #[test]
@@ -1820,6 +1940,7 @@ mod tests {
                     server: "ugoite".into(),
                     operation: "ugoite.search".into(),
                     arguments: BTreeMap::new(),
+                    effect: Some(CapabilityEffect::Read),
                 })),
             }),
         );
@@ -1851,6 +1972,7 @@ mod tests {
         let oversized = "x".repeat(MAX_GOAL_CHARS * 2);
         let state = KonaseState {
             status: SessionStatus::Completed,
+            knowledge: KnowledgeOutcome::Unchanged,
             work: Some(Work {
                 id: oversized.clone(),
                 goal: oversized.clone(),

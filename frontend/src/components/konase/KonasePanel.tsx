@@ -249,6 +249,11 @@ export function KonasePanel(props: KonasePanelProps) {
         {(current) => (
           <div class="ui-card ui-stack-sm">
             <p>{current().outcome.summary}</p>
+            <p class="ui-muted" role="status">
+              {t("konase.knowledge", {
+                outcome: knowledgeLabel(current().knowledge),
+              })}
+            </p>
             <Show when={current().undoAvailable && !undone()}>
               <button
                 class="btn"
@@ -277,7 +282,22 @@ const progressLabel = (progress: KonaseProgress): string => {
       return t("konase.mcp", { operation: progress.operation });
     case "complete":
       return t("konase.complete");
+    case "knowledge":
+      return t("konase.knowledge", {
+        outcome: knowledgeLabel(progress.outcome),
+      });
     case "undo":
       return t("konase.undone");
+  }
+};
+
+const knowledgeLabel = (outcome: KonaseTurn["knowledge"]): string => {
+  switch (outcome) {
+    case "unchanged":
+      return t("konase.knowledgeUnchanged");
+    case "saved":
+      return t("konase.knowledgeSaved");
+    case "write_failed":
+      return t("konase.knowledgeWriteFailed");
   }
 };

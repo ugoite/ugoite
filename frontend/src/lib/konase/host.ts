@@ -8,10 +8,15 @@ import type {
 } from "./model";
 import type { McpHost, McpRequest, McpResult } from "./mcp";
 
+export type CapabilityEffect = "read" | "write";
+
+export type KnowledgeOutcome = "unchanged" | "saved" | "write_failed";
+
 export type Capability = {
   name: string;
   description: string;
   input_schema?: Record<string, unknown>;
+  effect?: CapabilityEffect;
 };
 
 export type ResourceReference = { uri: string; label?: string };
@@ -27,6 +32,7 @@ export type Observation = {
 
 export type KonaseState = {
   status: "idle" | "working" | "completed" | "failed";
+  knowledge: KnowledgeOutcome;
   work?: Record<string, unknown>;
   job?: Record<string, unknown>;
   observations: Observation[];
@@ -102,12 +108,14 @@ export type KonaseProgress =
   | { kind: "model" }
   | { kind: "mcp"; operation: string }
   | { kind: "complete"; summary: string }
+  | { kind: "knowledge"; outcome: KnowledgeOutcome }
   | { kind: "undo" };
 
 export type KonaseTurn = {
   outcome: { job_id: string; summary: string; meaningful: boolean };
   workId: string;
   undoAvailable: boolean;
+  knowledge: KnowledgeOutcome;
 };
 
 export type KonaseHostOptions = {
@@ -164,6 +172,7 @@ export class KonaseHost {
       server: "ugoite",
       operation: "ugoite.undo",
       arguments: {},
+      effect: "write",
     }, workId);
     if (!result.success) {
       throw new Error(result.error ?? "Konase Work undo failed");
@@ -205,16 +214,17 @@ export class KonaseHost {
       } else if (action.kind === "call_mcp") {
         this.emitProgress({ kind: "mcp", operation: action.request.operation });
         const mcpResult = await this.mcp.callMcp(action.request, workId);
-        undoAvailable ||= action.request.operation === "ugoite.save" &&
-          mcpResult.success;
+        undoAvailable ||= action.request.effect === "write" &&
+          action.request.operation === "ugoite.save" && mcpResult.success;
         const mcpStep = await this.protocol.step(state, {
           mcp_completed: mcpResult,
         });
         state = requireState(mcpStep);
         action = runtime.resumeMcp(mcpResult);
       } else if (action.kind === "complete") {
+        state = await this.progress(state, jobId, action);
         this.emitProgress({ kind: "complete", summary: action.summary });
-        await this.progress(state, jobId, action);
+        this.emitProgress({ kind: "knowledge", outcome: state.knowledge });
         return {
           outcome: {
             job_id: action.job_id,
@@ -223,6 +233,7 @@ export class KonaseHost {
           },
           workId,
           undoAvailable,
+          knowledge: state.knowledge,
         };
       } else {
         throw new Error(
@@ -232,6 +243,7 @@ export class KonaseHost {
       state = await this.progress(state, jobId, action);
       if (action.kind === "complete") {
         this.emitProgress({ kind: "complete", summary: action.summary });
+        this.emitProgress({ kind: "knowledge", outcome: state.knowledge });
         return {
           outcome: {
             job_id: action.job_id,
@@ -240,6 +252,7 @@ export class KonaseHost {
           },
           workId,
           undoAvailable,
+          knowledge: state.knowledge,
         };
       }
     }
@@ -288,6 +301,7 @@ class BrowserAgentRuntime {
         name: capability.name,
         description: capability.description,
         input_schema: capability.input_schema,
+        effect: capability.effect,
       }];
     });
     return this.nextModel(
@@ -342,6 +356,7 @@ class BrowserAgentRuntime {
         server: "ugoite",
         operation: call.name,
         arguments: call.arguments,
+        effect: this.tools.find((tool) => tool.name === call.name)?.effect,
       },
     };
   }
