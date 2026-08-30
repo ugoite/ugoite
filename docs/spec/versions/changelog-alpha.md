@@ -2,6 +2,9 @@
 title: 'Alpha changelog'
 ---
 
-Alpha releases use the versioned GitHub Release assets, the alpha GHCR/npm aliases, the Helm chart, and the checksum-verified CLI/Compose assets. After those artifacts and their quick starts pass verification, `Release Publish` renders the repository-managed alpha source into the GitHub Release body. Alpha guidance remains explicit about preview risk and planned capability.
+This file preserves historical alpha guidance. Alpha is not a normal public
+release channel in the current release contract, so it does not define active
+GHCR, npm, Helm, CLI, or Compose publication behavior. Preview risk and planned
+capability remain explicit for historical references.
 
 Machine-readable source: [`../../version/changelog/alpha.yaml`](https://github.com/ugoite/ugoite/blob/main/docs/version/changelog/alpha.yaml).

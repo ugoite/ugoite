@@ -49,9 +49,10 @@ support, and product claims stay aligned with the implementation.
 - administrator recovery, managed service accounts, audit CRUD, and remote CLI
   asset upload are not supported v0.1 capabilities. TOTP is recovery-only and is
   not a normal login method;
-- the operator-dispatched `Release Publish` workflow publishes versioned release
-  artifacts and verifies the published Compose and CLI quick starts; an
-  operator-supported release still requires a successful published version.
+- the operator-dispatched candidate and promotion workflows publish only a
+  release-grade verified candidate. Promotion is buildless and verifies the
+  published Compose and CLI quick starts; an operator-supported release still
+  requires a successful published version.
 
 Release documentation and changelogs must use these boundaries rather than
 planned capability.

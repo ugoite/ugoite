@@ -35,6 +35,7 @@
       "e2e/deno.json",
       "docs/architecture/principles/north-star.md",
       "docs/architecture/release/release-rearchitecture.md",
+      "docs/architecture/release/release-contract.md",
       "docs/architecture/release/release-scope.md"
     ],
     "exclude": [

@@ -1,0 +1,342 @@
+name: Release Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact main commit to build and verify
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      source_sha: ${{ steps.resolve.outputs.source_sha }}
+      source_short: ${{ steps.resolve.outputs.source_short }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: true
+          cache: false
+
+      - name: Verify exact source and prepared version
+        id: resolve
+        env:
+          INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          test "${actual_sha}" = "${INPUT_SOURCE_SHA}"
+          mise run version:check
+          version="$(cat version.txt)"
+          {
+            echo "source_sha=${actual_sha}"
+            echo "source_short=${actual_sha:0:12}"
+            echo "version=${version}"
+          } >>"${GITHUB_OUTPUT}"
+
+  build-cli:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-13
+            target: x86_64-apple-darwin
+          - runner: macos-14
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.preflight.outputs.source_sha }}
+          persist-credentials: false
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: true
+          cache: true
+
+      - name: Build CLI from exact source
+        run: cargo build -p ugoite-cli --release --locked
+
+      - name: Package and verify CLI archive
+        env:
+          UGOITE_CLI_TARGET: ${{ matrix.target }}
+          UGOITE_CLI_BINARY_PATH: target/rust/release/ugoite
+        run: |
+          mise run package:cli:target
+          mise run verify:cli:target
+
+      - name: Upload verified CLI artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-cli-${{ matrix.target }}
+          path: target/artifacts/cli/*
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Attest CLI archive
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: target/artifacts/cli/*.tar.gz
+
+  build-npm-helm:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.preflight.outputs.source_sha }}
+          persist-credentials: false
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: true
+          cache: true
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+
+      - name: Package and verify Helm archive
+        run: |
+          mise run package:helm
+          mise run verify:helm:release
+
+      - name: Package and verify npm tarball
+        run: |
+          mise run package:npm
+          mise run verify:npm
+
+      - name: Upload verified npm and Helm artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-npm-helm
+          path: |
+            target/artifacts/npm/*
+            target/artifacts/helm/*
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Attest npm tarball
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: target/artifacts/npm/*.tgz
+
+  build-container:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    outputs:
+      image_digest: ${{ steps.digest.outputs.image_digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.preflight.outputs.source_sha }}
+          persist-credentials: false
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: true
+          cache: true
+
+      - name: Install Rust build prerequisites
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Build canonical container inputs
+        run: |
+          mise run build:wasm:release
+          mise run build:frontend
+          mise run build:rust:release
+
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Push candidate image under source identity
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          target: runtime-prebuilt
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: true
+          sbom: true
+          tags: ghcr.io/${{ github.repository }}:candidate-${{ needs.preflight.outputs.source_short }}-${{ github.run_id }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.preflight.outputs.source_sha }}
+            org.opencontainers.image.version=${{ needs.preflight.outputs.version }}
+
+      - name: Record candidate image digest
+        id: digest
+        run: |
+          digest="$(docker buildx imagetools inspect ghcr.io/${GITHUB_REPOSITORY}:candidate-${{ needs.preflight.outputs.source_short }}-${{ github.run_id }} --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          test -n "${digest}"
+          echo "image_digest=${digest}" >>"${GITHUB_OUTPUT}"
+
+  release-grade:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.preflight.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: true
+          cache: true
+
+      - name: Install Rust CI components
+        run: |
+          rustup component add rustfmt clippy
+          rustup target add wasm32-unknown-unknown
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Install Playwright browsers
+        run: deno task e2e:install:browsers
+
+      - name: Run release-grade repository gate
+        env:
+          UGOITE_SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
+          UGOITE_CI_RUN_ID: ${{ github.run_id }}
+        run: mise run ci:release
+
+  assemble-candidate:
+    needs:
+      - preflight
+      - build-cli
+      - build-npm-helm
+      - build-container
+      - release-grade
+    if: always() && needs.build-cli.result == 'success' && needs.build-npm-helm.result == 'success' && needs.build-container.result == 'success' && needs.release-grade.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.preflight.outputs.source_sha }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: candidate-cli-*
+          path: ${{ runner.temp }}/candidate-cli
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: candidate-npm-helm
+          path: ${{ runner.temp }}/candidate-packages
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: true
+          cache: false
+
+      - name: Stage exact candidate files
+        env:
+          CLI_INPUT: ${{ runner.temp }}/candidate-cli
+          PACKAGE_INPUT: ${{ runner.temp }}/candidate-packages
+        run: |
+          set -euo pipefail
+          rm -rf target/artifacts
+          mkdir -p target/artifacts/cli target/artifacts/npm target/artifacts/helm
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+          import shutil
+
+          cli_root = pathlib.Path(os.environ["CLI_INPUT"])
+          output = pathlib.Path("target/artifacts/cli")
+          for archive in sorted(cli_root.rglob("*.tar.gz")):
+              match = re.fullmatch(r"ugoite-v[^-]+-(.+)\.tar\.gz", archive.name)
+              if not match:
+                  raise SystemExit(f"unexpected CLI archive name: {archive.name}")
+              destination = output / match.group(1)
+              destination.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(archive, destination / archive.name)
+              checksum = archive.with_name(f"{archive.name}.sha256")
+              shutil.copy2(checksum, destination / checksum.name)
+
+          package_root = pathlib.Path(os.environ["PACKAGE_INPUT"])
+          for file in package_root.rglob("*.tgz"):
+              destination = pathlib.Path("target/artifacts/npm" if file.name.startswith("ugoite-ugoite-") else "target/artifacts/helm")
+              destination.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(file, destination / file.name)
+              checksum = file.with_name(f"{file.name}.sha256")
+              shutil.copy2(checksum, destination / checksum.name)
+          PY
+          cp docker-compose.release.yaml target/artifacts/docker-compose.release.yaml
+          (cd target/artifacts && sha256sum docker-compose.release.yaml >docker-compose.release.yaml.sha256)
+
+      - name: Write and verify candidate manifest
+        env:
+          UGOITE_RELEASE_CANDIDATE_PREBUILT: "true"
+          UGOITE_RELEASE_GRADE: passed
+          UGOITE_SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
+          UGOITE_CI_RUN_ID: ${{ github.run_id }}
+          UGOITE_CONTAINER_REPOSITORY: ghcr.io/${{ github.repository }}
+          UGOITE_CONTAINER_TAG: candidate-${{ needs.preflight.outputs.source_short }}-${{ github.run_id }}
+          UGOITE_CONTAINER_DIGEST: ${{ needs.build-container.outputs.image_digest }}
+        run: |
+          mise run release:candidate
+          mise run release:verify-candidate
+
+      - name: Assemble candidate bundle
+        run: |
+          set -euo pipefail
+          mkdir -p target/artifacts/candidate-bundle
+          cp target/artifacts/candidate-manifest.json target/artifacts/candidate-bundle/
+          cp target/artifacts/docker-compose.release.yaml* target/artifacts/candidate-bundle/
+          cp -R target/artifacts/cli target/artifacts/npm target/artifacts/helm target/artifacts/candidate-bundle/
+          (cd target/artifacts/candidate-bundle && sha256sum candidate-manifest.json >candidate-manifest.json.sha256)
+
+      - name: Upload verified candidate bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ugoite-release-candidate
+          path: target/artifacts/candidate-bundle
+          if-no-files-found: error
+          compression-level: 0

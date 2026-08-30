@@ -12,5 +12,7 @@ a product or support claim is safe to make.
 
 - [Current release scope](release-scope.md) lists included, limited, and
   unavailable capabilities.
+- [Versioning and release contract](release-contract.md) defines preparation,
+  candidate verification, and buildless promotion.
 - [Release rearchitecture status](release-rearchitecture.md) records the
   Rust/Deno consolidation and remaining future work.

@@ -349,7 +349,7 @@ run = "deno run -A tools/release.ts package-cli"
 
 [tasks."package:helm"]
 description = "Package the Helm chart under target/artifacts"
-run = "mkdir -p target/artifacts/helm && helm package charts/ugoite --destination target/artifacts/helm"
+run = "deno run -A tools/release.ts package-helm"
 
 [tasks."package:image"]
 description = "Export the built runtime image under target/artifacts"
@@ -399,13 +399,33 @@ run = "deno run -A tools/release.ts verify-npm"
 description = "Verify the packaged Helm archive without depending on the repo-wide artifact manifest"
 run = "deno run -A tools/release.ts verify-helm"
 
-[tasks."validate:release"]
-description = "Validate canonical release metadata and synchronized version sources"
-run = "deno run -A tools/release.ts validate-release"
+[tasks."version:sync"]
+description = "Synchronize product version projections from version.txt"
+run = "deno run -A tools/release.ts version-sync"
 
-[tasks."print:version"]
-description = "Print the canonical repository release version"
-run = "deno run -A tools/release.ts print-version"
+[tasks."version:check"]
+description = "Verify product version projections and Cargo.lock"
+run = "deno run -A tools/release.ts version-check"
+
+[tasks."release:prepare"]
+description = "Prepare the next pre-1.0 compatible or breaking product version"
+run = "deno run -A tools/release.ts prepare"
+
+[tasks."release:candidate"]
+description = "Build, verify, and record a release candidate manifest"
+run = "deno run -A tools/release.ts candidate"
+
+[tasks."release:verify-candidate"]
+description = "Verify candidate bytes and manifest integrity without rebuilding"
+run = "deno run -A tools/release.ts verify-candidate"
+
+[tasks."release:promote"]
+description = "Promote one verified candidate without rebuilding or repackaging"
+run = "deno run -A tools/release.ts promote"
+
+[tasks."release:promote:aliases"]
+description = "Update mutable distribution aliases after publication verification"
+run = "deno run -A tools/release.ts promote-aliases"
 
 [tasks.ci]
 description = "Run the repository quality gate"
@@ -425,7 +445,7 @@ run = [
   { tasks = [
     "test:docsite:e2e:navigation",
     "test:e2e:smoke-and-asset-owned",
-    "validate:release",
+    "version:check",
   ] },
 ]
 

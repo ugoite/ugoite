@@ -138,7 +138,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-009
   title: Deterministic Release Promotion
-  description: An operator-selected release tag must keep canonical metadata and published installer paths synchronized with the exact tagged source commit.
+  description: An operator-selected verified candidate must keep canonical metadata and published installer paths synchronized with its exact source commit and artifact digests.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operate/server/operations.md
@@ -289,7 +289,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-017
   title: Release Container Publishing and Quick Start
-  description: Release automation publishes one deterministic runtime image and verifies the documented Compose quick start from the published versioned image and Compose assets.
+  description: Promotion publishes the verified runtime image digest without rebuilding and verifies the documented Compose quick start from the published versioned image and Compose assets.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operate/server/operations.md
@@ -306,7 +306,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-018
   title: CLI Release Binaries and Install Path
-  description: Release automation publishes checksum-verified CLI archives for supported platforms, and the post-publication quick-start gate verifies the installer against the published release.
+  description: Candidate generation verifies checksum-verified CLI archives for supported platforms, and buildless promotion publishes those exact archives before the post-publication installer quick-start gate.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operate/server/operations.md
@@ -380,6 +380,24 @@ requirements:
   scope: Operational quality, workflow, and automation requirements.
   linked_policies: *id001
   linked_specifications: *id002
+  id: REQ-OPS-044
+  title: Repository-Native Candidate Promotion
+  description: Release preparation uses version.txt as the canonical prepared-version authority, records verified candidate identity from exact manifest bytes, and promotes only matching candidate artifacts without rebuilding or repackaging.
+  related_spec:
+  - testing/ci-cd.md
+  - ../../architecture/release/release-contract.md
+  priority: high
+  status: implemented
+  verification: traced
+  tests:
+  - file: tools/release_contract_test.ts
+  - file: .github/workflows/release-candidate.yml
+  - file: .github/workflows/release-publish.yml
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-023
   title: Public Installer Separation
   description: The public `packages/ugoite` installer must remain separate from repository development tooling.
@@ -429,8 +447,8 @@ requirements:
   linked_policies: *id001
   linked_specifications: *id002
   id: REQ-OPS-026
-  title: Channel-Scoped Changelog Sources
-  description: Stable, beta, and alpha changelog sources must remain separate, must not imply unpublished artifacts exist, and must be rendered into the matching GitHub Release body after artifact and quick-start verification. Reruns replace one marked repository-owned section without duplicating generated notes.
+  title: Repository-Managed Stable Changelog Source
+  description: The stable changelog source must not imply unpublished artifacts exist and must be rendered into the GitHub Release body after artifact and quick-start verification. Historical beta and alpha sources remain separate but are not normal public release channels. Reruns replace one marked repository-owned section without duplicating generated notes.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operate/server/operations.md

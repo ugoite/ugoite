@@ -198,7 +198,7 @@ function assertAggregateWorkflow(workflow: string, mise: string): void {
       '{ task = "verify" }',
       '"test:docsite:e2e:navigation"',
       '"test:e2e:smoke-and-asset-owned"',
-      '"validate:release"',
+      '"version:check"',
     ],
     "artifact CI task",
   );

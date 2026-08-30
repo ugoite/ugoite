@@ -2,6 +2,9 @@
 title: 'Beta changelog'
 ---
 
-Beta releases use the versioned GitHub Release assets, the beta GHCR/npm aliases, the Helm chart, and the checksum-verified CLI/Compose assets. After those artifacts and their quick starts pass verification, `Release Publish` renders the repository-managed beta source into the GitHub Release body. Beta guidance remains separate from stable and alpha narratives.
+This file preserves historical beta guidance. Beta is not a normal public
+release channel in the current release contract, so it does not define active
+GHCR, npm, Helm, CLI, or Compose publication behavior. Beta guidance remains
+separate from stable and alpha historical narratives.
 
 Machine-readable source: [`../../version/changelog/beta.yaml`](https://github.com/ugoite/ugoite/blob/main/docs/version/changelog/beta.yaml).
