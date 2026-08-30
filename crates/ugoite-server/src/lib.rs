@@ -10776,6 +10776,15 @@ mod authentication_regression_tests {
         )
     }
 
+    struct McpTestCall<'a> {
+        token: &'a str,
+        scheme: &'a str,
+        method: &'a str,
+        name: Option<&'a str>,
+        params: Value,
+        dpop: Option<&'a str>,
+    }
+
     fn mcp_request_at_uri(
         uri: &str,
         token: &str,
@@ -10785,19 +10794,29 @@ mod authentication_regression_tests {
         params: Value,
         dpop: Option<&str>,
     ) -> Request<Body> {
-        mcp_request_at_uri_with_id(uri, json!(1), token, scheme, method, name, params, dpop)
+        mcp_request_at_uri_with_id(
+            uri,
+            json!(1),
+            McpTestCall {
+                token,
+                scheme,
+                method,
+                name,
+                params,
+                dpop,
+            },
+        )
     }
 
-    fn mcp_request_at_uri_with_id(
-        uri: &str,
-        id: Value,
-        token: &str,
-        scheme: &str,
-        method: &str,
-        name: Option<&str>,
-        params: Value,
-        dpop: Option<&str>,
-    ) -> Request<Body> {
+    fn mcp_request_at_uri_with_id(uri: &str, id: Value, call: McpTestCall<'_>) -> Request<Body> {
+        let McpTestCall {
+            token,
+            scheme,
+            method,
+            name,
+            params,
+            dpop,
+        } = call;
         let mut params = params
             .as_object()
             .cloned()
@@ -10839,23 +10858,28 @@ mod authentication_regression_tests {
         params: Value,
         dpop: Option<&str>,
     ) -> (StatusCode, Value) {
-        mcp_call_with_id(router, json!(1), token, scheme, method, name, params, dpop).await
+        mcp_call_with_id(
+            router,
+            json!(1),
+            McpTestCall {
+                token,
+                scheme,
+                method,
+                name,
+                params,
+                dpop,
+            },
+        )
+        .await
     }
 
     async fn mcp_call_with_id(
         router: Router,
         id: Value,
-        token: &str,
-        scheme: &str,
-        method: &str,
-        name: Option<&str>,
-        params: Value,
-        dpop: Option<&str>,
+        call: McpTestCall<'_>,
     ) -> (StatusCode, Value) {
         let response = router
-            .oneshot(mcp_request_at_uri_with_id(
-                "/mcp", id, token, scheme, method, name, params, dpop,
-            ))
+            .oneshot(mcp_request_at_uri_with_id("/mcp", id, call))
             .await
             .expect("MCP request response");
         let status = response.status();
@@ -11243,12 +11267,14 @@ mod authentication_regression_tests {
         let (status, body) = mcp_call_with_id(
             router.clone(),
             json!("missing-run-id"),
-            &token,
-            "Bearer",
-            "tools/call",
-            Some("ugoite.save"),
-            json!({"name":"ugoite.save","arguments":{"content":"# Missing Run ID"}}),
-            None,
+            McpTestCall {
+                token: &token,
+                scheme: "Bearer",
+                method: "tools/call",
+                name: Some("ugoite.save"),
+                params: json!({"name":"ugoite.save","arguments":{"content":"# Missing Run ID"}}),
+                dpop: None,
+            },
         )
         .await;
         assert_eq!(status, StatusCode::OK);
@@ -11263,12 +11289,14 @@ mod authentication_regression_tests {
         let (status, body) = mcp_call_with_id(
             router.clone(),
             json!(2060),
-            &token,
-            "Bearer",
-            "tools/call",
-            Some("ugoite.undo"),
-            json!({"name":"ugoite.undo","arguments":{},"_meta":{"ugoite/runId":invalid_run_id}}),
-            None,
+            McpTestCall {
+                token: &token,
+                scheme: "Bearer",
+                method: "tools/call",
+                name: Some("ugoite.undo"),
+                params: json!({"name":"ugoite.undo","arguments":{},"_meta":{"ugoite/runId":invalid_run_id}}),
+                dpop: None,
+            },
         )
         .await;
         assert_eq!(status, StatusCode::OK);
