@@ -66,6 +66,8 @@ Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
   assertEquals(requiredStatus?.events, ["pull_request", "merge_group"]);
   requireText(workflow, "merge_group:", "PR validator");
   requireText(workflow, "github.rest.pulls.get", "PR validator");
+  requireText(workflow, "pr-(\\d+)", "PR validator");
+  requireText(workflow, "context.ref", "PR validator");
   requireText(
     contract,
     "Every pull request that can affect Space ownership",

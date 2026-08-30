@@ -25,7 +25,8 @@ jobs:
           script: |
             let body = context.payload.pull_request?.body || "";
             if (!body && context.eventName === "merge_group") {
-              const pullRequestNumber = context.payload.merge_group?.pull_requests?.[0]?.number;
+              const mergeGroupRef = context.ref || context.payload.merge_group?.head_ref || "";
+              const pullRequestNumber = mergeGroupRef.match(/(?:^|\/)pr-(\d+)(?:-|$)/)?.[1];
               if (pullRequestNumber) {
                 const response = await github.rest.pulls.get({
                   owner: context.repo.owner,
