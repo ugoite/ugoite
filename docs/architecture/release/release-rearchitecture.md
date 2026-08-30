@@ -6,8 +6,10 @@ sidebar:
 
 The repository has completed the current Rust-centered consolidation:
 
-- one Cargo workspace with domain, storage, core, server, CLI, WASM, portable
-  API client, and xtask crates;
+- one Cargo workspace with the 12 current crates: `ugoite-domain`,
+  `ugoite-api-client`, `ugoite-storage`, `ugoite-iceberg`, `ugoite-identity`,
+  `ugoite-core`, `ugoite-konase`, `ugoite-konase-rig`, `ugoite-server`,
+  `ugoite-cli`, `ugoite-wasm`, and `xtask`;
 - one Deno workspace for frontend, docsite, tools, and end-to-end tests;
 - one runtime container containing the server, CLI, and static browser files;
 - one root `mise.toml` command surface;
