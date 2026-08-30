@@ -1,4 +1,4 @@
-import { validateKnowledgeCompatibilityReview } from "./knowledge_compatibility.ts";
+import { validateKnowledgeCompatibilityReview } from "./knowledge_compatibility.mjs";
 
 const args = [...Deno.args];
 

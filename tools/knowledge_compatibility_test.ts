@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert/equals";
-import { validateKnowledgeCompatibilityReview } from "./knowledge_compatibility.ts";
+import { validateKnowledgeCompatibilityReview } from "./knowledge_compatibility.mjs";
 
 const contract = await Deno.readTextFile(
   "docs/spec/versions/v0.1-knowledge-compatibility.md",
@@ -7,7 +7,7 @@ const contract = await Deno.readTextFile(
 const template = await Deno.readTextFile(".github/pull_request_template.md");
 const validator = await Deno.readTextFile("tools/create_pr.ts");
 const compatibilityValidator = await Deno.readTextFile(
-  "tools/knowledge_compatibility.ts",
+  "tools/knowledge_compatibility.mjs",
 );
 const workflow = await Deno.readTextFile(
   ".github/workflows/pr-require-close-issue.yml",
@@ -41,19 +41,29 @@ Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
   );
   requireText(template, "Preserving implementation change", "PR template");
   requireText(template, "Breaking semantic change", "PR template");
-  for (const source of [validator, workflow]) {
-    requireText(source, "Knowledge Compatibility Review", "PR validator");
-  }
+  requireText(validator, "knowledge_compatibility.mjs", "PR validator");
   requireText(
     compatibilityValidator,
     "select exactly one valid classification",
-    "PR validator",
+    "canonical validator",
   );
-  requireText(validator, "knowledge_compatibility.ts", "PR validator");
+  requireText(workflow, "actions/checkout@", "PR validator");
   requireText(
     workflow,
-    "select exactly one valid classification",
+    "ref: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}",
     "PR validator",
+  );
+  requireText(workflow, "tools/knowledge_compatibility.mjs", "PR validator");
+  requireText(workflow, "await import(", "PR validator");
+  assertEquals(
+    workflow.includes("No effect on the v0\\.1 Knowledge semantic contract"),
+    false,
+    "workflow must not duplicate classification regexes",
+  );
+  assertEquals(
+    workflow.includes("checkedClassifications"),
+    false,
+    "workflow must not implement classification semantics",
   );
   const requiredStatus = requiredStatusChecks.required_status_checks?.find(
     (check) => check.context === "require-close-issue-link",
@@ -80,37 +90,97 @@ Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
   );
 });
 
-Deno.test("Knowledge Compatibility Review validates one classification and evidence", () => {
-  const preserving = `
-## Knowledge Compatibility Review
+const compatibilityReviewCases = [
+  {
+    name: "no-effect classification",
+    valid: true,
+    review: "- [x] No effect on the v0.1 Knowledge semantic contract.",
+  },
+  {
+    name: "preserving classification with evidence",
+    valid: true,
+    review: [
+      "- [x] Preserving implementation change; the canonical fixture and focused tests remain passing.",
+      "Evidence: canonical fixture passes.",
+    ].join("\n"),
+  },
+  {
+    name: "breaking classification with decision",
+    valid: true,
+    review: [
+      "- [x] Breaking semantic change; an explicit versioned contract or migration/re-encoding decision is documented.",
+      "Decision: versioned re-encoding approved.",
+    ].join("\n"),
+  },
+  {
+    name: "no classification",
+    valid: false,
+    review: "- [ ] No effect on the v0.1 Knowledge semantic contract.",
+  },
+  {
+    name: "two classifications",
+    valid: false,
+    review: [
+      "- [x] No effect on the v0.1 Knowledge semantic contract.",
+      "- [x] Preserving implementation change; the canonical fixture and focused tests remain passing.",
+      "Evidence: canonical fixture passes.",
+    ].join("\n"),
+  },
+  {
+    name: "preserving classification without evidence",
+    valid: false,
+    review:
+      "- [x] Preserving implementation change; the canonical fixture and focused tests remain passing.",
+  },
+  {
+    name: "preserving classification with empty evidence",
+    valid: false,
+    review: [
+      "- [x] Preserving implementation change; the canonical fixture and focused tests remain passing.",
+      "Evidence:",
+    ].join("\n"),
+  },
+  {
+    name: "preserving classification with untouched placeholder",
+    valid: false,
+    review: [
+      "- [x] Preserving implementation change; the canonical fixture and focused tests remain passing.",
+      "Evidence: <required for preserving changes>",
+    ].join("\n"),
+  },
+  {
+    name: "breaking classification without decision",
+    valid: false,
+    review:
+      "- [x] Breaking semantic change; an explicit versioned contract or migration/re-encoding decision is documented.",
+  },
+  {
+    name: "breaking classification with empty decision",
+    valid: false,
+    review: [
+      "- [x] Breaking semantic change; an explicit versioned contract or migration/re-encoding decision is documented.",
+      "Decision:",
+    ].join("\n"),
+  },
+  {
+    name: "breaking classification with untouched placeholder",
+    valid: false,
+    review: [
+      "- [x] Breaking semantic change; an explicit versioned contract or migration/re-encoding decision is documented.",
+      "Decision: <required for breaking changes>",
+    ].join("\n"),
+  },
+];
 
-- [x] Preserving implementation change; the canonical fixture and focused tests remain passing.
-Evidence: fixture and reopened Space assertions pass.
-`;
-  assertEquals(validateKnowledgeCompatibilityReview(preserving), []);
-
-  const noEffect = `
-## Knowledge Compatibility Review
-
-- [x] No effect on the v0.1 Knowledge semantic contract.
-`;
-  assertEquals(validateKnowledgeCompatibilityReview(noEffect), []);
-
-  const multiple = `
-## Knowledge Compatibility Review
-
-- [x] No effect on the v0.1 Knowledge semantic contract.
-- [x] Preserving implementation change; the canonical fixture and focused tests remain passing.
-Evidence: fixture passes.
-`;
-  assertEquals(validateKnowledgeCompatibilityReview(multiple).length, 1);
-
-  const missingEvidence = `
-## Knowledge Compatibility Review
-
-- [x] Preserving implementation change; the canonical fixture and focused tests remain passing.
-`;
-  assertEquals(validateKnowledgeCompatibilityReview(missingEvidence).length, 1);
+Deno.test("Knowledge Compatibility Review uses one canonical validation matrix", () => {
+  for (const testCase of compatibilityReviewCases) {
+    const body = `## Knowledge Compatibility Review\n\n${testCase.review}`;
+    assertEquals(
+      validateKnowledgeCompatibilityReview(body).length === 0,
+      testCase.valid,
+      testCase.name,
+    );
+  }
 });
 
 // REQ-STO-014

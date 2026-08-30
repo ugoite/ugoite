@@ -17,20 +17,34 @@ const classifications = [
     pattern:
       /^\s*-\s+\[[xX]\]\s+Breaking semantic change; an explicit versioned contract or migration\/re-encoding decision is documented\.\s*$/im,
   },
-] as const;
+];
 
-export function validateKnowledgeCompatibilityReview(body: string): string[] {
+const notePlaceholders = {
+  Evidence: "<required for preserving changes>",
+  Decision: "<required for breaking changes>",
+};
+
+function hasReviewNote(reviewText, label) {
+  const noteMatch = reviewText.match(
+    new RegExp(`^\\s*${label}:\\s*(.*)$`, "im"),
+  );
+  const note = noteMatch?.[1]?.trim() ?? "";
+  return note !== "" && note !== notePlaceholders[label];
+}
+
+export function validateKnowledgeCompatibilityReview(body) {
   const compatibilityMatch = body.match(reviewSectionPattern);
   if (!compatibilityMatch) {
     return ["Knowledge Compatibility Review section is missing."];
   }
 
   const reviewText = compatibilityMatch[1].trim();
-  const checkedCheckboxes = reviewText.match(/^\s*-\s+\[[xX]\]\s+.+$/gm) ?? [];
+  const checkedCheckboxes = reviewText.match(/^\s*-\s+\[[xX]\]\s+.+$/gm) ??
+    [];
   const checkedClassifications = classifications.filter(({ pattern }) =>
     pattern.test(reviewText)
   );
-  const errors: string[] = [];
+  const errors = [];
 
   if (checkedCheckboxes.length !== 1 || checkedClassifications.length !== 1) {
     errors.push(
@@ -40,15 +54,11 @@ export function validateKnowledgeCompatibilityReview(body: string): string[] {
 
   const classification = checkedClassifications[0]?.kind;
   if (
-    classification === "preserving" &&
-    !/^\s*Evidence:\s*\S.+$/im.test(reviewText)
+    classification === "preserving" && !hasReviewNote(reviewText, "Evidence")
   ) {
     errors.push("Preserving changes must include non-empty Evidence: notes.");
   }
-  if (
-    classification === "breaking" &&
-    !/^\s*Decision:\s*\S.+$/im.test(reviewText)
-  ) {
+  if (classification === "breaking" && !hasReviewNote(reviewText, "Decision")) {
     errors.push("Breaking changes must include non-empty Decision: notes.");
   }
 
