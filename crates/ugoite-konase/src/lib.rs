@@ -27,4 +27,7 @@ pub use engine::{
 };
 
 /// Version for portable Konase JSON semantics, independent of Ugoite REST.
-pub const KONASE_PROTOCOL_VERSION: u32 = 1;
+///
+/// Version 2 adds the observed Knowledge outcome and capability effect
+/// metadata. Pre-v1 internal state is intentionally not migrated.
+pub const KONASE_PROTOCOL_VERSION: u32 = 2;
