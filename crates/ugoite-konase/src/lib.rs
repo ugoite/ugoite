@@ -13,7 +13,10 @@ pub use agent_runtime::{
     AgentAction, AgentRuntime, AgentRuntimeError, AgentRuntimeInput, ModelMessage, ModelRequest,
     ModelResult, ModelTool, ModelToolCall,
 };
-pub use context::{ContextBuildRequest, ContextBuilder, ContextLimits};
+pub use context::{
+    ContextBuildRequest, ContextBuilder, ContextLimits, MAX_CONTEXT_CAPABILITY_JSON_BYTES,
+    MAX_CONTEXT_JSON_BYTES,
+};
 pub use engine::{
     normalize_state, step, AgentProgress, Capability, ConfirmationRequest, ConfirmationResult,
     ContextCapsule, HostError, Job, JobOutcome, JobRequest, JobSpec, JobStatus, KonaseEffect,

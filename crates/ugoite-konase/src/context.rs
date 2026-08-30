@@ -1,9 +1,15 @@
-use crate::{Capability, Observation, ResourceContent};
+use crate::{Capability, ContextCapsule, Observation, ResourceContent};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 const MAX_CONTEXT_SCHEMA_BYTES: usize = 16 * 1024;
 const MAX_CAPABILITY_NAME_CHARS: usize = 256;
+
+/// Maximum serialized size of a normalized Context Capsule.
+pub const MAX_CONTEXT_JSON_BYTES: usize = 48 * 1024;
+
+/// Maximum serialized size of the complete normalized capability payload.
+pub const MAX_CONTEXT_CAPABILITY_JSON_BYTES: usize = 24 * 1024;
 
 /// Explicit limits keep a model context proportional to the current bounded
 /// view, not to the total Work transcript.
@@ -89,6 +95,17 @@ impl ContextBuilder {
     }
 
     pub fn build(&self, request: ContextBuildRequest) -> crate::ContextCapsule {
+        self.build_with_byte_budget(request, MAX_CONTEXT_JSON_BYTES)
+    }
+
+    /// Build a deterministic Context Capsule within the requested serialized
+    /// byte budget. The budget is also capped by the protocol-wide context
+    /// limit so callers cannot expand the portable boundary.
+    pub fn build_with_byte_budget(
+        &self,
+        request: ContextBuildRequest,
+        max_bytes: usize,
+    ) -> crate::ContextCapsule {
         let ContextBuildRequest {
             work_goal,
             job_goal,
@@ -101,6 +118,19 @@ impl ContextBuilder {
             limits,
         } = request;
         let limits = limits.unwrap_or_else(|| self.limits.clone()).bounded();
+        let max_bytes = max_bytes.min(MAX_CONTEXT_JSON_BYTES);
+
+        let mut context = ContextCapsule {
+            work_goal: truncate(&work_goal, limits.max_summary_chars),
+            job_goal: truncate(&job_goal, limits.max_summary_chars),
+            current_strategy_summary: current_strategy_summary
+                .map(|summary| truncate(&summary, limits.max_summary_chars)),
+            relevant_observations: Vec::new(),
+            available_capabilities: Vec::new(),
+            selected_resource_contents: Vec::new(),
+            safety_hints: Vec::new(),
+            expected_response_schema: None,
+        };
 
         let observations = observations
             .into_iter()
@@ -143,15 +173,24 @@ impl ContextBuilder {
                 .then_with(|| left.description.cmp(&right.description))
         });
         available_capabilities.truncate(limits.max_capabilities);
-        for capability in &mut available_capabilities {
-            capability.name = truncate(&capability.name, MAX_CAPABILITY_NAME_CHARS);
-            capability.description = truncate(&capability.description, limits.max_summary_chars);
-            capability.input_schema = capability.input_schema.take().filter(|schema| {
-                serde_json::to_vec(schema)
-                    .map(|serialized| serialized.len() <= MAX_CONTEXT_SCHEMA_BYTES)
-                    .unwrap_or(false)
-            });
-        }
+        let available_capabilities = available_capabilities
+            .into_iter()
+            .filter_map(|mut capability| {
+                capability.name = truncate(&capability.name, MAX_CAPABILITY_NAME_CHARS);
+                capability.description =
+                    truncate(&capability.description, limits.max_summary_chars);
+                if let Some(schema) = capability.input_schema.take() {
+                    let schema_is_bounded = serde_json::to_vec(&schema)
+                        .map(|serialized| serialized.len() <= MAX_CONTEXT_SCHEMA_BYTES)
+                        .unwrap_or(false);
+                    if !schema_is_bounded {
+                        return None;
+                    }
+                    capability.input_schema = Some(schema);
+                }
+                Some(capability)
+            })
+            .collect::<Vec<_>>();
 
         let selected_resource_contents = selected_resource_contents
             .into_iter()
@@ -161,7 +200,7 @@ impl ContextBuilder {
                 resource.content = truncate(&resource.content, limits.max_summary_chars);
                 resource
             })
-            .collect();
+            .collect::<Vec<_>>();
 
         let expected_response_schema = expected_response_schema.filter(|schema| {
             serde_json::to_vec(schema)
@@ -169,22 +208,69 @@ impl ContextBuilder {
                 .unwrap_or(false)
         });
 
-        crate::ContextCapsule {
-            work_goal: truncate(&work_goal, limits.max_summary_chars),
-            job_goal: truncate(&job_goal, limits.max_summary_chars),
-            current_strategy_summary: current_strategy_summary
-                .map(|summary| truncate(&summary, limits.max_summary_chars)),
-            relevant_observations: observations.into_iter().rev().collect(),
-            available_capabilities,
-            selected_resource_contents,
-            safety_hints: safety_hints
-                .into_iter()
-                .take(limits.max_safety_hints)
-                .map(|hint| truncate(&hint, limits.max_summary_chars))
-                .collect(),
-            expected_response_schema,
+        // Capability metadata is kept as one atomic payload. In particular,
+        // do not retain a capability after dropping only its schema: hosts
+        // correctly omit capabilities without a usable input schema.
+        for capability in available_capabilities {
+            context.available_capabilities.push(capability);
+            let capability_payload_fits = serde_json::to_vec(&context.available_capabilities)
+                .map(|serialized| serialized.len() <= MAX_CONTEXT_CAPABILITY_JSON_BYTES)
+                .unwrap_or(false);
+            if !capability_payload_fits || !fits_budget(&context, max_bytes) {
+                context.available_capabilities.pop();
+                continue;
+            }
         }
+
+        // Observations are considered newest first and then restored to
+        // chronological order. Once the next recent observation does not fit,
+        // older observations are not more relevant and are omitted as well.
+        let mut recent_observations = Vec::new();
+        for observation in observations {
+            recent_observations.push(observation);
+            context.relevant_observations = recent_observations.iter().rev().cloned().collect();
+            if !fits_budget(&context, max_bytes) {
+                recent_observations.pop();
+                context.relevant_observations = recent_observations.iter().rev().cloned().collect();
+                break;
+            }
+        }
+
+        for resource in selected_resource_contents {
+            context.selected_resource_contents.push(resource);
+            if !fits_budget(&context, max_bytes) {
+                context.selected_resource_contents.pop();
+                break;
+            }
+        }
+
+        for hint in safety_hints
+            .into_iter()
+            .take(limits.max_safety_hints)
+            .map(|hint| truncate(&hint, limits.max_summary_chars))
+        {
+            context.safety_hints.push(hint);
+            if !fits_budget(&context, max_bytes) {
+                context.safety_hints.pop();
+                break;
+            }
+        }
+
+        if expected_response_schema.is_some() {
+            context.expected_response_schema = expected_response_schema;
+            if !fits_budget(&context, max_bytes) {
+                context.expected_response_schema = None;
+            }
+        }
+
+        context
     }
+}
+
+fn fits_budget(context: &ContextCapsule, max_bytes: usize) -> bool {
+    serde_json::to_vec(context)
+        .map(|serialized| serialized.len() <= max_bytes)
+        .unwrap_or(false)
 }
 
 fn truncate(value: &str, max_chars: usize) -> String {
@@ -335,20 +421,59 @@ mod tests {
             context.selected_resource_contents.len(),
             defaults.max_resources
         );
-        assert_eq!(
-            context.available_capabilities.len(),
-            defaults.max_capabilities
-        );
+        assert!(context.available_capabilities.is_empty());
         assert_eq!(context.safety_hints.len(), defaults.max_safety_hints);
         assert!(context.expected_response_schema.is_none());
-        assert!(context
-            .available_capabilities
-            .iter()
-            .all(|capability| capability.input_schema.is_none()));
         assert!(context.work_goal.chars().count() <= defaults.max_summary_chars);
         assert!(context
             .available_capabilities
             .iter()
             .all(|capability| capability.name.chars().count() <= MAX_CAPABILITY_NAME_CHARS));
+    }
+
+    #[test]
+    fn complete_capability_payload_and_context_are_aggregately_bounded() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "description": "x".repeat(7_000),
+        });
+        let request = ContextBuildRequest {
+            work_goal: "work goal".into(),
+            job_goal: "job goal".into(),
+            current_strategy_summary: Some("strategy".into()),
+            observations: (0..20).map(observation).collect(),
+            available_capabilities: (0..32)
+                .map(|id| Capability {
+                    name: format!("capability-{id}"),
+                    description: "capability description".into(),
+                    input_schema: Some(schema.clone()),
+                })
+                .collect(),
+            selected_resource_contents: (0..10)
+                .map(|id| ResourceContent {
+                    uri: format!("ugoite://entry/{id}"),
+                    content: "resource content".into(),
+                })
+                .collect(),
+            safety_hints: (0..20).map(|id| format!("hint-{id}")).collect(),
+            expected_response_schema: Some(schema),
+            limits: None,
+        };
+
+        let context = ContextBuilder::default().build(request.clone());
+        let serialized_size = serde_json::to_vec(&context).unwrap().len();
+        assert!(serialized_size <= MAX_CONTEXT_JSON_BYTES);
+        assert!(context.available_capabilities.len() < 32);
+        assert!(context
+            .available_capabilities
+            .iter()
+            .all(|capability| capability.input_schema.is_some()));
+        assert!(
+            serde_json::to_vec(&context.available_capabilities)
+                .unwrap()
+                .len()
+                <= MAX_CONTEXT_CAPABILITY_JSON_BYTES
+        );
+        assert_eq!(context, ContextBuilder::default().build(request));
     }
 }
