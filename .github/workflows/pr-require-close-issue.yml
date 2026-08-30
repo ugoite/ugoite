@@ -71,18 +71,17 @@ jobs:
               errors.push("Related Issue must include either `close: #123` or `closes #123`.");
             }
 
-            const { readFileSync } = await import("node:fs");
-            const { stripTypeScriptTypes } = await import("node:module");
-            const trustedValidatorSource = readFileSync(
+            if (!process.versions.node.startsWith("24.")) {
+              throw new Error(
+                `Knowledge compatibility review requires Node 24; got ${process.versions.node}`,
+              );
+            }
+            const { pathToFileURL } = await import("node:url");
+            const trustedValidatorUrl = pathToFileURL(
               `${process.env.GITHUB_WORKSPACE}/tools/knowledge_compatibility.ts`,
-              "utf8",
-            );
-            const trustedValidatorJavaScript = stripTypeScriptTypes(
-              trustedValidatorSource,
-              { mode: "strip" },
-            );
+            ).href;
             const { validateKnowledgeCompatibilityReview } = await import(
-              `data:text/javascript;charset=utf-8,${encodeURIComponent(trustedValidatorJavaScript)}`
+              trustedValidatorUrl
             );
             errors.push(...validateKnowledgeCompatibilityReview(body));
 
