@@ -15,6 +15,11 @@ type KonasePanelProps = {
   spaceId: string;
 };
 
+type PanelLifetime = {
+  generation: number;
+  spaceId: string;
+};
+
 /** Small browser surface for the same disposable Work used by the CLI. */
 export function KonasePanel(props: KonasePanelProps) {
   const [configuredHost, setConfiguredHost] = createSignal<KonaseHost>();
@@ -33,27 +38,44 @@ export function KonasePanel(props: KonasePanelProps) {
   const [error, setError] = createSignal<string>();
   let unsubscribe: (() => void) | undefined;
   let pendingSpaceId: string | undefined;
+  let lifetime: PanelLifetime = { generation: 0, spaceId: props.spaceId };
+
+  const captureLifetime = (): PanelLifetime => ({ ...lifetime });
+  const isCurrentLifetime = (candidate: PanelLifetime) =>
+    candidate.generation === lifetime.generation &&
+    candidate.spaceId === lifetime.spaceId &&
+    candidate.spaceId === props.spaceId;
 
   createEffect(() => {
     const currentSpaceId = props.spaceId;
-    if (pendingSpaceId && pendingSpaceId !== currentSpaceId) {
-      setApprovalUrl(undefined);
-    }
-    if (configuredSpaceId() && configuredSpaceId() !== props.spaceId) {
+    if (lifetime.spaceId !== currentSpaceId) {
+      lifetime = {
+        generation: lifetime.generation + 1,
+        spaceId: currentSpaceId,
+      };
+      if (pendingSpaceId && pendingSpaceId !== currentSpaceId) {
+        pendingSpaceId = undefined;
+      }
       unsubscribe?.();
       unsubscribe = undefined;
       setConfiguredHost(undefined);
       setConfiguredSpaceId(undefined);
       setApprovalUrl(undefined);
+      setConnecting(false);
+      setPrompt("");
+      setRunning(false);
+      setUndoing(false);
       setTurn(undefined);
       setUndone(false);
       setSteps([]);
+      setError(undefined);
     }
   });
 
-  const subscribe = (host: KonaseHost) => {
+  const subscribe = (host: KonaseHost, hostLifetime: PanelLifetime) => {
     unsubscribe?.();
     unsubscribe = host.subscribeProgress((progress) => {
+      if (!isCurrentLifetime(hostLifetime)) return;
       setSteps((current) => [...current, progressLabel(progress)]);
     });
   };
@@ -62,7 +84,8 @@ export function KonasePanel(props: KonasePanelProps) {
   const configure = async (event: SubmitEvent) => {
     event.preventDefault();
     if (connecting()) return;
-    const requestedSpaceId = props.spaceId;
+    const configureLifetime = captureLifetime();
+    const requestedSpaceId = configureLifetime.spaceId;
     pendingSpaceId = requestedSpaceId;
     setConnecting(true);
     setApprovalUrl(undefined);
@@ -76,24 +99,29 @@ export function KonasePanel(props: KonasePanelProps) {
       const credential = await authorizeBrowserMcp({
         spaceUid,
         deviceName: `Ugoite Browser Konase (${requestedSpaceId})`,
-        onApprovalRequired: ({ verificationUriComplete }) =>
-          setApprovalUrl(verificationUriComplete),
+        onApprovalRequired: ({ verificationUriComplete }) => {
+          if (isCurrentLifetime(configureLifetime)) {
+            setApprovalUrl(verificationUriComplete);
+          }
+        },
       });
-      if (props.spaceId !== requestedSpaceId) return;
+      if (!isCurrentLifetime(configureLifetime)) return;
       const host = new KonaseHost({
         model: new OpenAiModelHost({ apiKey: modelApiKey() }),
         mcp: new BrowserMcpHost(credential),
       });
       setConfiguredHost(host);
-      setConfiguredSpaceId(props.spaceId);
-      subscribe(host);
+      setConfiguredSpaceId(requestedSpaceId);
+      subscribe(host, configureLifetime);
     } catch (cause) {
-      if (props.spaceId === requestedSpaceId) {
+      if (isCurrentLifetime(configureLifetime)) {
         setError(formatUserFacingError(cause, "konase.error"));
       }
     } finally {
-      if (pendingSpaceId === requestedSpaceId) pendingSpaceId = undefined;
-      setConnecting(false);
+      if (isCurrentLifetime(configureLifetime)) {
+        if (pendingSpaceId === requestedSpaceId) pendingSpaceId = undefined;
+        setConnecting(false);
+      }
     }
   };
 
@@ -111,15 +139,20 @@ export function KonasePanel(props: KonasePanelProps) {
     setUndone(false);
     setSteps([]);
     setRunning(true);
+    const submitLifetime = captureLifetime();
     try {
-      setTurn(await host.submit(value));
+      const result = await host.submit(value);
+      if (!isCurrentLifetime(submitLifetime)) return;
+      setTurn(result);
       setPrompt("");
     } catch (cause) {
-      setError(
-        formatUserFacingError(cause, "konase.error"),
-      );
+      if (isCurrentLifetime(submitLifetime)) {
+        setError(
+          formatUserFacingError(cause, "konase.error"),
+        );
+      }
     } finally {
-      setRunning(false);
+      if (isCurrentLifetime(submitLifetime)) setRunning(false);
     }
   };
 
@@ -129,13 +162,16 @@ export function KonasePanel(props: KonasePanelProps) {
     if (!host || !current || !current.undoAvailable || undone()) return;
     setError(undefined);
     setUndoing(true);
+    const undoLifetime = captureLifetime();
     try {
       await host.undo(current.workId);
-      setUndone(true);
+      if (isCurrentLifetime(undoLifetime)) setUndone(true);
     } catch (cause) {
-      setError(formatUserFacingError(cause, "konase.error"));
+      if (isCurrentLifetime(undoLifetime)) {
+        setError(formatUserFacingError(cause, "konase.error"));
+      }
     } finally {
-      setUndoing(false);
+      if (isCurrentLifetime(undoLifetime)) setUndoing(false);
     }
   };
 
