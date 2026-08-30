@@ -111,6 +111,18 @@ Deno.test("REQ-OPS-043: repository-native release tasks and split workflows are 
       promoteBody.indexOf("ensureStableRelease("),
     true,
   );
+  const stableReleaseStart = releaseTool.indexOf(
+    "async function ensureStableRelease(",
+  );
+  const npmStart = releaseTool.indexOf("async function publishNpm(");
+  assertEquals(
+    releaseTool.slice(stableReleaseStart, npmStart).includes('"--draft"'),
+    true,
+  );
+  assertEquals(
+    releaseTool.slice(npmStart).includes('"--tag", "latest"'),
+    false,
+  );
   const aliasesBody = releaseTool.slice(
     aliasesStart,
     releaseTool.indexOf("async function ensureDraftRelease"),

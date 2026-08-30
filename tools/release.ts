@@ -547,12 +547,14 @@ async function ensureStableRelease(
         );
       }
     }
+    await publishReleaseFiles(tag, releaseFiles);
   } else {
     if (!isMissing(existing.stderr)) throw new Error(existing.stderr);
     await run("gh", [
       "release",
       "create",
       tag,
+      "--draft",
       "--title",
       `Ugoite ${tag}`,
       "--target",
@@ -562,7 +564,9 @@ async function ensureStableRelease(
       ...releaseFiles,
     ]);
   }
-  await publishReleaseFiles(tag, releaseFiles);
+  for (const filePath of releaseFiles) {
+    await verifyPublishedReleaseFile(tag, filePath);
+  }
   await run("gh", ["release", "edit", tag, "--draft=false"]);
 }
 
@@ -696,7 +700,12 @@ async function publishNpm(candidate: VerifiedCandidate): Promise<void> {
     throw new Error(existing.stderr);
   }
   if (!existing.success) {
-    await run("npm", ["publish", tarballPath, "--tag", "latest"]);
+    await run("npm", [
+      "publish",
+      tarballPath,
+      "--tag",
+      `candidate-${candidate.candidateId.slice(-12)}`,
+    ]);
   }
   await verifyPublishedNpm(packageName, version, tarballPath);
 }
