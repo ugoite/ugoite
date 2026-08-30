@@ -1,3 +1,6 @@
+// This module is also loaded as plain JavaScript by the trusted GitHub Script adapter.
+// @ts-nocheck: The trusted GitHub Script adapter evaluates this as plain JavaScript.
+
 const reviewSectionPattern =
   /##\s*Knowledge Compatibility Review\s*\n+([\s\S]*?)(?:\n##\s|$)/i;
 
@@ -19,11 +22,16 @@ const classifications = [
   },
 ];
 
+/** @type {Record<"Evidence" | "Decision", string>} */
 const notePlaceholders = {
   Evidence: "<required for preserving changes>",
   Decision: "<required for breaking changes>",
 };
 
+/**
+ * @param {string} reviewText
+ * @param {"Evidence" | "Decision"} label
+ */
 function hasReviewNote(reviewText, label) {
   const noteMatch = reviewText.match(
     new RegExp(`^\\s*${label}:\\s*(.*)$`, "im"),
@@ -32,6 +40,10 @@ function hasReviewNote(reviewText, label) {
   return note !== "" && note !== notePlaceholders[label];
 }
 
+/**
+ * @param {string} body
+ * @returns {string[]}
+ */
 export function validateKnowledgeCompatibilityReview(body) {
   const compatibilityMatch = body.match(reviewSectionPattern);
   if (!compatibilityMatch) {

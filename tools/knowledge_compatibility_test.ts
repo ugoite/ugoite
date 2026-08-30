@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert/equals";
-import { validateKnowledgeCompatibilityReview } from "./knowledge_compatibility.mjs";
+import { validateKnowledgeCompatibilityReview } from "./knowledge_compatibility.ts";
 
 const contract = await Deno.readTextFile(
   "docs/spec/versions/v0.1-knowledge-compatibility.md",
@@ -7,7 +7,7 @@ const contract = await Deno.readTextFile(
 const template = await Deno.readTextFile(".github/pull_request_template.md");
 const validator = await Deno.readTextFile("tools/create_pr.ts");
 const compatibilityValidator = await Deno.readTextFile(
-  "tools/knowledge_compatibility.mjs",
+  "tools/knowledge_compatibility.ts",
 );
 const workflow = await Deno.readTextFile(
   ".github/workflows/pr-require-close-issue.yml",
@@ -41,7 +41,7 @@ Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
   );
   requireText(template, "Preserving implementation change", "PR template");
   requireText(template, "Breaking semantic change", "PR template");
-  requireText(validator, "knowledge_compatibility.mjs", "PR validator");
+  requireText(validator, "knowledge_compatibility.ts", "PR validator");
   requireText(
     compatibilityValidator,
     "select exactly one valid classification",
@@ -53,7 +53,10 @@ Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
     "ref: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}",
     "PR validator",
   );
-  requireText(workflow, "tools/knowledge_compatibility.mjs", "PR validator");
+  requireText(workflow, "tools/knowledge_compatibility.ts", "PR validator");
+  requireText(workflow, "data:text/javascript", "PR validator");
+  requireText(workflow, "readFileSync", "PR validator");
+  requireText(workflow, "stripTypeScriptTypes", "PR validator");
   requireText(workflow, "await import(", "PR validator");
   assertEquals(
     workflow.includes("No effect on the v0\\.1 Knowledge semantic contract"),
