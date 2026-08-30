@@ -12,6 +12,7 @@ const compatibilityValidator = await Deno.readTextFile(
 const workflow = await Deno.readTextFile(
   ".github/workflows/pr-require-close-issue.yml",
 );
+const ciWorkflow = await Deno.readTextFile(".github/workflows/ci.yml");
 const requiredStatusChecks = JSON.parse(
   await Deno.readTextFile(".github/required-status-checks.json"),
 ) as {
@@ -54,14 +55,30 @@ Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
     "PR validator",
   );
   requireText(workflow, "tools/knowledge_compatibility.ts", "PR validator");
-  requireText(workflow, "data:text/javascript", "PR validator");
-  requireText(workflow, "readFileSync", "PR validator");
-  requireText(workflow, "stripTypeScriptTypes", "PR validator");
+  requireText(
+    workflow,
+    'process.versions.node.startsWith("24.")',
+    "PR validator",
+  );
+  requireText(workflow, "pathToFileURL", "PR validator");
+  requireText(workflow, 'await import("node:url")', "PR validator");
   requireText(workflow, "await import(", "PR validator");
   requireText(
     workflow,
     "validateKnowledgeCompatibilityReview(body)",
     "PR validator",
+  );
+  assertEquals(
+    workflow.includes("readFileSync") ||
+      workflow.includes("stripTypeScriptTypes") ||
+      workflow.includes("data:text/javascript"),
+    false,
+    "workflow must use native Node TypeScript loading",
+  );
+  assertEquals(
+    workflow.includes("knowledge_compatibility_node_fixture.ts"),
+    false,
+    "privileged workflow must not execute PR-added fixture code",
   );
   assertEquals(
     workflow.includes("No effect on the v0\\.1 Knowledge semantic contract"),
@@ -101,6 +118,15 @@ Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
     "template placeholder",
     "compatibility contract",
   );
+  const webJobStart = ciWorkflow.indexOf("  web:\n");
+  const artifactsJobStart = ciWorkflow.indexOf("  artifacts:\n", webJobStart);
+  assertEquals(webJobStart >= 0, true, "CI web job must exist");
+  const webJob = ciWorkflow.slice(
+    webJobStart,
+    artifactsJobStart >= 0 ? artifactsJobStart : undefined,
+  );
+  requireText(webJob, "actions/setup-node@", "CI web job");
+  requireText(webJob, "node-version: 24", "CI web job");
 });
 
 const compatibilityReviewCases = [
@@ -194,6 +220,53 @@ Deno.test("Knowledge Compatibility Review uses one canonical validation matrix",
       testCase.name,
     );
   }
+});
+
+Deno.test("Node 24 loads and executes trusted TypeScript adapters", async () => {
+  const nodeSmoke = String.raw`
+import assert from "node:assert/strict";
+import { pathToFileURL } from "node:url";
+
+assert.equal(Number.parseInt(process.versions.node, 10) >= 24, true);
+const [validatorPath, typedFixturePath] = process.argv.slice(2);
+const { validateKnowledgeCompatibilityReview } = await import(
+  pathToFileURL(validatorPath).href
+);
+assert.equal(typeof validateKnowledgeCompatibilityReview, "function");
+assert.deepEqual(
+  validateKnowledgeCompatibilityReview(
+    "## Knowledge Compatibility Review\n\n- [x] No effect on the v0.1 Knowledge semantic contract.",
+  ),
+  [],
+);
+assert.notDeepEqual(
+  validateKnowledgeCompatibilityReview(
+    "## Knowledge Compatibility Review\n\n- [x] Preserving implementation change; the canonical fixture and focused tests remain passing.",
+  ),
+    [],
+);
+const { runAdapterFixture } = await import(pathToFileURL(typedFixturePath).href);
+assert.deepEqual(runAdapterFixture("loaded"), { loaded: true });
+assert.deepEqual(runAdapterFixture("rejected"), { loaded: false });
+`;
+  const result = await new Deno.Command("node", {
+    args: [
+      "--input-type=module",
+      "--eval",
+      nodeSmoke,
+      "knowledge-compatibility-adapter-smoke",
+      `${Deno.cwd()}/tools/knowledge_compatibility.ts`,
+      `${Deno.cwd()}/tools/knowledge_compatibility_node_fixture.ts`,
+    ],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  assertEquals(
+    result.success,
+    true,
+    new TextDecoder().decode(result.stderr) ||
+      new TextDecoder().decode(result.stdout),
+  );
 });
 
 // REQ-STO-014
