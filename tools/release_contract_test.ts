@@ -94,6 +94,11 @@ Deno.test("REQ-OPS-043: repository-native release tasks and split workflows are 
   assertEquals(publish.includes("publish-channel-release-notes:"), true);
   assertEquals(publish.includes("release:promote:aliases"), true);
   assertEquals(publish.includes("UGOITE_PROMOTION_DEFER_ALIASES"), false);
+  assertEquals(
+    publish.includes("ref: ${{ needs.promote.outputs.source_sha }}"),
+    false,
+  );
+  assertEquals(publish.includes("ref: main"), true);
   const promoteStart = releaseTool.indexOf(
     "async function promote(candidate: VerifiedCandidate)",
   );
