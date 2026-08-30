@@ -17,7 +17,7 @@ phases:
 - id: implementation
   status: completed
   tasks:
-  - description: Implement the eight-crate Rust workspace and Deno workspace.
+  - description: Implement the 12-crate Rust workspace and Deno workspace.
     done: true
   - description: Implement Space, Entry, Form, asset, revision, integrity, search, and SQL behavior in Rust.
     done: true

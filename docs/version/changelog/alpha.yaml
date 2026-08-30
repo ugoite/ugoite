@@ -15,7 +15,7 @@ release_notes:
   - Focus notes on explicit risk, experimental guidance, and what needs more validation.
   - Keep stable promises out of the alpha narrative until behavior graduates through beta and stable review.
   added:
-  - A Rust-centered eight-crate workspace and one Deno workspace.
+  - A Rust-centered 12-crate workspace and one Deno workspace.
   - A single non-root runtime image layout with persistent /data storage.
   - Local CLI core mode, server-backed browser behavior, and the small MCP semantic facade.
   changed:
