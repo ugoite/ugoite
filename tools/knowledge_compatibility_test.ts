@@ -88,6 +88,11 @@ Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
     "breaking semantic change",
     "compatibility contract",
   );
+  requireText(
+    contract,
+    "template placeholder",
+    "compatibility contract",
+  );
 });
 
 const compatibilityReviewCases = [
