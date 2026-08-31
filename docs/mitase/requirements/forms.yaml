@@ -77,7 +77,7 @@ requirements:
       - id: extra-attributes-test
         role: verification
         facet: verification
-        responsibility: Verify rejection of disallowed extra attributes through the exact Iceberg integration test.
+        responsibility: Verify rejection of disallowed extra attributes on Entry creation and update through the exact Iceberg integration test.
         targets:
           - id: case
             adapter: rust
@@ -86,7 +86,9 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-FORM-004#criterion.extra-attributes
-                covers: [FEAT-ENTRY-001#binding.core/target.create-entry]
+                covers:
+                  - FEAT-ENTRY-001#binding.core/target.create-entry
+                  - FEAT-ENTRY-001#binding.core/target.update-entry
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: test_entry_req_form_004_deny_extra_attributes } }
   - id: REQ-FORM-005
     title: Reserved metadata columns

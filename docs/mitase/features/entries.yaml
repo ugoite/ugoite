@@ -35,6 +35,8 @@ features:
                 criterion: REQ-ENTRY-002#criterion.optimistic-concurrency
               - kind: satisfies
                 criterion: REQ-ENTRY-003#criterion.update
+              - kind: satisfies
+                criterion: REQ-FORM-004#criterion.extra-attributes
           - id: delete-entry
             adapter: rust
             path: crates/ugoite-iceberg/src/entry.rs

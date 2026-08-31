@@ -30,19 +30,19 @@ requirements:
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_search, test: test_search_req_srch_001_keyword_search } }
   - id: REQ-SRCH-002
     title: Content-scan search implementation
-    description: Keyword search scans current Entry rows and the authorized AssetText projection. AssetText is an internal derived Iceberg relation; missing, stale, or corrupt derived state degrades to native Entry search. A persistent inverted index is still absent.
+    description: This migration slice proves keyword scanning over current Entry rows. The authorized AssetText projection and its missing, stale, or corrupt-state fallback remain an explicit migration gap; a persistent inverted index is still absent.
     priority: medium
     status: implemented
     criteria:
       - id: content-scan
         kind: behavior
-        statement: Keyword search scans current Entry content and authorized derived text, while retaining native Entry search when derived state is unavailable; it does not claim a persistent inverted index.
+        statement: Keyword search scans current Entry content for matching keywords.
         governed_by: [POL-012#rule.governance]
     bindings:
       - id: content-scan-test
         role: verification
         facet: verification
-        responsibility: Verify content-scan fallback behavior through the exact integration test.
+        responsibility: Verify current Entry content scanning through the exact integration test; AssetText fallback is not claimed by this target.
         targets:
           - id: case
             adapter: rust
