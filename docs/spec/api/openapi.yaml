@@ -5980,15 +5980,6 @@
             "$ref": "#/components/parameters/SpaceId"
           },
           {
-            "name": "q",
-            "in": "query",
-            "required": true,
-            "description": "Keyword to search in current authorized entries.",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "$ref": "#/components/parameters/Limit"
           },
           {

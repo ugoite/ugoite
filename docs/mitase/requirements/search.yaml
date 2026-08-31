@@ -17,7 +17,7 @@ requirements:
       - id: keyword-test
         role: verification
         facet: verification
-        responsibility: Verify the current keyword search behavior through the exact integration test.
+        responsibility: Verify the current keyword search behavior through the exact named server and frontend tests.
         targets:
           - id: server-case
             adapter: rust
@@ -41,19 +41,35 @@ requirements:
                 runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-004: runs a direct keyword search and renders matching entries" } }
   - id: REQ-SRCH-002
     title: Content-scan search implementation
-    description: This migration slice proves keyword scanning over current Entry rows. The authorized AssetText projection and its missing, stale, or corrupt-state fallback remain an explicit migration gap; a persistent inverted index is still absent.
+    description: Keyword search scans current Entry rows and the authorized AssetText projection. AssetText is an internal derived Iceberg relation; missing, stale, or corrupt derived state degrades to native Entry search. A persistent inverted index is still absent.
     priority: medium
     status: implemented
     criteria:
-      - id: content-scan
+      - id: current-entry-scan
         kind: behavior
         statement: Keyword search scans current Entry content for matching keywords.
+        governed_by: [POL-012#rule.governance]
+      - id: authorized-assettext-projection
+        kind: behavior
+        statement: Keyword search includes matching content from the authorized AssetText projection.
+        governed_by: [POL-012#rule.governance]
+      - id: missing-derived-fallback
+        kind: behavior
+        statement: Search falls back to native current Entry search when the AssetText projection is missing.
+        governed_by: [POL-012#rule.governance]
+      - id: stale-derived-fallback
+        kind: behavior
+        statement: Search falls back to native current Entry search when the AssetText projection is stale.
+        governed_by: [POL-012#rule.governance]
+      - id: corrupt-derived-fallback
+        kind: behavior
+        statement: Search falls back to native current Entry search when the AssetText projection is corrupt or unavailable.
         governed_by: [POL-012#rule.governance]
     bindings:
       - id: content-scan-test
         role: verification
         facet: verification
-        responsibility: Verify current Entry content scanning through the exact integration test; AssetText fallback is not claimed by this target.
+        responsibility: Verify current Entry content scanning through the exact integration test; derived projection and fallback criteria remain unverified until criterion-specific evidence is available.
         targets:
           - id: case
             adapter: rust
@@ -61,7 +77,7 @@ requirements:
             selector: { kind: symbol, name: test_search_req_srch_002_fallback_scan }
             claims:
               - kind: verifies
-                criterion: REQ-SRCH-002#criterion.content-scan
+                criterion: REQ-SRCH-002#criterion.current-entry-scan
                 covers: [FEAT-SRCH-001#binding.core/target.search-entries]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_search, test: test_search_req_srch_002_fallback_scan } }
   - id: REQ-SRCH-003

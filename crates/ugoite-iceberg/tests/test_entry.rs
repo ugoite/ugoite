@@ -1523,7 +1523,7 @@ async fn entry_attribution_is_consistent_on_create() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-/// Lifecycle attribution evidence retained for the migration gap
+/// REQ-FORM-009
 async fn entry_attribution_is_consistent_across_lifecycle() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "entry-attribution", "/tmp").await?;

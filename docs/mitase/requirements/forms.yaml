@@ -186,26 +186,96 @@ requirements:
         governed_by: [POL-007#rule.governance]
   - id: REQ-FORM-009
     title: Mandatory attribution metadata
-    description: Form-backed rows persist system-managed author, updated_by, and deleted_by attribution metadata.
+    description: All Form-backed rows MUST persist system-managed attribution metadata. author is the principal that created the Entry and remains stable for its lifetime. updated_by is the principal that authored the latest revision, including create, update, delete, and restore. deleted_by is the principal that authored the current delete tombstone; it is cleared by restore while historical delete revisions retain its value.
     priority: high
     status: implemented
     criteria:
-      - id: attribution
+      - id: stable-author
         kind: behavior
-        statement: Entry creation persists stable author attribution and initializes current-revision actor metadata.
+        statement: The author of an Entry is the creating principal and remains stable across every later revision and restore.
+        governed_by: [POL-007#rule.governance, POL-014#rule.governance]
+      - id: updated-by-create
+        kind: behavior
+        statement: Entry creation initializes updated_by to the creating principal.
+        governed_by: [POL-007#rule.governance, POL-014#rule.governance]
+      - id: updated-by-update
+        kind: behavior
+        statement: An Entry update records the updating principal as updated_by on the latest revision.
+        governed_by: [POL-007#rule.governance, POL-014#rule.governance]
+      - id: updated-by-delete
+        kind: behavior
+        statement: An Entry delete records the deleting principal as updated_by on the delete revision.
+        governed_by: [POL-007#rule.governance, POL-014#rule.governance]
+      - id: updated-by-restore
+        kind: behavior
+        statement: An Entry restore records the restoring principal as updated_by on the restored revision.
+        governed_by: [POL-007#rule.governance, POL-014#rule.governance]
+      - id: deleted-by-tombstone
+        kind: behavior
+        statement: A current delete tombstone records the deleting principal as deleted_by.
+        governed_by: [POL-007#rule.governance, POL-014#rule.governance]
+      - id: restore-clears-deleted-by
+        kind: behavior
+        statement: Restoring an Entry clears deleted_by on the current revision.
+        governed_by: [POL-007#rule.governance, POL-014#rule.governance]
+      - id: historical-delete-attribution
+        kind: behavior
+        statement: Historical delete revisions retain their deleted_by attribution after restore.
         governed_by: [POL-007#rule.governance, POL-014#rule.governance]
     bindings:
-      - id: attribution-test
+      - id: attribution-create-test
         role: verification
         facet: verification
-        responsibility: Verify Entry-creation attribution metadata through the exact lifecycle integration test.
+        responsibility: Verify create-time attribution metadata through the exact Iceberg integration test.
         targets:
-          - id: case
+          - id: create-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_entry.rs
             selector: { kind: symbol, name: entry_attribution_is_consistent_on_create }
             claims:
               - kind: verifies
-                criterion: REQ-FORM-009#criterion.attribution
+                criterion: REQ-FORM-009#criterion.stable-author
                 covers: [FEAT-ENTRY-001#binding.core/target.create-entry]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_attribution_is_consistent_on_create } }
+              - kind: verifies
+                criterion: REQ-FORM-009#criterion.updated-by-create
+                covers: [FEAT-ENTRY-001#binding.core/target.create-entry]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_attribution_is_consistent_on_create } }
+      - id: attribution-lifecycle-test
+        role: verification
+        facet: verification
+        responsibility: Verify update, delete, restore, and historical attribution metadata through the exact Iceberg lifecycle integration test.
+        targets:
+          - id: lifecycle-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_entry.rs
+            selector: { kind: symbol, name: entry_attribution_is_consistent_across_lifecycle }
+            claims:
+              - kind: verifies
+                criterion: REQ-FORM-009#criterion.stable-author
+                covers: [FEAT-ENTRY-001#binding.core/target.create-entry]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_attribution_is_consistent_across_lifecycle } }
+              - kind: verifies
+                criterion: REQ-FORM-009#criterion.updated-by-update
+                covers: [FEAT-ENTRY-001#binding.core/target.update-entry]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_attribution_is_consistent_across_lifecycle } }
+              - kind: verifies
+                criterion: REQ-FORM-009#criterion.updated-by-delete
+                covers: [FEAT-ENTRY-001#binding.core/target.delete-entry]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_attribution_is_consistent_across_lifecycle } }
+              - kind: verifies
+                criterion: REQ-FORM-009#criterion.updated-by-restore
+                covers: [FEAT-ENTRY-001#binding.core/target.restore-entry]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_attribution_is_consistent_across_lifecycle } }
+              - kind: verifies
+                criterion: REQ-FORM-009#criterion.deleted-by-tombstone
+                covers: [FEAT-ENTRY-001#binding.core/target.delete-entry]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_attribution_is_consistent_across_lifecycle } }
+              - kind: verifies
+                criterion: REQ-FORM-009#criterion.restore-clears-deleted-by
+                covers: [FEAT-ENTRY-001#binding.core/target.restore-entry]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_attribution_is_consistent_across_lifecycle } }
+              - kind: verifies
+                criterion: REQ-FORM-009#criterion.historical-delete-attribution
+                covers: [FEAT-ENTRY-001#binding.core/target.entry-history]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_attribution_is_consistent_across_lifecycle } }

@@ -25,7 +25,9 @@ features:
               - kind: satisfies
                 criterion: REQ-FORM-004#criterion.extra-attributes
               - kind: satisfies
-                criterion: REQ-FORM-009#criterion.attribution
+                criterion: REQ-FORM-009#criterion.stable-author
+              - kind: satisfies
+                criterion: REQ-FORM-009#criterion.updated-by-create
           - id: update-entry
             adapter: rust
             path: crates/ugoite-iceberg/src/entry.rs
@@ -37,6 +39,8 @@ features:
                 criterion: REQ-ENTRY-003#criterion.update
               - kind: satisfies
                 criterion: REQ-FORM-004#criterion.extra-attributes
+              - kind: satisfies
+                criterion: REQ-FORM-009#criterion.updated-by-update
           - id: delete-entry
             adapter: rust
             path: crates/ugoite-iceberg/src/entry.rs
@@ -44,6 +48,10 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-ENTRY-004#criterion.tombstone
+              - kind: satisfies
+                criterion: REQ-FORM-009#criterion.updated-by-delete
+              - kind: satisfies
+                criterion: REQ-FORM-009#criterion.deleted-by-tombstone
           - id: entry-history
             adapter: rust
             path: crates/ugoite-iceberg/src/entry.rs
@@ -51,6 +59,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-ENTRY-005#criterion.history
+              - kind: satisfies
+                criterion: REQ-FORM-009#criterion.historical-delete-attribution
           - id: restore-entry
             adapter: rust
             path: crates/ugoite-iceberg/src/entry.rs
@@ -58,3 +68,7 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-ENTRY-005#criterion.history
+              - kind: satisfies
+                criterion: REQ-FORM-009#criterion.updated-by-restore
+              - kind: satisfies
+                criterion: REQ-FORM-009#criterion.restore-clears-deleted-by

@@ -38,6 +38,7 @@ inventory:
             - docs/mitase/features/forms.yaml
             - docs/mitase/migration/search.md
             - docs/mitase/migration/entries-forms.md
+            - docs/mitase/migration/policy.md
             - docs/spec/philosophy/foundation.yaml
             - docs/spec/policies/policies.yaml
             - docs/spec/requirements/search.yaml

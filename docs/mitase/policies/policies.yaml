@@ -18,9 +18,10 @@ policies:
     description: This policy treats ugoite-core as the durable source of product logic so adapters do not drift into incompatible implementations. It supports portable architecture and continuously verifiable behavior by reusing the same core rules from backend, CLI, and future integrations.
     rules:
       - id: governance
-        level: should
+        level: must
         statement: This policy treats ugoite-core as the durable source of product logic so adapters do not drift into incompatible implementations. It supports portable architecture and continuously verifiable behavior by reusing the same core rules from backend, CLI, and future integrations.
-        governed_by: [PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+        governed_by: [PHIL-000#principle.tools-without-authority, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+        enforcement: external Ugoite repository tooling and CI
   - id: POL-003
     title: Minimal Node Deployment
     summary: Optimize for low-node, serverless-oriented deployments.
@@ -36,9 +37,10 @@ policies:
     description: This policy limits the backend to interface translation, orchestration, and security boundaries instead of duplicating durable business rules. It keeps deployments lighter and preserves freedom to reuse the same core behavior across multiple operator surfaces without API-layer lock-in.
     rules:
       - id: governance
-        level: should
+        level: must
         statement: This policy limits the backend to interface translation, orchestration, and security boundaries instead of duplicating durable business rules. It keeps deployments lighter and preserves freedom to reuse the same core behavior across multiple operator surfaces without API-layer lock-in.
-        governed_by: [PHIL-001#principle.product-design-principle, PHIL-002#principle.product-design-principle]
+        governed_by: [PHIL-000#principle.tools-without-authority, PHIL-001#principle.product-design-principle, PHIL-002#principle.product-design-principle]
+        enforcement: external Ugoite repository tooling and CI
   - id: POL-005
     title: CLI as First-Class Operator Surface
     summary: Use CLI workflows to keep automation explicit, inspectable, and scriptable.
@@ -54,9 +56,10 @@ policies:
     description: This policy requires the frontend to follow shared contracts and documented UI behavior instead of inventing parallel rules in the client. It supports durable verification and trusted AI-assisted work by making contract drift visible through typed interfaces, specs, and tests.
     rules:
       - id: governance
-        level: should
+        level: must
         statement: This policy requires the frontend to follow shared contracts and documented UI behavior instead of inventing parallel rules in the client. It supports durable verification and trusted AI-assisted work by making contract drift visible through typed interfaces, specs, and tests.
-        governed_by: [PHIL-003#principle.product-design-principle, PHIL-004#principle.product-design-principle]
+        governed_by: [PHIL-000#principle.tools-without-authority, PHIL-003#principle.product-design-principle, PHIL-004#principle.product-design-principle]
+        enforcement: external Ugoite repository tooling and CI
   - id: POL-007
     title: Form and Entry Schema Governance
     summary: Enforce stable, typed entry/form behavior through documented schema contracts.
@@ -81,27 +84,30 @@ policies:
     description: This policy enforces pre-integration quality gates so regressions are caught before they become shared product behavior. It operationalizes rule-based development and trusted constraints by making type checks, lint rules, and regression suites mandatory for change integration.
     rules:
       - id: governance
-        level: should
+        level: must
         statement: This policy enforces pre-integration quality gates so regressions are caught before they become shared product behavior. It operationalizes rule-based development and trusted constraints by making type checks, lint rules, and regression suites mandatory for change integration.
-        governed_by: [PHIL-003#principle.product-design-principle, PHIL-004#principle.product-design-principle]
+        governed_by: [PHIL-000#principle.stable-foundation, PHIL-003#principle.product-design-principle, PHIL-004#principle.product-design-principle]
+        enforcement: external Ugoite repository tooling and CI
   - id: POL-010
     title: AI Under Trusted Tooling
     summary: Allow AI autonomy only inside trusted tools, validated interfaces, and audit paths.
     description: This policy defines the boundary for AI-assisted work by requiring trusted tools, validated interfaces, and auditable execution paths. It exists to preserve high autonomy only where risk remains observable, reviewable, and constrained by explicit contracts.
     rules:
       - id: governance
-        level: should
+        level: must
         statement: This policy defines the boundary for AI-assisted work by requiring trusted tools, validated interfaces, and auditable execution paths. It exists to preserve high autonomy only where risk remains observable, reviewable, and constrained by explicit contracts.
-        governed_by: [PHIL-004#principle.product-design-principle]
+        governed_by: [PHIL-000#principle.tools-without-authority, PHIL-004#principle.product-design-principle]
+        enforcement: external Ugoite repository tooling and CI
   - id: POL-011
     title: Security and Isolation by Default
     summary: Design for secure defaults, bounded execution, and explicit trust boundaries.
     description: This policy makes secure defaults and explicit trust boundaries part of the baseline product architecture instead of optional hardening. It supports minimal runtime topology and trusted AI operation by constraining what code can do, where it can run, and how risk is surfaced.
     rules:
       - id: governance
-        level: should
+        level: must
         statement: This policy makes secure defaults and explicit trust boundaries part of the baseline product architecture instead of optional hardening. It supports minimal runtime topology and trusted AI operation by constraining what code can do, where it can run, and how risk is surfaced.
-        governed_by: [PHIL-002#principle.product-design-principle, PHIL-004#principle.product-design-principle]
+        governed_by: [PHIL-000#principle.tools-without-authority, PHIL-002#principle.product-design-principle, PHIL-004#principle.product-design-principle]
+        enforcement: external Ugoite repository tooling and CI
   - id: POL-012
     title: Search and Form References as Core Knowledge Operations
     summary: Treat search and typed Form references as first-class capabilities.
@@ -134,7 +140,7 @@ policies:
       Review and canonical fixture evidence before merge.
     rules:
       - id: governance
-        level: should
+        level: must
         statement: >-
           This policy manages change through visible evolution rather than
           silent breakage between layers. For the v0.1 Foundation Freeze, the
@@ -145,7 +151,8 @@ policies:
           are not frozen by that promise. Changes that can affect the semantic
           boundary require the v0.1 Knowledge Compatibility Review and
           canonical fixture evidence before merge.
-        governed_by: [PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+        governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+        enforcement: external Ugoite repository tooling and CI
   - id: POL-015
     title: MCP as Governed AI Operator Surface
     summary: Position MCP as the AI-facing operator surface with explicit scope and trust boundaries.
@@ -161,6 +168,7 @@ policies:
     description: The v0.1 Knowledge compatibility floor freezes ownership, authority, append-only history, and adapter authority semantics. It does not freeze the physical Catalog Head encoding, Iceberg object layout, crate APIs, or frontend internals. A breaking semantic change requires an explicit compatibility review and must preserve the canonical v0.1 Knowledge fixture or establish a new versioned contract before it can merge.
     rules:
       - id: governance
-        level: should
+        level: must
         statement: The v0.1 Knowledge compatibility floor freezes ownership, authority, append-only history, and adapter authority semantics. It does not freeze the physical Catalog Head encoding, Iceberg object layout, crate APIs, or frontend internals. A breaking semantic change requires an explicit compatibility review and must preserve the canonical v0.1 Knowledge fixture or establish a new versioned contract before it can merge.
-        governed_by: [PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+        governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+        enforcement: external Ugoite repository tooling and CI
