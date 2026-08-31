@@ -17,9 +17,6 @@ const navigate = vi.fn();
 vi.mock("@solidjs/router", () => ({
   useNavigate: () => navigate,
   useSearchParams: () => [searchParams, vi.fn()],
-  Navigate: (props: { href: string }) => (
-    <a data-testid="redirect" href={props.href}>Redirect</a>
-  ),
   A: (props: { href: string; children: unknown }) => (
     <a href={props.href}>{props.children}</a>
   ),
@@ -53,12 +50,28 @@ describe("/spaces/:space_id/entries", () => {
     for (const key of Object.keys(searchParams)) delete searchParams[key];
   });
 
-  it("redirects the duplicate plain Entry list to the Forms workspace", () => {
-    renderRoute();
-    expect(screen.getByTestId("redirect")).toHaveAttribute(
-      "href",
-      "/spaces/default/forms",
+  it("REQ-FE-037: loads the plain Entry list without redirecting", async () => {
+    server.use(
+      http.get(
+        testApiUrl("/spaces/default/entries"),
+        () =>
+          HttpResponse.json([{
+            id: "entry-1",
+            title: "Entry one",
+            updated_at: "2026-03-01T00:00:00Z",
+            properties: {},
+            tags: [],
+          }]),
+      ),
     );
+
+    renderRoute();
+
+    expect(await screen.findByRole("heading", { name: "Entries" }))
+      .toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Entry one/ }))
+      .toBeInTheDocument();
+    expect(screen.queryByTestId("redirect")).not.toBeInTheDocument();
   });
 
   it("REQ-FE-054: keeps the dedicated SQL session result route", async () => {

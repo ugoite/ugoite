@@ -7,10 +7,9 @@ page:
   implementation: implemented
 components:
   body:
-    - id: plain-entry-list-redirect
-      type: redirect
-      target_page: space-form-grid
-      description: Plain Entry listing is integrated into the Forms workspace to avoid duplicate list screens.
+    - id: plain-entry-list
+      type: entry-card-grid
+      description: The plain Entries route loads the Space's Entry list and exposes the first-entry flow without redirecting to Forms.
     - id: sql-session-results
       type: query-results
       condition: session query parameter is present
