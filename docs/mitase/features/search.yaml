@@ -22,3 +22,61 @@ features:
                 criterion: REQ-SRCH-001#criterion.keyword-search
               - kind: satisfies
                 criterion: REQ-SRCH-002#criterion.content-scan
+          - id: search-entries-contract
+            adapter: rust
+            path: crates/ugoite-iceberg/src/search.rs
+            selector: { kind: symbol, name: search_entries }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-001#criterion.keyword-search
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep the shipped Search API, route, and advanced-query builder in the canonical Search feature artifact graph.
+        targets:
+          - id: search-api
+            adapter: typescript
+            path: frontend/src/lib/search-api.ts
+            selector: { kind: symbol, name: searchApi }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-001#criterion.keyword-search
+          - id: search-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/search.tsx
+            selector: { kind: symbol, name: SpaceSearchRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-001#criterion.keyword-search
+              - kind: satisfies
+                criterion: REQ-SRCH-004#criterion.keyword-first-route
+              - kind: satisfies
+                criterion: REQ-SRCH-005#criterion.structured-search-reuse
+          - id: advanced-query-builder
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/search.tsx
+            selector: { kind: symbol, name: buildAdvancedSearchQuery }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-005#criterion.structured-search-reuse
+      - id: contract
+        role: contract-source
+        facet: frontend
+        responsibility: Anchor the browser Search route as the source boundary for the keyword-search contract.
+        targets:
+          - id: search-contract
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/search.tsx
+            selector: { kind: file }
+    contracts:
+      - id: keyword-search
+        kind: http
+        source: FEAT-SRCH-001#binding.contract/target.search-contract
+        participants:
+          - target: FEAT-SRCH-001#binding.core/target.search-entries-contract
+            role: backend
+          - target: FEAT-SRCH-001#binding.frontend/target.search-api
+            role: client
+          - target: FEAT-SRCH-001#binding.frontend/target.search-route
+            role: route
+        guarantees: [REQ-SRCH-001#criterion.keyword-search]

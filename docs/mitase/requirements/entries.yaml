@@ -131,12 +131,12 @@ requirements:
           - id: restore-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_entry.rs
-            selector: { kind: symbol, name: deleted_entry_history_revision_and_restore_remain_reachable }
+            selector: { kind: symbol, name: restore_replays_historical_references_even_when_targets_are_unavailable }
             claims:
               - kind: verifies
                 criterion: REQ-ENTRY-005#criterion.history
                 covers: [FEAT-ENTRY-001#binding.core/target.restore-entry]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: deleted_entry_history_revision_and_restore_remain_reachable } }
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: restore_replays_historical_references_even_when_targets_are_unavailable } }
   - id: REQ-ENTRY-006
     title: Structured data extraction from Markdown
     description: Extract H2 headers as fields and merge them with frontmatter.

@@ -26,8 +26,21 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-SRCH-001#criterion.keyword-search
-                covers: [FEAT-SRCH-001#binding.core/target.search-entries]
+                covers:
+                  - FEAT-SRCH-001#binding.core/target.search-entries
+                  - FEAT-SRCH-001#binding.core/target.search-entries-contract
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_search, test: test_search_req_srch_001_keyword_search } }
+          - id: frontend-case
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/search.test.tsx
+            selector: { kind: symbol, name: test_search_req_srch_004_keyword_first_route }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-001#criterion.keyword-search
+                covers:
+                  - FEAT-SRCH-001#binding.frontend/target.search-api
+                  - FEAT-SRCH-001#binding.frontend/target.search-route
+                runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-004: runs a direct keyword search and renders matching entries" } }
   - id: REQ-SRCH-002
     title: Content-scan search implementation
     description: This migration slice proves keyword scanning over current Entry rows. The authorized AssetText projection and its missing, stale, or corrupt-state fallback remain an explicit migration gap; a persistent inverted index is still absent.
@@ -73,6 +86,21 @@ requirements:
         kind: behavior
         statement: The Search route presents direct keyword search as the default experience.
         governed_by: [POL-012#rule.governance]
+    bindings:
+      - id: frontend-test
+        role: verification
+        facet: verification
+        responsibility: Verify the keyword-first Search route through the exact frontend test.
+        targets:
+          - id: case
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/search.test.tsx
+            selector: { kind: symbol, name: test_search_req_srch_004_keyword_first_route }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-004#criterion.keyword-first-route
+                covers: [FEAT-SRCH-001#binding.frontend/target.search-route]
+                runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-004: runs a direct keyword search and renders matching entries" } }
   - id: REQ-SRCH-005
     title: Structured search reuse through shared query infrastructure
     description: The search route MUST offer advanced structured conditions that compile into the shared SQL or query execution path, and advanced searches MUST remain reusable from a human-readable search-history UI instead of exposing raw query management as the primary workflow.
@@ -83,3 +111,29 @@ requirements:
         kind: behavior
         statement: Advanced search compiles structured conditions into the shared query path and keeps the resulting search reusable through human-readable history.
         governed_by: [POL-012#rule.governance]
+    bindings:
+      - id: frontend-test
+        role: verification
+        facet: verification
+        responsibility: Verify advanced Search compilation and human-readable history reuse through exact frontend tests.
+        targets:
+          - id: compile-case
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/search.test.tsx
+            selector: { kind: symbol, name: test_search_req_srch_005_advanced_search_compiles }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-005#criterion.structured-search-reuse
+                covers:
+                  - FEAT-SRCH-001#binding.frontend/target.search-route
+                  - FEAT-SRCH-001#binding.frontend/target.advanced-query-builder
+                runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-005: advanced search compiles filters into saved SQL and runs a shared session" } }
+          - id: history-case
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/search.test.tsx
+            selector: { kind: symbol, name: test_search_req_srch_005_history_reuse }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-005#criterion.structured-search-reuse
+                covers: [FEAT-SRCH-001#binding.frontend/target.search-route]
+                runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-005: saved history entries rerun directly or open variable input when needed" } }

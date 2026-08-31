@@ -28,13 +28,16 @@ No Ugoite-specific Mitase kind or schema extension is introduced.
 
 | Legacy record | Canonical representation | Proof decision |
 | --- | --- | --- |
-| `REQ-SRCH-001` | Requirement with `keyword-search` Criterion governed by `POL-012#rule.governance` | Promoted to a Verification Claim only through the exact Rust test `test_search_req_srch_001_keyword_search`, covering the exact `search_entries` implementation target. |
+| `REQ-SRCH-001` | Requirement with `keyword-search` Criterion governed by `POL-012#rule.governance` | Promoted to Verification Claims through the exact Rust test `test_search_req_srch_001_keyword_search` and the exact frontend test `test_search_req_srch_004_keyword_first_route`, covering the current Rust `search_entries`, TypeScript `searchApi`, and `SpaceSearchRoute` targets. |
 | `REQ-SRCH-002` | Requirement with `content-scan` Criterion governed by `POL-012#rule.governance` | Narrowed to the current Entry scan proven by exact Rust test `test_search_req_srch_002_fallback_scan`. The authorized AssetText projection, its fallback behavior, and the legacy SQL-rule test path remain migration gaps because this test does not exercise them. |
 | `REQ-SRCH-003` | Requirement with `sql-rules` Criterion | Remains untraced. The legacy record has no test reference in this source slice. |
-| `REQ-SRCH-004` | Requirement with `keyword-first-route` Criterion | Remains untraced. The frontend and E2E references name test files and framework cases rather than an exact selector supported by the current Mitase inventory. |
-| `REQ-SRCH-005` | Requirement with `structured-search-reuse` Criterion | Remains untraced for the same selector-boundary reason as `REQ-SRCH-004`. |
+| `REQ-SRCH-004` | Requirement with `keyword-first-route` Criterion | Promoted to a Verification Claim through the exact frontend test `test_search_req_srch_004_keyword_first_route`, covering the current `SpaceSearchRoute` target. The E2E reference remains a migration gap. |
+| `REQ-SRCH-005` | Requirement with `structured-search-reuse` Criterion | Promoted to Verification Claims through the exact frontend tests `test_search_req_srch_005_advanced_search_compiles` and `test_search_req_srch_005_history_reuse`, covering the current `SpaceSearchRoute` and `buildAdvancedSearchQuery` targets. The E2E reference remains a migration gap. |
 
 The legacy `verification: traced` field is not copied as a Mitase proof state.
 Only a uniquely resolved current target, a Criterion-matching implementation
 target, and complete declarative runner metadata produce a Verification Claim.
-Mitase does not execute the runner in this migration.
+The frontend test callbacks are named top-level symbols so the TypeScript
+inventory can resolve them exactly; the declarative `frontend-vitest` runner
+selects the migrated Search test file and test title without executing it in
+Mitase. Mitase does not execute any runner in this migration.

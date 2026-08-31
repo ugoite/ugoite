@@ -30,6 +30,210 @@ vi.mock("~/components/SpaceShell", () => ({
   SpaceShell: (props: { children: unknown }) => <div>{props.children}</div>,
 }));
 
+async function test_search_req_srch_004_keyword_first_route() {
+  const record: KeywordSearchResult = {
+    id: "entry-1",
+    title: "Alpha Entry",
+    created_at: "2025-01-01T00:00:00Z",
+    updated_at: "2025-01-02T00:00:00Z",
+  };
+  let entryListCalls = 0;
+  let sqlSessionCalls = 0;
+  server.use(
+    http.get(
+      testApiUrl("/spaces/default/search"),
+      () => HttpResponse.json([record]),
+    ),
+    http.get(
+      testApiUrl("/spaces/default/entries"),
+      () => {
+        entryListCalls += 1;
+        return HttpResponse.json([]);
+      },
+    ),
+    http.post(
+      testApiUrl("/spaces/default/sql-sessions"),
+      () => {
+        sqlSessionCalls += 1;
+        return HttpResponse.json(
+          { detail: "Quick search must not create a SQL session" },
+          { status: 500 },
+        );
+      },
+    ),
+  );
+
+  render(() => <SpaceSearchRoute />);
+
+  fireEvent.input(screen.getByLabelText("Search keywords"), {
+    target: { value: "keyword-first" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Search entries" }));
+
+  expect(await screen.findByRole("button", { name: /Alpha Entry/ }))
+    .toBeInTheDocument();
+  expect(screen.getByText("1 result")).toBeInTheDocument();
+  expect(entryListCalls).toBe(0);
+  expect(sqlSessionCalls).toBe(0);
+}
+
+async function test_search_req_srch_005_advanced_search_compiles() {
+  const meetingForm: Form = {
+    name: "Meeting",
+    version: 1,
+    template: "# Meeting\n\n## Status\n",
+    fields: {
+      Status: { type: "string", required: false, sql_column: "field_100" },
+    },
+    sql_relation: "form_meeting",
+  };
+  seedForm("default", meetingForm);
+
+  let savedSqlBody: { name?: string | null; sql?: string } | null = null;
+  let sessionSqlBody: {
+    sql?: string;
+    parameters?: Record<string, unknown>;
+    parameter_types?: Record<string, string>;
+  } | null = null;
+  const postOrder: string[] = [];
+
+  server.use(
+    http.post(testApiUrl("/spaces/default/sql"), async ({ request }) => {
+      postOrder.push("saved");
+      savedSqlBody = (await request.json()) as {
+        name?: string | null;
+        sql?: string;
+      };
+      return HttpResponse.json(
+        { id: "saved-search-1", revision_id: "rev-2" },
+        { status: 201 },
+      );
+    }),
+    http.post(
+      testApiUrl("/spaces/default/sql-sessions"),
+      async ({ request }) => {
+        postOrder.push("session");
+        sessionSqlBody = (await request.json()) as typeof sessionSqlBody;
+        return HttpResponse.json(
+          { id: "advanced-session", status: "ready", error: null },
+          { status: 201 },
+        );
+      },
+    ),
+  );
+
+  render(() => <SpaceSearchRoute />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
+  await screen.findByRole("option", { name: "Meeting" });
+  fireEvent.change(screen.getByLabelText("Form"), {
+    target: { value: "Meeting" },
+  });
+  fireEvent.input(screen.getByLabelText("Updated from"), {
+    target: { value: "2025-03-01" },
+  });
+  fireEvent.input(screen.getByLabelText("Updated to"), {
+    target: { value: "2025-03-03" },
+  });
+  await screen.findByRole("option", { name: "Status" });
+  fireEvent.change(screen.getByLabelText("Field"), {
+    target: { value: "Status" },
+  });
+  fireEvent.input(screen.getByLabelText("Value"), {
+    target: { value: "Active" },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Run advanced search" }),
+  );
+
+  await waitFor(() => {
+    expect(savedSqlBody?.name).toBeNull();
+    expect(savedSqlBody?.sql).toBe(
+      "SELECT * FROM \"form_meeting\" WHERE _ugoite_updated_at >= TIMESTAMP '2025-03-01 00:00:00Z' AND _ugoite_updated_at < TIMESTAMP '2025-03-04 00:00:00Z' AND \"field_100\" = 'Active' ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50",
+    );
+    expect(sessionSqlBody?.sql).toContain('"field_100" = $search_2');
+    expect(sessionSqlBody?.parameters).toEqual({
+      search_0: "2025-03-01T00:00:00.000Z",
+      search_1: "2025-03-04T00:00:00.000Z",
+      search_2: "Active",
+    });
+    expect(sessionSqlBody?.parameter_types).toEqual({
+      search_0: "timestamp",
+      search_1: "timestamp",
+      search_2: "string",
+    });
+    expect(postOrder).toEqual(["session", "saved"]);
+    expect(navigateMock).toHaveBeenCalledWith(
+      "/spaces/default/entries?session=advanced-session",
+    );
+  });
+}
+
+async function test_search_req_srch_005_history_reuse() {
+  const relation = "form_entry";
+  seedForm("default", {
+    name: "Entry",
+    sql_relation: relation,
+    version: 1,
+    template: "# Entry\n",
+    fields: {},
+  });
+  seedSqlEntry("default", {
+    id: "saved-ready",
+    name: "Ready history",
+    sql:
+      `SELECT * FROM "${relation}" WHERE _ugoite_title = 'Alpha' ORDER BY _ugoite_id`,
+    variables: [],
+    created_at: "2025-01-01T00:00:00Z",
+    updated_at: "2025-01-02T00:00:00Z",
+    revision_id: "rev-1",
+  });
+  seedSqlEntry("default", {
+    id: "saved-vars",
+    name: "Needs variables",
+    sql:
+      `SELECT * FROM "${relation}" WHERE _ugoite_title = $title ORDER BY _ugoite_id`,
+    variables: [{ type: "string", name: "title", description: "Title" }],
+    created_at: "2025-01-01T00:00:00Z",
+    updated_at: "2025-01-03T00:00:00Z",
+    revision_id: "rev-2",
+  });
+
+  let sessionSqlBody: { sql?: string } | null = null;
+  server.use(
+    http.post(
+      testApiUrl("/spaces/default/sql-sessions"),
+      async ({ request }) => {
+        sessionSqlBody = (await request.json()) as { sql?: string };
+        return HttpResponse.json(
+          { id: "history-session", status: "ready", error: null },
+          { status: 201 },
+        );
+      },
+    ),
+  );
+
+  render(() => <SpaceSearchRoute />);
+
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Ready history/ }),
+  );
+  await waitFor(() => {
+    expect(sessionSqlBody?.sql).toBe(
+      `SELECT * FROM "${relation}" WHERE _ugoite_title = 'Alpha' ORDER BY _ugoite_id`,
+    );
+    expect(navigateMock).toHaveBeenCalledWith(
+      "/spaces/default/entries?session=history-session",
+    );
+  });
+
+  navigateMock.mockReset();
+  fireEvent.click(screen.getByRole("button", { name: /Needs variables/ }));
+  expect(navigateMock).toHaveBeenCalledWith(
+    "/spaces/default/queries/saved-vars/variables",
+  );
+}
+
 describe("/spaces/:space_id/search", () => {
   const testSpace: Space = {
     id: "default",
@@ -68,144 +272,15 @@ describe("/spaces/:space_id/search", () => {
       .toBeInTheDocument();
   });
 
-  it("REQ-SRCH-004: runs a direct keyword search and renders matching entries", async () => {
-    const record: KeywordSearchResult = {
-      id: "entry-1",
-      title: "Alpha Entry",
-      created_at: "2025-01-01T00:00:00Z",
-      updated_at: "2025-01-02T00:00:00Z",
-    };
-    let entryListCalls = 0;
-    let sqlSessionCalls = 0;
-    server.use(
-      http.get(
-        testApiUrl("/spaces/default/search"),
-        () => HttpResponse.json([record]),
-      ),
-      http.get(
-        testApiUrl("/spaces/default/entries"),
-        () => {
-          entryListCalls += 1;
-          return HttpResponse.json([]);
-        },
-      ),
-      http.post(
-        testApiUrl("/spaces/default/sql-sessions"),
-        () => {
-          sqlSessionCalls += 1;
-          return HttpResponse.json(
-            { detail: "Quick search must not create a SQL session" },
-            { status: 500 },
-          );
-        },
-      ),
-    );
+  it(
+    "REQ-SRCH-004: runs a direct keyword search and renders matching entries",
+    test_search_req_srch_004_keyword_first_route,
+  );
 
-    render(() => <SpaceSearchRoute />);
-
-    fireEvent.input(screen.getByLabelText("Search keywords"), {
-      target: { value: "keyword-first" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Search entries" }));
-
-    expect(await screen.findByRole("button", { name: /Alpha Entry/ }))
-      .toBeInTheDocument();
-    expect(screen.getByText("1 result")).toBeInTheDocument();
-    expect(entryListCalls).toBe(0);
-    expect(sqlSessionCalls).toBe(0);
-  });
-
-  it("REQ-SRCH-005: advanced search compiles filters into saved SQL and runs a shared session", async () => {
-    const meetingForm: Form = {
-      name: "Meeting",
-      version: 1,
-      template: "# Meeting\n\n## Status\n",
-      fields: {
-        Status: { type: "string", required: false, sql_column: "field_100" },
-      },
-      sql_relation: "form_meeting",
-    };
-    seedForm("default", meetingForm);
-
-    let savedSqlBody: { name?: string | null; sql?: string } | null = null;
-    let sessionSqlBody: {
-      sql?: string;
-      parameters?: Record<string, unknown>;
-      parameter_types?: Record<string, string>;
-    } | null = null;
-    const postOrder: string[] = [];
-
-    server.use(
-      http.post(testApiUrl("/spaces/default/sql"), async ({ request }) => {
-        postOrder.push("saved");
-        savedSqlBody = (await request.json()) as {
-          name?: string | null;
-          sql?: string;
-        };
-        return HttpResponse.json(
-          { id: "saved-search-1", revision_id: "rev-2" },
-          { status: 201 },
-        );
-      }),
-      http.post(
-        testApiUrl("/spaces/default/sql-sessions"),
-        async ({ request }) => {
-          postOrder.push("session");
-          sessionSqlBody = (await request.json()) as typeof sessionSqlBody;
-          return HttpResponse.json(
-            { id: "advanced-session", status: "ready", error: null },
-            { status: 201 },
-          );
-        },
-      ),
-    );
-
-    render(() => <SpaceSearchRoute />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
-    await screen.findByRole("option", { name: "Meeting" });
-    fireEvent.change(screen.getByLabelText("Form"), {
-      target: { value: "Meeting" },
-    });
-    fireEvent.input(screen.getByLabelText("Updated from"), {
-      target: { value: "2025-03-01" },
-    });
-    fireEvent.input(screen.getByLabelText("Updated to"), {
-      target: { value: "2025-03-03" },
-    });
-    await screen.findByRole("option", { name: "Status" });
-    fireEvent.change(screen.getByLabelText("Field"), {
-      target: { value: "Status" },
-    });
-    fireEvent.input(screen.getByLabelText("Value"), {
-      target: { value: "Active" },
-    });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Run advanced search" }),
-    );
-
-    await waitFor(() => {
-      expect(savedSqlBody?.name).toBeNull();
-      expect(savedSqlBody?.sql).toBe(
-        "SELECT * FROM \"form_meeting\" WHERE _ugoite_updated_at >= TIMESTAMP '2025-03-01 00:00:00Z' AND _ugoite_updated_at < TIMESTAMP '2025-03-04 00:00:00Z' AND \"field_100\" = 'Active' ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50",
-      );
-      expect(sessionSqlBody?.sql).toContain('"field_100" = $search_2');
-      expect(sessionSqlBody?.parameters).toEqual({
-        search_0: "2025-03-01T00:00:00.000Z",
-        search_1: "2025-03-04T00:00:00.000Z",
-        search_2: "Active",
-      });
-      expect(sessionSqlBody?.parameter_types).toEqual({
-        search_0: "timestamp",
-        search_1: "timestamp",
-        search_2: "string",
-      });
-      expect(postOrder).toEqual(["session", "saved"]);
-      expect(navigateMock).toHaveBeenCalledWith(
-        "/spaces/default/entries?session=advanced-session",
-      );
-    });
-  });
+  it(
+    "REQ-SRCH-005: advanced search compiles filters into saved SQL and runs a shared session",
+    test_search_req_srch_005_advanced_search_compiles,
+  );
 
   it("keeps focus in a field-condition value while typing", async () => {
     seedForm("default", {
@@ -291,70 +366,10 @@ describe("/spaces/:space_id/search", () => {
     expect(await screen.findByText(/Choose a Form/)).toBeInTheDocument();
   });
 
-  it("REQ-SRCH-005: saved history entries rerun directly or open variable input when needed", async () => {
-    const relation = "form_entry";
-    seedForm("default", {
-      name: "Entry",
-      sql_relation: relation,
-      version: 1,
-      template: "# Entry\n",
-      fields: {},
-    });
-    seedSqlEntry("default", {
-      id: "saved-ready",
-      name: "Ready history",
-      sql:
-        `SELECT * FROM "${relation}" WHERE _ugoite_title = 'Alpha' ORDER BY _ugoite_id`,
-      variables: [],
-      created_at: "2025-01-01T00:00:00Z",
-      updated_at: "2025-01-02T00:00:00Z",
-      revision_id: "rev-1",
-    });
-    seedSqlEntry("default", {
-      id: "saved-vars",
-      name: "Needs variables",
-      sql:
-        `SELECT * FROM "${relation}" WHERE _ugoite_title = $title ORDER BY _ugoite_id`,
-      variables: [{ type: "string", name: "title", description: "Title" }],
-      created_at: "2025-01-01T00:00:00Z",
-      updated_at: "2025-01-03T00:00:00Z",
-      revision_id: "rev-2",
-    });
-
-    let sessionSqlBody: { sql?: string } | null = null;
-    server.use(
-      http.post(
-        testApiUrl("/spaces/default/sql-sessions"),
-        async ({ request }) => {
-          sessionSqlBody = (await request.json()) as { sql?: string };
-          return HttpResponse.json(
-            { id: "history-session", status: "ready", error: null },
-            { status: 201 },
-          );
-        },
-      ),
-    );
-
-    render(() => <SpaceSearchRoute />);
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Ready history/ }),
-    );
-    await waitFor(() => {
-      expect(sessionSqlBody?.sql).toBe(
-        `SELECT * FROM "${relation}" WHERE _ugoite_title = 'Alpha' ORDER BY _ugoite_id`,
-      );
-      expect(navigateMock).toHaveBeenCalledWith(
-        "/spaces/default/entries?session=history-session",
-      );
-    });
-
-    navigateMock.mockReset();
-    fireEvent.click(screen.getByRole("button", { name: /Needs variables/ }));
-    expect(navigateMock).toHaveBeenCalledWith(
-      "/spaces/default/queries/saved-vars/variables",
-    );
-  });
+  it(
+    "REQ-SRCH-005: saved history entries rerun directly or open variable input when needed",
+    test_search_req_srch_005_history_reuse,
+  );
 
   it("links the Assets facet to the Space asset workspace", () => {
     render(() => <SpaceSearchRoute />);
