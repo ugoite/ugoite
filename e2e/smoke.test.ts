@@ -79,15 +79,20 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
     );
   });
 
-  test("plain Entries list is integrated into the Forms workspace", async ({ page, request }) => {
-    await page.goto(`/spaces/${spaceId}/entries`);
-    await expect(page).toHaveURL(`/spaces/${spaceId}/forms?form=Entry`);
-    await expect(page.getByRole("tab")).toHaveCount(0);
-    await expect(
-      page.getByRole("button", { name: "Form", exact: true }).locator("svg path"),
-    )
-      .toHaveCount(2);
-  });
+  test(
+    "plain Entries list keeps the Entries index in the Forms shell",
+    async ({ page, request }) => {
+      await page.goto(`/spaces/${spaceId}/entries`);
+      await expect(page).toHaveURL(`/spaces/${spaceId}/entries`);
+      await expect(page.getByRole("tab")).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "Form", exact: true }).locator(
+          "svg path",
+        ),
+      )
+        .toHaveCount(2);
+    },
+  );
 
   test("GET /about returns HTML", async ({ page }) => {
     await page.goto("/about");
