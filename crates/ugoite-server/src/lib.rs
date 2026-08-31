@@ -475,6 +475,15 @@ pub struct AppState {
     security_headers: SecurityHeadersPolicy,
 }
 
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub struct TestMcpAccess {
+    pub access_token: String,
+    pub credential_id: Uuid,
+    pub resource: String,
+    pub space_uid: Uuid,
+}
+
 impl AppState {
     pub fn new(root_uri: impl Into<String>) -> anyhow::Result<Self> {
         let root_uri = root_uri.into();
@@ -509,6 +518,101 @@ impl AppState {
             identity: NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?,
             security_headers: SecurityHeadersPolicy::from_public_origin("http://localhost:8000"),
             service,
+        })
+    }
+
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn new_for_tests_with_origin(
+        root_uri: impl Into<String>,
+        public_origin: impl Into<String>,
+    ) -> anyhow::Result<Self> {
+        let service = UgoiteService::new(root_uri.into())?;
+        let public_origin = public_origin.into();
+        let rp_id = url::Url::parse(&public_origin)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_string))
+            .unwrap_or_else(|| "localhost".to_string());
+        let identity = NodeIdentityService::new_for_tests(rp_id, public_origin)?;
+        Ok(Self {
+            security_headers: SecurityHeadersPolicy::from_public_origin(identity.public_origin()),
+            identity,
+            service,
+        })
+    }
+
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub async fn issue_test_mcp_access(
+        &self,
+        public_key_jwk: Value,
+    ) -> anyhow::Result<TestMcpAccess> {
+        let principal_id = Uuid::now_v7();
+        let slug = format!("mcp-contract-{}", Uuid::now_v7());
+        let space_uid = self
+            .service
+            .create_space_for_principal(&slug, principal_id, "MCP contract test")
+            .await?;
+        self.identity
+            .seed_test_recovery_accounts(&[(principal_id, space_uid, principal_id)])
+            .await?;
+
+        let (issuer, node_id) = self.identity.issuer_metadata().await?;
+        let resource = format!("{}/mcp", issuer.trim_end_matches('/'));
+        let actions = ["read".to_string()].into_iter().collect::<BTreeSet<_>>();
+        let device = self
+            .identity
+            .start_device_authorization(
+                "MCP contract test",
+                public_key_jwk.clone(),
+                Some(space_uid),
+                actions.clone(),
+                Some(resource.clone()),
+            )
+            .await?;
+        self.identity
+            .approve_device_authorization(
+                device["user_code"].as_str().ok_or_else(|| {
+                    anyhow::anyhow!("test device authorization omitted user code")
+                })?,
+                principal_id,
+                principal_id,
+                space_uid,
+                actions,
+            )
+            .await?;
+        let (credential, _, _, _) =
+            self.identity
+                .exchange_device_code(device["device_code"].as_str().ok_or_else(|| {
+                    anyhow::anyhow!("test device authorization omitted device code")
+                })?)
+                .await?;
+        let now = Utc::now().timestamp();
+        let claims = AccessTokenClaims {
+            iss: issuer,
+            node_id,
+            sub: principal_id,
+            principal_type: "human".to_string(),
+            actor_principal_id: None,
+            aud: resource.clone(),
+            space_uid,
+            granted_actions: ["read".to_string()].into_iter().collect(),
+            actor_chain: vec![principal_id],
+            exp: now + 300,
+            iat: now,
+            jti: Uuid::now_v7(),
+            credential_id: credential.credential_id,
+            credential_generation: Some(credential.credential_generation),
+            cnf: Confirmation {
+                jkt: oauth::jwk_thumbprint(&public_key_jwk)?,
+            },
+        };
+        let access_token = self.identity.issue_access_credential(claims).await?;
+        Ok(TestMcpAccess {
+            access_token,
+            credential_id: credential.credential_id,
+            resource,
+            space_uid,
         })
     }
 
