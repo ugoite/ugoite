@@ -6383,6 +6383,7 @@ dependencies = [
  "ugoite-iceberg",
  "ugoite-konase",
  "ugoite-konase-rig",
+ "ugoite-server",
  "url",
  "uuid",
 ]
