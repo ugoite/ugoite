@@ -1,0 +1,38 @@
+schema: mitase/spec/v1
+kind: features
+namespace: forms
+category: Form management
+features:
+  - id: FEAT-FORM-001
+    title: Form schema governance
+    summary: Define, validate, and evolve typed Form definitions used by Entry storage.
+    status: implemented
+    bindings:
+      - id: core
+        role: implementation
+        facet: core
+        responsibility: Implement typed Form definitions, column type discovery, and pre-v1 schema evolution boundaries.
+        targets:
+          - id: list-column-types
+            adapter: rust
+            path: crates/ugoite-iceberg/src/form.rs
+            selector: { kind: symbol, name: list_column_types }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FORM-001#criterion.column-types
+          - id: upsert-form
+            adapter: rust
+            path: crates/ugoite-iceberg/src/form.rs
+            selector: { kind: symbol, name: upsert_form }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FORM-002#criterion.evolution
+              - kind: satisfies
+                criterion: REQ-FORM-004#criterion.extra-attributes
+              - kind: satisfies
+                criterion: REQ-FORM-005#criterion.reserved-columns
+              - kind: satisfies
+                criterion: REQ-FORM-006#criterion.reserved-forms
+              - kind: satisfies
+                criterion: REQ-FORM-007#criterion.row-reference
+

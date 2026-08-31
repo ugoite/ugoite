@@ -1,0 +1,194 @@
+schema: mitase/spec/v1
+kind: requirements
+namespace: entries
+category: Entry creation, mutation, revision, and retrieval
+requirements:
+  - id: REQ-ENTRY-001
+    title: Entry creation
+    description: Create an Entry from Markdown content by appending one immutable revision row to the stable Form ID's Iceberg table.
+    priority: high
+    status: implemented
+    criteria:
+      - id: creation
+        kind: behavior
+        statement: Creating an Entry appends one immutable revision row to the stable Form-owned table.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: creation-test
+        role: verification
+        facet: verification
+        responsibility: Verify Entry creation through the exact Iceberg integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_entry.rs
+            selector: { kind: symbol, name: test_entry_req_entry_001_create_entry_basic }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-001#criterion.creation
+                covers: [FEAT-ENTRY-001#binding.core/target.create-entry]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: test_entry_req_entry_001_create_entry_basic } }
+  - id: REQ-ENTRY-002
+    title: Optimistic concurrency via revisions
+    description: Validate parent_revision_id during update and reject a mismatch as a conflict.
+    priority: high
+    status: implemented
+    criteria:
+      - id: optimistic-concurrency
+        kind: behavior
+        statement: Updating an Entry validates its parent revision and rejects a stale parent deterministically.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: concurrency-test
+        role: verification
+        facet: verification
+        responsibility: Verify stale revision rejection through the exact Iceberg integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_entry.rs
+            selector: { kind: symbol, name: test_entry_req_entry_002_update_entry_conflict }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-002#criterion.optimistic-concurrency
+                covers: [FEAT-ENTRY-001#binding.core/target.update-entry]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: test_entry_req_entry_002_update_entry_conflict } }
+  - id: REQ-ENTRY-003
+    title: Entry update
+    description: Update an Entry and create a new immutable revision.
+    priority: high
+    status: implemented
+    criteria:
+      - id: update
+        kind: behavior
+        statement: Updating an Entry appends a new revision without replacing prior history.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: update-test
+        role: verification
+        facet: verification
+        responsibility: Verify successful revision creation through the exact Iceberg integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_entry.rs
+            selector: { kind: symbol, name: test_entry_req_entry_003_update_entry_success }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-003#criterion.update
+                covers: [FEAT-ENTRY-001#binding.core/target.update-entry]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: test_entry_req_entry_003_update_entry_success } }
+  - id: REQ-ENTRY-004
+    title: Entry deletion tombstone
+    description: Delete an Entry as a tombstone and exclude it from the current list.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: tombstone
+        kind: behavior
+        statement: Deleting an Entry records a tombstone and removes it from current Entry listings while retaining history.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: tombstone-test
+        role: verification
+        facet: verification
+        responsibility: Verify Entry tombstone behavior through the exact Iceberg integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_entry.rs
+            selector: { kind: symbol, name: test_entry_req_entry_004_delete_entry }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-004#criterion.tombstone
+                covers: [FEAT-ENTRY-001#binding.core/target.delete-entry]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: test_entry_req_entry_004_delete_entry } }
+  - id: REQ-ENTRY-005
+    title: Entry history and restore
+    description: Every save creates an immutable revision, and history can be browsed and restored.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: history
+        kind: behavior
+        statement: Entry history remains browsable and restore appends a new revision without deleting historical revisions.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: history-test
+        role: verification
+        facet: verification
+        responsibility: Verify immutable history append behavior through the exact Iceberg integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_entry.rs
+            selector: { kind: symbol, name: test_entry_req_entry_005_entry_history_append }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-005#criterion.history
+                covers: [FEAT-ENTRY-001#binding.core/target.entry-history]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: test_entry_req_entry_005_entry_history_append } }
+          - id: restore-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_entry.rs
+            selector: { kind: symbol, name: deleted_entry_history_revision_and_restore_remain_reachable }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-005#criterion.history
+                covers: [FEAT-ENTRY-001#binding.core/target.restore-entry]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: deleted_entry_history_revision_and_restore_remain_reachable } }
+  - id: REQ-ENTRY-006
+    title: Structured data extraction from Markdown
+    description: Extract H2 headers as fields and merge them with frontmatter.
+    priority: high
+    status: implemented
+    criteria:
+      - id: markdown-extraction
+        kind: behavior
+        statement: Entry creation extracts H2 sections as structured fields while preserving frontmatter values.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: markdown-test
+        role: verification
+        facet: verification
+        responsibility: Verify Markdown section extraction through the exact Iceberg integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_entry.rs
+            selector: { kind: symbol, name: test_entry_req_entry_006_extract_h2_headers }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-006#criterion.markdown-extraction
+                covers: [FEAT-ENTRY-001#binding.core/target.create-entry]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: test_entry_req_entry_006_extract_h2_headers } }
+  - id: REQ-ENTRY-007
+    title: Properties in list response
+    description: Include Form-owned properties when retrieving the Entry list.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: list-properties
+        kind: behavior
+        statement: Entry list responses include the properties owned by the Entry's Form.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+  - id: REQ-ENTRY-008
+    title: Asset upload returns a Form value
+    description: Upload binary assets, return an AssetReference, and allow that value only in an asset_reference Form field.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: asset-reference
+        kind: behavior
+        statement: Asset upload returns a typed AssetReference suitable for an asset_reference Form field.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+  - id: REQ-ENTRY-009
+    title: Asset reference guard
+    description: Prevent deleting assets still referenced by current, non-deleted typed Form values.
+    priority: low
+    status: implemented
+    criteria:
+      - id: asset-reference-guard
+        kind: behavior
+        statement: Asset deletion is rejected while a current non-deleted typed Form value still references the asset.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]

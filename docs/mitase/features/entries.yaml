@@ -1,0 +1,56 @@
+schema: mitase/spec/v1
+kind: features
+namespace: entries
+category: Entry management
+features:
+  - id: FEAT-ENTRY-001
+    title: Entry lifecycle
+    summary: Create, update, delete, restore, and inspect immutable Entry revisions through the canonical Iceberg service.
+    status: implemented
+    bindings:
+      - id: core
+        role: implementation
+        facet: core
+        responsibility: Implement the immutable Entry lifecycle, revision history, Markdown extraction, and attribution behavior.
+        targets:
+          - id: create-entry
+            adapter: rust
+            path: crates/ugoite-iceberg/src/entry.rs
+            selector: { kind: symbol, name: create_entry }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-001#criterion.creation
+              - kind: satisfies
+                criterion: REQ-ENTRY-006#criterion.markdown-extraction
+              - kind: satisfies
+                criterion: REQ-FORM-009#criterion.attribution
+          - id: update-entry
+            adapter: rust
+            path: crates/ugoite-iceberg/src/entry.rs
+            selector: { kind: symbol, name: update_entry }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-002#criterion.optimistic-concurrency
+              - kind: satisfies
+                criterion: REQ-ENTRY-003#criterion.update
+          - id: delete-entry
+            adapter: rust
+            path: crates/ugoite-iceberg/src/entry.rs
+            selector: { kind: symbol, name: delete_entry }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-004#criterion.tombstone
+          - id: entry-history
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: entry_history }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-005#criterion.history
+          - id: restore-entry
+            adapter: rust
+            path: crates/ugoite-iceberg/src/entry.rs
+            selector: { kind: symbol, name: restore_entry }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-005#criterion.history

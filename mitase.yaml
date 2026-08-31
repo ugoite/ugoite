@@ -25,11 +25,24 @@ inventory:
         declared:
           roots:
             - AGENTS.md
+            - docs/mitase/philosophies/foundation.yaml
+            - docs/mitase/policies/policies.yaml
+            - docs/mitase/requirements/search.yaml
+            - docs/mitase/requirements/entries.yaml
+            - docs/mitase/requirements/forms.yaml
+            - docs/mitase/features/search.yaml
+            - docs/mitase/features/entries.yaml
+            - docs/mitase/features/forms.yaml
+            - docs/mitase/migration/search.md
+            - docs/mitase/migration/entries-forms.md
             - docs/spec/philosophy/foundation.yaml
             - docs/spec/policies/policies.yaml
             - docs/spec/requirements/search.yaml
             - docs/spec/features/search.yaml
-            - docs/mitase/migration/search.md
+            - docs/spec/requirements/entry.yaml
+            - docs/spec/features/entries.yaml
+            - docs/spec/requirements/form.yaml
+            - docs/spec/features/forms.yaml
             - .github/workflows/ci.yml
             - mise.toml
             - scripts/ci/mitase-check.sh

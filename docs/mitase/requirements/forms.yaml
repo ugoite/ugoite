@@ -1,0 +1,200 @@
+schema: mitase/spec/v1
+kind: requirements
+namespace: forms
+category: Form structure, validation, and lifecycle
+requirements:
+  - id: REQ-FORM-001
+    title: List column types
+    description: CLI and Server expose available column types for Form creation.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: column-types
+        kind: behavior
+        statement: The core exposes the supported typed column definitions used by Form creation.
+        governed_by: [POL-007#rule.governance]
+    bindings:
+      - id: column-types-test
+        role: verification
+        facet: verification
+        responsibility: Verify column type discovery through the exact Iceberg integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_form.rs
+            selector: { kind: symbol, name: test_form_req_form_001_list_column_types }
+            claims:
+              - kind: verifies
+                criterion: REQ-FORM-001#criterion.column-types
+                covers: [FEAT-FORM-001#binding.core/target.list-column-types]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_form, test: test_form_req_form_001_list_column_types } }
+  - id: REQ-FORM-002
+    title: Form evolution boundary
+    description: Before v1, Form updates preserve existing physical field types and IDs and reject breaking changes.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: evolution
+        kind: behavior
+        statement: Form updates reject pre-v1 breaking field changes while allowing compatible schema evolution.
+        governed_by: [POL-007#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: evolution-test
+        role: verification
+        facet: verification
+        responsibility: Verify the pre-v1 Form evolution boundary through the exact Iceberg integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_form.rs
+            selector: { kind: symbol, name: sql_columns_remain_stable_when_pre_v1_renames_are_rejected }
+            claims:
+              - kind: verifies
+                criterion: REQ-FORM-002#criterion.evolution
+                covers: [FEAT-FORM-001#binding.core/target.upsert-form]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_form, test: sql_columns_remain_stable_when_pre_v1_renames_are_rejected } }
+  - id: REQ-FORM-003
+    title: Form CRUD via API
+    description: The server allows creating, listing, and retrieving Form definitions and validates Entry updates against missing definitions.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: api-crud
+        kind: behavior
+        statement: Form definitions are available through the server Form API and participate in Entry validation.
+        governed_by: [POL-004#rule.governance, POL-007#rule.governance]
+  - id: REQ-FORM-004
+    title: Extra attributes policy
+    description: Form definitions declare how extra Markdown attributes are handled and the policy is enforced on Entry creation and update.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: extra-attributes
+        kind: behavior
+        statement: Form extra-attribute policy is enforced when an Entry is written.
+        governed_by: [POL-007#rule.governance]
+    bindings:
+      - id: extra-attributes-test
+        role: verification
+        facet: verification
+        responsibility: Verify rejection of disallowed extra attributes through the exact Iceberg integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_entry.rs
+            selector: { kind: symbol, name: test_entry_req_form_004_deny_extra_attributes }
+            claims:
+              - kind: verifies
+                criterion: REQ-FORM-004#criterion.extra-attributes
+                covers: [FEAT-FORM-001#binding.core/target.upsert-form]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: test_entry_req_form_004_deny_extra_attributes } }
+  - id: REQ-FORM-005
+    title: Reserved metadata columns
+    description: Form definitions reject field names colliding with system-owned metadata columns.
+    priority: high
+    status: implemented
+    criteria:
+      - id: reserved-columns
+        kind: behavior
+        statement: Form definitions reject system-owned metadata column names.
+        governed_by: [POL-007#rule.governance]
+    bindings:
+      - id: reserved-columns-test
+        role: verification
+        facet: verification
+        responsibility: Verify reserved metadata column rejection through the exact Iceberg integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_form.rs
+            selector: { kind: symbol, name: test_form_req_form_005_reject_reserved_metadata_columns }
+            claims:
+              - kind: verifies
+                criterion: REQ-FORM-005#criterion.reserved-columns
+                covers: [FEAT-FORM-001#binding.core/target.upsert-form]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_form, test: test_form_req_form_005_reject_reserved_metadata_columns } }
+  - id: REQ-FORM-006
+    title: Reserved metadata Forms
+    description: System-owned metadata Form names are reserved and rejected for user-authored Forms.
+    priority: high
+    status: implemented
+    criteria:
+      - id: reserved-forms
+        kind: behavior
+        statement: Form definitions reject system-owned metadata Form names.
+        governed_by: [POL-007#rule.governance]
+    bindings:
+      - id: reserved-forms-test
+        role: verification
+        facet: verification
+        responsibility: Verify reserved metadata Form rejection through the exact Iceberg integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_form.rs
+            selector: { kind: symbol, name: test_form_req_form_006_reject_reserved_metadata_form }
+            claims:
+              - kind: verifies
+                criterion: REQ-FORM-006#criterion.reserved-forms
+                covers: [FEAT-FORM-001#binding.core/target.upsert-form]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_form, test: test_form_req_form_006_reject_reserved_metadata_form } }
+  - id: REQ-FORM-007
+    title: Row reference field targets
+    description: A row_reference field declares a target Form that resolves to an existing Form or the current Form.
+    priority: high
+    status: implemented
+    criteria:
+      - id: row-reference
+        kind: behavior
+        statement: Row reference fields resolve their declared target Form before a Form definition is accepted.
+        governed_by: [POL-007#rule.governance]
+    bindings:
+      - id: row-reference-test
+        role: verification
+        facet: verification
+        responsibility: Verify row reference target resolution through the exact Iceberg integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_form.rs
+            selector: { kind: symbol, name: test_form_req_form_007_row_reference_requires_target }
+            claims:
+              - kind: verifies
+                criterion: REQ-FORM-007#criterion.row-reference
+                covers: [FEAT-FORM-001#binding.core/target.upsert-form]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_form, test: test_form_req_form_007_row_reference_requires_target } }
+  - id: REQ-FORM-008
+    title: Reserved identity metadata Forms
+    description: System reserves User and UserGroup metadata Form names in addition to existing metadata Forms.
+    priority: high
+    status: planned
+    criteria:
+      - id: reserved-identity-forms
+        kind: behavior
+        statement: User and UserGroup are reserved metadata Form names when the identity metadata contract is implemented.
+        governed_by: [POL-007#rule.governance]
+  - id: REQ-FORM-009
+    title: Mandatory attribution metadata
+    description: Form-backed rows persist system-managed author, updated_by, and deleted_by attribution metadata.
+    priority: high
+    status: implemented
+    criteria:
+      - id: attribution
+        kind: behavior
+        statement: Form-backed rows persist stable author attribution and current-revision actor metadata across create, update, delete, and restore.
+        governed_by: [POL-007#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: attribution-test
+        role: verification
+        facet: verification
+        responsibility: Verify Form-backed attribution metadata through the exact lifecycle integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_entry.rs
+            selector: { kind: symbol, name: entry_attribution_is_consistent_across_lifecycle }
+            claims:
+              - kind: verifies
+                criterion: REQ-FORM-009#criterion.attribution
+                covers: [FEAT-ENTRY-001#binding.core/target.create-entry]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_attribution_is_consistent_across_lifecycle } }
