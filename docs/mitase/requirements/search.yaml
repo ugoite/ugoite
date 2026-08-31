@@ -12,7 +12,7 @@ requirements:
       - id: keyword-search
         kind: behavior
         statement: Users can search current authorized entries by keyword and receive matching entry summaries.
-        governed_by: [POL-012#rule.governance]
+        governed_by: [POL-012#rule.governance, POL-011#rule.governance, POL-016#rule.governance]
     bindings:
       - id: keyword-test
         role: verification
@@ -48,23 +48,23 @@ requirements:
       - id: current-entry-scan
         kind: behavior
         statement: Keyword search scans current Entry content for matching keywords.
-        governed_by: [POL-012#rule.governance]
+        governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
       - id: authorized-assettext-projection
         kind: behavior
         statement: Keyword search includes matching content from the authorized AssetText projection.
-        governed_by: [POL-012#rule.governance]
+        governed_by: [POL-012#rule.governance, POL-011#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
       - id: missing-derived-fallback
         kind: behavior
         statement: Search falls back to native current Entry search when the AssetText projection is missing.
-        governed_by: [POL-012#rule.governance]
+        governed_by: [POL-012#rule.governance, POL-011#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
       - id: stale-derived-fallback
         kind: behavior
         statement: Search falls back to native current Entry search when the AssetText projection is stale.
-        governed_by: [POL-012#rule.governance]
+        governed_by: [POL-012#rule.governance, POL-011#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
       - id: corrupt-derived-fallback
         kind: behavior
         statement: Search falls back to native current Entry search when the AssetText projection is corrupt or unavailable.
-        governed_by: [POL-012#rule.governance]
+        governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
     bindings:
       - id: content-scan-test
         role: verification
@@ -89,7 +89,7 @@ requirements:
       - id: sql-rules
         kind: behavior
         statement: Shared SQL linting and completion rules are available to UI and CLI surfaces from common project configuration.
-        governed_by: [POL-012#rule.governance]
+        governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
   - id: REQ-SRCH-004
     title: Keyword-first search route
     description: The /spaces/{space_id}/search route MUST present direct keyword entry search as the default experience so users can find entries without first managing saved queries or writing SQL.
@@ -99,7 +99,7 @@ requirements:
       - id: keyword-first-route
         kind: behavior
         statement: The Search route presents direct keyword search as the default experience.
-        governed_by: [POL-012#rule.governance]
+        governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
     bindings:
       - id: frontend-test
         role: verification
@@ -124,7 +124,7 @@ requirements:
       - id: structured-search-reuse
         kind: behavior
         statement: Advanced search compiles structured conditions into the shared query path and keeps the resulting search reusable through human-readable history.
-        governed_by: [POL-012#rule.governance]
+        governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
     bindings:
       - id: frontend-test
         role: verification

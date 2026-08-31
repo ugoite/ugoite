@@ -9,7 +9,13 @@ Ugoite's governance stack is organized as:
 3. **Requirements, specifications, and features** answer _what_ concrete
    behavior must exist in the product.
 
-Each entry in `policies.yaml` is intended to be readable from those three
+The Foundation and Policy domains migrated into Mitase are authoritative in
+`docs/mitase`. This directory remains the read-only legacy policy snapshot and
+its downstream links are preserved as typed deferred edges in
+`docs/mitase-migration/policy-edges.yaml` until the referenced domains are
+migrated.
+
+Each legacy entry in `policies.yaml` is intended to be readable from those three
 angles:
 
 - `linked_philosophies` shows which foundational beliefs the policy realizes.
@@ -30,3 +36,5 @@ When updating the governance taxonomy:
 - keep policy descriptions specific enough to explain why the rule exists
 - preserve traceability from philosophy to policy to requirement/specification
   so drift remains visible in CI
+- update the canonical Mitase policy graph and its migration manifest for
+  migrated policy domains; do not edit the legacy snapshot

@@ -39,13 +39,24 @@ derived or disposable.
 
 ## Read the specification map
 
-The specification is organized by the question it answers. Each group keeps its
-existing source files and machine-readable registries; this page only makes the
-reading order explicit.
+The specification is organized by the question it answers. Migrated domains
+use the canonical Mitase graph under `docs/mitase`; unmigrated domains keep
+their existing source files and machine-readable registries. This page makes
+the reading order and migration boundary explicit.
+
+## Migrated domain authority
+
+Foundation and policy governance are authoritative in the canonical
+[Mitase Foundation](../mitase/philosophies/foundation.yaml) and
+[Mitase policies](../mitase/policies/policies.yaml). The legacy Foundation and
+Policy YAML remain read-only migration evidence and are guarded against drift.
+Search, Entry, and Form records migrated by the current dogfood slice likewise
+use `docs/mitase`; other requirement and feature domains remain authoritative
+in their existing `docs/spec` records until migrated.
 
 - **Core model:** [data model](data-model/overview.md),
-  [features](features/index.md), and the machine-readable
-  [foundation](https://github.com/ugoite/ugoite/blob/main/docs/spec/philosophy/foundation.yaml).
+  [features](features/index.md), and the canonical machine-readable
+  [foundation](../mitase/philosophies/foundation.yaml).
 - **Interfaces:** [REST API](api/rest.md),
   [OpenAPI](https://github.com/ugoite/ugoite/blob/main/docs/spec/api/openapi.yaml),
   [MCP](api/mcp.md), [operator surfaces](api/operator-surfaces.md), and
@@ -54,14 +65,15 @@ reading order explicit.
   [user stories](stories/index.md).
 - **Architecture contracts:** [architecture overview](architecture/overview.md),
   decisions, stack, future-proofing, and the Space catalog.
-- **Operations and quality:** [policies](policies/index.md),
+- **Operations and quality:** [policy traceability](policies/index.md),
   [security](security/overview.md), [testing and CI](testing/strategy.md),
   [quality](quality/error-handling.md),
   [product metrics](product/success-metrics.md), and
   [versions](versions/index.md).
 
-Use the [operator guides](../guide/index.md) for procedures. This section is the
-executable contract, not a beginner-first tutorial.
+Use the [operator guides](../guide/index.md) for procedures. This section
+describes the repository specification boundary; migrated governance is
+authored in `docs/mitase`, while unmigrated domains remain in `docs/spec`.
 
 ## Module matrix
 

@@ -38,8 +38,16 @@ Treat `crates/ugoite-server` as the REST implementation and `/openapi.json` as t
 - `docs/mitase` is authoritative for domains that have been migrated into the
   canonical Mitase graph.
 - Unmigrated domains remain authoritative in their existing `docs/spec`
-  records; migrated legacy records are read-only evidence until that domain's
-  migration is complete.
+  records. For migrated domains, the legacy Foundation and Policy files are
+  immutable migration snapshots: `tools/mitase_migration_test.ts` checks their
+  hashes and the index links the canonical files instead.
+- Policy downstream links that still target unmigrated domains are preserved
+  as typed deferred relations in `docs/mitase-migration/policy-edges.yaml`.
+  They must not be dropped or replaced by invented partial Mitase nodes.
+- Every migrated Policy has an explicit Ugoite-owned normative decision in
+  `docs/mitase-migration/policy-levels.yaml`. Foundation precedence and exact
+  evidence bindings for `must` rules are guarded by
+  `tools/mitase_migration_test.ts`.
 - Preserve source meaning when migrating Requirements. Missing or ambiguous
   evidence becomes an unverified Criterion or an explicit migration gap; it
   must not be represented by narrowing the Requirement.

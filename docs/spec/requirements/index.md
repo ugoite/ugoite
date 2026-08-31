@@ -2,7 +2,7 @@
 title: 'Requirements registry'
 ---
 
-Requirement YAML files define stable IDs, descriptions, governance links, implementation status, and generated test traceability.
+Requirement YAML files define stable IDs, descriptions, governance links, implementation status, and generated test traceability. Migrated domains are authoritative in `docs/mitase`; this registry remains authoritative for domains that have not yet been migrated.
 
 A current test mapping has this shape:
 

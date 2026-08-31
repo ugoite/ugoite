@@ -39,6 +39,8 @@ inventory:
             - docs/mitase/migration/search.md
             - docs/mitase/migration/entries-forms.md
             - docs/mitase/migration/policy.md
+            - docs/mitase-migration/policy-edges.yaml
+            - docs/mitase-migration/policy-levels.yaml
             - docs/spec/philosophy/foundation.yaml
             - docs/spec/policies/policies.yaml
             - docs/spec/requirements/search.yaml
@@ -50,6 +52,15 @@ inventory:
             - .github/workflows/ci.yml
             - mise.toml
             - scripts/ci/mitase-check.sh
+            - tools/mitase_migration_test.ts
+            - tools/knowledge_compatibility.ts
+            - crates/ugoite-core/src/lib.rs
+            - crates/ugoite-server/src/lib.rs
+            - crates/ugoite-iceberg/src/form.rs
+            - crates/ugoite-iceberg/src/search.rs
+            - crates/ugoite-konase/src/agent_runtime.rs
+            - frontend/src/lib/search-api.ts
+            - crates/ugoite-iceberg/tests/fixtures/v0.1-knowledge.json
 validation:
   preset: strict
   readiness:
