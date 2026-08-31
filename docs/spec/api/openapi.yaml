@@ -5991,6 +5991,9 @@
           },
           {
             "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/KeywordSearchQuery"
           }
         ],
         "responses": {
@@ -11682,9 +11685,11 @@
         "name": "limit",
         "in": "query",
         "required": false,
+        "description": "Maximum number of entries to return. Values are bounded to 10,000.",
         "schema": {
           "type": "integer",
           "minimum": 0,
+          "maximum": 10000,
           "default": 100
         }
       },
@@ -11697,6 +11702,16 @@
           "type": "integer",
           "minimum": 0,
           "default": 0
+        }
+      },
+      "KeywordSearchQuery": {
+        "name": "q",
+        "in": "query",
+        "required": true,
+        "description": "Plain-text keyword query. Values are limited to 8,192 UTF-8 bytes.",
+        "schema": {
+          "type": "string",
+          "maxLength": 8192
         }
       },
       "AuditOffset": {

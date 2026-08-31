@@ -8756,6 +8756,8 @@ async fn list_entries(
     Query(query): Query<EntryListQuery>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let limit = query.limit.unwrap_or(100);
+    validate_normal_read_limit(limit, "entry list")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
     Ok(Json(Value::Array(
@@ -8764,10 +8766,7 @@ async fn list_entries(
             .list_entries_authorized_for_principals(
                 &space_id,
                 &principals,
-                query
-                    .limit
-                    .unwrap_or(100)
-                    .min(ugoite_iceberg::MAX_NORMAL_READ_ROWS),
+                limit,
                 query.offset.unwrap_or(0),
             )
             .await
@@ -9271,14 +9270,24 @@ struct SearchQuery {
     limit: Option<usize>,
 }
 
-async fn search_entries(
-    State(state): State<AppState>,
-    Extension(identity): Extension<RequestIdentityContext>,
-    Path(space_id): Path<String>,
-    Query(query): Query<SearchQuery>,
-) -> ApiResult<Json<Value>> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
-    if query.q.len() > ugoite_iceberg::derived_relation::MAX_ASSET_TEXT_QUERY_BYTES {
+fn validate_normal_read_limit(limit: usize, operation: &str) -> ApiResult<()> {
+    if limit > ugoite_iceberg::MAX_NORMAL_READ_ROWS {
+        return Err(ApiError::from_core(
+            AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                format!(
+                    "{operation} limit exceeds the configured maximum of {} rows",
+                    ugoite_iceberg::MAX_NORMAL_READ_ROWS
+                ),
+            )
+            .into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_keyword_search_query(query: &str) -> ApiResult<()> {
+    if query.len() > ugoite_iceberg::derived_relation::MAX_ASSET_TEXT_QUERY_BYTES {
         return Err(ApiError::from_core(
             AppError::invalid_input(
                 ErrorCode::InvalidInput,
@@ -9287,21 +9296,26 @@ async fn search_entries(
             .into(),
         ));
     }
+    Ok(())
+}
+
+async fn search_entries(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    Query(query): Query<SearchQuery>,
+) -> ApiResult<Json<Value>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let limit = query.limit.unwrap_or(100);
+    validate_normal_read_limit(limit, "search")?;
+    validate_keyword_search_query(&query.q)?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
     Ok(Json(
         serde_json::to_value(
             state
                 .service
-                .search_entries_authorized_for_principals(
-                    &space_id,
-                    &principals,
-                    &query.q,
-                    query
-                        .limit
-                        .unwrap_or(100)
-                        .min(ugoite_iceberg::MAX_NORMAL_READ_ROWS),
-                )
+                .search_entries_authorized_for_principals(&space_id, &principals, &query.q, limit)
                 .await
                 .map_err(ApiError::from_core)?,
         )
@@ -12039,6 +12053,40 @@ mod authentication_regression_tests {
             ugoite_iceberg::sql_session::MAX_PAGE_SIZE + 1
         )
         .is_err());
+    }
+
+    #[test]
+    fn issue_2125_read_request_bounds_accept_edges_and_reject_over_limits() {
+        let max_rows = ugoite_iceberg::MAX_NORMAL_READ_ROWS;
+        assert!(validate_normal_read_limit(max_rows, "entry list").is_ok());
+        assert!(validate_normal_read_limit(0, "entry list").is_ok());
+
+        let error = validate_normal_read_limit(max_rows + 1, "entry list")
+            .expect_err("entry list over-limit must be rejected");
+        assert_eq!(error.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            error.detail,
+            json!({
+                "code": "INVALID_INPUT",
+                "message": format!(
+                    "entry list limit exceeds the configured maximum of {max_rows} rows"
+                )
+            })
+        );
+
+        let max_query = "x".repeat(ugoite_iceberg::derived_relation::MAX_ASSET_TEXT_QUERY_BYTES);
+        assert!(validate_keyword_search_query(&max_query).is_ok());
+        let oversized_query = format!("{max_query}x");
+        let error = validate_keyword_search_query(&oversized_query)
+            .expect_err("oversized keyword query must be rejected");
+        assert_eq!(error.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            error.detail,
+            json!({
+                "code": "INVALID_INPUT",
+                "message": "search query exceeds the configured byte limit"
+            })
+        );
     }
 
     #[test]
