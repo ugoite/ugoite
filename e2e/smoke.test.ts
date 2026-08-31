@@ -86,7 +86,7 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
       await expect(page).toHaveURL(`/spaces/${spaceId}/entries`);
       await expect(page.getByRole("tab")).toHaveCount(0);
       const formsLinks = page.getByRole("link", { name: "Forms", exact: true });
-      await expect(formsLinks).toHaveCount(2);
+      await expect(formsLinks).toHaveCount(1);
       await expect(formsLinks.first()).toHaveAttribute(
         "href",
         `/spaces/${spaceId}/forms`,
