@@ -116,20 +116,7 @@ impl RigAgentRuntime {
                     tools: self.tools.clone(),
                 }))
             }
-            AgentRunStep::CallTools { calls } => {
-                if calls.is_empty() {
-                    return Err(Self::error(
-                        "invalid_tool_batch",
-                        "Rig emitted an empty tool-call batch",
-                    ));
-                }
-                let queued_tools = calls
-                    .into_iter()
-                    .map(|call| self.validate_tool_call(call))
-                    .collect::<Result<VecDeque<_>, _>>()?;
-                self.queued_tools = queued_tools;
-                self.next_action()
-            }
+            AgentRunStep::CallTools { calls } => self.queue_tool_calls(calls),
             AgentRunStep::Done(response) => {
                 let job_id = self.active_job_id()?.to_owned();
                 self.clear();
@@ -254,6 +241,10 @@ impl RigAgentRuntime {
         &self,
         call: rig_agent::agent::run::PendingToolCall,
     ) -> Result<QueuedToolCall, AgentRuntimeError> {
+        // The adapter currently maps `NeedsResolution` to `unknown_tool` below
+        // and does not enter Rig's invalid-tool recovery. A pre-resolved result
+        // is therefore unreachable through this adapter today. Keep this guard
+        // defensive without treating Rig's valid recovery content as malformed.
         if call.preresolved_result.is_some() {
             return Err(Self::error(
                 "unsupported_tool_result",
@@ -279,6 +270,23 @@ impl RigAgentRuntime {
             arguments: arguments.into_iter().collect(),
             effect,
         })
+    }
+
+    fn queue_tool_calls(
+        &mut self,
+        calls: Vec<rig_agent::agent::run::PendingToolCall>,
+    ) -> Result<AgentAction, AgentRuntimeError> {
+        if calls.is_empty() {
+            return Err(Self::error(
+                "rig_invariant",
+                "Rig emitted an empty tool-call batch",
+            ));
+        }
+        self.queued_tools = calls
+            .into_iter()
+            .map(|call| self.validate_tool_call(call))
+            .collect::<Result<VecDeque<_>, _>>()?;
+        self.next_action()
     }
 }
 
@@ -572,6 +580,42 @@ mod tests {
         assert!(runtime.pending.is_none());
         assert!(runtime.queued_tools.is_empty());
         assert_eq!(runtime.mcp_sequence, 0);
+    }
+
+    #[test]
+    fn empty_tool_batch_is_reported_as_a_rig_invariant() {
+        let mut runtime = RigAgentRuntime::default();
+
+        let error = runtime
+            .queue_tool_calls(vec![])
+            .expect_err("an empty Rig tool batch must stop the adapter");
+
+        assert_eq!(error.kind, "rig_invariant");
+        assert!(runtime.queued_tools.is_empty());
+        assert!(runtime.pending.is_none());
+    }
+
+    #[test]
+    fn unavailable_tool_does_not_enter_rig_invalid_tool_recovery() {
+        let mut runtime = RigAgentRuntime::default();
+        let AgentAction::CallModel(model) = runtime.start(job(), context()).unwrap() else {
+            panic!("expected initial model call");
+        };
+
+        let error = runtime
+            .resume(AgentRuntimeInput::ModelCompleted(ModelResult {
+                request_id: model.request_id,
+                text: None,
+                tool_calls: vec![ugoite_konase::ModelToolCall {
+                    id: "call-1".into(),
+                    name: "ugoite.unknown".into(),
+                    arguments: serde_json::json!({}),
+                }],
+            }))
+            .expect_err("the current adapter does not resolve unavailable tools");
+
+        assert_eq!(error.kind, "unknown_tool");
+        assert!(runtime.pending.is_none());
     }
 
     #[test]
