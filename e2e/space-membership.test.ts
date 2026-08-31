@@ -6,11 +6,12 @@ test.describe("Space Membership", () => {
   test.beforeAll(async ({ request }) => await waitForServers(request));
 
   test("REQ-SEC-007: one-use invitation registers a real Passkey and can be revoked", async ({ browser, request }) => {
-    const spaceId = `e2e-members-${Date.now()}`;
+    const spaceSlug = `e2e-members-${Date.now()}`;
     const created = await request.post(getBackendUrl("/spaces"), {
-      data: { name: spaceId },
+      data: { name: spaceSlug },
     });
     expect(created.status()).toBe(201);
+    const { id: spaceId } = await created.json() as { id: string };
     const invite = await request.post(
       getBackendUrl(`/spaces/${spaceId}/members/invitations`),
       { data: { label: "Invited viewer", role: "viewer" } },
@@ -70,11 +71,12 @@ test.describe("Space Membership", () => {
   });
 
   test("REQ-SEC-007: an existing Space member can retry the same invitation idempotently", async ({ page, request }) => {
-    const spaceId = `e2e-existing-member-${Date.now()}`;
+    const spaceSlug = `e2e-existing-member-${Date.now()}`;
     const created = await request.post(getBackendUrl("/spaces"), {
-      data: { name: spaceId },
+      data: { name: spaceSlug },
     });
     expect(created.status()).toBe(201);
+    const { id: spaceId } = await created.json() as { id: string };
     const invite = await request.post(
       getBackendUrl(`/spaces/${spaceId}/members/invitations`),
       { data: { label: "Existing owner", role: "viewer" } },
