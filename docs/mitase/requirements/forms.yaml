@@ -203,9 +203,9 @@ requirements:
           - id: case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_entry.rs
-            selector: { kind: symbol, name: entry_attribution_is_consistent_across_lifecycle }
+            selector: { kind: symbol, name: entry_attribution_is_consistent_on_create }
             claims:
               - kind: verifies
                 criterion: REQ-FORM-009#criterion.attribution
                 covers: [FEAT-ENTRY-001#binding.core/target.create-entry]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_attribution_is_consistent_across_lifecycle } }
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_attribution_is_consistent_on_create } }

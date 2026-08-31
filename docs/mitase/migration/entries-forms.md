@@ -21,10 +21,11 @@ The Entry feature binds the canonical Iceberg implementation symbols for
 creation, update, deletion, history, and restore. The history claim uses the
 core test surface that owns that semantic. The legacy Form attribution
 requirement describes the full lifecycle, but this slice narrows its canonical
-criterion to Entry creation because one lifecycle test cannot be associated
-with multiple current implementation targets under the Mitase relation rules.
-Update, delete, and restore attribution remain migration gaps. The server and
-CLI remain adapters until their exact criteria are migrated.
+criterion to Entry creation and uses a dedicated exact creation test because
+one lifecycle test cannot be associated with multiple current implementation
+targets under the Mitase relation rules. Update, delete, and restore
+attribution remain migration gaps. The server and CLI remain adapters until
+their exact criteria are migrated.
 
 ## Form migration
 

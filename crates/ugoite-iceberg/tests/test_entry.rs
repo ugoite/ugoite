@@ -1483,6 +1483,32 @@ async fn test_entry_req_entry_004_delete_entry() -> anyhow::Result<()> {
 
 #[tokio::test]
 /// REQ-FORM-009
+async fn entry_attribution_is_consistent_on_create() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "entry-attribution-create", "/tmp").await?;
+    let ws_path = "spaces/entry-attribution-create";
+    ensure_entry_form(&op, ws_path).await?;
+    let integrity = FakeIntegrityProvider;
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "entry-attribution-create",
+        "---\nform: Entry\n---\n# Created\n\n## Body\nContent",
+        "creator",
+        &integrity,
+    )
+    .await?;
+
+    let created = entry::get_entry_content(&op, ws_path, "entry-attribution-create").await?;
+    assert_eq!(created.author, "creator");
+    assert_eq!(created.updated_by, "creator");
+    assert_eq!(created.deleted_by, None);
+    Ok(())
+}
+
+#[tokio::test]
+/// Lifecycle attribution evidence retained for the migration gap
 async fn entry_attribution_is_consistent_across_lifecycle() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "entry-attribution", "/tmp").await?;
