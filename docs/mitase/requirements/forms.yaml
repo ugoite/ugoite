@@ -53,6 +53,15 @@ requirements:
                 criterion: REQ-FORM-002#criterion.evolution
                 covers: [FEAT-FORM-001#binding.core/target.upsert-form]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_form, test: sql_columns_remain_stable_when_pre_v1_renames_are_rejected } }
+          - id: compatible-addition-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_form.rs
+            selector: { kind: symbol, name: existing_form_accepts_a_time_column }
+            claims:
+              - kind: verifies
+                criterion: REQ-FORM-002#criterion.evolution
+                covers: [FEAT-FORM-001#binding.core/target.upsert-form]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_form, test: existing_form_accepts_a_time_column } }
   - id: REQ-FORM-003
     title: Form CRUD via API
     description: The server allows creating, listing, and retrieving Form definitions and validates Entry updates against missing definitions.
@@ -183,13 +192,13 @@ requirements:
     criteria:
       - id: attribution
         kind: behavior
-        statement: Form-backed rows persist stable author attribution and current-revision actor metadata across create, update, delete, and restore.
+        statement: Entry creation persists stable author attribution and initializes current-revision actor metadata.
         governed_by: [POL-007#rule.governance, POL-014#rule.governance]
     bindings:
       - id: attribution-test
         role: verification
         facet: verification
-        responsibility: Verify Form-backed attribution metadata through the exact lifecycle integration test.
+        responsibility: Verify Entry-creation attribution metadata through the exact lifecycle integration test.
         targets:
           - id: case
             adapter: rust
@@ -198,6 +207,5 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-FORM-009#criterion.attribution
-                covers:
-                  - FEAT-ENTRY-001#binding.core/target.create-entry
+                covers: [FEAT-ENTRY-001#binding.core/target.create-entry]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_attribution_is_consistent_across_lifecycle } }

@@ -18,10 +18,13 @@ exact proof target for them. The legacy `verification: traced` field is not
 treated as proof by itself.
 
 The Entry feature binds the canonical Iceberg implementation symbols for
-creation, update, deletion, history, and restore. The history and attribution
-claims use the service/core and lifecycle test surfaces that own those
-semantics; the server and CLI remain adapters until their exact criteria are
-migrated.
+creation, update, deletion, history, and restore. The history claim uses the
+core test surface that owns that semantic. The legacy Form attribution
+requirement describes the full lifecycle, but this slice narrows its canonical
+criterion to Entry creation because one lifecycle test cannot be associated
+with multiple current implementation targets under the Mitase relation rules.
+Update, delete, and restore attribution remain migration gaps. The server and
+CLI remain adapters until their exact criteria are migrated.
 
 ## Form migration
 
