@@ -178,9 +178,27 @@ test.describe("Entries CRUD", () => {
 
 		await page.goto(`/spaces/${spaceId}/entries/${created.id}`);
 		await page.waitForLoadState("networkidle");
-		const html = await page.content();
-		expect(html).toContain("Updated content that should persist");
-		expect(html).not.toContain("Original content");
+		await expect(page).toHaveURL(
+			new RegExp(`/spaces/${spaceId}/entries/${created.id}$`),
+		);
+		await expect(page.getByLabel("Body")).toHaveValue(
+			"Updated content that should persist.",
+		);
+		await expect(page.getByLabel("Body")).not.toHaveValue(
+			"Original content.",
+		);
+
+		await page.reload();
+		await page.waitForLoadState("networkidle");
+		await expect(page).toHaveURL(
+			new RegExp(`/spaces/${spaceId}/entries/${created.id}$`),
+		);
+		await expect(page.getByLabel("Body")).toHaveValue(
+			"Updated content that should persist.",
+		);
+		await expect(page.getByLabel("Body")).not.toHaveValue(
+			"Original content.",
+		);
 
 		await request.delete(
 			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
