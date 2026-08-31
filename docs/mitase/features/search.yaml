@@ -5,13 +5,13 @@ category: Search
 features:
   - id: FEAT-SRCH-001
     title: Search core
-    summary: Provide keyword search over current authorized Entry content and the derived AssetText projection, with native Entry fallback.
+    summary: Provide keyword search over current authorized Entry content. AssetText projection and native fallback coverage remain migration gaps in this slice.
     status: implemented
     bindings:
       - id: core
         role: implementation
         facet: core
-        responsibility: Implement the exact keyword and fallback content-scan behavior used by the operator surfaces.
+        responsibility: Implement the exact current Entry keyword scan used by the operator surfaces; AssetText projection and fallback behavior remain unclaimed in this slice.
         targets:
           - id: search-entries
             adapter: rust
