@@ -273,8 +273,11 @@ Deno.test("legacy migrated snapshots and indexes remain guarded", async () => {
   );
 
   const index = await Deno.readTextFile("docs/spec/index.md");
-  assertEquals(index.includes("../mitase/philosophies/foundation.yaml"), true);
-  assertEquals(index.includes("../mitase/policies/policies.yaml"), true);
+  assertEquals(
+    index.includes("docs/mitase/philosophies/foundation.yaml"),
+    true,
+  );
+  assertEquals(index.includes("docs/mitase/policies/policies.yaml"), true);
   assertEquals(index.includes("docs/spec/philosophy/foundation.yaml"), false);
   const policyIndex = await Deno.readTextFile("docs/spec/policies/index.md");
   assertEquals(

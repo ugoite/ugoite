@@ -46,17 +46,18 @@ the reading order and migration boundary explicit.
 
 ## Migrated domain authority
 
-Foundation and policy governance are authoritative in the canonical
-[Mitase Foundation](../mitase/philosophies/foundation.yaml) and
-[Mitase policies](../mitase/policies/policies.yaml). The legacy Foundation and
-Policy YAML remain read-only migration evidence and are guarded against drift.
+Foundation and policy governance are authoritative in the canonical Mitase
+records at `docs/mitase/philosophies/foundation.yaml` and
+`docs/mitase/policies/policies.yaml`; see the [migration authority guide](../mitase/migration/policy)
+for the human-readable boundary. The legacy Foundation and Policy YAML remain
+read-only migration evidence and are guarded against drift.
 Search, Entry, and Form records migrated by the current dogfood slice likewise
 use `docs/mitase`; other requirement and feature domains remain authoritative
 in their existing `docs/spec` records until migrated.
 
 - **Core model:** [data model](data-model/overview.md),
-  [features](features/index.md), and the canonical machine-readable
-  [foundation](../mitase/philosophies/foundation.yaml).
+  [features](features/index.md), and the canonical machine-readable Foundation
+  record at `docs/mitase/philosophies/foundation.yaml`.
 - **Interfaces:** [REST API](api/rest.md),
   [OpenAPI](https://github.com/ugoite/ugoite/blob/main/docs/spec/api/openapi.yaml),
   [MCP](api/mcp.md), [operator surfaces](api/operator-surfaces.md), and
@@ -72,7 +73,7 @@ in their existing `docs/spec` records until migrated.
   [versions](versions/index.md).
 
 Use the [operator guides](../guide/index.md) for procedures. This section
-describes the repository specification boundary; migrated governance is
+  describes the repository specification boundary; migrated governance is
 authored in `docs/mitase`, while unmigrated domains remain in `docs/spec`.
 
 ## Module matrix
