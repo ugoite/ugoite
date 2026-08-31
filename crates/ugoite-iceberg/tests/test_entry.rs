@@ -275,6 +275,21 @@ async fn restore_replays_historical_references_even_when_targets_are_unavailable
         &FakeIntegrityProvider,
     )
     .await?;
+    let restored_content = entry::get_entry_content(&op, ws_path, "source-1").await?;
+    let restored_history = entry::get_entry_history(&op, ws_path, "source-1").await?;
+    let restored_revisions = restored_history["revisions"]
+        .as_array()
+        .expect("restored entry history");
+    assert_eq!(restored_revisions.len(), 3);
+    assert!(restored_revisions.iter().any(|revision| {
+        revision["revision_id"].as_str() == Some(historical_revision.as_str())
+    }));
+    let restore_revision = restored_revisions.last().expect("restore revision");
+    assert_eq!(restore_revision["operation"], "restore");
+    assert_eq!(
+        restore_revision["revision_id"].as_str(),
+        Some(restored_content.revision_id.as_str())
+    );
     let restored = entry::list_entries(&op, ws_path)
         .await?
         .into_iter()
