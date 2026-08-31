@@ -41,5 +41,5 @@ philosophies:
         statement: AI should accelerate user workflows, but only within explicit trust boundaries. Product design must make risk observable and governable while retaining high autonomy inside approved constraints.
         applies_to: [product, specification, verification]
       - id: coding-guideline
-        statement: Enforce strict typed contracts, CI gates, policy-linked specifications, and trusted toolchains for AI-assisted work. Do not bypass validation paths or introduce silent fallbacks that hide risk.
+        statement: Enforce strict typed contracts, CI gates, policy-linked specifications, and trusted toolchains for AI-assisted changes. Do not bypass validation paths or introduce silent fallbacks that hide risk.
         applies_to: [implementation, verification]

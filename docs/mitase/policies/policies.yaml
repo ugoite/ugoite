@@ -68,7 +68,7 @@ policies:
         governed_by: [PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
   - id: POL-008
     title: Requirement-to-Test Traceability
-    summary: Require machine-readable linkage from requirements to executable tests.
+    summary: Require machine-readable linkage from requirement to executable tests.
     description: This policy turns specifications into enforceable quality rules by requiring machine-readable links from requirements to tests. It strengthens trusted autonomy by ensuring that contributors and AI agents change behavior only through paths that remain continuously checkable in CI.
     rules:
       - id: governance
