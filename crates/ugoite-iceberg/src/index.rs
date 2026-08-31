@@ -2074,7 +2074,10 @@ async fn execute_datafusion_sql(
         allowed_relations,
         relation_scopes,
         checkpoint,
-        BTreeSet::new(),
+        // Direct authorized queries support the minimal aggregate needed for
+        // row counts. SQL-session pagination has its own deliberately empty
+        // allowlist and remains aggregate-free.
+        BTreeSet::from(["count".to_string()]),
     )
     .await
 }

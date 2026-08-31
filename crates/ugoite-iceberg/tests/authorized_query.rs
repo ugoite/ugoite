@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 
+use arrow_array::Int64Array;
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
 };
@@ -191,6 +192,39 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
         .authorized_query_context(policy(&tasks, &[]))
         .await?;
     assert!(empty.execute("SELECT * FROM tasks").await?.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn count_aggregates_only_authorized_current_entries() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(4)),
+        "memory://authorized-query-count",
+    )
+    .await?;
+    let tasks = form(5, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    append(&workspace, &tasks, 6, 7, "allowed").await?;
+    append(&workspace, &tasks, 8, 9, "hidden").await?;
+
+    let mut authorized_policy = policy(&tasks, &[6]);
+    authorized_policy
+        .limits
+        .allowed_functions
+        .insert("count".into());
+    let context = workspace
+        .authorized_query_context(authorized_policy)
+        .await?;
+    let batches = context
+        .execute("SELECT COUNT(*) AS visible_count FROM tasks")
+        .await?;
+    let count = batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .expect("COUNT(*) returns an Int64")
+        .value(0);
+    assert_eq!(count, 1, "hidden Entries must not contribute to COUNT(*)");
     Ok(())
 }
 

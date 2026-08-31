@@ -1,5 +1,6 @@
 mod common;
 use common::setup_operator;
+use std::collections::HashSet;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
 use ugoite_iceberg::{entry, form, index, space};
 
@@ -139,6 +140,21 @@ async fn test_index_req_idx_008_query_sql() -> anyhow::Result<()> {
     let results = index::query_index(&op, ws_path, &payload).await?;
     assert_eq!(results.len(), 1);
     assert_eq!(results[0]["_ugoite_id"].as_str(), Some("entry-2"));
+
+    let count_payload = serde_json::json!({
+        "$sql": format!(
+            "SELECT COUNT(*) AS visible_count FROM \"{meeting_relation}\""
+        )
+    })
+    .to_string();
+    let count_results = index::query_index_authorized(
+        &op,
+        ws_path,
+        &count_payload,
+        &HashSet::from(["entry-2".to_string()]),
+    )
+    .await?;
+    assert_eq!(count_results, vec![serde_json::json!({"visible_count": 1})]);
 
     Ok(())
 }
