@@ -49,10 +49,10 @@ inventory:
             - docs/spec/features/entries.yaml
             - docs/spec/requirements/form.yaml
             - docs/spec/features/forms.yaml
+            - docs/spec/versions/v0.1-knowledge-compatibility.md
             - .github/workflows/ci.yml
             - mise.toml
             - scripts/ci/mitase-check.sh
-            - tools/mitase_migration_test.ts
             - tools/knowledge_compatibility.ts
             - crates/ugoite-core/src/lib.rs
             - crates/ugoite-server/src/lib.rs

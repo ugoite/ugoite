@@ -19,14 +19,18 @@ features:
             selector: { kind: symbol, name: list_column_types }
             claims:
               - kind: satisfies
-                criterion: REQ-FORM-001#criterion.column-types
+                criterion: REQ-FORM-001#criterion.core-column-types
           - id: upsert-form
             adapter: rust
             path: crates/ugoite-iceberg/src/form.rs
             selector: { kind: symbol, name: upsert_form }
             claims:
               - kind: satisfies
-                criterion: REQ-FORM-002#criterion.evolution
+                criterion: REQ-FORM-002#criterion.preserve-physical-fields
+              - kind: satisfies
+                criterion: REQ-FORM-002#criterion.reject-breaking-change
+              - kind: satisfies
+                criterion: REQ-FORM-002#criterion.compatible-field-addition
               - kind: satisfies
                 criterion: REQ-FORM-005#criterion.reserved-columns
               - kind: satisfies

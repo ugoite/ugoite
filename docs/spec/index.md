@@ -49,8 +49,9 @@ the reading order and migration boundary explicit.
 Foundation and policy governance are authoritative in the canonical Mitase
 records at `docs/mitase/philosophies/foundation.yaml` and
 `docs/mitase/policies/policies.yaml`; see the [migration authority guide](../mitase/migration/policy)
-for the human-readable boundary. The legacy Foundation and Policy YAML remain
-read-only migration evidence and are guarded against drift.
+for the human-readable boundary. The legacy Foundation, Policy, Requirement,
+and Feature YAML remain read-only migration evidence; maintainers review each
+migration unit against its snapshot before changing authority.
 Search, Entry, and Form records migrated by the current dogfood slice likewise
 use `docs/mitase`; other requirement and feature domains remain authoritative
 in their existing `docs/spec` records until migrated.

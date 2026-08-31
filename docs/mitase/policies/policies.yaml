@@ -15,17 +15,17 @@ policies:
         applies_to: { roles: [configuration, documentation, implementation, verification] }
     bindings:
       - id: foundation-precedence-guard
-        role: enforcement
+        role: evidence
         facet: authority
-        responsibility: Guard Foundation precedence and the repository authority boundary across migrated Policy records.
+        responsibility: Document Foundation precedence and the repository authority boundary across migrated Policy records.
         targets:
-          - id: foundation-precedence-guard
+          - id: foundation-precedence-evidence
             adapter: declared
-            path: tools/mitase_migration_test.ts
+            path: docs/mitase/migration/policy.md
             selector: { kind: file }
             claims:
-              - kind: enforces
-                rule: POL-000#rule.foundation-precedence
+              - kind: evidences
+                anchor: POL-000#rule.foundation-precedence
   - id: POL-001
     title: Storage and Query Portability
     summary: Keep storage and query surfaces portable and vendor-neutral.
@@ -46,17 +46,17 @@ policies:
         governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
     bindings:
       - id: core-logic-boundary
-        role: enforcement
+        role: evidence
         facet: implementation-boundary
-        responsibility: Enforce the canonical durable-logic boundary at the Ugoite core source.
+        responsibility: Record the canonical durable-logic responsibility at the Ugoite core source.
         targets:
           - id: core-logic-boundary
             adapter: declared
             path: crates/ugoite-core/src/lib.rs
             selector: { kind: file }
             claims:
-              - kind: enforces
-                rule: POL-002#rule.governance
+              - kind: evidences
+                anchor: POL-002#rule.governance
   - id: POL-003
     title: Minimal Node Deployment
     summary: Optimize for low-node, serverless-oriented deployments.
@@ -77,17 +77,17 @@ policies:
         governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-002#principle.product-design-principle]
     bindings:
       - id: backend-adapter-boundary
-        role: enforcement
+        role: evidence
         facet: implementation-boundary
-        responsibility: Enforce the thin backend adapter boundary at the server source.
+        responsibility: Record the thin backend adapter responsibility at the server source.
         targets:
           - id: backend-adapter-boundary
             adapter: declared
             path: crates/ugoite-server/src/lib.rs
             selector: { kind: file }
             claims:
-              - kind: enforces
-                rule: POL-004#rule.governance
+              - kind: evidences
+                anchor: POL-004#rule.governance
   - id: POL-005
     title: CLI as First-Class Operator Surface
     summary: Use CLI workflows to keep automation explicit, inspectable, and scriptable.
@@ -108,17 +108,17 @@ policies:
         governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-003#principle.product-design-principle, PHIL-004#principle.product-design-principle]
     bindings:
       - id: frontend-contract-boundary
-        role: enforcement
+        role: evidence
         facet: implementation-boundary
-        responsibility: Enforce the shared Search frontend contract at its typed API boundary.
+        responsibility: Record the shared Search frontend contract at its typed API boundary.
         targets:
           - id: frontend-contract-boundary
             adapter: declared
             path: frontend/src/lib/search-api.ts
             selector: { kind: file }
             claims:
-              - kind: enforces
-                rule: POL-006#rule.governance
+              - kind: evidences
+                anchor: POL-006#rule.governance
   - id: POL-007
     title: Form and Entry Schema Governance
     summary: Enforce stable, typed entry/form behavior through documented schema contracts.
@@ -130,17 +130,17 @@ policies:
         governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
     bindings:
       - id: schema-governance-boundary
-        role: enforcement
+        role: evidence
         facet: knowledge-schema
-        responsibility: Enforce the typed Form and Entry schema boundary at the durable Iceberg model.
+        responsibility: Record the typed Form and Entry schema responsibility at the durable Iceberg model.
         targets:
           - id: schema-governance-boundary
             adapter: declared
             path: crates/ugoite-iceberg/src/form.rs
             selector: { kind: file }
             claims:
-              - kind: enforces
-                rule: POL-007#rule.governance
+              - kind: evidences
+                anchor: POL-007#rule.governance
   - id: POL-008
     title: Requirement-to-Test Traceability
     summary: Require machine-readable linkage from requirement to executable tests.
@@ -154,11 +154,11 @@ policies:
       - id: requirement-traceability-boundary
         role: enforcement
         facet: traceability
-        responsibility: Enforce migration traceability and exact evidence preservation through the repository migration guard.
+        responsibility: Enforce declared requirement-to-test traceability through the canonical Mitase repository check.
         targets:
           - id: requirement-traceability-boundary
             adapter: declared
-            path: tools/mitase_migration_test.ts
+            path: scripts/ci/mitase-check.sh
             selector: { kind: file }
             claims:
               - kind: enforces
@@ -196,17 +196,17 @@ policies:
         governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-004#principle.product-design-principle]
     bindings:
       - id: trusted-ai-boundary
-        role: enforcement
+        role: evidence
         facet: ai-boundary
-        responsibility: Enforce the trusted AI runtime boundary at the serializable agent runtime.
+        responsibility: Record the trusted AI runtime boundary at the serializable agent runtime.
         targets:
           - id: trusted-ai-boundary
             adapter: declared
             path: crates/ugoite-konase/src/agent_runtime.rs
             selector: { kind: file }
             claims:
-              - kind: enforces
-                rule: POL-010#rule.governance
+              - kind: evidences
+                anchor: POL-010#rule.governance
   - id: POL-011
     title: Security and Isolation by Default
     summary: Design for secure defaults, bounded execution, and explicit trust boundaries.
@@ -218,17 +218,17 @@ policies:
         governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-002#principle.product-design-principle, PHIL-004#principle.product-design-principle]
     bindings:
       - id: security-isolation-boundary
-        role: enforcement
+        role: evidence
         facet: security
-        responsibility: Enforce server security and isolation boundaries at the authenticated adapter surface.
+        responsibility: Record server security and isolation boundaries at the authenticated adapter surface.
         targets:
           - id: security-isolation-boundary
             adapter: declared
             path: crates/ugoite-server/src/lib.rs
             selector: { kind: file }
             claims:
-              - kind: enforces
-                rule: POL-011#rule.governance
+              - kind: evidences
+                anchor: POL-011#rule.governance
   - id: POL-012
     title: Search and Form References as Core Knowledge Operations
     summary: Treat search and typed Form references as first-class capabilities.
@@ -240,17 +240,17 @@ policies:
         governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
     bindings:
       - id: search-knowledge-boundary
-        role: enforcement
+        role: evidence
         facet: knowledge-operation
-        responsibility: Enforce the current authorized Search and derived-state boundary at the core search implementation.
+        responsibility: Record the current authorized Search and derived-state boundary at the core search implementation.
         targets:
           - id: search-knowledge-boundary
             adapter: declared
             path: crates/ugoite-iceberg/src/search.rs
             selector: { kind: file }
             claims:
-              - kind: enforces
-                rule: POL-012#rule.governance
+              - kind: evidences
+                anchor: POL-012#rule.governance
   - id: POL-013
     title: Spec-Driven Product Iteration
     summary: Evolve product behavior through explicit specifications before implementation drift.
@@ -262,17 +262,17 @@ policies:
         governed_by: [PHIL-000#principle.stable-foundation, PHIL-003#principle.product-design-principle]
     bindings:
       - id: specification-first-boundary
-        role: enforcement
+        role: evidence
         facet: migration
-        responsibility: Enforce specification-first migration and explicit gap recording through the repository migration guard.
+        responsibility: Document specification-first migration and explicit gap recording in the repository migration contract.
         targets:
-          - id: specification-first-boundary
+          - id: specification-first-evidence
             adapter: declared
-            path: tools/mitase_migration_test.ts
+            path: docs/mitase/migration/policy.md
             selector: { kind: file }
             claims:
-              - kind: enforces
-                rule: POL-013#rule.governance
+              - kind: evidences
+                anchor: POL-013#rule.governance
   - id: POL-014
     title: Compatibility Through Explicit Evolution
     summary: Manage change using explicit deprecation and migration guidance across layers.
@@ -291,7 +291,7 @@ policies:
         statement: >-
           This policy manages change through visible evolution rather than
           silent breakage between layers. For the v0.1 Foundation Freeze, the
-          protected compatibility boundary is semantic: operator-owned Space
+          protected compatibility boundary is semantic: user-owned Knowledge
           recoverability, unique catalog authority, append-only Knowledge
           history, and thin adapter boundaries must survive later
           implementations. Physical encodings, crate APIs, and UI internals
@@ -343,3 +343,25 @@ policies:
             claims:
               - kind: evidences
                 anchor: POL-016#rule.governance
+  - id: POL-017
+    title: Durable Knowledge Portability Boundary
+    summary: Keep durable Knowledge recoverable and semantically independent of a single provider.
+    description: Durable Knowledge recovery, meaning, and ownership must not depend on a single storage or service provider becoming its authority. Implementation abstractions remain context-dependent, but a provider cannot become the durable Knowledge boundary.
+    rules:
+      - id: knowledge-portability
+        level: must
+        statement: Durable Knowledge recovery, meaning, and ownership must not depend on a single provider authority.
+        governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle]
+    bindings:
+      - id: knowledge-portability-contract
+        role: evidence
+        facet: portability
+        responsibility: Record the provider-independent recovery and authority contract for durable Knowledge.
+        targets:
+          - id: knowledge-portability-contract
+            adapter: declared
+            path: docs/spec/versions/v0.1-knowledge-compatibility.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-017#rule.knowledge-portability

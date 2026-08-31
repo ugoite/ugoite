@@ -12,7 +12,10 @@ based on Ugoite main at `30b0e9def9d07cad7305b2d6ffad04c25d66eca2`.
 
 `REQ-ENTRY-001` through `REQ-ENTRY-006` retain their implemented status and
 gain exact current Rust test selectors where the repository has a named test
-that proves the criterion. `REQ-ENTRY-007` through `REQ-ENTRY-009` remain
+that proves the criterion. `REQ-ENTRY-002` retains both the core stale-parent
+behavior and the REST-visible `409 Conflict` contract as separate Criteria;
+only the core behavior has current exact proof in this slice. `REQ-ENTRY-007`
+through `REQ-ENTRY-009` remain
 migration gaps because this slice does not yet provide a criterion-specific
 exact proof target for them. The legacy `verification: traced` field is not
 treated as proof by itself.
@@ -36,8 +39,13 @@ exact UI criteria and ownership boundaries are defined.
 ## Form migration
 
 `REQ-FORM-001`, `REQ-FORM-002`, and `REQ-FORM-004` through `REQ-FORM-007`, plus
-`REQ-FORM-009`, are
-connected to exact Iceberg implementation symbols and named integration tests.
+`REQ-FORM-009`, are connected to exact implementation responsibilities and
+named integration tests where available. `REQ-FORM-001` retains separate core,
+CLI, and Server Criteria; the current exact test proves only the core
+definitions, while the adapter Criteria remain unverified. `REQ-FORM-002`
+retains physical field identity, explicit rejection, and compatible field
+addition as separate Criteria, with the current tests proving the corresponding
+core behaviors.
 `REQ-FORM-003` remains untraced because its legacy record has no exact
 criterion-specific test selector in this slice. `REQ-FORM-008` remains planned
 and is catalog-only; its legacy test reference is not promoted to a current

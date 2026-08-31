@@ -9,10 +9,18 @@ requirements:
     priority: medium
     status: implemented
     criteria:
-      - id: column-types
+      - id: core-column-types
         kind: behavior
         statement: The core exposes the supported typed column definitions used by Form creation.
         governed_by: [POL-007#rule.governance]
+      - id: cli-exposes-column-types
+        kind: behavior
+        statement: The CLI exposes the available column types for Form creation.
+        governed_by: [POL-005#rule.governance, POL-007#rule.governance]
+      - id: server-exposes-column-types
+        kind: behavior
+        statement: The Server exposes the available column types for Form creation.
+        governed_by: [POL-004#rule.governance, POL-007#rule.governance]
     bindings:
       - id: column-types-test
         role: verification
@@ -25,18 +33,26 @@ requirements:
             selector: { kind: symbol, name: test_form_req_form_001_list_column_types }
             claims:
               - kind: verifies
-                criterion: REQ-FORM-001#criterion.column-types
+                criterion: REQ-FORM-001#criterion.core-column-types
                 covers: [FEAT-FORM-001#binding.core/target.list-column-types]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_form, test: test_form_req_form_001_list_column_types } }
   - id: REQ-FORM-002
     title: Form evolution boundary
-    description: Before v1, Form updates preserve existing physical field types and IDs and reject breaking changes.
+    description: Before v1, Form updates MUST preserve existing physical field types and IDs. Breaking changes MUST be rejected with an explicit error; callers can add a new field instead of migrating existing values.
     priority: medium
     status: implemented
     criteria:
-      - id: evolution
+      - id: preserve-physical-fields
         kind: behavior
-        statement: Form updates reject pre-v1 breaking field changes while allowing compatible schema evolution.
+        statement: Before v1, Form updates preserve existing physical field types and IDs.
+        governed_by: [POL-007#rule.governance, POL-014#rule.governance]
+      - id: reject-breaking-change
+        kind: behavior
+        statement: Breaking Form changes are rejected with an explicit error rather than silently migrating existing values.
+        governed_by: [POL-007#rule.governance, POL-014#rule.governance]
+      - id: compatible-field-addition
+        kind: behavior
+        statement: Callers can add a new field instead of migrating existing values when the schema evolution is compatible.
         governed_by: [POL-007#rule.governance, POL-014#rule.governance]
     bindings:
       - id: evolution-test
@@ -50,7 +66,11 @@ requirements:
             selector: { kind: symbol, name: sql_columns_remain_stable_when_pre_v1_renames_are_rejected }
             claims:
               - kind: verifies
-                criterion: REQ-FORM-002#criterion.evolution
+                criterion: REQ-FORM-002#criterion.preserve-physical-fields
+                covers: [FEAT-FORM-001#binding.core/target.upsert-form]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_form, test: sql_columns_remain_stable_when_pre_v1_renames_are_rejected } }
+              - kind: verifies
+                criterion: REQ-FORM-002#criterion.reject-breaking-change
                 covers: [FEAT-FORM-001#binding.core/target.upsert-form]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_form, test: sql_columns_remain_stable_when_pre_v1_renames_are_rejected } }
           - id: compatible-addition-case
@@ -59,7 +79,7 @@ requirements:
             selector: { kind: symbol, name: existing_form_accepts_a_time_column }
             claims:
               - kind: verifies
-                criterion: REQ-FORM-002#criterion.evolution
+                criterion: REQ-FORM-002#criterion.compatible-field-addition
                 covers: [FEAT-FORM-001#binding.core/target.upsert-form]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_form, test: existing_form_accepts_a_time_column } }
   - id: REQ-FORM-003

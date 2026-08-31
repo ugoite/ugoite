@@ -34,7 +34,7 @@ features:
             selector: { kind: symbol, name: update_entry }
             claims:
               - kind: satisfies
-                criterion: REQ-ENTRY-002#criterion.optimistic-concurrency
+                criterion: REQ-ENTRY-002#criterion.parent-revision-validation
               - kind: satisfies
                 criterion: REQ-ENTRY-003#criterion.update
               - kind: satisfies

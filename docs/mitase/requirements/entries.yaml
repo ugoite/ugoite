@@ -30,14 +30,18 @@ requirements:
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: test_entry_req_entry_001_create_entry_basic } }
   - id: REQ-ENTRY-002
     title: Optimistic concurrency via revisions
-    description: Validate parent_revision_id during update and reject a mismatch as a conflict.
+    description: Validate parent_revision_id during update; return 409 Conflict on mismatch.
     priority: high
     status: implemented
     criteria:
-      - id: optimistic-concurrency
+      - id: parent-revision-validation
         kind: behavior
         statement: Updating an Entry validates its parent revision and rejects a stale parent deterministically.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: conflict-status
+        kind: behavior
+        statement: At the REST boundary, a parent_revision_id mismatch returns HTTP 409 Conflict.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
     bindings:
       - id: concurrency-test
         role: verification
@@ -50,7 +54,7 @@ requirements:
             selector: { kind: symbol, name: test_entry_req_entry_002_update_entry_conflict }
             claims:
               - kind: verifies
-                criterion: REQ-ENTRY-002#criterion.optimistic-concurrency
+                criterion: REQ-ENTRY-002#criterion.parent-revision-validation
                 covers: [FEAT-ENTRY-001#binding.core/target.update-entry]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: test_entry_req_entry_002_update_entry_conflict } }
   - id: REQ-ENTRY-003

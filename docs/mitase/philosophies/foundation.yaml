@@ -8,10 +8,10 @@ philosophies:
     summary: Keep durable Knowledge user-owned and let tools operate on it without becoming a second authority.
     principles:
       - id: user-owned-knowledge
-        statement: Durable Knowledge remains owned by the operator and stays portable across the runtimes that work with it.
+        statement: Durable Knowledge remains owned by the user; operators, servers, agents, providers, and interfaces may act on it without becoming its authority.
         applies_to: [product, architecture, specification, implementation, verification]
       - id: disposable-work
-        statement: Work and transient experience may be disposable, while durable Knowledge remains recoverable and meaningful across implementations.
+        statement: Work may be disposable, while durable Knowledge remains recoverable and meaningful across implementations.
         applies_to: [product, architecture, specification, implementation]
       - id: tools-without-authority
         statement: Knowledge may become tools and experiences without transferring Knowledge ownership or authority to a server, provider, agent, runtime, or user interface.

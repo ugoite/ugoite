@@ -56,3 +56,6 @@ decisions:
   - policy: POL-016
     level: must
     basis: The v0.1 Knowledge compatibility floor protects ownership, authority, history, and adapter semantics.
+  - policy: POL-017
+    level: must
+    basis: Durable Knowledge recovery, meaning, and ownership must remain independent of a single provider authority.

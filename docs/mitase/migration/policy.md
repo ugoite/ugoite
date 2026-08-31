@@ -12,8 +12,10 @@ to the canonical Mitase graph without creating two competing meanings.
   records.
 - Migrated legacy records remain read-only migration evidence until the domain
   migration is complete; they are not a second editable specification source.
-  The legacy Foundation and Policy snapshots are guarded by
-  `tools/mitase_migration_test.ts`.
+- The legacy Foundation, Policy, Requirement, and Feature records for a
+  migrated domain are read-only snapshots. The repository's migration review
+  compares each canonical record with its legacy source before authority is
+  changed; this convention does not make Mitase execute migration tooling.
 
 The downstream `linked_requirements` and `linked_specifications` edges of the
 legacy Policy registry are preserved as typed deferred relations in
@@ -23,8 +25,11 @@ discarded or replaced by a partial local node.
 
 The explicit Ugoite-owned normative decision for every migrated Policy is
 recorded in `docs/mitase-migration/policy-levels.yaml`. Its levels are mirrored
-in the canonical Policy rules and checked for completeness; they are not an
-implicit conversion from the legacy registry.
+in the canonical Policy rules and reviewed for completeness; they are not an
+implicit conversion from the legacy registry. `enforces` claims are reserved
+for repository validators or required workflows that mechanically check the
+rule. Architectural placement and documented responsibility are represented
+as `evidences` claims.
 
 ## Meaning before evidence
 
@@ -47,6 +52,16 @@ relationships. `readiness.target: off` and
 migrated incrementally; they do not claim that all Ugoite meaning is already
 represented in Mitase. Each domain migration must preserve its full meaning,
 make evidence gaps visible, and raise its own validation coverage before the
-global gate is tightened. The migration guard also requires an explicit
-normative decision for every migrated Policy and exact evidence bindings for
-each `must` rule.
+global gate is tightened. The migration review requires an explicit
+normative decision for every migrated Policy and an exact enforcement or
+evidence binding for each `must` rule. For migrated Search, Entry, and Form,
+the staged domain ratchet is a repository review rule: implementation-affecting
+changes update the canonical Requirement/Feature records and add exact proof
+or record an explicit unverified gap, even while the global owned-change gate
+remains off.
+
+`docs/mitase` is a migration staging surface, not a new permanent Ugoite
+information architecture. Once the legacy registry machinery is retired,
+Ugoite may consolidate executable specification records under its `docs/spec`
+information architecture while preserving the Mitase schema and authority
+semantics.
