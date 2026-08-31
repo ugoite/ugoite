@@ -85,12 +85,13 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
       await page.goto(`/spaces/${spaceId}/entries`);
       await expect(page).toHaveURL(`/spaces/${spaceId}/entries`);
       await expect(page.getByRole("tab")).toHaveCount(0);
-      await expect(
-        page.getByRole("button", { name: "Form", exact: true }).locator(
-          "svg path",
-        ),
-      )
-        .toHaveCount(2);
+      const formsLinks = page.getByRole("link", { name: "Forms", exact: true });
+      await expect(formsLinks).toHaveCount(2);
+      await expect(formsLinks.first()).toHaveAttribute(
+        "href",
+        `/spaces/${spaceId}/forms`,
+      );
+      await expect(formsLinks.first()).toHaveAttribute("aria-current", "page");
     },
   );
 
