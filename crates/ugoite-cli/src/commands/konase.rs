@@ -10,9 +10,13 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
+    future::Future,
     io::{self, IsTerminal, Write},
+    pin::Pin,
+    sync::{Arc as StdArc, Mutex as StdMutex},
     time::Duration,
 };
+use tokio::sync::oneshot;
 use ugoite_konase::{
     step, AgentAction, AgentProgress, AgentRuntime, AgentRuntimeInput, Capability,
     CapabilityEffect, HostError, JobOutcome, KnowledgeOutcome, KonaseEvent, KonaseState,
@@ -24,6 +28,137 @@ use uuid::Uuid;
 
 const DEFAULT_MODEL_TIMEOUT_SECS: u64 = 120;
 const MAX_MODEL_HOST_ERROR_CHARS: usize = 1_800;
+const MODEL_INTERRUPTED_KIND: &str = "model_interrupted";
+
+type ModelInterruptFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
+
+trait ModelInterruptSource {
+    fn wait_for_model_interrupt(&self) -> ModelInterruptFuture<'_>;
+}
+
+#[cfg(test)]
+struct NeverModelInterrupt;
+
+#[cfg(test)]
+impl ModelInterruptSource for NeverModelInterrupt {
+    fn wait_for_model_interrupt(&self) -> ModelInterruptFuture<'_> {
+        Box::pin(std::future::pending())
+    }
+}
+
+#[derive(Clone)]
+struct SignalCoordinator {
+    state: StdArc<SignalState>,
+}
+
+struct SignalState {
+    model_waiter: StdMutex<Option<oneshot::Sender<()>>>,
+}
+
+struct ModelWait {
+    receiver: oneshot::Receiver<()>,
+    state: StdArc<SignalState>,
+}
+
+impl SignalCoordinator {
+    fn new() -> Self {
+        Self {
+            state: StdArc::new(SignalState {
+                model_waiter: StdMutex::new(None),
+            }),
+        }
+    }
+
+    fn install() -> Result<Self> {
+        let coordinator = Self::new();
+        #[cfg(unix)]
+        {
+            let signals = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+                .context("install SIGINT handler")?;
+            tokio::spawn(run_unix_signal_loop(signals, coordinator.clone()));
+        }
+        #[cfg(not(unix))]
+        {
+            tokio::spawn(run_ctrl_c_signal_loop(coordinator.clone()));
+        }
+        Ok(coordinator)
+    }
+
+    fn interrupt_model_wait(&self) -> bool {
+        let sender = self
+            .state
+            .model_waiter
+            .lock()
+            .expect("SIGINT model waiter lock poisoned")
+            .take();
+        sender.is_some_and(|sender| sender.send(()).is_ok())
+    }
+
+    fn handle_interrupt(&self) {
+        if !self.interrupt_model_wait() {
+            // SIGINT has historically terminated the CLI outside a model wait.
+            // The process-wide listener owns the signal now, so preserve that
+            // behavior explicitly for idle, MCP, and undo states.
+            std::process::exit(130);
+        }
+    }
+}
+
+impl ModelInterruptSource for SignalCoordinator {
+    fn wait_for_model_interrupt(&self) -> ModelInterruptFuture<'_> {
+        let (sender, receiver) = oneshot::channel();
+        self.state
+            .model_waiter
+            .lock()
+            .expect("model waiter lock poisoned")
+            .replace(sender);
+        Box::pin(ModelWait {
+            receiver,
+            state: self.state.clone(),
+        })
+    }
+}
+
+impl Future for ModelWait {
+    type Output = ();
+
+    fn poll(
+        mut self: Pin<&mut Self>,
+        context: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        Pin::new(&mut self.receiver).poll(context).map(|_| ())
+    }
+}
+
+impl Drop for ModelWait {
+    fn drop(&mut self) {
+        self.state
+            .model_waiter
+            .lock()
+            .expect("model waiter lock poisoned")
+            .take();
+    }
+}
+
+#[cfg(unix)]
+async fn run_unix_signal_loop(
+    mut signals: tokio::signal::unix::Signal,
+    coordinator: SignalCoordinator,
+) {
+    while signals.recv().await.is_some() {
+        coordinator.handle_interrupt();
+    }
+}
+
+#[cfg(not(unix))]
+async fn run_ctrl_c_signal_loop(coordinator: SignalCoordinator) {
+    loop {
+        if tokio::signal::ctrl_c().await.is_err() {
+            return;
+        }
+        coordinator.handle_interrupt();
+    }
+}
 
 #[derive(Args)]
 pub struct KonaseCmd {
@@ -580,6 +715,7 @@ impl McpHost for RmcpMcpHost {
 }
 
 pub async fn run(cmd: KonaseCmd) -> Result<()> {
+    let interrupts = SignalCoordinator::install()?;
     let config = load_config();
     if config.mode == EndpointMode::Core {
         bail!("`ugoite konase` currently requires backend or api mode with an MCP credential");
@@ -594,10 +730,17 @@ pub async fn run(cmd: KonaseCmd) -> Result<()> {
             if prompt.trim().is_empty() {
                 bail!("Konase prompt must not be empty");
             }
-            let _ = report_turn(
-                run_turn(&mut model, &mut mcp, &prompt, &capabilities).await?,
-                false,
+            let result =
+                run_turn_with_interrupts(&mut model, &mut mcp, &prompt, &capabilities, &interrupts)
+                    .await?;
+            let interrupted = matches!(
+                &result,
+                TurnResult::Failed(failure) if failure.error.kind == MODEL_INTERRUPTED_KIND
             );
+            let _ = report_turn(result, false);
+            if interrupted {
+                bail!("model request interrupted");
+            }
         }
         None => {
             let interactive = io::stdin().is_terminal();
@@ -630,7 +773,14 @@ pub async fn run(cmd: KonaseCmd) -> Result<()> {
                     continue;
                 }
                 last_work_id = report_turn(
-                    run_turn(&mut model, &mut mcp, prompt, &capabilities).await?,
+                    run_turn_with_interrupts(
+                        &mut model,
+                        &mut mcp,
+                        prompt,
+                        &capabilities,
+                        &interrupts,
+                    )
+                    .await?,
                     true,
                 );
             }
@@ -695,10 +845,14 @@ fn report_turn(result: TurnResult, show_undo_hint: bool) -> Option<String> {
             (show_undo_hint && turn.undo_available).then_some(turn.work_id)
         }
         TurnResult::Failed(failure) => {
-            eprintln!(
-                "Model host failed ({}): {}",
-                failure.error.kind, failure.error.message
-            );
+            if failure.error.kind == MODEL_INTERRUPTED_KIND {
+                eprintln!("Model request interrupted.");
+            } else {
+                eprintln!(
+                    "Model host failed ({}): {}",
+                    failure.error.kind, failure.error.message
+                );
+            }
             println!("Knowledge: {}", knowledge_label(failure.knowledge));
             if show_undo_hint && failure.undo_available {
                 println!("[u] 取り消す");
@@ -716,11 +870,22 @@ fn knowledge_label(outcome: KnowledgeOutcome) -> &'static str {
     }
 }
 
+#[cfg(test)]
 async fn run_turn<M: ModelHost, C: McpHost>(
     model: &mut M,
     mcp: &mut C,
     prompt: &str,
     capabilities: &[Capability],
+) -> Result<TurnResult> {
+    run_turn_with_interrupts(model, mcp, prompt, capabilities, &NeverModelInterrupt).await
+}
+
+async fn run_turn_with_interrupts<M: ModelHost, C: McpHost, I: ModelInterruptSource + ?Sized>(
+    model: &mut M,
+    mcp: &mut C,
+    prompt: &str,
+    capabilities: &[Capability],
+    interrupts: &I,
 ) -> Result<TurnResult> {
     let work_id = format!("work-{}", Uuid::now_v7());
     let job_id = format!("job-{}", Uuid::now_v7());
@@ -773,7 +938,17 @@ async fn run_turn<M: ModelHost, C: McpHost>(
         action = match action {
             AgentAction::CallModel(request) => {
                 let request_id = request.request_id.clone();
-                let result = match model.call_model(request).await {
+                let interrupt = interrupts.wait_for_model_interrupt();
+                let result = tokio::select! {
+                    biased;
+                    _ = interrupt => Err(HostError {
+                        kind: MODEL_INTERRUPTED_KIND.into(),
+                        message: "model request interrupted by Ctrl-C".into(),
+                        request_id: Some(request_id.clone()),
+                    }),
+                    result = model.call_model(request) => result,
+                };
+                let result = match result {
                     Ok(result) => result,
                     Err(error) => {
                         return finish_failed_turn(
@@ -885,7 +1060,11 @@ mod tests {
     };
     use serde_json::json;
     use std::{collections::HashMap, sync::Arc};
-    use tokio::{net::TcpListener, sync::Mutex, task::JoinHandle};
+    use tokio::{
+        net::TcpListener,
+        sync::{Mutex, Notify},
+        task::JoinHandle,
+    };
 
     struct ScriptedModel {
         responses: Vec<std::result::Result<ModelResult, HostError>>,
@@ -900,6 +1079,61 @@ mod tests {
             let mut response = self.responses.remove(0)?;
             response.request_id = request.request_id;
             Ok(response)
+        }
+    }
+
+    #[derive(Clone, Default)]
+    struct TestInterrupt {
+        notify: Arc<Notify>,
+    }
+
+    impl TestInterrupt {
+        fn interrupt(&self) {
+            self.notify.notify_one();
+        }
+    }
+
+    impl ModelInterruptSource for TestInterrupt {
+        fn wait_for_model_interrupt(&self) -> ModelInterruptFuture<'_> {
+            Box::pin(self.notify.notified())
+        }
+    }
+
+    struct InterruptibleModel {
+        calls: usize,
+        started: Arc<Notify>,
+        save_before_interrupt: bool,
+    }
+
+    #[async_trait]
+    impl ModelHost for InterruptibleModel {
+        async fn call_model(
+            &mut self,
+            request: ModelRequest,
+        ) -> std::result::Result<ModelResult, HostError> {
+            self.calls += 1;
+            let request_id = request.request_id;
+            if self.save_before_interrupt && self.calls == 1 {
+                return Ok(ModelResult {
+                    request_id,
+                    text: None,
+                    tool_calls: vec![ugoite_konase::ModelToolCall {
+                        id: "call-save".into(),
+                        name: "ugoite.save".into(),
+                        arguments: json!({"content": "---\nform: Entry\n---\n# Saved"}),
+                    }],
+                });
+            }
+            let interrupt_call = if self.save_before_interrupt { 2 } else { 1 };
+            if self.calls == interrupt_call {
+                self.started.notify_one();
+                return std::future::pending().await;
+            }
+            Ok(ModelResult {
+                request_id,
+                text: Some("完了しました。".into()),
+                tool_calls: vec![],
+            })
         }
     }
 
@@ -1121,6 +1355,72 @@ mod tests {
         assert_eq!(mcp.operations, ["ugoite.search", "resources/read"]);
         assert_eq!(mcp.work_ids.len(), 2);
         assert_eq!(mcp.work_ids[0], mcp.work_ids[1]);
+    }
+
+    #[tokio::test]
+    async fn signal_coordinator_only_delivers_interrupts_to_a_model_waiter() {
+        let coordinator = SignalCoordinator::new();
+        let waiter = coordinator.wait_for_model_interrupt();
+
+        assert!(coordinator.interrupt_model_wait());
+        waiter.await;
+        assert!(!coordinator.interrupt_model_wait());
+    }
+
+    #[tokio::test]
+    async fn interrupting_model_wait_fails_work_preserves_save_and_allows_next_prompt() {
+        let interrupt = TestInterrupt::default();
+        let started = Arc::new(Notify::new());
+        let model = InterruptibleModel {
+            calls: 0,
+            started: started.clone(),
+            save_before_interrupt: true,
+        };
+        let mcp = ScriptedMcp {
+            operations: vec![],
+            work_ids: vec![],
+            fail_save: false,
+            fail_undo: false,
+        };
+        let capabilities = mcp.capabilities().await;
+        let task_interrupt = interrupt.clone();
+        let task_capabilities = capabilities.clone();
+        let task = tokio::spawn(async move {
+            let mut model = model;
+            let mut mcp = mcp;
+            let result = run_turn_with_interrupts(
+                &mut model,
+                &mut mcp,
+                "保存して",
+                &task_capabilities,
+                &task_interrupt,
+            )
+            .await;
+            (result, model, mcp)
+        });
+
+        started.notified().await;
+        interrupt.interrupt();
+        let (result, mut model, mut mcp) = task.await.unwrap();
+        let TurnResult::Failed(failure) = result.unwrap() else {
+            panic!("expected interrupted turn to fail");
+        };
+
+        assert_eq!(failure.error.kind, MODEL_INTERRUPTED_KIND);
+        assert_eq!(failure.error.message, "model request interrupted by Ctrl-C");
+        assert!(failure.error.request_id.is_some());
+        assert_eq!(failure.knowledge, KnowledgeOutcome::Saved);
+        assert!(failure.undo_available);
+        assert_eq!(mcp.operations, ["ugoite.save"]);
+
+        let TurnResult::Completed(next) =
+            run_turn_with_interrupts(&mut model, &mut mcp, "次の質問", &capabilities, &interrupt)
+                .await
+                .unwrap()
+        else {
+            panic!("expected the next prompt to complete");
+        };
+        assert_eq!(next.outcome.summary, "完了しました。");
     }
 
     #[tokio::test]

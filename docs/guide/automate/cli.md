@@ -61,6 +61,19 @@ timeout, transport failure, or provider failure marks the current Work as
 failed and reports the observed Knowledge outcome separately. Knowledge saved
 before the failure remains saved, and its Work-scoped undo remains available.
 
+In an interactive `ugoite konase` session, press Ctrl-C while the model is
+waiting to interrupt the local model wait. The current Work is reported as
+failed, the prompt returns, and a later prompt can start a new Work. If a save
+completed before the interruption, its Knowledge outcome remains saved and the
+Work-scoped undo remains available. Ctrl-C while idle, during MCP/undo work, or
+while connecting retains the CLI's process-exit behavior. With `--prompt`, an
+interrupted model wait reports the interruption and exits non-zero.
+
+This is host-local interruption: dropping the model request future stops the
+CLI from waiting, but does not guarantee that a remote provider has stopped
+generation or billing. The CLI does not cancel MCP writes, because the server
+may have committed a write even if its response has not reached the client.
+
 `ugoite auth login` and `ugoite auth login --for mcp` create different
 credential targets. Run the matching login command if a saved credential is for
 the other target. Remote CLI asset upload remains future scope.
