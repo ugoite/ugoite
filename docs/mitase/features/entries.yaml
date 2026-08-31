@@ -23,6 +23,8 @@ features:
               - kind: satisfies
                 criterion: REQ-ENTRY-006#criterion.markdown-extraction
               - kind: satisfies
+                criterion: REQ-FORM-004#criterion.extra-attributes
+              - kind: satisfies
                 criterion: REQ-FORM-009#criterion.attribution
           - id: update-entry
             adapter: rust
@@ -42,8 +44,8 @@ features:
                 criterion: REQ-ENTRY-004#criterion.tombstone
           - id: entry-history
             adapter: rust
-            path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: entry_history }
+            path: crates/ugoite-iceberg/src/entry.rs
+            selector: { kind: symbol, name: get_entry_history }
             claims:
               - kind: satisfies
                 criterion: REQ-ENTRY-005#criterion.history

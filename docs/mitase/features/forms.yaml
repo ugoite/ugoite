@@ -28,11 +28,8 @@ features:
               - kind: satisfies
                 criterion: REQ-FORM-002#criterion.evolution
               - kind: satisfies
-                criterion: REQ-FORM-004#criterion.extra-attributes
-              - kind: satisfies
                 criterion: REQ-FORM-005#criterion.reserved-columns
               - kind: satisfies
                 criterion: REQ-FORM-006#criterion.reserved-forms
               - kind: satisfies
                 criterion: REQ-FORM-007#criterion.row-reference
-

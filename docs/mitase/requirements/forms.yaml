@@ -86,7 +86,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-FORM-004#criterion.extra-attributes
-                covers: [FEAT-FORM-001#binding.core/target.upsert-form]
+                covers: [FEAT-ENTRY-001#binding.core/target.create-entry]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: test_entry_req_form_004_deny_extra_attributes } }
   - id: REQ-FORM-005
     title: Reserved metadata columns
@@ -196,5 +196,6 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-FORM-009#criterion.attribution
-                covers: [FEAT-ENTRY-001#binding.core/target.create-entry]
+                covers:
+                  - FEAT-ENTRY-001#binding.core/target.create-entry
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_attribution_is_consistent_across_lifecycle } }
