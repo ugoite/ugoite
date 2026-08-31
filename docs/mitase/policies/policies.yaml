@@ -1,0 +1,166 @@
+schema: mitase/spec/v1
+kind: policies
+namespace: product
+category: Implementation Policies
+policies:
+  - id: POL-001
+    title: Storage and Query Portability
+    summary: Keep storage and query surfaces portable and vendor-neutral.
+    description: This policy keeps storage layouts, SQL capabilities, and indexing contracts portable across backends and deployment environments. It protects user freedom by favoring open abstractions that can be reused, audited, and evolved without trapping data or query workflows inside a single provider.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy keeps storage layouts, SQL capabilities, and indexing contracts portable across backends and deployment environments. It protects user freedom by favoring open abstractions that can be reused, audited, and evolved without trapping data or query workflows inside a single provider.
+        governed_by: [PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+  - id: POL-002
+    title: Rust Core as Canonical Logic Layer
+    summary: Concentrate durable business logic in ugoite-core and reuse it from adapters.
+    description: This policy treats ugoite-core as the durable source of product logic so adapters do not drift into incompatible implementations. It supports portable architecture and continuously verifiable behavior by reusing the same core rules from backend, CLI, and future integrations.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy treats ugoite-core as the durable source of product logic so adapters do not drift into incompatible implementations. It supports portable architecture and continuously verifiable behavior by reusing the same core rules from backend, CLI, and future integrations.
+        governed_by: [PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+  - id: POL-003
+    title: Minimal Node Deployment
+    summary: Optimize for low-node, serverless-oriented deployments.
+    description: This policy keeps runtime topology intentionally small so product capabilities do not depend on unnecessary always-on services. It turns the serverless-oriented philosophy into operational guidance by preferring explicit, removable infrastructure over hidden long-lived dependencies.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy keeps runtime topology intentionally small so product capabilities do not depend on unnecessary always-on services. It turns the serverless-oriented philosophy into operational guidance by preferring explicit, removable infrastructure over hidden long-lived dependencies.
+        governed_by: [PHIL-002#principle.product-design-principle]
+  - id: POL-004
+    title: Backend as Thin API Adapter
+    summary: Keep backend responsibility focused on protocol and orchestration boundaries.
+    description: This policy limits the backend to interface translation, orchestration, and security boundaries instead of duplicating durable business rules. It keeps deployments lighter and preserves freedom to reuse the same core behavior across multiple operator surfaces without API-layer lock-in.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy limits the backend to interface translation, orchestration, and security boundaries instead of duplicating durable business rules. It keeps deployments lighter and preserves freedom to reuse the same core behavior across multiple operator surfaces without API-layer lock-in.
+        governed_by: [PHIL-001#principle.product-design-principle, PHIL-002#principle.product-design-principle]
+  - id: POL-005
+    title: CLI as First-Class Operator Surface
+    summary: Use CLI workflows to keep automation explicit, inspectable, and scriptable.
+    description: This policy keeps automation visible and scriptable by treating the CLI as a first-class operational surface rather than a secondary afterthought. It reinforces low-node operation, reusable workflows, and durable rule-based automation that can be inspected directly by users and maintainers.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy keeps automation visible and scriptable by treating the CLI as a first-class operational surface rather than a secondary afterthought. It reinforces low-node operation, reusable workflows, and durable rule-based automation that can be inspected directly by users and maintainers.
+        governed_by: [PHIL-001#principle.product-design-principle, PHIL-002#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+  - id: POL-006
+    title: Frontend Contract Discipline
+    summary: Keep frontend behavior aligned with API contracts and shared UI specifications.
+    description: This policy requires the frontend to follow shared contracts and documented UI behavior instead of inventing parallel rules in the client. It supports durable verification and trusted AI-assisted work by making contract drift visible through typed interfaces, specs, and tests.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy requires the frontend to follow shared contracts and documented UI behavior instead of inventing parallel rules in the client. It supports durable verification and trusted AI-assisted work by making contract drift visible through typed interfaces, specs, and tests.
+        governed_by: [PHIL-003#principle.product-design-principle, PHIL-004#principle.product-design-principle]
+  - id: POL-007
+    title: Form and Entry Schema Governance
+    summary: Enforce stable, typed entry/form behavior through documented schema contracts.
+    description: This policy stabilizes the product's structured content model through explicit schema contracts for forms, entries, and assets. It makes the data model portable and durable by ensuring that product behavior stays tied to documented rules instead of ad hoc field handling.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy stabilizes the product's structured content model through explicit schema contracts for forms, entries, and assets. It makes the data model portable and durable by ensuring that product behavior stays tied to documented rules instead of ad hoc field handling.
+        governed_by: [PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+  - id: POL-008
+    title: Requirement-to-Test Traceability
+    summary: Require machine-readable linkage from requirements to executable tests.
+    description: This policy turns specifications into enforceable quality rules by requiring machine-readable links from requirements to tests. It strengthens trusted autonomy by ensuring that contributors and AI agents change behavior only through paths that remain continuously checkable in CI.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy turns specifications into enforceable quality rules by requiring machine-readable links from requirements to tests. It strengthens trusted autonomy by ensuring that contributors and AI agents change behavior only through paths that remain continuously checkable in CI.
+        governed_by: [PHIL-003#principle.product-design-principle, PHIL-004#principle.product-design-principle]
+  - id: POL-009
+    title: Quality Gates Before Integration
+    summary: Apply strict linting, typing, and regression gates before merging and release.
+    description: This policy enforces pre-integration quality gates so regressions are caught before they become shared product behavior. It operationalizes rule-based development and trusted constraints by making type checks, lint rules, and regression suites mandatory for change integration.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy enforces pre-integration quality gates so regressions are caught before they become shared product behavior. It operationalizes rule-based development and trusted constraints by making type checks, lint rules, and regression suites mandatory for change integration.
+        governed_by: [PHIL-003#principle.product-design-principle, PHIL-004#principle.product-design-principle]
+  - id: POL-010
+    title: AI Under Trusted Tooling
+    summary: Allow AI autonomy only inside trusted tools, validated interfaces, and audit paths.
+    description: This policy defines the boundary for AI-assisted work by requiring trusted tools, validated interfaces, and auditable execution paths. It exists to preserve high autonomy only where risk remains observable, reviewable, and constrained by explicit contracts.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy defines the boundary for AI-assisted work by requiring trusted tools, validated interfaces, and auditable execution paths. It exists to preserve high autonomy only where risk remains observable, reviewable, and constrained by explicit contracts.
+        governed_by: [PHIL-004#principle.product-design-principle]
+  - id: POL-011
+    title: Security and Isolation by Default
+    summary: Design for secure defaults, bounded execution, and explicit trust boundaries.
+    description: This policy makes secure defaults and explicit trust boundaries part of the baseline product architecture instead of optional hardening. It supports minimal runtime topology and trusted AI operation by constraining what code can do, where it can run, and how risk is surfaced.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy makes secure defaults and explicit trust boundaries part of the baseline product architecture instead of optional hardening. It supports minimal runtime topology and trusted AI operation by constraining what code can do, where it can run, and how risk is surfaced.
+        governed_by: [PHIL-002#principle.product-design-principle, PHIL-004#principle.product-design-principle]
+  - id: POL-012
+    title: Search and Form References as Core Knowledge Operations
+    summary: Treat search and typed Form references as first-class capabilities.
+    description: This policy elevates retrieval and Form-owned cross-reference behavior into core product capabilities rather than optional convenience features. It supports user freedom and durable knowledge rules by making searchable, typed structure part of the canonical system design.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy elevates retrieval and Form-owned cross-reference behavior into core product capabilities rather than optional convenience features. It supports user freedom and durable knowledge rules by making searchable, typed structure part of the canonical system design.
+        governed_by: [PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+  - id: POL-013
+    title: Spec-Driven Product Iteration
+    summary: Evolve product behavior through explicit specifications before implementation drift.
+    description: This policy requires product evolution to move through explicit specs and shared documentation before implementation fragments into local decisions. It keeps iteration aligned with reusable rules so behavior changes remain reviewable, explainable, and continuously validated.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy requires product evolution to move through explicit specs and shared documentation before implementation fragments into local decisions. It keeps iteration aligned with reusable rules so behavior changes remain reviewable, explainable, and continuously validated.
+        governed_by: [PHIL-003#principle.product-design-principle]
+  - id: POL-014
+    title: Compatibility Through Explicit Evolution
+    summary: Manage change using explicit deprecation and migration guidance across layers.
+    description: >-
+      This policy manages change through visible evolution rather than silent
+      breakage between layers. For the v0.1 Foundation Freeze, the protected
+      compatibility boundary is semantic: operator-owned Space recoverability,
+      unique catalog authority, append-only Knowledge history, and thin adapter
+      boundaries must survive later implementations. Physical encodings, crate
+      APIs, and UI internals are not frozen by that promise. Changes that can
+      affect the semantic boundary require the v0.1 Knowledge Compatibility
+      Review and canonical fixture evidence before merge.
+    rules:
+      - id: governance
+        level: should
+        statement: >-
+          This policy manages change through visible evolution rather than
+          silent breakage between layers. For the v0.1 Foundation Freeze, the
+          protected compatibility boundary is semantic: operator-owned Space
+          recoverability, unique catalog authority, append-only Knowledge
+          history, and thin adapter boundaries must survive later
+          implementations. Physical encodings, crate APIs, and UI internals
+          are not frozen by that promise. Changes that can affect the semantic
+          boundary require the v0.1 Knowledge Compatibility Review and
+          canonical fixture evidence before merge.
+        governed_by: [PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+  - id: POL-015
+    title: MCP as Governed AI Operator Surface
+    summary: Position MCP as the AI-facing operator surface with explicit scope and trust boundaries.
+    description: This policy defines MCP as the operator surface for AI clients when they need structured, protocol-level access to Ugoite resources inside explicit trust boundaries. It keeps the current small semantic facade visible, separates AI-facing access from CLI-driven human automation and REST application integration, and requires expansion through documented, reviewable contracts.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy defines MCP as the operator surface for AI clients when they need structured, protocol-level access to Ugoite resources inside explicit trust boundaries. It keeps the current small semantic facade visible, separates AI-facing access from CLI-driven human automation and REST application integration, and requires expansion through documented, reviewable contracts.
+        governed_by: [PHIL-004#principle.product-design-principle]
+  - id: POL-016
+    title: v0.1 Knowledge Compatibility Floor
+    summary: Preserve v0.1 Knowledge meaning while allowing implementation evolution.
+    description: The v0.1 Knowledge compatibility floor freezes ownership, authority, append-only history, and adapter authority semantics. It does not freeze the physical Catalog Head encoding, Iceberg object layout, crate APIs, or frontend internals. A breaking semantic change requires an explicit compatibility review and must preserve the canonical v0.1 Knowledge fixture or establish a new versioned contract before it can merge.
+    rules:
+      - id: governance
+        level: should
+        statement: The v0.1 Knowledge compatibility floor freezes ownership, authority, append-only history, and adapter authority semantics. It does not freeze the physical Catalog Head encoding, Iceberg object layout, crate APIs, or frontend internals. A breaking semantic change requires an explicit compatibility review and must preserve the canonical v0.1 Knowledge fixture or establish a new versioned contract before it can merge.
+        governed_by: [PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]

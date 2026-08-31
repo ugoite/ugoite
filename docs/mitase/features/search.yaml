@@ -1,0 +1,24 @@
+schema: mitase/spec/v1
+kind: features
+namespace: search
+category: Search
+features:
+  - id: FEAT-SRCH-001
+    title: Search core
+    summary: Provide keyword search over current authorized Entry content and the derived AssetText projection, with native Entry fallback.
+    status: implemented
+    bindings:
+      - id: core
+        role: implementation
+        facet: core
+        responsibility: Implement the exact keyword and fallback content-scan behavior used by the operator surfaces.
+        targets:
+          - id: search-entries
+            adapter: rust
+            path: crates/ugoite-iceberg/src/search.rs
+            selector: { kind: symbol, name: search_entries }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-001#criterion.keyword-search
+              - kind: satisfies
+                criterion: REQ-SRCH-002#criterion.content-scan

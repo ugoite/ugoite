@@ -1,0 +1,85 @@
+schema: mitase/spec/v1
+kind: requirements
+namespace: search
+category: Search behavior and discoverability
+requirements:
+  - id: REQ-SRCH-001
+    title: Keyword search
+    description: Users must be able to search entries by keyword.
+    priority: high
+    status: implemented
+    criteria:
+      - id: keyword-search
+        kind: behavior
+        statement: Users can search current authorized entries by keyword and receive matching entry summaries.
+        governed_by: [POL-012#rule.governance]
+    bindings:
+      - id: keyword-test
+        role: verification
+        facet: verification
+        responsibility: Verify the current keyword search behavior through the exact integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_search.rs
+            selector: { kind: symbol, name: test_search_req_srch_001_keyword_search }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-001#criterion.keyword-search
+                covers: [FEAT-SRCH-001#binding.core/target.search-entries]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_search, test: test_search_req_srch_001_keyword_search } }
+  - id: REQ-SRCH-002
+    title: Content-scan search implementation
+    description: Keyword search scans current Entry rows and the authorized AssetText projection. AssetText is an internal derived Iceberg relation; missing, stale, or corrupt derived state degrades to native Entry search. A persistent inverted index is still absent.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: content-scan
+        kind: behavior
+        statement: Keyword search scans current Entry content and authorized derived text, while retaining native Entry search when derived state is unavailable; it does not claim a persistent inverted index.
+        governed_by: [POL-012#rule.governance]
+    bindings:
+      - id: content-scan-test
+        role: verification
+        facet: verification
+        responsibility: Verify content-scan fallback behavior through the exact integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_search.rs
+            selector: { kind: symbol, name: test_search_req_srch_002_fallback_scan }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-002#criterion.content-scan
+                covers: [FEAT-SRCH-001#binding.core/target.search-entries]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_search, test: test_search_req_srch_002_fallback_scan } }
+  - id: REQ-SRCH-003
+    title: Ugoite SQL lint and completion rules
+    description: The system MUST provide shared Ugoite SQL linting and completion rules for UI and CLI usage, sourced from a common config in the project root.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: sql-rules
+        kind: behavior
+        statement: Shared SQL linting and completion rules are available to UI and CLI surfaces from common project configuration.
+        governed_by: [POL-012#rule.governance]
+  - id: REQ-SRCH-004
+    title: Keyword-first search route
+    description: The /spaces/{space_id}/search route MUST present direct keyword entry search as the default experience so users can find entries without first managing saved queries or writing SQL.
+    priority: high
+    status: implemented
+    criteria:
+      - id: keyword-first-route
+        kind: behavior
+        statement: The Search route presents direct keyword search as the default experience.
+        governed_by: [POL-012#rule.governance]
+  - id: REQ-SRCH-005
+    title: Structured search reuse through shared query infrastructure
+    description: The search route MUST offer advanced structured conditions that compile into the shared SQL or query execution path, and advanced searches MUST remain reusable from a human-readable search-history UI instead of exposing raw query management as the primary workflow.
+    priority: high
+    status: implemented
+    criteria:
+      - id: structured-search-reuse
+        kind: behavior
+        statement: Advanced search compiles structured conditions into the shared query path and keeps the resulting search reusable through human-readable history.
+        governed_by: [POL-012#rule.governance]

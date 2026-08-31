@@ -247,7 +247,12 @@ run = [
   "cargo run -p xtask -- docs-current-stack-check",
   { task = "check:supported" },
   "cargo run -p xtask -- legacy-auth-check",
+  { task = "check:mitase" },
 ]
+
+[tasks."check:mitase"]
+description = "Validate the canonical executable specification with Mitase"
+run = "bash scripts/ci/mitase-check.sh"
 
 [tasks.check]
 description = "Run all repository checks"

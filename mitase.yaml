@@ -1,0 +1,48 @@
+schema: mitase/config/v1
+workspace:
+  spec_roots: [docs/mitase]
+  excludes:
+    - target/**
+    - node_modules/**
+    - frontend/.output/**
+    - frontend/coverage/**
+    - docsite/dist/**
+    - e2e/test-results/**
+inventory:
+  active_profile: default
+  profiles:
+    - id: default
+      providers:
+        rust:
+          mode: test
+          include_tests: true
+        typescript:
+          roots:
+            - frontend/src/lib/search-api.ts
+            - frontend/src/routes/spaces/[space_id]/search.tsx
+            - frontend/src/routes/spaces/[space_id]/search.test.tsx
+            - e2e/search-ui.test.ts
+        declared:
+          roots:
+            - AGENTS.md
+            - docs/spec/philosophy/foundation.yaml
+            - docs/spec/policies/policies.yaml
+            - docs/spec/requirements/search.yaml
+            - docs/spec/features/search.yaml
+            - docs/mitase/migration/search.md
+            - .github/workflows/ci.yml
+            - mise.toml
+            - scripts/ci/mitase-check.sh
+validation:
+  preset: strict
+  readiness:
+    target: off
+    limits: { max_ownership_scope_units: 64 }
+  changed:
+    baseline: { strategy: parent }
+    require_owned_changes: false
+verification:
+  runners:
+    cargo-test-integration:
+      executable: cargo
+      arguments: [test, -p, "{package}", --test, "{harness}", "{test}", --, --exact]
