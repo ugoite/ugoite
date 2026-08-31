@@ -3,6 +3,9 @@ title: 'Search migration ledger'
 description: 'Evidence and explicit gaps for the first live Mitase migration slice.'
 ---
 
+This page records the evidence and explicit gaps for the first live Search
+migration from Ugoite's legacy specification registry into Mitase.
+
 ## Search migration ledger
 
 This ledger records the first live migration slice from Ugoite's legacy
