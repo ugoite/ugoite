@@ -1,4 +1,4 @@
-import { A, Navigate, useNavigate, useSearchParams } from "@solidjs/router";
+import { useNavigate, useSearchParams } from "@solidjs/router";
 import {
   createEffect,
   createMemo,
@@ -26,9 +26,6 @@ export default function SpaceEntriesIndexPane() {
   const [searchParams] = useSearchParams();
   const ctx = useEntriesRouteContext();
   const spaceId = () => ctx.spaceId();
-  if (!searchParams.session) {
-    return <Navigate href={`/spaces/${spaceId()}/forms`} />;
-  }
   const [showCreateFormDialog, setShowCreateFormDialog] = createSignal(false);
   const creatableForms = createMemo(() =>
     filterCreatableEntryForms(ctx.forms())
