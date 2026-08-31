@@ -86,7 +86,6 @@ pub async fn search_entries(
     query: &str,
     limit: usize,
 ) -> Result<Vec<KeywordSearchResult>> {
-    // This entrypoint is the backend participant in the canonical keyword-search contract.
     let relation_scopes = entry::list_form_names(op, ws_path)
         .await?
         .into_iter()

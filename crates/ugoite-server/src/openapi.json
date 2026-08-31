@@ -1978,16 +1978,6 @@
             "$ref": "#/components/parameters/SpaceId"
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SpacePatchRequest"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "OK",
@@ -5988,6 +5978,15 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/SpaceId"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "Keyword to search in current authorized entries.",
+            "schema": {
+              "type": "string"
+            }
           },
           {
             "$ref": "#/components/parameters/Limit"

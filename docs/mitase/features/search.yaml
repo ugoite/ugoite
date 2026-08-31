@@ -19,12 +19,15 @@ features:
             selector: { kind: symbol, name: search_entries }
             claims:
               - kind: satisfies
-                criterion: REQ-SRCH-001#criterion.keyword-search
-              - kind: satisfies
                 criterion: REQ-SRCH-002#criterion.content-scan
-          - id: search-entries-contract
+      - id: server
+        role: implementation
+        facet: backend
+        responsibility: Protect the Search HTTP handler with Space authorization and delegate only authorized principals to the service layer.
+        targets:
+          - id: search-handler
             adapter: rust
-            path: crates/ugoite-iceberg/src/search.rs
+            path: crates/ugoite-server/src/lib.rs
             selector: { kind: symbol, name: search_entries }
             claims:
               - kind: satisfies
@@ -61,19 +64,24 @@ features:
                 criterion: REQ-SRCH-005#criterion.structured-search-reuse
       - id: contract
         role: contract-source
-        facet: frontend
-        responsibility: Anchor the browser Search route as the source boundary for the keyword-search contract.
+        facet: api
+        responsibility: Define the authoritative Search HTTP operation exposed by the Rust server.
+        owns:
+          - id: openapi-source
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: file }
         targets:
           - id: search-contract
-            adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/search.tsx
-            selector: { kind: file }
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/search' }
     contracts:
       - id: keyword-search
         kind: http
         source: FEAT-SRCH-001#binding.contract/target.search-contract
         participants:
-          - target: FEAT-SRCH-001#binding.core/target.search-entries-contract
+          - target: FEAT-SRCH-001#binding.server/target.search-handler
             role: backend
           - target: FEAT-SRCH-001#binding.frontend/target.search-api
             role: client

@@ -22,6 +22,9 @@ inventory:
             - frontend/src/routes/spaces/[space_id]/search.tsx
             - frontend/src/routes/spaces/[space_id]/search.test.tsx
             - e2e/search-ui.test.ts
+        openapi:
+          roots:
+            - crates/ugoite-server/src/openapi.json
         declared:
           roots:
             - AGENTS.md
@@ -59,6 +62,9 @@ verification:
     cargo-test-integration:
       executable: cargo
       arguments: [test, -p, "{package}", --test, "{harness}", "{test}", --, --exact]
+    cargo-test-unit:
+      executable: cargo
+      arguments: [test, -p, "{package}", "{test}", --, --exact]
     frontend-vitest:
       executable: deno
       arguments: [task, --cwd, frontend, test, "src/routes/spaces/[space_id]/search.test.tsx", --testNamePattern, "{test}"]

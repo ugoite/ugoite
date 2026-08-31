@@ -19,17 +19,15 @@ requirements:
         facet: verification
         responsibility: Verify the current keyword search behavior through the exact integration test.
         targets:
-          - id: case
+          - id: server-case
             adapter: rust
-            path: crates/ugoite-iceberg/tests/test_search.rs
-            selector: { kind: symbol, name: test_search_req_srch_001_keyword_search }
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: test_search_req_srch_001_authorized_route }
             claims:
               - kind: verifies
                 criterion: REQ-SRCH-001#criterion.keyword-search
-                covers:
-                  - FEAT-SRCH-001#binding.core/target.search-entries
-                  - FEAT-SRCH-001#binding.core/target.search-entries-contract
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_search, test: test_search_req_srch_001_keyword_search } }
+                covers: [FEAT-SRCH-001#binding.server/target.search-handler]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::test_search_req_srch_001_authorized_route } }
           - id: frontend-case
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/search.test.tsx

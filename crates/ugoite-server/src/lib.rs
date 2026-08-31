@@ -9305,6 +9305,7 @@ async fn search_entries(
     Path(space_id): Path<String>,
     Query(query): Query<SearchQuery>,
 ) -> ApiResult<Json<Value>> {
+    // This handler is the authorization boundary for the canonical Search HTTP operation.
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let limit = query.limit.unwrap_or(100);
     validate_normal_read_limit(limit, "search")?;
@@ -12339,6 +12340,68 @@ mod authentication_regression_tests {
                 "message": "a valid session or DPoP access token is required"
             }))?
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    /// REQ-SRCH-001
+    async fn test_search_req_srch_001_authorized_route() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-search-authorized-route")?;
+        let owner = Uuid::from_u128(2116001);
+        let outsider = Uuid::from_u128(2116002);
+        let space_id = state
+            .service
+            .create_space_for_principal("search-authorized-route", owner, "Search test")
+            .await?
+            .to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        state
+            .service
+            .create_entry(
+                &space_id,
+                "authorized-entry",
+                "---\nform: Entry\n---\n# Authorized\n\n## Body\nsecret keyword",
+                &owner.to_string(),
+            )
+            .await?;
+        let space_uid = state.service.space_uid(&space_id).await?;
+
+        let owner_route = Router::new()
+            .route("/spaces/{space_id}/search", get(search_entries))
+            .layer(Extension(content_identity(owner, space_uid)))
+            .with_state(state.clone());
+        let response = owner_route
+            .oneshot(
+                Request::get(format!("/spaces/{space_id}/search?q=secret&limit=10"))
+                    .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        let results: Value = serde_json::from_slice(&body)?;
+        assert_eq!(results.as_array().map(Vec::len), Some(1));
+        assert_eq!(results[0]["id"], "authorized-entry");
+
+        let outsider_route = Router::new()
+            .route("/spaces/{space_id}/search", get(search_entries))
+            .layer(Extension(content_identity(outsider, space_uid)))
+            .with_state(state);
+        let response = outsider_route
+            .oneshot(
+                Request::get(format!("/spaces/{space_id}/search?q=secret")).body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
         Ok(())
     }
 
