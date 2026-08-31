@@ -307,14 +307,17 @@ describe("UI spec YAML registry", () => {
     const entries = pages.find(({ spec }) =>
       spec.page?.id === "space-entries-object"
     );
-    expect(forms?.spec.components?.body?.some((component) =>
-      component.type === "tab-bar"
-    )).toBe(false);
-    expect(entries?.spec.components?.body?.find((component) =>
-      component.id === "plain-entry-list-redirect"
-    )).toMatchObject({
-      type: "redirect",
-      target_page: "space-form-grid",
+    expect(
+      forms?.spec.components?.body?.some((component) =>
+        component.type === "tab-bar"
+      ),
+    ).toBe(false);
+    expect(
+      entries?.spec.components?.body?.find((component) =>
+        component.id === "plain-entry-list"
+      ),
+    ).toMatchObject({
+      type: "entry-card-grid",
     });
   });
 });
