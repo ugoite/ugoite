@@ -81,9 +81,11 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
 
   test(
     "plain Entries list keeps the Entries index in the Forms shell",
-    async ({ page, request }) => {
+    async ({ page }) => {
       await page.goto(`/spaces/${spaceId}/entries`);
       await expect(page).toHaveURL(`/spaces/${spaceId}/entries`);
+      await expect(page.getByRole("heading", { name: "Entries" }))
+        .toBeVisible();
       await expect(page.getByRole("tab")).toHaveCount(0);
       const formsLinks = page.getByRole("link", { name: "Forms", exact: true });
       await expect(formsLinks).toHaveCount(1);

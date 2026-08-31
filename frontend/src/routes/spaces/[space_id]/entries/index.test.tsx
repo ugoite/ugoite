@@ -17,6 +17,9 @@ const navigate = vi.fn();
 vi.mock("@solidjs/router", () => ({
   useNavigate: () => navigate,
   useSearchParams: () => [searchParams, vi.fn()],
+  A: (props: { href: string; children: unknown }) => (
+    <a href={props.href}>{props.children}</a>
+  ),
 }));
 
 function renderRoute() {
@@ -47,14 +50,14 @@ describe("/spaces/:space_id/entries", () => {
     for (const key of Object.keys(searchParams)) delete searchParams[key];
   });
 
-  it("renders the plain Entries index and loads its entries", async () => {
+  it("REQ-FE-037: loads the plain Entry list without redirecting", async () => {
     server.use(
       http.get(
         testApiUrl("/spaces/default/entries"),
         () =>
           HttpResponse.json([{
             id: "entry-1",
-            title: "Existing entry",
+            title: "Entry one",
             updated_at: "2026-03-01T00:00:00Z",
             properties: {},
             tags: [],
@@ -66,8 +69,9 @@ describe("/spaces/:space_id/entries", () => {
 
     expect(await screen.findByRole("heading", { name: "Entries" }))
       .toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /Existing entry/ }))
+    expect(await screen.findByRole("button", { name: /Entry one/ }))
       .toBeInTheDocument();
+    expect(screen.queryByTestId("redirect")).not.toBeInTheDocument();
   });
 
   it("REQ-FE-054: keeps the dedicated SQL session result route", async () => {
