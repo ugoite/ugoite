@@ -1978,6 +1978,16 @@
             "$ref": "#/components/parameters/SpaceId"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpacePatchRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -2110,16 +2120,6 @@
               },
               "X-Ugoite-Signature": {
                 "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/JsonValue"
               }
             }
           }
