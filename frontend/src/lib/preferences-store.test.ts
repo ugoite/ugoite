@@ -1,3 +1,4 @@
+// Canonical Mitase evidence for the Frontend portable Space preference surface.
 // REQ-FE-003: Portable selected space preferences with local fallback
 // REQ-FE-044: Portable locale preferences with local fallback
 import { beforeEach, describe, expect, it } from "vitest";
@@ -24,6 +25,7 @@ describe("preferencesStore", () => {
     await resetUiState();
   });
 
+  // Mitase evidence: REQ-FE-003#criterion.portable-selection-persistence.
   it("REQ-FE-003: initializes selected space from local fallback and migrates portable storage", async () => {
     localStorage.setItem("ugoite-selected-space", "space-local");
 
@@ -99,6 +101,7 @@ describe("preferencesStore", () => {
     expect(document.documentElement.lang).toBe("ja");
   });
 
+  // Mitase evidence: REQ-FE-003#criterion.route-aware-preference-hydration.
   it("REQ-FE-003: authenticated routes hydrate portable preferences through route-aware initialization", async () => {
     seedPreferences({ selected_space_id: "space-remote" });
 
@@ -111,6 +114,7 @@ describe("preferencesStore", () => {
     expect(portablePreferences().selected_space_id).toBe("space-remote");
   });
 
+  // Mitase evidence: REQ-FE-003#criterion.route-aware-preference-hydration.
   it("REQ-FE-003: public routes keep initialized remote portable preferences", async () => {
     localStorage.setItem("ugoite-selected-space", "space-local");
     seedPreferences({ selected_space_id: "space-remote" });

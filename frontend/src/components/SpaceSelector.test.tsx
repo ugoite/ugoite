@@ -1,5 +1,6 @@
+// Canonical Mitase evidence for the Frontend Space selection surface.
 // REQ-FE-001: Space selector
-// REQ-FE-002: Automatic default space creation
+// REQ-FE-002: No client-side default space creation
 // REQ-FE-003: Persist space selection
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@solidjs/testing-library";
@@ -12,6 +13,7 @@ describe("SpaceSelector", () => {
     { id: "ws-2", name: "Space Two", created_at: "2025-01-01T00:00:00Z" },
   ];
 
+  // Mitase evidence: REQ-FE-001#criterion.authorized-space-selection.
   it("should render space options", () => {
     const onSelect = vi.fn();
 
@@ -66,6 +68,7 @@ describe("SpaceSelector", () => {
     expect(screen.getByText("Failed to load")).toBeInTheDocument();
   });
 
+  // Mitase evidence: REQ-FE-001#criterion.selector-interaction.
   it("should call onSelect when space changes", async () => {
     const onSelect = vi.fn();
 

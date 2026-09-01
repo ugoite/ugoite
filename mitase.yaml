@@ -26,8 +26,15 @@ inventory:
             - frontend/src/lib/sql-api.ts
             - frontend/src/lib/sql-session-api.ts
             - frontend/src/lib/asset-api.ts
+            - frontend/src/components/SpaceSelector.tsx
+            - frontend/src/components/SpaceSelector.test.tsx
+            - frontend/src/lib/space-store.ts
+            - frontend/src/lib/space-store.test.ts
+            - frontend/src/lib/preferences-store.ts
+            - frontend/src/lib/preferences-store.test.ts
             - frontend/src/routes/index.tsx
             - frontend/src/routes/spaces/index.tsx
+            - frontend/src/routes/spaces/index.test.tsx
             - frontend/src/routes/spaces/[space_id]/entries/[entry_id].tsx
             - frontend/src/routes/spaces/[space_id]/search.tsx
             - frontend/src/routes/spaces/[space_id]/search.test.tsx
@@ -148,7 +155,7 @@ verification:
       arguments: [test, -p, "{package}", "{test}", --, --exact]
     frontend-vitest:
       executable: deno
-      arguments: [task, --cwd, frontend, test, "src/routes/spaces/[space_id]/search.test.tsx", --testNamePattern, "{test}"]
+      arguments: [task, --cwd, frontend, test, "{file}", --testNamePattern, "{test}"]
     e2e-playwright:
       executable: deno
       arguments: [run, --node-modules-dir=none, -A, npm:@playwright/test@^1.60.0, test, --config, e2e/playwright.config.ts, "{file}", --grep, "{test}"]

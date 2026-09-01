@@ -109,7 +109,7 @@ requirements:
                 covers:
                   - FEAT-SRCH-001#binding.frontend/target.search-api
                   - FEAT-SRCH-001#binding.frontend/target.search-route
-                runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-004: runs a direct keyword search and renders matching entries" } }
+                runner: { runner: frontend-vitest, arguments: { file: "src/routes/[space_id]/search.test.tsx", test: "REQ-SRCH-004: runs a direct keyword search and renders matching entries" } }
   - id: REQ-SRCH-005
     title: Structured search reuse through shared query infrastructure
     description: The search route MUST offer advanced structured conditions that compile into the shared SQL or query execution path, and advanced searches MUST remain reusable from a human-readable search-history UI instead of exposing raw query management as the primary workflow.
@@ -140,7 +140,7 @@ requirements:
                 covers:
                   - FEAT-SRCH-001#binding.frontend/target.search-route
                   - FEAT-SRCH-001#binding.frontend/target.advanced-query-builder
-                runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-005: advanced search compiles filters into saved SQL and runs a shared session" } }
+                runner: { runner: frontend-vitest, arguments: { file: "src/routes/[space_id]/search.test.tsx", test: "REQ-SRCH-005: advanced search compiles filters into saved SQL and runs a shared session" } }
           - id: history-case
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/search.test.tsx
@@ -149,7 +149,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-SRCH-005#criterion.structured-search-reuse
                 covers: [FEAT-SRCH-001#binding.frontend/target.search-route]
-                runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-005: saved history entries rerun directly or open variable input when needed" } }
+                runner: { runner: frontend-vitest, arguments: { file: "src/routes/[space_id]/search.test.tsx", test: "REQ-SRCH-005: saved history entries rerun directly or open variable input when needed" } }
   - id: REQ-SRCH-006
     title: Structured query operation
     description: Users and operators can submit a structured query for a Space and receive the matching results through the supported Ugoite interfaces.

@@ -1,0 +1,72 @@
+schema: mitase/spec/v1
+kind: features
+namespace: frontend
+category: Frontend space selection surface
+features:
+  - id: FEAT-FE-001
+    title: Space selection surface
+    summary: Connect the Space selector, Space store, Spaces route, portable preference store, and exact frontend Vitest evidence without introducing a Ugoite-specific specification kind.
+    status: implemented
+    bindings:
+      - id: ui
+        role: implementation
+        facet: frontend
+        responsibility: Render the authorized Space selector and report user selection to the owning UI surface.
+        targets:
+          - id: space-selector
+            adapter: typescript
+            path: frontend/src/components/SpaceSelector.tsx
+            selector: { kind: symbol, name: SpaceSelector }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-001#criterion.authorized-space-selection
+              - kind: satisfies
+                criterion: REQ-FE-001#criterion.selector-interaction
+      - id: store
+        role: implementation
+        facet: frontend
+        responsibility: Load authorized Spaces, restore a valid selection, keep empty state unselected, and persist the chosen Space.
+        targets:
+          - id: space-store
+            adapter: typescript
+            path: frontend/src/lib/space-store.ts
+            selector: { kind: symbol, name: createSpaceStore }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-001#criterion.authorized-space-selection
+              - kind: satisfies
+                criterion: REQ-FE-002#criterion.no-automatic-creation
+              - kind: satisfies
+                criterion: REQ-FE-003#criterion.portable-selection-priority
+              - kind: satisfies
+                criterion: REQ-FE-003#criterion.portable-selection-persistence
+      - id: preferences
+        role: implementation
+        facet: frontend
+        responsibility: Hydrate and patch portable user preferences through the existing route-aware preference store and local fallback.
+        targets:
+          - id: preferences-store
+            adapter: typescript
+            path: frontend/src/lib/preferences-store.ts
+            selector: { kind: symbol, name: initializePortablePreferencesForPath }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-003#criterion.portable-selection-persistence
+              - kind: satisfies
+                criterion: REQ-FE-003#criterion.route-aware-preference-hydration
+      - id: route
+        role: implementation
+        facet: frontend
+        responsibility: Expose the empty-state Space creation flow and the authorized Space list in the Spaces route.
+        targets:
+          - id: spaces-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.tsx
+            selector: { kind: symbol, name: SpacesIndexRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-001#criterion.authorized-space-selection
+              - kind: satisfies
+                criterion: REQ-FE-002#criterion.explicit-empty-state-create
+              - kind: satisfies
+                criterion: REQ-FE-002#criterion.no-automatic-creation

@@ -1,3 +1,4 @@
+// Canonical Mitase evidence for the Frontend Space selection surface.
 // REQ-FE-001: Space selector
 // REQ-FE-002: No client-side default space creation
 // REQ-FE-003: Persist space selection
@@ -54,6 +55,7 @@ describe("createSpaceStore", () => {
     resetPortablePreferencesState();
   });
 
+  // Mitase evidence: REQ-FE-002#criterion.no-automatic-creation.
   it("should keep selection empty when no spaces exist", async () => {
     await createRoot(async (dispose) => {
       const store = createSpaceStore();
@@ -93,6 +95,7 @@ describe("createSpaceStore", () => {
     });
   });
 
+  // Mitase evidence: REQ-FE-001#criterion.authorized-space-selection.
   it("REQ-FE-001: selects the first ordinary Space when default is absent", async () => {
     const operationsSpace: Space = {
       id: "operations",
@@ -123,6 +126,7 @@ describe("createSpaceStore", () => {
     });
   });
 
+  // Mitase evidence: REQ-FE-001#criterion.authorized-space-selection.
   it("REQ-FE-001: restores any persisted authorized Space", async () => {
     const operationsSpace: Space = {
       id: "operations",
@@ -207,6 +211,7 @@ describe("createSpaceStore", () => {
     });
   });
 
+  // Mitase evidence: REQ-FE-003#criterion.portable-selection-priority.
   it("REQ-FE-003: should prefer portable selected space preference", async () => {
     const ws1: Space = {
       id: "space-1",
@@ -243,6 +248,7 @@ describe("createSpaceStore", () => {
     });
   });
 
+  // Mitase evidence: REQ-FE-003#criterion.portable-selection-priority.
   it("REQ-FE-003: portable preference may select any authorized Space", async () => {
     const operationsSpace: Space = {
       id: "operations",
@@ -306,6 +312,7 @@ describe("createSpaceStore", () => {
     });
   });
 
+  // Mitase evidence: REQ-FE-003#criterion.portable-selection-persistence.
   it("should select space and persist choice", async () => {
     const ws1: Space = {
       id: "space-1",

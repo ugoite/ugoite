@@ -11,6 +11,8 @@ import SpacesIndexRoute from "./index";
 import { authApi, spaceApi } from "~/lib/ugoite-client";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 
+// Canonical Mitase evidence for the Frontend Space selection and empty-state surface.
+
 const localDevAuthGuideUrl =
   "https://ugoite.github.io/ugoite/docs/guide/develop/local-dev-auth-login";
 const browserWalkthroughUrl =
@@ -46,6 +48,7 @@ describe("/spaces", () => {
     (authApi.loginWithPasskey as ReturnType<typeof vi.fn>).mockReset();
   });
 
+  // Mitase evidence: REQ-FE-002#criterion.explicit-empty-state-create.
   it("REQ-FE-002: shows a create-space action when no spaces exist", async () => {
     render(() => <SpacesIndexRoute />);
 
@@ -68,6 +71,7 @@ describe("/spaces", () => {
     expect(spaceApi.create).not.toHaveBeenCalled();
   });
 
+  // Mitase evidence: REQ-FE-002#criterion.explicit-empty-state-create.
   it("REQ-FE-002: creates a space only after explicit user submission", async () => {
     (spaceApi.create as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "my-space",
@@ -203,6 +207,7 @@ describe("/spaces", () => {
     ).not.toBeInTheDocument();
   });
 
+  // Mitase evidence: REQ-FE-001#criterion.authorized-space-selection.
   it("REQ-FE-001: lists every authorized Space in one section", async () => {
     (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
@@ -234,6 +239,7 @@ describe("/spaces", () => {
       );
   });
 
+  // Mitase evidence: REQ-FE-002#criterion.no-automatic-creation.
   it("REQ-FE-002: treats any authorized Space as selectable content", async () => {
     (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
