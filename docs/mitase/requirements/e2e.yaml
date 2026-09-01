@@ -1,0 +1,138 @@
+schema: mitase/spec/v1
+kind: requirements
+namespace: e2e
+category: Browser smoke, cross-layer integration, and navigation stability
+requirements:
+  - id: REQ-E2E-001
+    title: Browser HTML boundary
+    description: Public and authenticated browser routes return real HTML documents, and the root response declares the HTML media type.
+    priority: high
+    status: implemented
+    criteria:
+      - id: html-document
+        kind: behavior
+        statement: The browser root route returns a complete HTML document with a DOCTYPE.
+        governed_by: [POL-004#rule.governance, POL-006#rule.governance, POL-014#rule.governance]
+      - id: html-content-type
+        kind: behavior
+        statement: The browser root response declares a text/html content type.
+        governed_by: [POL-004#rule.governance, POL-006#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: browser-smoke-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the root browser document and response media type through exact Playwright smoke cases.
+        targets:
+          - id: doctype-case
+            adapter: typescript
+            path: e2e/smoke.test.ts
+            selector: { kind: test, name: GET / returns HTML with DOCTYPE }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-001#criterion.html-document
+                covers: [FEAT-E2E-001#binding.frontend/target.root-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/smoke.test.ts, test: GET / returns HTML with DOCTYPE } }
+          - id: content-type-case
+            adapter: typescript
+            path: e2e/smoke.test.ts
+            selector: { kind: test, name: GET / has correct content-type }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-001#criterion.html-content-type
+                covers: [FEAT-E2E-001#binding.frontend/target.root-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/smoke.test.ts, test: GET / has correct content-type } }
+
+  - id: REQ-E2E-002
+    title: API and frontend integration
+    description: 'The browser and server work together across Space and Entry routes: the browser renders an Entry returned by the API, and the Spaces and Entries API surfaces return list data that the browser can use.'
+    priority: high
+    status: implemented
+    criteria:
+      - id: entry-route
+        kind: behavior
+        statement: A newly created Entry can be opened through its browser route and rendered as an HTML document with its title and Form navigation.
+        governed_by: [POL-004#rule.governance, POL-006#rule.governance, POL-014#rule.governance]
+      - id: space-and-entry-lists
+        kind: behavior
+        statement: The Space and Entry list operations return successful JSON arrays that can seed the browser-backed workflow.
+        governed_by: [POL-004#rule.governance, POL-006#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: api-frontend-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the server-backed browser route and list responses through exact Playwright smoke cases.
+        targets:
+          - id: entry-route-case
+            adapter: typescript
+            path: e2e/smoke.test.ts
+            selector: { kind: test, name: GET /spaces/:space_id/entries/:id returns HTML }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-002#criterion.entry-route
+                covers:
+                  - FEAT-E2E-001#binding.frontend/target.entry-route
+                runner: { runner: e2e-playwright, arguments: { file: e2e/smoke.test.ts, test: GET /spaces/:space_id/entries/:id returns HTML } }
+          - id: space-list-case
+            adapter: typescript
+            path: e2e/smoke.test.ts
+            selector: { kind: test, name: GET /spaces returns list }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-002#criterion.space-and-entry-lists
+                covers:
+                  - FEAT-E2E-001#binding.server/target.list-spaces
+                runner: { runner: e2e-playwright, arguments: { file: e2e/smoke.test.ts, test: GET /spaces returns list } }
+          - id: entry-list-case
+            adapter: typescript
+            path: e2e/smoke.test.ts
+            selector: { kind: test, name: GET /spaces/:space_id/entries returns list }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-002#criterion.space-and-entry-lists
+                covers:
+                  - FEAT-E2E-001#binding.server/target.list-entries
+                runner: { runner: e2e-playwright, arguments: { file: e2e/smoke.test.ts, test: GET /spaces/:space_id/entries returns list } }
+
+  - id: REQ-E2E-004
+    title: Dynamic navigation stability
+    description: Traversing the current browser routes must not produce browser console errors, runtime page errors, or SolidJS fallback screens.
+    priority: high
+    status: implemented
+    criteria:
+      - id: route-traversal
+        kind: behavior
+        statement: Dynamic traversal visits at least the seeded Space routes and discovered internal links without falling into a missing-page or framework fallback screen.
+        governed_by: [POL-006#rule.governance, POL-014#rule.governance]
+      - id: console-stability
+        kind: quality
+        statement: Dynamic traversal completes without browser console errors.
+        governed_by: [POL-006#rule.governance, POL-014#rule.governance]
+      - id: runtime-stability
+        kind: quality
+        statement: Dynamic traversal completes without uncaught browser runtime errors.
+        governed_by: [POL-006#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: navigation-verification
+        role: verification
+        facet: verification
+        responsibility: Verify route traversal and browser/runtime error invariants through the exact dynamic-navigation Playwright case.
+        targets:
+          - id: traversal-case
+            adapter: typescript
+            path: e2e/navigation.test.ts
+            selector: { kind: test, name: 'REQ-E2E-004: dynamic traversal has no console or SolidJS errors' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-004#criterion.route-traversal
+                covers:
+                  - FEAT-E2E-001#binding.frontend/target.spaces-route
+                  - FEAT-E2E-001#binding.frontend/target.entry-route
+                runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-004: dynamic traversal has no console or SolidJS errors' } }
+              - kind: verifies
+                criterion: REQ-E2E-004#criterion.console-stability
+                covers: [FEAT-E2E-001#binding.frontend/target.spaces-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-004: dynamic traversal has no console or SolidJS errors' } }
+              - kind: verifies
+                criterion: REQ-E2E-004#criterion.runtime-stability
+                covers: [FEAT-E2E-001#binding.frontend/target.spaces-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-004: dynamic traversal has no console or SolidJS errors' } }

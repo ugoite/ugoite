@@ -1,0 +1,94 @@
+schema: mitase/spec/v1
+kind: features
+namespace: e2e
+category: Browser smoke and navigation surfaces
+features:
+  - id: FEAT-E2E-001
+    title: Browser smoke and dynamic navigation
+    summary: Connect the browser routes, server-backed Space and Entry operations, OpenAPI contracts, and exact Playwright smoke/navigation evidence.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep the shipped browser routes connected to the HTML boundary and server-backed Space and Entry workflow.
+        targets:
+          - id: root-route
+            adapter: typescript
+            path: frontend/src/routes/index.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-001#criterion.html-document
+              - kind: satisfies
+                criterion: REQ-E2E-001#criterion.html-content-type
+          - id: spaces-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-004#criterion.route-traversal
+              - kind: satisfies
+                criterion: REQ-E2E-004#criterion.console-stability
+              - kind: satisfies
+                criterion: REQ-E2E-004#criterion.runtime-stability
+          - id: entry-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/entries/[entry_id].tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-002#criterion.entry-route
+              - kind: satisfies
+                criterion: REQ-E2E-004#criterion.route-traversal
+      - id: server
+        role: implementation
+        facet: backend
+        responsibility: Expose the Space and Entry list/read operations used by the browser-backed smoke workflow.
+        targets:
+          - id: list-spaces
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: list_spaces }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-002#criterion.space-and-entry-lists
+          - id: list-entries
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: list_entries }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-002#criterion.space-and-entry-lists
+      - id: server-read
+        role: operation
+        facet: backend
+        responsibility: Keep the server Entry read adapter connected to the browser route used by the E2E smoke workflow.
+        targets:
+          - id: get-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: get_entry }
+      - id: contract
+        role: contract-source
+        facet: api
+        responsibility: Define the authoritative Space and Entry HTTP operations exercised by the E2E smoke workflow.
+        owns:
+          - id: openapi-source
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: file }
+        targets:
+          - id: list-spaces
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /spaces }
+          - id: list-entries
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/entries' }
+          - id: get-entry
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/entries/{entry_id}' }

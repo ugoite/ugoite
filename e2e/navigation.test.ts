@@ -8,6 +8,9 @@ import {
 
 const maxVisitedPages = 16;
 
+// Canonical Mitase evidence for dynamic route traversal and browser/runtime
+// error stability. The Mitase runner invokes this file from the repository
+// root with e2e/playwright.config.ts.
 test.describe("Dynamic navigation traversal", () => {
 	let spaceId = "";
 
@@ -21,6 +24,7 @@ test.describe("Dynamic navigation traversal", () => {
 		page,
 		request,
 	}) => {
+		// Mitase evidence: REQ-E2E-004 route, console, and runtime stability.
 		test.setTimeout(120_000);
 
 		const createdEntry = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {

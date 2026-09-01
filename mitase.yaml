@@ -26,9 +26,14 @@ inventory:
             - frontend/src/lib/sql-api.ts
             - frontend/src/lib/sql-session-api.ts
             - frontend/src/lib/asset-api.ts
+            - frontend/src/routes/index.tsx
+            - frontend/src/routes/spaces/index.tsx
+            - frontend/src/routes/spaces/[space_id]/entries/[entry_id].tsx
             - frontend/src/routes/spaces/[space_id]/search.tsx
             - frontend/src/routes/spaces/[space_id]/search.test.tsx
             - e2e/search-ui.test.ts
+            - e2e/smoke.test.ts
+            - e2e/navigation.test.ts
         openapi:
           roots:
             - crates/ugoite-server/src/openapi.json
@@ -50,6 +55,8 @@ inventory:
             - docs/mitase/features/api.yaml
             - docs/mitase/features/assets.yaml
             - docs/mitase/features/integrity.yaml
+            - docs/mitase/requirements/e2e.yaml
+            - docs/mitase/features/e2e.yaml
             - docs/spec/features/features.yaml
             - docs/spec/philosophy/foundation.yaml
             - docs/spec/policies/policies.yaml
@@ -126,3 +133,6 @@ verification:
     frontend-vitest:
       executable: deno
       arguments: [task, --cwd, frontend, test, "src/routes/spaces/[space_id]/search.test.tsx", --testNamePattern, "{test}"]
+    e2e-playwright:
+      executable: deno
+      arguments: [run, --node-modules-dir=none, -A, npm:@playwright/test@^1.60.0, test, --config, e2e/playwright.config.ts, "{file}", --grep, "{test}"]
