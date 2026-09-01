@@ -22,7 +22,7 @@ requirements:
           - id: case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_entry.rs
-            selector: { kind: symbol, name: test_entry_req_entry_001_create_entry_basic }
+            selector: { kind: test, name: test_entry_req_entry_001_create_entry_basic }
             claims:
               - kind: verifies
                 criterion: REQ-ENTRY-001#criterion.creation
@@ -51,7 +51,7 @@ requirements:
           - id: case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_entry.rs
-            selector: { kind: symbol, name: test_entry_req_entry_002_update_entry_conflict }
+            selector: { kind: test, name: test_entry_req_entry_002_update_entry_conflict }
             claims:
               - kind: verifies
                 criterion: REQ-ENTRY-002#criterion.parent-revision-validation
@@ -76,7 +76,7 @@ requirements:
           - id: case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_entry.rs
-            selector: { kind: symbol, name: test_entry_req_entry_003_update_entry_success }
+            selector: { kind: test, name: test_entry_req_entry_003_update_entry_success }
             claims:
               - kind: verifies
                 criterion: REQ-ENTRY-003#criterion.update
@@ -101,7 +101,7 @@ requirements:
           - id: case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_entry.rs
-            selector: { kind: symbol, name: test_entry_req_entry_004_delete_entry }
+            selector: { kind: test, name: test_entry_req_entry_004_delete_entry }
             claims:
               - kind: verifies
                 criterion: REQ-ENTRY-004#criterion.tombstone
@@ -126,7 +126,7 @@ requirements:
           - id: case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_entry.rs
-            selector: { kind: symbol, name: test_entry_req_entry_005_entry_history_append }
+            selector: { kind: test, name: test_entry_req_entry_005_entry_history_append }
             claims:
               - kind: verifies
                 criterion: REQ-ENTRY-005#criterion.history
@@ -135,7 +135,7 @@ requirements:
           - id: restore-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_entry.rs
-            selector: { kind: symbol, name: restore_replays_historical_references_even_when_targets_are_unavailable }
+            selector: { kind: test, name: restore_replays_historical_references_even_when_targets_are_unavailable }
             claims:
               - kind: verifies
                 criterion: REQ-ENTRY-005#criterion.history
@@ -160,7 +160,7 @@ requirements:
           - id: case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_entry.rs
-            selector: { kind: symbol, name: test_entry_req_entry_006_extract_h2_headers }
+            selector: { kind: test, name: test_entry_req_entry_006_extract_h2_headers }
             claims:
               - kind: verifies
                 criterion: REQ-ENTRY-006#criterion.markdown-extraction

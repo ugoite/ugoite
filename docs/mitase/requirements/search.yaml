@@ -22,7 +22,7 @@ requirements:
           - id: server-case
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: test_search_req_srch_001_authorized_route }
+            selector: { kind: test, name: authentication_regression_tests::test_search_req_srch_001_authorized_route }
             claims:
               - kind: verifies
                 criterion: REQ-SRCH-001#criterion.keyword-search
@@ -63,7 +63,7 @@ requirements:
           - id: case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_search.rs
-            selector: { kind: symbol, name: test_search_req_srch_002_fallback_scan }
+            selector: { kind: test, name: test_search_req_srch_002_fallback_scan }
             claims:
               - kind: verifies
                 criterion: REQ-SRCH-002#criterion.current-entry-scan
@@ -98,7 +98,7 @@ requirements:
           - id: case
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/search.test.tsx
-            selector: { kind: symbol, name: test_search_req_srch_004_keyword_first_route }
+            selector: { kind: test, name: 'REQ-SRCH-004: runs a direct keyword search and renders matching entries' }
             claims:
               - kind: verifies
                 criterion: REQ-SRCH-004#criterion.keyword-first-route
@@ -125,7 +125,7 @@ requirements:
           - id: compile-case
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/search.test.tsx
-            selector: { kind: symbol, name: test_search_req_srch_005_advanced_search_compiles }
+            selector: { kind: test, name: 'REQ-SRCH-005: advanced search compiles filters into saved SQL and runs a shared session' }
             claims:
               - kind: verifies
                 criterion: REQ-SRCH-005#criterion.structured-search-reuse
@@ -136,7 +136,7 @@ requirements:
           - id: history-case
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/search.test.tsx
-            selector: { kind: symbol, name: test_search_req_srch_005_history_reuse }
+            selector: { kind: test, name: 'REQ-SRCH-005: saved history entries rerun directly or open variable input when needed' }
             claims:
               - kind: verifies
                 criterion: REQ-SRCH-005#criterion.structured-search-reuse
