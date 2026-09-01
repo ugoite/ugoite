@@ -43,7 +43,7 @@ derived or disposable.
 The specification is organized by the question it answers. The migrated slice
 uses the schema-native Mitase graph under `docs/mitase`; unmigrated domains keep
 their existing source files and machine-readable registries. This page makes
-the reading order and staged authority boundary explicit.
+the reading order and the single semantic authority boundary explicit.
 
 Behavior changes are specified alongside their implementation and verification
 evidence. When evidence is incomplete, the gap remains explicit rather than
@@ -52,12 +52,12 @@ rewriting the requirement to fit the available proof.
 ## Migrated domain authority
 
 Foundation, Policy, Search, Entry, and Form are represented in the canonical
-Mitase records at `docs/mitase` for the current dogfood slice. Their authority
-cutover remains staged until changed-ownership enforcement can be scoped to the
-migrated slice. The legacy Foundation, Policy, Requirement, and Feature YAML
-remain migration evidence during that transition; maintainers review each
-migration unit against its source before completing the cutover. Other
-requirement and feature domains remain authoritative in their existing
+Mitase records at `docs/mitase` for the current dogfood slice. These records
+are the semantic source of truth for the migrated domains; their corresponding
+legacy Foundation, Policy, Requirement, and Feature YAML are migration evidence
+only and cannot override the canonical representation. Changed-ownership
+enforcement remains staged until it can be scoped safely to the migrated slice.
+Other requirement and feature domains remain authoritative in their existing
 `docs/spec` records until migrated.
 
 `docs/mitase` is an intentional Ugoite specification surface for the Mitase
@@ -86,7 +86,7 @@ rules have been reviewed.
 Use the [operator guides](../guide/index.md) for procedures. This section
 describes the repository specification boundary; the migrated dogfood
 representation is authored in `docs/mitase`, while unmigrated domains remain
-in `docs/spec` until their authority cutover is complete.
+authored in `docs/spec` until they are migrated.
 
 ## Module matrix
 

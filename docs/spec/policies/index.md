@@ -10,11 +10,12 @@ Ugoite's governance stack is organized as:
    behavior must exist in the product.
 
 The Foundation and Policy domains migrated into Mitase are represented in the
-schema-native graph under `docs/mitase`. Their authority cutover is staged until
-changed-ownership enforcement can be scoped to the migrated slice. This
-directory remains the legacy policy source and migration reference during that
-transition; its downstream links remain here until the referenced domains are
-migrated. They are not copied into a second migration manifest or authority.
+schema-native graph under `docs/mitase`, which is their canonical semantic
+authority. This directory remains migration evidence for those domains; its
+downstream links remain here until the referenced domains are migrated, but
+they do not override the canonical graph or form a second authority. Changed-
+ownership enforcement remains staged until it can be scoped safely to the
+migrated slice. No second migration manifest or authority is created.
 
 Each legacy entry in `policies.yaml` is intended to be readable from those three
 angles:
@@ -37,6 +38,6 @@ When updating the governance taxonomy:
 - keep policy descriptions specific enough to explain why the rule exists
 - preserve traceability from philosophy to policy to requirement/specification
   so drift remains visible in CI
-- update the canonical Mitase policy graph for the migrated slice while the
-  authority cutover is staged; do not treat migration bookkeeping as a second
-  policy source
+- update the canonical Mitase policy graph for the migrated slice; keep legacy
+  records as migration evidence only, and do not treat migration bookkeeping as
+  a second policy source
