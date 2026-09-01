@@ -1,6 +1,10 @@
 import type { AssetReference } from "./types";
 import { protocolFetch, protocolFetchResponse } from "./ugoite-client/protocol";
 
+const ASSET_UPLOAD_OPERATION = "asset.upload";
+const ASSET_DELETE_OPERATION = "asset.delete";
+const ASSET_READ_OPERATION = "asset.read";
+
 /** Asset API client backed by the shared Rust/WASM protocol. */
 export const assetApi = {
   async upload(
@@ -12,7 +16,7 @@ export const assetApi = {
     const formData = new FormData();
     formData.append("file", file, filename);
     return await protocolFetch<AssetReference>(
-      "asset.upload",
+      ASSET_UPLOAD_OPERATION,
       { space_id: spaceId },
       undefined,
       { body: formData, signal },
@@ -23,7 +27,7 @@ export const assetApi = {
     spaceId: string,
     assetId: string,
   ): Promise<{ status: string; id: string }> {
-    return await protocolFetch<{ status: string; id: string }>("asset.delete", {
+    return await protocolFetch<{ status: string; id: string }>(ASSET_DELETE_OPERATION, {
       space_id: spaceId,
       asset_id: assetId,
     });
@@ -36,7 +40,7 @@ export const assetApi = {
     entryId: string,
     signal?: AbortSignal,
   ): Promise<Blob> {
-    const response = await protocolFetchResponse("asset.read", {
+    const response = await protocolFetchResponse(ASSET_READ_OPERATION, {
       space_id: spaceId,
       asset_id: assetId,
       form: formName,

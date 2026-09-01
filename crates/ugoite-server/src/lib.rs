@@ -9590,6 +9590,7 @@ async fn upload_asset(
     Path(space_id): Path<String>,
     mut multipart: Multipart,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
+    // The REST contract delegates the explicit media type to the canonical service boundary.
     let field = multipart
         .next_field()
         .await
@@ -9673,6 +9674,7 @@ async fn get_asset(
     Path((space_id, asset_id)): Path<(String, String)>,
     Query(query): Query<AssetReadQuery>,
 ) -> ApiResult<Response> {
+    // An Asset ID alone is not a readable REST resource; the containing Entry is required.
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let form_name = query.form.ok_or_else(|| {
         ApiError::new(
@@ -9714,6 +9716,7 @@ async fn delete_asset(
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, asset_id)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
+    // The REST delete path publishes a logical asset.delete operation and never purges bytes.
     validate_id(&asset_id, "asset_id")?;
     let (principal_id, approval) = require_dangerous_resource_action(
         &state,
@@ -12850,6 +12853,40 @@ mod authentication_regression_tests {
             .expect("revision array");
         assert_eq!(revisions.len(), 1);
         assert_eq!(revisions[0]["revision_id"], created_revision_id);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn asset_read_requires_containing_entry_context() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-asset-read-context")?;
+        let principal_id = Uuid::from_u128(21741);
+        let space_id = state
+            .service
+            .create_space_for_principal(
+                "asset-read-context",
+                principal_id,
+                "Asset read context test",
+            )
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = Router::new()
+            .route("/spaces/{space_id}/assets/{asset_id}", get(get_asset))
+            .layer(Extension(content_identity(principal_id, space_uid)))
+            .with_state(state);
+
+        let response = route
+            .oneshot(
+                Request::get(format!("/spaces/{space_id}/assets/asset-id")).body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        let body: Value = serde_json::from_slice(&body)?;
+        assert_eq!(
+            body["detail"],
+            "asset reads require a containing Form and Entry context"
+        );
         Ok(())
     }
 
