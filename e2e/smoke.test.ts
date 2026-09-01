@@ -14,6 +14,8 @@ import {
   waitForServers,
 } from "./lib/client.ts";
 
+// Canonical Mitase evidence for the browser HTML boundary and the
+// server-backed Space/Entry smoke workflow.
 test.describe("Smoke Tests", { tag: "@smoke" }, () => {
   let spaceId = "";
 
@@ -24,6 +26,7 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
   });
 
   test("GET / returns HTML with DOCTYPE", async ({ page }) => {
+    // Mitase evidence: REQ-E2E-001#criterion.html-document.
     await page.goto("/");
     await page.waitForLoadState("networkidle");
     const body = await page.content();
@@ -31,6 +34,7 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
   });
 
   test("GET / has correct content-type", async ({ page }) => {
+    // Mitase evidence: REQ-E2E-001#criterion.html-content-type.
     const response = await page.goto("/");
     expect(response).not.toBeNull();
     const contentType = response?.headers()["content-type"] ?? "";
@@ -45,6 +49,7 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
   });
 
   test("GET /spaces/:space_id/entries/:id returns HTML", async ({ page, request }) => {
+    // Mitase evidence: REQ-E2E-002#criterion.entry-route.
     const createRes = await request.post(
       getBackendUrl(`/spaces/${spaceId}/entries`),
       {
@@ -108,6 +113,7 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
   });
 
   test("GET /spaces returns list", async ({ request }) => {
+    // Mitase evidence: REQ-E2E-002#criterion.space-and-entry-lists.
     const res = await request.get(getBackendUrl("/spaces"));
     expect(res.ok()).toBeTruthy();
 
@@ -125,6 +131,7 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
   });
 
   test("GET /spaces/:space_id/entries returns list", async ({ request }) => {
+    // Mitase evidence: REQ-E2E-002#criterion.space-and-entry-lists.
     const res = await request.get(getBackendUrl(`/spaces/${spaceId}/entries`));
     expect(res.ok()).toBeTruthy();
 
