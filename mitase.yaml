@@ -21,6 +21,10 @@ inventory:
             - frontend/src/lib/entry-api.ts
             - frontend/src/lib/form-api.ts
             - frontend/src/lib/search-api.ts
+            - frontend/src/lib/space-api.ts
+            - frontend/src/lib/preferences-api.ts
+            - frontend/src/lib/sql-api.ts
+            - frontend/src/lib/sql-session-api.ts
             - frontend/src/routes/spaces/[space_id]/search.tsx
             - frontend/src/routes/spaces/[space_id]/search.test.tsx
             - e2e/search-ui.test.ts
@@ -36,9 +40,16 @@ inventory:
             - docs/mitase/requirements/search.yaml
             - docs/mitase/requirements/entries.yaml
             - docs/mitase/requirements/forms.yaml
+            - docs/mitase/requirements/api.yaml
             - docs/mitase/features/search.yaml
             - docs/mitase/features/entries.yaml
             - docs/mitase/features/forms.yaml
+            - docs/mitase/features/api.yaml
+            - docs/spec/requirements/api.yaml
+            - docs/spec/features/features.yaml
+            - docs/spec/features/spaces.yaml
+            - docs/spec/features/preferences.yaml
+            - docs/spec/features/sql.yaml
             - docs/spec/philosophy/foundation.yaml
             - docs/spec/policies/policies.yaml
             - docs/spec/requirements/search.yaml

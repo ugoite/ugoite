@@ -1,0 +1,248 @@
+schema: mitase/spec/v1
+kind: requirements
+namespace: api
+category: API contracts and operator surfaces
+requirements:
+  - id: REQ-API-001
+    title: Space CRUD
+    description: Create, retrieve, and list Spaces. Every Space exposes an immutable UUIDv7 space_uid independently from its mutable human-facing slug, and the list operation returns only Spaces authorized for the current principal.
+    priority: high
+    status: implemented
+    criteria:
+      - id: space-lifecycle
+        kind: behavior
+        statement: The supported API surfaces create, retrieve, and list Spaces.
+        governed_by: [POL-004#rule.governance, POL-005#rule.governance]
+      - id: stable-space-identity
+        kind: quality
+        statement: Every Space exposes an immutable UUIDv7 space_uid independently from its mutable human-facing slug.
+        governed_by: [POL-001#rule.governance, POL-004#rule.governance]
+      - id: authorized-space-list
+        kind: security
+        statement: Space listing returns only Spaces authorized for the current principal.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+  - id: REQ-API-002
+    title: Entry CRUD
+    description: The API exposes creation, retrieval, update, and deletion of Entries while preserving the Entry lifecycle and revision semantics owned by the Entry domain.
+    priority: high
+    status: implemented
+    criteria:
+      - id: entry-lifecycle
+        kind: behavior
+        statement: The API exposes create, retrieve, update, and delete operations for Entries.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+
+  - id: REQ-API-003
+    title: MCP resource content framing
+    description: MCP resource responses label Entry content as user-supplied untrusted data and strip raw HTML or script-like constructs before returning JSON payloads to AI clients.
+    priority: high
+    status: implemented
+    criteria:
+      - id: untrusted-content
+        kind: security
+        statement: MCP resource responses frame Entry content as untrusted user data and sanitize raw HTML or script-like constructs before returning it to an AI client.
+        governed_by: [POL-010#rule.governance, POL-015#rule.governance]
+
+  - id: REQ-API-004
+    title: Feature registry consistency
+    description: API feature registry entries must match implemented backend and frontend paths, files, and functions. The canonical Feature graph supersedes the legacy registry as migration completes.
+    priority: high
+    status: implemented
+    criteria:
+      - id: implementation-alignment
+        kind: quality
+        statement: API Feature bindings identify the implemented backend and frontend artifacts they govern.
+        governed_by: [POL-008#rule.governance, POL-013#rule.governance]
+
+  - id: REQ-API-005
+    title: Requirements traceability automation
+    description: Requirements and tests should be linked by stable Requirement and Criterion IDs and validated automatically. Complete repository-wide coverage remains a migration target.
+    priority: high
+    status: planned
+    criteria:
+      - id: stable-traceability
+        kind: operational
+        statement: API verification claims use stable Requirement and Criterion IDs and are validated by the Mitase repository gate.
+        governed_by: [POL-008#rule.governance, POL-009#rule.governance]
+
+  - id: REQ-API-006
+    title: Saved SQL CRUD
+    description: The API exposes CRUD operations for saved SQL entries, including validation of SQL variable objects.
+    priority: high
+    status: implemented
+    criteria:
+      - id: saved-sql-lifecycle
+        kind: behavior
+        statement: The supported API and CLI surfaces create, retrieve, update, and delete saved SQL entries.
+        governed_by: [POL-004#rule.governance, POL-005#rule.governance]
+      - id: saved-sql-variable-validation
+        kind: behavior
+        statement: Saved SQL operations validate their SQL variable objects before persistence or execution.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: saved-sql-verification
+        role: verification
+        facet: verification
+        responsibility: Verify saved SQL CRUD through the exact Iceberg integration case; CLI and adapter coverage remains a separate migration slice.
+        targets:
+          - id: iceberg-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_saved_sql.rs
+            selector: { kind: test, name: test_saved_sql_req_api_006_crud }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-006#criterion.saved-sql-lifecycle
+                covers:
+                  - FEAT-API-001#binding.core/target.list-sql
+                  - FEAT-API-001#binding.core/target.get-sql
+                  - FEAT-API-001#binding.core/target.create-sql
+                  - FEAT-API-001#binding.core/target.update-sql
+                  - FEAT-API-001#binding.core/target.delete-sql
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_saved_sql, test: test_saved_sql_req_api_006_crud } }
+
+  - id: REQ-API-007
+    title: Saved SQL template validation
+    description: Saved SQL entries declare every {{variable_name}} template reference. Template execution is rejected until values are bound through DataFusion parameters; Ugoite never substitutes literal text into SQL.
+    priority: high
+    status: implemented
+    criteria:
+      - id: declared-template-bindings
+        kind: behavior
+        statement: Saved SQL validation requires every template reference to be declared before execution.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: parameterized-execution
+        kind: security
+        statement: SQL template values are bound through DataFusion parameters and are never substituted as literal SQL text.
+        governed_by: [POL-001#rule.governance, POL-011#rule.governance]
+    bindings:
+      - id: template-verification
+        role: verification
+        facet: verification
+        responsibility: Verify saved SQL template rejection through the exact Iceberg integration case; the CLI path remains explicitly unverified.
+        targets:
+          - id: iceberg-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_saved_sql.rs
+            selector: { kind: test, name: test_saved_sql_req_api_007_validation_errors }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-007#criterion.declared-template-bindings
+                covers: [FEAT-API-001#binding.core/target.create-sql]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_saved_sql, test: test_saved_sql_req_api_007_validation_errors } }
+
+  - id: REQ-API-008
+    title: SQL session query API
+    description: The API creates SQL query sessions and exposes status, count, and paged rows. Session metadata persists one PublicationRef, result rows are evaluated from that fixed coordinate, and no stream endpoint is shipped.
+    priority: high
+    status: implemented
+    criteria:
+      - id: fixed-publication-coordinate
+        kind: quality
+        statement: A SQL session evaluates its result rows from the single PublicationRef persisted when the session is created.
+        governed_by: [POL-001#rule.governance, POL-004#rule.governance]
+      - id: paged-session-results
+        kind: behavior
+        statement: The API exposes SQL session status, count, and paged row reads without shipping a stream endpoint.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: sql-session-verification
+        role: verification
+        facet: verification
+        responsibility: Verify SQL session creation and fixed-coordinate pagination through the exact Iceberg integration cases.
+        targets:
+          - id: lifecycle-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_sessions.rs
+            selector: { kind: test, name: test_sql_sessions_req_api_008_end_to_end }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-008#criterion.fixed-publication-coordinate
+                covers:
+                  - FEAT-API-001#binding.core/target.create-sql-session
+                  - FEAT-API-001#binding.core/target.get-sql-session-status
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_sessions, test: test_sql_sessions_req_api_008_end_to_end } }
+          - id: pagination-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_sessions.rs
+            selector: { kind: test, name: test_sql_sessions_req_api_008_scopes_rows_before_limit }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-008#criterion.paged-session-results
+                covers:
+                  - FEAT-API-001#binding.core/target.count-sql-session
+                  - FEAT-API-001#binding.core/target.rows-sql-session
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_sessions, test: test_sql_sessions_req_api_008_scopes_rows_before_limit } }
+
+  - id: REQ-API-009
+    title: Sample data Space generation
+    description: "The API is intended to provide a way to generate a sample-data Space from a small set of inputs: Space ID, scenario, Entry count, and seed. Backend REST exposure is currently unshipped; core implementation and tests remain retained for future re-exposure."
+    priority: medium
+    status: planned
+    criteria:
+      - id: sample-space-inputs
+        kind: behavior
+        statement: A future sample-data operation accepts Space ID, scenario, Entry count, and seed as explicit inputs.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance]
+
+  - id: REQ-API-010
+    title: Sample data scenarios and asynchronous jobs
+    description: The API is intended to expose a catalog of sample-data scenarios and asynchronous sample-data generation jobs with status reporting. Backend REST exposure is currently unshipped.
+    priority: medium
+    status: planned
+    criteria:
+      - id: sample-job-lifecycle
+        kind: behavior
+        statement: A future sample-data API exposes scenario discovery and asynchronous generation job status.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance]
+
+  - id: REQ-API-011
+    title: Portable user preferences API
+    description: The API exposes authenticated GET /preferences/me and PATCH /preferences/me operations for portable user preferences, including selected Space, locale, UI theme, color mode, and primary color. selected_space_id inputs are validated and dependency failures are returned explicitly.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: preferences-roundtrip
+        kind: behavior
+        statement: Authenticated callers can retrieve and patch the current user's portable preferences through the supported API operations.
+        governed_by: [POL-004#rule.governance, POL-006#rule.governance]
+      - id: selected-space-validation
+        kind: behavior
+        statement: Preference updates validate selected_space_id and return an explicit error when preference storage fails.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+
+  - id: REQ-API-012
+    title: MCP resource input safety
+    description: MCP resource identifiers are validated with the shared safe-ID allowlist before authentication or storage calls. MCP resource descriptions warn that Entry content is untrusted user data and must never be treated as instructions.
+    priority: high
+    status: implemented
+    criteria:
+      - id: safe-resource-identifiers
+        kind: security
+        statement: MCP resource identifiers pass the shared safe-ID validation before authentication or storage access.
+        governed_by: [POL-011#rule.governance, POL-015#rule.governance]
+      - id: instruction-boundary
+        kind: security
+        statement: MCP resource descriptions distinguish untrusted Entry content from instructions.
+        governed_by: [POL-010#rule.governance, POL-015#rule.governance]
+
+  - id: REQ-API-013
+    title: Current MCP surface documentation
+    description: "Current-state MCP documentation describes the shipped v1 semantic facade: ugoite.search, ugoite.save, and authorized ugoite.delete, plus lazy stable Entry/Form resources. Plain Markdown save canonicalizes to the built-in Entry Form without weakening Entry validation; storage-specific routes, prompts, SQL, and revision tools remain future work."
+    priority: medium
+    status: implemented
+    criteria:
+      - id: shipped-mcp-facade
+        kind: documentation
+        statement: Current MCP documentation describes the shipped search, save, delete, and lazy Entry/Form resource facade and separates future capabilities.
+        governed_by: [POL-015#rule.governance]
+
+  - id: REQ-API-014
+    title: Operator surface positioning guide
+    description: Specification documentation positions MCP as the governed AI-facing operator surface, CLI as the explicit human and automation surface, and REST as the application and frontend integration surface. The small stable MCP v1 scope remains distinct from broader future capabilities.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: surface-roles
+        kind: documentation
+        statement: The API documentation assigns distinct roles to MCP, CLI, and REST and preserves the stable MCP v1 boundary.
+        governed_by: [POL-004#rule.governance, POL-005#rule.governance, POL-015#rule.governance]

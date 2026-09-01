@@ -179,6 +179,15 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
         query_policy: &query_policy,
     };
 
+    let status = sql_session::get_sql_session_status_authorized(
+        &op,
+        ws_path,
+        session_id,
+        execution_authorization,
+    )
+    .await?;
+    assert_eq!(status["status"], "ready");
+
     entry::create_entry(
         &op,
         ws_path,

@@ -4,11 +4,13 @@ title: 'Requirements registry'
 
 Requirement YAML files define stable IDs, descriptions, governance links, implementation status, and generated test traceability. Migrated domains are authoritative in `docs/mitase`; this registry remains authoritative for domains that have not yet been migrated.
 
-The migrated Entry, Form, and Search requirements retain their external
+The migrated Entry, Form, Search, and API requirements retain their external
 operator/API contracts in the canonical graph; an exact test claim is added
 only for the behavior that the selected test actually exercises. Search
 authorization remains governed by the authoritative Security requirement until
-that domain is migrated.
+that domain is migrated. API adapter and frontend verification gaps remain
+explicit follow-up work rather than being inferred from the existence of a
+binding.
 
 A current test mapping has this shape:
 
