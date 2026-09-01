@@ -17,7 +17,7 @@ requirements:
       - id: keyword-test
         role: verification
         facet: verification
-        responsibility: Verify the current keyword search behavior through the exact named server and frontend tests.
+        responsibility: Verify the current keyword search behavior through the exact named server test.
         targets:
           - id: server-case
             adapter: rust
@@ -28,17 +28,6 @@ requirements:
                 criterion: REQ-SRCH-001#criterion.keyword-search
                 covers: [FEAT-SRCH-001#binding.server/target.search-handler]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::test_search_req_srch_001_authorized_route } }
-          - id: frontend-case
-            adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/search.test.tsx
-            selector: { kind: symbol, name: test_search_req_srch_004_keyword_first_route }
-            claims:
-              - kind: verifies
-                criterion: REQ-SRCH-001#criterion.keyword-search
-                covers:
-                  - FEAT-SRCH-001#binding.frontend/target.search-api
-                  - FEAT-SRCH-001#binding.frontend/target.search-route
-                runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-004: runs a direct keyword search and renders matching entries" } }
   - id: REQ-SRCH-002
     title: Content-scan search implementation
     description: Keyword search scans current Entry rows and the authorized AssetText projection. AssetText is an internal derived Iceberg relation; missing, stale, or corrupt derived state degrades to native Entry search. A persistent inverted index is still absent.
@@ -113,7 +102,9 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-SRCH-004#criterion.keyword-first-route
-                covers: [FEAT-SRCH-001#binding.frontend/target.search-route]
+                covers:
+                  - FEAT-SRCH-001#binding.frontend/target.search-api
+                  - FEAT-SRCH-001#binding.frontend/target.search-route
                 runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-004: runs a direct keyword search and renders matching entries" } }
   - id: REQ-SRCH-005
     title: Structured search reuse through shared query infrastructure

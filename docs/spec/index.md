@@ -44,17 +44,26 @@ use the canonical Mitase graph under `docs/mitase`; unmigrated domains keep
 their existing source files and machine-readable registries. This page makes
 the reading order and migration boundary explicit.
 
+Behavior changes are specified alongside their implementation and verification
+evidence. When evidence is incomplete, the gap remains explicit rather than
+rewriting the requirement to fit the available proof.
+
 ## Migrated domain authority
 
 Foundation and policy governance are authoritative in the canonical Mitase
 records at `docs/mitase/philosophies/foundation.yaml` and
-`docs/mitase/policies/policies.yaml`; see the [migration authority guide](../mitase/migration/policy)
-for the human-readable boundary. The legacy Foundation, Policy, Requirement,
-and Feature YAML remain read-only migration evidence; maintainers review each
-migration unit against its snapshot before changing authority.
+`docs/mitase/policies/policies.yaml`. The legacy Foundation, Policy,
+Requirement, and Feature YAML remain read-only migration evidence; maintainers
+review each migration unit against its snapshot before changing authority.
 Search, Entry, and Form records migrated by the current dogfood slice likewise
 use `docs/mitase`; other requirement and feature domains remain authoritative
 in their existing `docs/spec` records until migrated.
+
+`docs/mitase` is an intentional Ugoite specification surface for the Mitase
+schema, not a second product authority. As legacy registry machinery and
+unmigrated domains are retired, their corresponding `docs/spec` records may be
+removed after the equivalent canonical records and evidence have been
+reviewed.
 
 - **Core model:** [data model](data-model/overview.md),
   [features](features/index.md), and the canonical machine-readable Foundation
@@ -74,7 +83,7 @@ in their existing `docs/spec` records until migrated.
   [versions](versions/index.md).
 
 Use the [operator guides](../guide/index.md) for procedures. This section
-  describes the repository specification boundary; migrated governance is
+describes the repository specification boundary; migrated governance is
 authored in `docs/mitase`, while unmigrated domains remain in `docs/spec`.
 
 ## Module matrix

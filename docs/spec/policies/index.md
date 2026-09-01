@@ -11,9 +11,8 @@ Ugoite's governance stack is organized as:
 
 The Foundation and Policy domains migrated into Mitase are authoritative in
 `docs/mitase`. This directory remains the read-only legacy policy snapshot and
-its downstream links are preserved as typed deferred edges in
-`docs/mitase-migration/policy-edges.yaml` until the referenced domains are
-migrated.
+its downstream links remain in the snapshot until the referenced domains are
+migrated. They are not copied into a second migration manifest or authority.
 
 Each legacy entry in `policies.yaml` is intended to be readable from those three
 angles:
@@ -36,5 +35,5 @@ When updating the governance taxonomy:
 - keep policy descriptions specific enough to explain why the rule exists
 - preserve traceability from philosophy to policy to requirement/specification
   so drift remains visible in CI
-- update the canonical Mitase policy graph and its migration manifest for
-  migrated policy domains; do not edit the legacy snapshot
+- update the canonical Mitase policy graph for migrated policy domains; do not
+  edit the legacy snapshot

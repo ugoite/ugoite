@@ -17,11 +17,11 @@ policies:
       - id: foundation-precedence-guard
         role: evidence
         facet: authority
-        responsibility: Document Foundation precedence and the repository authority boundary across migrated Policy records.
+        responsibility: Record the permanent v0.1 Foundation boundaries that govern lower-level product and implementation choices.
         targets:
           - id: foundation-precedence-evidence
             adapter: declared
-            path: docs/mitase/migration/policy.md
+            path: docs/spec/versions/v0.1.md
             selector: { kind: file }
             claims:
               - kind: evidences
@@ -263,12 +263,12 @@ policies:
     bindings:
       - id: specification-first-boundary
         role: evidence
-        facet: migration
-        responsibility: Document specification-first migration and explicit gap recording in the repository migration contract.
+        facet: governance
+        responsibility: Record the permanent specification map and its specification-first change boundary.
         targets:
           - id: specification-first-evidence
             adapter: declared
-            path: docs/mitase/migration/policy.md
+            path: docs/spec/index.md
             selector: { kind: file }
             claims:
               - kind: evidences

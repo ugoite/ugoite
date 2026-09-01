@@ -43,14 +43,12 @@ features:
             selector: { kind: symbol, name: searchApi }
             claims:
               - kind: satisfies
-                criterion: REQ-SRCH-001#criterion.keyword-search
+                criterion: REQ-SRCH-004#criterion.keyword-first-route
           - id: search-route
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/search.tsx
             selector: { kind: symbol, name: SpaceSearchRoute }
             claims:
-              - kind: satisfies
-                criterion: REQ-SRCH-001#criterion.keyword-search
               - kind: satisfies
                 criterion: REQ-SRCH-004#criterion.keyword-first-route
               - kind: satisfies

@@ -28,6 +28,7 @@ inventory:
         declared:
           roots:
             - AGENTS.md
+            - docs/spec/index.md
             - docs/mitase/philosophies/foundation.yaml
             - docs/mitase/policies/policies.yaml
             - docs/mitase/requirements/search.yaml
@@ -36,11 +37,6 @@ inventory:
             - docs/mitase/features/search.yaml
             - docs/mitase/features/entries.yaml
             - docs/mitase/features/forms.yaml
-            - docs/mitase/migration/search.md
-            - docs/mitase/migration/entries-forms.md
-            - docs/mitase/migration/policy.md
-            - docs/mitase-migration/policy-edges.yaml
-            - docs/mitase-migration/policy-levels.yaml
             - docs/spec/philosophy/foundation.yaml
             - docs/spec/policies/policies.yaml
             - docs/spec/requirements/search.yaml
@@ -49,6 +45,7 @@ inventory:
             - docs/spec/features/entries.yaml
             - docs/spec/requirements/form.yaml
             - docs/spec/features/forms.yaml
+            - docs/spec/versions/v0.1.md
             - docs/spec/versions/v0.1-knowledge-compatibility.md
             - .github/workflows/ci.yml
             - mise.toml
@@ -64,7 +61,15 @@ inventory:
 validation:
   preset: strict
   readiness:
-    target: off
+    target: traceable
+    probes:
+      implemented_criteria:
+        - criterion: REQ-SRCH-002#criterion.current-entry-scan
+          level: verifiable
+        - criterion: REQ-ENTRY-001#criterion.creation
+          level: verifiable
+        - criterion: REQ-FORM-002#criterion.preserve-physical-fields
+          level: verifiable
     limits: { max_ownership_scope_units: 64 }
   changed:
     baseline: { strategy: parent }
