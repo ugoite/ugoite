@@ -76,6 +76,59 @@ fn test_create_entry_basic() {
     assert_eq!(v.get("id").and_then(|x| x.as_str()), Some("entry-001"));
 }
 
+/// REQ-ENTRY-002: Local CLI validation errors identify the field, contract,
+/// and reason using the structured warning returned by core.
+#[test]
+fn test_invalid_typed_entry_cli_error_is_actionable() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.json");
+    let space_path = format!("{root}/spaces/typed-entry-space");
+
+    let create_space = Command::new(ugoite_bin())
+        .args(["create-space", "--root", &root, "typed-entry-space"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("create space");
+    assert!(create_space.status.success());
+
+    let form_file = dir.path().join("typed-entry-form.json");
+    std::fs::write(
+        &form_file,
+        r#"{"name":"TypedEntry","fields":{"StartedAt":{"type":"date"},"ArtifactId":{"type":"uuid"}}}"#,
+    )
+    .unwrap();
+    let create_form = Command::new(ugoite_bin())
+        .args(["form", "update", &space_path, form_file.to_str().unwrap()])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("create typed form");
+    assert!(
+        create_form.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&create_form.stderr)
+    );
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "create",
+            "--content",
+            "---\nform: TypedEntry\n---\n# Invalid Entry\n\n## StartedAt\n\ntomorrow",
+            &space_path,
+            "invalid-typed-entry",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("create invalid typed entry");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("StartedAt"), "stderr: {stderr}");
+    assert!(stderr.contains("ISO date YYYY-MM-DD"), "stderr: {stderr}");
+    assert!(stderr.contains("does not match"), "stderr: {stderr}");
+}
+
 /// REQ-ENTRY-002: Optimistic concurrency - revision mismatch returns error.
 #[test]
 fn test_update_entry_revision_mismatch() {

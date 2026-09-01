@@ -3,6 +3,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use ugoite_cli::commands;
+use ugoite_cli::error::format_cli_error;
 
 #[derive(Parser)]
 #[command(
@@ -102,7 +103,7 @@ fn main() {
         run(cli).await
     });
     if let Err(e) = result {
-        eprintln!("Error: {e:#}");
+        eprintln!("Error: {}", format_cli_error(&e));
         std::process::exit(1);
     }
 }
