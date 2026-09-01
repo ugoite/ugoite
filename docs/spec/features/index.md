@@ -4,7 +4,7 @@ title: 'Feature registry'
 
 `features.yaml` indexes per-area YAML files. Each operation records the canonical HTTP method/path and existing backend, frontend, core, and optional CLI source locations.
 
-The Entry, Form, Search, and API operation maps are represented canonically in
+The Entry, Form, Search, API, and Asset operation maps are represented canonically in
 `docs/mitase/features`; this file and the legacy per-area registries remain
 read-only migration snapshots for those domains. Other domains remain
 authoritative here until their replacement review is complete. The canonical
