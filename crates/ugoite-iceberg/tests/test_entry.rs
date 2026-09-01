@@ -275,6 +275,21 @@ async fn restore_replays_historical_references_even_when_targets_are_unavailable
         &FakeIntegrityProvider,
     )
     .await?;
+    let restored_content = entry::get_entry_content(&op, ws_path, "source-1").await?;
+    let restored_history = entry::get_entry_history(&op, ws_path, "source-1").await?;
+    let restored_revisions = restored_history["revisions"]
+        .as_array()
+        .expect("restored entry history");
+    assert_eq!(restored_revisions.len(), 3);
+    assert!(restored_revisions.iter().any(|revision| {
+        revision["revision_id"].as_str() == Some(historical_revision.as_str())
+    }));
+    let restore_revision = restored_revisions.last().expect("restore revision");
+    assert_eq!(restore_revision["operation"], "restore");
+    assert_eq!(
+        restore_revision["revision_id"].as_str(),
+        Some(restored_content.revision_id.as_str())
+    );
     let restored = entry::list_entries(&op, ws_path)
         .await?
         .into_iter()
@@ -1457,12 +1472,7 @@ async fn test_entry_req_entry_004_delete_entry() -> anyhow::Result<()> {
     // Delete
     entry::delete_entry(&op, ws_path, entry_id, false, "deleter").await?;
 
-    // Verify
-    // op.exists() should match implementation (tombstone or file removal)
-    // If tombstone:
-    // let meta = note::get_note_meta(...)
-    // assert!(meta.deleted);
-    // If removal from list:
+    // Verify the tombstone is hidden from current listings but retained in history.
     let list = entry::list_entries(&op, ws_path).await?;
     let ids: Vec<String> = list
         .iter()
@@ -1473,6 +1483,15 @@ async fn test_entry_req_entry_004_delete_entry() -> anyhow::Result<()> {
         })
         .collect();
     assert!(!ids.contains(&entry_id.to_string()));
+
+    let history = entry::get_entry_history(&op, ws_path, entry_id).await?;
+    let revisions = history["revisions"]
+        .as_array()
+        .expect("deleted entry history");
+    assert_eq!(revisions.len(), 2);
+    let tombstone = revisions.last().expect("delete revision");
+    assert_eq!(tombstone["operation"], "delete");
+    assert_eq!(tombstone["deleted_by"], "deleter");
 
     Ok(())
 }
@@ -1578,8 +1597,13 @@ async fn test_entry_req_entry_006_extract_h2_headers() -> anyhow::Result<()> {
     let content = "---\nform: Meeting\n---\n# Title\n\n## Date\n2025-01-01\n\n## Summary\nText";
     entry::create_entry(&op, ws_path, entry_id, content, "author", &integrity).await?;
 
-    let props = ugoite_iceberg::index::extract_properties(content);
-    let props = props.as_object().unwrap();
+    let list = entry::list_entries(&op, ws_path).await?;
+    let props = list
+        .iter()
+        .find(|entry| entry.get("id").and_then(|value| value.as_str()) == Some(entry_id))
+        .and_then(|entry| entry.get("properties"))
+        .and_then(|value| value.as_object())
+        .expect("persisted extracted properties");
 
     assert!(props.contains_key("Date"));
     assert_eq!(props.get("Date").unwrap().as_str().unwrap(), "2025-01-01");
@@ -1624,6 +1648,35 @@ async fn test_entry_req_form_004_deny_extra_attributes() -> anyhow::Result<()> {
         ugoite_core::error::ErrorCode::UnknownFormFields
     );
     assert_eq!(app_error.message(), "Entry contains unknown form fields");
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "entry-extra-deny-update",
+        "---\nform: Entry\n---\n# Title\n\n## Body\nContent",
+        "author",
+        &integrity,
+    )
+    .await?;
+    let current = entry::get_entry_content(&op, ws_path, "entry-extra-deny-update").await?;
+    let update_result = entry::update_entry(
+        &op,
+        ws_path,
+        "entry-extra-deny-update",
+        "---\nform: Entry\n---\n# Title\n\n## Body\nUpdated\n\n## Extra\nValue",
+        Some(&current.revision_id),
+        "author",
+        &integrity,
+    )
+    .await;
+    let update_error = update_result.expect_err("unknown form fields must be rejected on update");
+    let update_app_error = update_error
+        .downcast_ref::<ugoite_core::error::AppError>()
+        .expect("unknown form fields must remain typed application errors on update");
+    assert_eq!(
+        update_app_error.code(),
+        ugoite_core::error::ErrorCode::UnknownFormFields
+    );
 
     Ok(())
 }

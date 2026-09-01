@@ -1,0 +1,61 @@
+schema: mitase/spec/v1
+kind: philosophies
+namespace: foundation
+category: Foundation
+philosophies:
+  - id: PHIL-000
+    title: User-Owned Knowledge and Stable Authority
+    summary: Keep durable Knowledge user-owned and let tools operate on it without becoming a second authority.
+    principles:
+      - id: user-owned-knowledge
+        statement: Durable Knowledge remains owned by the user; operators, servers, agents, providers, and interfaces may act on it without becoming its authority.
+        applies_to: [product, architecture, specification, implementation, verification]
+      - id: disposable-work
+        statement: Work may be disposable, while durable Knowledge remains recoverable and meaningful across implementations.
+        applies_to: [product, architecture, specification, implementation]
+      - id: tools-without-authority
+        statement: Knowledge may become tools and experiences without transferring Knowledge ownership or authority to a server, provider, agent, runtime, or user interface.
+        applies_to: [product, architecture, specification, implementation, verification]
+      - id: stable-foundation
+        statement: Foundational ownership and authority remain stable; runtime experience may inform iteration but cannot redefine those boundaries.
+        applies_to: [product, architecture, specification, implementation, verification]
+  - id: PHIL-001
+    title: Freedom Through Modern Abstraction Layers
+    summary: Product and architecture decisions must preserve user optionality by default through portable abstractions and open interfaces.
+    principles:
+      - id: product-design-principle
+        statement: Product and architecture decisions must preserve user optionality by default. Storage abstraction, reusable core components, open table formats, and portable interfaces are first-class features because they reduce lock-in and preserve long-term user freedom.
+        applies_to: [product, specification, implementation]
+      - id: coding-guideline
+        statement: Prefer abstractions and open interfaces over tightly coupled one-off integrations. Reuse shared core modules, avoid storage/provider-specific assumptions in API/UI layers, and keep code paths portable across backends and runtimes.
+        applies_to: [implementation]
+  - id: PHIL-002
+    title: Serverless-Oriented Minimal Node Topology
+    summary: Product capabilities should favor fewer persistent nodes and minimal infrastructure coupling.
+    principles:
+      - id: product-design-principle
+        statement: Product capabilities should favor fewer persistent nodes and minimal infrastructure coupling. Clients should integrate directly with storage and AI services where safe, while transitional adapters remain explicit and temporary.
+        applies_to: [product, architecture, implementation]
+      - id: coding-guideline
+        statement: Keep runtime topology small and explicit in implementation. Avoid adding new always-on services unless required by a documented constraint, and isolate transitional adapters so they can be removed without broad refactoring.
+        applies_to: [implementation]
+  - id: PHIL-003
+    title: Build Rules, Not Disposable Artifacts
+    summary: Product behavior should be encoded as durable, reusable rules that can be continuously re-verified.
+    principles:
+      - id: product-design-principle
+        statement: Product behavior should be encoded as durable, reusable rules rather than manual one-off artifacts. Specifications, implementation, and validation are coupled so behavior can be continuously re-verified.
+        applies_to: [product, specification, implementation, verification]
+      - id: coding-guideline
+        statement: Tie behavior changes to specs and tests in the same change set. Prefer reusable helpers, schemas, and automation over manual procedural steps, and avoid introducing logic that cannot be continuously validated in CI.
+        applies_to: [implementation, verification]
+  - id: PHIL-004
+    title: Give AI Freedom Inside Trusted Constraints
+    summary: AI should accelerate user workflows only within explicit trust boundaries that keep risk observable and governable.
+    principles:
+      - id: product-design-principle
+        statement: AI should accelerate user workflows, but only within explicit trust boundaries. Product design must make risk observable and governable while retaining high autonomy inside approved constraints.
+        applies_to: [product, specification, verification]
+      - id: coding-guideline
+        statement: Enforce strict typed contracts, CI gates, policy-linked specifications, and trusted toolchains for AI-assisted changes. Do not bypass validation paths or introduce silent fallbacks that hide risk.
+        applies_to: [implementation, verification]

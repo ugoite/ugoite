@@ -15,7 +15,7 @@ ugoite-iceberg (physical adapter and publication coordinator)
           ↓
 ugoite-storage (OpenDAL configuration, Space keys, and publication objects)
           ↓
-operator-owned workspace
+user-owned Space storage
 ```
 
 `ugoite-domain` supplies portable types, strict Space-relative keys, and logical

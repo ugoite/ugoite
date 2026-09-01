@@ -10,8 +10,9 @@ sidebar:
 
 Ugoite is a private, portable Knowledge Space for humans and AI. Its foundation
 is expressed as three boundaries: **Knowledge persists**, **Work may
-disappear**, and **Knowledge can become tools**. Operator-owned Space
-directories are authoritative; indexes, query sessions, and runtime state are
+disappear**, and **Knowledge can become tools**. User-owned Space directories
+are authoritative; deployment and storage operators may host them without
+becoming Knowledge authority. Indexes, query sessions, and runtime state are
 derived or disposable.
 
 ## Current boundary
@@ -39,13 +40,35 @@ derived or disposable.
 
 ## Read the specification map
 
-The specification is organized by the question it answers. Each group keeps its
-existing source files and machine-readable registries; this page only makes the
-reading order explicit.
+The specification is organized by the question it answers. The migrated slice
+uses the schema-native Mitase graph under `docs/mitase`; unmigrated domains keep
+their existing source files and machine-readable registries. This page makes
+the reading order and the single semantic authority boundary explicit.
+
+Behavior changes are specified alongside their implementation and verification
+evidence. When evidence is incomplete, the gap remains explicit rather than
+rewriting the requirement to fit the available proof.
+
+## Migrated domain authority
+
+Foundation, Policy, Search, Entry, and Form are represented in the canonical
+Mitase records at `docs/mitase` for the current dogfood slice. These records
+are the semantic source of truth for the migrated domains; their corresponding
+legacy Foundation, Policy, Requirement, and Feature YAML are migration evidence
+only and cannot override the canonical representation. Changed-ownership
+enforcement remains staged until it can be scoped safely to the migrated slice.
+Other requirement and feature domains remain authoritative in their existing
+`docs/spec` records until migrated.
+
+`docs/mitase` is an intentional Ugoite specification surface for the Mitase
+schema, not a second product authority. As legacy registry machinery and
+unmigrated domains are retired, their corresponding `docs/spec` records may be
+removed after the equivalent canonical records, evidence, and scoped ownership
+rules have been reviewed.
 
 - **Core model:** [data model](data-model/overview.md),
-  [features](features/index.md), and the machine-readable
-  [foundation](https://github.com/ugoite/ugoite/blob/main/docs/spec/philosophy/foundation.yaml).
+  [features](features/index.md), and the canonical machine-readable Foundation
+  record at `docs/mitase/philosophies/foundation.yaml`.
 - **Interfaces:** [REST API](api/rest.md),
   [OpenAPI](https://github.com/ugoite/ugoite/blob/main/docs/spec/api/openapi.yaml),
   [MCP](api/mcp.md), [operator surfaces](api/operator-surfaces.md), and
@@ -54,14 +77,16 @@ reading order explicit.
   [user stories](stories/index.md).
 - **Architecture contracts:** [architecture overview](architecture/overview.md),
   decisions, stack, future-proofing, and the Space catalog.
-- **Operations and quality:** [policies](policies/index.md),
+- **Operations and quality:** [policy traceability](policies/index.md),
   [security](security/overview.md), [testing and CI](testing/strategy.md),
   [quality](quality/error-handling.md),
   [product metrics](product/success-metrics.md), and
   [versions](versions/index.md).
 
-Use the [operator guides](../guide/index.md) for procedures. This section is the
-executable contract, not a beginner-first tutorial.
+Use the [operator guides](../guide/index.md) for procedures. This section
+describes the repository specification boundary; the migrated dogfood
+representation is authored in `docs/mitase`, while unmigrated domains remain
+authored in `docs/spec` until they are migrated.
 
 ## Module matrix
 

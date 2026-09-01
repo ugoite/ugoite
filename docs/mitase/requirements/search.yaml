@@ -1,0 +1,162 @@
+schema: mitase/spec/v1
+kind: requirements
+namespace: search
+category: Search behavior and discoverability
+requirements:
+  - id: REQ-SRCH-001
+    title: Keyword search
+    description: Users must be able to search entries by keyword.
+    priority: high
+    status: implemented
+    criteria:
+      - id: keyword-search
+        kind: behavior
+        statement: Users can search current authorized entries by keyword and receive matching entry summaries.
+        governed_by: [POL-012#rule.governance, POL-011#rule.governance, POL-016#rule.governance]
+    bindings:
+      - id: keyword-test
+        role: verification
+        facet: verification
+        responsibility: Verify keyword search behavior through the existing exact Iceberg integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_search.rs
+            selector: { kind: test, name: test_search_req_srch_001_keyword_search }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-001#criterion.keyword-search
+                covers: [FEAT-SRCH-001#binding.core/target.search-entries]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_search, test: test_search_req_srch_001_keyword_search } }
+  - id: REQ-SRCH-002
+    title: Content-scan search implementation
+    description: Keyword search scans current Entry rows and the authorized AssetText projection. AssetText is an internal derived Iceberg relation; missing, stale, or corrupt derived state degrades to native Entry search. A persistent inverted index is still absent.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: current-entry-scan
+        kind: behavior
+        statement: Keyword search scans current Entry content for matching keywords.
+        governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+      - id: authorized-assettext-projection
+        kind: behavior
+        statement: Keyword search includes matching content from the authorized AssetText projection.
+        governed_by: [POL-012#rule.governance, POL-011#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+      - id: missing-derived-fallback
+        kind: behavior
+        statement: Search falls back to native current Entry search when the AssetText projection is missing.
+        governed_by: [POL-012#rule.governance, POL-011#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+      - id: stale-derived-fallback
+        kind: behavior
+        statement: Search falls back to native current Entry search when the AssetText projection is stale.
+        governed_by: [POL-012#rule.governance, POL-011#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+      - id: corrupt-derived-fallback
+        kind: behavior
+        statement: Search falls back to native current Entry search when the AssetText projection is corrupt or unavailable.
+        governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+    bindings:
+      - id: content-scan-test
+        role: verification
+        facet: verification
+        responsibility: Verify current Entry content scanning through the exact integration test; derived projection and fallback criteria remain unverified until criterion-specific evidence is available.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_search.rs
+            selector: { kind: test, name: test_search_req_srch_002_fallback_scan }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-002#criterion.current-entry-scan
+                covers: [FEAT-SRCH-001#binding.core/target.search-entries]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_search, test: test_search_req_srch_002_fallback_scan } }
+  - id: REQ-SRCH-003
+    title: Ugoite SQL lint and completion rules
+    description: The system MUST provide shared Ugoite SQL linting and completion rules for UI and CLI usage, sourced from a common config in the project root.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: sql-rules
+        kind: behavior
+        statement: Shared SQL linting and completion rules are available to UI and CLI surfaces from common project configuration.
+        governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+  - id: REQ-SRCH-004
+    title: Keyword-first search route
+    description: The /spaces/{space_id}/search route MUST present direct keyword entry search as the default experience so users can find entries without first managing saved queries or writing SQL.
+    priority: high
+    status: implemented
+    criteria:
+      - id: keyword-first-route
+        kind: behavior
+        statement: The Search route presents direct keyword search as the default experience.
+        governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+      - id: no-prerequisite-query-management
+        kind: behavior
+        statement: Direct keyword search is usable without requiring users to create saved queries or write SQL first.
+        governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+    bindings:
+      - id: frontend-test
+        role: verification
+        facet: verification
+        responsibility: Verify the keyword-first Search route through the exact frontend test.
+        targets:
+          - id: case
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/search.test.tsx
+            selector: { kind: test, name: 'REQ-SRCH-004: runs a direct keyword search and renders matching entries' }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-004#criterion.keyword-first-route
+                covers:
+                  - FEAT-SRCH-001#binding.frontend/target.search-api
+                  - FEAT-SRCH-001#binding.frontend/target.search-route
+                runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-004: runs a direct keyword search and renders matching entries" } }
+  - id: REQ-SRCH-005
+    title: Structured search reuse through shared query infrastructure
+    description: The search route MUST offer advanced structured conditions that compile into the shared SQL or query execution path, and advanced searches MUST remain reusable from a human-readable search-history UI instead of exposing raw query management as the primary workflow.
+    priority: high
+    status: implemented
+    criteria:
+      - id: structured-search-reuse
+        kind: behavior
+        statement: Advanced search compiles structured conditions into the shared query path and keeps the resulting search reusable through human-readable history.
+        governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+      - id: history-not-raw-query-workflow
+        kind: behavior
+        statement: Search history remains human-readable and reusable without making raw query management the primary workflow.
+        governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+    bindings:
+      - id: frontend-test
+        role: verification
+        facet: verification
+        responsibility: Verify advanced Search compilation and human-readable history reuse through exact frontend tests.
+        targets:
+          - id: compile-case
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/search.test.tsx
+            selector: { kind: test, name: 'REQ-SRCH-005: advanced search compiles filters into saved SQL and runs a shared session' }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-005#criterion.structured-search-reuse
+                covers:
+                  - FEAT-SRCH-001#binding.frontend/target.search-route
+                  - FEAT-SRCH-001#binding.frontend/target.advanced-query-builder
+                runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-005: advanced search compiles filters into saved SQL and runs a shared session" } }
+          - id: history-case
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/search.test.tsx
+            selector: { kind: test, name: 'REQ-SRCH-005: saved history entries rerun directly or open variable input when needed' }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-005#criterion.structured-search-reuse
+                covers: [FEAT-SRCH-001#binding.frontend/target.search-route]
+                runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-005: saved history entries rerun directly or open variable input when needed" } }
+  - id: REQ-SRCH-006
+    title: Structured query operation
+    description: Users and operators can submit a structured query for a Space and receive the matching results through the supported Ugoite interfaces.
+    priority: high
+    status: implemented
+    criteria:
+      - id: query-operation
+        kind: behavior
+        statement: The structured query operation accepts the documented request and returns matching results for the selected Space.
+        governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]

@@ -2,7 +2,11 @@
 title: 'Data model overview'
 ---
 
-Ugoite treats operator-controlled files as the persistence boundary. A **Space** is a portable ownership boundary below the configured storage root and an Iceberg namespace. Apache Iceberg owns one append-only table per stable Form ID.
+Ugoite treats user-owned Space files as the persistence boundary. A **Space** is
+a portable ownership boundary below the configured storage root and an Iceberg
+namespace. Deployment and storage operators may control that root without
+becoming the Knowledge authority. Apache Iceberg owns one append-only table per
+stable Form ID.
 
 Node-local Space locators are kept separately at
 `_ugoite/space-bindings/{space_id}.json`; they are not part of a portable

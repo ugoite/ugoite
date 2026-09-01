@@ -1,0 +1,138 @@
+schema: mitase/spec/v1
+kind: features
+namespace: search
+category: Search
+features:
+  - id: FEAT-SRCH-001
+    title: Search core
+    summary: Provide keyword search over current authorized Entry content and the authorized AssetText projection, with native fallback when derived data cannot be used. Criterion-specific proof for derived projection and fallback behavior remains pending.
+    status: implemented
+    bindings:
+      - id: core
+        role: implementation
+        facet: core
+        responsibility: Implement the exact current Entry keyword scan, authorized AssetText projection, and native fallback behavior used by the operator surfaces.
+        targets:
+          - id: search-entries
+            adapter: rust
+            path: crates/ugoite-iceberg/src/search.rs
+            selector: { kind: symbol, name: search_entries }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-001#criterion.keyword-search
+              - kind: satisfies
+                criterion: REQ-SRCH-002#criterion.current-entry-scan
+      - id: server
+        role: operation
+        facet: backend
+        responsibility: Expose the Search HTTP operations through the backend adapter; Space authorization remains the security requirement owned by the unmigrated Security domain.
+        targets:
+          - id: search-handler
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: search_entries }
+          - id: query-handler
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: query_entries }
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep the shipped Search API, route, and advanced-query builder in the canonical Search feature artifact graph.
+        targets:
+          - id: search-api
+            adapter: typescript
+            path: frontend/src/lib/search-api.ts
+            selector: { kind: symbol, name: searchApi }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-004#criterion.keyword-first-route
+          - id: search-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/search.tsx
+            selector: { kind: symbol, name: SpaceSearchRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-004#criterion.keyword-first-route
+              - kind: satisfies
+                criterion: REQ-SRCH-005#criterion.structured-search-reuse
+          - id: advanced-query-builder
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/search.tsx
+            selector: { kind: symbol, name: buildAdvancedSearchQuery }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-005#criterion.structured-search-reuse
+      - id: service
+        role: operation
+        facet: service
+        responsibility: Keep the Search service operations connected to the canonical implementation and operator surfaces.
+        targets:
+          - id: keyword-service
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: search_entries }
+          - id: query-service
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: query_entries }
+      - id: cli
+        role: operation
+        facet: cli
+        responsibility: Expose the Search keyword and structured query capabilities through the Ugoite CLI operator surface.
+        targets:
+          - id: keyword-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/search.rs
+            selector: { kind: symbol, name: run }
+          - id: query-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/index.rs
+            selector: { kind: symbol, name: query_cmd }
+      - id: contract
+        role: contract-source
+        facet: api
+        responsibility: Define the authoritative Search HTTP operation exposed by the Rust server.
+        owns:
+          - id: openapi-source
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: file }
+        targets:
+          - id: search-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/search' }
+          - id: query-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/query' }
+    contracts:
+      - id: keyword-search
+        kind: http
+        source: FEAT-SRCH-001#binding.contract/target.search-contract
+        participants:
+          - target: FEAT-SRCH-001#binding.service/target.keyword-service
+            role: service
+          - target: FEAT-SRCH-001#binding.server/target.search-handler
+            role: backend
+          - target: FEAT-SRCH-001#binding.frontend/target.search-api
+            role: client
+          - target: FEAT-SRCH-001#binding.frontend/target.search-route
+            role: route
+          - target: FEAT-SRCH-001#binding.cli/target.keyword-command
+            role: operator
+        guarantees: [REQ-SRCH-001#criterion.keyword-search]
+      - id: structured-query
+        kind: http
+        source: FEAT-SRCH-001#binding.contract/target.query-contract
+        participants:
+          - target: FEAT-SRCH-001#binding.service/target.query-service
+            role: service
+          - target: FEAT-SRCH-001#binding.server/target.query-handler
+            role: backend
+          - target: FEAT-SRCH-001#binding.frontend/target.search-api
+            role: client
+          - target: FEAT-SRCH-001#binding.cli/target.query-command
+            role: operator
+        guarantees: [REQ-SRCH-006#criterion.query-operation]

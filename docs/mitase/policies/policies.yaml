@@ -1,0 +1,718 @@
+schema: mitase/spec/v1
+kind: policies
+namespace: product
+category: Implementation Policies
+policies:
+  - id: POL-000
+    title: Foundation Authority and Precedence
+    summary: Foundation authority governs every migrated policy and cannot be displaced by implementation or experience preferences.
+    description: The user-owned Knowledge and stable-authority Foundation is the highest-order governance boundary for this repository. Product, runtime, adapter, and experience choices remain subordinate to it and must not create a second Knowledge authority.
+    rules:
+      - id: foundation-precedence
+        level: must
+        statement: Foundation authority and user-owned Knowledge take precedence over lower-level product, runtime, adapter, and experience choices; no migrated Policy may contradict or bypass that boundary.
+        governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation]
+        applies_to: { roles: [configuration, documentation, implementation, verification] }
+    bindings:
+      - id: foundation-precedence-guard
+        role: evidence
+        facet: authority
+        responsibility: Record the permanent v0.1 Foundation boundaries that govern lower-level product and implementation choices.
+        targets:
+          - id: foundation-precedence-evidence
+            adapter: declared
+            path: docs/spec/versions/v0.1.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-000#rule.foundation-precedence
+  - id: POL-001
+    title: Storage and Query Portability
+    summary: Keep storage and query surfaces portable and vendor-neutral.
+    description: This policy keeps storage layouts, SQL capabilities, and indexing contracts portable across backends and deployment environments. It protects user freedom by favoring open abstractions that can be reused, audited, and evolved without trapping data or query workflows inside a single provider.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy keeps storage layouts, SQL capabilities, and indexing contracts portable across backends and deployment environments. It protects user freedom by favoring open abstractions that can be reused, audited, and evolved without trapping data or query workflows inside a single provider.
+        governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+    bindings:
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the canonical architecture and data portability references for this policy.
+        targets:
+          - id: architecture-overview
+            adapter: declared
+            path: docs/spec/architecture/overview.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-001#rule.governance }]
+          - id: data-model-overview
+            adapter: declared
+            path: docs/spec/data-model/overview.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-001#rule.governance }]
+          - id: feature-sql
+            adapter: declared
+            path: docs/spec/features/sql.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-001#rule.governance }]
+          - id: sql-sessions
+            adapter: declared
+            path: docs/spec/data-model/sql-sessions.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-001#rule.governance }]
+  - id: POL-002
+    title: Rust Core as Canonical Logic Layer
+    summary: Concentrate durable business logic in ugoite-core and reuse it from adapters.
+    description: This policy treats ugoite-core as the durable source of product logic so adapters do not drift into incompatible implementations. It supports portable architecture and continuously verifiable behavior by reusing the same core rules from backend, CLI, and future integrations.
+    rules:
+      - id: governance
+        level: must
+        statement: This policy treats ugoite-core as the durable source of product logic so adapters do not drift into incompatible implementations. It supports portable architecture and continuously verifiable behavior by reusing the same core rules from backend, CLI, and future integrations.
+        governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+    bindings:
+      - id: core-logic-boundary
+        role: evidence
+        facet: implementation-boundary
+        responsibility: Record the canonical durable-logic responsibility at the Ugoite core source.
+        targets:
+          - id: core-logic-boundary
+            adapter: declared
+            path: crates/ugoite-core/src/lib.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-002#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the architecture and API references that define the durable core logic boundary.
+        targets:
+          - id: architecture-overview
+            adapter: declared
+            path: docs/spec/architecture/overview.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-002#rule.governance }]
+          - id: architecture-decisions
+            adapter: declared
+            path: docs/spec/architecture/decisions.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-002#rule.governance }]
+          - id: api-rest
+            adapter: declared
+            path: docs/spec/api/rest.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-002#rule.governance }]
+  - id: POL-003
+    title: Minimal Node Deployment
+    summary: Optimize for low-node, serverless-oriented deployments.
+    description: This policy keeps runtime topology intentionally small so product capabilities do not depend on unnecessary always-on services. It turns the serverless-oriented philosophy into operational guidance by preferring explicit, removable infrastructure over hidden long-lived dependencies.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy keeps runtime topology intentionally small so product capabilities do not depend on unnecessary always-on services. It turns the serverless-oriented philosophy into operational guidance by preferring explicit, removable infrastructure over hidden long-lived dependencies.
+        governed_by: [PHIL-000#principle.stable-foundation, PHIL-002#principle.product-design-principle]
+    bindings:
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the deployment and CI references that define the minimal-node boundary.
+        targets:
+          - id: architecture-stack
+            adapter: declared
+            path: docs/spec/architecture/stack.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-003#rule.governance }]
+          - id: architecture-future-proofing
+            adapter: declared
+            path: docs/spec/architecture/future-proofing.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-003#rule.governance }]
+          - id: testing-cicd
+            adapter: declared
+            path: docs/spec/testing/ci-cd.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-003#rule.governance }]
+  - id: POL-004
+    title: Backend as Thin API Adapter
+    summary: Keep backend responsibility focused on protocol and orchestration boundaries.
+    description: This policy limits the backend to interface translation, orchestration, and security boundaries instead of duplicating durable business rules. It keeps deployments lighter and preserves freedom to reuse the same core behavior across multiple operator surfaces without API-layer lock-in.
+    rules:
+      - id: governance
+        level: must
+        statement: This policy limits the backend to interface translation, orchestration, and security boundaries instead of duplicating durable business rules. It keeps deployments lighter and preserves freedom to reuse the same core behavior across multiple operator surfaces without API-layer lock-in.
+        governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-002#principle.product-design-principle]
+    bindings:
+      - id: backend-adapter-boundary
+        role: evidence
+        facet: implementation-boundary
+        responsibility: Record the thin backend adapter responsibility at the server source.
+        targets:
+          - id: backend-adapter-boundary
+            adapter: declared
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-004#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the interface, REST, OpenAPI, and operator-surface references for the thin backend boundary.
+        targets:
+          - id: architecture-interface
+            adapter: declared
+            path: docs/spec/architecture/frontend-backend-interface.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-004#rule.governance }]
+          - id: api-rest
+            adapter: declared
+            path: docs/spec/api/rest.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-004#rule.governance }]
+          - id: api-openapi
+            adapter: declared
+            path: docs/spec/api/openapi.yaml
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-004#rule.governance }]
+          - id: api-surfaces
+            adapter: declared
+            path: docs/spec/api/operator-surfaces.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-004#rule.governance }]
+  - id: POL-005
+    title: CLI as First-Class Operator Surface
+    summary: Use CLI workflows to keep automation explicit, inspectable, and scriptable.
+    description: This policy keeps automation visible and scriptable by treating the CLI as a first-class operational surface rather than a secondary afterthought. It reinforces low-node operation, reusable workflows, and durable rule-based automation that can be inspected directly by users and maintainers.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy keeps automation visible and scriptable by treating the CLI as a first-class operational surface rather than a secondary afterthought. It reinforces low-node operation, reusable workflows, and durable rule-based automation that can be inspected directly by users and maintainers.
+        governed_by: [PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-002#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+    bindings:
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the CLI, operator-surface, testing, and CI references for this policy.
+        targets:
+          - id: architecture-stack
+            adapter: declared
+            path: docs/spec/architecture/stack.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-005#rule.governance }]
+          - id: api-surfaces
+            adapter: declared
+            path: docs/spec/api/operator-surfaces.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-005#rule.governance }]
+          - id: testing-strategy
+            adapter: declared
+            path: docs/spec/testing/strategy.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-005#rule.governance }]
+          - id: testing-cicd
+            adapter: declared
+            path: docs/spec/testing/ci-cd.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-005#rule.governance }]
+  - id: POL-006
+    title: Frontend Contract Discipline
+    summary: Keep frontend behavior aligned with API contracts and shared UI specifications.
+    description: This policy requires the frontend to follow shared contracts and documented UI behavior instead of inventing parallel rules in the client. It supports durable verification and trusted AI-assisted work by making contract drift visible through typed interfaces, specs, and tests.
+    rules:
+      - id: governance
+        level: must
+        statement: This policy requires the frontend to follow shared contracts and documented UI behavior instead of inventing parallel rules in the client. It supports durable verification and trusted AI-assisted work by making contract drift visible through typed interfaces, specs, and tests.
+        governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-003#principle.product-design-principle, PHIL-004#principle.product-design-principle]
+    bindings:
+      - id: frontend-contract-boundary
+        role: evidence
+        facet: implementation-boundary
+        responsibility: Record the shared Search frontend contract at its typed API boundary.
+        targets:
+          - id: frontend-contract-boundary
+            adapter: declared
+            path: frontend/src/lib/search-api.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-006#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the frontend interface and UI references for this policy.
+        targets:
+          - id: architecture-interface
+            adapter: declared
+            path: docs/spec/architecture/frontend-backend-interface.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-006#rule.governance }]
+          - id: ui-overview
+            adapter: declared
+            path: docs/spec/ui/index.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-006#rule.governance }]
+          - id: ui-pages
+            adapter: declared
+            path: docs/spec/ui/pages/space-home.yaml
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-006#rule.governance }]
+  - id: POL-007
+    title: Form and Entry Schema Governance
+    summary: Enforce stable, typed entry/form behavior through documented schema contracts.
+    description: This policy stabilizes the product's structured content model through explicit schema contracts for forms, entries, and assets. It makes the data model portable and durable by ensuring that product behavior stays tied to documented rules instead of ad hoc field handling.
+    rules:
+      - id: governance
+        level: must
+        statement: This policy stabilizes the product's structured content model through explicit schema contracts for forms, entries, and assets. It makes the data model portable and durable by ensuring that product behavior stays tied to documented rules instead of ad hoc field handling.
+        governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+    bindings:
+      - id: schema-governance-boundary
+        role: evidence
+        facet: knowledge-schema
+        responsibility: Record the typed Form and Entry schema responsibility at the durable Iceberg model.
+        targets:
+          - id: schema-governance-boundary
+            adapter: declared
+            path: crates/ugoite-iceberg/src/form.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-007#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the data-model, core-story, and UI references for typed Entry and Form schema governance.
+        targets:
+          - id: data-model-schema
+            adapter: declared
+            path: docs/spec/data-model/file-schemas.yaml
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-007#rule.governance }]
+          - id: stories-core
+            adapter: declared
+            path: docs/spec/stories/core.yaml
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-007#rule.governance }]
+          - id: ui-pages
+            adapter: declared
+            path: docs/spec/ui/index.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-007#rule.governance }]
+  - id: POL-008
+    title: Requirement-to-Test Traceability
+    summary: Require machine-readable linkage from requirement to executable tests.
+    description: This policy turns specifications into enforceable quality rules by requiring machine-readable links from requirements to tests. It strengthens trusted autonomy by ensuring that contributors and AI agents change behavior only through paths that remain continuously checkable in CI.
+    rules:
+      - id: governance
+        level: must
+        statement: This policy turns specifications into enforceable quality rules by requiring machine-readable links from requirements to tests. It strengthens trusted autonomy by ensuring that contributors and AI agents change behavior only through paths that remain continuously checkable in CI.
+        governed_by: [PHIL-000#principle.stable-foundation, PHIL-000#principle.tools-without-authority, PHIL-003#principle.product-design-principle, PHIL-004#principle.product-design-principle]
+    bindings:
+      - id: requirement-traceability-boundary
+        role: evidence
+        facet: traceability
+        responsibility: Record the bounded requirement-to-test traceability currently checked for connected Mitase criteria; repository-wide enforcement remains staged.
+        targets:
+          - id: requirement-traceability-boundary
+            adapter: declared
+            path: scripts/ci/mitase-check.sh
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-008#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the testing and error-handling references for requirement-to-test traceability.
+        targets:
+          - id: testing-strategy
+            adapter: declared
+            path: docs/spec/testing/strategy.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-008#rule.governance }]
+          - id: testing-cicd
+            adapter: declared
+            path: docs/spec/testing/ci-cd.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-008#rule.governance }]
+          - id: quality-errors
+            adapter: declared
+            path: docs/spec/quality/error-handling.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-008#rule.governance }]
+  - id: POL-009
+    title: Quality Gates Before Integration
+    summary: Apply strict linting, typing, and regression gates before merging and release.
+    description: This policy enforces pre-integration quality gates so regressions are caught before they become shared product behavior. It operationalizes rule-based development and trusted constraints by making type checks, lint rules, and regression suites mandatory for change integration.
+    rules:
+      - id: governance
+        level: must
+        statement: This policy enforces pre-integration quality gates so regressions are caught before they become shared product behavior. It operationalizes rule-based development and trusted constraints by making type checks, lint rules, and regression suites mandatory for change integration.
+        governed_by: [PHIL-000#principle.stable-foundation, PHIL-003#principle.product-design-principle, PHIL-004#principle.product-design-principle]
+    bindings:
+      - id: integration-quality-gate
+        role: enforcement
+        facet: integration
+        responsibility: Enforce the repository quality gate before integration through the required CI workflow.
+        targets:
+          - id: integration-quality-gate
+            adapter: declared
+            path: .github/workflows/ci.yml
+            selector: { kind: file }
+            claims:
+              - kind: enforces
+                rule: POL-009#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the CI, testing, and product-metrics references for pre-integration quality gates.
+        targets:
+          - id: testing-cicd
+            adapter: declared
+            path: docs/spec/testing/ci-cd.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-009#rule.governance }]
+          - id: testing-strategy
+            adapter: declared
+            path: docs/spec/testing/strategy.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-009#rule.governance }]
+          - id: product-metrics
+            adapter: declared
+            path: docs/spec/product/success-metrics.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-009#rule.governance }]
+  - id: POL-010
+    title: AI Under Trusted Tooling
+    summary: Allow AI autonomy only inside trusted tools, validated interfaces, and audit paths.
+    description: This policy defines the boundary for AI-assisted work by requiring trusted tools, validated interfaces, and auditable execution paths. It exists to preserve high autonomy only where risk remains observable, reviewable, and constrained by explicit contracts.
+    rules:
+      - id: governance
+        level: must
+        statement: This policy defines the boundary for AI-assisted work by requiring trusted tools, validated interfaces, and auditable execution paths. It exists to preserve high autonomy only where risk remains observable, reviewable, and constrained by explicit contracts.
+        governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-004#principle.product-design-principle]
+    bindings:
+      - id: trusted-ai-boundary
+        role: evidence
+        facet: ai-boundary
+        responsibility: Record the trusted AI runtime boundary at the serializable agent runtime.
+        targets:
+          - id: trusted-ai-boundary
+            adapter: declared
+            path: crates/ugoite-konase/src/agent_runtime.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-010#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the security, future-proofing, and operator-surface references for the trusted AI boundary.
+        targets:
+          - id: security-overview
+            adapter: declared
+            path: docs/spec/security/overview.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-010#rule.governance }]
+          - id: security-sandbox
+            adapter: declared
+            path: docs/spec/security/sandbox.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-010#rule.governance }]
+          - id: architecture-future-proofing
+            adapter: declared
+            path: docs/spec/architecture/future-proofing.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-010#rule.governance }]
+          - id: api-surfaces
+            adapter: declared
+            path: docs/spec/api/operator-surfaces.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-010#rule.governance }]
+  - id: POL-011
+    title: Security and Isolation by Default
+    summary: Design for secure defaults, bounded execution, and explicit trust boundaries.
+    description: This policy makes secure defaults and explicit trust boundaries part of the baseline product architecture instead of optional hardening. It supports minimal runtime topology and trusted AI operation by constraining what code can do, where it can run, and how risk is surfaced.
+    rules:
+      - id: governance
+        level: must
+        statement: This policy makes secure defaults and explicit trust boundaries part of the baseline product architecture instead of optional hardening. It supports minimal runtime topology and trusted AI operation by constraining what code can do, where it can run, and how risk is surfaced.
+        governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-002#principle.product-design-principle, PHIL-004#principle.product-design-principle]
+    bindings:
+      - id: security-isolation-boundary
+        role: evidence
+        facet: security
+        responsibility: Record server security and isolation boundaries at the authenticated adapter surface.
+        targets:
+          - id: security-isolation-boundary
+            adapter: declared
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-011#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the security isolation and MCP references for this policy.
+        targets:
+          - id: security-overview
+            adapter: declared
+            path: docs/spec/security/overview.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-011#rule.governance }]
+          - id: security-sandbox
+            adapter: declared
+            path: docs/spec/security/sandbox.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-011#rule.governance }]
+          - id: api-mcp
+            adapter: declared
+            path: docs/spec/api/mcp.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-011#rule.governance }]
+  - id: POL-012
+    title: Search and Form References as Core Knowledge Operations
+    summary: Treat search and typed Form references as first-class capabilities.
+    description: This policy elevates retrieval and Form-owned cross-reference behavior into core product capabilities rather than optional convenience features. It supports user freedom and durable knowledge rules by making searchable, typed structure part of the canonical system design.
+    rules:
+      - id: governance
+        level: must
+        statement: This policy elevates retrieval and Form-owned cross-reference behavior into core product capabilities rather than optional convenience features. It supports user freedom and durable knowledge rules by making searchable, typed structure part of the canonical system design.
+        governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+    bindings:
+      - id: search-knowledge-boundary
+        role: evidence
+        facet: knowledge-operation
+        responsibility: Record the current authorized Search and derived-state boundary at the core search implementation.
+        targets:
+          - id: search-knowledge-boundary
+            adapter: declared
+            path: crates/ugoite-iceberg/src/search.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-012#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the feature registry, advanced-story, and REST references for Search and Form knowledge operations.
+        targets:
+          - id: features-registry
+            adapter: declared
+            path: docs/spec/features/index.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-012#rule.governance }]
+          - id: stories-advanced
+            adapter: declared
+            path: docs/spec/stories/advanced.yaml
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-012#rule.governance }]
+          - id: api-rest
+            adapter: declared
+            path: docs/spec/api/rest.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-012#rule.governance }]
+  - id: POL-013
+    title: Spec-Driven Product Iteration
+    summary: Evolve product behavior through explicit specifications before implementation drift.
+    description: This policy requires product evolution to move through explicit specs and shared documentation before implementation fragments into local decisions. It keeps iteration aligned with reusable rules so behavior changes remain reviewable, explainable, and continuously validated.
+    rules:
+      - id: governance
+        level: must
+        statement: This policy requires product evolution to move through explicit specs and shared documentation before implementation fragments into local decisions. It keeps iteration aligned with reusable rules so behavior changes remain reviewable, explainable, and continuously validated.
+        governed_by: [PHIL-000#principle.stable-foundation, PHIL-003#principle.product-design-principle]
+    bindings:
+      - id: specification-first-boundary
+        role: evidence
+        facet: governance
+        responsibility: Record the permanent specification map and its specification-first change boundary.
+        targets:
+          - id: specification-first-evidence
+            adapter: declared
+            path: docs/spec/index.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-013#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the core, advanced, metrics, and experimental references for specification-first product iteration.
+        targets:
+          - id: stories-core
+            adapter: declared
+            path: docs/spec/stories/core.yaml
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-013#rule.governance }]
+          - id: stories-advanced
+            adapter: declared
+            path: docs/spec/stories/advanced.yaml
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-013#rule.governance }]
+          - id: product-metrics
+            adapter: declared
+            path: docs/spec/product/success-metrics.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-013#rule.governance }]
+          - id: stories-experimental
+            adapter: declared
+            path: docs/spec/stories/experimental.yaml
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-013#rule.governance }]
+  - id: POL-014
+    title: Compatibility Through Explicit Evolution
+    summary: Manage change using explicit deprecation and migration guidance across layers.
+    description: >-
+      This policy manages change through visible evolution rather than silent
+      breakage between layers. For the v0.1 Foundation Freeze, the protected
+      compatibility boundary is semantic: user-owned Knowledge recoverability,
+      unique catalog authority, append-only Knowledge history, and thin adapter
+      boundaries must survive later implementations. Physical encodings, crate
+      APIs, and UI internals are not frozen by that promise. Changes that can
+      affect the semantic boundary require the v0.1 Knowledge Compatibility
+      Review and canonical fixture evidence before merge.
+    rules:
+      - id: governance
+        level: must
+        statement: >-
+          This policy manages change through visible evolution rather than
+          silent breakage between layers. For the v0.1 Foundation Freeze, the
+          protected compatibility boundary is semantic: user-owned Knowledge
+          recoverability, unique catalog authority, append-only Knowledge
+          history, and thin adapter boundaries must survive later
+          implementations. Physical encodings, crate APIs, and UI internals
+          are not frozen by that promise. Changes that can affect the semantic
+          boundary require the v0.1 Knowledge Compatibility Review and
+          canonical fixture evidence before merge.
+        governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+    bindings:
+      - id: compatibility-review-gate
+        role: enforcement
+        facet: compatibility
+        responsibility: Enforce the explicit Knowledge compatibility review at the trusted repository validator.
+        targets:
+          - id: compatibility-review-gate
+            adapter: declared
+            path: tools/knowledge_compatibility.ts
+            selector: { kind: file }
+            claims:
+              - kind: enforces
+                rule: POL-014#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the architecture, API, directory, and compatibility references for explicit evolution.
+        targets:
+          - id: architecture-decisions
+            adapter: declared
+            path: docs/spec/architecture/decisions.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-014#rule.governance }]
+          - id: architecture-future-proofing
+            adapter: declared
+            path: docs/spec/architecture/future-proofing.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-014#rule.governance }]
+          - id: api-openapi
+            adapter: declared
+            path: docs/spec/api/openapi.yaml
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-014#rule.governance }]
+          - id: data-model-directory
+            adapter: declared
+            path: docs/spec/data-model/directory-structure.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-014#rule.governance }]
+          - id: knowledge-compatibility
+            adapter: declared
+            path: docs/spec/versions/v0.1-knowledge-compatibility.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-014#rule.governance }]
+  - id: POL-015
+    title: MCP as Governed AI Operator Surface
+    summary: Position MCP as the AI-facing operator surface with explicit scope and trust boundaries.
+    description: This policy defines MCP as the operator surface for AI clients when they need structured, protocol-level access to Ugoite resources inside explicit trust boundaries. It keeps the current small semantic facade visible, separates AI-facing access from CLI-driven human automation and REST application integration, and requires expansion through documented, reviewable contracts.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy defines MCP as the operator surface for AI clients when they need structured, protocol-level access to Ugoite resources inside explicit trust boundaries. It keeps the current small semantic facade visible, separates AI-facing access from CLI-driven human automation and REST application integration, and requires expansion through documented, reviewable contracts.
+        governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-004#principle.product-design-principle]
+    bindings:
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the MCP and operator-surface references for the governed AI operator boundary.
+        targets:
+          - id: api-mcp
+            adapter: declared
+            path: docs/spec/api/mcp.md
+            selector: { kind: file }
+            claims:
+              - kind: documents
+                anchor: POL-015#rule.governance
+          - id: api-surfaces
+            adapter: declared
+            path: docs/spec/api/operator-surfaces.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-015#rule.governance }]
+  - id: POL-016
+    title: v0.1 Knowledge Compatibility Floor
+    summary: Preserve v0.1 Knowledge meaning while allowing implementation evolution.
+    description: The v0.1 Knowledge compatibility floor freezes ownership, authority, append-only history, and adapter authority semantics. It does not freeze the physical Catalog Head encoding, Iceberg object layout, crate APIs, or frontend internals. A breaking semantic change requires an explicit compatibility review and must preserve the canonical v0.1 Knowledge fixture or establish a new versioned contract before it can merge.
+    rules:
+      - id: governance
+        level: must
+        statement: The v0.1 Knowledge compatibility floor freezes ownership, authority, append-only history, and adapter authority semantics. It does not freeze the physical Catalog Head encoding, Iceberg object layout, crate APIs, or frontend internals. A breaking semantic change requires an explicit compatibility review and must preserve the canonical v0.1 Knowledge fixture or establish a new versioned contract before it can merge.
+        governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+    bindings:
+      - id: compatibility-fixture
+        role: evidence
+        facet: compatibility
+        responsibility: Record the canonical v0.1 Knowledge fixture as exact compatibility evidence.
+        targets:
+          - id: compatibility-fixture
+            adapter: declared
+            path: crates/ugoite-iceberg/tests/fixtures/v0.1-knowledge.json
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-016#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the v0.1 compatibility and Space Catalog references for the Knowledge compatibility floor.
+        targets:
+          - id: knowledge-compatibility
+            adapter: declared
+            path: docs/spec/versions/v0.1-knowledge-compatibility.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-016#rule.governance }]
+          - id: space-catalog
+            adapter: declared
+            path: docs/spec/architecture/space-catalog.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-016#rule.governance }]
+  - id: POL-017
+    title: Durable Knowledge Portability Boundary
+    summary: Keep durable Knowledge recoverable and semantically independent of a single provider.
+    description: Durable Knowledge recovery, meaning, and ownership must not depend on a single storage or service provider becoming its authority. Implementation abstractions remain context-dependent, but a provider cannot become the durable Knowledge boundary.
+    rules:
+      - id: knowledge-portability
+        level: must
+        statement: Durable Knowledge recovery, meaning, and ownership must not depend on a single provider authority.
+        governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle]
+    bindings:
+      - id: knowledge-portability-contract
+        role: evidence
+        facet: portability
+        responsibility: Record the provider-independent recovery and authority contract for durable Knowledge.
+        targets:
+          - id: knowledge-portability-contract
+            adapter: declared
+            path: docs/spec/versions/v0.1-knowledge-compatibility.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-017#rule.knowledge-portability

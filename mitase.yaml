@@ -1,0 +1,116 @@
+schema: mitase/config/v1
+workspace:
+  spec_roots: [docs/mitase]
+  excludes:
+    - target/**
+    - node_modules/**
+    - frontend/.output/**
+    - frontend/coverage/**
+    - docsite/dist/**
+    - e2e/test-results/**
+inventory:
+  active_profile: default
+  profiles:
+    - id: default
+      providers:
+        rust:
+          mode: test
+          include_tests: true
+        typescript:
+          roots:
+            - frontend/src/lib/entry-api.ts
+            - frontend/src/lib/form-api.ts
+            - frontend/src/lib/search-api.ts
+            - frontend/src/routes/spaces/[space_id]/search.tsx
+            - frontend/src/routes/spaces/[space_id]/search.test.tsx
+            - e2e/search-ui.test.ts
+        openapi:
+          roots:
+            - crates/ugoite-server/src/openapi.json
+        declared:
+          roots:
+            - AGENTS.md
+            - docs/spec/index.md
+            - docs/mitase/philosophies/foundation.yaml
+            - docs/mitase/policies/policies.yaml
+            - docs/mitase/requirements/search.yaml
+            - docs/mitase/requirements/entries.yaml
+            - docs/mitase/requirements/forms.yaml
+            - docs/mitase/features/search.yaml
+            - docs/mitase/features/entries.yaml
+            - docs/mitase/features/forms.yaml
+            - docs/spec/philosophy/foundation.yaml
+            - docs/spec/policies/policies.yaml
+            - docs/spec/requirements/search.yaml
+            - docs/spec/features/search.yaml
+            - docs/spec/requirements/entry.yaml
+            - docs/spec/features/entries.yaml
+            - docs/spec/requirements/form.yaml
+            - docs/spec/features/forms.yaml
+            - docs/spec/versions/v0.1.md
+            - docs/spec/versions/v0.1-knowledge-compatibility.md
+            - docs/spec/architecture/overview.md
+            - docs/spec/architecture/decisions.md
+            - docs/spec/architecture/stack.md
+            - docs/spec/architecture/future-proofing.md
+            - docs/spec/architecture/frontend-backend-interface.md
+            - docs/spec/architecture/space-catalog.md
+            - docs/spec/api/rest.md
+            - docs/spec/api/openapi.yaml
+            - docs/spec/api/operator-surfaces.md
+            - docs/spec/api/mcp.md
+            - docs/spec/data-model/overview.md
+            - docs/spec/data-model/sql-sessions.md
+            - docs/spec/data-model/directory-structure.md
+            - docs/spec/data-model/file-schemas.yaml
+            - docs/spec/features/index.md
+            - docs/spec/features/sql.md
+            - docs/spec/testing/strategy.md
+            - docs/spec/testing/ci-cd.md
+            - docs/spec/product/success-metrics.md
+            - docs/spec/quality/error-handling.md
+            - docs/spec/security/overview.md
+            - docs/spec/security/sandbox.md
+            - docs/spec/stories/core.yaml
+            - docs/spec/stories/advanced.yaml
+            - docs/spec/stories/experimental.yaml
+            - docs/spec/ui/index.md
+            - docs/spec/ui/pages/space-home.yaml
+            - .github/workflows/ci.yml
+            - mise.toml
+            - scripts/ci/mitase-check.sh
+            - tools/knowledge_compatibility.ts
+            - crates/ugoite-core/src/lib.rs
+            - crates/ugoite-server/src/lib.rs
+            - crates/ugoite-iceberg/src/form.rs
+            - crates/ugoite-iceberg/src/search.rs
+            - crates/ugoite-konase/src/agent_runtime.rs
+            - frontend/src/lib/search-api.ts
+            - crates/ugoite-iceberg/tests/fixtures/v0.1-knowledge.json
+validation:
+  preset: strict
+  readiness:
+    target: traceable
+    probes:
+      implemented_criteria:
+        - criterion: REQ-SRCH-002#criterion.current-entry-scan
+          level: verifiable
+        - criterion: REQ-ENTRY-001#criterion.creation
+          level: verifiable
+        - criterion: REQ-FORM-002#criterion.preserve-physical-fields
+          level: verifiable
+    limits: { max_ownership_scope_units: 64 }
+  changed:
+    baseline: { strategy: parent }
+    require_owned_changes: false
+verification:
+  runners:
+    cargo-test-integration:
+      executable: cargo
+      arguments: [test, -p, "{package}", --test, "{harness}", "{test}", --, --exact]
+    cargo-test-unit:
+      executable: cargo
+      arguments: [test, -p, "{package}", "{test}", --, --exact]
+    frontend-vitest:
+      executable: deno
+      arguments: [task, --cwd, frontend, test, "src/routes/spaces/[space_id]/search.test.tsx", --testNamePattern, "{test}"]
