@@ -2,7 +2,7 @@
 
 ## Product intent
 
-Ugoite keeps operator-owned Space directories as the source of truth. Preserve portability, append-only history, and the ability to use the CLI locally without a mandatory server. The current browser is server-backed; browser-local storage plus optional sync is planned, not shipped.
+Ugoite keeps user-owned Knowledge in portable Space directories. Deployment and storage operators may manage where that Knowledge is hosted, but they do not become its authority. Preserve portability, append-only history, and the ability to use the CLI locally without a mandatory server. The current browser is server-backed; browser-local storage plus optional sync is planned, not shipped.
 
 ## Architecture
 

@@ -261,7 +261,7 @@ policies:
   description: |
     This policy manages change through visible evolution rather than silent
     breakage between layers. For the v0.1 Foundation Freeze, the protected
-    compatibility boundary is semantic: operator-owned Space recoverability,
+    compatibility boundary is semantic: user-owned Space recoverability,
     unique catalog authority, append-only Knowledge history, and thin adapter
     boundaries must survive later implementations. Physical encodings, crate
     APIs, and UI internals are not frozen by that promise. Changes that can

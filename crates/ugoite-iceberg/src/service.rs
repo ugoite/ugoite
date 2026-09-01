@@ -1525,10 +1525,6 @@ impl UgoiteService {
         form::list_forms(&self.operator, &self.workspace_path(space_id)).await
     }
 
-    pub async fn list_column_types(&self) -> Result<Vec<String>> {
-        form::list_column_types().await
-    }
-
     pub async fn list_forms_authorized_for_principals(
         &self,
         space_id: &str,

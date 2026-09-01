@@ -182,10 +182,14 @@ requirements:
     priority: medium
     status: implemented
     criteria:
-      - id: asset-reference
+      - id: asset-reference-return
         kind: behavior
         statement: Asset upload returns a typed AssetReference suitable for an asset_reference Form field.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: asset-reference-field-only
+        kind: behavior
+        statement: AssetReference values are accepted only by asset_reference Form fields and are rejected by other field types.
+        governed_by: [POL-007#rule.governance, POL-014#rule.governance]
   - id: REQ-ENTRY-009
     title: Asset reference guard
     description: Prevent deleting assets still referenced by current, non-deleted typed Form values.

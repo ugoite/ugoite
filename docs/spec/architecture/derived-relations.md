@@ -11,7 +11,7 @@ Ugoite has two sibling kinds of typed Iceberg relation:
 - a DerivedRelation is a replaceable current build computed from
   authoritative Space data.
 
-Derived data remains inside the operator-owned Space. It is not a second
+Derived data remains inside the user-owned Space. It is not a second
 database, an ACL authority, a Form, or a user-visible revision history. A
 relation is valid only when deleting it and rebuilding it from authoritative
 data restores the same kind of result.

@@ -54,10 +54,6 @@ features:
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
             selector: { kind: symbol, name: get_form }
-          - id: list-column-types
-            adapter: rust
-            path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: list_column_types }
       - id: server
         role: operation
         facet: backend
@@ -154,8 +150,6 @@ features:
         kind: http
         source: FEAT-FORM-001#binding.contract/target.types-contract
         participants:
-          - target: FEAT-FORM-001#binding.service/target.list-column-types
-            role: service
           - target: FEAT-FORM-001#binding.server/target.form-types
             role: backend
           - target: FEAT-FORM-001#binding.frontend/target.form-api

@@ -69,9 +69,21 @@ requirements:
     priority: medium
     status: implemented
     criteria:
-      - id: api-crud
+      - id: create-form
         kind: behavior
-        statement: Form definitions are available through the server Form API and participate in Entry validation.
+        statement: The server accepts creation of a Form definition.
+        governed_by: [POL-004#rule.governance, POL-007#rule.governance]
+      - id: list-forms
+        kind: behavior
+        statement: The server lists Form definitions.
+        governed_by: [POL-004#rule.governance, POL-007#rule.governance]
+      - id: retrieve-form
+        kind: behavior
+        statement: The server retrieves an individual Form definition.
+        governed_by: [POL-004#rule.governance, POL-007#rule.governance]
+      - id: reject-entry-update-with-missing-form
+        kind: behavior
+        statement: Entry updates are rejected when the referenced Form definition is missing.
         governed_by: [POL-004#rule.governance, POL-007#rule.governance]
   - id: REQ-FORM-004
     title: Extra attributes policy
@@ -82,6 +94,10 @@ requirements:
       - id: extra-attributes
         kind: behavior
         statement: Form extra-attribute policy is enforced when an Entry is written.
+        governed_by: [POL-007#rule.governance]
+      - id: policy-declaration
+        kind: behavior
+        statement: A Form definition declares how extra Markdown attributes are handled.
         governed_by: [POL-007#rule.governance]
     bindings:
       - id: extra-attributes-test
@@ -184,6 +200,10 @@ requirements:
       - id: reserved-identity-forms
         kind: behavior
         statement: User and UserGroup are reserved metadata Form names when the identity metadata contract is implemented.
+        governed_by: [POL-007#rule.governance]
+      - id: reject-identity-collision
+        kind: behavior
+        statement: User-authored Forms colliding with User or UserGroup are rejected when the identity metadata contract is implemented.
         governed_by: [POL-007#rule.governance]
   - id: REQ-FORM-009
     title: Mandatory attribution metadata

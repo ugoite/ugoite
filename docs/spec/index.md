@@ -10,8 +10,9 @@ sidebar:
 
 Ugoite is a private, portable Knowledge Space for humans and AI. Its foundation
 is expressed as three boundaries: **Knowledge persists**, **Work may
-disappear**, and **Knowledge can become tools**. Operator-owned Space
-directories are authoritative; indexes, query sessions, and runtime state are
+disappear**, and **Knowledge can become tools**. User-owned Space directories
+are authoritative; deployment and storage operators may host them without
+becoming Knowledge authority. Indexes, query sessions, and runtime state are
 derived or disposable.
 
 ## Current boundary
@@ -39,10 +40,10 @@ derived or disposable.
 
 ## Read the specification map
 
-The specification is organized by the question it answers. Migrated domains
-use the canonical Mitase graph under `docs/mitase`; unmigrated domains keep
+The specification is organized by the question it answers. The migrated slice
+uses the schema-native Mitase graph under `docs/mitase`; unmigrated domains keep
 their existing source files and machine-readable registries. This page makes
-the reading order and migration boundary explicit.
+the reading order and staged authority boundary explicit.
 
 Behavior changes are specified alongside their implementation and verification
 evidence. When evidence is incomplete, the gap remains explicit rather than
@@ -50,20 +51,20 @@ rewriting the requirement to fit the available proof.
 
 ## Migrated domain authority
 
-Foundation and policy governance are authoritative in the canonical Mitase
-records at `docs/mitase/philosophies/foundation.yaml` and
-`docs/mitase/policies/policies.yaml`. The legacy Foundation, Policy,
-Requirement, and Feature YAML remain read-only migration evidence; maintainers
-review each migration unit against its snapshot before changing authority.
-Search, Entry, and Form records migrated by the current dogfood slice likewise
-use `docs/mitase`; other requirement and feature domains remain authoritative
-in their existing `docs/spec` records until migrated.
+Foundation, Policy, Search, Entry, and Form are represented in the canonical
+Mitase records at `docs/mitase` for the current dogfood slice. Their authority
+cutover remains staged until changed-ownership enforcement can be scoped to the
+migrated slice. The legacy Foundation, Policy, Requirement, and Feature YAML
+remain migration evidence during that transition; maintainers review each
+migration unit against its source before completing the cutover. Other
+requirement and feature domains remain authoritative in their existing
+`docs/spec` records until migrated.
 
 `docs/mitase` is an intentional Ugoite specification surface for the Mitase
 schema, not a second product authority. As legacy registry machinery and
 unmigrated domains are retired, their corresponding `docs/spec` records may be
-removed after the equivalent canonical records and evidence have been
-reviewed.
+removed after the equivalent canonical records, evidence, and scoped ownership
+rules have been reviewed.
 
 - **Core model:** [data model](data-model/overview.md),
   [features](features/index.md), and the canonical machine-readable Foundation
@@ -83,8 +84,9 @@ reviewed.
   [versions](versions/index.md).
 
 Use the [operator guides](../guide/index.md) for procedures. This section
-describes the repository specification boundary; migrated governance is
-authored in `docs/mitase`, while unmigrated domains remain in `docs/spec`.
+describes the repository specification boundary; the migrated dogfood
+representation is authored in `docs/mitase`, while unmigrated domains remain
+in `docs/spec` until their authority cutover is complete.
 
 ## Module matrix
 

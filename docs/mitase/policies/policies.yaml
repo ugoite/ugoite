@@ -32,7 +32,7 @@ policies:
     description: This policy keeps storage layouts, SQL capabilities, and indexing contracts portable across backends and deployment environments. It protects user freedom by favoring open abstractions that can be reused, audited, and evolved without trapping data or query workflows inside a single provider.
     rules:
       - id: governance
-        level: unspecified
+        level: should
         statement: This policy keeps storage layouts, SQL capabilities, and indexing contracts portable across backends and deployment environments. It protects user freedom by favoring open abstractions that can be reused, audited, and evolved without trapping data or query workflows inside a single provider.
         governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
     bindings:
@@ -109,7 +109,7 @@ policies:
     description: This policy keeps runtime topology intentionally small so product capabilities do not depend on unnecessary always-on services. It turns the serverless-oriented philosophy into operational guidance by preferring explicit, removable infrastructure over hidden long-lived dependencies.
     rules:
       - id: governance
-        level: unspecified
+        level: should
         statement: This policy keeps runtime topology intentionally small so product capabilities do not depend on unnecessary always-on services. It turns the serverless-oriented philosophy into operational guidance by preferring explicit, removable infrastructure over hidden long-lived dependencies.
         governed_by: [PHIL-000#principle.stable-foundation, PHIL-002#principle.product-design-principle]
     bindings:
@@ -221,7 +221,7 @@ policies:
     description: This policy requires the frontend to follow shared contracts and documented UI behavior instead of inventing parallel rules in the client. It supports durable verification and trusted AI-assisted work by making contract drift visible through typed interfaces, specs, and tests.
     rules:
       - id: governance
-        level: unspecified
+        level: must
         statement: This policy requires the frontend to follow shared contracts and documented UI behavior instead of inventing parallel rules in the client. It supports durable verification and trusted AI-assisted work by making contract drift visible through typed interfaces, specs, and tests.
         governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-003#principle.product-design-principle, PHIL-004#principle.product-design-principle]
     bindings:
@@ -305,7 +305,7 @@ policies:
     description: This policy turns specifications into enforceable quality rules by requiring machine-readable links from requirements to tests. It strengthens trusted autonomy by ensuring that contributors and AI agents change behavior only through paths that remain continuously checkable in CI.
     rules:
       - id: governance
-        level: unspecified
+        level: must
         statement: This policy turns specifications into enforceable quality rules by requiring machine-readable links from requirements to tests. It strengthens trusted autonomy by ensuring that contributors and AI agents change behavior only through paths that remain continuously checkable in CI.
         governed_by: [PHIL-000#principle.stable-foundation, PHIL-000#principle.tools-without-authority, PHIL-003#principle.product-design-principle, PHIL-004#principle.product-design-principle]
     bindings:
@@ -389,7 +389,7 @@ policies:
     description: This policy defines the boundary for AI-assisted work by requiring trusted tools, validated interfaces, and auditable execution paths. It exists to preserve high autonomy only where risk remains observable, reviewable, and constrained by explicit contracts.
     rules:
       - id: governance
-        level: unspecified
+        level: must
         statement: This policy defines the boundary for AI-assisted work by requiring trusted tools, validated interfaces, and auditable execution paths. It exists to preserve high autonomy only where risk remains observable, reviewable, and constrained by explicit contracts.
         governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-004#principle.product-design-principle]
     bindings:
@@ -436,7 +436,7 @@ policies:
     description: This policy makes secure defaults and explicit trust boundaries part of the baseline product architecture instead of optional hardening. It supports minimal runtime topology and trusted AI operation by constraining what code can do, where it can run, and how risk is surfaced.
     rules:
       - id: governance
-        level: unspecified
+        level: must
         statement: This policy makes secure defaults and explicit trust boundaries part of the baseline product architecture instead of optional hardening. It supports minimal runtime topology and trusted AI operation by constraining what code can do, where it can run, and how risk is surfaced.
         governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-002#principle.product-design-principle, PHIL-004#principle.product-design-principle]
     bindings:
@@ -520,7 +520,7 @@ policies:
     description: This policy requires product evolution to move through explicit specs and shared documentation before implementation fragments into local decisions. It keeps iteration aligned with reusable rules so behavior changes remain reviewable, explainable, and continuously validated.
     rules:
       - id: governance
-        level: unspecified
+        level: must
         statement: This policy requires product evolution to move through explicit specs and shared documentation before implementation fragments into local decisions. It keeps iteration aligned with reusable rules so behavior changes remain reviewable, explainable, and continuously validated.
         governed_by: [PHIL-000#principle.stable-foundation, PHIL-003#principle.product-design-principle]
     bindings:
@@ -636,7 +636,7 @@ policies:
     description: This policy defines MCP as the operator surface for AI clients when they need structured, protocol-level access to Ugoite resources inside explicit trust boundaries. It keeps the current small semantic facade visible, separates AI-facing access from CLI-driven human automation and REST application integration, and requires expansion through documented, reviewable contracts.
     rules:
       - id: governance
-        level: unspecified
+        level: must
         statement: This policy defines MCP as the operator surface for AI clients when they need structured, protocol-level access to Ugoite resources inside explicit trust boundaries. It keeps the current small semantic facade visible, separates AI-facing access from CLI-driven human automation and REST application integration, and requires expansion through documented, reviewable contracts.
         governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-004#principle.product-design-principle]
     bindings:
@@ -649,7 +649,11 @@ policies:
             adapter: declared
             path: docs/spec/api/mcp.md
             selector: { kind: file }
-            claims: [{ kind: documents, anchor: POL-015#rule.governance }]
+            claims:
+              - kind: documents
+                anchor: POL-015#rule.governance
+              - kind: evidences
+                anchor: POL-015#rule.governance
           - id: api-surfaces
             adapter: declared
             path: docs/spec/api/operator-surfaces.md

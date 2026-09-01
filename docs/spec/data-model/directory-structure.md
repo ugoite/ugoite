@@ -130,8 +130,9 @@ latest non-conflicting revision provides current Entry responses.
 
 ## Portability
 
-A complete Space prefix can be backed up or moved as an operator-controlled,
-portable unit. Stop writes and use a complete prefix copy or backend-native
+A complete Space prefix can be backed up or moved as a user-owned, portable
+unit through storage controlled by the user or their chosen operator. Stop
+writes and use a complete prefix copy or backend-native
 consistent snapshot; object listing must not be used to reconstruct Catalog
 Head or Iceberg state. Node control state and Space storage bindings are
 node-local and are not part of a

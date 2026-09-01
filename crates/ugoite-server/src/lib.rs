@@ -55,7 +55,7 @@ use ugoite_iceberg::{
         AuthorizationState, Authorizer, HumanApproval, HumanApprovalIssue, ResourceKind,
         ResourceRef,
     },
-    saved_sql,
+    form, saved_sql,
     service::{
         ApplyOperation, SpacePermission, UgoiteService, MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS,
     },
@@ -9210,9 +9210,7 @@ async fn form_types(
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(
         serde_json::to_value(
-            state
-                .service
-                .list_column_types()
+            form::list_column_types()
                 .await
                 .map_err(ApiError::from_core)?,
         )

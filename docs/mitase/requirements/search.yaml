@@ -89,6 +89,10 @@ requirements:
         kind: behavior
         statement: The Search route presents direct keyword search as the default experience.
         governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+      - id: no-prerequisite-query-management
+        kind: behavior
+        statement: Direct keyword search is usable without requiring users to create saved queries or write SQL first.
+        governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
     bindings:
       - id: frontend-test
         role: verification
@@ -115,6 +119,10 @@ requirements:
       - id: structured-search-reuse
         kind: behavior
         statement: Advanced search compiles structured conditions into the shared query path and keeps the resulting search reusable through human-readable history.
+        governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+      - id: history-not-raw-query-workflow
+        kind: behavior
+        statement: Search history remains human-readable and reusable without making raw query management the primary workflow.
         governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
     bindings:
       - id: frontend-test
