@@ -11109,6 +11109,7 @@ mod authentication_regression_tests {
     async fn production_rest_fixture(
         slug: &str,
         principal_id: Uuid,
+        seed_entry_form: bool,
     ) -> anyhow::Result<(ProductionRestClient, String, Uuid)> {
         let state = AppState::new_for_tests(format!(
             "memory://server-issue-2075-production-auth-{}",
@@ -11125,17 +11126,19 @@ mod authentication_regression_tests {
             .identity
             .seed_test_recovery_accounts(&[(principal_id, space_uid, principal_id)])
             .await?;
-        state
-            .service
-            .upsert_form(
-                &space_id,
-                &json!({
-                    "name": "Entry",
-                    "fields": {"Body": {"type": "markdown"}},
-                    "allow_extra_attributes": "deny"
-                }),
-            )
-            .await?;
+        if seed_entry_form {
+            state
+                .service
+                .upsert_form(
+                    &space_id,
+                    &json!({
+                        "name": "Entry",
+                        "fields": {"Body": {"type": "markdown"}},
+                        "allow_extra_attributes": "deny"
+                    }),
+                )
+                .await?;
+        }
 
         let (signing_key, jwk) = agent_test_key();
         let actions = ["read", "create", "update", "delete", "share"]
@@ -11209,7 +11212,7 @@ mod authentication_regression_tests {
     {
         let principal_id = Uuid::from_u128(20751);
         let (client, space_id, _space_uid) =
-            production_rest_fixture("issue-2075-production-auth", principal_id).await?;
+            production_rest_fixture("issue-2075-production-auth", principal_id, true).await?;
         let apply_path = format!("/spaces/{space_id}/apply");
 
         let create = client
@@ -12059,53 +12062,27 @@ mod authentication_regression_tests {
     #[tokio::test]
     async fn issue_2138_sql_session_route_accepts_an_empty_form_immediately_after_creation(
     ) -> anyhow::Result<()> {
-        let state = AppState::new_for_tests(format!(
-            "memory://server-sql-session-empty-form-{}",
-            Uuid::now_v7()
-        ))?;
         let principal_id = Uuid::from_u128(21380);
-        let space_id = state
-            .service
-            .create_space_for_principal("sql-session-empty-form", principal_id, "Route test")
-            .await?
-            .to_string();
-        let space_uid = state.service.space_uid(&space_id).await?;
-        let route = Router::new()
-            .route(
-                "/spaces/{space_id}/forms",
-                get(list_forms).post(upsert_form),
-            )
-            .route("/spaces/{space_id}/sql-sessions", post(create_sql_session))
-            .route(
-                "/spaces/{space_id}/sql-sessions/{session_id}/count",
-                get(get_sql_session_count),
-            )
-            .route(
-                "/spaces/{space_id}/sql-sessions/{session_id}/rows",
-                get(get_sql_session_rows),
-            )
-            .layer(Extension(content_identity(principal_id, space_uid)))
-            .with_state(state);
+        let (client, space_id, _space_uid) =
+            production_rest_fixture("issue-2138-sql-session-empty-form", principal_id, false)
+                .await?;
 
-        let form_response = route
-            .clone()
-            .oneshot(json_request(
+        let (form_status, form_response) = client
+            .json(
                 Method::POST,
-                format!("/spaces/{space_id}/forms"),
-                json!({
+                &format!("/spaces/{space_id}/forms"),
+                Some(json!({
                     "name": "Empty",
                     "template": "# Empty\n",
                     "fields": {}
-                }),
-            ))
+                })),
+            )
             .await?;
-        assert_eq!(form_response.status(), StatusCode::CREATED);
+        assert_eq!(form_status, StatusCode::CREATED, "{form_response}");
 
-        let (form_status, forms) = route_json(
-            route.clone(),
-            Request::get(format!("/spaces/{space_id}/forms")).body(Body::empty())?,
-        )
-        .await?;
+        let (form_status, forms) = client
+            .json(Method::GET, &format!("/spaces/{space_id}/forms"), None)
+            .await?;
         assert_eq!(form_status, StatusCode::OK, "{forms}");
         let relation = forms
             .as_array()
@@ -12114,39 +12091,35 @@ mod authentication_regression_tests {
             .expect("new Form SQL relation")
             .to_owned();
 
-        let (session_status, session) = route_json(
-            route.clone(),
-            json_request(
+        let (session_status, session) = client
+            .json(
                 Method::POST,
-                format!("/spaces/{space_id}/sql-sessions"),
-                json!({
+                &format!("/spaces/{space_id}/sql-sessions"),
+                Some(json!({
                     "sql": format!("SELECT * FROM \"{relation}\" ORDER BY _ugoite_id")
-                }),
-            ),
-        )
-        .await?;
+                })),
+            )
+            .await?;
         assert_eq!(session_status, StatusCode::CREATED, "{session}");
         let session_id = session["id"].as_str().expect("SQL session ID");
 
-        let (count_status, count) = route_json(
-            route.clone(),
-            Request::get(format!(
-                "/spaces/{space_id}/sql-sessions/{session_id}/count"
-            ))
-            .body(Body::empty())?,
-        )
-        .await?;
+        let (count_status, count) = client
+            .json(
+                Method::GET,
+                &format!("/spaces/{space_id}/sql-sessions/{session_id}/count"),
+                None,
+            )
+            .await?;
         assert_eq!(count_status, StatusCode::OK, "{count}");
         assert_eq!(count["count"], 0);
 
-        let (rows_status, rows) = route_json(
-            route,
-            Request::get(format!(
-                "/spaces/{space_id}/sql-sessions/{session_id}/rows?offset=0&limit=10"
-            ))
-            .body(Body::empty())?,
-        )
-        .await?;
+        let (rows_status, rows) = client
+            .json(
+                Method::GET,
+                &format!("/spaces/{space_id}/sql-sessions/{session_id}/rows"),
+                None,
+            )
+            .await?;
         assert_eq!(rows_status, StatusCode::OK, "{rows}");
         assert_eq!(rows["total_count"], 0);
         assert_eq!(rows["rows"], json!([]));
