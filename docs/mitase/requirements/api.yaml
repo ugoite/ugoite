@@ -21,31 +21,6 @@ requirements:
         kind: security
         statement: Space listing returns only Spaces authorized for the current principal.
         governed_by: [POL-004#rule.governance, POL-011#rule.governance]
-    bindings:
-      - id: routing-verification
-        role: verification
-        facet: verification
-        responsibility: Verify the operator routing for Space creation through the exact CLI integration cases.
-        targets:
-          - id: backend-case
-            adapter: rust
-            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
-            selector: { kind: test, name: test_create_space_req_api_001_routes_to_backend_post_spaces }
-            claims:
-              - kind: verifies
-                criterion: REQ-API-001#criterion.space-lifecycle
-                covers: [FEAT-API-001#binding.cli/target.space-command]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_create_space_req_api_001_routes_to_backend_post_spaces } }
-          - id: api-case
-            adapter: rust
-            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
-            selector: { kind: test, name: test_create_space_req_api_001_routes_to_api_post_spaces }
-            claims:
-              - kind: verifies
-                criterion: REQ-API-001#criterion.space-lifecycle
-                covers: [FEAT-API-001#binding.cli/target.space-command]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_create_space_req_api_001_routes_to_api_post_spaces } }
-
   - id: REQ-API-002
     title: Entry CRUD
     description: The API exposes creation, retrieval, update, and deletion of Entries while preserving the Entry lifecycle and revision semantics owned by the Entry domain.
@@ -182,7 +157,9 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-API-008#criterion.fixed-publication-coordinate
-                covers: [FEAT-API-001#binding.core/target.create-sql-session]
+                covers:
+                  - FEAT-API-001#binding.core/target.create-sql-session
+                  - FEAT-API-001#binding.core/target.get-sql-session-status
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_sessions, test: test_sql_sessions_req_api_008_end_to_end } }
           - id: pagination-case
             adapter: rust

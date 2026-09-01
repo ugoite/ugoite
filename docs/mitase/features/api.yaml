@@ -57,6 +57,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-API-008#criterion.fixed-publication-coordinate
+          - id: get-sql-session-status
+            adapter: rust
+            path: crates/ugoite-iceberg/src/sql_session.rs
+            selector: { kind: symbol, name: get_sql_session_status_authorized }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-008#criterion.fixed-publication-coordinate
           - id: count-sql-session
             adapter: rust
             path: crates/ugoite-iceberg/src/sql_session.rs
@@ -76,6 +83,26 @@ features:
         facet: service
         responsibility: Connect the canonical Iceberg service methods to saved SQL and SQL-session implementations.
         targets:
+          - id: list-spaces
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: list_space_ids }
+          - id: create-space
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: create_space_for_principal }
+          - id: get-space
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: get_space }
+          - id: get-preferences
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: get_user_preferences }
+          - id: patch-preferences
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: patch_user_preferences }
           - id: list-saved-sql
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
@@ -195,22 +222,14 @@ features:
             path: frontend/src/lib/sql-session-api.ts
             selector: { kind: symbol, name: sqlSessionApi }
       - id: cli
-        role: implementation
+        role: operation
         facet: cli
-        responsibility: Implement the Space workflow through the explicit Ugoite CLI operator surface.
+        responsibility: Keep Space and saved SQL workflows available through the explicit Ugoite CLI operator surface; exact CLI verification remains follow-up work.
         targets:
           - id: space-command
             adapter: rust
             path: crates/ugoite-cli/src/commands/space.rs
             selector: { kind: symbol, name: run }
-            claims:
-              - kind: satisfies
-                criterion: REQ-API-001#criterion.space-lifecycle
-      - id: cli-operator
-        role: operation
-        facet: cli
-        responsibility: Keep saved SQL workflows available through the explicit Ugoite CLI operator surface; exact CLI verification remains follow-up work.
-        targets:
           - id: sql-command
             adapter: rust
             path: crates/ugoite-cli/src/commands/sql.rs
@@ -343,7 +362,7 @@ features:
             role: backend
           - target: FEAT-API-001#binding.frontend/target.sql-api
             role: client
-          - target: FEAT-API-001#binding.cli-operator/target.sql-command
+          - target: FEAT-API-001#binding.cli/target.sql-command
             role: operator
         guarantees: [REQ-API-006#criterion.saved-sql-lifecycle]
       - id: create-saved-sql
@@ -356,7 +375,7 @@ features:
             role: backend
           - target: FEAT-API-001#binding.frontend/target.sql-api
             role: client
-          - target: FEAT-API-001#binding.cli-operator/target.sql-command
+          - target: FEAT-API-001#binding.cli/target.sql-command
             role: operator
         guarantees: [REQ-API-006#criterion.saved-sql-lifecycle, REQ-API-006#criterion.saved-sql-variable-validation]
       - id: get-saved-sql
@@ -369,7 +388,7 @@ features:
             role: backend
           - target: FEAT-API-001#binding.frontend/target.sql-api
             role: client
-          - target: FEAT-API-001#binding.cli-operator/target.sql-command
+          - target: FEAT-API-001#binding.cli/target.sql-command
             role: operator
         guarantees: [REQ-API-006#criterion.saved-sql-lifecycle]
       - id: update-saved-sql
@@ -382,7 +401,7 @@ features:
             role: backend
           - target: FEAT-API-001#binding.frontend/target.sql-api
             role: client
-          - target: FEAT-API-001#binding.cli-operator/target.sql-command
+          - target: FEAT-API-001#binding.cli/target.sql-command
             role: operator
         guarantees: [REQ-API-006#criterion.saved-sql-lifecycle, REQ-API-006#criterion.saved-sql-variable-validation]
       - id: delete-saved-sql
@@ -395,7 +414,7 @@ features:
             role: backend
           - target: FEAT-API-001#binding.frontend/target.sql-api
             role: client
-          - target: FEAT-API-001#binding.cli-operator/target.sql-command
+          - target: FEAT-API-001#binding.cli/target.sql-command
             role: operator
         guarantees: [REQ-API-006#criterion.saved-sql-lifecycle]
       - id: create-sql-session
