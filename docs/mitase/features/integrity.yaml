@@ -1,0 +1,106 @@
+schema: mitase/spec/v1
+kind: features
+namespace: integrity
+category: Integrity and response-signing surfaces
+features:
+  - id: FEAT-INT-001
+    title: Integrity and response authenticity
+    summary: Connect revision HMAC providers, response-signing material, bounded response middleware, and the OpenAPI response-signing contract without introducing a Ugoite-specific specification kind.
+    status: implemented
+    bindings:
+      - id: core
+        role: implementation
+        facet: core
+        responsibility: Implement the canonical IntegrityProvider and HMAC-backed revision signature behavior.
+        targets:
+          - id: hmac-provider
+            adapter: rust
+            path: crates/ugoite-domain/src/integrity.rs
+            selector: { kind: symbol, name: HmacIntegrityProvider }
+            claims:
+              - kind: satisfies
+                criterion: REQ-INT-001#criterion.revision-signature
+      - id: storage
+        role: implementation
+        facet: storage
+        responsibility: Load and derive scope-owned response-signing HMAC material through the storage boundary and expose the real provider for byte-exact signatures.
+        targets:
+          - id: real-provider
+            adapter: rust
+            path: crates/ugoite-iceberg/src/integrity.rs
+            selector: { kind: symbol, name: RealIntegrityProvider }
+            claims:
+              - kind: satisfies
+                criterion: REQ-INT-001#criterion.revision-signature
+          - id: space-material
+            adapter: rust
+            path: crates/ugoite-iceberg/src/integrity.rs
+            selector: { kind: symbol, name: load_response_hmac_material }
+            claims:
+              - kind: satisfies
+                criterion: REQ-INT-003#criterion.scoped-response-material
+          - id: default-material
+            adapter: rust
+            path: crates/ugoite-iceberg/src/integrity.rs
+            selector: { kind: symbol, name: load_default_response_hmac_material }
+            claims:
+              - kind: satisfies
+                criterion: REQ-INT-003#criterion.scoped-response-material
+          - id: response-signature
+            adapter: rust
+            path: crates/ugoite-iceberg/src/integrity.rs
+            selector: { kind: symbol, name: build_response_signature }
+            claims:
+              - kind: satisfies
+                criterion: REQ-INT-003#criterion.eligible-response-signature
+          - id: default-response-signature
+            adapter: rust
+            path: crates/ugoite-iceberg/src/integrity.rs
+            selector: { kind: symbol, name: build_default_response_signature }
+            claims:
+              - kind: satisfies
+                criterion: REQ-INT-003#criterion.eligible-response-signature
+      - id: server
+        role: implementation
+        facet: backend
+        responsibility: Select the response-signing scope, materialize only bounded eligible bodies, and attach signatures at the REST adapter boundary while preserving unsigned failure cases.
+        targets:
+          - id: response-signing
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: add_security_headers }
+            claims:
+              - kind: satisfies
+                criterion: REQ-INT-003#criterion.eligible-response-signature
+              - kind: satisfies
+                criterion: REQ-INT-003#criterion.unsigned-response-boundary
+      - id: contract
+        role: contract-source
+        facet: api
+        responsibility: Preserve the authoritative OpenAPI artifact that publishes response-signing headers and the unsigned response boundary.
+        targets:
+          - id: openapi-source
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: file }
+    contracts:
+      - id: response-signing
+        kind: custom
+        source: FEAT-INT-001#binding.contract/target.openapi-source
+        participants:
+          - target: FEAT-INT-001#binding.core/target.hmac-provider
+            role: provider
+          - target: FEAT-INT-001#binding.storage/target.response-signature
+            role: storage
+          - target: FEAT-INT-001#binding.storage/target.default-response-signature
+            role: storage
+          - target: FEAT-INT-001#binding.storage/target.space-material
+            role: storage
+          - target: FEAT-INT-001#binding.storage/target.default-material
+            role: storage
+          - target: FEAT-INT-001#binding.server/target.response-signing
+            role: backend
+        guarantees:
+          - REQ-INT-001#criterion.revision-signature
+          - REQ-INT-003#criterion.scoped-response-material
+          - REQ-INT-003#criterion.eligible-response-signature

@@ -1,0 +1,150 @@
+schema: mitase/spec/v1
+kind: requirements
+namespace: integrity
+category: Data integrity and response authenticity
+requirements:
+  - id: REQ-INT-001
+    title: HMAC integrity for data revisions
+    description: Sign all data revisions with a locally generated key to prevent tampering.
+    priority: high
+    status: implemented
+    criteria:
+      - id: revision-signature
+        kind: security
+        statement: Data revision content is processed through the IntegrityProvider contract and the real provider produces a deterministic HMAC signature with a locally generated key.
+        governed_by: [POL-004#rule.governance, POL-005#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: revision-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the HMAC provider contract, known digest behavior, and Space-backed provider initialization through exact Rust tests.
+        targets:
+          - id: domain-provider-case
+            adapter: rust
+            path: crates/ugoite-domain/tests/test_coverage.rs
+            selector: { kind: test, name: test_integrity_req_int_001_hmac_provider_matches_known_digest }
+            claims:
+              - kind: verifies
+                criterion: REQ-INT-001#criterion.revision-signature
+                covers: [FEAT-INT-001#binding.core/target.hmac-provider]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-domain, harness: test_coverage, test: test_integrity_req_int_001_hmac_provider_matches_known_digest } }
+          - id: fake-provider-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_integrity.rs
+            selector: { kind: test, name: test_integrity_req_int_001_fake_integrity_provider }
+            claims:
+              - kind: verifies
+                criterion: REQ-INT-001#criterion.revision-signature
+                covers: [FEAT-INT-001#binding.core/target.hmac-provider]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_integrity, test: test_integrity_req_int_001_fake_integrity_provider } }
+          - id: real-provider-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_integrity.rs
+            selector: { kind: test, name: test_integrity_req_int_001_real_integrity_provider }
+            claims:
+              - kind: verifies
+                criterion: REQ-INT-001#criterion.revision-signature
+                covers: [FEAT-INT-001#binding.storage/target.real-provider]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_integrity, test: test_integrity_req_int_001_real_integrity_provider } }
+
+  - id: REQ-INT-002
+    title: Checksum verification
+    description: Calculate and store checksums for reconstructed Entry content.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: reconstructed-entry-checksum
+        kind: quality
+        statement: Reconstructed Entry content has a calculated checksum that is stored with the reconstructed content.
+        governed_by: [POL-004#rule.governance, POL-005#rule.governance, POL-008#rule.governance]
+    # The legacy requirement is retained as implemented, but no exact
+    # criterion-specific verification currently proves the reconstruction and
+    # storage boundary. Keep that evidence gap explicit for the next slice.
+
+  - id: REQ-INT-003
+    title: API response HMAC signing
+    description: The server signs eligible materialized HTTP response bodies with the scope-owned HMAC material and exposes the key ID and lowercase-hex signature in response headers. Streaming, fallible, and otherwise explicitly unsigned responses remain unsigned.
+    priority: low
+    status: implemented
+    criteria:
+      - id: scoped-response-material
+        kind: security
+        statement: Response-signing HMAC material is scoped to the default node or the containing Space, and invalid or unknown Space identifiers do not provision response-signing storage.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: eligible-response-signature
+        kind: security
+        statement: An eligible materialized HTTP response is signed over its exact body bytes and exposes the scope key ID plus a lowercase hexadecimal HMAC signature in response headers.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: unsigned-response-boundary
+        kind: quality
+        statement: Streaming, fallible, oversized, trailer-bearing, explicitly unsigned, and unavailable-key responses remain unsigned rather than being partially or incorrectly signed.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: response-signing-verification
+        role: verification
+        facet: verification
+        responsibility: Verify response-signing material, eligible response headers, and fail-closed unsigned boundaries through exact Rust integration, unit, and OpenAPI contract tests.
+        targets:
+          - id: space-material-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_integrity.rs
+            selector: { kind: test, name: test_response_hmac_material_is_space_scoped }
+            claims:
+              - kind: verifies
+                criterion: REQ-INT-003#criterion.scoped-response-material
+                covers: [FEAT-INT-001#binding.storage/target.space-material]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_integrity, test: test_response_hmac_material_is_space_scoped } }
+          - id: default-material-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_integrity.rs
+            selector: { kind: test, name: test_default_response_hmac_material_has_a_node_scoped_path }
+            claims:
+              - kind: verifies
+                criterion: REQ-INT-003#criterion.scoped-response-material
+                covers: [FEAT-INT-001#binding.storage/target.default-material]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_integrity, test: test_default_response_hmac_material_has_a_node_scoped_path } }
+          - id: response-signature-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: req_int_003_signs_default_and_space_scoped_api_responses }
+            claims:
+              - kind: verifies
+                criterion: REQ-INT-003#criterion.eligible-response-signature
+                covers:
+                  - FEAT-INT-001#binding.storage/target.response-signature
+                  - FEAT-INT-001#binding.storage/target.default-response-signature
+                  - FEAT-INT-001#binding.server/target.response-signing
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_int_003_signs_default_and_space_scoped_api_responses } }
+          - id: head-response-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: req_int_003_signs_head_and_empty_bodies }
+            claims:
+              - kind: verifies
+                criterion: REQ-INT-003#criterion.eligible-response-signature
+                covers:
+                  - FEAT-INT-001#binding.storage/target.default-response-signature
+                  - FEAT-INT-001#binding.server/target.response-signing
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_int_003_signs_head_and_empty_bodies } }
+          - id: failure-boundary-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: req_int_003_fails_closed_for_unknown_space_and_key_errors }
+            claims:
+              - kind: verifies
+                criterion: REQ-INT-003#criterion.unsigned-response-boundary
+                covers: [FEAT-INT-001#binding.server/target.response-signing]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_int_003_fails_closed_for_unknown_space_and_key_errors } }
+          - id: openapi-signing-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: openapi_publishes_response_signing_headers_and_unsigned_boundary }
+            claims:
+              - kind: verifies
+                criterion: REQ-INT-003#criterion.eligible-response-signature
+                covers: [FEAT-INT-001#binding.server/target.response-signing]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: openapi_publishes_response_signing_headers_and_unsigned_boundary } }
+              - kind: verifies
+                criterion: REQ-INT-003#criterion.unsigned-response-boundary
+                covers: [FEAT-INT-001#binding.server/target.response-signing]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: openapi_publishes_response_signing_headers_and_unsigned_boundary } }

@@ -43,11 +43,13 @@ inventory:
             - docs/mitase/requirements/forms.yaml
             - docs/mitase/requirements/api.yaml
             - docs/mitase/requirements/assets.yaml
+            - docs/mitase/requirements/integrity.yaml
             - docs/mitase/features/search.yaml
             - docs/mitase/features/entries.yaml
             - docs/mitase/features/forms.yaml
             - docs/mitase/features/api.yaml
             - docs/mitase/features/assets.yaml
+            - docs/mitase/features/integrity.yaml
             - docs/spec/features/features.yaml
             - docs/spec/philosophy/foundation.yaml
             - docs/spec/policies/policies.yaml
