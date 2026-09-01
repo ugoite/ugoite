@@ -9,7 +9,8 @@ import {
 const maxVisitedPages = 16;
 
 // Canonical Mitase evidence for dynamic route traversal and browser/runtime
-// error stability.
+// error stability. The Mitase runner invokes this file from the repository
+// root with e2e/playwright.config.ts.
 test.describe("Dynamic navigation traversal", () => {
 	let spaceId = "";
 
