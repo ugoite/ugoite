@@ -22,6 +22,10 @@ read-only migration snapshot and is no longer included in Mitase's declared
 inventory. The canonical Asset feature graph at `docs/mitase/features/assets.yaml`
 is the only semantic authority for the migrated Asset domain.
 
+The E2E browser feature is represented by the canonical graph at
+`docs/mitase/features/e2e.yaml`; no legacy per-area E2E feature registry is
+authoritative for that domain.
+
 The registry is generated from the current Rust/OpenAPI surface, not from roadmap intent. `implemented` means the route and referenced adapter exist. `contracted_unavailable` is used for `/auth/login`, whose route exists but intentionally returns `403` in this release.
 
 Validate feature routes against [`../api/openapi.yaml`](https://github.com/ugoite/ugoite/blob/main/docs/spec/api/openapi.yaml) and referenced files against the repository. MCP is documented separately because it is not part of the portable application-operation manifest.
