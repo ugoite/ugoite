@@ -522,6 +522,37 @@ describe("CreateEntryDialog", () => {
     expect(createButton).not.toBeDisabled();
   });
 
+  it("allows an empty title after selecting a form", async () => {
+    const onSubmit = vi.fn();
+    const forms = [
+      {
+        name: "Notes",
+        version: 1,
+        fields: {},
+        template: "# Notes\n",
+      },
+    ];
+
+    render(() => (
+      <CreateEntryDialog
+        open={true}
+        forms={forms}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    ));
+
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Notes" },
+    });
+
+    const createButton = screen.getByRole("button", { name: "Create" });
+    expect(createButton).toBeEnabled();
+    fireEvent.click(createButton);
+
+    expect(onSubmit).toHaveBeenCalledWith("", "Notes", {}, "webform");
+  });
+
   it("REQ-FE-037: blocks submission when required fields are empty", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();

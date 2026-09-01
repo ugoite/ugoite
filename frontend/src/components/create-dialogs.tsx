@@ -874,8 +874,8 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     const entryTitle = title().trim();
     const formName = selectedForm().trim();
     /* v8 ignore start */
-    if (!entryTitle || !formName) {
-      setErrorMessage(t("createDialog.entry.error.provideTitleAndForm"));
+    if (!formName) {
+      setErrorMessage(t("createDialog.entry.error.provideForm"));
       return;
     }
     /* v8 ignore stop */
@@ -1243,8 +1243,8 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
               </button>
               <button
                 type="submit"
-                disabled={!title().trim() || !selectedForm().trim() ||
-                  selectableForms().length === 0}
+                disabled={!selectedForm().trim() || selectableForms().length ===
+                  0}
                 class="ui-button ui-button-primary text-sm"
               >
                 {t("common.create")}
