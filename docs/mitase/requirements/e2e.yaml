@@ -93,6 +93,84 @@ requirements:
                   - FEAT-E2E-001#binding.server/target.list-entries
                 runner: { runner: e2e-playwright, arguments: { file: e2e/smoke.test.ts, test: GET /spaces/:space_id/entries returns list } }
 
+  - id: REQ-E2E-003
+    title: Theme-aware UI flows
+    description: The UI supports the core Space workflows across all supported UI themes and both supported color modes, including navigation, query flows, and Entry detail access.
+    priority: high
+    status: implemented
+    criteria:
+      - id: theme-workflows
+        kind: behavior
+        statement: The core Space workflow remains usable in the materialize, classic, and pop UI themes, including navigation, query flows, and Entry detail access.
+        governed_by: [POL-004#rule.governance, POL-006#rule.governance, POL-014#rule.governance]
+      - id: color-mode-stability
+        kind: quality
+        statement: Each supported UI theme workflow can switch between light and dark color modes without losing the active Space workflow.
+        governed_by: [POL-006#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: theme-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the supported UI themes, navigation, query flows, Entry detail access, and light/dark color modes through exact Playwright cases.
+        targets:
+          - id: materialize-case
+            adapter: typescript
+            path: e2e/ui-themes.test.ts
+            selector: { kind: test, name: 'REQ-E2E-003: UI flows work in materialize theme' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-003#criterion.theme-workflows
+                covers:
+                  - FEAT-E2E-002#binding.application/target.theme-dashboard
+                  - FEAT-E2E-002#binding.application/target.theme-search
+                  - FEAT-E2E-002#binding.application/target.theme-entry
+                  - FEAT-E2E-002#binding.application/target.theme-query
+                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-themes.test.ts, test: 'REQ-E2E-003: UI flows work in materialize theme' } }
+              - kind: verifies
+                criterion: REQ-E2E-003#criterion.color-mode-stability
+                covers:
+                  - FEAT-E2E-002#binding.application/target.theme-dashboard
+                  - FEAT-E2E-002#binding.application/target.theme-settings
+                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-themes.test.ts, test: 'REQ-E2E-003: UI flows work in materialize theme' } }
+          - id: classic-case
+            adapter: typescript
+            path: e2e/ui-themes.test.ts
+            selector: { kind: test, name: 'REQ-E2E-003: UI flows work in classic theme' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-003#criterion.theme-workflows
+                covers:
+                  - FEAT-E2E-002#binding.application/target.theme-dashboard
+                  - FEAT-E2E-002#binding.application/target.theme-search
+                  - FEAT-E2E-002#binding.application/target.theme-entry
+                  - FEAT-E2E-002#binding.application/target.theme-query
+                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-themes.test.ts, test: 'REQ-E2E-003: UI flows work in classic theme' } }
+              - kind: verifies
+                criterion: REQ-E2E-003#criterion.color-mode-stability
+                covers:
+                  - FEAT-E2E-002#binding.application/target.theme-dashboard
+                  - FEAT-E2E-002#binding.application/target.theme-settings
+                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-themes.test.ts, test: 'REQ-E2E-003: UI flows work in classic theme' } }
+          - id: pop-case
+            adapter: typescript
+            path: e2e/ui-themes.test.ts
+            selector: { kind: test, name: 'REQ-E2E-003: UI flows work in pop theme' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-003#criterion.theme-workflows
+                covers:
+                  - FEAT-E2E-002#binding.application/target.theme-dashboard
+                  - FEAT-E2E-002#binding.application/target.theme-search
+                  - FEAT-E2E-002#binding.application/target.theme-entry
+                  - FEAT-E2E-002#binding.application/target.theme-query
+                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-themes.test.ts, test: 'REQ-E2E-003: UI flows work in pop theme' } }
+              - kind: verifies
+                criterion: REQ-E2E-003#criterion.color-mode-stability
+                covers:
+                  - FEAT-E2E-002#binding.application/target.theme-dashboard
+                  - FEAT-E2E-002#binding.application/target.theme-settings
+                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-themes.test.ts, test: 'REQ-E2E-003: UI flows work in pop theme' } }
+
   - id: REQ-E2E-004
     title: Dynamic navigation stability
     description: Traversing the current browser routes must not produce browser console errors, runtime page errors, or SolidJS fallback screens.
@@ -136,3 +214,247 @@ requirements:
                 criterion: REQ-E2E-004#criterion.runtime-stability
                 covers: [FEAT-E2E-001#binding.frontend/target.spaces-route]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-004: dynamic traversal has no console or SolidJS errors' } }
+
+  - id: REQ-E2E-005
+    title: Docsite responsive navigation
+    description: The docsite delegates responsive global and document navigation to Starlight, exposing the sidebar through an accessible mobile menu and a persistent desktop layout while preserving the documented beginner path.
+    priority: high
+    status: implemented
+    criteria:
+      - id: mobile-sidebar
+        kind: behavior
+        statement: A small viewport exposes the Starlight documentation sidebar through an accessible menu button, and Escape closes the expanded menu.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: desktop-sidebar
+        kind: quality
+        statement: A desktop viewport exposes the persistent Starlight sidebar and the documented navigation groups.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance]
+      - id: beginner-path
+        kind: behavior
+        statement: The Guide landing page exposes the documented beginner path in its canonical learning order.
+        governed_by: [POL-006#rule.governance, POL-014#rule.governance]
+      - id: homepage-navigation
+        kind: behavior
+        statement: The documentation homepage preserves its hero content and Starlight navigation at both mobile and desktop viewport sizes.
+        governed_by: [POL-006#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: responsive-navigation-verification
+        role: verification
+        facet: verification
+        responsibility: Verify responsive sidebar behavior, Escape handling, desktop navigation, beginner ordering, and homepage navigation through exact Playwright cases.
+        targets:
+          - id: mobile-menu-case
+            adapter: typescript
+            path: e2e/docsite-mobile-nav.test.ts
+            selector: { kind: test, name: 'REQ-E2E-005: Starlight exposes the documentation sidebar as a mobile menu' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-005#criterion.mobile-sidebar
+                covers: [FEAT-E2E-002#binding.docsite/target.docsite-config]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: 'REQ-E2E-005: Starlight exposes the documentation sidebar as a mobile menu' } }
+              - kind: verifies
+                criterion: REQ-E2E-009#criterion.responsive-layout
+                covers: [FEAT-E2E-002#binding.docsite/target.docsite-config]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: 'REQ-E2E-005: Starlight exposes the documentation sidebar as a mobile menu' } }
+          - id: escape-case
+            adapter: typescript
+            path: e2e/docsite-mobile-nav.test.ts
+            selector: { kind: test, name: 'REQ-E2E-005: the mobile menu closes with Escape' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-005#criterion.mobile-sidebar
+                covers: [FEAT-E2E-002#binding.docsite/target.docsite-config]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: 'REQ-E2E-005: the mobile menu closes with Escape' } }
+          - id: desktop-case
+            adapter: typescript
+            path: e2e/docsite-mobile-nav.test.ts
+            selector: { kind: test, name: "REQ-E2E-009: desktop pages use Starlight's sidebar and table of contents" }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-005#criterion.desktop-sidebar
+                covers: [FEAT-E2E-002#binding.docsite/target.docsite-config]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: "REQ-E2E-009: desktop pages use Starlight's sidebar and table of contents" } }
+              - kind: verifies
+                criterion: REQ-E2E-009#criterion.desktop-layout
+                covers: [FEAT-E2E-002#binding.docsite/target.docsite-config]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: "REQ-E2E-009: desktop pages use Starlight's sidebar and table of contents" } }
+          - id: beginner-case
+            adapter: typescript
+            path: e2e/docsite-mobile-nav.test.ts
+            selector: { kind: test, name: 'REQ-E2E-005: the beginner path follows its documented learning order' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-005#criterion.beginner-path
+                covers:
+                  - FEAT-E2E-002#binding.docsite/target.docsite-config
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: 'REQ-E2E-005: the beginner path follows its documented learning order' } }
+          - id: homepage-case
+            adapter: typescript
+            path: e2e/docsite-mobile-nav.test.ts
+            selector: { kind: test, name: 'REQ-E2E-005: the homepage keeps the hero and Starlight navigation' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-005#criterion.homepage-navigation
+                covers:
+                  - FEAT-E2E-002#binding.docsite/target.homepage
+                  - FEAT-E2E-002#binding.docsite/target.docsite-config
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: 'REQ-E2E-005: the homepage keeps the hero and Starlight navigation' } }
+
+  - id: REQ-E2E-006
+    title: Docsite internal link integrity
+    description: Docsite internal page links resolve without 404 responses under a non-root base path, and the build shell loads the repository-level docs directory directly through the native Starlight and Sätteri pipeline.
+    priority: high
+    status: implemented
+    criteria:
+      - id: base-path-integrity
+        kind: behavior
+        statement: Internal docsite links remain within the configured non-root base path and resolve without 404 responses.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance]
+      - id: repository-docs-source
+        kind: quality
+        statement: The docsite content loader and Starlight integration read the repository-level docs directory directly without a hand-authored second route tree.
+        governed_by: [POL-006#rule.governance, POL-013#rule.governance]
+      - id: link-rewrite
+        kind: behavior
+        statement: Repository Markdown links are rewritten to Starlight directory routes while external links remain unchanged.
+        governed_by: [POL-006#rule.governance, POL-013#rule.governance]
+    bindings:
+      - id: link-integrity-verification
+        role: verification
+        facet: verification
+        responsibility: Verify non-root docsite crawling, direct repository docs loading, and Sätteri link rewriting through exact Vitest and Playwright cases.
+        targets:
+          - id: crawl-case
+            adapter: typescript
+            path: e2e/docsite-links.test.ts
+            selector: { kind: test, name: 'REQ-E2E-006: docsite internal page links resolve without 404s' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-006#criterion.base-path-integrity
+                covers: [FEAT-E2E-002#binding.docsite/target.link-rewriter]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-links.test.ts, test: 'REQ-E2E-006: docsite internal page links resolve without 404s' } }
+          - id: loader-case
+            adapter: typescript
+            path: docsite/src/ssot.test.ts
+            selector: { kind: test, name: 'Starlight loads the repository docs directory directly' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-006#criterion.repository-docs-source
+                covers:
+                  - FEAT-E2E-002#binding.docsite/target.content-config
+                  - FEAT-E2E-002#binding.docsite/target.docs-source
+                runner: { runner: docsite-vitest, arguments: { test: 'Starlight loads the repository docs directory directly' } }
+          - id: pipeline-case
+            adapter: typescript
+            path: docsite/src/ssot.test.ts
+            selector: { kind: test, name: "external docs use Starlight's native Sätteri pipeline" }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-006#criterion.repository-docs-source
+                covers: [FEAT-E2E-002#binding.docsite/target.docsite-config]
+                runner: { runner: docsite-vitest, arguments: { test: "external docs use Starlight's native Sätteri pipeline" } }
+          - id: rewrite-case
+            adapter: typescript
+            path: docsite/src/ssot.test.ts
+            selector: { kind: test, name: 'REQ-E2E-006: Sätteri link plugin rewrites authored links' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-006#criterion.link-rewrite
+                covers: [FEAT-E2E-002#binding.docsite/target.link-rewriter]
+                runner: { runner: docsite-vitest, arguments: { test: 'REQ-E2E-006: Sätteri link plugin rewrites authored links' } }
+
+  - id: REQ-E2E-007
+    title: Framework-owned docsite theme controls
+    description: The docsite uses Starlight's single light, dark, and system color-mode selector and does not maintain product-specific theme-switching code.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: single-framework-selector
+        kind: behavior
+        statement: The docsite exposes exactly one Starlight light, dark, and auto selector and persists its selected mode through the framework-owned preference.
+        governed_by: [POL-006#rule.governance, POL-014#rule.governance]
+      - id: no-product-selector
+        kind: quality
+        statement: The docsite does not expose product-specific theme-selector attributes alongside Starlight's framework-owned selector.
+        governed_by: [POL-006#rule.governance, POL-013#rule.governance]
+    bindings:
+      - id: theme-controls-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the single Starlight selector, its three modes, persistence, and absence of product-specific selector controls through the exact Playwright case.
+        targets:
+          - id: selector-case
+            adapter: typescript
+            path: e2e/docsite-theme-controls.test.ts
+            selector: { kind: test, name: 'REQ-E2E-007: Starlight owns the single light/dark/auto selector' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-007#criterion.single-framework-selector
+                covers: [FEAT-E2E-002#binding.docsite/target.docsite-config]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-theme-controls.test.ts, test: 'REQ-E2E-007: Starlight owns the single light/dark/auto selector' } }
+              - kind: verifies
+                criterion: REQ-E2E-007#criterion.no-product-selector
+                covers: [FEAT-E2E-002#binding.docsite/target.docsite-config]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-theme-controls.test.ts, test: 'REQ-E2E-007: Starlight owns the single light/dark/auto selector' } }
+
+  - id: REQ-E2E-008
+    title: Canonical documentation landing page
+    description: The canonical docs/index.md landing page explains Ugoite, exposes concrete operator and developer start paths, and states the current browser boundary and source-of-truth rules.
+    priority: high
+    status: implemented
+    criteria:
+      - id: landing-content
+        kind: behavior
+        statement: The documentation landing page identifies Ugoite and communicates its durable Knowledge boundary, current browser boundary, and source-of-truth rules.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-013#rule.governance]
+      - id: start-paths
+        kind: behavior
+        statement: The documentation landing page exposes concrete container, source, and GitHub paths, and its primary action opens the canonical container quick-start page.
+        governed_by: [POL-005#rule.governance, POL-006#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: landing-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the canonical landing content and primary quick-start navigation through exact docsite assertions.
+        targets:
+          - id: landing-case
+            adapter: typescript
+            path: e2e/docsite-onboarding.test.ts
+            selector: { kind: test, name: 'REQ-E2E-008: the canonical docs landing page gives users concrete start paths' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-008#criterion.landing-content
+                covers: [FEAT-E2E-002#binding.docsite/target.homepage]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-onboarding.test.ts, test: 'REQ-E2E-008: the canonical docs landing page gives users concrete start paths' } }
+              - kind: verifies
+                criterion: REQ-E2E-008#criterion.start-paths
+                covers:
+                  - FEAT-E2E-002#binding.docsite/target.homepage
+                  - FEAT-E2E-002#binding.docsite/target.quickstart
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-onboarding.test.ts, test: 'REQ-E2E-008: the canonical docs landing page gives users concrete start paths' } }
+          - id: primary-action-case
+            adapter: typescript
+            path: e2e/docsite-onboarding.test.ts
+            selector: { kind: test, name: 'REQ-E2E-008: the primary action opens the canonical quick-start document' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-008#criterion.start-paths
+                covers:
+                  - FEAT-E2E-002#binding.docsite/target.homepage
+                  - FEAT-E2E-002#binding.docsite/target.quickstart
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-onboarding.test.ts, test: 'REQ-E2E-008: the primary action opens the canonical quick-start document' } }
+
+  - id: REQ-E2E-009
+    title: Framework-owned desktop documentation layout
+    description: Desktop documentation pages use Starlight's persistent documentation sidebar and page table of contents, while smaller viewports use the accessible mobile menu.
+    priority: high
+    status: implemented
+    criteria:
+      - id: desktop-layout
+        kind: quality
+        statement: Desktop documentation pages expose Starlight's persistent sidebar and right-side table of contents.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance]
+      - id: responsive-layout
+        kind: quality
+        statement: Smaller documentation viewports use the Starlight accessible mobile menu for the same documentation navigation.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance]

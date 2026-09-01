@@ -92,3 +92,120 @@ features:
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: get, path: '/spaces/{space_id}/entries/{entry_id}' }
+
+  - id: FEAT-E2E-002
+    title: Docsite and UI acceptance surfaces
+    summary: Connect the supported UI themes, Starlight docsite shell, repository documentation sources, and exact docsite Playwright/Vitest evidence.
+    status: implemented
+    bindings:
+      - id: application
+        role: implementation
+        facet: frontend
+        responsibility: Keep the supported UI theme workflow connected to the Space dashboard, search, query, Entry, and settings routes.
+        targets:
+          - id: theme-dashboard
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/dashboard.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-003#criterion.theme-workflows
+              - kind: satisfies
+                criterion: REQ-E2E-003#criterion.color-mode-stability
+          - id: theme-search
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/search.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-003#criterion.theme-workflows
+          - id: theme-entry
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/entries.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-003#criterion.theme-workflows
+          - id: theme-query
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/queries/new.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-003#criterion.theme-workflows
+          - id: theme-settings
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/settings.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-003#criterion.color-mode-stability
+      - id: docsite
+        role: implementation
+        facet: docsite
+        responsibility: Keep the Starlight shell, repository docs loader, link processor, canonical landing page, and documented navigation structure connected as one docsite surface.
+        targets:
+          - id: docsite-config
+            adapter: declared
+            path: docsite/astro.config.mjs
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-006#criterion.repository-docs-source
+              - kind: satisfies
+                criterion: REQ-E2E-005#criterion.mobile-sidebar
+              - kind: satisfies
+                criterion: REQ-E2E-005#criterion.desktop-sidebar
+              - kind: satisfies
+                criterion: REQ-E2E-005#criterion.beginner-path
+              - kind: satisfies
+                criterion: REQ-E2E-005#criterion.homepage-navigation
+              - kind: satisfies
+                criterion: REQ-E2E-007#criterion.single-framework-selector
+              - kind: satisfies
+                criterion: REQ-E2E-007#criterion.no-product-selector
+              - kind: satisfies
+                criterion: REQ-E2E-009#criterion.desktop-layout
+              - kind: satisfies
+                criterion: REQ-E2E-009#criterion.responsive-layout
+          - id: content-config
+            adapter: declared
+            path: docsite/src/content.config.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-006#criterion.repository-docs-source
+          - id: docs-source
+            adapter: declared
+            path: docsite/src/docs-ssot.mjs
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-006#criterion.repository-docs-source
+          - id: link-rewriter
+            adapter: declared
+            path: docsite/src/satteri-doc-links.mjs
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-006#criterion.base-path-integrity
+              - kind: satisfies
+                criterion: REQ-E2E-006#criterion.link-rewrite
+          - id: homepage
+            adapter: declared
+            path: docs/index.md
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-005#criterion.homepage-navigation
+              - kind: satisfies
+                criterion: REQ-E2E-008#criterion.landing-content
+              - kind: satisfies
+                criterion: REQ-E2E-008#criterion.start-paths
+          - id: quickstart
+            adapter: declared
+            path: docs/guide/start/container-quickstart.md
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-008#criterion.start-paths

@@ -21,6 +21,8 @@ test.describe("Docsite navigation layout", () => {
   });
 
   test("REQ-E2E-005: Starlight exposes the documentation sidebar as a mobile menu", async ({ page }) => {
+    // Mitase evidence: REQ-E2E-005#criterion.mobile-sidebar.
+    // Mitase evidence: REQ-E2E-009#criterion.responsive-layout.
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(buildDocsiteUrl(docPath), { waitUntil: "networkidle" });
 
@@ -40,6 +42,7 @@ test.describe("Docsite navigation layout", () => {
   });
 
   test("REQ-E2E-005: the mobile menu closes with Escape", async ({ page }) => {
+    // Mitase evidence: REQ-E2E-005#criterion.mobile-sidebar.
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(buildDocsiteUrl(docPath), { waitUntil: "networkidle" });
 
@@ -57,6 +60,8 @@ test.describe("Docsite navigation layout", () => {
   });
 
   test("REQ-E2E-009: desktop pages use Starlight's sidebar and table of contents", async ({ page }) => {
+    // Mitase evidence: REQ-E2E-005#criterion.desktop-sidebar.
+    // Mitase evidence: REQ-E2E-009#criterion.desktop-layout.
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(buildDocsiteUrl(docPath), { waitUntil: "networkidle" });
 
@@ -77,6 +82,7 @@ test.describe("Docsite navigation layout", () => {
   });
 
   test("REQ-E2E-005: the beginner path follows its documented learning order", async ({ page }) => {
+    // Mitase evidence: REQ-E2E-005#criterion.beginner-path.
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(buildDocsiteUrl("/docs/guide/"), {
       waitUntil: "networkidle",
@@ -94,6 +100,7 @@ test.describe("Docsite navigation layout", () => {
   });
 
   test("REQ-E2E-005: the homepage keeps the hero and Starlight navigation", async ({ page }) => {
+    // Mitase evidence: REQ-E2E-005#criterion.homepage-navigation.
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(buildDocsiteUrl(homepagePath), {
       waitUntil: "networkidle",

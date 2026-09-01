@@ -34,6 +34,16 @@ inventory:
             - e2e/search-ui.test.ts
             - e2e/smoke.test.ts
             - e2e/navigation.test.ts
+            - frontend/src/routes/spaces/[space_id]/dashboard.tsx
+            - frontend/src/routes/spaces/[space_id]/entries.tsx
+            - frontend/src/routes/spaces/[space_id]/queries/new.tsx
+            - frontend/src/routes/spaces/[space_id]/settings.tsx
+            - e2e/ui-themes.test.ts
+            - e2e/docsite-mobile-nav.test.ts
+            - e2e/docsite-links.test.ts
+            - e2e/docsite-theme-controls.test.ts
+            - e2e/docsite-onboarding.test.ts
+            - docsite/src/ssot.test.ts
         openapi:
           roots:
             - crates/ugoite-server/src/openapi.json
@@ -57,6 +67,12 @@ inventory:
             - docs/mitase/features/integrity.yaml
             - docs/mitase/requirements/e2e.yaml
             - docs/mitase/features/e2e.yaml
+            - docs/index.md
+            - docs/guide/start/container-quickstart.md
+            - docsite/astro.config.mjs
+            - docsite/src/content.config.ts
+            - docsite/src/docs-ssot.mjs
+            - docsite/src/satteri-doc-links.mjs
             - docs/spec/features/features.yaml
             - docs/spec/philosophy/foundation.yaml
             - docs/spec/policies/policies.yaml
@@ -136,3 +152,6 @@ verification:
     e2e-playwright:
       executable: deno
       arguments: [run, --node-modules-dir=none, -A, npm:@playwright/test@^1.60.0, test, --config, e2e/playwright.config.ts, "{file}", --grep, "{test}"]
+    docsite-vitest:
+      executable: deno
+      arguments: [task, --cwd, docsite, test, src/ssot.test.ts, --testNamePattern, "{test}"]

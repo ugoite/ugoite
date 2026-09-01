@@ -18,6 +18,7 @@ test.describe("Docsite internal links", () => {
   });
 
   test("REQ-E2E-006: docsite internal page links resolve without 404s", async ({ browser, request }) => {
+    // Mitase evidence: REQ-E2E-006#criterion.base-path-integrity.
     test.setTimeout(180_000);
     const queue = [buildDocsiteUrl("/")];
     const visited = new Set<string>();

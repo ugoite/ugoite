@@ -8,11 +8,7 @@ import {
 } from "./lib/client.ts";
 
 const themes = ["materialize", "classic", "pop"] as const;
-const themeTestTitles: Record<(typeof themes)[number], string> = {
-	materialize: "REQ-E2E-003: UI flows work in materialize theme",
-	classic: "REQ-E2E-003: UI flows work in classic theme",
-	pop: "REQ-E2E-003: UI flows work in pop theme",
-};
+type UiTheme = (typeof themes)[number];
 
 test.describe("UI theme flows", () => {
   let spaceId = "";
@@ -21,211 +17,234 @@ test.describe("UI theme flows", () => {
     await waitForServers(request);
     spaceId = await getDefaultSpaceId(request);
     await ensureDefaultForm(request, spaceId);
-	});
+  });
 
-	for (const theme of themes) {
-		test(themeTestTitles[theme], async ({ page, request }) => {
-			test.setTimeout(120_000);
-      const relation = await getDefaultFormRelation(request, spaceId);
-			const runId = Date.now();
-			const entryTitle = `E2E Theme Entry ${theme} ${runId}`;
-			const variableQueryName = `E2E Variables ${theme}`;
-			let entryId: string | null = null;
-			let variableQueryId: string | null = null;
+  test("REQ-E2E-003: UI flows work in materialize theme", async ({ page, request }) => {
+    // Mitase evidence: REQ-E2E-003#criterion.theme-workflows.
+    // Mitase evidence: REQ-E2E-003#criterion.color-mode-stability.
+    test.setTimeout(120_000);
+    await runThemeFlow("materialize", page, request, spaceId);
+  });
 
-			await cleanupThemeQueries(request, theme, spaceId);
-			await resetThemePreferences(request);
+  test("REQ-E2E-003: UI flows work in classic theme", async ({ page, request }) => {
+    // Mitase evidence: REQ-E2E-003#criterion.theme-workflows.
+    // Mitase evidence: REQ-E2E-003#criterion.color-mode-stability.
+    test.setTimeout(120_000);
+    await runThemeFlow("classic", page, request, spaceId);
+  });
 
-			try {
-				const entryRes = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
-					data: {
-						markdown: `---\nform: Entry\n---\n# ${entryTitle}\n\n## Body\nTheme flow test.`,
-					},
-				});
-				expect(entryRes.status()).toBe(201);
-				const entry = (await entryRes.json()) as { id: string };
-				entryId = entry.id;
-
-				const variableQueryRes = await request.post(getBackendUrl(`/spaces/${spaceId}/sql`), {
-					data: {
-						name: variableQueryName,
-						kind: "user-query",
-						sql: `SELECT * FROM "${relation}" WHERE _ugoite_title = {{title}} ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
-						variables: [
-							{ type: "string", name: "title", description: "Title" },
-						],
-					},
-				});
-				expect([200, 201]).toContain(variableQueryRes.status());
-				const variableQuery = (await variableQueryRes.json()) as { id: string };
-				variableQueryId = variableQuery.id;
-
-				await gotoWithRetry(page, `/spaces/${spaceId}/dashboard`);
-
-				const settingsButton = page
-					.locator("button[aria-label='Theme settings']:visible")
-					.first();
-				await settingsButton.click();
-				await page.getByRole("radio", { name: new RegExp(`^${theme}$`, "i") }).click();
-				await page.getByRole("radio", { name: "light" }).click();
-				await page.keyboard.press("Escape");
-
-				await expect(page.locator("html")).toHaveAttribute("data-ui-theme", theme);
-				await expect(page.locator("html")).toHaveAttribute("data-color-mode", "light");
-
-				await page.getByRole("link", { name: "search" }).click();
-				await page.getByRole("button", { name: "Advanced search", exact: true }).click();
-				await page.getByRole("button", { name: "Run advanced search" }).waitFor();
-				await page.getByRole("button", { name: "Quick search" }).click();
-
-				await gotoWithRetry(page, `/spaces/${spaceId}/queries/new`);
-				await waitForQueryForm(page);
-
-				const queryName = `E2E Theme Query ${theme} ${runId}`;
-				await page.getByLabel("Query name").fill(queryName);
-				await page.getByRole("button", { name: "Save" }).click();
-				await waitForQueryButton(page, request, variableQueryName, spaceId);
-				await gotoWithRetry(page, `/spaces/${spaceId}/search`);
-				await page
-					.getByRole("button", { name: new RegExp(variableQueryName) })
-					.waitFor({ state: "visible" });
-				await page.getByRole("button", { name: new RegExp(variableQueryName) }).click();
-				await page.getByRole("heading", { name: "Query variables" }).waitFor();
-
-				await page.getByLabel("title").fill(entryTitle);
-				await page.getByRole("button", { name: "Run" }).click();
-				await page.getByRole("heading", { name: /Query Results|Entries/ }).waitFor();
-				await page.getByRole("button", { name: "Clear query" }).click();
-				await page.getByRole("heading", { name: "Entries" }).waitFor();
-
-				await page.getByRole("link", { name: "Forms" }).click();
-				await page.getByRole("heading", { name: /Query Results|Form Grid/ }).waitFor();
-				await page.getByPlaceholder("Global Search...").fill(entryTitle.slice(0, 6));
-				await page.getByRole("button", { name: "Sort menu" }).click();
-				await page.getByRole("combobox", { name: "Sort field" }).selectOption("updated_at");
-				await page.getByRole("radio", { name: "Descending" }).click();
-				await page.keyboard.press("Escape");
-				await page.getByRole("button", { name: "Filter" }).click();
-
-				await page.getByRole("link", { name: "Entries" }).click();
-				await page.getByRole("heading", { name: /Query Results|Entries/ }).waitFor();
-				await page.getByRole("button", { name: entryTitle }).waitFor();
-				await page.getByRole("button", { name: entryTitle }).click();
-				await page.getByRole("heading", { name: entryTitle, level: 2 }).waitFor();
-
-				await settingsButton.click();
-				await page.getByRole("radio", { name: "dark" }).click();
-				await expect(page.locator("html")).toHaveAttribute("data-color-mode", "dark");
-				await gotoWithRetry(page, `/spaces/${spaceId}/settings`);
-				await page.getByRole("heading", { name: "Space Settings", level: 1 }).waitFor();
-
-				await expect(page.locator("html")).toHaveAttribute("data-color-mode", "dark");
-			} finally {
-				if (entryId) {
-					await request.delete(getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`));
-				}
-				if (variableQueryId) {
-					await request.delete(getBackendUrl(`/spaces/${spaceId}/sql/${variableQueryId}`));
-				}
-				await cleanupThemeQueries(request, theme, spaceId);
-			}
-		});
-	}
+  test("REQ-E2E-003: UI flows work in pop theme", async ({ page, request }) => {
+    // Mitase evidence: REQ-E2E-003#criterion.theme-workflows.
+    // Mitase evidence: REQ-E2E-003#criterion.color-mode-stability.
+    test.setTimeout(120_000);
+    await runThemeFlow("pop", page, request, spaceId);
+  });
 });
 
+async function runThemeFlow(
+  theme: UiTheme,
+  page: Page,
+  request: APIRequestContext,
+  spaceId: string,
+): Promise<void> {
+  const relation = await getDefaultFormRelation(request, spaceId);
+  const runId = Date.now();
+  const entryTitle = `E2E Theme Entry ${theme} ${runId}`;
+  const variableQueryName = `E2E Variables ${theme}`;
+  let entryId: string | null = null;
+  let variableQueryId: string | null = null;
+
+  await cleanupThemeQueries(request, theme, spaceId);
+  await resetThemePreferences(request);
+
+  try {
+    const entryRes = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
+      data: {
+        markdown: `---\nform: Entry\n---\n# ${entryTitle}\n\n## Body\nTheme flow test.`,
+      },
+    });
+    expect(entryRes.status()).toBe(201);
+    const entry = (await entryRes.json()) as { id: string };
+    entryId = entry.id;
+
+    const variableQueryRes = await request.post(getBackendUrl(`/spaces/${spaceId}/sql`), {
+      data: {
+        name: variableQueryName,
+        kind: "user-query",
+        sql: `SELECT * FROM "${relation}" WHERE _ugoite_title = {{title}} ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
+        variables: [
+          { type: "string", name: "title", description: "Title" },
+        ],
+      },
+    });
+    expect([200, 201]).toContain(variableQueryRes.status());
+    const variableQuery = (await variableQueryRes.json()) as { id: string };
+    variableQueryId = variableQuery.id;
+
+    await gotoWithRetry(page, `/spaces/${spaceId}/dashboard`);
+
+    const settingsButton = page
+      .locator("button[aria-label='Theme settings']:visible")
+      .first();
+    await settingsButton.click();
+    await page.getByRole("radio", { name: new RegExp(`^${theme}$`, "i") }).click();
+    await page.getByRole("radio", { name: "light" }).click();
+    await page.keyboard.press("Escape");
+
+    await expect(page.locator("html")).toHaveAttribute("data-ui-theme", theme);
+    await expect(page.locator("html")).toHaveAttribute("data-color-mode", "light");
+
+    await page.getByRole("link", { name: "search" }).click();
+    await page.getByRole("button", { name: "Advanced search", exact: true }).click();
+    await page.getByRole("button", { name: "Run advanced search" }).waitFor();
+    await page.getByRole("button", { name: "Quick search" }).click();
+
+    await gotoWithRetry(page, `/spaces/${spaceId}/queries/new`);
+    await waitForQueryForm(page);
+
+    const queryName = `E2E Theme Query ${theme} ${runId}`;
+    await page.getByLabel("Query name").fill(queryName);
+    await page.getByRole("button", { name: "Save" }).click();
+    await waitForQueryButton(page, request, variableQueryName, spaceId);
+    await gotoWithRetry(page, `/spaces/${spaceId}/search`);
+    await page
+      .getByRole("button", { name: new RegExp(variableQueryName) })
+      .waitFor({ state: "visible" });
+    await page.getByRole("button", { name: new RegExp(variableQueryName) }).click();
+    await page.getByRole("heading", { name: "Query variables" }).waitFor();
+
+    await page.getByLabel("title").fill(entryTitle);
+    await page.getByRole("button", { name: "Run" }).click();
+    await page.getByRole("heading", { name: /Query Results|Entries/ }).waitFor();
+    await page.getByRole("button", { name: "Clear query" }).click();
+    await page.getByRole("heading", { name: "Entries" }).waitFor();
+
+    await page.getByRole("link", { name: "Forms" }).click();
+    await page.getByRole("heading", { name: /Query Results|Form Grid/ }).waitFor();
+    await page.getByPlaceholder("Global Search...").fill(entryTitle.slice(0, 6));
+    await page.getByRole("button", { name: "Sort menu" }).click();
+    await page.getByRole("combobox", { name: "Sort field" }).selectOption("updated_at");
+    await page.getByRole("radio", { name: "Descending" }).click();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Filter" }).click();
+
+    await page.getByRole("link", { name: "Entries" }).click();
+    await page.getByRole("heading", { name: /Query Results|Entries/ }).waitFor();
+    await page.getByRole("button", { name: entryTitle }).waitFor();
+    await page.getByRole("button", { name: entryTitle }).click();
+    await page.getByRole("heading", { name: entryTitle, level: 2 }).waitFor();
+
+    await settingsButton.click();
+    await page.getByRole("radio", { name: "dark" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-color-mode", "dark");
+    await gotoWithRetry(page, `/spaces/${spaceId}/settings`);
+    await page.getByRole("heading", { name: "Space Settings", level: 1 }).waitFor();
+
+    await expect(page.locator("html")).toHaveAttribute("data-color-mode", "dark");
+  } finally {
+    if (entryId) {
+      await request.delete(getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`));
+    }
+    if (variableQueryId) {
+      await request.delete(getBackendUrl(`/spaces/${spaceId}/sql/${variableQueryId}`));
+    }
+    await cleanupThemeQueries(request, theme, spaceId);
+  }
+}
+
 async function waitForQueryForm(page: Page): Promise<void> {
-	const queryName = page.getByLabel("Query name");
-	for (let attempt = 0; attempt < 2; attempt += 1) {
-		try {
-			await queryName.waitFor({ state: "visible", timeout: 30_000 });
-			await page.getByRole("button", { name: "Save" }).waitFor({ state: "visible" });
-			return;
-		} catch (error) {
-			if (attempt === 1) {
-				throw error;
-			}
-			await page.reload({ waitUntil: "domcontentloaded" });
-		}
-	}
+  const queryName = page.getByLabel("Query name");
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await queryName.waitFor({ state: "visible", timeout: 30_000 });
+      await page.getByRole("button", { name: "Save" }).waitFor({ state: "visible" });
+      return;
+    } catch (error) {
+      if (attempt === 1) {
+        throw error;
+      }
+      await page.reload({ waitUntil: "domcontentloaded" });
+    }
+  }
 }
 
 async function waitForQueryButton(
-	page: Page,
-	request: APIRequestContext,
-	name: string,
-	space: string,
+  page: Page,
+  request: APIRequestContext,
+  name: string,
+  space: string,
 ): Promise<void> {
-	for (let attempt = 0; attempt < 20; attempt += 1) {
-		const response = await request.get(getBackendUrl(`/spaces/${space}/sql`));
-		if (response.ok()) {
-			const list = (await response.json()) as Array<{
-				id: string;
-				name: string | null;
-				kind: "user-query" | "search-history";
-			}>;
-			if (list.some((item) => item.name === name)) {
-				return;
-			}
-		}
-		await page.waitForTimeout(500);
-	}
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const response = await request.get(getBackendUrl(`/spaces/${space}/sql`));
+    if (response.ok()) {
+      const list = (await response.json()) as Array<{
+        id: string;
+        name: string | null;
+        kind: "user-query" | "search-history";
+      }>;
+      if (list.some((item) => item.name === name)) {
+        return;
+      }
+    }
+    await page.waitForTimeout(500);
+  }
 
-	throw new Error(`Timed out waiting for query '${name}' to be listed in /spaces/${space}/sql`);
+  throw new Error(`Timed out waiting for query '${name}' to be listed in /spaces/${space}/sql`);
 }
 
 async function cleanupThemeQueries(
-	request: APIRequestContext,
-	theme: (typeof themes)[number],
-	space: string,
+  request: APIRequestContext,
+  theme: UiTheme,
+  space: string,
 ): Promise<void> {
-	const listRes = await request.get(getBackendUrl(`/spaces/${space}/sql`));
-	if (!listRes.ok()) {
-		return;
-	}
+  const listRes = await request.get(getBackendUrl(`/spaces/${space}/sql`));
+  if (!listRes.ok()) {
+    return;
+  }
 
-	const list = (await listRes.json()) as Array<{
-		id: string;
-		name: string | null;
-		kind: "user-query" | "search-history";
-	}>;
-	const prefixes = [`E2E Theme Query ${theme}`, `E2E Variables ${theme}`];
-	const created = list.filter((item) => {
-		const name = item.name;
-		return item.kind === "user-query" &&
-			name !== null &&
-			prefixes.some((prefix) => name.startsWith(prefix));
-	});
-	for (const item of created) {
-		await request.delete(getBackendUrl(`/spaces/${space}/sql/${item.id}`));
-	}
+  const list = (await listRes.json()) as Array<{
+    id: string;
+    name: string | null;
+    kind: "user-query" | "search-history";
+  }>;
+  const prefixes = [`E2E Theme Query ${theme}`, `E2E Variables ${theme}`];
+  const created = list.filter((item) => {
+    const name = item.name;
+    return item.kind === "user-query" &&
+      name !== null &&
+      prefixes.some((prefix) => name.startsWith(prefix));
+  });
+  for (const item of created) {
+    await request.delete(getBackendUrl(`/spaces/${space}/sql/${item.id}`));
+  }
 }
 
 async function resetThemePreferences(request: APIRequestContext): Promise<void> {
-	const response = await request.patch(getBackendUrl("/preferences/me"), {
-		data: {
-			ui_theme: null,
-			color_mode: null,
-			primary_color: null,
-		},
-	});
-	if (response.ok()) {
-		return;
-	}
-	throw new Error(
-		`Failed to reset theme preferences: ${response.status()} ${await response.text()}`,
-	);
+  const response = await request.patch(getBackendUrl("/preferences/me"), {
+    data: {
+      ui_theme: null,
+      color_mode: null,
+      primary_color: null,
+    },
+  });
+  if (response.ok()) {
+    return;
+  }
+  throw new Error(
+    `Failed to reset theme preferences: ${response.status()} ${await response.text()}`,
+  );
 }
 
 async function gotoWithRetry(page: Page, path: string): Promise<void> {
-	for (let attempt = 0; attempt < 3; attempt += 1) {
-		try {
-			await page.goto(path, { waitUntil: "domcontentloaded" });
-			return;
-		} catch (error) {
-			if (attempt === 2) {
-				throw error;
-			}
-			await page.waitForTimeout(500);
-		}
-	}
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await page.goto(path, { waitUntil: "domcontentloaded" });
+      return;
+    } catch (error) {
+      if (attempt === 2) {
+        throw error;
+      }
+      await page.waitForTimeout(500);
+    }
+  }
 }
