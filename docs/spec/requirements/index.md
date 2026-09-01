@@ -27,6 +27,11 @@ read-only migration snapshot and is no longer included in Mitase's declared
 inventory. The canonical E2E requirements at `docs/mitase/requirements/e2e.yaml`
 are the only semantic authority for the migrated E2E domain.
 
+The legacy Integrity requirement registry at `requirements/integrity.yaml` is
+retained as a read-only migration snapshot. The canonical Integrity requirements
+at `docs/mitase/requirements/integrity.yaml` are the only semantic authority for
+the migrated Integrity domain.
+
 A current test mapping has this shape:
 
 ```yaml
