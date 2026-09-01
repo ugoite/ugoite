@@ -9,6 +9,7 @@ const docsRoot = path.join(repoRoot, "docs");
 
 describe("documentation single source of truth", () => {
   test("Starlight loads the repository docs directory directly", async () => {
+    // Mitase evidence: REQ-E2E-006#criterion.repository-docs-source.
     const config = await fs.readFile(
       path.join(process.cwd(), "src/content.config.ts"),
       "utf8",
@@ -21,6 +22,7 @@ describe("documentation single source of truth", () => {
   });
 
   test("external docs use Starlight's native Sätteri pipeline", async () => {
+    // Mitase evidence: REQ-E2E-006#criterion.repository-docs-source.
     const config = await fs.readFile(
       path.join(process.cwd(), "astro.config.mjs"),
       "utf8",
@@ -93,6 +95,7 @@ describe("documentation single source of truth", () => {
   });
 
   test("REQ-E2E-006: Sätteri link plugin rewrites authored links", () => {
+    // Mitase evidence: REQ-E2E-006#criterion.link-rewrite.
     const rewritten: string[] = [];
     const context = {
       fileURL: new URL("file:///repo/docs/index.md"),

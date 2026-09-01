@@ -19,6 +19,8 @@ test.describe("Docsite theme controls", () => {
   });
 
   test("REQ-E2E-007: Starlight owns the single light/dark/auto selector", async ({ page }) => {
+    // Mitase evidence: REQ-E2E-007#criterion.single-framework-selector.
+    // Mitase evidence: REQ-E2E-007#criterion.no-product-selector.
     await page.addInitScript(() => {
       localStorage.setItem("starlight-theme", "dark");
     });

@@ -17,6 +17,8 @@ test.describe("Docsite onboarding", () => {
   });
 
   test("REQ-E2E-008: the canonical docs landing page gives users concrete start paths", async ({ page }) => {
+    // Mitase evidence: REQ-E2E-008#criterion.landing-content.
+    // Mitase evidence: REQ-E2E-008#criterion.start-paths.
     await page.goto(buildDocsiteUrl("/"), { waitUntil: "networkidle" });
 
     await expect(page.getByRole("heading", { level: 1, name: "Ugoite" }))
@@ -41,6 +43,7 @@ test.describe("Docsite onboarding", () => {
   });
 
   test("REQ-E2E-008: the primary action opens the canonical quick-start document", async ({ page }) => {
+    // Mitase evidence: REQ-E2E-008#criterion.start-paths.
     await page.goto(buildDocsiteUrl("/"), { waitUntil: "networkidle" });
     await page.getByRole("link", { name: "Container quick start" }).click();
 
