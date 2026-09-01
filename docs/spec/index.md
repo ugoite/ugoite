@@ -55,8 +55,11 @@ Foundation, Policy, Search, Entry, Form, and API are represented in the canonica
 Mitase records at `docs/mitase` for the current dogfood slice. These records
 are the semantic source of truth for the migrated domains; their corresponding
 legacy Foundation, Policy, Requirement, and Feature YAML are migration evidence
-only and cannot override the canonical representation. Changed-ownership
-enforcement remains staged until it can be scoped safely to the migrated slice.
+only and cannot override the canonical representation. The API-specific legacy
+requirement and per-area feature YAML are no longer part of Mitase's declared
+inventory; they remain read-only migration snapshots until the broader
+`docs/spec` cleanup is complete. Changed-ownership enforcement remains staged
+until it can be scoped safely to the migrated slice.
 Other requirement and feature domains remain authoritative in their existing
 `docs/spec` records until migrated.
 

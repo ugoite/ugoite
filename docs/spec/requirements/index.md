@@ -12,6 +12,11 @@ that domain is migrated. API adapter and frontend verification gaps remain
 explicit follow-up work rather than being inferred from the existence of a
 binding.
 
+The legacy API requirement registry at `requirements/api.yaml` is retained as a
+read-only migration snapshot and is no longer included in Mitase's declared
+inventory. The canonical API requirements at `docs/mitase/requirements/api.yaml`
+are the only semantic authority for the migrated API domain.
+
 A current test mapping has this shape:
 
 ```yaml
