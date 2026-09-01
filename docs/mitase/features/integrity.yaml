@@ -73,7 +73,7 @@ features:
               - kind: satisfies
                 criterion: REQ-INT-003#criterion.eligible-response-signature
               - kind: satisfies
-                criterion: REQ-INT-003#criterion.unsigned-response-boundary
+                criterion: REQ-INT-003#criterion.unavailable-material-remains-unsigned
       - id: contract
         role: contract-source
         facet: api

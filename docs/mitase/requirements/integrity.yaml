@@ -77,8 +77,14 @@ requirements:
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
       - id: unsigned-response-boundary
         kind: quality
-        statement: Streaming, fallible, oversized, trailer-bearing, explicitly unsigned, and unavailable-key responses remain unsigned rather than being partially or incorrectly signed.
+        statement: Streaming, fallible, oversized, trailer-bearing, and explicitly unsigned responses remain unsigned rather than being partially or incorrectly signed.
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: unavailable-material-remains-unsigned
+        kind: security
+        statement: Responses remain unsigned when their scope is unknown or the required response-signing HMAC material is unavailable, rather than being partially or incorrectly signed.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      # Exact evidence for the broader unsigned-response boundary remains a
+      # separate migration slice; do not infer it from the failure-path test.
     bindings:
       - id: response-signing-verification
         role: verification
@@ -103,6 +109,24 @@ requirements:
                 criterion: REQ-INT-003#criterion.scoped-response-material
                 covers: [FEAT-INT-001#binding.storage/target.default-material]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_integrity, test: test_default_response_hmac_material_has_a_node_scoped_path } }
+          - id: unknown-space-material-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_integrity.rs
+            selector: { kind: test, name: test_unknown_space_does_not_create_response_hmac_storage }
+            claims:
+              - kind: verifies
+                criterion: REQ-INT-003#criterion.scoped-response-material
+                covers: [FEAT-INT-001#binding.storage/target.space-material]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_integrity, test: test_unknown_space_does_not_create_response_hmac_storage } }
+          - id: invalid-space-material-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_integrity.rs
+            selector: { kind: test, name: test_response_hmac_material_rejects_invalid_space_id }
+            claims:
+              - kind: verifies
+                criterion: REQ-INT-003#criterion.scoped-response-material
+                covers: [FEAT-INT-001#binding.storage/target.space-material]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_integrity, test: test_response_hmac_material_rejects_invalid_space_id } }
           - id: response-signature-case
             adapter: rust
             path: crates/ugoite-server/tests/api_contract.rs
@@ -132,7 +156,7 @@ requirements:
             selector: { kind: test, name: req_int_003_fails_closed_for_unknown_space_and_key_errors }
             claims:
               - kind: verifies
-                criterion: REQ-INT-003#criterion.unsigned-response-boundary
+                criterion: REQ-INT-003#criterion.unavailable-material-remains-unsigned
                 covers: [FEAT-INT-001#binding.server/target.response-signing]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_int_003_fails_closed_for_unknown_space_and_key_errors } }
           - id: openapi-signing-case
@@ -142,9 +166,5 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-INT-003#criterion.eligible-response-signature
-                covers: [FEAT-INT-001#binding.server/target.response-signing]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: openapi_publishes_response_signing_headers_and_unsigned_boundary } }
-              - kind: verifies
-                criterion: REQ-INT-003#criterion.unsigned-response-boundary
                 covers: [FEAT-INT-001#binding.server/target.response-signing]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: openapi_publishes_response_signing_headers_and_unsigned_boundary } }
