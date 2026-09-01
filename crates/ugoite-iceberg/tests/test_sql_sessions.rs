@@ -222,6 +222,42 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     assert_eq!(rows_list.len(), 1);
     assert_eq!(rows_list[0]["_ugoite_id"], "entry-1");
 
+    let injection_parameters = [("title".to_string(), serde_json::json!("Alpha' OR 1=1 --"))]
+        .into_iter()
+        .collect();
+    let injection_parameter_types = [("title".to_string(), "string".to_string())]
+        .into_iter()
+        .collect();
+    let injection_session =
+        sql_session::create_sql_session_authorized_for_principals_by_form_with_parameters(
+            &op,
+            ws_path,
+            &sql_payload.sql,
+            injection_parameters,
+            injection_parameter_types,
+            sql_session::SqlSessionCreateAuthorization {
+                authorization,
+                readable_entries_by_form: &readable_entries_by_form,
+            },
+            ugoite_core::query::EntryScope::AllCurrent,
+        )
+        .await?;
+    let injection_session_id = injection_session["id"].as_str().unwrap();
+    let injection_query_policy = serde_json::from_value(injection_session["query_policy"].clone())?;
+    let injection_rows = sql_session::get_sql_session_rows_authorized_by_form(
+        &op,
+        ws_path,
+        injection_session_id,
+        sql_session::SqlSessionExecutionAuthorization {
+            authorization,
+            query_policy: &injection_query_policy,
+        },
+        0,
+        10,
+    )
+    .await?;
+    assert_eq!(injection_rows["total_count"], 0);
+
     Ok(())
 }
 
