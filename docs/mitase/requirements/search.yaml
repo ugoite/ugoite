@@ -144,11 +144,11 @@ requirements:
                 runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-005: saved history entries rerun directly or open variable input when needed" } }
   - id: REQ-SRCH-006
     title: Structured query operation
-    description: The /spaces/{space_id}/query operation exposes the shared structured query path through the backend, frontend, core, and CLI surfaces.
+    description: Users and operators can submit a structured query for a Space and receive the matching results through the supported Ugoite interfaces.
     priority: high
     status: implemented
     criteria:
       - id: query-operation
         kind: behavior
-        statement: The shared structured query operation is available through the backend, frontend, core, and CLI surfaces.
+        statement: The structured query operation accepts the documented request and returns matching results for the selected Space.
         governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]

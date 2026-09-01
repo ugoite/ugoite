@@ -17,9 +17,6 @@ features:
             adapter: rust
             path: crates/ugoite-iceberg/src/form.rs
             selector: { kind: symbol, name: list_column_types }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FORM-010#criterion.core-types
           - id: upsert-form
             adapter: rust
             path: crates/ugoite-iceberg/src/form.rs

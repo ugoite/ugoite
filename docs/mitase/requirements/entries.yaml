@@ -197,8 +197,8 @@ requirements:
         statement: Asset deletion is rejected while a current non-deleted typed Form value still references the asset.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
   - id: REQ-ENTRY-010
-    title: Entry operator surfaces
-    description: The implemented Entry read and selection operations remain available through the canonical service, REST, frontend, and CLI surfaces recorded by the feature graph.
+    title: Entry read and selection operations
+    description: Users and operators can list, select, retrieve, and inspect historical Entry data through the supported Ugoite interfaces.
     priority: medium
     status: implemented
     criteria:

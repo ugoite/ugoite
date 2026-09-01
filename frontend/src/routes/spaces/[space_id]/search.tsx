@@ -362,7 +362,6 @@ function buildAdvancedSearchQuery(
 }
 
 export default function SpaceSearchRoute() {
-  // This route is the browser participant in the canonical keyword-search contract.
   const params = useParams<{ space_id: string }>();
   const navigate = useNavigate();
   const spaceId = () => params.space_id;

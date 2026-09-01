@@ -17,21 +17,6 @@ requirements:
         kind: behavior
         statement: The Server exposes the available column types for Form creation.
         governed_by: [POL-004#rule.governance, POL-007#rule.governance]
-    bindings:
-      - id: column-types-test
-        role: verification
-        facet: verification
-        responsibility: Verify column type discovery through the exact Iceberg integration test.
-        targets:
-          - id: case
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_form.rs
-            selector: { kind: test, name: test_form_req_form_001_list_column_types }
-            claims:
-              - kind: verifies
-                criterion: REQ-FORM-010#criterion.core-types
-                covers: [FEAT-FORM-001#binding.core/target.list-column-types]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_form, test: test_form_req_form_001_list_column_types } }
   - id: REQ-FORM-002
     title: Form evolution boundary
     description: Before v1, Form updates MUST preserve existing physical field types and IDs. Breaking changes MUST be rejected with an explicit error; callers can add a new field instead of migrating existing values.
@@ -282,15 +267,11 @@ requirements:
                 covers: [FEAT-ENTRY-001#binding.core/target.entry-history]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_attribution_is_consistent_across_lifecycle } }
   - id: REQ-FORM-010
-    title: Form operator surfaces
-    description: The implemented Form list, creation, type discovery, and retrieval operations remain available through the canonical service, REST, frontend, and CLI surfaces recorded by the feature graph.
+    title: Form management operations
+    description: Operators can list, create, update, discover types for, and retrieve Form definitions through the supported Ugoite interfaces.
     priority: medium
     status: implemented
     criteria:
-      - id: core-types
-        kind: behavior
-        statement: The core exposes the supported typed column definitions used by Form creation.
-        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: list-operation
         kind: behavior
         statement: Form definitions can be listed through the service and operator surfaces.

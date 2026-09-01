@@ -347,7 +347,7 @@ policies:
     description: This policy enforces pre-integration quality gates so regressions are caught before they become shared product behavior. It operationalizes rule-based development and trusted constraints by making type checks, lint rules, and regression suites mandatory for change integration.
     rules:
       - id: governance
-        level: unspecified
+        level: must
         statement: This policy enforces pre-integration quality gates so regressions are caught before they become shared product behavior. It operationalizes rule-based development and trusted constraints by making type checks, lint rules, and regression suites mandatory for change integration.
         governed_by: [PHIL-000#principle.stable-foundation, PHIL-003#principle.product-design-principle, PHIL-004#principle.product-design-principle]
     bindings:
@@ -575,7 +575,7 @@ policies:
       Review and canonical fixture evidence before merge.
     rules:
       - id: governance
-        level: unspecified
+        level: must
         statement: >-
           This policy manages change through visible evolution rather than
           silent breakage between layers. For the v0.1 Foundation Freeze, the
@@ -661,7 +661,7 @@ policies:
     description: The v0.1 Knowledge compatibility floor freezes ownership, authority, append-only history, and adapter authority semantics. It does not freeze the physical Catalog Head encoding, Iceberg object layout, crate APIs, or frontend internals. A breaking semantic change requires an explicit compatibility review and must preserve the canonical v0.1 Knowledge fixture or establish a new versioned contract before it can merge.
     rules:
       - id: governance
-        level: unspecified
+        level: must
         statement: The v0.1 Knowledge compatibility floor freezes ownership, authority, append-only history, and adapter authority semantics. It does not freeze the physical Catalog Head encoding, Iceberg object layout, crate APIs, or frontend internals. A breaking semantic change requires an explicit compatibility review and must preserve the canonical v0.1 Knowledge fixture or establish a new versioned contract before it can merge.
         governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
     bindings:
