@@ -42,6 +42,7 @@ fn assert_forbidden(error: &anyhow::Error) {
 
 #[tokio::test]
 /// REQ-API-008
+/// REQ-API-007
 async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "test-sql-session", "/tmp").await?;
