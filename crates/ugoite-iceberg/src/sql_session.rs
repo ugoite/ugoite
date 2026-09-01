@@ -329,7 +329,8 @@ pub async fn create_sql_session_authorized_for_principals_by_form_with_parameter
         )
         .into());
     }
-    let bound_parameters = index::datafusion_parameters(&parameters, &parameter_types)?;
+    let bound_parameters =
+        index::datafusion_parameters(&parameters, &parameter_types).map_err(session_query_error)?;
     let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
     let publication = workspace.current_publication().await?;
     let checkpoint = workspace.resolve_publication(&publication).await?;

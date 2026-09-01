@@ -51,6 +51,19 @@ describe("portable Ugoite API protocol WASM", () => {
     });
   });
 
+  it("REQ-FE-065: sends row-reference lookups with the immutable Space ID", async () => {
+    const request = await prepareApiRequest("entry.options", {
+      space_id: "01900000-0000-7000-8000-000000000001",
+      form: "Project",
+      q: "alpha",
+      limit: 8,
+    });
+
+    expect(request.path).toBe(
+      "/spaces/01900000-0000-7000-8000-000000000001/entries/options?form=Project&limit=8&q=alpha",
+    );
+  });
+
   it("REQ-API-001: serializes JSON bodies in the portable Rust layer", async () => {
     const request = await prepareApiRequest(
       "entry.create",

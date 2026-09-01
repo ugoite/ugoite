@@ -38,6 +38,14 @@ content.
 - Preserve the current editor value while displaying save failures.
 - Do not interpret a 2xx response as durable success until the corresponding
   client decoder accepts the response body.
+- After a lost mutation response, reconcile the immutable target before
+  replaying intent. Entry creates use their explicit ID as the reconciliation
+  key; Entry updates use `parent_revision_id` and a concurrent change remains a
+  409 conflict. Automatic blind retries and last-write-wins are not supported.
+- A server restart preserves browser sessions only when the configured Node
+  control store and node secret are preserved. A 401 means authentication is
+  absent or invalid; a 403/404 for a Space is an authorization or Space-state
+  result and must be shown separately.
 - Recovery one-time responses use `Cache-Control: no-store`. Treat
   `SPACE_RECOVERY_ALREADY_COMPLETED` as terminal; do not replay the token.
   `audit_status: pending` means the Space binding mutation committed and audit

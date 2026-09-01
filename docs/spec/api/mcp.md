@@ -34,6 +34,17 @@ The stable surface is deliberately narrow:
   `_meta["ugoite/runId"]` for both `ugoite.save` and `ugoite.undo`.
 - `ugoite.delete` performs only an authorized soft delete.
 
+The capability boundary is explicit:
+
+| Capability | v0.1 status | Contract |
+| --- | --- | --- |
+| Search Entries | Supported | `ugoite.search` returns bounded sanitized summaries; bodies are lazy resources. |
+| Create/update Entry | Supported | `ugoite.save` uses the normal Entry/Form validation and authorization boundary. |
+| Saved SQL | Not supported | Use the authenticated REST/CLI Saved SQL and SQL-session surfaces; no MCP SQL tool is advertised. |
+| ACL administration | Not supported | MCP credentials are scoped to an already approved Space; membership and ACL changes remain REST owner operations. |
+| Duplicate tool calls | No general guarantee | Each call is an independent semantic operation. A client must use the returned result or reconcile its target; the MCP adapter does not promise blind replay idempotency. |
+| Service accounts, audit CRUD, browser-local persistence | Future/reference | These are not v0.1 MCP capabilities. |
+
 Tools are filtered before `tools/list`: read-only credentials see search,
 write credentials additionally see save and undo, and delete is shown only to
 an approved human device credential with effective Delete authority. Tool

@@ -3003,7 +3003,8 @@ impl UgoiteService {
             principal_ids,
             policy_hash: &authorization_policy_hash,
         };
-        let bound_parameters = index::datafusion_parameters(&parameters, &parameter_types)?;
+        let bound_parameters = index::datafusion_parameters(&parameters, &parameter_types)
+            .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
         sql_session::create_sql_session_authorized_for_principals_with_frozen_policy_and_saved_sql_scope(
             &self.operator,
             &self.workspace_path(space_id),

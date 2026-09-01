@@ -291,6 +291,181 @@ pub fn datafusion_parameters(
         .collect()
 }
 
+/// Normalize the two user-facing parameter spellings to the native DataFusion
+/// placeholder syntax. Template markers are recognized only in SQL code; a
+/// marker in a string, quoted identifier, or comment remains literal text.
+/// This keeps CLI, REST, and Browser saved-query inputs on one contract and
+/// avoids substituting user values into SQL.
+pub fn normalize_sql_template(sql: &str) -> Result<String> {
+    let bytes = sql.as_bytes();
+    let mut normalized = String::with_capacity(sql.len());
+    let mut offset = 0;
+    let mut state = SqlTemplateState::Code;
+
+    while offset < bytes.len() {
+        match state {
+            SqlTemplateState::Code => {
+                if bytes[offset] == b'-' && bytes.get(offset + 1) == Some(&b'-') {
+                    normalized.push_str("--");
+                    offset += 2;
+                    state = SqlTemplateState::LineComment;
+                } else if bytes[offset] == b'/' && bytes.get(offset + 1) == Some(&b'*') {
+                    normalized.push_str("/*");
+                    offset += 2;
+                    state = SqlTemplateState::BlockComment;
+                } else if bytes[offset] == b'\'' {
+                    normalized.push('\'');
+                    offset += 1;
+                    state = SqlTemplateState::String;
+                } else if bytes[offset] == b'"' {
+                    normalized.push('"');
+                    offset += 1;
+                    state = SqlTemplateState::QuotedIdentifier;
+                } else if bytes[offset] == b'`' {
+                    normalized.push('`');
+                    offset += 1;
+                    state = SqlTemplateState::BacktickIdentifier;
+                } else if bytes[offset] == b'{' && bytes.get(offset + 1) == Some(&b'{') {
+                    let end = sql[offset + 2..]
+                        .find("}}")
+                        .map(|relative| offset + 2 + relative)
+                        .ok_or_else(|| {
+                            anyhow!("SQL template variable is missing closing braces")
+                        })?;
+                    let name = sql[offset + 2..end].trim();
+                    if !is_sql_parameter_name(name) {
+                        return Err(anyhow!(
+                            "SQL template variable name must match [A-Za-z_][A-Za-z0-9_]*"
+                        ));
+                    }
+                    normalized.push('$');
+                    normalized.push_str(name);
+                    offset = end + 2;
+                } else {
+                    let character = sql[offset..]
+                        .chars()
+                        .next()
+                        .expect("offset is on a character boundary");
+                    normalized.push(character);
+                    offset += character.len_utf8();
+                }
+            }
+            SqlTemplateState::String => {
+                let character = sql[offset..]
+                    .chars()
+                    .next()
+                    .expect("offset is on a character boundary");
+                normalized.push(character);
+                if character == '\'' {
+                    if bytes.get(offset + 1) == Some(&b'\'') {
+                        normalized.push('\'');
+                        offset += 2;
+                    } else {
+                        offset += character.len_utf8();
+                        state = SqlTemplateState::Code;
+                    }
+                } else {
+                    offset += character.len_utf8();
+                }
+            }
+            SqlTemplateState::QuotedIdentifier => {
+                let character = sql[offset..]
+                    .chars()
+                    .next()
+                    .expect("offset is on a character boundary");
+                normalized.push(character);
+                if character == '"' {
+                    if bytes.get(offset + 1) == Some(&b'"') {
+                        normalized.push('"');
+                        offset += 2;
+                    } else {
+                        offset += character.len_utf8();
+                        state = SqlTemplateState::Code;
+                    }
+                } else {
+                    offset += character.len_utf8();
+                }
+            }
+            SqlTemplateState::BacktickIdentifier => {
+                let character = sql[offset..]
+                    .chars()
+                    .next()
+                    .expect("offset is on a character boundary");
+                normalized.push(character);
+                if character == '`' {
+                    if bytes.get(offset + 1) == Some(&b'`') {
+                        normalized.push('`');
+                        offset += 2;
+                    } else {
+                        offset += character.len_utf8();
+                        state = SqlTemplateState::Code;
+                    }
+                } else {
+                    offset += character.len_utf8();
+                }
+            }
+            SqlTemplateState::LineComment => {
+                let character = sql[offset..]
+                    .chars()
+                    .next()
+                    .expect("offset is on a character boundary");
+                normalized.push(character);
+                offset += character.len_utf8();
+                if character == '\n' {
+                    state = SqlTemplateState::Code;
+                }
+            }
+            SqlTemplateState::BlockComment => {
+                if bytes[offset] == b'*' && bytes.get(offset + 1) == Some(&b'/') {
+                    normalized.push_str("*/");
+                    offset += 2;
+                    state = SqlTemplateState::Code;
+                } else {
+                    let character = sql[offset..]
+                        .chars()
+                        .next()
+                        .expect("offset is on a character boundary");
+                    normalized.push(character);
+                    offset += character.len_utf8();
+                }
+            }
+        }
+    }
+    Ok(normalized)
+}
+
+#[derive(Clone, Copy)]
+enum SqlTemplateState {
+    Code,
+    String,
+    QuotedIdentifier,
+    BacktickIdentifier,
+    LineComment,
+    BlockComment,
+}
+
+fn is_sql_parameter_name(name: &str) -> bool {
+    let mut characters = name.chars();
+    matches!(characters.next(), Some(first) if first == '_' || first.is_ascii_alphabetic())
+        && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
+}
+
+/// Validate SQL using the same DataFusion parser used for query execution.
+/// Relation and column resolution intentionally remain an execution concern.
+pub fn validate_sql_syntax(sql: &str) -> Result<()> {
+    use datafusion::sql::parser::DFParser;
+
+    let normalized = normalize_sql_template(sql)?;
+    if normalized.trim().is_empty() {
+        return Err(anyhow!("SQL must not be empty"));
+    }
+    let statements = DFParser::parse_sql(&normalized).context("parse SQL with DataFusion")?;
+    if statements.is_empty() {
+        return Err(anyhow!("SQL must contain a statement"));
+    }
+    Ok(())
+}
+
 pub async fn datafusion_parameter_names(
     _op: &Operator,
     _ws_path: &str,
@@ -300,10 +475,14 @@ pub async fn datafusion_parameter_names(
     use datafusion::sql::sqlparser::ast::{visit_expressions, Expr, Value};
     use std::ops::ControlFlow;
 
+    let normalized = normalize_sql_template(sql)?;
     // Saving SQL validates only DataFusion syntax and native placeholders.
     // Relation resolution remains an execution-time concern: a saved query may
     // legitimately target a Form that an operator creates later.
-    let statements = DFParser::parse_sql(sql).context("parse saved SQL with DataFusion")?;
+    let statements = DFParser::parse_sql(&normalized).context("parse saved SQL with DataFusion")?;
+    if statements.is_empty() {
+        return Err(anyhow!("SQL must contain a statement"));
+    }
     let mut names = BTreeSet::new();
     for statement in statements {
         if let Statement::Statement(statement) = statement {
@@ -380,12 +559,16 @@ pub(crate) async fn query_entry_candidates_authorized_after(
         ));
     }
     let forms = load_forms(op, ws_path).await?;
+    let searchable_scopes = searchable_relation_scopes(&forms, relation_scopes);
+    if searchable_scopes.is_empty() {
+        return Ok(Vec::new());
+    }
     let context = datafusion_sql_context_with_limits(
         op,
         ws_path,
         EntryScope::AllCurrent,
         None,
-        Some(relation_scopes),
+        Some(&searchable_scopes),
         None,
         BTreeSet::from(["array_to_string".to_string(), "lower".to_string()]),
         crate::MAX_NORMAL_READ_ROWS,
@@ -396,7 +579,7 @@ pub(crate) async fn query_entry_candidates_authorized_after(
     query_entry_candidates_in_context(
         &context,
         &forms,
-        relation_scopes,
+        &searchable_scopes,
         form_filter,
         keyword,
         &EntryCandidatePage {
@@ -1451,6 +1634,76 @@ fn searchable_keyword_predicate(form: &Value, form_name: &str, query: &str) -> R
         }
     }
     Ok(expressions.join(" OR "))
+}
+
+/// Search candidates use a deliberately smaller provider surface than a
+/// general SQL query. A Form with nested/opaque columns must not make an
+/// otherwise independent Form unsearchable when DataFusion cannot build a
+/// projection for that column type. Such a Form is skipped locally; its
+/// unsupported fields are not advertised as searchable.
+fn searchable_relation_scopes(
+    forms: &HashMap<String, Value>,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> BTreeMap<String, EntryScope> {
+    relation_scopes
+        .iter()
+        .filter(|(scope_name, _)| {
+            forms.iter().any(|(form_name, form)| {
+                (form_name.eq_ignore_ascii_case(scope_name)
+                    || form
+                        .get("sql_relation")
+                        .and_then(Value::as_str)
+                        .is_some_and(|relation| relation.eq_ignore_ascii_case(scope_name)))
+                    && form_supports_search_context(form)
+            })
+        })
+        .map(|(name, scope)| (name.clone(), scope.clone()))
+        .collect()
+}
+
+fn form_supports_search_context(form: &Value) -> bool {
+    form.get("fields")
+        .and_then(Value::as_object)
+        .is_none_or(|fields| {
+            fields.values().all(|field| {
+                let field_type = field
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("string");
+                match field_type {
+                    "string" | "markdown" | "sql" | "boolean" | "integer" | "long" | "float"
+                    | "double" | "date" | "time" | "timestamp" | "timestamp_tz"
+                    | "timestamp_ns" | "timestamp_tz_ns" | "uuid" | "row_reference" => true,
+                    "list" => field
+                        .get("items")
+                        .and_then(Value::as_object)
+                        .and_then(|items| items.get("type"))
+                        .and_then(Value::as_str)
+                        .is_none_or(|item_type| {
+                            matches!(
+                                item_type,
+                                "string"
+                                    | "markdown"
+                                    | "sql"
+                                    | "boolean"
+                                    | "integer"
+                                    | "long"
+                                    | "float"
+                                    | "double"
+                                    | "date"
+                                    | "time"
+                                    | "timestamp"
+                                    | "timestamp_tz"
+                                    | "timestamp_ns"
+                                    | "timestamp_tz_ns"
+                                    | "uuid"
+                                    | "row_reference"
+                            )
+                        }),
+                    _ => false,
+                }
+            })
+        })
 }
 
 pub async fn execute_sql_query(
@@ -2758,10 +3011,14 @@ pub fn validate_properties(properties: &Value, entry_form: &Value) -> Result<(Va
             .unwrap_or(false);
 
         if required && (value.is_none() || value == Some(Value::String(String::new()))) {
+            let (expected_type, expected_format) = expected_field_contract(field_type);
             warnings.push(serde_json::json!({
                 "code": "missing_field",
                 "field": field_name,
-                "message": format!("Missing required field: {}", field_name)
+                "expected_type": expected_type,
+                "expected_format": expected_format,
+                "reason": "required value is missing",
+                "message": format!("Missing required field: {} (expected {})", field_name, expected_format)
             }));
             continue;
         }
@@ -2881,15 +3138,46 @@ pub fn validate_properties(properties: &Value, entry_form: &Value) -> Result<(Va
                 obj.insert(field_name.clone(), value);
             }
         } else {
+            let (expected_type, expected_format) = expected_field_contract(field_type);
             warnings.push(serde_json::json!({
                 "code": "invalid_type",
                 "field": field_name,
-                "message": format!("Field '{}' has invalid type", field_name)
+                "expected_type": expected_type,
+                "expected_format": expected_format,
+                "reason": format!("value does not match the {expected_format} contract"),
+                "message": format!("Field '{}' has invalid type; expected {}", field_name, expected_format)
             }));
         }
     }
 
     Ok((casted, warnings))
+}
+
+fn expected_field_contract(field_type: &str) -> (&'static str, &'static str) {
+    match field_type {
+        "number" | "double" | "float" => ("number", "a numeric value"),
+        "integer" => ("integer", "a 32-bit integer"),
+        "long" => ("long", "an integer"),
+        "date" => ("date", "ISO date YYYY-MM-DD"),
+        "time" => ("time", "ISO time HH:MM[:SS[.fraction]]"),
+        "timestamp" => ("timestamp", "timezone-free ISO timestamp"),
+        "timestamp_tz" => ("timestamp_tz", "RFC3339 timestamp with timezone"),
+        "timestamp_ns" => ("timestamp_ns", "nanosecond timezone-free ISO timestamp"),
+        "timestamp_tz_ns" => (
+            "timestamp_tz_ns",
+            "nanosecond RFC3339 timestamp with timezone",
+        ),
+        "uuid" => ("uuid", "UUID"),
+        "binary" => ("binary", "base64: or hex: encoded bytes"),
+        "boolean" => ("boolean", "true, false, yes, no, on, off, 1, or 0"),
+        "list" => ("list", "a JSON array or Markdown list"),
+        "object_list" => ("object_list", "a list of JSON objects"),
+        "asset_reference" => ("asset_reference", "an asset reference object"),
+        "row_reference" => ("row_reference", "an Entry ID"),
+        "markdown" => ("markdown", "Markdown text"),
+        "sql" => ("sql", "SQL text"),
+        _ => ("string", "text"),
+    }
 }
 
 pub fn aggregate_stats(entries: &Map<String, Value>) -> Value {

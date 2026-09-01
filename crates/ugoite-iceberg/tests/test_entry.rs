@@ -25,6 +25,31 @@ async fn ensure_entry_form(op: &opendal::Operator, ws_path: &str) -> anyhow::Res
 }
 
 #[tokio::test]
+/// Issue 2141: Entry titles are optional across the local Entry contract.
+async fn entry_create_allows_an_empty_title() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "optional-entry-title", "/tmp").await?;
+    let ws_path = "spaces/optional-entry-title";
+    ensure_entry_form(&op, ws_path).await?;
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "untitled-entry",
+        "---\nform: Entry\n---\n# \n\n## Body\ncontent",
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await?;
+
+    let entries = entry::list_entries(&op, ws_path).await?;
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["id"], "untitled-entry");
+    assert_eq!(entries[0]["title"], "");
+    Ok(())
+}
+
+#[tokio::test]
 async fn explicit_change_command_identity_reaches_entry_history() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "explicit-change-entry", "/tmp").await?;

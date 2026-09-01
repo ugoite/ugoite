@@ -58,7 +58,10 @@ requirements:
   - features/sql.md
   priority: medium
   status: implemented
-  verification: untraced
+  verification: traced
+  tests:
+  - file: crates/ugoite-cli/tests/test_sql_rules.rs
+  - file: crates/ugoite-iceberg/tests/test_index.rs
 - set_id: REQCAT-SEARCH
   source_file: requirements/search.yaml
   scope: Search behavior and discoverability requirements.

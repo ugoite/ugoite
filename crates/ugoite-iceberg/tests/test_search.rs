@@ -160,3 +160,47 @@ async fn test_search_req_srch_002_fallback_scan() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+/// Issue 2135: an empty Form with unsupported projection types must not break
+/// keyword search for an ordinary Form in the same Space.
+async fn search_ignores_incompatible_empty_form() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let ws_path = "spaces/search-complex-form";
+    space::create_space(&op, "search-complex-form", "/tmp").await?;
+    create_test_entry(&op, ws_path, "ordinary-entry", "ordinary searchable text").await?;
+
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Complex",
+            "fields": {
+                "Day": {"type": "date"},
+                "Time": {"type": "time"},
+                "When": {"type": "timestamp_tz"},
+                "Identifier": {"type": "uuid"},
+                "Labels": {"type": "list", "items": {"type": "string"}},
+                "Blob": {"type": "binary"},
+                "Objects": {"type": "object_list"}
+            }
+        }),
+    )
+    .await?;
+
+    let results = search::search_entries(
+        &op,
+        ws_path,
+        "ordinary searchable",
+        ugoite_iceberg::MAX_NORMAL_READ_ROWS,
+    )
+    .await?;
+    assert_eq!(
+        results
+            .iter()
+            .map(|result| result.id.as_str())
+            .collect::<Vec<_>>(),
+        ["ordinary-entry"]
+    );
+    Ok(())
+}

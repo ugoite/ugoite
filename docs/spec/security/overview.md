@@ -92,6 +92,10 @@ request-header allowlists, including the MCP protocol headers for `/mcp`;
 wildcard origins, methods, and request headers are not used with credentials.
 An origin outside the allowlist does not receive
 `Access-Control-Allow-Origin`, so it is not granted browser CORS access.
+Credentialed GET reads are intentional under this allowlist; they use the same
+authenticated identity and Space ACL checks as same-origin reads. This does not
+make cross-origin writes safe by default: cookie-authenticated unsafe methods
+remain subject to the separate Origin/CSRF guard.
 
 CORS response permission is independent of CSRF protection. Cookie-authenticated
 unsafe requests still require the canonical `UGOITE_PUBLIC_ORIGIN`, even when a

@@ -17,7 +17,11 @@ requirements:
   title: Entry Creation
   description: 'Create entry from Markdown content by appending one immutable
 
-    revision row to the stable Form ID''s Iceberg table.
+    revision row to the stable Form ID''s Iceberg table. The Entry title is
+
+    optional; when no title text is supplied, list/search metadata keeps an
+
+    empty title and Browser presentation may use its Untitled placeholder.
 
     '
   related_spec:

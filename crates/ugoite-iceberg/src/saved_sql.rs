@@ -15,7 +15,11 @@ const SQL_FORM_NAME: &str = "SQL";
 const SQL_VALIDATION_PREFIX: &str = "UGOITE_SQL_VALIDATION";
 
 fn validation_error(message: impl std::fmt::Display) -> anyhow::Error {
-    anyhow!("{SQL_VALIDATION_PREFIX}: {message}")
+    AppError::invalid_input(
+        ErrorCode::InvalidInput,
+        format!("{SQL_VALIDATION_PREFIX}: {message}"),
+    )
+    .into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,10 +214,23 @@ fn normalize_sql_variables(value: Option<&Value>) -> Result<Value> {
             .get("type")
             .and_then(|v| v.as_str())
             .ok_or_else(|| validation_error("variables.type must be a string"))?;
+        if !matches!(
+            var_type,
+            "string" | "boolean" | "integer" | "float" | "timestamp" | "date"
+        ) {
+            return Err(validation_error(format!(
+                "variables.type is unsupported: {var_type}"
+            )));
+        }
         let name = obj
             .get("name")
             .and_then(|v| v.as_str())
             .ok_or_else(|| validation_error("variables.name must be a string"))?;
+        if !is_sql_variable_name(name) {
+            return Err(validation_error(
+                "variables.name must match [A-Za-z_][A-Za-z0-9_]*",
+            ));
+        }
         let description = obj
             .get("description")
             .and_then(|v| v.as_str())
@@ -252,16 +269,16 @@ async fn validate_sql_payload(
 
     let embedded_names = crate::index::datafusion_parameter_names(op, ws_path, sql_text)
         .await
-        .map_err(|_| validation_error("sql is not valid DataFusion SQL"))?
+        .map_err(validation_error)?
         .into_iter()
         .map(|name| name.trim_start_matches('$').to_string())
         .collect::<BTreeSet<_>>();
 
     for name in &var_names {
         if !embedded_names.contains(name) {
-            return Err(validation_error(
-                "variables must be embedded in SQL as ${name}",
-            ));
+            return Err(validation_error(format!(
+                "variables must be embedded in SQL as ${name}"
+            )));
         }
     }
 
@@ -274,6 +291,12 @@ async fn validate_sql_payload(
     }
 
     Ok(())
+}
+
+fn is_sql_variable_name(name: &str) -> bool {
+    let mut characters = name.chars();
+    matches!(characters.next(), Some(first) if first == '_' || first.is_ascii_alphabetic())
+        && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
 }
 
 fn sql_integrity_payload(
@@ -412,22 +435,28 @@ pub async fn create_sql<I: IntegrityProvider>(
 ) -> Result<Value> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let form_def = ensure_sql_form(op, ws_path).await?;
-    validate_sql_metadata(payload)?;
+    let mut normalized_payload = payload.clone();
+    normalized_payload.sql =
+        index::normalize_sql_template(&payload.sql).map_err(validation_error)?;
+    validate_sql_metadata(&normalized_payload)?;
     let variables = normalize_sql_variables(Some(&payload.variables))?;
-    validate_sql_payload(op, ws_path, &payload.sql, &variables).await?;
+    validate_sql_payload(op, ws_path, &normalized_payload.sql, &variables).await?;
 
     let timestamp = entry::now_ts();
     let revision_id = Uuid::new_v4().to_string();
-    let integrity_payload = sql_integrity_payload(integrity, payload, &variables);
+    let integrity_payload = sql_integrity_payload(integrity, &normalized_payload, &variables);
 
     let mut fields = Map::new();
-    fields.insert("sql".to_string(), Value::String(payload.sql.to_string()));
+    fields.insert(
+        "sql".to_string(),
+        Value::String(normalized_payload.sql.to_string()),
+    );
     fields.insert("variables".to_string(), variables.clone());
-    let extra_attributes = sql_extra_attributes(payload);
+    let extra_attributes = sql_extra_attributes(&normalized_payload);
 
     let row = entry::EntryRow {
         entry_id: sql_id.to_string(),
-        title: payload.name.clone().unwrap_or_default(),
+        title: normalized_payload.name.clone().unwrap_or_default(),
         form: SQL_FORM_NAME.to_string(),
         tags: Vec::new(),
         created_at: timestamp,
@@ -507,22 +536,28 @@ pub async fn update_sql<I: IntegrityProvider>(
         .into());
     }
 
-    let variables = normalize_sql_variables(Some(&payload.variables))?;
-    validate_sql_metadata(payload)?;
-    validate_sql_payload(op, ws_path, &payload.sql, &variables).await?;
+    let mut normalized_payload = payload.clone();
+    normalized_payload.sql =
+        index::normalize_sql_template(&payload.sql).map_err(validation_error)?;
+    let variables = normalize_sql_variables(Some(&normalized_payload.variables))?;
+    validate_sql_metadata(&normalized_payload)?;
+    validate_sql_payload(op, ws_path, &normalized_payload.sql, &variables).await?;
     let mut timestamp = entry::now_ts();
     if timestamp <= row.updated_at {
         timestamp = row.updated_at + 0.001;
     }
     let revision_id = Uuid::new_v4().to_string();
-    let integrity_payload = sql_integrity_payload(integrity, payload, &variables);
+    let integrity_payload = sql_integrity_payload(integrity, &normalized_payload, &variables);
 
     let mut fields = Map::new();
-    fields.insert("sql".to_string(), Value::String(payload.sql.to_string()));
+    fields.insert(
+        "sql".to_string(),
+        Value::String(normalized_payload.sql.to_string()),
+    );
     fields.insert("variables".to_string(), variables.clone());
-    let extra_attributes = sql_extra_attributes(payload);
+    let extra_attributes = sql_extra_attributes(&normalized_payload);
 
-    row.title = payload.name.clone().unwrap_or_default();
+    row.title = normalized_payload.name.clone().unwrap_or_default();
     row.updated_at = timestamp;
     row.fields = Value::Object(fields);
     row.extra_attributes = extra_attributes;

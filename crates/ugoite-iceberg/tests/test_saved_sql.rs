@@ -24,7 +24,7 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
         name: Some("Recent Meetings".to_string()),
         kind: SqlKind::UserQuery,
         metadata: None,
-        sql: format!("SELECT * FROM \"{FORM_RELATION}\" WHERE _ugoite_updated_at >= $since"),
+        sql: format!("SELECT * FROM \"{FORM_RELATION}\" WHERE _ugoite_updated_at >= {{{{since}}}}"),
         variables: json!([
             {
                 "type": "date",
@@ -46,6 +46,12 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
     assert_eq!(
         fetched.get("name").and_then(|v| v.as_str()),
         Some("Recent Meetings")
+    );
+    let expected_sql =
+        format!("SELECT * FROM \"{FORM_RELATION}\" WHERE _ugoite_updated_at >= $since");
+    assert_eq!(
+        fetched.get("sql").and_then(|v| v.as_str()),
+        Some(expected_sql.as_str())
     );
 
     let entries = saved_sql::list_sql(&op, ws_path, EntryScope::AllCurrent).await?;
@@ -291,6 +297,21 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
     .await
     .unwrap_err();
     assert!(missing_err.to_string().contains("UGOITE_SQL_VALIDATION"));
+
+    let empty_sql = SqlPayload {
+        name: Some("Empty SQL".to_string()),
+        kind: SqlKind::UserQuery,
+        metadata: None,
+        sql: "  ".to_string(),
+        variables: json!([]),
+    };
+    let empty_sql_err =
+        saved_sql::create_sql(&op, ws_path, "sql-empty", &empty_sql, "author", &integrity)
+            .await
+            .unwrap_err();
+    assert!(empty_sql_err
+        .to_string()
+        .contains("SQL must contain a statement"));
 
     let undefined_placeholder = SqlPayload {
         name: Some("Undefined placeholder".to_string()),

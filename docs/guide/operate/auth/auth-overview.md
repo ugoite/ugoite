@@ -67,6 +67,16 @@ The account security page lists browser sessions with creation, last-use,
 expiry, and revocation state. A user can revoke any individual session; the
 change is enforced on its next request.
 
+### Server restart behavior
+
+Sessions are server-side Node control-store records, not Browser-local data.
+Restarting Ugoite with the same configured control-store prefix and node secret
+preserves an otherwise valid session, including its expiry and revocation
+state. If either input is missing or the session is invalid, the next request
+returns 401 and the Browser must show the sign-in/recovery path. A 403 or 404
+for a Space is not a session restart result: it means the authenticated
+identity cannot access that Space or the Space is absent.
+
 Credential enrollment, MCP device approval, and role/ACL changes require a
 Passkey authentication within the preceding five minutes. OIDC provider
 configuration and identity linking use the same recent-Passkey boundary.
