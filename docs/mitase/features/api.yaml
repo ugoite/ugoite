@@ -1,0 +1,178 @@
+schema: mitase/spec/v1
+kind: features
+namespace: api
+category: API contract surfaces
+features:
+  - id: FEAT-API-001
+    title: API contract and operator surfaces
+    summary: Connect shipped REST, CLI, and SQL-session surfaces to the canonical API requirements without introducing a Ugoite-specific specification kind.
+    status: implemented
+    bindings:
+      - id: backend
+        role: operation
+        facet: backend
+        responsibility: Expose the API-owned Space, preference, saved SQL, and SQL-session operations through the backend adapter.
+        targets:
+          - id: space-list
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: list_spaces }
+          - id: space-create
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: create_space }
+          - id: space-get
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: get_space }
+          - id: preferences
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: get_preferences }
+          - id: sql-session
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: create_sql_session }
+      - id: core
+        role: implementation
+        facet: core
+        responsibility: Implement the API-owned saved SQL and SQL-session storage behavior in the canonical Rust core.
+        targets:
+          - id: sql-storage
+            adapter: rust
+            path: crates/ugoite-iceberg/src/saved_sql.rs
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-006#criterion.saved-sql-lifecycle
+              - kind: satisfies
+                criterion: REQ-API-007#criterion.declared-template-bindings
+          - id: sql-session
+            adapter: rust
+            path: crates/ugoite-iceberg/src/sql_session.rs
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-008#criterion.fixed-publication-coordinate
+              - kind: satisfies
+                criterion: REQ-API-008#criterion.paged-session-results
+      - id: cli
+        role: implementation
+        facet: cli
+        responsibility: Keep Space and saved SQL workflows available through the explicit Ugoite CLI operator surface.
+        targets:
+          - id: space-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/space.rs
+            selector: { kind: symbol, name: run }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-001#criterion.space-lifecycle
+          - id: sql-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/sql.rs
+            selector: { kind: symbol, name: run }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-006#criterion.saved-sql-lifecycle
+              - kind: satisfies
+                criterion: REQ-API-007#criterion.declared-template-bindings
+      - id: contract
+        role: contract-source
+        facet: api
+        responsibility: Define API-owned HTTP operations using the generated OpenAPI snapshot produced from the Rust server.
+        owns:
+          - id: openapi-source
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: file }
+        targets:
+          - id: spaces-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /spaces }
+          - id: create-space-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /spaces }
+          - id: preferences-get-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /preferences/me }
+          - id: preferences-patch-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: patch, path: /preferences/me }
+          - id: sql-session-create-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/sql-sessions' }
+          - id: sql-session-status-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/sql-sessions/{session_id}' }
+          - id: sql-session-count-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/sql-sessions/{session_id}/count' }
+          - id: sql-session-rows-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/sql-sessions/{session_id}/rows' }
+          - id: sql-list-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/sql' }
+          - id: sql-create-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/sql' }
+          - id: sql-get-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/sql/{sql_id}' }
+          - id: sql-update-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: put, path: '/spaces/{space_id}/sql/{sql_id}' }
+          - id: sql-delete-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: delete, path: '/spaces/{space_id}/sql/{sql_id}' }
+    contracts:
+      - id: space-crud
+        kind: http
+        source: FEAT-API-001#binding.contract/target.spaces-contract
+        participants:
+          - target: FEAT-API-001#binding.backend/target.space-list
+            role: backend
+          - target: FEAT-API-001#binding.backend/target.space-create
+            role: backend
+          - target: FEAT-API-001#binding.backend/target.space-get
+            role: backend
+          - target: FEAT-API-001#binding.cli/target.space-command
+            role: operator
+        guarantees: [REQ-API-001#criterion.space-lifecycle, REQ-API-001#criterion.stable-space-identity]
+      - id: preferences
+        kind: http
+        source: FEAT-API-001#binding.contract/target.preferences-get-contract
+        participants:
+          - target: FEAT-API-001#binding.backend/target.preferences
+            role: backend
+        guarantees: [REQ-API-011#criterion.preferences-roundtrip, REQ-API-011#criterion.selected-space-validation]
+      - id: saved-sql
+        kind: http
+        source: FEAT-API-001#binding.contract/target.sql-list-contract
+        participants:
+          - target: FEAT-API-001#binding.core/target.sql-storage
+            role: service
+          - target: FEAT-API-001#binding.cli/target.sql-command
+            role: operator
+        guarantees: [REQ-API-006#criterion.saved-sql-lifecycle, REQ-API-007#criterion.parameterized-execution]
+      - id: sql-session
+        kind: http
+        source: FEAT-API-001#binding.contract/target.sql-session-create-contract
+        participants:
+          - target: FEAT-API-001#binding.core/target.sql-session
+            role: backend
+        guarantees: [REQ-API-008#criterion.fixed-publication-coordinate, REQ-API-008#criterion.paged-session-results]
