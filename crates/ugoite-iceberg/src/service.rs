@@ -3219,15 +3219,8 @@ impl UgoiteService {
         filename: &str,
         content: &[u8],
     ) -> Result<ugoite_domain::entry::AssetReference> {
-        self.ensure_mutation_admitted(space_id).await?;
-        self.validate_complete_space(space_id).await?;
-        asset::save_asset(
-            &self.operator,
-            &self.workspace_path(space_id),
-            filename,
-            content,
-        )
-        .await
+        self.save_asset_with_media_type(space_id, filename, content, "application/octet-stream")
+            .await
     }
 
     pub async fn save_asset_with_media_type(
@@ -3237,6 +3230,7 @@ impl UgoiteService {
         content: &[u8],
         media_type: &str,
     ) -> Result<ugoite_domain::entry::AssetReference> {
+        // This is the canonical service boundary used by REST multipart upload.
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
         asset::save_asset_with_media_type(
@@ -3263,6 +3257,7 @@ impl UgoiteService {
         asset_id: &str,
         principal_ids: &[Uuid],
     ) -> Result<asset::AssetContent> {
+        // The service enforces both the containing Entry and the Asset edge.
         require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_form_name(form_name))?;
@@ -3439,6 +3434,7 @@ impl UgoiteService {
         asset_id: &str,
         principal_ids: &[Uuid],
     ) -> Result<()> {
+        // Deletion remains a Catalog Head publication after authorization scopes are fixed.
         require_nonempty_authorized_principals(principal_ids)?;
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;

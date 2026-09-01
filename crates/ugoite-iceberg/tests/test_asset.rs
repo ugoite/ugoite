@@ -27,6 +27,8 @@ async fn upload_returns_a_typed_reference_without_creating_an_entry() -> anyhow:
     assert_eq!(reference.name, "image.png");
     assert_eq!(reference.size_bytes, 5);
     assert_eq!(reference.media_type, "application/octet-stream");
+    assert!(!reference.asset_id.is_empty());
+    assert_eq!(reference.sha256.len(), 64);
     assert!(
         op.exists(&format!("{ws_path}/assets/{}", reference.asset_id))
             .await?
@@ -67,6 +69,7 @@ async fn read_and_delete_use_the_exact_asset_id_key() -> anyhow::Result<()> {
 
     let content = asset::read_asset(&op, ws_path, &reference.asset_id).await?;
     assert_eq!(content.bytes, b"data");
+    assert_eq!(content.bytes.len(), reference.size_bytes as usize);
 
     asset::delete_asset(&op, ws_path, &reference.asset_id, &BTreeMap::new()).await?;
     assert!(
@@ -101,6 +104,7 @@ async fn upload_normalizes_the_display_name_without_leaking_storage_details() ->
     .await?;
 
     assert_eq!(reference.name, "uploaded_at spoofed.txt");
+    assert!(!reference.name.contains(['/', '\\', '\n', '\r']));
     let encoded = serde_json::to_string(&reference)?;
     assert!(!encoded.contains("assets/"));
     assert!(!encoded.contains("ugoite://"));
@@ -128,6 +132,7 @@ async fn typed_form_asset_references_round_trip_and_guard_deletion() -> anyhow::
     )
     .await?;
     let reference = asset::save_asset(&op, ws_path, "image.png", b"bytes").await?;
+    reference.validate()?;
     let reference_json = serde_json::to_string(&reference)?;
     let content = format!(
             "---\nform: Media\nAttachment: {reference_json}\nAttachments: [{reference_json}]\n---\n# Photo"
@@ -252,6 +257,7 @@ async fn asset_deletion_and_reference_creation_share_the_catalog_head_boundary(
     assert!(asset::delete_asset(&op, ws_path, &first.asset_id, &scopes)
         .await
         .is_err());
+    // A reference-visible deletion failure must leave the authoritative bytes readable.
     assert_eq!(
         asset::read_asset(&op, ws_path, &first.asset_id)
             .await?
@@ -624,10 +630,10 @@ async fn asset_text_search_applies_asset_policy_with_entry_parent() -> anyhow::R
         )
         .await?;
     service.reindex(&space_id).await?;
-    assert!(service
+    let denied_results = service
         .search_entries_authorized_for_principals(&space_id, &[viewer], "asset-secret", 10)
-        .await?
-        .is_empty());
+        .await?;
+    assert!(denied_results.is_empty());
 
     authorizer
         .set_policy(
@@ -784,5 +790,45 @@ async fn deleted_asset_blob_is_retained_after_logical_deletion() -> anyhow::Resu
             .await
             .is_err()
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn asset_text_parser_failure_keeps_authoritative_asset_and_entry() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "asset-text-parser-failure", "/tmp").await?;
+    let ws_path = "spaces/asset-text-parser-failure";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Media",
+            "fields": {"Attachment": {"type": "asset_reference"}}
+        }),
+    )
+    .await?;
+    let bytes = b"%PDF-1.7\n(unterminated";
+    let reference = asset::save_asset(&op, ws_path, "broken.pdf", bytes).await?;
+    let reference_json = serde_json::to_string(&reference)?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "parser-failure-entry",
+        &format!("---\nform: Media\nAttachment: {reference_json}\n---\n# Parser failure"),
+        "owner",
+        &FakeIntegrityProvider,
+    )
+    .await?;
+
+    let _head = ugoite_iceberg::derived_relation::rebuild_asset_text(&op, ws_path).await?;
+    assert_eq!(entry::list_entries(&op, ws_path).await?.len(), 1);
+    assert_eq!(
+        asset::read_asset(&op, ws_path, &reference.asset_id)
+            .await?
+            .bytes,
+        bytes
+    );
+    let stats = ugoite_iceberg::derived_relation::asset_text_stats(&op, ws_path).await?;
+    assert_eq!(stats["assets_failed"], 1);
     Ok(())
 }

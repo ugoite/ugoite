@@ -68,6 +68,10 @@ features:
               - kind: satisfies
                 criterion: REQ-ASSET-004#criterion.durable-entry-source
               - kind: satisfies
+                criterion: REQ-ASSET-004#criterion.bounded-derived-text
+              - kind: satisfies
+                criterion: REQ-ASSET-004#criterion.independent-durability
+              - kind: satisfies
                 criterion: REQ-ASSET-004#criterion.no-derived-authority
       - id: service
         role: operation
@@ -78,6 +82,10 @@ features:
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
             selector: { kind: symbol, name: save_asset }
+          - id: save-asset-with-media-type
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: save_asset_with_media_type }
           - id: read-asset
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
@@ -86,6 +94,18 @@ features:
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
             selector: { kind: symbol, name: delete_asset_with_principals }
+      - id: service-guard
+        role: implementation
+        facet: service
+        responsibility: Enforce the explicit containing Entry and Form context at the canonical authorized Asset read boundary.
+        targets:
+          - id: read-context
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: read_asset_authorized_for_principals }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ASSET-002#criterion.containing-entry-context
       - id: server
         role: operation
         facet: backend
@@ -99,6 +119,9 @@ features:
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
             selector: { kind: symbol, name: get_asset }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ASSET-002#criterion.containing-entry-context
           - id: delete-asset
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
@@ -148,7 +171,7 @@ features:
         kind: http
         source: FEAT-ASSET-001#binding.contract/target.upload-contract
         participants:
-          - target: FEAT-ASSET-001#binding.service/target.save-asset
+          - target: FEAT-ASSET-001#binding.service/target.save-asset-with-media-type
             role: service
           - target: FEAT-ASSET-001#binding.server/target.upload-asset
             role: backend

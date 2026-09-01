@@ -100,6 +100,15 @@ requirements:
                 criterion: REQ-ASSET-002#criterion.reference-edge-authorization
                 covers: [FEAT-ASSET-001#binding.core/target.reference-guard]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: authorization_state_hides_scalar_and_list_asset_references } }
+          - id: context-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::asset_read_requires_containing_entry_context }
+            claims:
+              - kind: verifies
+                criterion: REQ-ASSET-002#criterion.containing-entry-context
+                covers: [FEAT-ASSET-001#binding.service-guard/target.read-context]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::asset_read_requires_containing_entry_context } }
 
   - id: REQ-ASSET-003
     title: Logical Asset deletion
@@ -198,3 +207,21 @@ requirements:
                 criterion: REQ-ASSET-004#criterion.no-derived-authority
                 covers: [FEAT-ASSET-001#binding.derived/target.asset-text-rebuild]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: asset_text_search_applies_asset_policy_with_entry_parent } }
+          - id: bounded-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/derived_relation.rs
+            selector: { kind: symbol, name: tests::extracted_text_limit_is_enforced_while_accumulating_chunks }
+            claims:
+              - kind: verifies
+                criterion: REQ-ASSET-004#criterion.bounded-derived-text
+                covers: [FEAT-ASSET-001#binding.derived/target.asset-text-rebuild]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: derived_relation::tests::extracted_text_limit_is_enforced_while_accumulating_chunks } }
+          - id: durability-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_asset.rs
+            selector: { kind: test, name: asset_text_parser_failure_keeps_authoritative_asset_and_entry }
+            claims:
+              - kind: verifies
+                criterion: REQ-ASSET-004#criterion.independent-durability
+                covers: [FEAT-ASSET-001#binding.derived/target.asset-text-rebuild]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: asset_text_parser_failure_keeps_authoritative_asset_and_entry } }

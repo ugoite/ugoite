@@ -51,11 +51,14 @@ rewriting the requirement to fit the available proof.
 
 ## Migrated domain authority
 
-Foundation, Policy, Search, Entry, Form, and API are represented in the canonical
+Foundation, Policy, Search, Entry, Form, API, and the Asset lifecycle are represented in the canonical
 Mitase records at `docs/mitase` for the current dogfood slice. These records
 are the semantic source of truth for the migrated domains; their corresponding
 legacy Foundation, Policy, Requirement, and Feature YAML are migration evidence
-only and cannot override the canonical representation. The API-specific legacy
+only and cannot override the canonical representation. The legacy Asset
+requirement and feature registries remain read-only migration snapshots and
+cannot override `docs/mitase/requirements/assets.yaml` or
+`docs/mitase/features/assets.yaml`. The API-specific legacy
 requirement and per-area feature YAML are no longer part of Mitase's declared
 inventory; they remain read-only migration snapshots until the broader
 `docs/spec` cleanup is complete. Changed-ownership enforcement remains staged

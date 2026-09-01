@@ -4304,6 +4304,7 @@ mod tests {
         let mut total_bytes = 0;
         append_text_chunks(&mut chunks, &mut total_bytes, &first, json!({"part": 1}))
             .expect("first parser part fits");
+        assert_eq!(total_bytes, first.len());
         assert!(
             append_text_chunks(&mut chunks, &mut total_bytes, &second, json!({"part": 2}),)
                 .is_err()
