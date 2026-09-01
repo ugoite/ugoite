@@ -1237,8 +1237,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                           <label class="ui-label" for="entry-title-editor">
                             {t("common.title")}
                           </label>
-                          <span class="ui-entry-required">
-                            {t("entryDetail.required")}
+                          <span class="ui-pill">
+                            {t("entryDetail.optional")}
                           </span>
                         </div>
                         <input

@@ -153,6 +153,45 @@ describe("EntryDetailPane", () => {
     });
   });
 
+  it("creates an empty-title entry and keeps Untitled as presentation only", async () => {
+    const createMock = entryApi.create as ReturnType<typeof vi.fn>;
+    createMock.mockResolvedValue({
+      id: "untitled-entry",
+      revision_id: "untitled-revision",
+    });
+    const form: Form = {
+      name: "Notes",
+      version: 1,
+      template: "# Notes\n\n## Body\n",
+      fields: { Body: { type: "markdown", required: false } },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const title = await screen.findByLabelText("Title");
+    fireEvent.input(title, { target: { value: "" } });
+
+    expect(title).toHaveValue("");
+    expect(screen.getByRole("heading", { name: "Untitled" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
+    const markdown = createMock.mock.calls[0][1].markdown as string;
+    expect(markdown).toContain("\n# \n");
+    expect(markdown).not.toContain("# Untitled");
+  });
+
   it("blocks create until every active required field has a value", async () => {
     const createMock = entryApi.create as ReturnType<typeof vi.fn>;
     createMock.mockResolvedValue({
