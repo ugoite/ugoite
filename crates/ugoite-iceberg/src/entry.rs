@@ -1618,10 +1618,18 @@ async fn prepare_entry<I: IntegrityProvider>(
 
     let title = extract_title(content, entry_id);
     let tags = extract_tags(&frontmatter);
+    let fields = Value::Object(fields);
+    let reconstructed_markdown = render_markdown(
+        &title,
+        &form_name,
+        &tags,
+        &merge_entry_fields(&fields, &extra_attributes),
+        &form_fields,
+    );
     let timestamp = now_ts();
     let revision_id = Uuid::new_v4().to_string();
-    let checksum = integrity.checksum(content);
-    let signature = integrity.signature(content);
+    let checksum = integrity.checksum(&reconstructed_markdown);
+    let signature = integrity.signature(&reconstructed_markdown);
 
     let entry_row = EntryRow {
         entry_id: entry_id.to_string(),
@@ -1630,7 +1638,7 @@ async fn prepare_entry<I: IntegrityProvider>(
         tags,
         created_at: timestamp,
         updated_at: timestamp,
-        fields: Value::Object(fields),
+        fields: fields.clone(),
         extra_attributes: extra_attributes.clone(),
         revision_id: revision_id.clone(),
         parent_revision_id: None,
@@ -2581,20 +2589,33 @@ pub async fn update_entry_authorized_with_change<I: IntegrityProvider>(
         }
     }
 
+    let title = extract_title(content, &row.title);
+    let tags = if frontmatter.get("tags").is_some() {
+        extract_tags(&frontmatter)
+    } else {
+        row.tags.clone()
+    };
+    let fields = Value::Object(fields);
+    let reconstructed_markdown = render_markdown(
+        &title,
+        &form_name,
+        &tags,
+        &merge_entry_fields(&fields, &extra_attributes),
+        &form_fields,
+    );
+
     let mut timestamp = now_ts();
     if timestamp <= row.updated_at {
         timestamp = row.updated_at + 0.001;
     }
     let revision_id = Uuid::new_v4().to_string();
-    let checksum = integrity.checksum(content);
-    let signature = integrity.signature(content);
+    let checksum = integrity.checksum(&reconstructed_markdown);
+    let signature = integrity.signature(&reconstructed_markdown);
 
-    row.title = extract_title(content, &row.title);
+    row.title = title;
     row.updated_at = timestamp;
-    if frontmatter.get("tags").is_some() {
-        row.tags = extract_tags(&frontmatter);
-    }
-    row.fields = Value::Object(fields);
+    row.tags = tags;
+    row.fields = fields;
     row.extra_attributes = extra_attributes.clone();
     row.parent_revision_id = Some(row.revision_id.clone());
     row.revision_id = revision_id.clone();

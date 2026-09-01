@@ -2,6 +2,9 @@ mod common;
 use base64::{engine::general_purpose, Engine as _};
 use common::setup_operator;
 use serde_json::json;
+use ugoite_domain::integrity::{checksum_hex, HmacIntegrityProvider};
+use ugoite_iceberg::entry;
+use ugoite_iceberg::form;
 use ugoite_iceberg::integrity::{FakeIntegrityProvider, IntegrityProvider, RealIntegrityProvider};
 use ugoite_iceberg::space;
 
@@ -45,6 +48,83 @@ async fn test_integrity_req_int_001_real_integrity_provider() -> anyhow::Result<
     assert_ne!(checksum, signature);
     assert_eq!(signature.len(), 64); // SHA-256 hex is 64 chars
 
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-INT-002
+async fn test_integrity_req_int_002_reconstructed_entry_checksum_is_stored() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "reconstructed-checksum", "/tmp").await?;
+    let ws_path = "spaces/reconstructed-checksum";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &json!({
+            "name": "Entry",
+            "template": "# Entry\n\n## Body\n",
+            "fields": {"Body": {"type": "markdown"}},
+            "allow_extra_attributes": "allow_columns",
+        }),
+    )
+    .await?;
+
+    let content = "---\nform: Entry\n---\n# Checksum\n\n## Body\nReconstructed\n\n";
+    let integrity = HmacIntegrityProvider::new(b"integrity-test-key".to_vec());
+    entry::create_entry(
+        &op,
+        ws_path,
+        "checksum-entry",
+        content,
+        "author",
+        &integrity,
+    )
+    .await?;
+
+    let reconstructed = entry::get_entry_content(&op, ws_path, "checksum-entry").await?;
+    let history = entry::get_entry_history(&op, ws_path, "checksum-entry").await?;
+    let revision = history["revisions"]
+        .as_array()
+        .and_then(|revisions| revisions.first())
+        .expect("created revision");
+
+    assert_eq!(reconstructed.markdown, content.trim_end());
+    assert_eq!(
+        revision["checksum"],
+        checksum_hex(reconstructed.markdown.as_bytes())
+    );
+    assert_eq!(
+        revision["signature"],
+        integrity.signature(&reconstructed.markdown)
+    );
+
+    let updated_content = "---\nform: Entry\n---\n# Updated checksum\n\n## Body\nUpdated\n\n";
+    entry::update_entry(
+        &op,
+        ws_path,
+        "checksum-entry",
+        updated_content,
+        Some(&reconstructed.revision_id),
+        "author",
+        &integrity,
+    )
+    .await?;
+    let updated = entry::get_entry_content(&op, ws_path, "checksum-entry").await?;
+    let updated_history = entry::get_entry_history(&op, ws_path, "checksum-entry").await?;
+    let updated_revision = updated_history["revisions"]
+        .as_array()
+        .and_then(|revisions| revisions.last())
+        .expect("updated revision");
+
+    assert_eq!(updated.markdown, updated_content.trim_end());
+    assert_eq!(
+        updated_revision["checksum"],
+        checksum_hex(updated.markdown.as_bytes())
+    );
+    assert_eq!(
+        updated_revision["signature"],
+        integrity.signature(&updated.markdown)
+    );
     Ok(())
 }
 
