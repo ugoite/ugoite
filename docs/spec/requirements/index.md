@@ -17,6 +17,11 @@ read-only migration snapshot and is no longer included in Mitase's declared
 inventory. The canonical API requirements at `docs/mitase/requirements/api.yaml`
 are the only semantic authority for the migrated API domain.
 
+The legacy Asset requirement registry at `requirements/asset.yaml` is retained
+as a read-only migration snapshot and is no longer included in Mitase's declared
+inventory. The canonical Asset requirements at `docs/mitase/requirements/assets.yaml`
+are the only semantic authority for the migrated Asset domain.
+
 A current test mapping has this shape:
 
 ```yaml
