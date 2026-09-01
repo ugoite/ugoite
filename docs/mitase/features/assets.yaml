@@ -68,6 +68,10 @@ features:
               - kind: satisfies
                 criterion: REQ-ASSET-004#criterion.durable-entry-source
               - kind: satisfies
+                criterion: REQ-ASSET-004#criterion.bounded-derived-text
+              - kind: satisfies
+                criterion: REQ-ASSET-004#criterion.independent-durability
+              - kind: satisfies
                 criterion: REQ-ASSET-004#criterion.no-derived-authority
       - id: service
         role: operation
