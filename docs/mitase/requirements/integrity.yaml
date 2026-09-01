@@ -101,7 +101,7 @@ requirements:
       - id: response-signing-verification
         role: verification
         facet: verification
-        responsibility: Verify response-signing material, eligible response headers, and fail-closed unsigned boundaries through exact Rust integration, unit, and OpenAPI contract tests.
+        responsibility: Verify response-signing material, eligible response headers, and fail-closed unsigned boundaries through exact Rust integration, unit, and OpenAPI contract tests. Boundary evidence is split between classification of SSE, oversized, and explicitly unsigned responses and replay of fallible and trailer-bearing bodies.
         targets:
           - id: space-material-case
             adapter: rust
