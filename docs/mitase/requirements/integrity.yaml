@@ -57,9 +57,23 @@ requirements:
         kind: quality
         statement: Reconstructed Entry content has a calculated checksum that is stored with the reconstructed content.
         governed_by: [POL-004#rule.governance, POL-005#rule.governance, POL-008#rule.governance]
-    # The legacy requirement is retained as implemented, but no exact
-    # criterion-specific verification currently proves the reconstruction and
-    # storage boundary. Keep that evidence gap explicit for the next slice.
+    bindings:
+      - id: reconstructed-entry-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that the checksum and signature stored for a created Entry are derived from the exact Markdown reconstructed by the Entry read boundary.
+        targets:
+          - id: reconstructed-entry-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_integrity.rs
+            selector: { kind: test, name: test_integrity_req_int_002_reconstructed_entry_checksum_is_stored }
+            claims:
+              - kind: verifies
+                criterion: REQ-INT-002#criterion.reconstructed-entry-checksum
+                covers:
+                  - FEAT-INT-001#binding.storage/target.entry-integrity
+                  - FEAT-INT-001#binding.storage/target.entry-update-integrity
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_integrity, test: test_integrity_req_int_002_reconstructed_entry_checksum_is_stored } }
 
   - id: REQ-INT-003
     title: API response HMAC signing

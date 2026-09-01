@@ -32,6 +32,20 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-INT-001#criterion.revision-signature
+          - id: entry-integrity
+            adapter: rust
+            path: crates/ugoite-iceberg/src/entry.rs
+            selector: { kind: symbol, name: prepare_entry }
+            claims:
+              - kind: satisfies
+                criterion: REQ-INT-002#criterion.reconstructed-entry-checksum
+          - id: entry-update-integrity
+            adapter: rust
+            path: crates/ugoite-iceberg/src/entry.rs
+            selector: { kind: symbol, name: update_entry_authorized_with_change }
+            claims:
+              - kind: satisfies
+                criterion: REQ-INT-002#criterion.reconstructed-entry-checksum
           - id: space-material
             adapter: rust
             path: crates/ugoite-iceberg/src/integrity.rs
