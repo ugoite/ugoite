@@ -5,61 +5,199 @@ category: API contract surfaces
 features:
   - id: FEAT-API-001
     title: API contract and operator surfaces
-    summary: Connect shipped REST, CLI, and SQL-session surfaces to the canonical API requirements without introducing a Ugoite-specific specification kind.
+    summary: Map the shipped API domain across canonical service, backend, frontend, CLI, and exact OpenAPI operation artifacts without introducing a Ugoite-specific specification kind.
     status: implemented
     bindings:
-      - id: backend
-        role: operation
-        facet: backend
-        responsibility: Expose the API-owned Space, preference, saved SQL, and SQL-session operations through the backend adapter.
-        targets:
-          - id: space-list
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: list_spaces }
-          - id: space-create
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: create_space }
-          - id: space-get
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: get_space }
-          - id: preferences
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: get_preferences }
-          - id: sql-session
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: create_sql_session }
       - id: core
         role: implementation
         facet: core
-        responsibility: Implement the API-owned saved SQL and SQL-session storage behavior in the canonical Rust core.
+        responsibility: Implement saved SQL persistence and SQL-session evaluation at the canonical Iceberg boundary.
         targets:
-          - id: sql-storage
+          - id: list-sql
             adapter: rust
             path: crates/ugoite-iceberg/src/saved_sql.rs
-            selector: { kind: file }
+            selector: { kind: symbol, name: list_sql }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-006#criterion.saved-sql-lifecycle
+          - id: get-sql
+            adapter: rust
+            path: crates/ugoite-iceberg/src/saved_sql.rs
+            selector: { kind: symbol, name: get_sql }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-006#criterion.saved-sql-lifecycle
+          - id: create-sql
+            adapter: rust
+            path: crates/ugoite-iceberg/src/saved_sql.rs
+            selector: { kind: symbol, name: create_sql }
             claims:
               - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
               - kind: satisfies
                 criterion: REQ-API-007#criterion.declared-template-bindings
-          - id: sql-session
+          - id: update-sql
+            adapter: rust
+            path: crates/ugoite-iceberg/src/saved_sql.rs
+            selector: { kind: symbol, name: update_sql }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-006#criterion.saved-sql-lifecycle
+          - id: delete-sql
+            adapter: rust
+            path: crates/ugoite-iceberg/src/saved_sql.rs
+            selector: { kind: symbol, name: delete_sql }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-006#criterion.saved-sql-lifecycle
+          - id: create-sql-session
             adapter: rust
             path: crates/ugoite-iceberg/src/sql_session.rs
-            selector: { kind: file }
+            selector: { kind: symbol, name: create_sql_session_authorized_for_principals_by_form_with_parameters }
             claims:
               - kind: satisfies
                 criterion: REQ-API-008#criterion.fixed-publication-coordinate
+          - id: count-sql-session
+            adapter: rust
+            path: crates/ugoite-iceberg/src/sql_session.rs
+            selector: { kind: symbol, name: get_sql_session_count_authorized_by_form }
+            claims:
               - kind: satisfies
                 criterion: REQ-API-008#criterion.paged-session-results
+          - id: rows-sql-session
+            adapter: rust
+            path: crates/ugoite-iceberg/src/sql_session.rs
+            selector: { kind: symbol, name: get_sql_session_rows_authorized_by_form }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-008#criterion.paged-session-results
+      - id: service
+        role: operation
+        facet: service
+        responsibility: Connect the canonical Iceberg service methods to saved SQL and SQL-session implementations.
+        targets:
+          - id: list-saved-sql
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: list_saved_sql_operator_unscoped }
+          - id: create-saved-sql
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: create_saved_sql }
+          - id: get-saved-sql
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: get_saved_sql }
+          - id: update-saved-sql
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: update_saved_sql }
+          - id: delete-saved-sql
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: delete_saved_sql }
+          - id: create-sql-session
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: create_sql_session_authorized_for_principals_with_parameters }
+          - id: get-sql-session
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: get_sql_session_authorized_for_principals }
+          - id: count-sql-session
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: get_sql_session_count_authorized_for_principals }
+          - id: rows-sql-session
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: get_sql_session_rows_authorized_for_principals }
+      - id: backend
+        role: operation
+        facet: backend
+        responsibility: Expose the API-owned operations through the Rust server adapter.
+        targets:
+          - id: list-spaces
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: list_spaces }
+          - id: create-space
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: create_space }
+          - id: get-space
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: get_space }
+          - id: get-preferences
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: get_preferences }
+          - id: patch-preferences
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: patch_preferences }
+          - id: create-sql-session
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: create_sql_session }
+          - id: get-sql-session
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: get_sql_session }
+          - id: count-sql-session
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: get_sql_session_count }
+          - id: rows-sql-session
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: get_sql_session_rows }
+          - id: list-sql
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: list_sql }
+          - id: create-sql
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: create_sql }
+          - id: get-sql
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: get_sql }
+          - id: update-sql
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: update_sql }
+          - id: delete-sql
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: delete_sql }
+      - id: frontend
+        role: operation
+        facet: frontend
+        responsibility: Keep the shipped TypeScript API adapters connected to the same protocol and HTTP contracts.
+        targets:
+          - id: space-api
+            adapter: typescript
+            path: frontend/src/lib/space-api.ts
+            selector: { kind: symbol, name: spaceApi }
+          - id: preferences-api
+            adapter: typescript
+            path: frontend/src/lib/preferences-api.ts
+            selector: { kind: symbol, name: preferencesApi }
+          - id: sql-api
+            adapter: typescript
+            path: frontend/src/lib/sql-api.ts
+            selector: { kind: symbol, name: sqlApi }
+          - id: sql-session-api
+            adapter: typescript
+            path: frontend/src/lib/sql-session-api.ts
+            selector: { kind: symbol, name: sqlSessionApi }
       - id: cli
         role: implementation
         facet: cli
-        responsibility: Keep Space and saved SQL workflows available through the explicit Ugoite CLI operator surface.
+        responsibility: Implement the Space workflow through the explicit Ugoite CLI operator surface.
         targets:
           - id: space-command
             adapter: rust
@@ -68,111 +206,239 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-API-001#criterion.space-lifecycle
+      - id: cli-operator
+        role: operation
+        facet: cli
+        responsibility: Keep saved SQL workflows available through the explicit Ugoite CLI operator surface; exact CLI verification remains follow-up work.
+        targets:
           - id: sql-command
             adapter: rust
             path: crates/ugoite-cli/src/commands/sql.rs
             selector: { kind: symbol, name: run }
-            claims:
-              - kind: satisfies
-                criterion: REQ-API-006#criterion.saved-sql-lifecycle
-              - kind: satisfies
-                criterion: REQ-API-007#criterion.declared-template-bindings
       - id: contract
         role: contract-source
         facet: api
-        responsibility: Define API-owned HTTP operations using the generated OpenAPI snapshot produced from the Rust server.
+        responsibility: Define the API-owned HTTP operations using the generated OpenAPI snapshot produced from the Rust server.
         owns:
           - id: openapi-source
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: file }
         targets:
-          - id: spaces-contract
+          - id: list-spaces
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: get, path: /spaces }
-          - id: create-space-contract
+          - id: create-space
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: post, path: /spaces }
-          - id: preferences-get-contract
+          - id: get-space
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}' }
+          - id: get-preferences
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: get, path: /preferences/me }
-          - id: preferences-patch-contract
+          - id: patch-preferences
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: patch, path: /preferences/me }
-          - id: sql-session-create-contract
+          - id: create-sql-session
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: post, path: '/spaces/{space_id}/sql-sessions' }
-          - id: sql-session-status-contract
+          - id: get-sql-session
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: get, path: '/spaces/{space_id}/sql-sessions/{session_id}' }
-          - id: sql-session-count-contract
+          - id: count-sql-session
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: get, path: '/spaces/{space_id}/sql-sessions/{session_id}/count' }
-          - id: sql-session-rows-contract
+          - id: rows-sql-session
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: get, path: '/spaces/{space_id}/sql-sessions/{session_id}/rows' }
-          - id: sql-list-contract
+          - id: list-sql
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: get, path: '/spaces/{space_id}/sql' }
-          - id: sql-create-contract
+          - id: create-sql
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: post, path: '/spaces/{space_id}/sql' }
-          - id: sql-get-contract
+          - id: get-sql
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: get, path: '/spaces/{space_id}/sql/{sql_id}' }
-          - id: sql-update-contract
+          - id: update-sql
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: put, path: '/spaces/{space_id}/sql/{sql_id}' }
-          - id: sql-delete-contract
+          - id: delete-sql
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: delete, path: '/spaces/{space_id}/sql/{sql_id}' }
     contracts:
-      - id: space-crud
+      - id: list-spaces
         kind: http
-        source: FEAT-API-001#binding.contract/target.spaces-contract
+        source: FEAT-API-001#binding.contract/target.list-spaces
         participants:
-          - target: FEAT-API-001#binding.backend/target.space-list
+          - target: FEAT-API-001#binding.backend/target.list-spaces
             role: backend
-          - target: FEAT-API-001#binding.backend/target.space-create
+          - target: FEAT-API-001#binding.frontend/target.space-api
+            role: client
+          - target: FEAT-API-001#binding.cli/target.space-command
+            role: operator
+        guarantees: [REQ-API-001#criterion.space-lifecycle, REQ-API-001#criterion.authorized-space-list]
+      - id: create-space
+        kind: http
+        source: FEAT-API-001#binding.contract/target.create-space
+        participants:
+          - target: FEAT-API-001#binding.backend/target.create-space
             role: backend
-          - target: FEAT-API-001#binding.backend/target.space-get
-            role: backend
+          - target: FEAT-API-001#binding.frontend/target.space-api
+            role: client
           - target: FEAT-API-001#binding.cli/target.space-command
             role: operator
         guarantees: [REQ-API-001#criterion.space-lifecycle, REQ-API-001#criterion.stable-space-identity]
-      - id: preferences
+      - id: get-space
         kind: http
-        source: FEAT-API-001#binding.contract/target.preferences-get-contract
+        source: FEAT-API-001#binding.contract/target.get-space
         participants:
-          - target: FEAT-API-001#binding.backend/target.preferences
+          - target: FEAT-API-001#binding.backend/target.get-space
             role: backend
-        guarantees: [REQ-API-011#criterion.preferences-roundtrip, REQ-API-011#criterion.selected-space-validation]
-      - id: saved-sql
-        kind: http
-        source: FEAT-API-001#binding.contract/target.sql-list-contract
-        participants:
-          - target: FEAT-API-001#binding.core/target.sql-storage
-            role: service
-          - target: FEAT-API-001#binding.cli/target.sql-command
+          - target: FEAT-API-001#binding.frontend/target.space-api
+            role: client
+          - target: FEAT-API-001#binding.cli/target.space-command
             role: operator
-        guarantees: [REQ-API-006#criterion.saved-sql-lifecycle, REQ-API-007#criterion.parameterized-execution]
-      - id: sql-session
+        guarantees: [REQ-API-001#criterion.space-lifecycle, REQ-API-001#criterion.stable-space-identity]
+      - id: get-preferences
         kind: http
-        source: FEAT-API-001#binding.contract/target.sql-session-create-contract
+        source: FEAT-API-001#binding.contract/target.get-preferences
         participants:
-          - target: FEAT-API-001#binding.core/target.sql-session
+          - target: FEAT-API-001#binding.backend/target.get-preferences
             role: backend
-        guarantees: [REQ-API-008#criterion.fixed-publication-coordinate, REQ-API-008#criterion.paged-session-results]
+          - target: FEAT-API-001#binding.frontend/target.preferences-api
+            role: client
+        guarantees: [REQ-API-011#criterion.preferences-roundtrip]
+      - id: patch-preferences
+        kind: http
+        source: FEAT-API-001#binding.contract/target.patch-preferences
+        participants:
+          - target: FEAT-API-001#binding.backend/target.patch-preferences
+            role: backend
+          - target: FEAT-API-001#binding.frontend/target.preferences-api
+            role: client
+        guarantees: [REQ-API-011#criterion.preferences-roundtrip, REQ-API-011#criterion.selected-space-validation]
+      - id: list-saved-sql
+        kind: http
+        source: FEAT-API-001#binding.contract/target.list-sql
+        participants:
+          - target: FEAT-API-001#binding.service/target.list-saved-sql
+            role: service
+          - target: FEAT-API-001#binding.backend/target.list-sql
+            role: backend
+          - target: FEAT-API-001#binding.frontend/target.sql-api
+            role: client
+          - target: FEAT-API-001#binding.cli-operator/target.sql-command
+            role: operator
+        guarantees: [REQ-API-006#criterion.saved-sql-lifecycle]
+      - id: create-saved-sql
+        kind: http
+        source: FEAT-API-001#binding.contract/target.create-sql
+        participants:
+          - target: FEAT-API-001#binding.service/target.create-saved-sql
+            role: service
+          - target: FEAT-API-001#binding.backend/target.create-sql
+            role: backend
+          - target: FEAT-API-001#binding.frontend/target.sql-api
+            role: client
+          - target: FEAT-API-001#binding.cli-operator/target.sql-command
+            role: operator
+        guarantees: [REQ-API-006#criterion.saved-sql-lifecycle, REQ-API-006#criterion.saved-sql-variable-validation]
+      - id: get-saved-sql
+        kind: http
+        source: FEAT-API-001#binding.contract/target.get-sql
+        participants:
+          - target: FEAT-API-001#binding.service/target.get-saved-sql
+            role: service
+          - target: FEAT-API-001#binding.backend/target.get-sql
+            role: backend
+          - target: FEAT-API-001#binding.frontend/target.sql-api
+            role: client
+          - target: FEAT-API-001#binding.cli-operator/target.sql-command
+            role: operator
+        guarantees: [REQ-API-006#criterion.saved-sql-lifecycle]
+      - id: update-saved-sql
+        kind: http
+        source: FEAT-API-001#binding.contract/target.update-sql
+        participants:
+          - target: FEAT-API-001#binding.service/target.update-saved-sql
+            role: service
+          - target: FEAT-API-001#binding.backend/target.update-sql
+            role: backend
+          - target: FEAT-API-001#binding.frontend/target.sql-api
+            role: client
+          - target: FEAT-API-001#binding.cli-operator/target.sql-command
+            role: operator
+        guarantees: [REQ-API-006#criterion.saved-sql-lifecycle, REQ-API-006#criterion.saved-sql-variable-validation]
+      - id: delete-saved-sql
+        kind: http
+        source: FEAT-API-001#binding.contract/target.delete-sql
+        participants:
+          - target: FEAT-API-001#binding.service/target.delete-saved-sql
+            role: service
+          - target: FEAT-API-001#binding.backend/target.delete-sql
+            role: backend
+          - target: FEAT-API-001#binding.frontend/target.sql-api
+            role: client
+          - target: FEAT-API-001#binding.cli-operator/target.sql-command
+            role: operator
+        guarantees: [REQ-API-006#criterion.saved-sql-lifecycle]
+      - id: create-sql-session
+        kind: http
+        source: FEAT-API-001#binding.contract/target.create-sql-session
+        participants:
+          - target: FEAT-API-001#binding.service/target.create-sql-session
+            role: service
+          - target: FEAT-API-001#binding.backend/target.create-sql-session
+            role: backend
+          - target: FEAT-API-001#binding.frontend/target.sql-session-api
+            role: client
+        guarantees: [REQ-API-007#criterion.parameterized-execution, REQ-API-008#criterion.fixed-publication-coordinate]
+      - id: get-sql-session
+        kind: http
+        source: FEAT-API-001#binding.contract/target.get-sql-session
+        participants:
+          - target: FEAT-API-001#binding.service/target.get-sql-session
+            role: service
+          - target: FEAT-API-001#binding.backend/target.get-sql-session
+            role: backend
+          - target: FEAT-API-001#binding.frontend/target.sql-session-api
+            role: client
+        guarantees: [REQ-API-008#criterion.paged-session-results]
+      - id: count-sql-session
+        kind: http
+        source: FEAT-API-001#binding.contract/target.count-sql-session
+        participants:
+          - target: FEAT-API-001#binding.service/target.count-sql-session
+            role: service
+          - target: FEAT-API-001#binding.backend/target.count-sql-session
+            role: backend
+          - target: FEAT-API-001#binding.frontend/target.sql-session-api
+            role: client
+        guarantees: [REQ-API-008#criterion.paged-session-results]
+      - id: rows-sql-session
+        kind: http
+        source: FEAT-API-001#binding.contract/target.rows-sql-session
+        participants:
+          - target: FEAT-API-001#binding.service/target.rows-sql-session
+            role: service
+          - target: FEAT-API-001#binding.backend/target.rows-sql-session
+            role: backend
+          - target: FEAT-API-001#binding.frontend/target.sql-session-api
+            role: client
+        guarantees: [REQ-API-008#criterion.paged-session-results]

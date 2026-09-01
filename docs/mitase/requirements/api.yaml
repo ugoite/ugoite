@@ -108,17 +108,8 @@ requirements:
       - id: saved-sql-verification
         role: verification
         facet: verification
-        responsibility: Verify the saved SQL CRUD contract through the exact CLI and Iceberg integration cases.
+        responsibility: Verify saved SQL CRUD through the exact Iceberg integration case; CLI and adapter coverage remains a separate migration slice.
         targets:
-          - id: cli-case
-            adapter: rust
-            path: crates/ugoite-cli/tests/test_saved_sql.rs
-            selector: { kind: test, name: test_saved_sql_req_api_006_crud }
-            claims:
-              - kind: verifies
-                criterion: REQ-API-006#criterion.saved-sql-lifecycle
-                covers: [FEAT-API-001#binding.cli/target.sql-command]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_saved_sql, test: test_saved_sql_req_api_006_crud } }
           - id: iceberg-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_saved_sql.rs
@@ -126,7 +117,12 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
-                covers: [FEAT-API-001#binding.core/target.sql-storage]
+                covers:
+                  - FEAT-API-001#binding.core/target.list-sql
+                  - FEAT-API-001#binding.core/target.get-sql
+                  - FEAT-API-001#binding.core/target.create-sql
+                  - FEAT-API-001#binding.core/target.update-sql
+                  - FEAT-API-001#binding.core/target.delete-sql
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_saved_sql, test: test_saved_sql_req_api_006_crud } }
 
   - id: REQ-API-007
@@ -147,17 +143,8 @@ requirements:
       - id: template-verification
         role: verification
         facet: verification
-        responsibility: Verify saved SQL template rejection through the exact CLI and Iceberg integration cases.
+        responsibility: Verify saved SQL template rejection through the exact Iceberg integration case; the CLI path remains explicitly unverified.
         targets:
-          - id: cli-case
-            adapter: rust
-            path: crates/ugoite-cli/tests/test_saved_sql.rs
-            selector: { kind: test, name: test_saved_sql_req_api_007_validation }
-            claims:
-              - kind: verifies
-                criterion: REQ-API-007#criterion.declared-template-bindings
-                covers: [FEAT-API-001#binding.cli/target.sql-command]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_saved_sql, test: test_saved_sql_req_api_007_validation } }
           - id: iceberg-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_saved_sql.rs
@@ -165,7 +152,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-API-007#criterion.declared-template-bindings
-                covers: [FEAT-API-001#binding.core/target.sql-storage]
+                covers: [FEAT-API-001#binding.core/target.create-sql]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_saved_sql, test: test_saved_sql_req_api_007_validation_errors } }
 
   - id: REQ-API-008
@@ -195,7 +182,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-API-008#criterion.fixed-publication-coordinate
-                covers: [FEAT-API-001#binding.core/target.sql-session]
+                covers: [FEAT-API-001#binding.core/target.create-sql-session]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_sessions, test: test_sql_sessions_req_api_008_end_to_end } }
           - id: pagination-case
             adapter: rust
@@ -204,7 +191,9 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-API-008#criterion.paged-session-results
-                covers: [FEAT-API-001#binding.core/target.sql-session]
+                covers:
+                  - FEAT-API-001#binding.core/target.count-sql-session
+                  - FEAT-API-001#binding.core/target.rows-sql-session
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_sessions, test: test_sql_sessions_req_api_008_scopes_rows_before_limit } }
 
   - id: REQ-API-009

@@ -4,12 +4,13 @@ title: 'Feature registry'
 
 `features.yaml` indexes per-area YAML files. Each operation records the canonical HTTP method/path and existing backend, frontend, core, and optional CLI source locations.
 
-The Entry, Form, and Search operation maps are represented canonically in
+The Entry, Form, Search, and API operation maps are represented canonically in
 `docs/mitase/features`; this file and the legacy per-area registries remain
-read-only migration snapshots until their replacement review is complete. The
-canonical feature graph retains core/service, backend, frontend, CLI, and HTTP
-contract surfaces rather than treating a core implementation target as the
-whole capability.
+read-only migration snapshots for those domains. Other domains remain
+authoritative here until their replacement review is complete. The canonical
+feature graph retains core/service, backend, frontend, CLI, and HTTP contract
+surfaces rather than treating a core implementation target as the whole
+capability.
 
 The registry is generated from the current Rust/OpenAPI surface, not from roadmap intent. `implemented` means the route and referenced adapter exist. `contracted_unavailable` is used for `/auth/login`, whose route exists but intentionally returns `403` in this release.
 

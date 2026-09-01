@@ -51,7 +51,7 @@ rewriting the requirement to fit the available proof.
 
 ## Migrated domain authority
 
-Foundation, Policy, Search, Entry, and Form are represented in the canonical
+Foundation, Policy, Search, Entry, Form, and API are represented in the canonical
 Mitase records at `docs/mitase` for the current dogfood slice. These records
 are the semantic source of truth for the migrated domains; their corresponding
 legacy Foundation, Policy, Requirement, and Feature YAML are migration evidence
