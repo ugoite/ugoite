@@ -1,0 +1,200 @@
+schema: mitase/spec/v1
+kind: requirements
+namespace: assets
+category: Asset lifecycle and derived content
+requirements:
+  - id: REQ-ASSET-001
+    title: Asset object lifecycle
+    description: Uploads allocate a stable Asset ID, persist bytes under the Space asset boundary, and return a validated AssetReference without creating an Entry or Form row. Uploaded names are reduced to metadata-safe basenames before the object is written.
+    priority: high
+    status: implemented
+    criteria:
+      - id: stable-object
+        kind: behavior
+        statement: Asset upload allocates a stable Asset ID and writes the bytes to the Space asset object boundary.
+        governed_by: [POL-001#rule.governance, POL-004#rule.governance, POL-007#rule.governance]
+      - id: typed-reference
+        kind: behavior
+        statement: Asset upload returns a validated AssetReference containing asset_id, name, media_type, size_bytes, and sha256.
+        governed_by: [POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: metadata-safe-name
+        kind: security
+        statement: Asset upload normalizes path separators, traversal segments, control characters, and Markdown heading prefixes before storing the logical name.
+        governed_by: [POL-001#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: no-entry-side-effect
+        kind: quality
+        statement: Asset upload does not create an Entry, Form revision, or universal Asset metadata row.
+        governed_by: [POL-007#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: upload-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the core Asset upload boundary and typed reference shape through exact Iceberg integration cases.
+        targets:
+          - id: typed-reference-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_asset.rs
+            selector: { kind: test, name: upload_returns_a_typed_reference_without_creating_an_entry }
+            claims:
+              - kind: verifies
+                criterion: REQ-ASSET-001#criterion.stable-object
+                covers: [FEAT-ASSET-001#binding.core/target.upload-object]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: upload_returns_a_typed_reference_without_creating_an_entry } }
+              - kind: verifies
+                criterion: REQ-ASSET-001#criterion.typed-reference
+                covers: [FEAT-ASSET-001#binding.core/target.upload-object]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: upload_returns_a_typed_reference_without_creating_an_entry } }
+              - kind: verifies
+                criterion: REQ-ASSET-001#criterion.no-entry-side-effect
+                covers: [FEAT-ASSET-001#binding.core/target.upload-object]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: upload_returns_a_typed_reference_without_creating_an_entry } }
+          - id: safe-name-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_asset.rs
+            selector: { kind: test, name: upload_normalizes_the_display_name_without_leaking_storage_details }
+            claims:
+              - kind: verifies
+                criterion: REQ-ASSET-001#criterion.metadata-safe-name
+                covers: [FEAT-ASSET-001#binding.core/target.upload-object]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: upload_normalizes_the_display_name_without_leaking_storage_details } }
+
+  - id: REQ-ASSET-002
+    title: Authorized asset byte reads
+    description: Asset bytes are readable only through an explicit containing Form and Entry context. The byte object key is exact and does not fabricate Form-owned logical metadata.
+    priority: high
+    status: implemented
+    criteria:
+      - id: containing-entry-context
+        kind: security
+        statement: Asset byte reads require an explicit containing Form and Entry context rather than an unscoped asset ID alone.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: reference-edge-authorization
+        kind: security
+        statement: Asset reads require authorization for the containing Entry and the Asset reference edge, and require that the current Entry actually references the Asset.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance, POL-013#rule.governance]
+      - id: exact-object-read
+        kind: behavior
+        statement: Authorized Asset reads use the exact Asset ID object key and return bytes without inventing a logical name or media type.
+        governed_by: [POL-001#rule.governance, POL-007#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: read-verification
+        role: verification
+        facet: verification
+        responsibility: Verify exact Asset object reads and the current reference edge through exact Iceberg integration cases.
+        targets:
+          - id: exact-key-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_asset.rs
+            selector: { kind: test, name: read_and_delete_use_the_exact_asset_id_key }
+            claims:
+              - kind: verifies
+                criterion: REQ-ASSET-002#criterion.exact-object-read
+                covers: [FEAT-ASSET-001#binding.core/target.read-object]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: read_and_delete_use_the_exact_asset_id_key } }
+          - id: reference-edge-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_asset.rs
+            selector: { kind: test, name: authorization_state_hides_scalar_and_list_asset_references }
+            claims:
+              - kind: verifies
+                criterion: REQ-ASSET-002#criterion.reference-edge-authorization
+                covers: [FEAT-ASSET-001#binding.core/target.reference-guard]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: authorization_state_hides_scalar_and_list_asset_references } }
+
+  - id: REQ-ASSET-003
+    title: Logical Asset deletion
+    description: Asset deletion validates current references at the exact Catalog Head and publishes an immutable asset.delete publication. The publication makes the Asset unavailable while preserving physical bytes for the v1 lifecycle.
+    priority: high
+    status: implemented
+    criteria:
+      - id: exact-catalog-head
+        kind: quality
+        statement: Asset deletion validates current typed references against the exact Catalog Head used for the deletion commit.
+        governed_by: [POL-001#rule.governance, POL-004#rule.governance, POL-013#rule.governance]
+      - id: referenced-asset-protection
+        kind: security
+        statement: An Asset referenced by an authorized current Entry cannot be deleted, while hidden references fail closed rather than being exposed.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance, POL-013#rule.governance]
+      - id: logical-deletion
+        kind: behavior
+        statement: Successful deletion publishes the asset.delete lifecycle event, makes the Asset unavailable from the authoritative Head, and retains physical bytes without automatic purge.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: deletion-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Catalog Head conflict behavior, reference protection, logical unavailability, and physical-byte retention through exact Iceberg integration cases.
+        targets:
+          - id: catalog-head-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_asset.rs
+            selector: { kind: test, name: asset_deletion_and_reference_creation_share_the_catalog_head_boundary }
+            claims:
+              - kind: verifies
+                criterion: REQ-ASSET-003#criterion.exact-catalog-head
+                covers: [FEAT-ASSET-001#binding.core/target.delete-object]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: asset_deletion_and_reference_creation_share_the_catalog_head_boundary } }
+          - id: reference-guard-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_asset.rs
+            selector: { kind: test, name: typed_form_asset_references_round_trip_and_guard_deletion }
+            claims:
+              - kind: verifies
+                criterion: REQ-ASSET-003#criterion.referenced-asset-protection
+                covers:
+                  - FEAT-ASSET-001#binding.core/target.delete-object
+                  - FEAT-ASSET-001#binding.core/target.reference-guard
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: typed_form_asset_references_round_trip_and_guard_deletion } }
+          - id: retention-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_asset.rs
+            selector: { kind: test, name: deleted_asset_blob_is_retained_after_logical_deletion }
+            claims:
+              - kind: verifies
+                criterion: REQ-ASSET-003#criterion.logical-deletion
+                covers:
+                  - FEAT-ASSET-001#binding.core/target.delete-object
+                  - FEAT-ASSET-001#binding.core/target.read-object
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: deleted_asset_blob_is_retained_after_logical_deletion } }
+
+  - id: REQ-ASSET-004
+    title: AssetText derived projection
+    description: After an authoritative Asset and its current Entry references are durable, the internal AssetText DerivedRelation may materialize bounded searchable text. It is a replaceable derived artifact, not an authorization source of truth, and parser failure never rolls back authoritative Asset or Entry durability.
+    priority: high
+    status: implemented
+    criteria:
+      - id: durable-entry-source
+        kind: behavior
+        statement: AssetText rebuilds scan current authoritative Form and Entry AssetReferences rather than using an assets object listing as the source set.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-012#rule.governance]
+      - id: bounded-derived-text
+        kind: quality
+        statement: AssetText extracts bounded normalized text from supported Asset formats and records parser failures as derived diagnostics.
+        governed_by: [POL-002#rule.governance, POL-012#rule.governance, POL-014#rule.governance]
+      - id: independent-durability
+        kind: quality
+        statement: AssetText rebuild or parser failure does not roll back the authoritative Asset upload or Entry commit.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-012#rule.governance]
+      - id: no-derived-authority
+        kind: security
+        statement: AssetText is not a Form, publication coordinate, ACL authority, or second history store; authorization remains based on the containing current Entry and Asset reference edge.
+        governed_by: [POL-011#rule.governance, POL-012#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: derived-policy-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that AssetText results remain subordinate to current Entry references and Asset policy through the exact Iceberg integration case.
+        targets:
+          - id: policy-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_asset.rs
+            selector: { kind: test, name: asset_text_search_applies_asset_policy_with_entry_parent }
+            claims:
+              - kind: verifies
+                criterion: REQ-ASSET-004#criterion.durable-entry-source
+                covers: [FEAT-ASSET-001#binding.derived/target.asset-text-rebuild]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: asset_text_search_applies_asset_policy_with_entry_parent } }
+              - kind: verifies
+                criterion: REQ-ASSET-004#criterion.no-derived-authority
+                covers: [FEAT-ASSET-001#binding.derived/target.asset-text-rebuild]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: asset_text_search_applies_asset_policy_with_entry_parent } }

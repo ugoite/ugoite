@@ -1,0 +1,179 @@
+schema: mitase/spec/v1
+kind: features
+namespace: assets
+category: Asset lifecycle and access surfaces
+features:
+  - id: FEAT-ASSET-001
+    title: Asset lifecycle and access
+    summary: Connect the Asset object lifecycle, typed Form references, authorized byte access, logical deletion, and AssetText derivation across exact Ugoite artifacts without introducing a Ugoite-specific specification kind.
+    status: implemented
+    bindings:
+      - id: core
+        role: implementation
+        facet: core
+        responsibility: Implement exact Asset object writes, reads, deletion publication, reference guards, and object-size boundaries.
+        targets:
+          - id: upload-object
+            adapter: rust
+            path: crates/ugoite-iceberg/src/asset.rs
+            selector: { kind: symbol, name: save_asset_with_media_type }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ASSET-001#criterion.stable-object
+              - kind: satisfies
+                criterion: REQ-ASSET-001#criterion.typed-reference
+              - kind: satisfies
+                criterion: REQ-ASSET-001#criterion.metadata-safe-name
+              - kind: satisfies
+                criterion: REQ-ASSET-001#criterion.no-entry-side-effect
+          - id: read-object
+            adapter: rust
+            path: crates/ugoite-iceberg/src/asset.rs
+            selector: { kind: symbol, name: read_asset }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ASSET-002#criterion.exact-object-read
+              - kind: satisfies
+                criterion: REQ-ASSET-003#criterion.logical-deletion
+          - id: delete-object
+            adapter: rust
+            path: crates/ugoite-iceberg/src/asset.rs
+            selector: { kind: symbol, name: delete_asset }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ASSET-003#criterion.exact-catalog-head
+              - kind: satisfies
+                criterion: REQ-ASSET-003#criterion.referenced-asset-protection
+              - kind: satisfies
+                criterion: REQ-ASSET-003#criterion.logical-deletion
+          - id: reference-guard
+            adapter: rust
+            path: crates/ugoite-iceberg/src/asset.rs
+            selector: { kind: symbol, name: current_asset_reference_exists_in_workspace }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ASSET-002#criterion.reference-edge-authorization
+              - kind: satisfies
+                criterion: REQ-ASSET-003#criterion.referenced-asset-protection
+      - id: derived
+        role: implementation
+        facet: derived
+        responsibility: Build the replaceable AssetText DerivedRelation from authoritative current Entry references with bounded extraction and independent failure handling.
+        targets:
+          - id: asset-text-rebuild
+            adapter: rust
+            path: crates/ugoite-iceberg/src/derived_relation.rs
+            selector: { kind: symbol, name: rebuild_asset_text }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ASSET-004#criterion.durable-entry-source
+              - kind: satisfies
+                criterion: REQ-ASSET-004#criterion.no-derived-authority
+      - id: service
+        role: operation
+        facet: service
+        responsibility: Keep the canonical Asset service surface connected to storage, authorization, reference context, deletion, and derived refresh behavior.
+        targets:
+          - id: save-asset
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: save_asset }
+          - id: read-asset
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: read_asset_authorized_for_principals }
+          - id: delete-asset
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: delete_asset_with_principals }
+      - id: server
+        role: operation
+        facet: backend
+        responsibility: Expose authenticated Asset upload, context-bound byte read, and protected deletion through the REST backend adapter.
+        targets:
+          - id: upload-asset
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: upload_asset }
+          - id: get-asset
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: get_asset }
+          - id: delete-asset
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: delete_asset }
+      - id: frontend
+        role: operation
+        facet: frontend
+        responsibility: Keep the shipped browser Asset API client connected to multipart upload, context-bound read, and deletion operations.
+        targets:
+          - id: asset-api
+            adapter: typescript
+            path: frontend/src/lib/asset-api.ts
+            selector: { kind: symbol, name: assetApi }
+      - id: cli
+        role: operation
+        facet: cli
+        responsibility: Keep local Asset upload and deletion workflows available through the Ugoite CLI operator surface while preserving the explicitly unavailable remote upload boundary.
+        targets:
+          - id: asset-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/asset.rs
+            selector: { kind: symbol, name: run }
+      - id: contract
+        role: contract-source
+        facet: api
+        responsibility: Define the authoritative Asset HTTP operations exposed by the Rust server and their exact OpenAPI paths.
+        owns:
+          - id: openapi-source
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: file }
+        targets:
+          - id: upload-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/assets' }
+          - id: read-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/assets/{asset_id}' }
+          - id: delete-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: delete, path: '/spaces/{space_id}/assets/{asset_id}' }
+    contracts:
+      - id: upload
+        kind: http
+        source: FEAT-ASSET-001#binding.contract/target.upload-contract
+        participants:
+          - target: FEAT-ASSET-001#binding.service/target.save-asset
+            role: service
+          - target: FEAT-ASSET-001#binding.server/target.upload-asset
+            role: backend
+          - target: FEAT-ASSET-001#binding.frontend/target.asset-api
+            role: client
+        guarantees: [REQ-ASSET-001#criterion.typed-reference]
+      - id: read
+        kind: http
+        source: FEAT-ASSET-001#binding.contract/target.read-contract
+        participants:
+          - target: FEAT-ASSET-001#binding.service/target.read-asset
+            role: service
+          - target: FEAT-ASSET-001#binding.server/target.get-asset
+            role: backend
+          - target: FEAT-ASSET-001#binding.frontend/target.asset-api
+            role: client
+        guarantees: [REQ-ASSET-002#criterion.containing-entry-context]
+      - id: delete
+        kind: http
+        source: FEAT-ASSET-001#binding.contract/target.delete-contract
+        participants:
+          - target: FEAT-ASSET-001#binding.service/target.delete-asset
+            role: service
+          - target: FEAT-ASSET-001#binding.server/target.delete-asset
+            role: backend
+          - target: FEAT-ASSET-001#binding.frontend/target.asset-api
+            role: client
+        guarantees: [REQ-ASSET-003#criterion.logical-deletion]
