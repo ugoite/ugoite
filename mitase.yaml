@@ -135,4 +135,4 @@ verification:
       arguments: [task, --cwd, frontend, test, "src/routes/spaces/[space_id]/search.test.tsx", --testNamePattern, "{test}"]
     e2e-playwright:
       executable: deno
-      arguments: [task, --cwd, e2e, test, "{file}", --grep, "{test}"]
+      arguments: [run, --node-modules-dir=none, -A, npm:@playwright/test@^1.60.0, test, --config, e2e/playwright.config.ts, "{file}", --grep, "{test}"]
