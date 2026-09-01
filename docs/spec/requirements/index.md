@@ -4,7 +4,7 @@ title: 'Requirements registry'
 
 Requirement YAML files define stable IDs, descriptions, governance links, implementation status, and generated test traceability. Migrated domains are authoritative in `docs/mitase`; this registry remains authoritative for domains that have not yet been migrated.
 
-The migrated Entry, Form, Search, API, and Asset requirements retain their external
+The migrated Entry, Form, Search, API, Asset, and E2E requirements retain their external
 operator/API contracts in the canonical graph; an exact test claim is added
 only for the behavior that the selected test actually exercises. Search
 authorization remains governed by the authoritative Security requirement until
@@ -21,6 +21,11 @@ The legacy Asset requirement registry at `requirements/asset.yaml` is retained
 as a read-only migration snapshot and is no longer included in Mitase's declared
 inventory. The canonical Asset requirements at `docs/mitase/requirements/assets.yaml`
 are the only semantic authority for the migrated Asset domain.
+
+The legacy E2E requirement registry at `requirements/e2e.yaml` is retained as a
+read-only migration snapshot and is no longer included in Mitase's declared
+inventory. The canonical E2E requirements at `docs/mitase/requirements/e2e.yaml`
+are the only semantic authority for the migrated E2E domain.
 
 A current test mapping has this shape:
 
