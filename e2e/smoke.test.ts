@@ -15,7 +15,8 @@ import {
 } from "./lib/client.ts";
 
 // Canonical Mitase evidence for the browser HTML boundary and the
-// server-backed Space/Entry smoke workflow.
+// server-backed Space/Entry smoke workflow. The Mitase runner invokes this
+// file from the repository root with e2e/playwright.config.ts.
 test.describe("Smoke Tests", { tag: "@smoke" }, () => {
   let spaceId = "";
 
