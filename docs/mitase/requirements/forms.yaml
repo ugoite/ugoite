@@ -272,6 +272,10 @@ requirements:
     priority: medium
     status: implemented
     criteria:
+      - id: core-types
+        kind: behavior
+        statement: The Form implementation exposes the supported typed column definitions used when constructing a Form.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: list-operation
         kind: behavior
         statement: Form definitions can be listed through the service and operator surfaces.
@@ -288,3 +292,18 @@ requirements:
         kind: behavior
         statement: An individual Form definition can be retrieved through the service and operator surfaces.
         governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-005#rule.governance, POL-006#rule.governance, POL-013#rule.governance]
+    bindings:
+      - id: core-types-test
+        role: verification
+        facet: verification
+        responsibility: Verify the Form implementation's supported column types through the existing exact Iceberg integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_form.rs
+            selector: { kind: test, name: test_form_req_form_001_list_column_types }
+            claims:
+              - kind: verifies
+                criterion: REQ-FORM-010#criterion.core-types
+                covers: [FEAT-FORM-001#binding.core/target.list-column-types]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_form, test: test_form_req_form_001_list_column_types } }
