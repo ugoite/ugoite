@@ -12056,6 +12056,103 @@ mod authentication_regression_tests {
         .is_err());
     }
 
+    #[tokio::test]
+    async fn issue_2138_sql_session_route_accepts_an_empty_form_immediately_after_creation(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-sql-session-empty-form-{}",
+            Uuid::now_v7()
+        ))?;
+        let principal_id = Uuid::from_u128(21380);
+        let space_id = state
+            .service
+            .create_space_for_principal("sql-session-empty-form", principal_id, "Route test")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = Router::new()
+            .route(
+                "/spaces/{space_id}/forms",
+                get(list_forms).post(upsert_form),
+            )
+            .route("/spaces/{space_id}/sql-sessions", post(create_sql_session))
+            .route(
+                "/spaces/{space_id}/sql-sessions/{session_id}/count",
+                get(get_sql_session_count),
+            )
+            .route(
+                "/spaces/{space_id}/sql-sessions/{session_id}/rows",
+                get(get_sql_session_rows),
+            )
+            .layer(Extension(content_identity(principal_id, space_uid)))
+            .with_state(state);
+
+        let form_response = route
+            .clone()
+            .oneshot(json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/forms"),
+                json!({
+                    "name": "Empty",
+                    "template": "# Empty\n",
+                    "fields": {}
+                }),
+            ))
+            .await?;
+        assert_eq!(form_response.status(), StatusCode::CREATED);
+
+        let (form_status, forms) = route_json(
+            route.clone(),
+            Request::get(format!("/spaces/{space_id}/forms")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(form_status, StatusCode::OK, "{forms}");
+        let relation = forms
+            .as_array()
+            .and_then(|forms| forms.iter().find(|form| form["name"] == "Empty"))
+            .and_then(|form| form["sql_relation"].as_str())
+            .expect("new Form SQL relation")
+            .to_owned();
+
+        let (session_status, session) = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/sql-sessions"),
+                json!({
+                    "sql": format!("SELECT * FROM \"{relation}\" ORDER BY _ugoite_id")
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(session_status, StatusCode::CREATED, "{session}");
+        let session_id = session["id"].as_str().expect("SQL session ID");
+
+        let (count_status, count) = route_json(
+            route.clone(),
+            Request::get(format!(
+                "/spaces/{space_id}/sql-sessions/{session_id}/count"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(count_status, StatusCode::OK, "{count}");
+        assert_eq!(count["count"], 0);
+
+        let (rows_status, rows) = route_json(
+            route,
+            Request::get(format!(
+                "/spaces/{space_id}/sql-sessions/{session_id}/rows?offset=0&limit=10"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(rows_status, StatusCode::OK, "{rows}");
+        assert_eq!(rows["total_count"], 0);
+        assert_eq!(rows["rows"], json!([]));
+        Ok(())
+    }
+
     #[test]
     fn issue_2125_read_request_bounds_accept_edges_and_reject_over_limits() {
         let max_rows = ugoite_iceberg::MAX_NORMAL_READ_ROWS;
