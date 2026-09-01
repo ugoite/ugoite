@@ -19,7 +19,7 @@ features:
             selector: { kind: symbol, name: list_column_types }
             claims:
               - kind: satisfies
-                criterion: REQ-FORM-001#criterion.core-column-types
+                criterion: REQ-FORM-010#criterion.core-types
           - id: upsert-form
             adapter: rust
             path: crates/ugoite-iceberg/src/form.rs
@@ -37,3 +37,122 @@ features:
                 criterion: REQ-FORM-006#criterion.reserved-forms
               - kind: satisfies
                 criterion: REQ-FORM-007#criterion.row-reference
+      - id: service
+        role: operation
+        facet: service
+        responsibility: Keep the canonical Form service surface connected to typed schema implementation and its operator-facing operations.
+        targets:
+          - id: list-forms
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: list_forms }
+          - id: upsert-form
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: upsert_form }
+          - id: get-form
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: get_form }
+      - id: server
+        role: operation
+        facet: backend
+        responsibility: Expose the Form HTTP operations through the backend adapter while retaining the service as the durable implementation boundary.
+        targets:
+          - id: list-forms
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: list_forms }
+          - id: upsert-form
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: upsert_form }
+          - id: form-types
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: form_types }
+          - id: get-form
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: get_form }
+      - id: frontend
+        role: operation
+        facet: frontend
+        responsibility: Keep the shipped Form API client connected to the complete Form operator surface.
+        targets:
+          - id: form-api
+            adapter: typescript
+            path: frontend/src/lib/form-api.ts
+            selector: { kind: symbol, name: formApi }
+      - id: cli
+        role: operation
+        facet: cli
+        responsibility: Keep Form list, creation, type discovery, and retrieval workflows available through the Ugoite CLI operator surface.
+        targets:
+          - id: form-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/form.rs
+            selector: { kind: symbol, name: run }
+      - id: contract
+        role: contract-source
+        facet: api
+        responsibility: Define the authoritative Form HTTP operations exposed by the Rust server.
+        owns:
+          - id: openapi-source
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: file }
+        targets:
+          - id: list-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/forms' }
+          - id: upsert-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/forms' }
+          - id: types-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/forms/types' }
+          - id: get-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/forms/{form_name}' }
+    contracts:
+      - id: list
+        kind: http
+        source: FEAT-FORM-001#binding.contract/target.list-contract
+        participants:
+          - target: FEAT-FORM-001#binding.server/target.list-forms
+            role: backend
+          - target: FEAT-FORM-001#binding.frontend/target.form-api
+            role: client
+        guarantees: [REQ-FORM-010#criterion.list-operation]
+      - id: upsert
+        kind: http
+        source: FEAT-FORM-001#binding.contract/target.upsert-contract
+        participants:
+          - target: FEAT-FORM-001#binding.server/target.upsert-form
+            role: backend
+          - target: FEAT-FORM-001#binding.frontend/target.form-api
+            role: client
+        guarantees: [REQ-FORM-010#criterion.upsert-operation]
+      - id: types
+        kind: http
+        source: FEAT-FORM-001#binding.contract/target.types-contract
+        participants:
+          - target: FEAT-FORM-001#binding.server/target.form-types
+            role: backend
+          - target: FEAT-FORM-001#binding.frontend/target.form-api
+            role: client
+        guarantees: [REQ-FORM-001#criterion.server-exposes-column-types]
+      - id: get
+        kind: http
+        source: FEAT-FORM-001#binding.contract/target.get-contract
+        participants:
+          - target: FEAT-FORM-001#binding.server/target.get-form
+            role: backend
+          - target: FEAT-FORM-001#binding.frontend/target.form-api
+            role: client
+        guarantees: [REQ-FORM-010#criterion.get-operation]

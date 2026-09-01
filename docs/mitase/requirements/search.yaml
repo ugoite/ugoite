@@ -17,17 +17,17 @@ requirements:
       - id: keyword-test
         role: verification
         facet: verification
-        responsibility: Verify the current keyword search behavior through the exact named server test.
+        responsibility: Verify keyword search behavior through the existing exact Iceberg integration test.
         targets:
-          - id: server-case
+          - id: case
             adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: test, name: authentication_regression_tests::test_search_req_srch_001_authorized_route }
+            path: crates/ugoite-iceberg/tests/test_search.rs
+            selector: { kind: test, name: test_search_req_srch_001_keyword_search }
             claims:
               - kind: verifies
                 criterion: REQ-SRCH-001#criterion.keyword-search
-                covers: [FEAT-SRCH-001#binding.server/target.search-handler]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::test_search_req_srch_001_authorized_route } }
+                covers: [FEAT-SRCH-001#binding.core/target.search-entries]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_search, test: test_search_req_srch_001_keyword_search } }
   - id: REQ-SRCH-002
     title: Content-scan search implementation
     description: Keyword search scans current Entry rows and the authorized AssetText projection. AssetText is an internal derived Iceberg relation; missing, stale, or corrupt derived state degrades to native Entry search. A persistent inverted index is still absent.
@@ -142,3 +142,13 @@ requirements:
                 criterion: REQ-SRCH-005#criterion.structured-search-reuse
                 covers: [FEAT-SRCH-001#binding.frontend/target.search-route]
                 runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-005: saved history entries rerun directly or open variable input when needed" } }
+  - id: REQ-SRCH-006
+    title: Structured query operation
+    description: The /spaces/{space_id}/query operation exposes the shared structured query path through the backend, frontend, core, and CLI surfaces.
+    priority: high
+    status: implemented
+    criteria:
+      - id: query-operation
+        kind: behavior
+        statement: The shared structured query operation is available through the backend, frontend, core, and CLI surfaces.
+        governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]

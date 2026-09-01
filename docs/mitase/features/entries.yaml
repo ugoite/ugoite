@@ -72,3 +72,231 @@ features:
                 criterion: REQ-FORM-009#criterion.updated-by-restore
               - kind: satisfies
                 criterion: REQ-FORM-009#criterion.restore-clears-deleted-by
+      - id: service
+        role: operation
+        facet: service
+        responsibility: Keep the canonical Entry service surface connected to the lifecycle implementation and its operator-facing read operations.
+        targets:
+          - id: list-entries
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: list_entries }
+          - id: entry-options
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: list_entry_options }
+          - id: get-entry
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: get_entry }
+          - id: create-entry
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: create_entry }
+          - id: update-entry
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: update_entry }
+          - id: delete-entry
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: delete_entry }
+          - id: entry-history
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: entry_history }
+          - id: entry-revision
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: entry_revision }
+          - id: restore-entry
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: restore_entry }
+      - id: server
+        role: operation
+        facet: backend
+        responsibility: Expose the Entry HTTP operations through the backend adapter while retaining the service as the durable implementation boundary.
+        targets:
+          - id: list-entries
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: list_entries }
+          - id: create-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: create_entry }
+          - id: entry-options
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: entry_options }
+          - id: get-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: get_entry }
+          - id: update-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: update_entry }
+          - id: delete-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: delete_entry }
+          - id: entry-history
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: entry_history }
+          - id: entry-revision
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: entry_revision }
+          - id: restore-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: restore_entry }
+      - id: frontend
+        role: operation
+        facet: frontend
+        responsibility: Keep the shipped Entry API client connected to the complete Entry lifecycle and read-surface contract.
+        targets:
+          - id: entry-api
+            adapter: typescript
+            path: frontend/src/lib/entry-api.ts
+            selector: { kind: symbol, name: entryApi }
+      - id: cli
+        role: operation
+        facet: cli
+        responsibility: Keep Entry list, read, mutation, history, revision, and restore workflows available through the Ugoite CLI operator surface.
+        targets:
+          - id: entry-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/entry.rs
+            selector: { kind: symbol, name: run }
+      - id: contract
+        role: contract-source
+        facet: api
+        responsibility: Define the authoritative Entry HTTP operations exposed by the Rust server.
+        owns:
+          - id: openapi-source
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: file }
+        targets:
+          - id: list-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/entries' }
+          - id: create-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/entries' }
+          - id: options-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/entries/options' }
+          - id: get-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/entries/{entry_id}' }
+          - id: update-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: put, path: '/spaces/{space_id}/entries/{entry_id}' }
+          - id: delete-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: delete, path: '/spaces/{space_id}/entries/{entry_id}' }
+          - id: history-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/entries/{entry_id}/history' }
+          - id: revision-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/entries/{entry_id}/history/{revision_id}' }
+          - id: restore-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/entries/{entry_id}/restore' }
+    contracts:
+      - id: list
+        kind: http
+        source: FEAT-ENTRY-001#binding.contract/target.list-contract
+        participants:
+          - target: FEAT-ENTRY-001#binding.server/target.list-entries
+            role: backend
+          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
+            role: client
+        guarantees: [REQ-ENTRY-010#criterion.list-operation]
+      - id: create
+        kind: http
+        source: FEAT-ENTRY-001#binding.contract/target.create-contract
+        participants:
+          - target: FEAT-ENTRY-001#binding.server/target.create-entry
+            role: backend
+          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
+            role: client
+        guarantees: [REQ-ENTRY-001#criterion.creation]
+      - id: options
+        kind: http
+        source: FEAT-ENTRY-001#binding.contract/target.options-contract
+        participants:
+          - target: FEAT-ENTRY-001#binding.server/target.entry-options
+            role: backend
+          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
+            role: client
+        guarantees: [REQ-ENTRY-010#criterion.options-operation]
+      - id: get
+        kind: http
+        source: FEAT-ENTRY-001#binding.contract/target.get-contract
+        participants:
+          - target: FEAT-ENTRY-001#binding.server/target.get-entry
+            role: backend
+          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
+            role: client
+        guarantees: [REQ-ENTRY-010#criterion.read-operation]
+      - id: update
+        kind: http
+        source: FEAT-ENTRY-001#binding.contract/target.update-contract
+        participants:
+          - target: FEAT-ENTRY-001#binding.server/target.update-entry
+            role: backend
+          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
+            role: client
+        guarantees: [REQ-ENTRY-003#criterion.update]
+      - id: delete
+        kind: http
+        source: FEAT-ENTRY-001#binding.contract/target.delete-contract
+        participants:
+          - target: FEAT-ENTRY-001#binding.server/target.delete-entry
+            role: backend
+          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
+            role: client
+        guarantees: [REQ-ENTRY-004#criterion.tombstone]
+      - id: history
+        kind: http
+        source: FEAT-ENTRY-001#binding.contract/target.history-contract
+        participants:
+          - target: FEAT-ENTRY-001#binding.server/target.entry-history
+            role: backend
+          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
+            role: client
+        guarantees: [REQ-ENTRY-005#criterion.history]
+      - id: revision
+        kind: http
+        source: FEAT-ENTRY-001#binding.contract/target.revision-contract
+        participants:
+          - target: FEAT-ENTRY-001#binding.server/target.entry-revision
+            role: backend
+          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
+            role: client
+        guarantees: [REQ-ENTRY-010#criterion.revision-operation]
+      - id: restore
+        kind: http
+        source: FEAT-ENTRY-001#binding.contract/target.restore-contract
+        participants:
+          - target: FEAT-ENTRY-001#binding.server/target.restore-entry
+            role: backend
+          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
+            role: client
+        guarantees: [REQ-ENTRY-005#criterion.history]

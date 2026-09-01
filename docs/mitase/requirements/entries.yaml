@@ -196,3 +196,25 @@ requirements:
         kind: behavior
         statement: Asset deletion is rejected while a current non-deleted typed Form value still references the asset.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+  - id: REQ-ENTRY-010
+    title: Entry operator surfaces
+    description: The implemented Entry read and selection operations remain available through the canonical service, REST, frontend, and CLI surfaces recorded by the feature graph.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: list-operation
+        kind: behavior
+        statement: The Entry list operation is available through the service and operator surfaces.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-005#rule.governance, POL-006#rule.governance, POL-013#rule.governance]
+      - id: options-operation
+        kind: behavior
+        statement: Entry reference options are available through the authorized operator surface.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-005#rule.governance, POL-006#rule.governance, POL-011#rule.governance]
+      - id: read-operation
+        kind: behavior
+        statement: The current Entry retrieval operation is available through the service and operator surfaces.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-005#rule.governance, POL-006#rule.governance, POL-013#rule.governance]
+      - id: revision-operation
+        kind: behavior
+        statement: Individual historical Entry revisions are retrievable through the service and operator surfaces.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-005#rule.governance, POL-006#rule.governance, POL-014#rule.governance]

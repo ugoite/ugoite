@@ -18,6 +18,8 @@ inventory:
           include_tests: true
         typescript:
           roots:
+            - frontend/src/lib/entry-api.ts
+            - frontend/src/lib/form-api.ts
             - frontend/src/lib/search-api.ts
             - frontend/src/routes/spaces/[space_id]/search.tsx
             - frontend/src/routes/spaces/[space_id]/search.test.tsx
@@ -47,6 +49,33 @@ inventory:
             - docs/spec/features/forms.yaml
             - docs/spec/versions/v0.1.md
             - docs/spec/versions/v0.1-knowledge-compatibility.md
+            - docs/spec/architecture/overview.md
+            - docs/spec/architecture/decisions.md
+            - docs/spec/architecture/stack.md
+            - docs/spec/architecture/future-proofing.md
+            - docs/spec/architecture/frontend-backend-interface.md
+            - docs/spec/architecture/space-catalog.md
+            - docs/spec/api/rest.md
+            - docs/spec/api/openapi.yaml
+            - docs/spec/api/operator-surfaces.md
+            - docs/spec/api/mcp.md
+            - docs/spec/data-model/overview.md
+            - docs/spec/data-model/sql-sessions.md
+            - docs/spec/data-model/directory-structure.md
+            - docs/spec/data-model/file-schemas.yaml
+            - docs/spec/features/index.md
+            - docs/spec/features/sql.md
+            - docs/spec/testing/strategy.md
+            - docs/spec/testing/ci-cd.md
+            - docs/spec/product/success-metrics.md
+            - docs/spec/quality/error-handling.md
+            - docs/spec/security/overview.md
+            - docs/spec/security/sandbox.md
+            - docs/spec/stories/core.yaml
+            - docs/spec/stories/advanced.yaml
+            - docs/spec/stories/experimental.yaml
+            - docs/spec/ui/index.md
+            - docs/spec/ui/pages/space-home.yaml
             - .github/workflows/ci.yml
             - mise.toml
             - scripts/ci/mitase-check.sh

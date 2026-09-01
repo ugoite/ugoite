@@ -12344,8 +12344,8 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
-    /// REQ-SRCH-001
-    async fn test_search_req_srch_001_authorized_route() -> anyhow::Result<()> {
+    /// REQ-SEC-006
+    async fn test_search_req_sec_006_authorization_filter_before_search() -> anyhow::Result<()> {
         let state = AppState::new_for_tests("memory://server-search-authorized-route")?;
         let owner = Uuid::from_u128(2116001);
         let outsider = Uuid::from_u128(2116002);

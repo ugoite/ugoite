@@ -19,19 +19,22 @@ features:
             selector: { kind: symbol, name: search_entries }
             claims:
               - kind: satisfies
+                criterion: REQ-SRCH-001#criterion.keyword-search
+              - kind: satisfies
                 criterion: REQ-SRCH-002#criterion.current-entry-scan
       - id: server
-        role: implementation
+        role: operation
         facet: backend
-        responsibility: Protect the Search HTTP handler with Space authorization and delegate only authorized principals to the service layer.
+        responsibility: Expose the Search HTTP operations through the backend adapter; Space authorization remains the security requirement owned by the unmigrated Security domain.
         targets:
           - id: search-handler
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
             selector: { kind: symbol, name: search_entries }
-            claims:
-              - kind: satisfies
-                criterion: REQ-SRCH-001#criterion.keyword-search
+          - id: query-handler
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: query_entries }
       - id: frontend
         role: implementation
         facet: frontend
@@ -60,6 +63,28 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SRCH-005#criterion.structured-search-reuse
+      - id: query
+        role: operation
+        facet: query
+        responsibility: Keep the structured query operation connected to the canonical service and its operator surfaces.
+        targets:
+          - id: query-service
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: query_entries }
+      - id: cli
+        role: operation
+        facet: cli
+        responsibility: Expose the Search keyword and structured query capabilities through the Ugoite CLI operator surface.
+        targets:
+          - id: keyword-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/search.rs
+            selector: { kind: symbol, name: run }
+          - id: query-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/index.rs
+            selector: { kind: symbol, name: query_cmd }
       - id: contract
         role: contract-source
         facet: api
@@ -74,6 +99,10 @@ features:
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: get, path: '/spaces/{space_id}/search' }
+          - id: query-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/query' }
     contracts:
       - id: keyword-search
         kind: http
@@ -86,3 +115,12 @@ features:
           - target: FEAT-SRCH-001#binding.frontend/target.search-route
             role: route
         guarantees: [REQ-SRCH-001#criterion.keyword-search]
+      - id: structured-query
+        kind: http
+        source: FEAT-SRCH-001#binding.contract/target.query-contract
+        participants:
+          - target: FEAT-SRCH-001#binding.server/target.query-handler
+            role: backend
+          - target: FEAT-SRCH-001#binding.frontend/target.search-api
+            role: client
+        guarantees: [REQ-SRCH-006#criterion.query-operation]
