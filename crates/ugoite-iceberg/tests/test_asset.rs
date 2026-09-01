@@ -9,6 +9,7 @@ use ugoite_domain::identity::{
 };
 use ugoite_iceberg::asset;
 use ugoite_iceberg::authorization::{Authorizer, ResourceKind, ResourceRef};
+use ugoite_iceberg::derived_relation;
 use ugoite_iceberg::entry;
 use ugoite_iceberg::form;
 use ugoite_iceberg::index;
@@ -657,6 +658,64 @@ async fn asset_text_search_applies_asset_policy_with_entry_parent() -> anyhow::R
             .collect::<Vec<_>>(),
         vec!["visible"]
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn asset_text_parser_limit_is_recorded_without_rolling_back_authoritative_state(
+) -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "asset-text-failure", "/tmp").await?;
+    let ws_path = "spaces/asset-text-failure";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Documents",
+            "fields": {"Attachment": {"type": "asset_reference"}}
+        }),
+    )
+    .await?;
+
+    let parser_limit_pdf = format!("%PDF-1.7\n{}", "/Type /Page ".repeat(10_001));
+    let reference = asset::save_asset_with_media_type(
+        &op,
+        ws_path,
+        "broken.pdf",
+        parser_limit_pdf.as_bytes(),
+        "application/pdf",
+    )
+    .await?;
+    let reference_json = serde_json::to_string(&reference)?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "document-1",
+        &format!("---\nform: Documents\nAttachment: {reference_json}\n---\nDocument"),
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await?;
+
+    let catalog_head_path = format!("{ws_path}/_ugoite/catalog/head.json");
+    let catalog_head_before = op.read(&catalog_head_path).await?.to_vec();
+    derived_relation::rebuild_asset_text(&op, ws_path).await?;
+
+    let stats = derived_relation::asset_text_stats(&op, ws_path).await?;
+    assert_eq!(stats["state"], "ready");
+    assert_eq!(stats["assets_referenced"], 1);
+    assert_eq!(stats["assets_ready"], 0);
+    assert_eq!(stats["assets_failed"], 1);
+    assert_eq!(
+        op.read(&catalog_head_path).await?.to_vec(),
+        catalog_head_before,
+        "derived parser failure must not change the authoritative Catalog Head"
+    );
+    assert!(
+        op.exists(&format!("{ws_path}/assets/{}", reference.asset_id))
+            .await?
+    );
+    assert_eq!(entry::list_entries(&op, ws_path).await?.len(), 1);
     Ok(())
 }
 
