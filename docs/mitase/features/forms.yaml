@@ -54,6 +54,10 @@ features:
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
             selector: { kind: symbol, name: get_form }
+          - id: list-column-types
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: list_column_types }
       - id: server
         role: operation
         facet: backend
@@ -124,35 +128,51 @@ features:
         kind: http
         source: FEAT-FORM-001#binding.contract/target.list-contract
         participants:
+          - target: FEAT-FORM-001#binding.service/target.list-forms
+            role: service
           - target: FEAT-FORM-001#binding.server/target.list-forms
             role: backend
           - target: FEAT-FORM-001#binding.frontend/target.form-api
             role: client
+          - target: FEAT-FORM-001#binding.cli/target.form-command
+            role: operator
         guarantees: [REQ-FORM-010#criterion.list-operation]
       - id: upsert
         kind: http
         source: FEAT-FORM-001#binding.contract/target.upsert-contract
         participants:
+          - target: FEAT-FORM-001#binding.service/target.upsert-form
+            role: service
           - target: FEAT-FORM-001#binding.server/target.upsert-form
             role: backend
           - target: FEAT-FORM-001#binding.frontend/target.form-api
             role: client
+          - target: FEAT-FORM-001#binding.cli/target.form-command
+            role: operator
         guarantees: [REQ-FORM-010#criterion.upsert-operation]
       - id: types
         kind: http
         source: FEAT-FORM-001#binding.contract/target.types-contract
         participants:
+          - target: FEAT-FORM-001#binding.service/target.list-column-types
+            role: service
           - target: FEAT-FORM-001#binding.server/target.form-types
             role: backend
           - target: FEAT-FORM-001#binding.frontend/target.form-api
             role: client
+          - target: FEAT-FORM-001#binding.cli/target.form-command
+            role: operator
         guarantees: [REQ-FORM-001#criterion.server-exposes-column-types]
       - id: get
         kind: http
         source: FEAT-FORM-001#binding.contract/target.get-contract
         participants:
+          - target: FEAT-FORM-001#binding.service/target.get-form
+            role: service
           - target: FEAT-FORM-001#binding.server/target.get-form
             role: backend
           - target: FEAT-FORM-001#binding.frontend/target.form-api
             role: client
+          - target: FEAT-FORM-001#binding.cli/target.form-command
+            role: operator
         guarantees: [REQ-FORM-010#criterion.get-operation]

@@ -63,11 +63,15 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SRCH-005#criterion.structured-search-reuse
-      - id: query
+      - id: service
         role: operation
-        facet: query
-        responsibility: Keep the structured query operation connected to the canonical service and its operator surfaces.
+        facet: service
+        responsibility: Keep the Search service operations connected to the canonical implementation and operator surfaces.
         targets:
+          - id: keyword-service
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: search_entries }
           - id: query-service
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
@@ -108,19 +112,27 @@ features:
         kind: http
         source: FEAT-SRCH-001#binding.contract/target.search-contract
         participants:
+          - target: FEAT-SRCH-001#binding.service/target.keyword-service
+            role: service
           - target: FEAT-SRCH-001#binding.server/target.search-handler
             role: backend
           - target: FEAT-SRCH-001#binding.frontend/target.search-api
             role: client
           - target: FEAT-SRCH-001#binding.frontend/target.search-route
             role: route
+          - target: FEAT-SRCH-001#binding.cli/target.keyword-command
+            role: operator
         guarantees: [REQ-SRCH-001#criterion.keyword-search]
       - id: structured-query
         kind: http
         source: FEAT-SRCH-001#binding.contract/target.query-contract
         participants:
+          - target: FEAT-SRCH-001#binding.service/target.query-service
+            role: service
           - target: FEAT-SRCH-001#binding.server/target.query-handler
             role: backend
           - target: FEAT-SRCH-001#binding.frontend/target.search-api
             role: client
+          - target: FEAT-SRCH-001#binding.cli/target.query-command
+            role: operator
         guarantees: [REQ-SRCH-006#criterion.query-operation]

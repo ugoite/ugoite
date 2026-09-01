@@ -163,6 +163,10 @@ features:
             adapter: typescript
             path: frontend/src/lib/entry-api.ts
             selector: { kind: symbol, name: entryApi }
+          - id: search-api
+            adapter: typescript
+            path: frontend/src/lib/search-api.ts
+            selector: { kind: symbol, name: searchApi }
       - id: cli
         role: operation
         facet: cli
@@ -223,80 +227,114 @@ features:
         kind: http
         source: FEAT-ENTRY-001#binding.contract/target.list-contract
         participants:
+          - target: FEAT-ENTRY-001#binding.service/target.list-entries
+            role: service
           - target: FEAT-ENTRY-001#binding.server/target.list-entries
             role: backend
           - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
             role: client
+          - target: FEAT-ENTRY-001#binding.cli/target.entry-command
+            role: operator
         guarantees: [REQ-ENTRY-010#criterion.list-operation]
       - id: create
         kind: http
         source: FEAT-ENTRY-001#binding.contract/target.create-contract
         participants:
+          - target: FEAT-ENTRY-001#binding.service/target.create-entry
+            role: service
           - target: FEAT-ENTRY-001#binding.server/target.create-entry
             role: backend
           - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
             role: client
+          - target: FEAT-ENTRY-001#binding.cli/target.entry-command
+            role: operator
         guarantees: [REQ-ENTRY-001#criterion.creation]
       - id: options
         kind: http
         source: FEAT-ENTRY-001#binding.contract/target.options-contract
         participants:
+          - target: FEAT-ENTRY-001#binding.service/target.entry-options
+            role: service
           - target: FEAT-ENTRY-001#binding.server/target.entry-options
             role: backend
-          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
+          - target: FEAT-ENTRY-001#binding.frontend/target.search-api
             role: client
         guarantees: [REQ-ENTRY-010#criterion.options-operation]
       - id: get
         kind: http
         source: FEAT-ENTRY-001#binding.contract/target.get-contract
         participants:
+          - target: FEAT-ENTRY-001#binding.service/target.get-entry
+            role: service
           - target: FEAT-ENTRY-001#binding.server/target.get-entry
             role: backend
           - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
             role: client
+          - target: FEAT-ENTRY-001#binding.cli/target.entry-command
+            role: operator
         guarantees: [REQ-ENTRY-010#criterion.read-operation]
       - id: update
         kind: http
         source: FEAT-ENTRY-001#binding.contract/target.update-contract
         participants:
+          - target: FEAT-ENTRY-001#binding.service/target.update-entry
+            role: service
           - target: FEAT-ENTRY-001#binding.server/target.update-entry
             role: backend
           - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
             role: client
+          - target: FEAT-ENTRY-001#binding.cli/target.entry-command
+            role: operator
         guarantees: [REQ-ENTRY-003#criterion.update]
       - id: delete
         kind: http
         source: FEAT-ENTRY-001#binding.contract/target.delete-contract
         participants:
+          - target: FEAT-ENTRY-001#binding.service/target.delete-entry
+            role: service
           - target: FEAT-ENTRY-001#binding.server/target.delete-entry
             role: backend
           - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
             role: client
+          - target: FEAT-ENTRY-001#binding.cli/target.entry-command
+            role: operator
         guarantees: [REQ-ENTRY-004#criterion.tombstone]
       - id: history
         kind: http
         source: FEAT-ENTRY-001#binding.contract/target.history-contract
         participants:
+          - target: FEAT-ENTRY-001#binding.service/target.entry-history
+            role: service
           - target: FEAT-ENTRY-001#binding.server/target.entry-history
             role: backend
           - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
             role: client
+          - target: FEAT-ENTRY-001#binding.cli/target.entry-command
+            role: operator
         guarantees: [REQ-ENTRY-005#criterion.history]
       - id: revision
         kind: http
         source: FEAT-ENTRY-001#binding.contract/target.revision-contract
         participants:
+          - target: FEAT-ENTRY-001#binding.service/target.entry-revision
+            role: service
           - target: FEAT-ENTRY-001#binding.server/target.entry-revision
             role: backend
           - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
             role: client
+          - target: FEAT-ENTRY-001#binding.cli/target.entry-command
+            role: operator
         guarantees: [REQ-ENTRY-010#criterion.revision-operation]
       - id: restore
         kind: http
         source: FEAT-ENTRY-001#binding.contract/target.restore-contract
         participants:
+          - target: FEAT-ENTRY-001#binding.service/target.restore-entry
+            role: service
           - target: FEAT-ENTRY-001#binding.server/target.restore-entry
             role: backend
           - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
             role: client
+          - target: FEAT-ENTRY-001#binding.cli/target.entry-command
+            role: operator
         guarantees: [REQ-ENTRY-005#criterion.history]

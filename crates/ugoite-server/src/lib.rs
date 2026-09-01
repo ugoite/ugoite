@@ -9210,7 +9210,9 @@ async fn form_types(
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(
         serde_json::to_value(
-            form::list_column_types()
+            state
+                .service
+                .list_column_types()
                 .await
                 .map_err(ApiError::from_core)?,
         )
