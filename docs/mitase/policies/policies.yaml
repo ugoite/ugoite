@@ -67,7 +67,7 @@ policies:
     description: This policy treats ugoite-core as the durable source of product logic so adapters do not drift into incompatible implementations. It supports portable architecture and continuously verifiable behavior by reusing the same core rules from backend, CLI, and future integrations.
     rules:
       - id: governance
-        level: unspecified
+        level: must
         statement: This policy treats ugoite-core as the durable source of product logic so adapters do not drift into incompatible implementations. It supports portable architecture and continuously verifiable behavior by reusing the same core rules from backend, CLI, and future integrations.
         governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
     bindings:
@@ -139,7 +139,7 @@ policies:
     description: This policy limits the backend to interface translation, orchestration, and security boundaries instead of duplicating durable business rules. It keeps deployments lighter and preserves freedom to reuse the same core behavior across multiple operator surfaces without API-layer lock-in.
     rules:
       - id: governance
-        level: unspecified
+        level: must
         statement: This policy limits the backend to interface translation, orchestration, and security boundaries instead of duplicating durable business rules. It keeps deployments lighter and preserves freedom to reuse the same core behavior across multiple operator surfaces without API-layer lock-in.
         governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-002#principle.product-design-principle]
     bindings:
@@ -186,7 +186,7 @@ policies:
     description: This policy keeps automation visible and scriptable by treating the CLI as a first-class operational surface rather than a secondary afterthought. It reinforces low-node operation, reusable workflows, and durable rule-based automation that can be inspected directly by users and maintainers.
     rules:
       - id: governance
-        level: unspecified
+        level: should
         statement: This policy keeps automation visible and scriptable by treating the CLI as a first-class operational surface rather than a secondary afterthought. It reinforces low-node operation, reusable workflows, and durable rule-based automation that can be inspected directly by users and maintainers.
         governed_by: [PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-002#principle.product-design-principle, PHIL-003#principle.product-design-principle]
     bindings:
@@ -263,7 +263,7 @@ policies:
     description: This policy stabilizes the product's structured content model through explicit schema contracts for forms, entries, and assets. It makes the data model portable and durable by ensuring that product behavior stays tied to documented rules instead of ad hoc field handling.
     rules:
       - id: governance
-        level: unspecified
+        level: must
         statement: This policy stabilizes the product's structured content model through explicit schema contracts for forms, entries, and assets. It makes the data model portable and durable by ensuring that product behavior stays tied to documented rules instead of ad hoc field handling.
         governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
     bindings:
@@ -478,7 +478,7 @@ policies:
     description: This policy elevates retrieval and Form-owned cross-reference behavior into core product capabilities rather than optional convenience features. It supports user freedom and durable knowledge rules by making searchable, typed structure part of the canonical system design.
     rules:
       - id: governance
-        level: unspecified
+        level: must
         statement: This policy elevates retrieval and Form-owned cross-reference behavior into core product capabilities rather than optional convenience features. It supports user freedom and durable knowledge rules by making searchable, typed structure part of the canonical system design.
         governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
     bindings:
@@ -636,7 +636,7 @@ policies:
     description: This policy defines MCP as the operator surface for AI clients when they need structured, protocol-level access to Ugoite resources inside explicit trust boundaries. It keeps the current small semantic facade visible, separates AI-facing access from CLI-driven human automation and REST application integration, and requires expansion through documented, reviewable contracts.
     rules:
       - id: governance
-        level: must
+        level: should
         statement: This policy defines MCP as the operator surface for AI clients when they need structured, protocol-level access to Ugoite resources inside explicit trust boundaries. It keeps the current small semantic facade visible, separates AI-facing access from CLI-driven human automation and REST application integration, and requires expansion through documented, reviewable contracts.
         governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-004#principle.product-design-principle]
     bindings:
@@ -651,8 +651,6 @@ policies:
             selector: { kind: file }
             claims:
               - kind: documents
-                anchor: POL-015#rule.governance
-              - kind: evidences
                 anchor: POL-015#rule.governance
           - id: api-surfaces
             adapter: declared
