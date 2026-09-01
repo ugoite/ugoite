@@ -289,6 +289,20 @@ fn test_index_req_idx_010_rich_content_parsing() -> anyhow::Result<()> {
 }
 
 #[test]
+fn sql_template_normalization_ignores_literals_identifiers_and_comments() -> anyhow::Result<()> {
+    let sql = "SELECT '{{literal}}', \"{{identifier}}\", $native -- {{comment}}\nFROM table WHERE id = {{actual}}";
+    assert_eq!(
+        index::normalize_sql_template(sql)?,
+        "SELECT '{{literal}}', \"{{identifier}}\", $native -- {{comment}}\nFROM table WHERE id = $actual"
+    );
+    assert!(index::validate_sql_syntax("SELECTE broken").is_err());
+    assert!(index::validate_sql_syntax("SELEC broken").is_err());
+    assert!(index::validate_sql_syntax("").is_err());
+    assert!(index::validate_sql_syntax("SELECT 1").is_ok());
+    Ok(())
+}
+
+#[test]
 fn asset_reference_markdown_values_round_trip_as_complete_json() -> anyhow::Result<()> {
     let reference = serde_json::json!({
         "asset_id": "01900000-0000-7000-8000-000000000001",
@@ -339,6 +353,16 @@ fn timestamp_types_reject_values_with_the_wrong_timezone_contract() -> anyhow::R
     });
     let (_, warnings) = index::validate_properties(&wall_with_offset, &form_def)?;
     assert_eq!(warnings.len(), 2);
+    let wall_warning = warnings
+        .iter()
+        .find(|warning| warning["field"] == "Wall")
+        .expect("Wall validation warning");
+    assert_eq!(wall_warning["expected_type"], "timestamp");
+    assert!(wall_warning["expected_format"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("timezone-free"));
+    assert!(wall_warning["reason"].is_string());
     assert!(warnings.iter().all(|warning| {
         warning["code"] == "invalid_type"
             && ["Wall", "WallNs"].contains(&warning["field"].as_str().unwrap_or_default())

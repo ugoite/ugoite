@@ -2,8 +2,11 @@ use crate::config::{load_config, print_json, resolve_space_reference, validated_
 use crate::http;
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use ugoite_iceberg::saved_sql::{SqlKind, SqlPayload};
 use ugoite_iceberg::service::UgoiteService;
+use ugoite_iceberg::{
+    index::validate_sql_syntax,
+    saved_sql::{SqlKind, SqlPayload},
+};
 use uuid::Uuid;
 
 #[derive(Args)]
@@ -55,11 +58,17 @@ pub enum SqlSubCmd {
 pub async fn run(cmd: SqlCmd) -> Result<()> {
     let config = load_config();
     match cmd.sub {
-        SqlSubCmd::Lint { sql_text } => {
-            let upper = sql_text.trim().to_uppercase();
-            let valid = upper.contains("SELECT");
-            print_json(&serde_json::json!({"valid": valid, "sql": sql_text}));
-        }
+        SqlSubCmd::Lint { sql_text } => match validate_sql_syntax(&sql_text) {
+            Ok(()) => print_json(&serde_json::json!({
+                "valid": true,
+                "sql": sql_text,
+            })),
+            Err(error) => print_json(&serde_json::json!({
+                "valid": false,
+                "sql": sql_text,
+                "reason": error.to_string(),
+            })),
+        },
         SqlSubCmd::SavedList { space_path } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "sql saved-list")?;
             if let Some(base) = validated_base_url(&config)? {
@@ -103,7 +112,8 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             let (root, space_id) =
                 resolve_space_reference(&config, &space_path, "sql saved-create")?;
             let vars: serde_json::Value = variables
-                .map(|v| serde_json::from_str(&v).unwrap_or(serde_json::json!([])))
+                .map(|v| serde_json::from_str(&v))
+                .transpose()?
                 .unwrap_or(serde_json::json!([]));
             if let Some(base) = validated_base_url(&config)? {
                 let result = http::execute(
@@ -141,7 +151,8 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             let (root, space_id) =
                 resolve_space_reference(&config, &space_path, "sql saved-update")?;
             let vars: serde_json::Value = variables
-                .map(|v| serde_json::from_str(&v).unwrap_or(serde_json::json!([])))
+                .map(|v| serde_json::from_str(&v))
+                .transpose()?
                 .unwrap_or(serde_json::json!([]));
             if let Some(base) = validated_base_url(&config)? {
                 let mut body = serde_json::json!({

@@ -65,6 +65,7 @@ type ChatMessage = {
 
 type ChatResponse = {
   choices?: Array<{
+    finish_reason?: string | null;
     message?: {
       content?: string | null;
       tool_calls?: Array<{
@@ -131,7 +132,8 @@ export class OpenAiModelHost implements ModelHost {
         body.error?.message ?? `model provider returned ${response.status}`,
       );
     }
-    const message = body.choices?.[0]?.message;
+    const choice = body.choices?.[0];
+    const message = choice?.message;
     if (!message) throw new Error("model provider returned no choices");
     const toolCalls = (message.tool_calls ?? []).map((call) => {
       const name = call.function?.name;
@@ -150,9 +152,17 @@ export class OpenAiModelHost implements ModelHost {
       }
       return { id: call.id, name, arguments: argumentsValue };
     });
+    const messageText = message.content?.trim() ? message.content : undefined;
+    if (!messageText && toolCalls.length === 0) {
+      throw new Error(
+        choice?.finish_reason === "length"
+          ? "model provider reached the output limit without producing an answer; retry with a shorter request"
+          : "model provider returned an empty completion; retry the request",
+      );
+    }
     return {
       request_id: request.request_id,
-      text: message.content ?? undefined,
+      text: messageText,
       tool_calls: toolCalls,
     };
   }

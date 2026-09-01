@@ -170,7 +170,7 @@ describe("MarkdownEditor", () => {
   it("REQ-FE-005: split preview escapes raw HTML content", () => {
     render(() => (
       <MarkdownEditor
-        content={'# Preview\n\n<img src=x onerror="alert(1)">\n\n**bold**'}
+        content={'# Preview\n\n<img src=x onerror="alert(1)">\n<script>window.__previewXss = true</script>\n<div onmouseover="alert(2)">hover</div>\n\n**bold**'}
         onChange={() => {}}
         mode="split"
       />
@@ -179,7 +179,10 @@ describe("MarkdownEditor", () => {
     const preview = document.querySelector(".preview");
     expect(preview).toBeInTheDocument();
     expect(preview?.querySelector("img")).not.toBeInTheDocument();
+    expect(preview?.querySelector("script")).not.toBeInTheDocument();
+    expect(preview?.querySelector("[onmouseover]")).not.toBeInTheDocument();
     expect(preview).toHaveTextContent('<img src=x onerror="alert(1)">');
+    expect(preview).toHaveTextContent("window.__previewXss = true");
     expect(preview?.querySelector("strong")).toHaveTextContent("bold");
   });
 

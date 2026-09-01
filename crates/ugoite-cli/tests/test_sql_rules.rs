@@ -1,5 +1,5 @@
 //! Integration tests for SQL linting and auto-completion.
-//! REQ-SRCH-002
+//! REQ-SRCH-003
 
 use std::process::Command;
 
@@ -17,42 +17,40 @@ fn ugoite_bin() -> std::path::PathBuf {
     path
 }
 
-/// REQ-SRCH-002: SQL lint reports errors for invalid SQL.
+/// REQ-SRCH-003: SQL lint reports errors for invalid SQL.
 #[test]
 fn test_cli_sql_lint_reports_errors() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
-
-    Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "lint-space"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create space");
-
     let output = Command::new(ugoite_bin())
-        .args([
-            "sql",
-            "lint",
-            &root,
-            "lint-space",
-            "--sql",
-            "SELECT * FROM nonexistent_table WHERE",
-        ])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .args(["sql", "lint", "SELECTE broken"])
         .output()
         .expect("failed to execute");
 
-    // Lint command should run (success or failure with error info)
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !output.status.success() || stdout.contains("error") || stderr.contains("error"),
-        "Lint should report errors for invalid SQL"
-    );
+    assert!(output.status.success());
+    let body: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(body["valid"], false);
+    assert!(body["reason"].as_str().unwrap().contains("parse"));
 }
 
-/// REQ-SRCH-002: SQL completion suggests table names.
+#[test]
+fn test_cli_sql_lint_uses_datafusion_for_valid_select_and_empty_input() {
+    let valid = Command::new(ugoite_bin())
+        .args(["sql", "lint", "SELECT 1"])
+        .output()
+        .expect("failed to execute valid lint");
+    assert!(valid.status.success());
+    let valid_body: serde_json::Value = serde_json::from_slice(&valid.stdout).unwrap();
+    assert_eq!(valid_body["valid"], true);
+
+    let empty = Command::new(ugoite_bin())
+        .args(["sql", "lint", ""])
+        .output()
+        .expect("failed to execute empty lint");
+    assert!(empty.status.success());
+    let empty_body: serde_json::Value = serde_json::from_slice(&empty.stdout).unwrap();
+    assert_eq!(empty_body["valid"], false);
+}
+
+/// REQ-SRCH-003: SQL completion suggests table names.
 #[test]
 fn test_cli_sql_complete_suggests_tables() {
     let dir = tempfile::tempdir().unwrap();

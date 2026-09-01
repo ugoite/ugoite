@@ -120,4 +120,27 @@ Active
 			getBackendUrl(`/spaces/${spaceId}/entries/${entry.id}`),
 		);
 	});
+
+	test("Issue 2138: a newly created Form is immediately queryable", async ({ request }) => {
+		const formName = `ImmediateQueryForm-${Date.now()}`;
+		const createRes = await request.post(
+			getBackendUrl(`/spaces/${spaceId}/forms`),
+			{
+				data: {
+					name: formName,
+					version: 1,
+					template: `# ${formName}\n\n## Status\n`,
+					fields: { Status: { type: "string" } },
+				},
+			},
+		);
+		expect([200, 201]).toContain(createRes.status());
+
+		const queryRes = await request.post(
+			getBackendUrl(`/spaces/${spaceId}/query`),
+			{ data: { filter: { form: formName } } },
+		);
+		expect(queryRes.status()).toBe(200);
+		expect(await queryRes.json()).toEqual([]);
+	});
 });

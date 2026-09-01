@@ -242,6 +242,8 @@ struct ChatResponse {
 #[derive(Debug, Deserialize)]
 struct ChatChoice {
     message: ChatResponseMessage,
+    #[serde(default)]
+    finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -336,12 +338,12 @@ impl OpenAiModelHost {
             .json()
             .await
             .map_err(|error| ModelCallError::Response(error.to_string()))?;
-        let message = body
-            .choices
-            .into_iter()
-            .next()
-            .ok_or_else(|| ModelCallError::Response("model provider returned no choices".into()))?
-            .message;
+        let choice =
+            body.choices.into_iter().next().ok_or_else(|| {
+                ModelCallError::Response("model provider returned no choices".into())
+            })?;
+        let finish_reason = choice.finish_reason;
+        let message = choice.message;
         let mut tool_calls = Vec::new();
         for call in message.tool_calls {
             let arguments = serde_json::from_str(&call.function.arguments).map_err(|error| {
@@ -356,9 +358,18 @@ impl OpenAiModelHost {
                 arguments,
             });
         }
+        let text = message.content.filter(|content| !content.trim().is_empty());
+        if text.is_none() && tool_calls.is_empty() {
+            let reason = if finish_reason.as_deref() == Some("length") {
+                "model provider reached the output limit without producing an answer; retry with a shorter request"
+            } else {
+                "model provider returned an empty completion; retry the request"
+            };
+            return Err(ModelCallError::Response(reason.into()));
+        }
         Ok(ModelResult {
             request_id: request.request_id,
-            text: message.content,
+            text,
             tool_calls,
         })
     }
@@ -1517,6 +1528,16 @@ mod tests {
         (StatusCode::SERVICE_UNAVAILABLE, "provider is busy").into_response()
     }
 
+    async fn empty_model_provider() -> Response {
+        Json(json!({
+            "choices": [{
+                "finish_reason": "length",
+                "message": {"content": "   ", "tool_calls": []}
+            }]
+        }))
+        .into_response()
+    }
+
     #[tokio::test]
     async fn slow_model_provider_returns_a_request_scoped_timeout_host_error() {
         let app = Router::new().route("/chat/completions", post(slow_model_provider));
@@ -1582,6 +1603,38 @@ mod tests {
         );
         assert!(error.message.contains("503 Service Unavailable"));
         assert!(error.message.contains("provider is busy"));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn empty_model_completion_returns_a_retryable_response_error() {
+        let app = Router::new().route("/chat/completions", post(empty_model_provider));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let mut host = OpenAiModelHost {
+            client: reqwest::Client::new(),
+            base_url: format!("http://{address}"),
+            api_key: "test-key".into(),
+            model: "test-model".into(),
+            timeout: Duration::from_secs(1),
+        };
+
+        let error = host
+            .call_model(ModelRequest {
+                request_id: "request-empty-completion".into(),
+                prompt: "try".into(),
+                history: vec![],
+                tools: vec![],
+            })
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.kind, "model_response");
+        assert!(error.message.contains("output limit"));
+        assert!(error.message.contains("retry"));
         server.abort();
     }
 
