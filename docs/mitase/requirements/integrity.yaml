@@ -97,13 +97,11 @@ requirements:
         kind: security
         statement: Responses remain unsigned when their scope is unknown or the required response-signing HMAC material is unavailable, rather than being partially or incorrectly signed.
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
-      # Exact evidence for the broader unsigned-response boundary remains a
-      # separate migration slice; do not infer it from the failure-path test.
     bindings:
       - id: response-signing-verification
         role: verification
         facet: verification
-        responsibility: Verify response-signing material, eligible response headers, and fail-closed unsigned boundaries through exact Rust integration, unit, and OpenAPI contract tests.
+        responsibility: Verify response-signing material, eligible response headers, and fail-closed unsigned boundaries through exact Rust integration, unit, and OpenAPI contract tests. Boundary evidence is split between classification of SSE, oversized, and explicitly unsigned responses and replay of fallible and trailer-bearing bodies.
         targets:
           - id: space-material-case
             adapter: rust
@@ -173,6 +171,33 @@ requirements:
                 criterion: REQ-INT-003#criterion.unavailable-material-remains-unsigned
                 covers: [FEAT-INT-001#binding.server/target.response-signing]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_int_003_fails_closed_for_unknown_space_and_key_errors } }
+          - id: boundary-classification-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: security_headers_tests::req_int_003_marks_only_bounded_in_memory_responses_signable }
+            claims:
+              - kind: verifies
+                criterion: REQ-INT-003#criterion.unsigned-response-boundary
+                covers: [FEAT-INT-001#binding.server/target.response-signing]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: security_headers_tests::req_int_003_marks_only_bounded_in_memory_responses_signable } }
+          - id: fallible-response-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: security_headers_tests::response_body_collection_replays_prefix_before_failure }
+            claims:
+              - kind: verifies
+                criterion: REQ-INT-003#criterion.unsigned-response-boundary
+                covers: [FEAT-INT-001#binding.server/target.response-signing]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: security_headers_tests::response_body_collection_replays_prefix_before_failure } }
+          - id: trailer-response-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: security_headers_tests::response_body_collection_preserves_actual_trailers_without_signing }
+            claims:
+              - kind: verifies
+                criterion: REQ-INT-003#criterion.unsigned-response-boundary
+                covers: [FEAT-INT-001#binding.server/target.response-signing]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: security_headers_tests::response_body_collection_preserves_actual_trailers_without_signing } }
           - id: openapi-signing-case
             adapter: rust
             path: crates/ugoite-server/tests/api_contract.rs
