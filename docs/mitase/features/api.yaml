@@ -57,6 +57,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-API-008#criterion.fixed-publication-coordinate
+              - kind: satisfies
+                criterion: REQ-API-007#criterion.parameterized-execution
           - id: get-sql-session-status
             adapter: rust
             path: crates/ugoite-iceberg/src/sql_session.rs
