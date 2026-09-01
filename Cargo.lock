@@ -6380,6 +6380,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "ugoite-api-client",
+ "ugoite-core",
  "ugoite-iceberg",
  "ugoite-konase",
  "ugoite-konase-rig",
