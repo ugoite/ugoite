@@ -369,7 +369,28 @@ impl IcebergWorkspace {
             relations.insert(internal.clone());
             context.register_table(internal.as_str(), provider.clone())?;
             let visible = visible_columns(&form, form_policy)?;
-            let source = context.table(internal.as_str()).await?;
+            // Project before deriving latest revisions. This keeps opaque
+            // Form columns out of the physical scan when a closed query
+            // surface intentionally exposes only a safe subset, such as
+            // keyword search. The revision derivation still receives the
+            // identity columns it needs for authorization and head checks.
+            let mut source_names = BTreeSet::new();
+            let mut source_columns = Vec::new();
+            for column in &visible {
+                if source_names.insert(column.source.clone()) {
+                    source_columns.push(ident(&column.source));
+                }
+            }
+            for source in ["entry_id", "entry_version", "operation"] {
+                if source_names.insert(source.to_string()) {
+                    source_columns.push(ident(source));
+                }
+            }
+            let source = context
+                .table(internal.as_str())
+                .await?
+                .select(source_columns)
+                .context("project authorized query source")?;
             let heads = latest_revision_dataframe(
                 source,
                 &form_policy.entry_scope,

@@ -204,3 +204,44 @@ async fn search_ignores_incompatible_empty_form() -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+#[tokio::test]
+/// Issue 2155: supported fields remain searchable in a mixed Form.
+async fn search_preserves_supported_fields_in_mixed_form() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let ws_path = "spaces/search-mixed-form";
+    space::create_space(&op, "search-mixed-form", "/tmp").await?;
+    let form_def = serde_json::json!({
+        "name": "Mixed",
+        "fields": {
+            "Notes": {"type": "markdown"},
+            "Attachment": {"type": "asset_reference"}
+        }
+    });
+    form::upsert_form(&op, ws_path, &form_def).await?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "mixed-entry",
+        "---\nform: Mixed\n---\n# Mixed entry\n\n## Notes\nmixed-form-search-needle",
+        "author",
+        &ugoite_iceberg::integrity::FakeIntegrityProvider,
+    )
+    .await?;
+
+    let results = search::search_entries(
+        &op,
+        ws_path,
+        "mixed-form-search-needle",
+        ugoite_iceberg::MAX_NORMAL_READ_ROWS,
+    )
+    .await?;
+    assert_eq!(
+        results
+            .iter()
+            .map(|result| result.id.as_str())
+            .collect::<Vec<_>>(),
+        ["mixed-entry"]
+    );
+    Ok(())
+}

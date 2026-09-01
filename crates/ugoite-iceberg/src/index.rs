@@ -19,7 +19,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use ugoite_domain::form::{sql_column_name, sql_relation_name, FormDefinition};
+use ugoite_domain::form::{
+    sql_column_name, sql_relation_name, FieldType, FormDefinition, FormField,
+};
 use ugoite_domain::id::FormId;
 pub use ugoite_domain::text::compute_word_count;
 use uuid::Uuid;
@@ -563,7 +565,7 @@ pub(crate) async fn query_entry_candidates_authorized_after(
     if searchable_scopes.is_empty() {
         return Ok(Vec::new());
     }
-    let context = datafusion_sql_context_with_limits(
+    let context = datafusion_search_context_with_limits(
         op,
         ws_path,
         EntryScope::AllCurrent,
@@ -804,6 +806,7 @@ pub(crate) async fn authorized_asset_reference_query_context(
         AUTHORIZED_ASSET_REFERENCE_MAX_ROWS,
         true,
         form_definitions,
+        None,
     )
     .await
     .map_err(map_sql_error)?;
@@ -1587,7 +1590,7 @@ fn searchable_keyword_predicate(form: &Value, form_name: &str, query: &str) -> R
             let expression = match field_type {
                 "string" | "markdown" | "sql" | "boolean" | "integer" | "long" | "float"
                 | "double" | "date" | "time" | "timestamp" | "timestamp_tz" | "timestamp_ns"
-                | "timestamp_tz_ns" | "uuid" | "row_reference" => format!(
+                | "timestamp_tz_ns" | "row_reference" => format!(
                     "lower(CAST({} AS VARCHAR)) LIKE {pattern} ESCAPE {}",
                     quote_identifier(column),
                     sql_string_literal("\\")
@@ -1615,7 +1618,6 @@ fn searchable_keyword_predicate(form: &Value, form_name: &str, query: &str) -> R
                             | "timestamp_tz"
                             | "timestamp_ns"
                             | "timestamp_tz_ns"
-                            | "uuid"
                             | "row_reference"
                     ) {
                         format!(
@@ -1637,10 +1639,8 @@ fn searchable_keyword_predicate(form: &Value, form_name: &str, query: &str) -> R
 }
 
 /// Search candidates use a deliberately smaller provider surface than a
-/// general SQL query. A Form with nested/opaque columns must not make an
-/// otherwise independent Form unsearchable when DataFusion cannot build a
-/// projection for that column type. Such a Form is skipped locally; its
-/// unsupported fields are not advertised as searchable.
+/// general SQL query. Relation authorization remains Form-wide, while the
+/// search context exposes only fields whose values keyword search can consume.
 fn searchable_relation_scopes(
     forms: &HashMap<String, Value>,
     relation_scopes: &BTreeMap<String, EntryScope>,
@@ -1649,61 +1649,71 @@ fn searchable_relation_scopes(
         .iter()
         .filter(|(scope_name, _)| {
             forms.iter().any(|(form_name, form)| {
-                (form_name.eq_ignore_ascii_case(scope_name)
+                form_name.eq_ignore_ascii_case(scope_name)
                     || form
                         .get("sql_relation")
                         .and_then(Value::as_str)
-                        .is_some_and(|relation| relation.eq_ignore_ascii_case(scope_name)))
-                    && form_supports_search_context(form)
+                        .is_some_and(|relation| relation.eq_ignore_ascii_case(scope_name))
             })
         })
         .map(|(name, scope)| (name.clone(), scope.clone()))
         .collect()
 }
 
-fn form_supports_search_context(form: &Value) -> bool {
-    form.get("fields")
-        .and_then(Value::as_object)
-        .is_none_or(|fields| {
-            fields.values().all(|field| {
-                let field_type = field
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .unwrap_or("string");
-                match field_type {
-                    "string" | "markdown" | "sql" | "boolean" | "integer" | "long" | "float"
-                    | "double" | "date" | "time" | "timestamp" | "timestamp_tz"
-                    | "timestamp_ns" | "timestamp_tz_ns" | "uuid" | "row_reference" => true,
-                    "list" => field
-                        .get("items")
-                        .and_then(Value::as_object)
-                        .and_then(|items| items.get("type"))
-                        .and_then(Value::as_str)
-                        .is_none_or(|item_type| {
-                            matches!(
-                                item_type,
-                                "string"
-                                    | "markdown"
-                                    | "sql"
-                                    | "boolean"
-                                    | "integer"
-                                    | "long"
-                                    | "float"
-                                    | "double"
-                                    | "date"
-                                    | "time"
-                                    | "timestamp"
-                                    | "timestamp_tz"
-                                    | "timestamp_ns"
-                                    | "timestamp_tz_ns"
-                                    | "uuid"
-                                    | "row_reference"
-                            )
-                        }),
-                    _ => false,
-                }
-            })
-        })
+fn searchable_form_columns(form: &FormDefinition) -> BTreeSet<String> {
+    form.fields
+        .iter()
+        .filter(|field| searchable_form_field(field))
+        .map(|field| sql_column_name(field.id))
+        .collect()
+}
+
+fn searchable_form_field(field: &FormField) -> bool {
+    match &field.field_type {
+        FieldType::String
+        | FieldType::Markdown
+        | FieldType::Sql
+        | FieldType::Boolean
+        | FieldType::Integer
+        | FieldType::Long
+        | FieldType::Float
+        | FieldType::Double
+        | FieldType::Date
+        | FieldType::Time
+        | FieldType::Timestamp
+        | FieldType::TimestampTz
+        | FieldType::TimestampNs
+        | FieldType::TimestampTzNs
+        | FieldType::RowReference => true,
+        FieldType::List => field
+            .list_item
+            .as_ref()
+            .is_none_or(|item| searchable_form_field_type(&item.field_type)),
+        FieldType::Uuid | FieldType::Binary | FieldType::ObjectList | FieldType::AssetReference => {
+            false
+        }
+    }
+}
+
+fn searchable_form_field_type(field_type: &FieldType) -> bool {
+    matches!(
+        field_type,
+        FieldType::String
+            | FieldType::Markdown
+            | FieldType::Sql
+            | FieldType::Boolean
+            | FieldType::Integer
+            | FieldType::Long
+            | FieldType::Float
+            | FieldType::Double
+            | FieldType::Date
+            | FieldType::Time
+            | FieldType::Timestamp
+            | FieldType::TimestampTz
+            | FieldType::TimestampNs
+            | FieldType::TimestampTzNs
+            | FieldType::RowReference
+    )
 }
 
 pub async fn execute_sql_query(
@@ -2441,6 +2451,42 @@ async fn datafusion_sql_context_with_limits(
         max_rows,
         include_payload,
         forms,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn datafusion_search_context_with_limits(
+    op: &Operator,
+    ws_path: &str,
+    entry_scope: EntryScope,
+    allowed_relations: Option<&HashSet<String>>,
+    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    checkpoint: Option<SpaceCheckpoint>,
+    allowed_functions: BTreeSet<String>,
+    max_rows: usize,
+    include_payload: bool,
+) -> Result<crate::query_context::AuthorizedQueryContext> {
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    let forms = workspace
+        .list_forms_bounded(MAX_QUERY_FORMS, MAX_QUERY_FORM_DEFINITION_BYTES)
+        .await?;
+    let searchable_columns = forms
+        .iter()
+        .map(|form| (form.id, searchable_form_columns(form)))
+        .collect::<BTreeMap<_, _>>();
+    datafusion_sql_context_with_form_snapshot(
+        workspace,
+        entry_scope,
+        allowed_relations,
+        relation_scopes,
+        checkpoint,
+        allowed_functions,
+        max_rows,
+        include_payload,
+        forms,
+        Some(&searchable_columns),
     )
     .await
 }
@@ -2456,6 +2502,7 @@ async fn datafusion_sql_context_with_form_snapshot(
     max_rows: usize,
     include_payload: bool,
     forms: Vec<FormDefinition>,
+    searchable_columns: Option<&BTreeMap<FormId, BTreeSet<String>>>,
 ) -> Result<crate::query_context::AuthorizedQueryContext> {
     let mut policy_forms = BTreeMap::new();
     for form in forms {
@@ -2502,6 +2549,11 @@ async fn datafusion_sql_context_with_form_snapshot(
                 columns: form
                     .fields
                     .iter()
+                    .filter(|field| {
+                        searchable_columns
+                            .and_then(|columns| columns.get(&form.id))
+                            .is_none_or(|columns| columns.contains(&sql_column_name(field.id)))
+                    })
                     .map(|field| sql_column_name(field.id))
                     .collect(),
                 system_columns,
