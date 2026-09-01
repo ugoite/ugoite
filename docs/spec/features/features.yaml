@@ -27,11 +27,6 @@ files:
   linked_requirements:
   - REQCAT-FORM
   - REQCAT-API
-- kind: assets
-  file: assets.yaml
-  linked_requirements:
-  - REQCAT-ASSET
-  - REQCAT-API
 - kind: derived_relations
   file: derived-relations.yaml
   linked_requirements:
