@@ -1,0 +1,78 @@
+schema: mitase/spec/v1
+kind: features
+namespace: security
+category: Server security boundary surfaces
+features:
+  - id: FEAT-SEC-001
+    title: Server security boundary
+    summary: Connect loopback-first server configuration, response security headers, mandatory REST/MCP authentication, deployment artifacts, and exact verification evidence without introducing a Ugoite-specific specification kind.
+    status: implemented
+    bindings:
+      - id: server
+        role: implementation
+        facet: backend
+        responsibility: Enforce the response security-header policy and authenticated boundary for protected REST and MCP requests.
+        targets:
+          - id: security-header-policy
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: SecurityHeadersPolicy }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-002#criterion.common-header-policy
+              - kind: satisfies
+                criterion: REQ-SEC-002#criterion.loopback-hsts-boundary
+          - id: security-route-layer
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: app_layers }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-002#criterion.common-header-policy
+          - id: authentication-middleware
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: require_auth }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-003#criterion.protected-rest
+          - id: mcp-authentication
+            adapter: rust
+            path: crates/ugoite-server/src/mcp.rs
+            selector: { kind: symbol, name: authenticate }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-003#criterion.protected-mcp
+      - id: listen-configuration
+        role: implementation
+        facet: deployment
+        responsibility: Keep the server's explicit listen-address override and loopback default visible at the process and operator configuration boundaries.
+        targets:
+          - id: server-entrypoint
+            adapter: rust
+            path: crates/ugoite-server/src/main.rs
+            selector: { kind: symbol, name: server_address_from }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-001#criterion.default-loopback
+          - id: release-compose
+            adapter: declared
+            path: docker-compose.release.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-001#criterion.compose-loopback
+      - id: contract
+        role: contract-source
+        facet: api
+        responsibility: Keep the authoritative OpenAPI artifact connected to the protected REST operation surface; detailed authentication operation coverage remains part of the next Security migration slices.
+        owns:
+          - id: openapi-source
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: file }
+        targets:
+          - id: protected-space-list
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /spaces }

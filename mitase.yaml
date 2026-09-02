@@ -67,8 +67,11 @@ inventory:
             - docs/mitase/features/integrity.yaml
             - docs/mitase/requirements/e2e.yaml
             - docs/mitase/features/e2e.yaml
+            - docs/mitase/requirements/security.yaml
+            - docs/mitase/features/security.yaml
             - docs/index.md
             - docs/guide/start/container-quickstart.md
+            - docker-compose.release.yaml
             - docsite/astro.config.mjs
             - docsite/src/content.config.ts
             - docsite/src/docs-ssot.mjs
@@ -117,6 +120,8 @@ inventory:
             - tools/knowledge_compatibility.ts
             - crates/ugoite-core/src/lib.rs
             - crates/ugoite-server/src/lib.rs
+            - crates/ugoite-server/src/main.rs
+            - crates/ugoite-server/tests/security_config.rs
             - crates/ugoite-iceberg/src/form.rs
             - crates/ugoite-iceberg/src/search.rs
             - crates/ugoite-konase/src/agent_runtime.rs
