@@ -326,6 +326,196 @@ requirements:
                 covers: [FEAT-SEC-002#binding.identity/target.session-validation]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::browser_sessions_expire_and_are_revoked_without_exposing_verifiers } }
 
+  - id: REQ-SEC-006
+    title: Space-scoped Entry and Asset authorization
+    description: Space roles and grant-only inheritable ACLs protect Entries and Assets. Private policies disable role inheritance and grant only named principals. Authorization filtering occurs before search, SQL, aggregation, history, Asset access, reference resolution, and MCP results are produced.
+    priority: high
+    status: implemented
+    criteria:
+      - id: scoped-resource-actions
+        kind: security
+        statement: Space roles and explicit grants determine whether an active principal may perform an action on a Space, Entry, Asset, Form, SavedSql, or MaterializedView resource.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: grant-only-inheritance
+        kind: security
+        statement: Private policies do not inherit role actions and grant access only to their named principals, while resource authorization honors an explicitly supplied parent relationship.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: filtered-before-materialization
+        kind: security
+        statement: Authorization filtering is applied before search, SQL, aggregation, history, Asset access, reference resolution, and MCP results are returned.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance, POL-011#rule.governance, POL-015#rule.governance]
+    bindings:
+      - id: authorization-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Space role evaluation, private grant inheritance, and authorization filtering before protected search and MCP results through exact repository tests.
+        targets:
+          - id: authorizer-role-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/authorization.rs
+            selector: { kind: symbol, name: tests::authorizer_enforces_roles_and_last_owner }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-006#criterion.scoped-resource-actions
+                covers:
+                  - FEAT-SEC-004#binding.authorization/target.authorizer
+                  - FEAT-SEC-004#binding.authorization/target.authorization-decision
+                  - FEAT-SEC-004#binding.membership-server/target.space-permission
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: authorization::tests::authorizer_enforces_roles_and_last_owner } }
+              - kind: verifies
+                criterion: REQ-SEC-006#criterion.grant-only-inheritance
+                covers:
+                  - FEAT-SEC-004#binding.authorization/target.authorizer
+                  - FEAT-SEC-004#binding.authorization/target.authorization-decision
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: authorization::tests::authorizer_enforces_roles_and_last_owner } }
+          - id: search-filter-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::test_search_req_sec_006_authorization_filter_before_search }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-006#criterion.filtered-before-materialization
+                covers:
+                  - FEAT-SEC-004#binding.authorization/target.authorized-resource-filter
+                  - FEAT-SEC-004#binding.authorization/target.service-authorization-boundary
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::test_search_req_sec_006_authorization_filter_before_search } }
+          - id: mcp-filter-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::authenticated_mcp_route_enforces_binding_dpop_acl_and_human_mutations }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-006#criterion.scoped-resource-actions
+                covers: [FEAT-SEC-004#binding.membership-server/target.space-permission]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::authenticated_mcp_route_enforces_binding_dpop_acl_and_human_mutations } }
+
+  - id: REQ-SEC-007
+    title: Space membership lifecycle and invitation collaboration
+    description: Each Space supports explicit member lifecycle states (invited, active, and revoked) with invitation issuance, acceptance, role changes, and revocation controls. Membership updates are concurrency-safe and drive effective authorization outcomes for the authenticated principal.
+    priority: high
+    status: implemented
+    criteria:
+      - id: explicit-membership-state
+        kind: security
+        statement: A Space membership has an explicit lifecycle state and role, and revoked principals no longer receive effective Space authorization.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: invitation-acceptance
+        kind: security
+        statement: A Space owner can issue an invitation that is accepted through the supported Passkey flow, and retries for an existing account or binding do not create a second principal.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: concurrency-safe-membership
+        kind: quality
+        statement: Invitation acceptance, role changes, revocation, and policy updates serialize against the Space authorization state so a stale mutation cannot restore a revoked or demoted principal and the last owner cannot be removed.
+        governed_by: [POL-001#rule.governance, POL-004#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: membership-verification
+        role: verification
+        facet: verification
+        responsibility: Verify invitation issuance and idempotent acceptance, explicit membership lifecycle behavior, and serialized membership changes through exact identity, authorization, server, and browser tests.
+        targets:
+          - id: invitation-journey
+            adapter: typescript
+            path: e2e/space-membership.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-007#criterion.explicit-membership-state
+                covers:
+                  - FEAT-SEC-004#binding.membership-server/target.member-revoke
+                  - FEAT-SEC-004#binding.membership-server/target.members-list
+                runner: { runner: e2e-playwright, arguments: { file: e2e/space-membership.test.ts, test: 'REQ-SEC-007: one-use invitation registers a real Passkey and can be revoked' } }
+              - kind: verifies
+                criterion: REQ-SEC-007#criterion.invitation-acceptance
+                covers:
+                  - FEAT-SEC-004#binding.membership/target.invitation-issue
+                  - FEAT-SEC-004#binding.membership/target.invitation-acceptance
+                  - FEAT-SEC-004#binding.membership/target.invitation-finalization
+                  - FEAT-SEC-004#binding.client/target.invitation-route
+                  - FEAT-SEC-004#binding.membership-server/target.member-invite
+                runner: { runner: e2e-playwright, arguments: { file: e2e/space-membership.test.ts, test: 'REQ-SEC-007: one-use invitation registers a real Passkey and can be revoked' } }
+          - id: invitation-retry-journey
+            adapter: typescript
+            path: e2e/space-membership.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-007#criterion.invitation-acceptance
+                covers:
+                  - FEAT-SEC-004#binding.membership/target.invitation-acceptance
+                  - FEAT-SEC-004#binding.membership/target.invitation-issue
+                runner: { runner: e2e-playwright, arguments: { file: e2e/space-membership.test.ts, test: 'REQ-SEC-007: an existing Space member can retry the same invitation idempotently' } }
+          - id: existing-account-invitation-case
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: tests::existing_account_can_accept_invitation_idempotently }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-007#criterion.invitation-acceptance
+                covers:
+                  - FEAT-SEC-004#binding.membership/target.invitation-acceptance
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::existing_account_can_accept_invitation_idempotently } }
+          - id: existing-binding-invitation-case
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: tests::existing_space_binding_accepts_invitation_without_creating_a_second_principal }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-007#criterion.invitation-acceptance
+                covers: [FEAT-SEC-004#binding.membership/target.invitation-acceptance]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::existing_space_binding_accepts_invitation_without_creating_a_second_principal } }
+          - id: membership-concurrency-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/authorization.rs
+            selector: { kind: symbol, name: tests::recovery_fence_serializes_membership_lifecycle_changes }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-007#criterion.concurrency-safe-membership
+                covers:
+                  - FEAT-SEC-004#binding.membership-server/target.member-role-update
+                  - FEAT-SEC-004#binding.membership-server/target.member-revoke
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: authorization::tests::recovery_fence_serializes_membership_lifecycle_changes } }
+
+  - id: REQ-SEC-008
+    title: Security audit logging and attribution
+    description: Security-relevant Space authorization events are persisted in an append-only, integrity-checked audit chain with principal attribution and safe metadata, and are exposed only to authorized Space owners.
+    priority: high
+    status: implemented
+    criteria:
+      - id: attributed-append-only-audit
+        kind: security
+        statement: Authorization and membership mutations append attributable audit events without allowing event replacement, chain discontinuity, or secret-bearing metadata.
+        governed_by: [POL-001#rule.governance, POL-004#rule.governance, POL-011#rule.governance]
+      - id: owner-authorized-audit-read
+        kind: security
+        statement: Space audit events can be read only after the requesting principal is authenticated and authorized for the Space owner-level audit action.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+    bindings:
+      - id: audit-verification
+        role: verification
+        facet: verification
+        responsibility: Verify append-only attributed Space audit persistence and owner-only audit reads through exact Iceberg and server tests.
+        targets:
+          - id: audit-chain-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/audit.rs
+            selector: { kind: symbol, name: tests::req_sec_008_authorization_audit_is_append_only_and_attributed }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-008#criterion.attributed-append-only-audit
+                covers: [FEAT-SEC-004#binding.audit/target.audit-append]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: audit::tests::req_sec_008_authorization_audit_is_append_only_and_attributed } }
+          - id: audit-owner-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::req_sec_008_space_audit_is_visible_only_to_space_owners }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-008#criterion.owner-authorized-audit-read
+                covers:
+                  - FEAT-SEC-004#binding.audit/target.audit-list
+                  - FEAT-SEC-004#binding.audit/target.audit-server
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::req_sec_008_space_audit_is_visible_only_to_space_owners } }
+
   - id: REQ-SEC-014
     title: Account Self-Recovery
     description: An active HumanAccount may replace its Node-local Passkey credentials only through an explicitly enrolled recovery-only TOTP and one valid offline Recovery Code, while preserving the HumanAccount and its Space bindings.
