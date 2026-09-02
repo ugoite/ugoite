@@ -325,3 +325,155 @@ requirements:
                 criterion: REQ-SEC-005#criterion.opaque-bootstrap-session
                 covers: [FEAT-SEC-002#binding.identity/target.session-validation]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::browser_sessions_expire_and_are_revoked_without_exposing_verifiers } }
+
+  - id: REQ-SEC-014
+    title: Account Self-Recovery
+    description: An active HumanAccount may replace its Node-local Passkey credentials only through an explicitly enrolled recovery-only TOTP and one valid offline Recovery Code, while preserving the HumanAccount and its Space bindings.
+    priority: high
+    status: implemented
+    criteria:
+      - id: recovery-factor-enrollment
+        kind: security
+        statement: Recovery TOTP is explicitly enrolled behind a recent Passkey, is encrypted at rest, and is sufficient only as one factor of Account Self-Recovery; TOTP is not a normal login method.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: dual-factor-recovery
+        kind: security
+        statement: Recovery start requires the exact Account ID, one currently valid Recovery Code, and a currently valid TOTP code; start does not consume the code or persist its plaintext, and repeated invalid attempts are temporarily locked.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: credential-replacement
+        kind: security
+        statement: Successful recovery replaces the account's Passkeys, advances credential_generation, rotates all Recovery Codes, preserves the HumanAccount and Space identity, and removes linked OIDC methods from the recovered account.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: stale-authority-invalidation
+        kind: security
+        statement: Recovery authority is bound to the current credential generation and account lifecycle; pre-recovery sessions and stale recovery challenges fail closed after credential replacement or recovery-factor changes.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: recovery-audit-attribution
+        kind: security
+        statement: Successful Account Self-Recovery emits attributable Node audit state without recording Recovery Code plaintext or the TOTP secret, and establishes a new ordinary opaque browser session.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+    bindings:
+      - id: account-recovery-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the recovery-only factors, dual-factor ceremony, credential replacement boundary, stale-authority invalidation, audit attribution, and published recovery operations through exact repository tests.
+        targets:
+          - id: totp-enrollment-case
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: test, name: tests::totp_enrollment_distinguishes_invalid_codes_from_internal_state_errors }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-014#criterion.recovery-factor-enrollment
+                covers: [FEAT-SEC-003#binding.identity/target.totp-enrollment, FEAT-SEC-003#binding.identity/target.totp-enrollment-finish]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::totp_enrollment_distinguishes_invalid_codes_from_internal_state_errors } }
+          - id: totp-window-case
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: test, name: tests::totp_accepts_one_adjacent_step_but_not_two }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-014#criterion.recovery-factor-enrollment
+                covers: [FEAT-SEC-003#binding.identity/target.totp-enrollment]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::totp_accepts_one_adjacent_step_but_not_two } }
+          - id: recovery-crypto-case
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: test, name: tests::recovery_secret_is_authenticated_encryption }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-014#criterion.recovery-factor-enrollment
+                covers: [FEAT-SEC-003#binding.identity/target.totp-enrollment]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::recovery_secret_is_authenticated_encryption } }
+          - id: recovery-start-case
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: test, name: tests::recovery_start_validates_without_consuming_code_or_persisting_plaintext }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-014#criterion.dual-factor-recovery
+                covers: [FEAT-SEC-003#binding.identity/target.recovery-start]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::recovery_start_validates_without_consuming_code_or_persisting_plaintext } }
+              - kind: verifies
+                criterion: REQ-SEC-014#criterion.stale-authority-invalidation
+                covers: [FEAT-SEC-003#binding.identity/target.recovery-finish]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::recovery_start_validates_without_consuming_code_or_persisting_plaintext } }
+          - id: recovery-lock-case
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: test, name: tests::recovery_failures_lock_after_five_attempts_and_lock_valid_credentials }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-014#criterion.dual-factor-recovery
+                covers: [FEAT-SEC-003#binding.identity/target.recovery-start]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::recovery_failures_lock_after_five_attempts_and_lock_valid_credentials } }
+          - id: recovery-totp-change-case
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: test, name: tests::changing_recovery_totp_invalidates_pending_account_recovery_challenges }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-014#criterion.stale-authority-invalidation
+                covers: [FEAT-SEC-003#binding.identity/target.recovery-finish]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::changing_recovery_totp_invalidates_pending_account_recovery_challenges } }
+          - id: recovery-oidc-removal-case
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: test, name: tests::recovery_credential_replacement_removes_oidc_methods }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-014#criterion.credential-replacement
+                covers: [FEAT-SEC-003#binding.identity/target.recovery-finish, FEAT-SEC-003#binding.identity/target.recovery-code-rotation]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::recovery_credential_replacement_removes_oidc_methods } }
+          - id: recovery-frontend-case
+            adapter: typescript
+            path: frontend/src/routes/recover/account.test.tsx
+            selector: { kind: test, name: replaces the Passkey and displays the rotated codes once }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-014#criterion.credential-replacement
+                covers: [FEAT-SEC-003#binding.client/target.account-recovery-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/recover/account.test.tsx, test: replaces the Passkey and displays the rotated codes once } }
+          - id: recovery-browser-case
+            adapter: typescript
+            path: e2e/account-self-recovery.test.ts
+            selector: { kind: test, name: replaces the credential generation and preserves the HumanAccount }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-014#criterion.credential-replacement
+                covers: [FEAT-SEC-003#binding.client/target.account-recovery-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/account-self-recovery.test.ts, test: replaces the credential generation and preserves the HumanAccount } }
+              - kind: verifies
+                criterion: REQ-SEC-014#criterion.recovery-audit-attribution
+                covers: [FEAT-SEC-003#binding.client/target.browser-recovery-journey]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/account-self-recovery.test.ts, test: replaces the credential generation and preserves the HumanAccount } }
+          - id: recovery-error-boundary-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: security_headers_tests::account_recovery_credential_failures_share_authentication_error }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-014#criterion.dual-factor-recovery
+                covers: [FEAT-SEC-003#binding.server/target.recovery-start]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: security_headers_tests::account_recovery_credential_failures_share_authentication_error } }
+          - id: recovery-openapi-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: req_sec_014_openapi_publishes_account_recovery_surfaces }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-014#criterion.recovery-factor-enrollment
+                covers: [FEAT-SEC-003#binding.server/target.totp-start, FEAT-SEC-003#binding.server/target.totp-finish]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_sec_014_openapi_publishes_account_recovery_surfaces } }
+              - kind: verifies
+                criterion: REQ-SEC-014#criterion.dual-factor-recovery
+                covers: [FEAT-SEC-003#binding.server/target.recovery-start]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_sec_014_openapi_publishes_account_recovery_surfaces } }
+              - kind: verifies
+                criterion: REQ-SEC-014#criterion.credential-replacement
+                covers: [FEAT-SEC-003#binding.server/target.recovery-finish]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_sec_014_openapi_publishes_account_recovery_surfaces } }
+              - kind: verifies
+                criterion: REQ-SEC-014#criterion.recovery-audit-attribution
+                covers: [FEAT-SEC-003#binding.server/target.node-audit]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_sec_014_openapi_publishes_account_recovery_surfaces } }

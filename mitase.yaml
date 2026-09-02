@@ -23,6 +23,8 @@ inventory:
             - frontend/src/routes/login.test.tsx
             - frontend/src/routes/setup.tsx
             - frontend/src/routes/setup.test.tsx
+            - frontend/src/routes/recover/account.tsx
+            - frontend/src/routes/recover/account.test.tsx
             - frontend/src/lib/entry-api.ts
             - frontend/src/lib/form-api.ts
             - frontend/src/lib/search-api.ts
@@ -49,6 +51,7 @@ inventory:
             - e2e/docsite-theme-controls.test.ts
             - e2e/docsite-onboarding.test.ts
             - e2e/global-setup.ts
+            - e2e/account-self-recovery.test.ts
             - docsite/src/ssot.test.ts
         openapi:
           roots:

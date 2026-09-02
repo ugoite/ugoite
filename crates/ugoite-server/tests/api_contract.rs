@@ -894,6 +894,27 @@ fn req_sec_005_openapi_publishes_setup_surfaces() {
 }
 
 #[test]
+fn req_sec_014_openapi_publishes_account_recovery_surfaces() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    for (path, method, response) in [
+        ("/auth/recovery/totp/start", "post", "200"),
+        ("/auth/recovery/totp/finish", "post", "200"),
+        ("/auth/recovery/start", "post", "200"),
+        ("/auth/recovery/finish", "post", "201"),
+        ("/auth/audit", "get", "200"),
+    ] {
+        assert!(
+            snapshot["paths"][path][method].is_object(),
+            "{method} {path}"
+        );
+        assert!(
+            snapshot["paths"][path][method]["responses"][response].is_object(),
+            "{method} {path} publishes {response}"
+        );
+    }
+}
+
+#[test]
 fn openapi_documents_resource_bound_mcp_agent_tokens() {
     let snapshot = ugoite_server::openapi_snapshot();
     for path in [
