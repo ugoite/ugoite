@@ -104,6 +104,57 @@ features:
                 criterion: REQ-STO-006#criterion.safe-remote-endpoint
               - kind: satisfies
                 criterion: REQ-STO-006#criterion.explicit-connectivity-failure
+      - id: connector-api
+        role: implementation
+        facet: backend
+        responsibility: Expose the Space storage connector update and connection-validation operations through the server adapter without making the adapter a second storage authority.
+        targets:
+          - id: patch-space
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: patch_space }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-006#criterion.connector-updates
+          - id: test-connection
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: test_connection }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-006#criterion.validation-endpoint
+      - id: connector-ui
+        role: implementation
+        facet: frontend
+        responsibility: Present storage connector metadata updates and an explicit connection-validation action without conflating saved configuration with the current physical storage topology.
+        targets:
+          - id: storage-settings
+            adapter: typescript
+            path: frontend/src/components/SpaceSettings.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-006#criterion.connector-updates
+              - kind: satisfies
+                criterion: REQ-STO-006#criterion.validation-endpoint
+      - id: contract
+        role: contract-source
+        facet: api
+        responsibility: Define the authoritative HTTP operations for updating Space storage metadata and validating a proposed storage connection.
+        owns:
+          - id: openapi-source
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: file }
+        targets:
+          - id: patch-space
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: patch, path: '/spaces/{space_id}' }
+          - id: test-connection
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/test-connection' }
       - id: routing
         role: implementation
         facet: cli
@@ -141,3 +192,22 @@ features:
                 criterion: REQ-STO-011#criterion.hashed-user-path
               - kind: satisfies
                 criterion: REQ-STO-011#criterion.merged-concurrent-patch
+    contracts:
+      - id: patch-space
+        kind: http
+        source: FEAT-STO-001#binding.contract/target.patch-space
+        participants:
+          - target: FEAT-STO-001#binding.connector-api/target.patch-space
+            role: backend
+          - target: FEAT-STO-001#binding.connector-ui/target.storage-settings
+            role: client
+        guarantees: [REQ-STO-006#criterion.connector-updates]
+      - id: test-connection
+        kind: http
+        source: FEAT-STO-001#binding.contract/target.test-connection
+        participants:
+          - target: FEAT-STO-001#binding.connector-api/target.test-connection
+            role: backend
+          - target: FEAT-STO-001#binding.connector-ui/target.storage-settings
+            role: client
+        guarantees: [REQ-STO-006#criterion.validation-endpoint]

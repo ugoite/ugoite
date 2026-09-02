@@ -55,9 +55,7 @@ features:
               - kind: satisfies
                 criterion: REQ-E2E-002#criterion.space-and-entry-lists
               - kind: satisfies
-                criterion: REQ-STO-009#criterion.authorized-space-listing
-              - kind: satisfies
-                criterion: REQ-STO-009#criterion.storage-error-propagation
+                criterion: REQ-STO-009#criterion.authenticated-listing-contract
           - id: list-entries
             adapter: rust
             path: crates/ugoite-server/src/lib.rs

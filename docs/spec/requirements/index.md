@@ -41,6 +41,13 @@ HTTP 409 duplicate contract must first be reconciled with the current
 idempotent bootstrap-retry behavior. Storage layout synchronization,
 derived-relation, and Knowledge-compatibility requirements remain in this
 registry until their later migration slices are reviewed.
+The canonical Storage connector record preserves the connector-update and
+pre-commit validation contract; its available API/UI surface and core probe
+evidence are traced, while mandatory sequencing of an update after successful
+validation remains an explicit evidence gap. The canonical accessible-listing
+record likewise keeps runtime authorization and storage-error propagation as
+implementation requirements while its current verification target covers only
+the published OpenAPI boundary.
 
 A current test mapping has this shape:
 

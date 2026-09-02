@@ -1127,6 +1127,17 @@ fn issue_2037_openapi_publishes_the_public_knowledge_contract() {
 #[test]
 fn issue_2029_openapi_documents_storage_connection_contract() {
     let snapshot = ugoite_server::openapi_snapshot();
+    let patch = &snapshot["paths"]["/spaces/{space_id}"]["patch"];
+    assert_eq!(
+        patch["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/SpacePatchRequest"
+    );
+    assert!(
+        snapshot["components"]["schemas"]["SpacePatchRequest"]["properties"]["storage_config"]
+            .is_object(),
+        "Space patch accepts connector metadata"
+    );
+
     let operation = &snapshot["paths"]["/spaces/{space_id}/test-connection"]["post"];
 
     assert_eq!(

@@ -187,10 +187,22 @@ requirements:
 
   - id: REQ-STO-006
     title: Storage connector validation
-    description: The Space storage connection probe accepts supported URI schemes, rejects unsafe remote endpoints before attempting a connection, and reports unreachable targets as connectivity failures rather than false success.
+    description: Spaces MUST accept storage connector updates and provide a validation endpoint before committing changes. Unsafe connector endpoints such as loopback or link-local hosts MUST be rejected before the core binding attempts a connection test, and unreachable targets MUST return a connectivity failure rather than a false success.
     priority: medium
     status: implemented
     criteria:
+      - id: connector-updates
+        kind: behavior
+        statement: The Space update surface accepts storage connector metadata without treating that metadata change as a physical data migration.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
+      - id: validation-endpoint
+        kind: behavior
+        statement: A dedicated Space connection-validation endpoint accepts a proposed connector configuration and delegates validation to the shared storage boundary.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-008#rule.governance]
+      - id: pre-commit-validation
+        kind: quality
+        statement: Callers can validate a proposed connector through the validation endpoint before committing a connector update; mandatory sequencing of those two operations remains an explicit contract boundary.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-008#rule.governance]
       - id: supported-connector-config
         kind: behavior
         statement: Storage connection validation rejects unsupported URI schemes and reports a supported local or in-memory configuration as the corresponding connection mode.
@@ -207,8 +219,39 @@ requirements:
       - id: connector-verification
         role: verification
         facet: verification
-        responsibility: Verify supported-scheme validation, endpoint safety, and explicit connectivity failure through exact Iceberg integration cases.
+        responsibility: Verify the connector update and validation surfaces plus supported modes, endpoint safety, and typed connectivity failure through exact API, frontend, Iceberg integration, and unit cases. The repository exposes the validation-before-update workflow, while evidence that every update is rejected unless a prior validation succeeds remains unverified in this migration slice.
         targets:
+          - id: connector-api-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: issue_2029_openapi_documents_storage_connection_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.connector-updates
+                covers: [FEAT-STO-001#binding.connector-api/target.patch-space]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: issue_2029_openapi_documents_storage_connection_contract } }
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.validation-endpoint
+                covers: [FEAT-STO-001#binding.connector-api/target.test-connection]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: issue_2029_openapi_documents_storage_connection_contract } }
+          - id: connector-save-case
+            adapter: typescript
+            path: frontend/src/components/SpaceSettings.test.tsx
+            selector: { kind: test, name: renders storage values and saves only storage configuration }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.connector-updates
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-settings]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SpaceSettings.test.tsx, test: renders storage values and saves only storage configuration } }
+          - id: connector-test-case
+            adapter: typescript
+            path: frontend/src/components/SpaceSettings.test.tsx
+            selector: { kind: test, name: tests the edited storage connection }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.validation-endpoint
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-settings]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SpaceSettings.test.tsx, test: tests the edited storage connection } }
           - id: unsupported-scheme-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_space.rs
@@ -218,6 +261,24 @@ requirements:
                 criterion: REQ-STO-006#criterion.supported-connector-config
                 covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_006_test_storage_connection_unknown_rejects_unsupported_scheme } }
+          - id: memory-mode-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: test_space_req_sto_002_test_storage_connection_memory }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.supported-connector-config
+                covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_002_test_storage_connection_memory } }
+          - id: local-mode-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: test_space_req_sto_002_test_storage_connection_local }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.supported-connector-config
+                covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_002_test_storage_connection_local } }
           - id: blocked-endpoint-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_space.rs
@@ -227,6 +288,15 @@ requirements:
                 criterion: REQ-STO-006#criterion.safe-remote-endpoint
                 covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_006_test_storage_connection_rejects_blocked_endpoint } }
+          - id: blocked-addresses-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/space.rs
+            selector: { kind: symbol, name: tests::storage_endpoints_reject_private_link_local_and_mapped_addresses }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.safe-remote-endpoint
+                covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: tests::storage_endpoints_reject_private_link_local_and_mapped_addresses } }
           - id: unreachable-endpoint-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_space.rs
@@ -236,6 +306,15 @@ requirements:
                 criterion: REQ-STO-006#criterion.explicit-connectivity-failure
                 covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_006_test_storage_connection_accepts_custom_s3_endpoint_validation } }
+          - id: typed-connectivity-failure-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/space.rs
+            selector: { kind: symbol, name: tests::storage_connection_probe_times_out_without_external_service }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.explicit-connectivity-failure
+                covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: tests::storage_connection_probe_times_out_without_external_service } }
 
   - id: REQ-STO-008
     title: Resilient directory-based Space listing
@@ -278,6 +357,10 @@ requirements:
         kind: security
         statement: The authenticated Space listing endpoint filters each discovered Space through the caller's read authorization before returning its metadata.
         governed_by: [POL-004#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: authenticated-listing-contract
+        kind: behavior
+        statement: The published Space listing operation declares its authenticated JSON success and storage-error response boundary.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
       - id: incomplete-space-filtering
         kind: behavior
         statement: The API uses the metadata-backed core listing boundary, so incomplete Space directories are ignored rather than fabricated as accessible entries.
@@ -290,7 +373,7 @@ requirements:
       - id: listing-contract
         role: verification
         facet: verification
-        responsibility: Verify the authenticated Space listing operation and its visibility contract through the exact server API contract test; runtime authorization evidence remains explicit in the server binding.
+        responsibility: Verify the published Space listing operation through the exact server API contract test. Runtime authorization filtering, node-administration exclusion, and unexpected storage-error propagation remain explicit in the server implementation binding but unverified in this migration slice because this contract test inspects the OpenAPI shape only.
         targets:
           - id: visible-spaces-contract-case
             adapter: rust
@@ -298,11 +381,7 @@ requirements:
             selector: { kind: test, name: test_space_req_sto_009_openapi_documents_authenticated_space_listing }
             claims:
               - kind: verifies
-                criterion: REQ-STO-009#criterion.authorized-space-listing
-                covers: [FEAT-E2E-001#binding.server/target.list-spaces]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: test_space_req_sto_009_openapi_documents_authenticated_space_listing } }
-              - kind: verifies
-                criterion: REQ-STO-009#criterion.storage-error-propagation
+                criterion: REQ-STO-009#criterion.authenticated-listing-contract
                 covers: [FEAT-E2E-001#binding.server/target.list-spaces]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: test_space_req_sto_009_openapi_documents_authenticated_space_listing } }
 
