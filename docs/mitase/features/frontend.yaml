@@ -1,0 +1,62 @@
+schema: mitase/spec/v1
+kind: features
+namespace: frontend
+category: Frontend Space selection and preference surfaces
+features:
+  - id: FEAT-FE-001
+    title: Space selection and portable preference persistence
+    summary: Connect the browser Space selector, deterministic authorized Space store, portable preference hydration, local fallback, and the /spaces route to exact frontend verification evidence.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep Space selection and portable selected-Space preference behavior connected to the shipped frontend components, stores, local fallback, and route.
+        targets:
+          - id: space-selector
+            adapter: typescript
+            path: frontend/src/components/SpaceSelector.tsx
+            selector: { kind: symbol, name: SpaceSelector }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-001#criterion.authorized-space-selection
+              - kind: satisfies
+                criterion: REQ-FE-001#criterion.switch-space
+          - id: space-store
+            adapter: typescript
+            path: frontend/src/lib/space-store.ts
+            selector: { kind: symbol, name: createSpaceStore }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-001#criterion.authorized-space-selection
+              - kind: satisfies
+                criterion: REQ-FE-002#criterion.no-implicit-creation
+              - kind: satisfies
+                criterion: REQ-FE-003#criterion.portable-selection
+          - id: portable-preferences-store
+            adapter: typescript
+            path: frontend/src/lib/preferences-store.ts
+            selector: { kind: symbol, name: initializePortablePreferences }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-003#criterion.portable-selection
+              - kind: satisfies
+                criterion: REQ-FE-003#criterion.local-fallback
+          - id: local-preferences
+            adapter: typescript
+            path: frontend/src/lib/preferences-local.ts
+            selector: { kind: symbol, name: readLocalPreferences }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-003#criterion.local-fallback
+          - id: spaces-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-001#criterion.authorized-space-selection
+              - kind: satisfies
+                criterion: REQ-FE-002#criterion.no-implicit-creation
+              - kind: satisfies
+                criterion: REQ-FE-002#criterion.explicit-create-action
