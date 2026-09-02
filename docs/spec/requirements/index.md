@@ -13,7 +13,7 @@ explicit follow-up work rather than being inferred from the existence of a
 binding.
 
 Operations requirements `REQ-OPS-001` through `REQ-OPS-007` are now canonical in
-[`docs/mitase/requirements/ops.yaml`](../../mitase/requirements/ops.yaml). The
+`docs/mitase/requirements/ops.yaml`. The
 legacy `requirements/ops.yaml` records remain read-only migration evidence;
 later Operations requirements are not included in this slice. The canonical
 graph connects generic guides, workflows, settings, registries, and exact

@@ -14,7 +14,7 @@ capability.
 
 Operations, local-run, and quality-gate surfaces for `REQ-OPS-001` through
 `REQ-OPS-007` are represented canonically by
-[`docs/mitase/features/ops.yaml`](../../mitase/features/ops.yaml). The legacy
+`docs/mitase/features/ops.yaml`. The legacy
 records remain read-only migration evidence for this slice; later Operations
 requirements remain outside its scope.
 
