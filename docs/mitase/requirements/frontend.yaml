@@ -1,0 +1,242 @@
+schema: mitase/spec/v1
+kind: requirements
+namespace: frontend
+category: Frontend route, component, and interaction requirements
+requirements:
+  - id: REQ-FE-001
+    title: Space Selector
+    description: The frontend displays every authorized Space, chooses a deterministic available selection, and lets the user switch among authorized Spaces.
+    priority: high
+    status: implemented
+    criteria:
+      - id: authorized-space-selection
+        kind: behavior
+        statement: The frontend presents every authorized Space and selects only an available Space, using deterministic fallback behavior when no persisted selection is available.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: switch-space
+        kind: behavior
+        statement: A user can switch the selected Space through the frontend Space selector.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: space-selection-verification
+        role: verification
+        facet: verification
+        responsibility: Verify authorized Space rendering, deterministic selection, and user switching through the exact frontend tests.
+        targets:
+          - id: selector-rendering
+            adapter: typescript
+            path: frontend/src/components/SpaceSelector.test.tsx
+            selector: { kind: test, name: "should render space options" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-001#criterion.authorized-space-selection
+                covers: [FEAT-FE-001#binding.frontend/target.space-selector]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/components/SpaceSelector.test.tsx, test: "should render space options" } }
+          - id: selector-switching
+            adapter: typescript
+            path: frontend/src/components/SpaceSelector.test.tsx
+            selector: { kind: test, name: "should call onSelect when space changes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-001#criterion.switch-space
+                covers: [FEAT-FE-001#binding.frontend/target.space-selector]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/components/SpaceSelector.test.tsx, test: "should call onSelect when space changes" } }
+          - id: store-fallback
+            adapter: typescript
+            path: frontend/src/lib/space-store.test.ts
+            selector: { kind: test, name: "REQ-FE-001: selects the first ordinary Space when default is absent" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-001#criterion.authorized-space-selection
+                covers: [FEAT-FE-001#binding.frontend/target.space-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/lib/space-store.test.ts, test: "REQ-FE-001: selects the first ordinary Space when default is absent" } }
+          - id: store-persisted-selection
+            adapter: typescript
+            path: frontend/src/lib/space-store.test.ts
+            selector: { kind: test, name: "REQ-FE-001: restores any persisted authorized Space" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-001#criterion.authorized-space-selection
+                covers: [FEAT-FE-001#binding.frontend/target.space-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/lib/space-store.test.ts, test: "REQ-FE-001: restores any persisted authorized Space" } }
+          - id: store-sorting
+            adapter: typescript
+            path: frontend/src/lib/space-store.test.ts
+            selector: { kind: test, name: "REQ-FE-001: should sort blank space names by fallback id" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-001#criterion.authorized-space-selection
+                covers: [FEAT-FE-001#binding.frontend/target.space-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/lib/space-store.test.ts, test: "REQ-FE-001: should sort blank space names by fallback id" } }
+          - id: route-space-list
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.test.tsx
+            selector: { kind: test, name: "REQ-FE-001: lists every authorized Space in one section" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-001#criterion.authorized-space-selection
+                covers: [FEAT-FE-001#binding.frontend/target.spaces-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/routes/spaces/index.test.tsx, test: "REQ-FE-001: lists every authorized Space in one section" } }
+
+  - id: REQ-FE-002
+    title: No Client-side Default Space Creation
+    description: When no Space exists, the frontend must not create one implicitly. The /spaces view offers an explicit user-triggered create-space action instead of silently creating a default Space.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: no-implicit-creation
+        kind: security
+        statement: Loading an empty authorized Space list does not invoke Space creation or select a fabricated default Space.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: explicit-create-action
+        kind: behavior
+        statement: When no Space exists, the /spaces view exposes a create action that creates a Space only after explicit user submission.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: no-default-creation-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that an empty Space state remains empty and creation requires an explicit user action.
+        targets:
+          - id: empty-store
+            adapter: typescript
+            path: frontend/src/lib/space-store.test.ts
+            selector: { kind: test, name: "should keep selection empty when no spaces exist" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-002#criterion.no-implicit-creation
+                covers: [FEAT-FE-001#binding.frontend/target.space-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/lib/space-store.test.ts, test: "should keep selection empty when no spaces exist" } }
+          - id: explicit-create-action
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.test.tsx
+            selector: { kind: test, name: "REQ-FE-002: shows a create-space action when no spaces exist" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-002#criterion.explicit-create-action
+                covers: [FEAT-FE-001#binding.frontend/target.spaces-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/routes/spaces/index.test.tsx, test: "REQ-FE-002: shows a create-space action when no spaces exist" } }
+              - kind: verifies
+                criterion: REQ-FE-002#criterion.no-implicit-creation
+                covers: [FEAT-FE-001#binding.frontend/target.spaces-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/routes/spaces/index.test.tsx, test: "REQ-FE-002: shows a create-space action when no spaces exist" } }
+          - id: explicit-create-submission
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.test.tsx
+            selector: { kind: test, name: "REQ-FE-002: creates a space only after explicit user submission" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-002#criterion.explicit-create-action
+                covers: [FEAT-FE-001#binding.frontend/target.spaces-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/routes/spaces/index.test.tsx, test: "REQ-FE-002: creates a space only after explicit user submission" } }
+          - id: create-space-guidance
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.test.tsx
+            selector: { kind: test, name: "REQ-FE-002: labels the create-space field as a space ID and explains allowed characters" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-002#criterion.explicit-create-action
+                covers: [FEAT-FE-001#binding.frontend/target.spaces-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/routes/spaces/index.test.tsx, test: "REQ-FE-002: labels the create-space field as a space ID and explains allowed characters" } }
+          - id: authorized-single-space
+            adapter: typescript
+            path: frontend/src/lib/space-store.test.ts
+            selector: { kind: test, name: "REQ-FE-002: a single authorized Space remains selectable" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-002#criterion.no-implicit-creation
+                covers: [FEAT-FE-001#binding.frontend/target.space-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/lib/space-store.test.ts, test: "REQ-FE-002: a single authorized Space remains selectable" } }
+
+  - id: REQ-FE-003
+    title: Persist Space Selection
+    description: The frontend saves the selected Space in portable user preferences and restores it across sessions. Portable selected-Space preferences loaded from /preferences/me take precedence; localStorage is used only as an offline or pre-initialization fallback and migration layer.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: portable-selection
+        kind: behavior
+        statement: The frontend persists the selected Space through portable user preferences and restores the selected authorized Space on later initialization.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: local-fallback
+        kind: quality
+        statement: The frontend may use localStorage as a local fallback or pre-initialization migration source, while an initialized portable selected-Space preference remains authoritative.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: portable-selection-verification
+        role: verification
+        facet: verification
+        responsibility: Verify portable selected-Space preference hydration, local fallback behavior, persistence, and authorized selection through exact frontend tests.
+        targets:
+          - id: local-storage-unavailable
+            adapter: typescript
+            path: frontend/src/lib/preferences-local.test.ts
+            selector: { kind: test, name: "returns empty preferences when browser storage is unavailable" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-003#criterion.local-fallback
+                covers: [FEAT-FE-001#binding.frontend/target.local-preferences]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/lib/preferences-local.test.ts, test: "returns empty preferences when browser storage is unavailable" } }
+          - id: local-storage-malformed
+            adapter: typescript
+            path: frontend/src/lib/preferences-local.test.ts
+            selector: { kind: test, name: "returns empty preferences when localStorage is malformed" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-003#criterion.local-fallback
+                covers: [FEAT-FE-001#binding.frontend/target.local-preferences]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/lib/preferences-local.test.ts, test: "returns empty preferences when localStorage is malformed" } }
+          - id: local-preference-migration
+            adapter: typescript
+            path: frontend/src/lib/preferences-store.test.ts
+            selector: { kind: test, name: "REQ-FE-003: initializes selected space from local fallback and migrates portable storage" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-003#criterion.local-fallback
+                covers: [FEAT-FE-001#binding.frontend/target.portable-preferences-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/lib/preferences-store.test.ts, test: "REQ-FE-003: initializes selected space from local fallback and migrates portable storage" } }
+          - id: authenticated-hydration
+            adapter: typescript
+            path: frontend/src/lib/preferences-store.test.ts
+            selector: { kind: test, name: "REQ-FE-003: authenticated routes hydrate portable preferences through route-aware initialization" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-003#criterion.portable-selection
+                covers: [FEAT-FE-001#binding.frontend/target.portable-preferences-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/lib/preferences-store.test.ts, test: "REQ-FE-003: authenticated routes hydrate portable preferences through route-aware initialization" } }
+          - id: remote-preference-precedence
+            adapter: typescript
+            path: frontend/src/lib/space-store.test.ts
+            selector: { kind: test, name: "REQ-FE-003: should prefer portable selected space preference" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-003#criterion.portable-selection
+                covers: [FEAT-FE-001#binding.frontend/target.space-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/lib/space-store.test.ts, test: "REQ-FE-003: should prefer portable selected space preference" } }
+          - id: authorized-portable-selection
+            adapter: typescript
+            path: frontend/src/lib/space-store.test.ts
+            selector: { kind: test, name: "REQ-FE-003: portable preference may select any authorized Space" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-003#criterion.portable-selection
+                covers: [FEAT-FE-001#binding.frontend/target.space-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/lib/space-store.test.ts, test: "REQ-FE-003: portable preference may select any authorized Space" } }
+          - id: selected-space-persistence
+            adapter: typescript
+            path: frontend/src/lib/space-store.test.ts
+            selector: { kind: test, name: "should select space and persist choice" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-003#criterion.portable-selection
+                covers: [FEAT-FE-001#binding.frontend/target.space-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/lib/space-store.test.ts, test: "should select space and persist choice" } }
+          - id: portable-cache
+            adapter: typescript
+            path: frontend/src/lib/preferences-store.test.ts
+            selector: { kind: test, name: "REQ-FE-003: returns cached portable preferences after initialization" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-003#criterion.portable-selection
+                covers: [FEAT-FE-001#binding.frontend/target.portable-preferences-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: frontend/src/lib/preferences-store.test.ts, test: "REQ-FE-003: returns cached portable preferences after initialization" } }
