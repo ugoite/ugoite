@@ -1,0 +1,288 @@
+schema: mitase/spec/v1
+kind: requirements
+namespace: ops
+category: Operations, development, and quality-gate requirements
+requirements:
+  - id: REQ-OPS-001
+    title: Developer Guides for Local Runs
+    description: Current English guides cover root Mise development, Docker Compose, CLI core and backend modes, and runtime prerequisites.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: local-run-guidance
+        kind: quality
+        statement: The repository publishes operator guidance for the supported local runtime and CLI entry paths, including prerequisites and the boundaries between local and server-backed operation.
+        governed_by: [POL-003#rule.governance, POL-005#rule.governance]
+    bindings:
+      - id: local-run-documentation
+        role: evidence
+        facet: operator-guide
+        responsibility: The guide artifacts cover the documented local and container paths. Exact parity between every legacy prose subsection and the current guides remains an explicit evidence gap; this slice does not infer completeness from file existence.
+        targets:
+          - id: operations-guide
+            adapter: declared
+            path: docs/guide/operate/server/operations.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-001#criterion.local-run-guidance
+          - id: container-quickstart
+            adapter: declared
+            path: docs/guide/start/container-quickstart.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-001#criterion.local-run-guidance
+
+  - id: REQ-OPS-002
+    title: Container Build Validation
+    description: The single runtime image is validated locally by `ci:release` and is smoke-tested by the hosted release gate, including the documented Compose quick start for the published version.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: release-container-validation
+        kind: behavior
+        statement: The release workflow builds the runtime image and the release smoke check exercises the published versioned image through the documented Compose quick start.
+        governed_by: [POL-003#rule.governance, POL-005#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: release-container-verification
+        role: evidence
+        facet: release-gate
+        responsibility: Connect the local `ci:release` task, release workflow, and smoke script that provide the current container evidence. This slice records the existing gates and does not change runtime or release behavior.
+        targets:
+          - id: local-release-gate
+            adapter: declared
+            path: mise.toml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-002#criterion.release-container-validation
+          - id: release-workflow
+            adapter: declared
+            path: .github/workflows/release-publish.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-002#criterion.release-container-validation
+          - id: container-smoke
+            adapter: declared
+            path: scripts/verify-release-container-quickstart.sh
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-002#criterion.release-container-validation
+
+  - id: REQ-OPS-003
+    title: Governance Taxonomy Link Integrity
+    description: Governance and specification YAML remain parseable and free of dangling identifiers.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: taxonomy-integrity
+        kind: quality
+        statement: The governance registries, requirement references, related documents, and test references resolve without duplicate or dangling identifiers.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: taxonomy-integrity-verification
+        role: verification
+        facet: docsite-test
+        responsibility: Verify the current legacy registry link-integrity contract through the exact docsite test. The legacy registries remain migration evidence for this slice; later domain migrations may move the checked authority.
+        targets:
+          - id: taxonomy-integrity-test
+            adapter: typescript
+            path: docsite/src/spec-integrity.test.ts
+            selector: { kind: test, name: 'REQ-OPS-003: requirement IDs, related documents, and test references resolve' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-003#criterion.taxonomy-integrity
+                covers: [FEAT-OPS-001#binding.registries/target.taxonomy-registry, FEAT-OPS-001#binding.registries/target.requirements-registry]
+                runner: { runner: docsite-vitest-file, arguments: { file: src/spec-integrity.test.ts, test: 'REQ-OPS-003: requirement IDs, related documents, and test references resolve' } }
+
+  - id: REQ-OPS-004
+    title: Version Milestone Definitions
+    description: Version and milestone status is represented under docs/version and distinguishes implemented, in-progress, and planned work.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: milestone-status
+        kind: quality
+        statement: Version documents expose valid milestone and phase statuses whose aggregate status agrees with their child work and whose source paths resolve.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: milestone-status-verification
+        role: verification
+        facet: docsite-test
+        responsibility: Verify the version status and source-integrity contract through the exact docsite test; this does not promote planned milestones to implemented behavior.
+        targets:
+          - id: milestone-status-test
+            adapter: typescript
+            path: docsite/src/spec-integrity.test.ts
+            selector: { kind: test, name: 'REQ-OPS-004: version statuses agree with their tasks and canonical sources' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-004#criterion.milestone-status
+                covers: [FEAT-OPS-001#binding.versions/target.version-v01, FEAT-OPS-001#binding.versions/target.version-v02]
+                runner: { runner: docsite-vitest-file, arguments: { file: src/spec-integrity.test.ts, test: 'REQ-OPS-004: version statuses agree with their tasks and canonical sources' } }
+
+  - id: REQ-OPS-005
+    title: Repository Lint and Hygiene Gates
+    description: Root checks cover formatting, Rust and Deno linting, architecture and OpenAPI drift, and configured repository artifact hygiene.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: repository-quality-gates
+        kind: quality
+        statement: The root task graph and hosted CI lanes compose the repository formatting, lint, check, test, artifact, and required-result gates that are currently configured.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: repository-quality-verification
+        role: verification
+        facet: repository-test
+        responsibility: Verify the root task and hosted lane composition through the exact repository coverage test. This checks the configured contract and does not claim that the tools execute successfully in every external environment.
+        targets:
+          - id: quality-gate-composition-test
+            adapter: typescript
+            path: tools/coverage_gates_test.ts
+            selector: { kind: file }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-005#criterion.repository-quality-gates
+                covers: [FEAT-OPS-001#binding.automation/target.root-mise, FEAT-OPS-001#binding.automation/target.ci-workflow]
+                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: CI aggregate tasks own test coverage and lane scheduling } }
+
+  - id: REQ-OPS-006
+    title: Rust Quality Gate Parity
+    description: Root local and CI gates run workspace formatting, Clippy, checks, and tests with the pinned Rust toolchain.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: root-rust-gate
+        kind: quality
+        statement: The root task graph and hosted Rust lanes retain the configured formatting, Clippy, check, test, and pinned-toolchain quality gate composition.
+        governed_by: [POL-002#rule.governance, POL-005#rule.governance, POL-008#rule.governance]
+      - id: cli-surface
+        kind: behavior
+        statement: The CLI configuration helpers and documented entry, form, and search command help retain the current local-run surface.
+        governed_by: [POL-002#rule.governance, POL-005#rule.governance]
+    bindings:
+      - id: rust-quality-verification
+        role: verification
+        facet: rust-and-task-tests
+        responsibility: Verify the configured root Rust gate with the repository composition test and verify the selected CLI configuration/help behavior with exact integration tests. These targets cover the selected surface only; complete Rust quality-gate execution remains owned by the root workflow.
+        targets:
+          - id: rust-gate-composition-test
+            adapter: typescript
+            path: tools/coverage_gates_test.ts
+            selector: { kind: file }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-006#criterion.root-rust-gate
+                covers: [FEAT-OPS-001#binding.automation/target.root-mise, FEAT-OPS-001#binding.automation/target.ci-workflow]
+                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: CI aggregate tasks own test coverage and lane scheduling } }
+          - id: config-precedence-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
+            selector: { kind: test, name: test_cli_req_ops_006_config_path_precedence_and_home_fallback }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-006#criterion.cli-surface
+                covers: [FEAT-OPS-001#binding.cli/target.config]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_req_ops_006_config_helpers, test: test_cli_req_ops_006_config_path_precedence_and_home_fallback } }
+          - id: config-load-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
+            selector: { kind: test, name: test_cli_req_ops_006_load_config_defaults_on_invalid_or_unreadable_data }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-006#criterion.cli-surface
+                covers: [FEAT-OPS-001#binding.cli/target.config]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_req_ops_006_config_helpers, test: test_cli_req_ops_006_load_config_defaults_on_invalid_or_unreadable_data } }
+          - id: config-save-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
+            selector: { kind: test, name: test_cli_req_ops_006_save_config_creates_parent_dirs_and_roundtrips }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-006#criterion.cli-surface
+                covers: [FEAT-OPS-001#binding.cli/target.config]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_req_ops_006_config_helpers, test: test_cli_req_ops_006_save_config_creates_parent_dirs_and_roundtrips } }
+          - id: config-path-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
+            selector: { kind: test, name: test_cli_req_ops_006_operator_for_path_supports_file_and_rejects_remote_uris }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-006#criterion.cli-surface
+                covers: [FEAT-OPS-001#binding.cli/target.config]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_req_ops_006_config_helpers, test: test_cli_req_ops_006_operator_for_path_supports_file_and_rejects_remote_uris } }
+          - id: config-space-path-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
+            selector: { kind: test, name: test_cli_req_ops_006_parse_space_path_variants }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-006#criterion.cli-surface
+                covers: [FEAT-OPS-001#binding.cli/target.config]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_req_ops_006_config_helpers, test: test_cli_req_ops_006_parse_space_path_variants } }
+          - id: config-endpoint-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
+            selector: { kind: test, name: test_cli_req_ops_006_endpoint_helpers_cover_base_url_and_space_path }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-006#criterion.cli-surface
+                covers: [FEAT-OPS-001#binding.cli/target.config]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_req_ops_006_config_helpers, test: test_cli_req_ops_006_endpoint_helpers_cover_base_url_and_space_path } }
+          - id: entry-update-help-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_entry_update_req_ops_006_help_describes_required_inputs }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-006#criterion.cli-surface
+                covers: [FEAT-OPS-001#binding.cli/target.help]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_entry_update_req_ops_006_help_describes_required_inputs } }
+          - id: entry-create-help-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_entry_create_req_ops_006_help_leads_with_plain_markdown_example }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-006#criterion.cli-surface
+                covers: [FEAT-OPS-001#binding.cli/target.help]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_entry_create_req_ops_006_help_leads_with_plain_markdown_example } }
+          - id: form-search-help-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_form_and_search_req_ops_006_help_describes_required_inputs }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-006#criterion.cli-surface
+                covers: [FEAT-OPS-001#binding.cli/target.help]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_form_and_search_req_ops_006_help_describes_required_inputs } }
+
+  - id: REQ-OPS-007
+    title: Docsite Quality Gate Parity
+    description: Docsite type, build, and behavior tests run through Deno and the root check and test gates.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: docsite-gate
+        kind: quality
+        statement: The root task graph and hosted web lane include the configured docsite type, build, and behavior test gates.
+        governed_by: [POL-006#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: docsite-quality-verification
+        role: verification
+        facet: repository-test
+        responsibility: Verify the configured docsite lane as part of the shared root task and hosted lane composition test. This records the gate contract without claiming a successful build in every environment.
+        targets:
+          - id: docsite-gate-composition-test
+            adapter: typescript
+            path: tools/coverage_gates_test.ts
+            selector: { kind: file }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-007#criterion.docsite-gate
+                covers: [FEAT-OPS-001#binding.automation/target.root-mise, FEAT-OPS-001#binding.automation/target.ci-workflow]
+                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: CI aggregate tasks own test coverage and lane scheduling } }

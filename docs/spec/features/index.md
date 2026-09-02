@@ -12,6 +12,12 @@ feature graph retains core/service, backend, frontend, CLI, and HTTP contract
 surfaces rather than treating a core implementation target as the whole
 capability.
 
+Operations, local-run, and quality-gate surfaces for `REQ-OPS-001` through
+`REQ-OPS-007` are represented canonically by
+`docs/mitase/features/ops.yaml`. The legacy
+records remain read-only migration evidence for this slice; later Operations
+requirements remain outside its scope.
+
 The API-specific legacy registries for spaces, preferences, and SQL are retained
 for migration evidence but are no longer included in Mitase's declared
 inventory. The shared `features.yaml` index remains because it also indexes

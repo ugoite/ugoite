@@ -12,6 +12,14 @@ that domain is migrated. API adapter and frontend verification gaps remain
 explicit follow-up work rather than being inferred from the existence of a
 binding.
 
+Operations requirements `REQ-OPS-001` through `REQ-OPS-007` are now canonical in
+`docs/mitase/requirements/ops.yaml`. The
+legacy `requirements/ops.yaml` records remain read-only migration evidence;
+later Operations requirements are not included in this slice. The canonical
+graph connects generic guides, workflows, settings, registries, and exact
+docsite, repository-gate, and CLI evidence while preserving unverified
+completeness as an explicit gap.
+
 The legacy API requirement registry at `requirements/api.yaml` is retained as a
 read-only migration snapshot and is no longer included in Mitase's declared
 inventory. The canonical API requirements at `docs/mitase/requirements/api.yaml`

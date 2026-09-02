@@ -1,0 +1,191 @@
+schema: mitase/spec/v1
+kind: features
+namespace: ops
+category: Operations documentation, automation, and quality gates
+features:
+  - id: FEAT-OPS-001
+    title: Repository operations and quality gates
+    summary: Connect local-run guidance, release container evidence, governance integrity, version milestones, root quality gates, CLI surfaces, and docsite gates to generic repository artifacts and exact verification evidence.
+    status: implemented
+    bindings:
+      - id: documentation
+        role: documentation
+        facet: documentation
+        responsibility: Keep the operator guides, testing contracts, version declarations, and legacy registries connected as repository documentation artifacts. The legacy registries remain read-only migration evidence for this focused slice.
+        targets:
+          - id: operations-guide
+            adapter: declared
+            path: docs/guide/operate/server/operations.md
+            selector: { kind: file }
+            claims:
+              - kind: documents
+                anchor: REQ-OPS-001#criterion.local-run-guidance
+          - id: container-quickstart
+            adapter: declared
+            path: docs/guide/start/container-quickstart.md
+            selector: { kind: file }
+            claims:
+              - kind: documents
+                anchor: REQ-OPS-001#criterion.local-run-guidance
+              - kind: documents
+                anchor: REQ-OPS-002#criterion.release-container-validation
+          - id: testing-ci-cd
+            adapter: declared
+            path: docs/spec/testing/ci-cd.md
+            selector: { kind: file }
+            claims:
+              - kind: documents
+                anchor: REQ-OPS-005#criterion.repository-quality-gates
+              - kind: documents
+                anchor: REQ-OPS-006#criterion.root-rust-gate
+              - kind: documents
+                anchor: REQ-OPS-007#criterion.docsite-gate
+          - id: testing-strategy
+            adapter: declared
+            path: docs/spec/testing/strategy.md
+            selector: { kind: file }
+            claims:
+              - kind: documents
+                anchor: REQ-OPS-005#criterion.repository-quality-gates
+              - kind: documents
+                anchor: REQ-OPS-006#criterion.root-rust-gate
+              - kind: documents
+                anchor: REQ-OPS-007#criterion.docsite-gate
+          - id: version-v01
+            adapter: declared
+            path: docs/version/v0.1.yaml
+            selector: { kind: file }
+            claims:
+              - kind: documents
+                anchor: REQ-OPS-004#criterion.milestone-status
+          - id: version-v02
+            adapter: declared
+            path: docs/version/v0.2.yaml
+            selector: { kind: file }
+            claims:
+              - kind: documents
+                anchor: REQ-OPS-004#criterion.milestone-status
+          - id: taxonomy-registry
+            adapter: declared
+            path: docs/spec/features/features.yaml
+            selector: { kind: file }
+            claims:
+              - kind: documents
+                anchor: REQ-OPS-003#criterion.taxonomy-integrity
+          - id: requirements-registry
+            adapter: declared
+            path: docs/spec/requirements/index.yaml
+            selector: { kind: file }
+            claims:
+              - kind: documents
+                anchor: REQ-OPS-003#criterion.taxonomy-integrity
+      - id: registries
+        role: implementation
+        facet: documentation
+        responsibility: Keep the registry artifacts that the current taxonomy-integrity test parses as exact implementation targets. The test proves link resolution for the current registry corpus; it does not make later unmigrated domains canonical.
+        targets:
+          - id: taxonomy-registry
+            adapter: declared
+            path: docs/spec/features/features.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-003#criterion.taxonomy-integrity
+          - id: requirements-registry
+            adapter: declared
+            path: docs/spec/requirements/index.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-003#criterion.taxonomy-integrity
+      - id: versions
+        role: implementation
+        facet: documentation
+        responsibility: Keep the current version declaration artifacts as exact implementation targets for milestone status integrity. Planned milestones remain planned and are not promoted by this binding.
+        targets:
+          - id: version-v01
+            adapter: declared
+            path: docs/version/v0.1.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-004#criterion.milestone-status
+          - id: version-v02
+            adapter: declared
+            path: docs/version/v0.2.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-004#criterion.milestone-status
+      - id: automation
+        role: implementation
+        facet: quality-gates
+        responsibility: Keep the root task graph and hosted CI lanes connected to their generic repository artifacts. This binding describes existing automation and does not move delivery responsibilities into Mitase.
+        targets:
+          - id: root-mise
+            adapter: declared
+            path: mise.toml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-005#criterion.repository-quality-gates
+              - kind: satisfies
+                criterion: REQ-OPS-006#criterion.root-rust-gate
+              - kind: satisfies
+                criterion: REQ-OPS-007#criterion.docsite-gate
+          - id: ci-workflow
+            adapter: declared
+            path: .github/workflows/ci.yml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-005#criterion.repository-quality-gates
+              - kind: satisfies
+                criterion: REQ-OPS-006#criterion.root-rust-gate
+              - kind: satisfies
+                criterion: REQ-OPS-007#criterion.docsite-gate
+      - id: release-evidence
+        role: evidence
+        facet: release-gate
+        responsibility: Preserve the local release task, hosted release workflow, and container smoke script as evidence for the release boundary without asserting that this documentation-only slice changes release behavior.
+        targets:
+          - id: local-release-gate
+            adapter: declared
+            path: mise.toml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-002#criterion.release-container-validation
+          - id: release-workflow
+            adapter: declared
+            path: .github/workflows/release-publish.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-002#criterion.release-container-validation
+          - id: container-smoke
+            adapter: declared
+            path: scripts/verify-release-container-quickstart.sh
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-002#criterion.release-container-validation
+      - id: cli
+        role: implementation
+        facet: cli
+        responsibility: Keep the existing CLI configuration and command-help surfaces visible as generic Rust artifacts for the selected local-run contract.
+        targets:
+          - id: config
+            adapter: rust
+            path: crates/ugoite-cli/src/config.rs
+            selector: { kind: symbol, name: config_path }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-006#criterion.cli-surface
+          - id: help
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/entry.rs
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-006#criterion.cli-surface
