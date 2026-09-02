@@ -165,6 +165,10 @@ requirements:
                 criterion: REQ-API-007#criterion.parameterized-execution
                 covers: [FEAT-API-001#binding.core/target.create-sql-session]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_sessions, test: test_sql_sessions_req_api_008_end_to_end } }
+              - kind: verifies
+                criterion: REQ-STO-012#criterion.lazy-path-boundary
+                covers: [FEAT-API-001#binding.core/target.create-sql-session]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_sessions, test: test_sql_sessions_req_api_008_end_to_end } }
           - id: pagination-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_sql_sessions.rs

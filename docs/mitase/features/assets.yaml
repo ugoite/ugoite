@@ -73,6 +73,12 @@ features:
                 criterion: REQ-ASSET-004#criterion.independent-durability
               - kind: satisfies
                 criterion: REQ-ASSET-004#criterion.no-derived-authority
+              - kind: satisfies
+                criterion: REQ-STO-013#criterion.space-local-coordinates
+              - kind: satisfies
+                criterion: REQ-STO-013#criterion.non-authoritative-derived-state
+              - kind: satisfies
+                criterion: REQ-STO-013#criterion.rebuildable-builds
       - id: service
         role: operation
         facet: service

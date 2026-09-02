@@ -112,6 +112,10 @@ requirements:
                 criterion: REQ-INT-003#criterion.scoped-response-material
                 covers: [FEAT-INT-001#binding.storage/target.space-material]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_integrity, test: test_response_hmac_material_is_space_scoped } }
+              - kind: verifies
+                criterion: REQ-STO-012#criterion.lazy-path-boundary
+                covers: [FEAT-INT-001#binding.storage/target.space-material]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_integrity, test: test_response_hmac_material_is_space_scoped } }
           - id: default-material-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_integrity.rs
@@ -119,6 +123,10 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-INT-003#criterion.scoped-response-material
+                covers: [FEAT-INT-001#binding.storage/target.default-material]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_integrity, test: test_default_response_hmac_material_has_a_node_scoped_path } }
+              - kind: verifies
+                criterion: REQ-STO-012#criterion.lazy-path-boundary
                 covers: [FEAT-INT-001#binding.storage/target.default-material]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_integrity, test: test_default_response_hmac_material_has_a_node_scoped_path } }
           - id: unknown-space-material-case

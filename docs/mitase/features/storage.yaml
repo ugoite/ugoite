@@ -39,6 +39,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-STO-002#criterion.bootstrap-scaffold
+              - kind: satisfies
+                criterion: REQ-STO-012#criterion.bootstrap-boundary
           - id: list-spaces
             adapter: rust
             path: crates/ugoite-iceberg/src/space.rs
@@ -192,6 +194,67 @@ features:
                 criterion: REQ-STO-011#criterion.hashed-user-path
               - kind: satisfies
                 criterion: REQ-STO-011#criterion.merged-concurrent-patch
+      - id: layout
+        role: contract-source
+        facet: storage-layout
+        responsibility: Keep the machine-readable Space layout and its explanatory directory reference connected to the current storage implementation. These artifacts classify bootstrap and lazy paths; they do not introduce a Ugoite-specific Mitase kind.
+        targets:
+          - id: layout-source
+            adapter: declared
+            path: docs/spec/data-model/directory-layout.yaml
+            selector: { kind: file }
+          - id: directory-structure
+            adapter: declared
+            path: docs/spec/data-model/directory-structure.md
+            selector: { kind: file }
+      - id: derived
+        role: implementation
+        facet: derived
+        responsibility: Keep replaceable DerivedRelation Heads and their logical Iceberg coordinates within the owning Space while preserving the authoritative Catalog boundary.
+        targets:
+          - id: head-store
+            adapter: rust
+            path: crates/ugoite-storage/src/lib.rs
+            selector: { kind: symbol, name: DerivedRelationHeadStore }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-013#criterion.space-local-coordinates
+              - kind: satisfies
+                criterion: REQ-STO-013#criterion.conditional-head-publication
+              - kind: satisfies
+                criterion: REQ-STO-013#criterion.non-authoritative-derived-state
+          - id: logical-coordinate-resolver
+            adapter: rust
+            path: crates/ugoite-iceberg/src/logical_storage.rs
+            selector: { kind: symbol, name: LogicalStorage }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-013#criterion.canonical-coordinate-resolution
+      - id: compatibility
+        role: implementation
+        facet: compatibility
+        responsibility: Keep the canonical v0.1 Knowledge fixture connected to the semantic compatibility requirement. The fixture protects Knowledge meaning and authority, not physical storage encoding.
+        targets:
+          - id: fixture
+            adapter: declared
+            path: crates/ugoite-iceberg/tests/fixtures/v0.1-knowledge.json
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-014#criterion.fixture-identity
+              - kind: satisfies
+                criterion: REQ-STO-014#criterion.authoritative-recovery
+              - kind: satisfies
+                criterion: REQ-STO-014#criterion.append-only-history
+      - id: compatibility-contract
+        role: contract-source
+        facet: compatibility
+        responsibility: Preserve the v0.1 Knowledge compatibility reference as an artifact defining semantic recovery, authority, and append-only history without freezing physical storage encoding.
+        targets:
+          - id: contract
+            adapter: declared
+            path: docs/spec/versions/v0.1-knowledge-compatibility.md
+            selector: { kind: file }
     contracts:
       - id: patch-space
         kind: http
@@ -211,3 +274,40 @@ features:
           - target: FEAT-STO-001#binding.connector-ui/target.storage-settings
             role: client
         guarantees: [REQ-STO-006#criterion.validation-endpoint]
+      - id: derived-relations
+        kind: custom
+        source: FEAT-STO-001#binding.layout/target.layout-source
+        participants:
+          - target: FEAT-STO-001#binding.derived/target.head-store
+            role: storage
+          - target: FEAT-STO-001#binding.derived/target.logical-coordinate-resolver
+            role: resolver
+          - target: FEAT-ASSET-001#binding.derived/target.asset-text-rebuild
+            role: producer
+        guarantees:
+          - REQ-STO-013#criterion.space-local-coordinates
+          - REQ-STO-013#criterion.conditional-head-publication
+          - REQ-STO-013#criterion.non-authoritative-derived-state
+          - REQ-STO-013#criterion.rebuildable-builds
+          - REQ-STO-013#criterion.canonical-coordinate-resolution
+      - id: knowledge-compatibility
+        kind: custom
+        source: FEAT-STO-001#binding.compatibility-contract/target.contract
+        participants:
+          - target: FEAT-STO-001#binding.compatibility/target.fixture
+            role: fixture
+        guarantees:
+          - REQ-STO-014#criterion.fixture-identity
+          - REQ-STO-014#criterion.authoritative-recovery
+          - REQ-STO-014#criterion.append-only-history
+      - id: lazy-paths
+        kind: custom
+        source: FEAT-STO-001#binding.layout/target.layout-source
+        participants:
+          - target: FEAT-INT-001#binding.storage/target.space-material
+            role: space-response-material
+          - target: FEAT-INT-001#binding.storage/target.default-material
+            role: node-response-material
+          - target: FEAT-API-001#binding.core/target.create-sql-session
+            role: sql-session-metadata
+        guarantees: [REQ-STO-012#criterion.lazy-path-boundary]
