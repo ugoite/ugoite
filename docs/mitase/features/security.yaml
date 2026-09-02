@@ -76,3 +76,209 @@ features:
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: get, path: /spaces }
+
+  - id: FEAT-SEC-002
+    title: Human Passkey and initial bootstrap
+    summary: Connect the passwordless Passkey/WebAuthn authentication flow and initial node-owner bootstrap across identity state, server handlers, browser routes, OpenAPI operations, and exact verification artifacts.
+    status: implemented
+    bindings:
+      - id: identity
+        role: implementation
+        facet: identity
+        responsibility: Enforce discoverable Passkey registration, server-side assertion validation, one-time setup-secret handling, initial administrator creation, recovery-code emission, and opaque session creation.
+        targets:
+          - id: passkey-registration
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: start_add_passkey }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-004#criterion.discoverable-credentials
+          - id: passkey-authentication
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: finish_authentication }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-004#criterion.server-side-assertion-validation
+          - id: setup-secret
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: bootstrap_if_needed }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-005#criterion.setup-secret-hash-once
+          - id: setup-finish
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: finish_setup_registration }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-005#criterion.initial-owner-passkey
+          - id: session-validation
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: authenticate_session }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-005#criterion.opaque-bootstrap-session
+      - id: server
+        role: implementation
+        facet: backend
+        responsibility: Expose the Passkey login and setup ceremonies through the server's public authentication boundary.
+        targets:
+          - id: passkey-start
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: auth_passkey_start }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-004#criterion.passwordless-primary
+          - id: passkey-registration-start
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: start_add_passkey }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-004#criterion.discoverable-credentials
+          - id: passkey-registration-finish
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: finish_add_passkey }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-004#criterion.discoverable-credentials
+          - id: passkey-finish
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: auth_passkey_finish }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-004#criterion.server-side-assertion-validation
+          - id: setup-start
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: auth_setup_start }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-005#criterion.initial-owner-passkey
+          - id: setup-finish
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: auth_setup_finish }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-005#criterion.initial-owner-passkey
+              - kind: satisfies
+                criterion: REQ-SEC-005#criterion.bootstrap-recovery-material
+              - kind: satisfies
+                criterion: REQ-SEC-005#criterion.opaque-bootstrap-session
+      - id: client
+        role: implementation
+        facet: frontend
+        responsibility: Keep the browser Passkey login and initial setup journeys connected to the server authentication API while preserving the requested post-authentication route.
+        targets:
+          - id: auth-client
+            adapter: typescript
+            path: frontend/src/lib/auth-api.ts
+            selector: { kind: symbol, name: authApi }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-004#criterion.passwordless-primary
+              - kind: satisfies
+                criterion: REQ-SEC-005#criterion.bootstrap-recovery-material
+          - id: login-route
+            adapter: typescript
+            path: frontend/src/routes/login.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-004#criterion.passwordless-primary
+          - id: setup-route
+            adapter: typescript
+            path: frontend/src/routes/setup.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-005#criterion.bootstrap-recovery-material
+      - id: contract
+        role: contract-source
+        facet: api
+        responsibility: Keep the public OpenAPI authentication operations connected to the Passkey and setup handlers.
+        targets:
+          - id: setup-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/setup/start }
+          - id: setup-finish
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/setup/finish }
+          - id: passkey-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/passkey/start }
+          - id: passkey-finish
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/passkey/finish }
+          - id: passkey-registration-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/passkeys/start }
+          - id: passkey-registration-finish
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/passkeys/finish }
+    contracts:
+      - id: passkey-authentication
+        kind: http
+        source: FEAT-SEC-002#binding.contract/target.passkey-start
+        participants:
+          - target: FEAT-SEC-002#binding.identity/target.passkey-authentication
+            role: identity
+          - target: FEAT-SEC-002#binding.server/target.passkey-start
+            role: backend
+          - target: FEAT-SEC-002#binding.server/target.passkey-finish
+            role: backend
+          - target: FEAT-SEC-002#binding.client/target.auth-client
+            role: client
+          - target: FEAT-SEC-002#binding.client/target.login-route
+            role: route
+        guarantees:
+          - REQ-SEC-004#criterion.passwordless-primary
+          - REQ-SEC-004#criterion.server-side-assertion-validation
+      - id: passkey-registration
+        kind: http
+        source: FEAT-SEC-002#binding.contract/target.passkey-registration-start
+        participants:
+          - target: FEAT-SEC-002#binding.identity/target.passkey-registration
+            role: identity
+          - target: FEAT-SEC-002#binding.server/target.passkey-registration-start
+            role: backend
+          - target: FEAT-SEC-002#binding.server/target.passkey-registration-finish
+            role: backend
+        guarantees: [REQ-SEC-004#criterion.discoverable-credentials]
+      - id: initial-bootstrap
+        kind: http
+        source: FEAT-SEC-002#binding.contract/target.setup-start
+        participants:
+          - target: FEAT-SEC-002#binding.identity/target.setup-secret
+            role: identity
+          - target: FEAT-SEC-002#binding.identity/target.setup-finish
+            role: identity
+          - target: FEAT-SEC-002#binding.server/target.setup-start
+            role: backend
+          - target: FEAT-SEC-002#binding.server/target.setup-finish
+            role: backend
+          - target: FEAT-SEC-002#binding.client/target.auth-client
+            role: client
+          - target: FEAT-SEC-002#binding.client/target.setup-route
+            role: route
+          - target: FEAT-SEC-002#binding.identity/target.session-validation
+            role: session
+        guarantees:
+          - REQ-SEC-005#criterion.setup-secret-hash-once
+          - REQ-SEC-005#criterion.initial-owner-passkey
+          - REQ-SEC-005#criterion.bootstrap-recovery-material
+          - REQ-SEC-005#criterion.opaque-bootstrap-session

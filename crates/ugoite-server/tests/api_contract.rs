@@ -857,6 +857,43 @@ fn openapi_publishes_oidc_account_linking_and_bootstrap_surfaces() {
 }
 
 #[test]
+fn req_sec_004_openapi_publishes_passkey_surfaces() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    for path in [
+        "/auth/config",
+        "/auth/passkey/start",
+        "/auth/passkey/finish",
+        "/auth/passkeys",
+        "/auth/passkeys/start",
+        "/auth/passkeys/finish",
+    ] {
+        assert!(snapshot["paths"].get(path).is_some(), "missing {path}");
+    }
+    assert_eq!(
+        snapshot["paths"]["/auth/passkey/start"]["post"]["responses"]["200"]["description"],
+        "Success"
+    );
+}
+
+#[test]
+fn req_sec_005_openapi_publishes_setup_surfaces() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    for path in [
+        "/auth/config",
+        "/auth/setup/start",
+        "/auth/setup/finish",
+        "/auth/passkeys/bootstrap/start",
+        "/auth/passkeys/bootstrap/finish",
+    ] {
+        assert!(snapshot["paths"].get(path).is_some(), "missing {path}");
+    }
+    assert_eq!(
+        snapshot["paths"]["/auth/setup/finish"]["post"]["responses"]["200"]["description"],
+        "Success"
+    );
+}
+
+#[test]
 fn openapi_documents_resource_bound_mcp_agent_tokens() {
     let snapshot = ugoite_server::openapi_snapshot();
     for path in [
