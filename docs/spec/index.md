@@ -52,8 +52,8 @@ rewriting the requirement to fit the available proof.
 ## Migrated domain authority
 
 Foundation, Policy, Search, Entry, Form, API, Asset, E2E, Integrity, and the
-Storage Space foundation slice (excluding the unresolved duplicate-create
-conflict contract) are
+Storage Space foundation plus connector/access/routing/preference slice
+(excluding the unresolved duplicate-create conflict contract) are
 represented in the canonical Mitase records at `docs/mitase` for the current
 dogfood slice. These records are the semantic source of truth for the migrated
 domains; their corresponding legacy Foundation, Policy, Requirement, and

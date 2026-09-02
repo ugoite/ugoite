@@ -33,6 +33,8 @@ inventory:
             - frontend/src/lib/sql-api.ts
             - frontend/src/lib/sql-session-api.ts
             - frontend/src/lib/asset-api.ts
+            - frontend/src/components/SpaceSettings.tsx
+            - frontend/src/components/SpaceSettings.test.tsx
             - frontend/src/components/SpaceSelector.tsx
             - frontend/src/components/SpaceSelector.test.tsx
             - frontend/src/components/EntryList.tsx

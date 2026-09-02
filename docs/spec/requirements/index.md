@@ -32,14 +32,22 @@ retained as a read-only migration snapshot. The canonical Integrity requirements
 at `docs/mitase/requirements/integrity.yaml` are the only semantic authority for
 the migrated Integrity domain.
 
-The Storage Space foundation slice (`REQ-STO-001`, `REQ-STO-002`, `REQ-STO-003`,
-`REQ-STO-004`, and `REQ-STO-007`) is represented canonically at
-`docs/mitase/requirements/storage.yaml`. `REQ-STO-005` remains authoritative in
-this legacy registry because its broad HTTP 409 duplicate contract must first be
-reconciled with the current idempotent bootstrap-retry behavior. Connector,
-preference, directory-resilience, derived-relation, and Knowledge-compatibility
-Storage requirements remain in this registry until their later migration slices
-are reviewed.
+The Storage Space foundation and connector/access/routing/preference slice
+(`REQ-STO-001`, `REQ-STO-002`, `REQ-STO-003`, `REQ-STO-004`, `REQ-STO-006`,
+`REQ-STO-007`, `REQ-STO-008`, `REQ-STO-009`, `REQ-STO-010`, and `REQ-STO-011`)
+is represented canonically at `docs/mitase/requirements/storage.yaml`.
+`REQ-STO-005` remains authoritative in this legacy registry because its broad
+HTTP 409 duplicate contract must first be reconciled with the current
+idempotent bootstrap-retry behavior. Storage layout synchronization,
+derived-relation, and Knowledge-compatibility requirements remain in this
+registry until their later migration slices are reviewed.
+The canonical Storage connector record preserves the connector-update and
+pre-commit validation contract; its available API/UI surface and core probe
+evidence are traced, while mandatory sequencing of an update after successful
+validation remains an explicit evidence gap. The canonical accessible-listing
+record likewise keeps runtime authorization and storage-error propagation as
+implementation requirements while its current verification target covers only
+the published OpenAPI boundary.
 
 A current test mapping has this shape:
 
