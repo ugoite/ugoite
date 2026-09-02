@@ -594,49 +594,49 @@ requirements:
           - id: empty-rebuild-case
             adapter: rust
             path: crates/ugoite-iceberg/src/derived_relation.rs
-            selector: { kind: symbol, name: tests::empty_space_rebuild_publishes_only_a_derived_head }
+            selector: { kind: symbol, name: derived_relation::tests::empty_space_rebuild_publishes_only_a_derived_head }
             claims:
               - kind: verifies
                 criterion: REQ-STO-013#criterion.non-authoritative-derived-state
                 covers:
                   - FEAT-STO-001#binding.derived/target.head-store
                   - FEAT-ASSET-001#binding.derived/target.asset-text-rebuild
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: tests::empty_space_rebuild_publishes_only_a_derived_head } }
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: derived_relation::tests::empty_space_rebuild_publishes_only_a_derived_head } }
           - id: rebuild-recovery-case
             adapter: rust
             path: crates/ugoite-iceberg/src/derived_relation.rs
-            selector: { kind: symbol, name: tests::malformed_derived_head_is_replaced_by_the_next_rebuild }
+            selector: { kind: symbol, name: derived_relation::tests::malformed_derived_head_is_replaced_by_the_next_rebuild }
             claims:
               - kind: verifies
                 criterion: REQ-STO-013#criterion.rebuildable-builds
                 covers: [FEAT-ASSET-001#binding.derived/target.asset-text-rebuild]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: tests::malformed_derived_head_is_replaced_by_the_next_rebuild } }
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: derived_relation::tests::malformed_derived_head_is_replaced_by_the_next_rebuild } }
           - id: materialized-coordinate-case
             adapter: rust
             path: crates/ugoite-iceberg/src/derived_relation.rs
-            selector: { kind: symbol, name: tests::text_asset_materializes_and_is_searchable }
+            selector: { kind: symbol, name: derived_relation::tests::text_asset_materializes_and_is_searchable }
             claims:
               - kind: verifies
                 criterion: REQ-STO-013#criterion.space-local-coordinates
                 covers:
                   - FEAT-STO-001#binding.derived/target.head-store
                   - FEAT-ASSET-001#binding.derived/target.asset-text-rebuild
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: tests::text_asset_materializes_and_is_searchable } }
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: derived_relation::tests::text_asset_materializes_and_is_searchable } }
               - kind: verifies
                 criterion: REQ-STO-013#criterion.non-authoritative-derived-state
                 covers:
                   - FEAT-STO-001#binding.derived/target.head-store
                   - FEAT-ASSET-001#binding.derived/target.asset-text-rebuild
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: tests::text_asset_materializes_and_is_searchable } }
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: derived_relation::tests::text_asset_materializes_and_is_searchable } }
           - id: logical-coordinate-case
             adapter: rust
             path: crates/ugoite-iceberg/src/logical_storage.rs
-            selector: { kind: symbol, name: tests::logical_coordinates_resolve_to_the_bound_memory_space }
+            selector: { kind: symbol, name: logical_storage::tests::logical_coordinates_resolve_to_the_bound_memory_space }
             claims:
               - kind: verifies
                 criterion: REQ-STO-013#criterion.canonical-coordinate-resolution
                 covers: [FEAT-STO-001#binding.derived/target.logical-coordinate-resolver]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: tests::logical_coordinates_resolve_to_the_bound_memory_space } }
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: logical_storage::tests::logical_coordinates_resolve_to_the_bound_memory_space } }
 
   - id: REQ-STO-014
     title: v0.1 Knowledge semantic compatibility fixture
