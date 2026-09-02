@@ -30,7 +30,7 @@ features:
       - id: space
         role: implementation
         facet: space
-        responsibility: Implement current Space bootstrap, registry discovery, duplicate rejection, and local permission boundaries.
+        responsibility: Implement current Space bootstrap, registry discovery, and local permission boundaries.
         targets:
           - id: create-space
             adapter: rust
@@ -39,8 +39,6 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-STO-002#criterion.bootstrap-scaffold
-              - kind: satisfies
-                criterion: REQ-STO-005#criterion.duplicate-rejection
           - id: list-spaces
             adapter: rust
             path: crates/ugoite-iceberg/src/space.rs
@@ -86,39 +84,3 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-STO-004#criterion.portable-storage-config
-      - id: server
-        role: operation
-        facet: backend
-        responsibility: Expose Space creation through the authenticated REST adapter and preserve its conflict response boundary.
-        targets:
-          - id: create-space
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: create_space }
-            claims:
-              - kind: satisfies
-                criterion: REQ-STO-005#criterion.conflict-status
-      - id: contract
-        role: contract-source
-        facet: api
-        responsibility: Define the authoritative Space creation HTTP operation and its OpenAPI conflict response.
-        owns:
-          - id: openapi-source
-            adapter: openapi
-            path: crates/ugoite-server/src/openapi.json
-            selector: { kind: file }
-        targets:
-          - id: create-contract
-            adapter: openapi
-            path: crates/ugoite-server/src/openapi.json
-            selector: { kind: operation, method: post, path: '/spaces' }
-    contracts:
-      - id: create
-        kind: http
-        source: FEAT-STO-001#binding.contract/target.create-contract
-        participants:
-          - target: FEAT-STO-001#binding.space/target.create-space
-            role: service
-          - target: FEAT-STO-001#binding.server/target.create-space
-            role: backend
-        guarantees: [REQ-STO-005#criterion.conflict-status]

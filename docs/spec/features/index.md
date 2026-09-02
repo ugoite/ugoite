@@ -28,8 +28,10 @@ authoritative for that domain.
 
 The Space storage foundation feature is represented by the canonical graph at
 `docs/mitase/features/storage.yaml`. Its corresponding legacy Space operation
-records remain read-only migration evidence for the migrated Storage slice;
-remaining Storage operations continue to await their focused migration reviews.
+records remain read-only migration evidence for the migrated Storage slice.
+Duplicate-create conflict semantics remain in the legacy Space records until
+their HTTP 409 contract is reconciled with the current idempotent bootstrap
+retry behavior; remaining Storage operations continue to await focused reviews.
 
 The registry is generated from the current Rust/OpenAPI surface, not from roadmap intent. `implemented` means the route and referenced adapter exist. `contracted_unavailable` is used for `/auth/login`, whose route exists but intentionally returns `403` in this release.
 

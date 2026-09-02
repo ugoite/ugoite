@@ -159,36 +159,6 @@ requirements:
                 covers: [FEAT-STO-001#binding.domain/target.storage-config]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-domain, harness: test_coverage, test: test_space_req_sto_004_storage_type_and_root_normalizes_local_and_remote_uris } }
 
-  - id: REQ-STO-005
-    title: Duplicate Space creation conflict
-    description: Creating a Space with an existing identifier is rejected instead of replacing or silently reusing the existing Space; the REST create operation returns HTTP 409 Conflict.
-    priority: medium
-    status: implemented
-    criteria:
-      - id: duplicate-rejection
-        kind: behavior
-        statement: A second create operation for the same Space identifier returns an error and does not replace the existing Space.
-        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-014#rule.governance]
-      - id: conflict-status
-        kind: behavior
-        statement: At the REST boundary, creating a Space with an existing identifier returns HTTP 409 Conflict.
-        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-014#rule.governance]
-    bindings:
-      - id: duplicate-verification
-        role: verification
-        facet: verification
-        responsibility: Verify duplicate Space creation rejection through the exact Iceberg integration test.
-        targets:
-          - id: duplicate-case
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_space.rs
-            selector: { kind: test, name: test_space_req_sto_005_create_space_idempotency }
-            claims:
-              - kind: verifies
-                criterion: REQ-STO-005#criterion.duplicate-rejection
-                covers: [FEAT-STO-001#binding.space/target.create-space]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_005_create_space_idempotency } }
-
   - id: REQ-STO-007
     title: Backend-neutral Space I/O
     description: Authoritative Space I/O remains behind the Rust OpenDAL-backed storage and core boundary and is exercised with local filesystem and in-memory operators. Adapter configuration and Unix permission setup are bounded integration concerns, not alternate persistence models.

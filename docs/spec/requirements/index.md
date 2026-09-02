@@ -33,11 +33,13 @@ at `docs/mitase/requirements/integrity.yaml` are the only semantic authority for
 the migrated Integrity domain.
 
 The Storage Space foundation slice (`REQ-STO-001`, `REQ-STO-002`, `REQ-STO-003`,
-`REQ-STO-004`, `REQ-STO-005`, and `REQ-STO-007`) is represented canonically at
-`docs/mitase/requirements/storage.yaml`. Those legacy records remain only as
-read-only migration evidence; connector, preference, directory-resilience,
-derived-relation, and Knowledge-compatibility Storage requirements remain in
-this registry until their later migration slices are reviewed.
+`REQ-STO-004`, and `REQ-STO-007`) is represented canonically at
+`docs/mitase/requirements/storage.yaml`. `REQ-STO-005` remains authoritative in
+this legacy registry because its broad HTTP 409 duplicate contract must first be
+reconciled with the current idempotent bootstrap-retry behavior. Connector,
+preference, directory-resilience, derived-relation, and Knowledge-compatibility
+Storage requirements remain in this registry until their later migration slices
+are reviewed.
 
 A current test mapping has this shape:
 
