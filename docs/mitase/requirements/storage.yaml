@@ -184,3 +184,228 @@ requirements:
                 criterion: REQ-STO-007#criterion.backend-neutral-io
                 covers: [FEAT-STO-001#binding.opendal/target.operator-factory]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-storage, test: tests::operator_from_uri_supports_fs_and_memory } }
+
+  - id: REQ-STO-006
+    title: Storage connector validation
+    description: The Space storage connection probe accepts supported URI schemes, rejects unsafe remote endpoints before attempting a connection, and reports unreachable targets as connectivity failures rather than false success.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: supported-connector-config
+        kind: behavior
+        statement: Storage connection validation rejects unsupported URI schemes and reports a supported local or in-memory configuration as the corresponding connection mode.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
+      - id: safe-remote-endpoint
+        kind: security
+        statement: Storage connection validation rejects loopback, link-local, private, and otherwise unsafe remote endpoints before the connection probe attempts network access.
+        governed_by: [POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: explicit-connectivity-failure
+        kind: behavior
+        statement: An unreachable custom remote storage endpoint returns a connectivity failure and never reports a false successful validation.
+        governed_by: [POL-002#rule.governance, POL-008#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: connector-verification
+        role: verification
+        facet: verification
+        responsibility: Verify supported-scheme validation, endpoint safety, and explicit connectivity failure through exact Iceberg integration cases.
+        targets:
+          - id: unsupported-scheme-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: test_space_req_sto_006_test_storage_connection_unknown_rejects_unsupported_scheme }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.supported-connector-config
+                covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_006_test_storage_connection_unknown_rejects_unsupported_scheme } }
+          - id: blocked-endpoint-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: test_space_req_sto_006_test_storage_connection_rejects_blocked_endpoint }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.safe-remote-endpoint
+                covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_006_test_storage_connection_rejects_blocked_endpoint } }
+          - id: unreachable-endpoint-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: test_space_req_sto_006_test_storage_connection_accepts_custom_s3_endpoint_validation }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.explicit-connectivity-failure
+                covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_006_test_storage_connection_accepts_custom_s3_endpoint_validation } }
+
+  - id: REQ-STO-008
+    title: Resilient directory-based Space listing
+    description: Listing Spaces ignores incomplete directories that do not contain current metadata and returns valid Spaces without converting those incomplete directories into false entries or whole-list failures.
+    priority: high
+    status: implemented
+    criteria:
+      - id: incomplete-directory-filtering
+        kind: behavior
+        statement: Space discovery ignores directories without meta.json and returns valid Space identifiers only.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: resilient-listing-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that incomplete Space directories are ignored through the exact Iceberg integration case.
+        targets:
+          - id: missing-meta-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: test_space_req_sto_008_list_spaces_ignores_missing_meta }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-008#criterion.incomplete-directory-filtering
+                covers:
+                  - FEAT-STO-001#binding.space/target.list-spaces
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_008_list_spaces_ignores_missing_meta } }
+              - kind: verifies
+                criterion: REQ-STO-009#criterion.incomplete-space-filtering
+                covers: [FEAT-STO-001#binding.space/target.list-spaces]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_008_list_spaces_ignores_missing_meta } }
+
+  - id: REQ-STO-009
+    title: Accessible Space listing API
+    description: The authenticated Space listing API returns only Spaces where the caller has read permission, relies on the resilient core listing behavior for incomplete directories, does not infer Space access from node administration, and propagates unexpected storage errors instead of returning false success.
+    priority: high
+    status: implemented
+    criteria:
+      - id: authorized-space-listing
+        kind: security
+        statement: The authenticated Space listing endpoint filters each discovered Space through the caller's read authorization before returning its metadata.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: incomplete-space-filtering
+        kind: behavior
+        statement: The API uses the metadata-backed core listing boundary, so incomplete Space directories are ignored rather than fabricated as accessible entries.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-004#rule.governance]
+      - id: storage-error-propagation
+        kind: quality
+        statement: Unexpected storage errors from Space enumeration or authorized metadata reads are returned as errors rather than converted into an empty or successful response.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: listing-contract
+        role: verification
+        facet: verification
+        responsibility: Verify the authenticated Space listing operation and its visibility contract through the exact server API contract test; runtime authorization evidence remains explicit in the server binding.
+        targets:
+          - id: visible-spaces-contract-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: test_space_req_sto_009_openapi_documents_authenticated_space_listing }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-009#criterion.authorized-space-listing
+                covers: [FEAT-E2E-001#binding.server/target.list-spaces]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: test_space_req_sto_009_openapi_documents_authenticated_space_listing } }
+              - kind: verifies
+                criterion: REQ-STO-009#criterion.storage-error-propagation
+                covers: [FEAT-E2E-001#binding.server/target.list-spaces]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: test_space_req_sto_009_openapi_documents_authenticated_space_listing } }
+
+  - id: REQ-STO-010
+    title: Mode-appropriate CLI Space identifiers
+    description: When endpoint routing is backend or API, Space commands accept remote identifiers without misleading local-root positional arguments. When endpoint routing is core, commands that access local storage require an explicit local root before touching the filesystem.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: remote-identifier-routing
+        kind: behavior
+        statement: Backend and API routing accept a bare remote Space identifier for commands that operate through the server.
+        governed_by: [POL-004#rule.governance, POL-005#rule.governance, POL-008#rule.governance]
+      - id: explicit-core-root
+        kind: security
+        statement: Core-mode Space commands require an explicit local root or Space path before accessing local storage.
+        governed_by: [POL-001#rule.governance, POL-003#rule.governance, POL-005#rule.governance]
+      - id: routing-help-contract
+        kind: quality
+        statement: CLI help explains the local Space path and remote Space identifier forms for the supported routing modes.
+        governed_by: [POL-005#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: cli-routing-verification
+        role: verification
+        facet: verification
+        responsibility: Verify core-root requirements, remote identifier routing, and the user-facing routing help through exact CLI integration cases.
+        targets:
+          - id: core-root-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_create_space_req_sto_010_requires_root_only_in_core_mode }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-010#criterion.explicit-core-root
+                covers: [FEAT-STO-001#binding.routing/target.space-command-routing]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_create_space_req_sto_010_requires_root_only_in_core_mode } }
+          - id: remote-id-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_space_list_req_sto_010_accepts_backend_mode_without_local_root }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-010#criterion.remote-identifier-routing
+                covers: [FEAT-STO-001#binding.routing/target.space-command-routing]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_space_list_req_sto_010_accepts_backend_mode_without_local_root } }
+          - id: routing-help-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_cli_help_req_sto_010_describes_space_id_or_path_routing }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-010#criterion.routing-help-contract
+                covers: [FEAT-STO-001#binding.routing/target.space-command-routing]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_cli_help_req_sto_010_describes_space_id_or_path_routing } }
+
+  - id: REQ-STO-011
+    title: Hashed portable user preference storage
+    description: Portable user preferences persist under users/<sha256(user_id)>/preferences.json rather than exposing raw user identifiers in storage paths. Missing files resolve to a full null-valued preference object, and patch updates merge through the exact-read/CAS publication boundary without recreating raw user-id directories.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: hashed-user-path
+        kind: security
+        statement: Preference storage derives the user directory from the SHA-256 digest of the user identifier and never uses the raw identifier as a storage path segment.
+        governed_by: [POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: null-valued-default
+        kind: behavior
+        statement: A missing preference document resolves to the complete UserPreferences object with every optional field unset.
+        governed_by: [POL-002#rule.governance, POL-014#rule.governance]
+      - id: merged-concurrent-patch
+        kind: quality
+        statement: Preference patches merge into the stored document through exact-read and conditional publication semantics so concurrent updates are retried rather than silently discarded.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-008#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: preference-verification
+        role: verification
+        facet: verification
+        responsibility: Verify default preference shape, hashed path persistence, and concurrent patch preservation through exact Iceberg integration cases.
+        targets:
+          - id: default-preferences-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_preferences.rs
+            selector: { kind: test, name: test_preferences_req_sto_011_default_values }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-011#criterion.null-valued-default
+                covers: [FEAT-STO-001#binding.preferences/target.get-user-preferences]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_preferences, test: test_preferences_req_sto_011_default_values } }
+          - id: hashed-path-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_preferences.rs
+            selector: { kind: test, name: test_preferences_req_sto_011_patch_roundtrip_uses_hashed_user_path }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-011#criterion.hashed-user-path
+                covers: [FEAT-STO-001#binding.preferences/target.patch-user-preferences]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_preferences, test: test_preferences_req_sto_011_patch_roundtrip_uses_hashed_user_path } }
+          - id: concurrent-patch-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_preferences.rs
+            selector: { kind: test, name: concurrent_preference_patches_preserve_both_updates }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-011#criterion.merged-concurrent-patch
+                covers: [FEAT-STO-001#binding.preferences/target.patch-user-preferences]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_preferences, test: concurrent_preference_patches_preserve_both_updates } }

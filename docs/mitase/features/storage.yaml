@@ -5,7 +5,7 @@ category: Space storage and bootstrap foundation
 features:
   - id: FEAT-STO-001
     title: Space storage foundation
-    summary: Connect the shared OpenDAL storage boundary, Space bootstrap and registry behavior, local permissions, duplicate creation conflict, and backend-neutral operator support to exact Ugoite artifacts and verification evidence.
+    summary: Connect the shared OpenDAL storage boundary, Space bootstrap and registry behavior, local permissions, connector validation, resilient listing, and backend-neutral operator support to exact Ugoite artifacts and verification evidence. Duplicate-create conflict remains a separate reconciliation slice.
     status: implemented
     bindings:
       - id: opendal
@@ -46,6 +46,10 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-STO-004#criterion.directory-registry
+              - kind: satisfies
+                criterion: REQ-STO-008#criterion.incomplete-directory-filtering
+              - kind: satisfies
+                criterion: REQ-STO-009#criterion.incomplete-space-filtering
           - id: local-permissions
             adapter: rust
             path: crates/ugoite-iceberg/src/space.rs
@@ -84,3 +88,56 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-STO-004#criterion.portable-storage-config
+      - id: connector
+        role: implementation
+        facet: storage
+        responsibility: Validate proposed storage connector configurations and report unsafe or unreachable endpoints before they are treated as usable.
+        targets:
+          - id: test-storage-connection
+            adapter: rust
+            path: crates/ugoite-iceberg/src/space.rs
+            selector: { kind: symbol, name: test_storage_connection }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-006#criterion.supported-connector-config
+              - kind: satisfies
+                criterion: REQ-STO-006#criterion.safe-remote-endpoint
+              - kind: satisfies
+                criterion: REQ-STO-006#criterion.explicit-connectivity-failure
+      - id: routing
+        role: implementation
+        facet: cli
+        responsibility: Keep Space CLI identifiers aligned with the configured local core or remote backend routing mode and document both forms in help.
+        targets:
+          - id: space-command-routing
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/space.rs
+            selector: { kind: symbol, name: run }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-010#criterion.remote-identifier-routing
+              - kind: satisfies
+                criterion: REQ-STO-010#criterion.explicit-core-root
+              - kind: satisfies
+                criterion: REQ-STO-010#criterion.routing-help-contract
+      - id: preferences
+        role: implementation
+        facet: storage
+        responsibility: Persist portable user preferences under hashed user storage keys and merge concurrent updates through the publication boundary.
+        targets:
+          - id: get-user-preferences
+            adapter: rust
+            path: crates/ugoite-iceberg/src/preferences.rs
+            selector: { kind: symbol, name: get_user_preferences }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-011#criterion.null-valued-default
+          - id: patch-user-preferences
+            adapter: rust
+            path: crates/ugoite-iceberg/src/preferences.rs
+            selector: { kind: symbol, name: patch_user_preferences }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-011#criterion.hashed-user-path
+              - kind: satisfies
+                criterion: REQ-STO-011#criterion.merged-concurrent-patch

@@ -956,6 +956,26 @@ fn openapi_publishes_read_only_space_health() {
 }
 
 #[test]
+/// REQ-STO-009
+fn test_space_req_sto_009_openapi_documents_authenticated_space_listing() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let operation = &snapshot["paths"]["/spaces"]["get"];
+
+    assert_eq!(
+        operation["summary"],
+        "List spaces visible to the authenticated identity"
+    );
+    assert_eq!(
+        operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/JsonValue"
+    );
+    assert_eq!(
+        operation["responses"]["500"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/ErrorResponse"
+    );
+}
+
+#[test]
 fn issue_2125_openapi_documents_entry_list_and_keyword_search_bounds() {
     let snapshot = ugoite_server::openapi_snapshot();
     let limit = &snapshot["components"]["parameters"]["Limit"];
