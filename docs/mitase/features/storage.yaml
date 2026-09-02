@@ -1,0 +1,86 @@
+schema: mitase/spec/v1
+kind: features
+namespace: storage
+category: Space storage and bootstrap foundation
+features:
+  - id: FEAT-STO-001
+    title: Space storage foundation
+    summary: Connect the shared OpenDAL storage boundary, Space bootstrap and registry behavior, local permissions, duplicate creation conflict, and backend-neutral operator support to exact Ugoite artifacts and verification evidence.
+    status: implemented
+    bindings:
+      - id: opendal
+        role: implementation
+        facet: storage
+        responsibility: Keep shared OpenDAL operator construction and storage helpers as the only runtime persistence boundary for Space data.
+        targets:
+          - id: operator-factory
+            adapter: rust
+            path: crates/ugoite-storage/src/lib.rs
+            selector: { kind: symbol, name: operator_from_uri }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-007#criterion.backend-neutral-io
+          - id: storage-helper
+            adapter: rust
+            path: crates/ugoite-storage/src/lib.rs
+            selector: { kind: symbol, name: OpendalStorage }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-001#criterion.shared-opendal-boundary
+      - id: space
+        role: implementation
+        facet: space
+        responsibility: Implement current Space bootstrap, registry discovery, and local permission boundaries.
+        targets:
+          - id: create-space
+            adapter: rust
+            path: crates/ugoite-iceberg/src/space.rs
+            selector: { kind: symbol, name: create_space }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-002#criterion.bootstrap-scaffold
+          - id: list-spaces
+            adapter: rust
+            path: crates/ugoite-iceberg/src/space.rs
+            selector: { kind: symbol, name: list_spaces }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-004#criterion.directory-registry
+          - id: local-permissions
+            adapter: rust
+            path: crates/ugoite-iceberg/src/space.rs
+            selector: { kind: symbol, name: apply_local_space_permissions }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-003#criterion.owner-only-scaffold
+      - id: service
+        role: implementation
+        facet: service
+        responsibility: Keep application-level Space listing and mutation admission connected to the storage boundary.
+        targets:
+          - id: list-space-ids
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: list_space_ids }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-004#criterion.service-space-listing
+          - id: mutation-admission
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: ensure_mutation_admitted }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-001#criterion.mutation-admission
+      - id: domain
+        role: implementation
+        facet: domain
+        responsibility: Preserve portable Space storage configuration without coupling its representation to a provider-specific persistence model.
+        targets:
+          - id: storage-config
+            adapter: rust
+            path: crates/ugoite-domain/src/space.rs
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-004#criterion.portable-storage-config
