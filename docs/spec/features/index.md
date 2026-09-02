@@ -33,8 +33,11 @@ slice is represented by the canonical graph at
 records remain read-only migration evidence for the migrated Storage slice.
 Duplicate-create conflict semantics remain in the legacy Space records until
 their HTTP 409 contract is reconciled with the current idempotent bootstrap
-retry behavior; storage layout synchronization and remaining derived or
-compatibility operations continue to await focused reviews.
+retry behavior. The storage layout, DerivedRelation, and v0.1 Knowledge
+compatibility operations are now represented in `docs/mitase/features/storage.yaml`
+and remain here only as read-only migration evidence. Complete executable
+parity between every documented layout path and runtime creation remains an
+explicit follow-up rather than an inferred guarantee.
 The connector feature records the existing server and settings surfaces plus
 the shared connection probe; mandatory pre-commit sequencing remains an
 explicit evidence gap. The accessible-listing feature similarly keeps runtime

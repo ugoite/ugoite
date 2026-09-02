@@ -76,6 +76,10 @@ requirements:
                 criterion: REQ-STO-002#criterion.bootstrap-scaffold
                 covers: [FEAT-STO-001#binding.space/target.create-space]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_002_create_space_scaffolding } }
+              - kind: verifies
+                criterion: REQ-STO-012#criterion.bootstrap-boundary
+                covers: [FEAT-STO-001#binding.space/target.create-space]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_002_create_space_scaffolding } }
 
   - id: REQ-STO-003
     title: Owner-only local Space permissions
@@ -488,3 +492,195 @@ requirements:
                 criterion: REQ-STO-011#criterion.merged-concurrent-patch
                 covers: [FEAT-STO-001#binding.preferences/target.patch-user-preferences]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_preferences, test: concurrent_preference_patches_preserve_both_updates } }
+
+  - id: REQ-STO-012
+    title: Machine-readable Space layout boundaries
+    description: >-
+      The machine-readable Space layout records the distinction between
+      bootstrap scaffolding, lazily materialized paths, node-local control
+      state, and Space-owned data. The current migration traces the
+      create_space scaffold plus response-signing and SQL-session paths; a
+      complete executable parity check for every documented path remains an
+      explicit evidence gap.
+    priority: high
+    status: implemented
+    criteria:
+      - id: machine-readable-layout
+        kind: quality
+        statement: The current Space layout is recorded as a machine-readable artifact with explicit roots, bootstrap entries, trigger entries, and user preference entries.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-008#rule.governance, POL-014#rule.governance]
+      - id: bootstrap-boundary
+        kind: behavior
+        statement: Space creation produces the documented metadata, settings, forms, and assets scaffold and bootstraps the Entry Form; DerivedRelation state is replaceable and is not required for an empty Space.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
+      - id: lazy-path-boundary
+        kind: behavior
+        statement: Response-signing material and SQL-session metadata are materialized under their documented lazy paths rather than being treated as bootstrap Space metadata.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-008#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: layout-verification
+        role: evidence
+        facet: storage-layout
+        responsibility: Record the machine-readable layout reference. The repository does not yet have a single parity test covering every documented path, so complete executable layout parity remains unverified.
+        targets:
+          - id: layout-source
+            adapter: declared
+            path: docs/spec/data-model/directory-layout.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-STO-012#criterion.machine-readable-layout
+
+  - id: REQ-STO-013
+    title: Rebuildable DerivedRelation storage
+    description: >-
+      DerivedRelation Heads and immutable Iceberg builds remain under the
+      owning Space prefix and use exact conditional Head publication. Derived
+      state stays outside the authoritative Catalog Head and SpaceCheckpoint,
+      can be rebuilt from authoritative data, and uses canonical
+      ugoite://{space_uid}/{space-relative-key} coordinates. The logical
+      resolver rejects malformed or cross-Space coordinates.
+    priority: high
+    status: implemented
+    criteria:
+      - id: space-local-coordinates
+        kind: security
+        statement: A DerivedRelation Head and its immutable build coordinates are bound to the owning Space and cannot escape its relation/build prefix.
+        governed_by: [POL-001#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: conditional-head-publication
+        kind: quality
+        statement: DerivedRelation Head publication uses exact read and conditional replacement semantics so a stale single-process writer cannot replace the current build.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-008#rule.governance, POL-014#rule.governance]
+      - id: non-authoritative-derived-state
+        kind: behavior
+        statement: DerivedRelation publication does not mutate the authoritative Catalog Head, and an empty Space can be rebuilt with only derived state being published.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
+      - id: rebuildable-builds
+        kind: behavior
+        statement: A malformed or missing current DerivedRelation build can be replaced by a subsequent rebuild from authoritative Space data without requiring a migration reader for the discarded representation.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
+      - id: canonical-coordinate-resolution
+        kind: security
+        statement: Iceberg metadata and data locations use canonical logical Space URIs, and the resolver rejects malformed, traversal, cross-Space, or physical-backend locations.
+        governed_by: [POL-001#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: derived-verification
+        role: verification
+        facet: verification
+        responsibility: Verify relation-local Head publication, rebuild recovery, non-authoritative publication, and logical coordinate resolution through exact storage and Iceberg tests. Shared-backend conditional-write behavior remains fail-closed until its backend contract is established; the traced publication tests cover the current single-process boundary.
+        targets:
+          - id: head-publication-case
+            adapter: rust
+            path: crates/ugoite-storage/src/lib.rs
+            selector: { kind: symbol, name: tests::derived_head_uses_checksum_and_single_process_publication }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-013#criterion.space-local-coordinates
+                covers: [FEAT-STO-001#binding.derived/target.head-store]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-storage, test: tests::derived_head_uses_checksum_and_single_process_publication } }
+              - kind: verifies
+                criterion: REQ-STO-013#criterion.conditional-head-publication
+                covers: [FEAT-STO-001#binding.derived/target.head-store]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-storage, test: tests::derived_head_uses_checksum_and_single_process_publication } }
+          - id: stale-writer-case
+            adapter: rust
+            path: crates/ugoite-storage/src/lib.rs
+            selector: { kind: symbol, name: tests::derived_publish_rejects_a_stale_single_process_writer }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-013#criterion.conditional-head-publication
+                covers: [FEAT-STO-001#binding.derived/target.head-store]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-storage, test: tests::derived_publish_rejects_a_stale_single_process_writer } }
+          - id: empty-rebuild-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/derived_relation.rs
+            selector: { kind: symbol, name: derived_relation::tests::empty_space_rebuild_publishes_only_a_derived_head }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-013#criterion.non-authoritative-derived-state
+                covers:
+                  - FEAT-STO-001#binding.derived/target.head-store
+                  - FEAT-ASSET-001#binding.derived/target.asset-text-rebuild
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: derived_relation::tests::empty_space_rebuild_publishes_only_a_derived_head } }
+          - id: rebuild-recovery-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/derived_relation.rs
+            selector: { kind: symbol, name: derived_relation::tests::malformed_derived_head_is_replaced_by_the_next_rebuild }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-013#criterion.rebuildable-builds
+                covers: [FEAT-ASSET-001#binding.derived/target.asset-text-rebuild]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: derived_relation::tests::malformed_derived_head_is_replaced_by_the_next_rebuild } }
+          - id: materialized-coordinate-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/derived_relation.rs
+            selector: { kind: symbol, name: derived_relation::tests::text_asset_materializes_and_is_searchable }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-013#criterion.space-local-coordinates
+                covers:
+                  - FEAT-STO-001#binding.derived/target.head-store
+                  - FEAT-ASSET-001#binding.derived/target.asset-text-rebuild
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: derived_relation::tests::text_asset_materializes_and_is_searchable } }
+              - kind: verifies
+                criterion: REQ-STO-013#criterion.non-authoritative-derived-state
+                covers:
+                  - FEAT-STO-001#binding.derived/target.head-store
+                  - FEAT-ASSET-001#binding.derived/target.asset-text-rebuild
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: derived_relation::tests::text_asset_materializes_and_is_searchable } }
+          - id: logical-coordinate-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/logical_storage.rs
+            selector: { kind: symbol, name: logical_storage::tests::logical_coordinates_resolve_to_the_bound_memory_space }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-013#criterion.canonical-coordinate-resolution
+                covers: [FEAT-STO-001#binding.derived/target.logical-coordinate-resolver]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: logical_storage::tests::logical_coordinates_resolve_to_the_bound_memory_space } }
+
+  - id: REQ-STO-014
+    title: v0.1 Knowledge semantic compatibility fixture
+    description: >-
+      The canonical v0.1 Knowledge fixture remains semantically readable
+      through the authoritative Space, publication, and append-only history
+      paths. The fixture protects recoverability and authority semantics; it
+      does not freeze physical storage encoding or require a pre-v1 migration
+      reader.
+    priority: high
+    status: implemented
+    criteria:
+      - id: fixture-identity
+        kind: quality
+        statement: The canonical compatibility fixture identifies the v0.1 release and its expected Knowledge observations without encoding a byte-for-byte Iceberg representation.
+        governed_by: [POL-014#rule.governance, POL-016#rule.governance]
+      - id: authoritative-recovery
+        kind: behavior
+        statement: The fixture can be written through the authoritative Space and publication paths, closed, reopened, and read with the expected current Knowledge values.
+        governed_by: [POL-002#rule.governance, POL-014#rule.governance, POL-016#rule.governance, POL-017#rule.knowledge-portability]
+      - id: append-only-history
+        kind: behavior
+        statement: The fixture preserves the expected append-only revision history and makes both the prior and current values readable after reopening the Space.
+        governed_by: [POL-002#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+    bindings:
+      - id: compatibility-verification
+        role: verification
+        facet: compatibility
+        responsibility: Verify the canonical v0.1 fixture identity, authoritative Space/publication recovery, and append-only history through the exact close-and-reopen compatibility test. Physical encoding compatibility is intentionally outside this requirement.
+        targets:
+          - id: fixture-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_knowledge_compatibility.rs
+            selector: { kind: test, name: v01_knowledge_fixture_is_semantically_recoverable }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-014#criterion.fixture-identity
+                covers: [FEAT-STO-001#binding.compatibility/target.fixture]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_knowledge_compatibility, test: v01_knowledge_fixture_is_semantically_recoverable } }
+              - kind: verifies
+                criterion: REQ-STO-014#criterion.authoritative-recovery
+                covers: [FEAT-STO-001#binding.compatibility/target.fixture]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_knowledge_compatibility, test: v01_knowledge_fixture_is_semantically_recoverable } }
+              - kind: verifies
+                criterion: REQ-STO-014#criterion.append-only-history
+                covers: [FEAT-STO-001#binding.compatibility/target.fixture]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_knowledge_compatibility, test: v01_knowledge_fixture_is_semantically_recoverable } }

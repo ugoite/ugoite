@@ -53,6 +53,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-INT-003#criterion.scoped-response-material
+              - kind: satisfies
+                criterion: REQ-STO-012#criterion.lazy-path-boundary
           - id: default-material
             adapter: rust
             path: crates/ugoite-iceberg/src/integrity.rs
@@ -60,6 +62,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-INT-003#criterion.scoped-response-material
+              - kind: satisfies
+                criterion: REQ-STO-012#criterion.lazy-path-boundary
           - id: response-signature
             adapter: rust
             path: crates/ugoite-iceberg/src/integrity.rs

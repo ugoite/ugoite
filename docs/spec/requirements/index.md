@@ -49,6 +49,14 @@ record likewise keeps runtime authorization and storage-error propagation as
 implementation requirements while its current verification target covers only
 the published OpenAPI boundary.
 
+The Storage layout, DerivedRelation, and v0.1 Knowledge compatibility records
+(`REQ-STO-012`, `REQ-STO-013`, and `REQ-STO-014`) are now represented in
+`docs/mitase/requirements/storage.yaml`. The records in this legacy file are
+retained as read-only migration evidence; the canonical graph carries the
+current artifact bindings and exact verification claims. Complete executable
+parity between every documented layout path and runtime creation remains an
+explicit follow-up rather than an inferred guarantee.
+
 A current test mapping has this shape:
 
 ```yaml

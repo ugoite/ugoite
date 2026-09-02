@@ -143,7 +143,9 @@ inventory:
             - docs/spec/data-model/overview.md
             - docs/spec/data-model/sql-sessions.md
             - docs/spec/data-model/directory-structure.md
+            - docs/spec/data-model/directory-layout.yaml
             - docs/spec/data-model/file-schemas.yaml
+            - docs/spec/architecture/derived-relations.md
             - docs/spec/features/index.md
             - docs/spec/features/sql.md
             - docs/spec/testing/strategy.md
