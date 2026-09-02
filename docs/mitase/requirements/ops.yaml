@@ -36,7 +36,7 @@ requirements:
 
   - id: REQ-OPS-002
     title: Container Build Validation
-    description: The single runtime image is built and smoke-tested by an automated release gate, including the documented Compose quick start for the published version.
+    description: The single runtime image is validated locally by `ci:release` and is smoke-tested by the hosted release gate, including the documented Compose quick start for the published version.
     priority: medium
     status: implemented
     criteria:
@@ -48,8 +48,15 @@ requirements:
       - id: release-container-verification
         role: evidence
         facet: release-gate
-        responsibility: Connect the release workflow and smoke script that provide the current container evidence. This slice records the existing gate and does not change runtime or release behavior.
+        responsibility: Connect the local `ci:release` task, release workflow, and smoke script that provide the current container evidence. This slice records the existing gates and does not change runtime or release behavior.
         targets:
+          - id: local-release-gate
+            adapter: declared
+            path: mise.toml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-002#criterion.release-container-validation
           - id: release-workflow
             adapter: declared
             path: .github/workflows/release-publish.yml

@@ -147,8 +147,15 @@ features:
       - id: release-evidence
         role: evidence
         facet: release-gate
-        responsibility: Preserve the existing release workflow and container smoke script as evidence for the release boundary without asserting that this documentation-only slice changes release behavior.
+        responsibility: Preserve the local release task, hosted release workflow, and container smoke script as evidence for the release boundary without asserting that this documentation-only slice changes release behavior.
         targets:
+          - id: local-release-gate
+            adapter: declared
+            path: mise.toml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-002#criterion.release-container-validation
           - id: release-workflow
             adapter: declared
             path: .github/workflows/release-publish.yml
