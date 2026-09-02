@@ -1,0 +1,148 @@
+schema: mitase/spec/v1
+kind: requirements
+namespace: security
+category: Server security boundaries
+requirements:
+  - id: REQ-SEC-001
+    title: Loopback-first server binding
+    description: The server listens on 127.0.0.1:8000 by default. Non-loopback exposure requires an explicit UGOITE_SERVER_ADDRESS, while the release Compose host port remains bound to loopback.
+    priority: high
+    status: implemented
+    criteria:
+      - id: default-loopback
+        kind: security
+        statement: An unset UGOITE_SERVER_ADDRESS selects 127.0.0.1:8000, and a non-loopback listen address is selected only when the operator explicitly supplies UGOITE_SERVER_ADDRESS.
+        governed_by: [POL-003#rule.governance, POL-004#rule.governance, POL-011#rule.governance]
+      - id: compose-loopback
+        kind: security
+        statement: The release Compose host port is published on 127.0.0.1 rather than on all host interfaces.
+        governed_by: [POL-003#rule.governance, POL-011#rule.governance]
+    bindings:
+      - id: listen-boundary-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the default listen address selection and Compose host-port publication through exact repository tests.
+        targets:
+          - id: default-listen-unit
+            adapter: rust
+            path: crates/ugoite-server/src/main.rs
+            selector: { kind: symbol, name: server_address_tests::req_sec_001_defaults_to_loopback }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-001#criterion.default-loopback
+                covers: [FEAT-SEC-001#binding.listen-configuration/target.server-entrypoint]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: server_address_tests::req_sec_001_defaults_to_loopback } }
+          - id: compose-loopback-integration
+            adapter: rust
+            path: crates/ugoite-server/tests/security_config.rs
+            selector: { kind: test, name: req_sec_001_release_compose_publishes_host_port_on_loopback }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-001#criterion.compose-loopback
+                covers: [FEAT-SEC-001#binding.listen-configuration/target.release-compose]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: security_config, test: req_sec_001_release_compose_publishes_host_port_on_loopback } }
+
+  - id: REQ-SEC-002
+    title: Response security headers
+    description: Every application response receives the explicit response security-header policy. HSTS is limited to non-loopback HTTPS public origins so local development does not acquire a TLS-only browser policy.
+    priority: high
+    status: implemented
+    criteria:
+      - id: common-header-policy
+        kind: security
+        statement: Application responses receive the configured CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, and Permissions-Policy values, with CSP excluding unsafe-inline script execution.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: loopback-hsts-boundary
+        kind: security
+        statement: Strict-Transport-Security is present only for non-loopback HTTPS public origins and is omitted for HTTP, localhost, IPv4-loopback, and IPv6-loopback origins.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+    bindings:
+      - id: response-header-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the common response-header policy, loopback HSTS boundary, and representative public, error, static, and CORS responses through exact Rust tests.
+        targets:
+          - id: common-policy-unit
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: security_headers_tests::req_sec_002_adds_the_common_header_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-002#criterion.common-header-policy
+                covers: [FEAT-SEC-001#binding.server/target.security-header-policy]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: security_headers_tests::req_sec_002_adds_the_common_header_contract } }
+          - id: loopback-hsts-unit
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: security_headers_tests::req_sec_002_omits_hsts_for_local_origins }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-002#criterion.loopback-hsts-boundary
+                covers: [FEAT-SEC-001#binding.server/target.security-header-policy]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: security_headers_tests::req_sec_002_omits_hsts_for_local_origins } }
+          - id: representative-response-integration
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: req_sec_002_covers_metadata_api_error_and_middleware_responses }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-002#criterion.common-header-policy
+                covers: [FEAT-SEC-001#binding.server/target.security-route-layer]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_sec_002_covers_metadata_api_error_and_middleware_responses } }
+          - id: static-response-integration
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: req_sec_002_covers_the_static_browser_root }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-002#criterion.common-header-policy
+                covers: [FEAT-SEC-001#binding.server/target.security-route-layer]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_sec_002_covers_the_static_browser_root } }
+          - id: cors-preflight-integration
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: req_sec_002_keeps_security_headers_on_cors_preflight }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-002#criterion.common-header-policy
+                covers: [FEAT-SEC-001#binding.server/target.security-route-layer]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_sec_002_keeps_security_headers_on_cors_preflight } }
+
+  - id: REQ-SEC-003
+    title: Mandatory authentication at protected boundaries
+    description: Every protected REST and MCP request requires an authenticated identity. Localhost mode and explicit remote exposure configuration do not bypass authentication.
+    priority: high
+    status: implemented
+    criteria:
+      - id: protected-rest
+        kind: security
+        statement: An unauthenticated request to a protected REST route is rejected with the standard authentication-required error envelope.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: protected-mcp
+        kind: security
+        statement: An unauthenticated MCP request is rejected as authentication-required after the transport request has the required protocol shape.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance, POL-015#rule.governance]
+    bindings:
+      - id: authentication-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that protected REST and MCP requests do not become public in the initialized localhost test mode through exact Rust tests.
+        targets:
+          - id: rest-authentication-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::req_sec_003_rejects_unauthenticated_rest_requests }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-003#criterion.protected-rest
+                covers: [FEAT-SEC-001#binding.server/target.authentication-middleware]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::req_sec_003_rejects_unauthenticated_rest_requests } }
+          - id: mcp-authentication-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: mcp_v1_transport_rejects_legacy_methods_and_validates_the_wire_shape }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-003#criterion.protected-mcp
+                covers: [FEAT-SEC-001#binding.server/target.mcp-authentication]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: mcp_v1_transport_rejects_legacy_methods_and_validates_the_wire_shape } }
