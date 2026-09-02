@@ -83,6 +83,8 @@ inventory:
             - e2e/global-setup.ts
             - e2e/account-self-recovery.test.ts
             - docsite/src/ssot.test.ts
+            - docsite/src/spec-integrity.test.ts
+            - tools/coverage_gates_test.ts
         openapi:
           roots:
             - crates/ugoite-server/src/openapi.json
@@ -112,8 +114,11 @@ inventory:
             - docs/mitase/features/security.yaml
             - docs/mitase/requirements/storage.yaml
             - docs/mitase/features/storage.yaml
+            - docs/mitase/requirements/ops.yaml
+            - docs/mitase/features/ops.yaml
             - docs/index.md
             - docs/guide/start/container-quickstart.md
+            - docs/guide/operate/server/operations.md
             - docker-compose.release.yaml
             - docsite/astro.config.mjs
             - docsite/src/content.config.ts
@@ -128,8 +133,11 @@ inventory:
             - docs/spec/features/entries.yaml
             - docs/spec/requirements/form.yaml
             - docs/spec/features/forms.yaml
+            - docs/spec/requirements/index.yaml
             - docs/spec/versions/v0.1.md
             - docs/spec/versions/v0.1-knowledge-compatibility.md
+            - docs/version/v0.1.yaml
+            - docs/version/v0.2.yaml
             - docs/spec/architecture/overview.md
             - docs/spec/architecture/decisions.md
             - docs/spec/architecture/stack.md
@@ -160,9 +168,13 @@ inventory:
             - docs/spec/ui/index.md
             - docs/spec/ui/pages/space-home.yaml
             - .github/workflows/ci.yml
+            - .github/workflows/release-publish.yml
             - mise.toml
             - scripts/ci/mitase-check.sh
+            - scripts/verify-release-container-quickstart.sh
             - tools/knowledge_compatibility.ts
+            - tools/coverage_gates_test.ts
+            - docsite/src/spec-integrity.test.ts
             - crates/ugoite-core/src/lib.rs
             - crates/ugoite-server/src/lib.rs
             - crates/ugoite-server/src/main.rs
@@ -209,3 +221,9 @@ verification:
     docsite-vitest:
       executable: deno
       arguments: [task, --cwd, docsite, test, src/ssot.test.ts, --testNamePattern, "{test}"]
+    docsite-vitest-file:
+      executable: deno
+      arguments: [task, --cwd, docsite, test, "{file}", --testNamePattern, "{test}"]
+    deno-test-file:
+      executable: deno
+      arguments: [test, -A, --filter, "{test}", "{file}"]
