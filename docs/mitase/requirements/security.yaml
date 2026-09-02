@@ -146,3 +146,182 @@ requirements:
                 criterion: REQ-SEC-003#criterion.protected-mcp
                 covers: [FEAT-SEC-001#binding.server/target.mcp-authentication]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: mcp_v1_transport_rejects_legacy_methods_and_validates_the_wire_shape } }
+
+  - id: REQ-SEC-004
+    title: Passwordless Passkey authentication
+    description: The supported primary human authenticator is passwordless Passkey/WebAuthn. Registration requests discoverable credentials, and authentication is completed by server-side WebAuthn assertion validation against an enrolled active credential.
+    priority: high
+    status: implemented
+    criteria:
+      - id: passwordless-primary
+        kind: security
+        statement: The browser login flow starts and finishes Passkey authentication and creates the ordinary opaque browser session; passwords and default credentials are not part of the primary login surface.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: discoverable-credentials
+        kind: security
+        statement: Passkey registration requests discoverable credentials and allocates distinct user handles for additional credentials belonging to the same account.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: server-side-assertion-validation
+        kind: security
+        statement: The server validates the WebAuthn assertion, resolves the enrolled credential to an active account, and only then creates an authenticated session.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+    bindings:
+      - id: passkey-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the discoverable credential contract, browser Passkey login surface, and published authentication operations through exact repository tests.
+        targets:
+          - id: discoverable-registration-case
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: test, name: tests::added_passkeys_use_distinct_discoverable_user_handles }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-004#criterion.discoverable-credentials
+                covers: [FEAT-SEC-002#binding.identity/target.passkey-registration]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::added_passkeys_use_distinct_discoverable_user_handles } }
+          - id: server-registration-start-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: test, name: authentication_regression_tests::req_sec_004_server_registration_starts_discoverable_credentials }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-004#criterion.discoverable-credentials
+                covers: [FEAT-SEC-002#binding.server/target.passkey-registration-start]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::req_sec_004_server_registration_starts_discoverable_credentials } }
+          - id: server-registration-finish-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: test, name: authentication_regression_tests::req_sec_004_server_registration_finish_rejects_invalid_credential }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-004#criterion.discoverable-credentials
+                covers: [FEAT-SEC-002#binding.server/target.passkey-registration-finish]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::req_sec_004_server_registration_finish_rejects_invalid_credential } }
+          - id: login-route-case
+            adapter: typescript
+            path: frontend/src/routes/login.test.tsx
+            selector: { kind: test, name: keeps the requested route after Passkey login }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-004#criterion.passwordless-primary
+                covers: [FEAT-SEC-002#binding.client/target.auth-client, FEAT-SEC-002#binding.client/target.login-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/login.test.tsx, test: keeps the requested route after Passkey login } }
+          - id: assertion-validation-case
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: test, name: tests::invalid_passkey_assertion_is_rejected_before_session_creation }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-004#criterion.server-side-assertion-validation
+                covers: [FEAT-SEC-002#binding.identity/target.passkey-authentication]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::invalid_passkey_assertion_is_rejected_before_session_creation } }
+          - id: server-assertion-validation-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: test, name: authentication_regression_tests::req_sec_004_server_authentication_finish_rejects_unverified_assertion }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-004#criterion.server-side-assertion-validation
+                covers: [FEAT-SEC-002#binding.server/target.passkey-finish]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::req_sec_004_server_authentication_finish_rejects_unverified_assertion } }
+          - id: authentication-surface-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: req_sec_004_openapi_publishes_passkey_surfaces }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-004#criterion.passwordless-primary
+                covers: [FEAT-SEC-002#binding.server/target.passkey-start]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_sec_004_openapi_publishes_passkey_surfaces } }
+
+  - id: REQ-SEC-005
+    title: Initial owner bootstrap controls
+    description: Initial setup uses an expiring one-use secret stored only as a hash, creates the administrator account and initial Passkey, emits bootstrap-only recovery-code material once, and establishes an authenticated opaque browser session. Account Self-Recovery is a separate enrolled flow.
+    priority: high
+    status: implemented
+    criteria:
+      - id: setup-secret-hash-once
+        kind: security
+        statement: Node bootstrap creates an expiring setup secret whose persisted representation is only a hash, emits the plaintext only for the initial bootstrap result, and does not emit a second setup result.
+        governed_by: [POL-003#rule.governance, POL-004#rule.governance, POL-011#rule.governance]
+      - id: initial-owner-passkey
+        kind: security
+        statement: The setup finish flow validates the one-time secret and Passkey ceremony, creates the active node administrator, and establishes the initial Passkey state without a default identity.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: bootstrap-recovery-material
+        kind: security
+        statement: Successful initial setup returns bootstrap-only recovery-code material for offline storage and the setup UI does not present it as a reusable login method.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: opaque-bootstrap-session
+        kind: security
+        statement: Successful setup creates the ordinary opaque browser session, while session expiry and revocation invalidate its server-side authority without exposing a verifier.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+    bindings:
+      - id: bootstrap-verification
+        role: verification
+        facet: verification
+        responsibility: Verify setup-secret storage, setup API publication, setup UI continuation, and opaque browser-session behavior through exact repository tests.
+        targets:
+          - id: setup-secret-case
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: test, name: tests::setup_secret_is_hashed_and_only_emitted_once }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-005#criterion.setup-secret-hash-once
+                covers: [FEAT-SEC-002#binding.identity/target.setup-secret]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::setup_secret_is_hashed_and_only_emitted_once } }
+          - id: setup-registration-case
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: test, name: tests::invalid_setup_passkey_is_rejected_before_owner_creation }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-005#criterion.initial-owner-passkey
+                covers: [FEAT-SEC-002#binding.identity/target.setup-finish]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::invalid_setup_passkey_is_rejected_before_owner_creation } }
+          - id: setup-api-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: req_sec_005_openapi_publishes_setup_surfaces }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-005#criterion.initial-owner-passkey
+                covers: [FEAT-SEC-002#binding.server/target.setup-start, FEAT-SEC-002#binding.server/target.setup-finish]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_sec_005_openapi_publishes_setup_surfaces } }
+              - kind: verifies
+                criterion: REQ-SEC-005#criterion.bootstrap-recovery-material
+                covers: [FEAT-SEC-002#binding.server/target.setup-finish]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_sec_005_openapi_publishes_setup_surfaces } }
+              - kind: verifies
+                criterion: REQ-SEC-005#criterion.opaque-bootstrap-session
+                covers: [FEAT-SEC-002#binding.server/target.setup-finish]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_sec_005_openapi_publishes_setup_surfaces } }
+          - id: server-setup-registration-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: test, name: authentication_regression_tests::req_sec_005_server_setup_rejects_invalid_registration_before_consuming_secret }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-005#criterion.initial-owner-passkey
+                covers: [FEAT-SEC-002#binding.server/target.setup-start, FEAT-SEC-002#binding.server/target.setup-finish]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::req_sec_005_server_setup_rejects_invalid_registration_before_consuming_secret } }
+          - id: setup-route-case
+            adapter: typescript
+            path: frontend/src/routes/setup.test.tsx
+            selector: { kind: test, name: keeps the protected route after setup strengthening }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-005#criterion.bootstrap-recovery-material
+                covers: [FEAT-SEC-002#binding.client/target.auth-client, FEAT-SEC-002#binding.client/target.setup-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/setup.test.tsx, test: keeps the protected route after setup strengthening } }
+          - id: opaque-session-case
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: test, name: tests::browser_sessions_expire_and_are_revoked_without_exposing_verifiers }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-005#criterion.opaque-bootstrap-session
+                covers: [FEAT-SEC-002#binding.identity/target.session-validation]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::browser_sessions_expire_and_are_revoked_without_exposing_verifiers } }

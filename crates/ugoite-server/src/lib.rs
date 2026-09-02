@@ -10536,6 +10536,188 @@ mod authentication_regression_tests {
     use ugoite_identity::node_identity::{token_hash, RecoveryAuditOutboxRecord};
     use ugoite_storage::SpaceUri;
 
+    fn passkey_identity(account_id: Uuid) -> RequestIdentityContext {
+        RequestIdentityContext {
+            request_identity: RequestIdentity {
+                subject: AuthenticatedSubject::HumanAccount { account_id },
+                actor: Actor::Human { account_id },
+                credential_id: Uuid::now_v7(),
+                authentication_method: RequestAuthenticationMethod::Passkey,
+                assurance: AssuranceLevel::PhishingResistant,
+                constraints: CredentialConstraints::default(),
+                session_id: None,
+            },
+            account_id,
+            display_name: "Passkey test account".to_string(),
+            node_admin: true,
+            token_principal_id: None,
+            token_actor_principal_id: None,
+            token_space_uid: None,
+            token_actions: None,
+            recent_passkey: true,
+            credential_generation: 0,
+            session_token: None,
+            human_approval_token: None,
+            human_approval_header_invalid: false,
+            request_id: Uuid::now_v7(),
+        }
+    }
+
+    #[tokio::test]
+    async fn req_sec_004_server_registration_starts_discoverable_credentials() -> anyhow::Result<()>
+    {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-passkey-registration-start-{}",
+            Uuid::now_v7()
+        ))?;
+        let account_id = Uuid::now_v7();
+        state.identity.bootstrap_if_needed().await?;
+        state
+            .identity
+            .seed_test_recovery_accounts(&[(account_id, Uuid::now_v7(), Uuid::now_v7())])
+            .await?;
+
+        let Json(first) = start_add_passkey(
+            State(state.clone()),
+            Extension(passkey_identity(account_id)),
+        )
+        .await
+        .expect("passkey registration should start");
+        let Json(second) = start_add_passkey(State(state), Extension(passkey_identity(account_id)))
+            .await
+            .expect("second passkey registration should start");
+        for value in [&first, &second] {
+            assert_eq!(
+                value["public_key"]["publicKey"]["authenticatorSelection"]["requireResidentKey"],
+                true
+            );
+        }
+        assert_ne!(
+            first["public_key"]["publicKey"]["user"]["id"],
+            second["public_key"]["publicKey"]["user"]["id"]
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn req_sec_004_server_registration_finish_rejects_invalid_credential(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-passkey-registration-finish-{}",
+            Uuid::now_v7()
+        ))?;
+        let account_id = Uuid::now_v7();
+        state.identity.bootstrap_if_needed().await?;
+        state
+            .identity
+            .seed_test_recovery_accounts(&[(account_id, Uuid::now_v7(), Uuid::now_v7())])
+            .await?;
+        let identity = passkey_identity(account_id);
+        let Json(start) = start_add_passkey(State(state.clone()), Extension(identity.clone()))
+            .await
+            .expect("passkey registration should start");
+        let credential: RegisterPublicKeyCredential = serde_json::from_value(json!({
+            "id": "invalid",
+            "rawId": "aW52YWxpZA",
+            "response": {
+                "attestationObject": "aW52YWxpZA",
+                "clientDataJSON": "aW52YWxpZA"
+            },
+            "type": "public-key"
+        }))?;
+        assert!(finish_add_passkey(
+            State(state),
+            Extension(identity),
+            Json(AddPasskeyFinishRequest {
+                challenge_id: start["challenge_id"]
+                    .as_str()
+                    .expect("challenge id")
+                    .parse()?,
+                credential,
+            }),
+        )
+        .await
+        .is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn req_sec_004_server_authentication_finish_rejects_unverified_assertion(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-passkey-authentication-finish-{}",
+            Uuid::now_v7()
+        ))?;
+        state.identity.bootstrap_if_needed().await?;
+        let credential: PublicKeyCredential = serde_json::from_value(json!({
+            "id": "invalid",
+            "rawId": "aW52YWxpZA",
+            "response": {
+                "authenticatorData": "aW52YWxpZA",
+                "clientDataJSON": "aW52YWxpZA",
+                "signature": "aW52YWxpZA"
+            },
+            "type": "public-key"
+        }))?;
+        assert!(auth_passkey_finish(
+            State(state),
+            Json(PasskeyFinishRequest {
+                challenge_id: Uuid::now_v7(),
+                credential,
+            }),
+        )
+        .await
+        .is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn req_sec_005_server_setup_rejects_invalid_registration_before_consuming_secret(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-setup-registration-finish-{}",
+            Uuid::now_v7()
+        ))?;
+        let bootstrap = state
+            .identity
+            .bootstrap_if_needed()
+            .await?
+            .expect("first bootstrap");
+        let Json(start) = auth_setup_start(
+            State(state.clone()),
+            Json(SetupStartRequest {
+                setup_secret: bootstrap.setup_secret.clone(),
+                display_name: "Initial owner".to_string(),
+            }),
+        )
+        .await
+        .expect("setup registration should start");
+        let credential: RegisterPublicKeyCredential = serde_json::from_value(json!({
+            "id": "invalid",
+            "rawId": "aW52YWxpZA",
+            "response": {
+                "attestationObject": "aW52YWxpZA",
+                "clientDataJSON": "aW52YWxpZA"
+            },
+            "type": "public-key"
+        }))?;
+        assert!(auth_setup_finish(
+            State(state.clone()),
+            Json(SetupFinishRequest {
+                setup_secret: bootstrap.setup_secret,
+                challenge_id: start["challenge_id"]
+                    .as_str()
+                    .expect("challenge id")
+                    .parse()?,
+                credential,
+            }),
+        )
+        .await
+        .is_err());
+        assert!(state.identity.list_accounts().await?.is_empty());
+        Ok(())
+    }
+
     fn token_claims(sub: Uuid, actor_principal_id: Option<Uuid>) -> AccessTokenClaims {
         AccessTokenClaims {
             iss: "https://ugoite.example".to_string(),

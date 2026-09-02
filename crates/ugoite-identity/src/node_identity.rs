@@ -7649,6 +7649,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn invalid_setup_passkey_is_rejected_before_owner_creation() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        let bootstrap = service
+            .bootstrap_if_needed()
+            .await?
+            .expect("first bootstrap");
+        let start = service
+            .start_setup_registration(&bootstrap.setup_secret, "Initial owner")
+            .await?;
+        let invalid_credential: RegisterPublicKeyCredential =
+            serde_json::from_value(serde_json::json!({
+                "id": "invalid",
+                "rawId": "aW52YWxpZA",
+                "response": {
+                    "attestationObject": "aW52YWxpZA",
+                    "clientDataJSON": "aW52YWxpZA"
+                },
+                "type": "public-key"
+            }))?;
+
+        assert!(service
+            .finish_setup_registration(
+                &bootstrap.setup_secret,
+                start.challenge_id,
+                &invalid_credential,
+            )
+            .await
+            .is_err());
+        let state = service.read_state().await?;
+        assert!(state.accounts.is_empty());
+        assert!(state.recovery.is_empty());
+        assert!(state
+            .setup
+            .as_ref()
+            .is_some_and(|setup| setup.used_at.is_none()));
+        assert!(service.list_sessions(Uuid::nil()).await?.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn filesystem_node_identity_uses_atomic_control_prefix() -> Result<()> {
         let root = tempfile::tempdir()?;
         let operator = operator_from_uri(root.path().to_str().expect("utf-8 path"))?;
@@ -8270,6 +8310,18 @@ mod tests {
 
         let first = service.start_add_passkey(account_id).await?;
         let second = service.start_add_passkey(account_id).await?;
+        assert!(first
+            .public_key
+            .public_key
+            .authenticator_selection
+            .as_ref()
+            .is_some_and(|selection| selection.require_resident_key));
+        assert!(second
+            .public_key
+            .public_key
+            .authenticator_selection
+            .as_ref()
+            .is_some_and(|selection| selection.require_resident_key));
         let first_handle = serde_json::to_value(first.public_key.public_key.user.id)?;
         let second_handle = serde_json::to_value(second.public_key.public_key.user.id)?;
 
@@ -8278,6 +8330,70 @@ mod tests {
             first_handle,
             serde_json::Value::String(URL_SAFE_NO_PAD.encode(account_id.as_bytes()))
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn invalid_passkey_assertion_is_rejected_before_session_creation() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let method_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.lifecycle = NodeLifecycle::Active;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "Assertion user".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+                credential_generation: 0,
+            },
+        );
+        state.authentication_methods.insert(
+            method_id,
+            AuthenticationMethod {
+                method_id,
+                account_id,
+                kind: AuthenticationMethodKind::Passkey,
+                external_subject: None,
+                created_at: timestamp(Utc::now()),
+                last_used_at: None,
+            },
+        );
+        state.passkeys.insert(
+            "AQIDBA".to_string(),
+            StoredPasskey {
+                credential_id: "AQIDBA".to_string(),
+                account_id,
+                method_id,
+                passkey: test_passkey(),
+                created_at: timestamp(Utc::now()),
+                last_used_at: None,
+                rp_id: "localhost".to_string(),
+            },
+        );
+        service.write_state(&state).await?;
+
+        let start = service.start_authentication().await?;
+        let invalid_credential: PublicKeyCredential = serde_json::from_value(serde_json::json!({
+            "id": "invalid",
+            "rawId": "aW52YWxpZA",
+            "response": {
+                "authenticatorData": "aW52YWxpZA",
+                "clientDataJSON": "aW52YWxpZA",
+                "signature": "aW52YWxpZA"
+            },
+            "type": "public-key"
+        }))?;
+
+        assert!(service
+            .finish_authentication(start.challenge_id, &invalid_credential)
+            .await
+            .is_err());
+        assert!(service.list_sessions(account_id).await?.is_empty());
         Ok(())
     }
 
