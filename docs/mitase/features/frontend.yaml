@@ -104,3 +104,68 @@ features:
                 criterion: REQ-FE-004#criterion.display
               - kind: satisfies
                 criterion: REQ-FE-008#criterion.selection
+  - id: FEAT-FE-003
+    title: Entry detail and Markdown editing
+    summary: Connect the Entry detail workspace, Markdown editor, form-aware guidance, conflict handling, and safe preview behavior to exact frontend verification evidence.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep Entry detail loading, form-aware editing, Markdown preview, save state, conflict handling, and localized guidance connected to the shipped frontend components and routes.
+        targets:
+          - id: entry-detail-pane
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.tsx
+            selector: { kind: symbol, name: EntryDetailPane }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-009#criterion.conflict-guidance
+              - kind: satisfies
+                criterion: REQ-FE-010#criterion.preserve-draft
+              - kind: satisfies
+                criterion: REQ-FE-038#criterion.validation-feedback
+              - kind: satisfies
+                criterion: REQ-FE-052#criterion.form-derived-guidance
+              - kind: satisfies
+                criterion: REQ-FE-053#criterion.localized-guidance
+          - id: markdown-editor
+            adapter: typescript
+            path: frontend/src/components/MarkdownEditor.tsx
+            selector: { kind: symbol, name: MarkdownEditor }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-005#criterion.edit-preview-save
+              - kind: satisfies
+                criterion: REQ-FE-005#criterion.safe-preview
+              - kind: satisfies
+                criterion: REQ-FE-005A#criterion.missing-content
+              - kind: satisfies
+                criterion: REQ-FE-005A#criterion.new-entry-preview
+              - kind: satisfies
+                criterion: REQ-FE-009#criterion.conflict-guidance
+          - id: markdown-utils
+            adapter: typescript
+            path: frontend/src/lib/markdown.ts
+            selector: { kind: symbol, name: renderMarkdownPreview }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-005#criterion.safe-preview
+          - id: entry-detail-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-033#criterion.detail-route
+              - kind: satisfies
+                criterion: REQ-FE-033#criterion.encoded-entry-id
+              - kind: satisfies
+                criterion: REQ-FE-034#criterion.navigation-loading
+          - id: new-entry-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/new.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-052#criterion.form-derived-guidance

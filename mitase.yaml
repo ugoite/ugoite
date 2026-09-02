@@ -52,6 +52,17 @@ inventory:
             - frontend/src/routes/spaces/index.test.tsx
             - frontend/src/routes/spaces/[space_id]/entries/index.tsx
             - frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
+            - frontend/src/components/EntryDetailPane.tsx
+            - frontend/src/components/EntryDetailPane.test.tsx
+            - frontend/src/components/MarkdownEditor.tsx
+            - frontend/src/components/MarkdownEditor.test.tsx
+            - frontend/src/lib/markdown.ts
+            - frontend/src/lib/markdown.test.ts
+            - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.tsx
+            - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.test.tsx
+            - frontend/src/routes/spaces/[space_id]/entries/new.tsx
+            - frontend/src/routes/spaces/[space_id]/entries/new.test.tsx
+            - e2e/entries.test.ts
             - frontend/src/routes/spaces/[space_id]/entries/[entry_id].tsx
             - frontend/src/routes/spaces/[space_id]/search.tsx
             - frontend/src/routes/spaces/[space_id]/search.test.tsx

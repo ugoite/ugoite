@@ -353,3 +353,357 @@ requirements:
                 criterion: REQ-FE-008#criterion.selection
                 covers: [FEAT-FE-002#binding.frontend/target.entries-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "REQ-FE-054: keeps the dedicated SQL session result route" } }
+  - id: REQ-FE-005
+    title: Markdown Editor
+    description: The frontend provides a Markdown editor with editing, preview, save, and safe rendered-preview behavior for Entry content.
+    priority: high
+    status: implemented
+    criteria:
+      - id: edit-preview-save
+        kind: behavior
+        statement: The Markdown editor exposes editable content, a rendered preview, and explicit save behavior including the supported keyboard shortcut.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: safe-preview
+        kind: security
+        statement: Rendered Markdown preview preserves supported formatting while treating raw HTML as text rather than executable markup.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: markdown-editor-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Markdown editing, preview, save, keyboard save, and safe preview rendering through exact frontend tests.
+        targets:
+          - id: edit
+            adapter: typescript
+            path: frontend/src/components/MarkdownEditor.test.tsx
+            selector: { kind: test, name: "should call onChange when content is edited" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-005#criterion.edit-preview-save
+                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "should call onChange when content is edited" } }
+          - id: preview
+            adapter: typescript
+            path: frontend/src/components/MarkdownEditor.test.tsx
+            selector: { kind: test, name: "should render markdown preview when preview mode is enabled" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-005#criterion.edit-preview-save
+                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "should render markdown preview when preview mode is enabled" } }
+          - id: save
+            adapter: typescript
+            path: frontend/src/components/MarkdownEditor.test.tsx
+            selector: { kind: test, name: "should call onSave when save button is clicked" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-005#criterion.edit-preview-save
+                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "should call onSave when save button is clicked" } }
+          - id: keyboard-save
+            adapter: typescript
+            path: frontend/src/components/MarkdownEditor.test.tsx
+            selector: { kind: test, name: "should support keyboard shortcut for save" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-005#criterion.edit-preview-save
+                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "should support keyboard shortcut for save" } }
+          - id: preview-safety
+            adapter: typescript
+            path: frontend/src/lib/markdown.test.ts
+            selector: { kind: test, name: "REQ-FE-005: renderMarkdownPreview escapes raw HTML while keeping markdown formatting" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-005#criterion.safe-preview
+                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor, FEAT-FE-003#binding.frontend/target.markdown-utils]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/markdown.test.ts, test: "REQ-FE-005: renderMarkdownPreview escapes raw HTML while keeping markdown formatting" } }
+  - id: REQ-FE-005A
+    title: Editor Content Graceful Handling
+    description: The editor treats missing Markdown content as empty content, keeps new-entry draft content available immediately, and remains safe when previewing missing content.
+    priority: high
+    status: implemented
+    criteria:
+      - id: missing-content
+        kind: quality
+        statement: Undefined or null editor content is rendered as an empty string and never as the literal text "undefined" or "null".
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: new-entry-preview
+        kind: behavior
+        statement: New-entry draft content is available without waiting for a persisted Entry resource, and preview mode remains renderable when content is missing.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: missing-content-verification
+        role: verification
+        facet: verification
+        responsibility: Verify missing-content normalization and preview safety through exact Markdown editor tests.
+        targets:
+          - id: undefined-content
+            adapter: typescript
+            path: frontend/src/components/MarkdownEditor.test.tsx
+            selector: { kind: test, name: "should handle undefined content gracefully" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-005A#criterion.missing-content
+                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "should handle undefined content gracefully" } }
+          - id: null-content
+            adapter: typescript
+            path: frontend/src/components/MarkdownEditor.test.tsx
+            selector: { kind: test, name: "should handle null content gracefully" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-005A#criterion.missing-content
+                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "should handle null content gracefully" } }
+          - id: preview-without-content
+            adapter: typescript
+            path: frontend/src/components/MarkdownEditor.test.tsx
+            selector: { kind: test, name: "should render preview with undefined content without crashing" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-005A#criterion.new-entry-preview
+                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "should render preview with undefined content without crashing" } }
+          - id: split-null-content
+            adapter: typescript
+            path: frontend/src/components/MarkdownEditor.test.tsx
+            selector: { kind: test, name: "renders split mode with null content" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-005A#criterion.missing-content
+                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "renders split mode with null content" } }
+  - id: REQ-FE-009
+    title: Conflict Refresh Guidance
+    description: On a revision conflict, the frontend informs the user, keeps the current draft visible, and requires an explicit refresh before loading the latest server revision.
+    priority: high
+    status: implemented
+    criteria:
+      - id: conflict-guidance
+        kind: behavior
+        statement: A revision conflict is surfaced in the editor without replacing the current draft, and refreshing is an explicit user action.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: conflict-verification
+        role: verification
+        facet: verification
+        responsibility: Verify conflict messaging and draft-preserving refresh guidance through exact frontend tests.
+        targets:
+          - id: editor-conflict-message
+            adapter: typescript
+            path: frontend/src/components/MarkdownEditor.test.tsx
+            selector: { kind: test, name: "REQ-FE-009: should show conflict message when there is a conflict" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-009#criterion.conflict-guidance
+                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "REQ-FE-009: should show conflict message when there is a conflict" } }
+          - id: revision-conflict
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.test.tsx
+            selector: { kind: test, name: "REQ-FE-009: shows refresh guidance on revision conflict" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-009#criterion.conflict-guidance
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "REQ-FE-009: shows refresh guidance on revision conflict" } }
+  - id: REQ-FE-010
+    title: Editor Content Persistence During Save
+    description: Saving an Entry sends the edited Markdown without reloading or overwriting the current editor draft.
+    priority: high
+    status: implemented
+    criteria:
+      - id: preserve-draft
+        kind: behavior
+        statement: The editor does not replace the current draft during or after a save; edits made while a save is in flight remain unsaved until explicitly saved.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: save-preservation-verification
+        role: verification
+        facet: verification
+        responsibility: Verify save completion and draft preservation through exact Entry detail tests.
+        targets:
+          - id: save-clean-state
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.test.tsx
+            selector: { kind: test, name: "saves successfully and marks editor clean" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-010#criterion.preserve-draft
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "saves successfully and marks editor clean" } }
+          - id: save-draft-preservation
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.test.tsx
+            selector: { kind: test, name: "keeps edits made during a save marked as unsaved" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-010#criterion.preserve-draft
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "keeps edits made during a save marked as unsaved" } }
+  - id: REQ-FE-033
+    title: Entry Detail Navigation
+    description: Selecting or opening an Entry reaches the detail view and correctly handles encoded Entry identifiers.
+    priority: high
+    status: implemented
+    criteria:
+      - id: detail-route
+        kind: behavior
+        statement: The frontend Entry detail route renders the Entry workspace instead of a not-found page.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: encoded-entry-id
+        kind: behavior
+        statement: Entry detail navigation preserves identifiers containing special characters when they are URL-encoded.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: detail-navigation-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Entry detail route rendering and encoded identifier handling through exact Playwright evidence.
+        targets:
+          - id: detail-route-renders
+            adapter: typescript
+            path: e2e/entries.test.ts
+            selector: { kind: test, name: "REQ-FE-033: frontend entry detail route renders (not SolidJS Not Found)" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-033#criterion.detail-route
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entries.test.ts, test: "REQ-FE-033: frontend entry detail route renders (not SolidJS Not Found)" } }
+          - id: special-character-id
+            adapter: typescript
+            path: e2e/entries.test.ts
+            selector: { kind: test, name: "REQ-FE-033: Retrieve entry with special characters" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-033#criterion.encoded-entry-id
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entries.test.ts, test: "REQ-FE-033: Retrieve entry with special characters" } }
+  - id: REQ-FE-034
+    title: Entry Detail Loading State Management
+    description: Navigating between Entries clears loading state and displays the selected Entry without requiring a page reload.
+    priority: high
+    status: implemented
+    criteria:
+      - id: navigation-loading
+        kind: behavior
+        statement: Sequential Entry detail navigation does not remain stuck in an Entry loading state.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: loading-state-verification
+        role: verification
+        facet: verification
+        responsibility: Verify sequential Entry detail navigation through the exact Playwright test.
+        targets:
+          - id: sequential-navigation
+            adapter: typescript
+            path: e2e/entries.test.ts
+            selector: { kind: test, name: "REQ-FE-034: Multi-entry navigation should not get stuck in loading state" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-034#criterion.navigation-loading
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entries.test.ts, test: "REQ-FE-034: Multi-entry navigation should not get stuck in loading state" } }
+  - id: REQ-FE-038
+    title: Form Validation Feedback in Editor
+    description: Form validation failures are shown as readable warnings while the current Entry draft remains available for correction.
+    priority: high
+    status: implemented
+    criteria:
+      - id: validation-feedback
+        kind: behavior
+        statement: A save rejected by Form validation produces readable field or validation messages in the Entry editor.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: validation-feedback-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Form validation warning rendering through the exact Entry detail test.
+        targets:
+          - id: form-validation-warning
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.test.tsx
+            selector: { kind: test, name: "REQ-FE-038: renders form validation warnings" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-038#criterion.validation-feedback
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "REQ-FE-038: renders form validation warnings" } }
+  - id: REQ-FE-052
+    title: Form-Aware Entry Editor Guidance
+    description: Entry editor guidance is derived from the active Form and does not invent field headings when a Form has no suitable structured fields.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: form-derived-guidance
+        kind: behavior
+        statement: The editor uses the active Form's fields for guidance, preserves typed values, and explains an unstructured Form without a fabricated field example.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: form-guidance-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Form-derived editor guidance and typed controls through exact frontend tests.
+        targets:
+          - id: form-fields
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.test.tsx
+            selector: { kind: test, name: "REQ-FE-052: edits form fields without requiring Markdown knowledge" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-052#criterion.form-derived-guidance
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "REQ-FE-052: edits form fields without requiring Markdown knowledge" } }
+          - id: no-structured-fields
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.test.tsx
+            selector: { kind: test, name: "REQ-FE-052: explains forms that have no structured fields" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-052#criterion.form-derived-guidance
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "REQ-FE-052: explains forms that have no structured fields" } }
+          - id: new-entry-form-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/new.test.tsx"
+            selector: { kind: test, name: "reuses the shared editor and prefers the Form requested by the route" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-052#criterion.form-derived-guidance
+                covers: [FEAT-FE-003#binding.frontend/target.new-entry-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/new.test.tsx", test: "reuses the shared editor and prefers the Form requested by the route" } }
+  - id: REQ-FE-053
+    title: Entry Workflow Guidance Localization
+    description: Entry creation and editing guidance uses the active frontend locale consistently for hints, warnings, and helper actions.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: localized-guidance
+        kind: behavior
+        statement: The default English workflow does not display Japanese-only guidance, while the Japanese workflow renders localized Entry editor guidance.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: localization-verification
+        role: verification
+        facet: verification
+        responsibility: Verify localized Entry editor guidance and warnings through exact frontend tests.
+        targets:
+          - id: localized-warnings
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.test.tsx
+            selector: { kind: test, name: "REQ-FE-053: keeps type and additional-content warnings next to the form" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-053#criterion.localized-guidance
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "REQ-FE-053: keeps type and additional-content warnings next to the form" } }
+          - id: japanese-guidance
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.test.tsx
+            selector: { kind: test, name: "REQ-FE-053: renders the form-first editor in Japanese" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-053#criterion.localized-guidance
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "REQ-FE-053: renders the form-first editor in Japanese" } }
