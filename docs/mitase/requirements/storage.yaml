@@ -1,0 +1,212 @@
+schema: mitase/spec/v1
+kind: requirements
+namespace: storage
+category: Space storage boundaries and bootstrap
+requirements:
+  - id: REQ-STO-001
+    title: Shared OpenDAL runtime storage boundary
+    description: "Runtime Space I/O uses the shared Rust storage boundary: Ugoite core and Iceberg services route storage mechanics through OpenDAL and portable domain types. Local authoritative mutations use the single-process serializer, while non-local mutation paths fail closed unless their exact-read, conditional-write, stale-rejection, and one-winner guarantees are established."
+    priority: high
+    status: implemented
+    criteria:
+      - id: shared-opendal-boundary
+        kind: behavior
+        statement: Runtime Space reads and writes use the shared OpenDAL-backed storage abstraction and do not create a parallel direct-persistence path in the application service.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-014#rule.governance]
+      - id: mutation-admission
+        kind: quality
+        statement: Local authoritative mutations are serialized, and non-local mutations are admitted only when the storage contract can provide exact reads, conditional create or replacement, stale rejection, and one-winner concurrency behavior.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: storage-boundary-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the shared storage helper boundary and the fail-closed mutation admission rule through exact Rust tests.
+        targets:
+          - id: json-helper-case
+            adapter: rust
+            path: crates/ugoite-storage/src/lib.rs
+            selector: { kind: symbol, name: tests::test_storage_req_sto_001_json_helpers_use_storage_abstraction }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-001#criterion.shared-opendal-boundary
+                covers: [FEAT-STO-001#binding.opendal/target.storage-helper]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-storage, test: tests::test_storage_req_sto_001_json_helpers_use_storage_abstraction } }
+          - id: non-local-admission-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: service::tests::non_local_space_mutations_fail_closed_before_storage_writes }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-001#criterion.mutation-admission
+                covers: [FEAT-STO-001#binding.service/target.mutation-admission]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: service::tests::non_local_space_mutations_fail_closed_before_storage_writes } }
+          - id: one-winner-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: service::tests::concurrent_principal_space_creation_preserves_slug_uniqueness }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-001#criterion.mutation-admission
+                covers: [FEAT-STO-001#binding.service/target.mutation-admission]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: service::tests::concurrent_principal_space_creation_preserves_slug_uniqueness } }
+
+  - id: REQ-STO-002
+    title: Space bootstrap directory structure
+    description: Creating a Space writes its current metadata and settings, creates the forms, assets, and sql_sessions directories, and bootstraps the built-in Entry Form through the Iceberg-backed Form store.
+    priority: high
+    status: implemented
+    criteria:
+      - id: bootstrap-scaffold
+        kind: behavior
+        statement: Space creation produces meta.json and settings.json, creates forms/, assets/, and sql_sessions/, and persists the built-in Entry Form with the current default settings.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: bootstrap-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the current Space scaffold and built-in Entry Form through the exact Iceberg integration test.
+        targets:
+          - id: scaffold-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: test_space_req_sto_002_create_space_scaffolding }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-002#criterion.bootstrap-scaffold
+                covers: [FEAT-STO-001#binding.space/target.create-space]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_002_create_space_scaffolding } }
+
+  - id: REQ-STO-003
+    title: Owner-only local Space permissions
+    description: "On Unix-like local filesystem backends, Space bootstrap scaffolding uses owner-only permissions: directories are mode 700 and metadata files created during bootstrap are mode 600."
+    priority: medium
+    status: implemented
+    criteria:
+      - id: owner-only-scaffold
+        kind: security
+        statement: Local Space directories are created with mode 700 and bootstrap metadata files are created with mode 600.
+        governed_by: [POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: permissions-verification
+        role: verification
+        facet: verification
+        responsibility: Verify owner-only modes for the Space root, scaffold directories, and bootstrap metadata through the exact Unix integration tests.
+        targets:
+          - id: initial-permissions-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: test_space_req_sto_003_local_space_permissions }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-003#criterion.owner-only-scaffold
+                covers: [FEAT-STO-001#binding.space/target.local-permissions]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_003_local_space_permissions } }
+          - id: atomic-permissions-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: local_atomic_space_patch_preserves_private_json_modes }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-003#criterion.owner-only-scaffold
+                covers: [FEAT-STO-001#binding.space/target.local-permissions]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: local_atomic_space_patch_preserves_private_json_modes } }
+
+  - id: REQ-STO-004
+    title: Space registry management
+    description: The spaces/ directory and each Space's current metadata maintain the Space registry, while the service exposes the current Space identifiers without fabricating incomplete entries.
+    priority: high
+    status: implemented
+    criteria:
+      - id: directory-registry
+        kind: behavior
+        statement: Listing Spaces discovers valid Space directories and returns their identifiers from current metadata-backed Space state.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: service-space-listing
+        kind: behavior
+        statement: The application service exposes the current Space identifiers through the same metadata-backed registry rather than a separate registry source.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: portable-storage-config
+        kind: quality
+        statement: Portable Space storage configuration normalizes local and remote URI forms without making a provider-specific representation the registry authority.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: registry-verification
+        role: verification
+        facet: verification
+        responsibility: Verify directory-backed Space discovery and service-level Space identifier listing through exact Rust tests.
+        targets:
+          - id: directory-list-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: test_space_req_sto_004_list_spaces_from_directory }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-004#criterion.directory-registry
+                covers: [FEAT-STO-001#binding.space/target.list-spaces]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_004_list_spaces_from_directory } }
+              - kind: verifies
+                criterion: REQ-STO-004#criterion.service-space-listing
+                covers: [FEAT-STO-001#binding.service/target.list-space-ids]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_004_list_spaces_from_directory } }
+          - id: domain-storage-config-case
+            adapter: rust
+            path: crates/ugoite-domain/tests/test_coverage.rs
+            selector: { kind: test, name: test_space_req_sto_004_storage_type_and_root_normalizes_local_and_remote_uris }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-004#criterion.portable-storage-config
+                covers: [FEAT-STO-001#binding.domain/target.storage-config]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-domain, harness: test_coverage, test: test_space_req_sto_004_storage_type_and_root_normalizes_local_and_remote_uris } }
+
+  - id: REQ-STO-005
+    title: Duplicate Space creation conflict
+    description: Creating a Space with an existing identifier is rejected instead of replacing or silently reusing the existing Space.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: duplicate-rejection
+        kind: behavior
+        statement: A second create operation for the same Space identifier returns an error and does not replace the existing Space.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: duplicate-verification
+        role: verification
+        facet: verification
+        responsibility: Verify duplicate Space creation rejection through the exact Iceberg integration test.
+        targets:
+          - id: duplicate-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: test_space_req_sto_005_create_space_idempotency }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-005#criterion.duplicate-rejection
+                covers: [FEAT-STO-001#binding.space/target.create-space]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_005_create_space_idempotency } }
+
+  - id: REQ-STO-007
+    title: Backend-neutral Space I/O
+    description: Authoritative Space I/O remains behind the Rust OpenDAL-backed storage and core boundary and is exercised with local filesystem and in-memory operators. Adapter configuration and Unix permission setup are bounded integration concerns, not alternate persistence models.
+    priority: high
+    status: implemented
+    criteria:
+      - id: backend-neutral-io
+        kind: quality
+        statement: The shared storage boundary supports the local filesystem and in-memory OpenDAL operators while keeping Space persistence mechanics behind the same abstraction.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: backend-verification
+        role: verification
+        facet: verification
+        responsibility: Verify backend-neutral operator construction and the shared storage helper behavior through exact Rust unit tests.
+        targets:
+          - id: operator-backends-case
+            adapter: rust
+            path: crates/ugoite-storage/src/lib.rs
+            selector: { kind: symbol, name: tests::operator_from_uri_supports_fs_and_memory }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-007#criterion.backend-neutral-io
+                covers: [FEAT-STO-001#binding.opendal/target.operator-factory]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-storage, test: tests::operator_from_uri_supports_fs_and_memory } }

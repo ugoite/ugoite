@@ -108,6 +108,8 @@ inventory:
             - docs/mitase/features/e2e.yaml
             - docs/mitase/requirements/security.yaml
             - docs/mitase/features/security.yaml
+            - docs/mitase/requirements/storage.yaml
+            - docs/mitase/features/storage.yaml
             - docs/index.md
             - docs/guide/start/container-quickstart.md
             - docker-compose.release.yaml
