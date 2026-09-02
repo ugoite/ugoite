@@ -282,3 +282,180 @@ features:
           - REQ-SEC-005#criterion.initial-owner-passkey
           - REQ-SEC-005#criterion.bootstrap-recovery-material
           - REQ-SEC-005#criterion.opaque-bootstrap-session
+
+  - id: FEAT-SEC-003
+    title: Account Self-Recovery
+    summary: Connect recovery-only TOTP enrollment and the Recovery Code plus TOTP Passkey replacement flow across Node identity state, server boundaries, browser recovery UI, OpenAPI, and the end-to-end recovery journey.
+    status: implemented
+    bindings:
+      - id: identity
+        role: implementation
+        facet: identity
+        responsibility: Enforce encrypted recovery-factor storage, dual-factor recovery validation, credential-generation replacement, Recovery Code rotation, stale-authority invalidation, and recovery session creation.
+        targets:
+          - id: totp-enrollment
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: start_totp_enrollment }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-014#criterion.recovery-factor-enrollment
+          - id: totp-enrollment-finish
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: finish_totp_enrollment }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-014#criterion.recovery-factor-enrollment
+          - id: recovery-start
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: start_recovery_registration }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-014#criterion.dual-factor-recovery
+          - id: recovery-finish
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: finish_recovery_registration }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-014#criterion.credential-replacement
+              - kind: satisfies
+                criterion: REQ-SEC-014#criterion.stale-authority-invalidation
+          - id: recovery-code-rotation
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: rotate_recovery_codes_with_snapshot_credential_and_session }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-014#criterion.credential-replacement
+      - id: server
+        role: implementation
+        facet: backend
+        responsibility: Expose recovery-factor enrollment, Account Self-Recovery, and Node audit reads through the authenticated server boundary.
+        targets:
+          - id: totp-start
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: start_totp_enrollment }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-014#criterion.recovery-factor-enrollment
+          - id: totp-finish
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: finish_totp_enrollment }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-014#criterion.recovery-factor-enrollment
+          - id: recovery-start
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: auth_recovery_start }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-014#criterion.dual-factor-recovery
+          - id: recovery-finish
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: auth_recovery_finish }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-014#criterion.credential-replacement
+          - id: node-audit
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: list_node_audit_events }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-014#criterion.recovery-audit-attribution
+      - id: client
+        role: implementation
+        facet: frontend
+        responsibility: Keep the browser Account Self-Recovery journey connected to the recovery API and display rotated Recovery Codes once before returning to the requested route.
+        targets:
+          - id: account-recovery-route
+            adapter: typescript
+            path: frontend/src/routes/recover/account.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-014#criterion.credential-replacement
+          - id: browser-recovery-journey
+            adapter: typescript
+            path: e2e/account-self-recovery.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-014#criterion.recovery-audit-attribution
+      - id: contract
+        role: contract-source
+        facet: api
+        responsibility: Keep the public OpenAPI recovery operations and Node audit read connected to the recovery implementation boundaries.
+        targets:
+          - id: totp-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/recovery/totp/start }
+          - id: totp-finish
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/recovery/totp/finish }
+          - id: recovery-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/recovery/start }
+          - id: recovery-finish
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/recovery/finish }
+          - id: node-audit
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /auth/audit }
+    contracts:
+      - id: account-self-recovery
+        kind: http
+        source: FEAT-SEC-003#binding.contract/target.recovery-start
+        participants:
+          - target: FEAT-SEC-003#binding.identity/target.recovery-start
+            role: identity
+          - target: FEAT-SEC-003#binding.identity/target.recovery-finish
+            role: identity
+          - target: FEAT-SEC-003#binding.identity/target.recovery-code-rotation
+            role: identity
+          - target: FEAT-SEC-003#binding.server/target.recovery-start
+            role: backend
+          - target: FEAT-SEC-003#binding.server/target.recovery-finish
+            role: backend
+          - target: FEAT-SEC-003#binding.client/target.account-recovery-route
+            role: client
+          - target: FEAT-SEC-002#binding.client/target.auth-client
+            role: api-client
+        guarantees:
+          - REQ-SEC-014#criterion.dual-factor-recovery
+          - REQ-SEC-014#criterion.credential-replacement
+          - REQ-SEC-014#criterion.stale-authority-invalidation
+      - id: recovery-factor-enrollment
+        kind: http
+        source: FEAT-SEC-003#binding.contract/target.totp-start
+        participants:
+          - target: FEAT-SEC-003#binding.identity/target.totp-enrollment
+            role: identity
+          - target: FEAT-SEC-003#binding.identity/target.totp-enrollment-finish
+            role: identity
+          - target: FEAT-SEC-003#binding.server/target.totp-start
+            role: backend
+          - target: FEAT-SEC-003#binding.server/target.totp-finish
+            role: backend
+        guarantees:
+          - REQ-SEC-014#criterion.recovery-factor-enrollment
+      - id: recovery-audit
+        kind: http
+        source: FEAT-SEC-003#binding.contract/target.node-audit
+        participants:
+          - target: FEAT-SEC-003#binding.server/target.node-audit
+            role: backend
+        guarantees:
+          - REQ-SEC-014#criterion.recovery-audit-attribution
