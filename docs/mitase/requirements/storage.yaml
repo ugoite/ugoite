@@ -161,13 +161,17 @@ requirements:
 
   - id: REQ-STO-005
     title: Duplicate Space creation conflict
-    description: Creating a Space with an existing identifier is rejected instead of replacing or silently reusing the existing Space.
+    description: Creating a Space with an existing identifier is rejected instead of replacing or silently reusing the existing Space; the REST create operation returns HTTP 409 Conflict.
     priority: medium
     status: implemented
     criteria:
       - id: duplicate-rejection
         kind: behavior
         statement: A second create operation for the same Space identifier returns an error and does not replace the existing Space.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-014#rule.governance]
+      - id: conflict-status
+        kind: behavior
+        statement: At the REST boundary, creating a Space with an existing identifier returns HTTP 409 Conflict.
         governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-014#rule.governance]
     bindings:
       - id: duplicate-verification
