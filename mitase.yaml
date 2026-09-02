@@ -35,8 +35,14 @@ inventory:
             - frontend/src/lib/asset-api.ts
             - frontend/src/components/SpaceSelector.tsx
             - frontend/src/components/SpaceSelector.test.tsx
+            - frontend/src/components/EntryList.tsx
+            - frontend/src/components/EntryList.test.tsx
+            - frontend/src/components/ListPanel.tsx
+            - frontend/src/components/ListPanel.test.tsx
             - frontend/src/lib/space-store.ts
             - frontend/src/lib/space-store.test.ts
+            - frontend/src/lib/entry-store.ts
+            - frontend/src/lib/entry-store.test.ts
             - frontend/src/lib/preferences-store.ts
             - frontend/src/lib/preferences-store.test.ts
             - frontend/src/lib/preferences-local.ts
@@ -44,6 +50,8 @@ inventory:
             - frontend/src/routes/index.tsx
             - frontend/src/routes/spaces/index.tsx
             - frontend/src/routes/spaces/index.test.tsx
+            - frontend/src/routes/spaces/[space_id]/entries/index.tsx
+            - frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
             - frontend/src/routes/spaces/[space_id]/entries/[entry_id].tsx
             - frontend/src/routes/spaces/[space_id]/search.tsx
             - frontend/src/routes/spaces/[space_id]/search.test.tsx

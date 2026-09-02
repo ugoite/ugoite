@@ -240,3 +240,116 @@ requirements:
                 criterion: REQ-FE-003#criterion.portable-selection
                 covers: [FEAT-FE-001#binding.frontend/target.portable-preferences-store]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/preferences-store.test.ts, test: "REQ-FE-003: returns cached portable preferences after initialization" } }
+  - id: REQ-FE-004
+    title: Entry List Display
+    description: The frontend displays the Entry list with titles and available properties, including explicit loading and empty states.
+    priority: high
+    status: implemented
+    criteria:
+      - id: display
+        kind: behavior
+        statement: The frontend renders current Entry records as titled cards and exposes their available Form and property values without failing on missing properties.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: entry-list-display-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Entry card rendering, property display, missing-property handling, and the plain Entries route through exact frontend tests.
+        targets:
+          - id: entry-list-properties
+            adapter: typescript
+            path: frontend/src/components/EntryList.test.tsx
+            selector: { kind: test, name: "should display extracted properties in entry cards" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-004#criterion.display
+                covers: [FEAT-FE-002#binding.frontend/target.entry-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryList.test.tsx, test: "should display extracted properties in entry cards" } }
+          - id: entry-list-missing-properties
+            adapter: typescript
+            path: frontend/src/components/EntryList.test.tsx
+            selector: { kind: test, name: "should handle entries with null or undefined properties gracefully" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-004#criterion.display
+                covers: [FEAT-FE-002#binding.frontend/target.entry-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryList.test.tsx, test: "should handle entries with null or undefined properties gracefully" } }
+          - id: list-panel-entries
+            adapter: typescript
+            path: frontend/src/components/ListPanel.test.tsx
+            selector: { kind: test, name: "should render entries list" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-004#criterion.display
+                covers: [FEAT-FE-002#binding.frontend/target.list-panel]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "should render entries list" } }
+          - id: entries-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/index.test.tsx"
+            selector: { kind: test, name: "REQ-FE-037: loads the plain Entry list without redirecting" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-004#criterion.display
+                covers: [FEAT-FE-002#binding.frontend/target.entries-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "REQ-FE-037: loads the plain Entry list without redirecting" } }
+  - id: REQ-FE-008
+    title: Entry Selection and Highlight
+    description: The frontend highlights the selected Entry and lets the user select an Entry to load its detail view.
+    priority: high
+    status: implemented
+    criteria:
+      - id: selection
+        kind: behavior
+        statement: The frontend marks the selected Entry, invokes the selection callback for a clicked Entry, and routes the selected Entry to its detail view.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: entry-selection-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Entry selection callbacks, selected-card highlighting, and the list panel selection callback through exact frontend tests.
+        targets:
+          - id: entry-list-highlight
+            adapter: typescript
+            path: frontend/src/components/EntryList.test.tsx
+            selector: { kind: test, name: "should highlight selected entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-008#criterion.selection
+                covers: [FEAT-FE-002#binding.frontend/target.entry-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryList.test.tsx, test: "should highlight selected entry" } }
+          - id: list-panel-highlight
+            adapter: typescript
+            path: frontend/src/components/ListPanel.test.tsx
+            selector: { kind: test, name: "should highlight selected entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-008#criterion.selection
+                covers: [FEAT-FE-002#binding.frontend/target.list-panel]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "should highlight selected entry" } }
+          - id: list-panel-select
+            adapter: typescript
+            path: frontend/src/components/ListPanel.test.tsx
+            selector: { kind: test, name: "should call onSelectEntry when a entry is clicked" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-008#criterion.selection
+                covers: [FEAT-FE-002#binding.frontend/target.list-panel]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "should call onSelectEntry when a entry is clicked" } }
+          - id: entry-store-selection
+            adapter: typescript
+            path: frontend/src/lib/entry-store.test.ts
+            selector: { kind: test, name: "should handle entry selection" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-008#criterion.selection
+                covers: [FEAT-FE-002#binding.frontend/target.entry-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-store.test.ts, test: "should handle entry selection" } }
+          - id: route-selection
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/index.test.tsx"
+            selector: { kind: test, name: "REQ-FE-054: keeps the dedicated SQL session result route" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-008#criterion.selection
+                covers: [FEAT-FE-002#binding.frontend/target.entries-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "REQ-FE-054: keeps the dedicated SQL session result route" } }
