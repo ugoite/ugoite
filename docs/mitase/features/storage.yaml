@@ -81,7 +81,7 @@ features:
         targets:
           - id: storage-config
             adapter: rust
-            path: crates/ugoite-domain/src/metadata.rs
+            path: crates/ugoite-domain/src/space.rs
             selector: { kind: file }
             claims:
               - kind: satisfies
