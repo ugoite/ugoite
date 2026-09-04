@@ -12,7 +12,7 @@ use datafusion::execution::memory_pool::GreedyMemoryPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::execution::{SessionStateBuilder, SessionStateDefaults};
 use datafusion::logical_expr::expr_fn::ident;
-use datafusion::logical_expr::{Expr, LogicalPlan, SortExpr};
+use datafusion::logical_expr::{Expr, LogicalPlan, ScalarUDF, SortExpr};
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::{col, lit, DataFrame, SessionConfig};
 use iceberg_datafusion::IcebergStaticTableProvider;
@@ -187,14 +187,7 @@ pub(crate) fn bounded_session_context(
         .with_config(config)
         .with_runtime_env(runtime)
         .with_expr_planners(SessionStateDefaults::default_expr_planners())
-        .with_scalar_functions(
-            SessionStateDefaults::default_scalar_functions()
-                .into_iter()
-                .filter(|function| {
-                    allowed_functions.contains(&function.name().to_ascii_lowercase())
-                })
-                .collect(),
-        )
+        .with_scalar_functions(allowed_scalar_functions(allowed_functions))
         .with_aggregate_functions(
             SessionStateDefaults::default_aggregate_functions()
                 .into_iter()
@@ -214,6 +207,17 @@ pub(crate) fn bounded_session_context(
         .with_table_function_list(Vec::new())
         .build();
     Ok(SessionContext::new_with_state(state))
+}
+
+fn allowed_scalar_functions(allowed_functions: &BTreeSet<String>) -> Vec<Arc<ScalarUDF>> {
+    let mut functions = SessionStateDefaults::default_scalar_functions()
+        .into_iter()
+        .filter(|function| allowed_functions.contains(&function.name().to_ascii_lowercase()))
+        .collect::<Vec<_>>();
+    if allowed_functions.contains(crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME) {
+        functions.push(crate::search_normalization::search_normalize_udf());
+    }
+    functions
 }
 
 fn classify_datafusion_error(error: datafusion::error::DataFusionError) -> AuthorizedQueryError {

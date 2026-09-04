@@ -245,3 +245,35 @@ async fn search_preserves_supported_fields_in_mixed_form() -> anyhow::Result<()>
     );
     Ok(())
 }
+
+#[tokio::test]
+/// Issue 2247: keyword search applies the same Unicode normalization to
+/// stored Entry content and the query.
+async fn search_matches_unicode_compatibility_and_composed_forms() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let ws_path = "spaces/search-unicode";
+    space::create_space(&op, "search-unicode", "/tmp").await?;
+    create_test_entry(
+        &op,
+        ws_path,
+        "unicode-entry",
+        "Ｕｇｏｉｔｅ 日本語の世界 Cafe\u{301} 😀",
+    )
+    .await?;
+
+    for query in ["ugoite", "café", "世界", "😀"] {
+        let results =
+            search::search_entries(&op, ws_path, query, ugoite_iceberg::MAX_NORMAL_READ_ROWS)
+                .await?;
+        assert_eq!(
+            results
+                .iter()
+                .map(|result| result.id.as_str())
+                .collect::<Vec<_>>(),
+            ["unicode-entry"],
+            "query {query:?} should match normalized Entry content"
+        );
+    }
+
+    Ok(())
+}

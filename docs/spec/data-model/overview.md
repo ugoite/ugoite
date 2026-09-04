@@ -111,11 +111,14 @@ H2 sections are parsed according to the Form field type. Supported types are exp
 ## Search, query, and derived data
 
 Keyword search scans current Entry data and the authorized internal AssetText
-projection for case-insensitive substring matches. It returns Entries, applies
-authorization before AssetText joins, and degrades to native Entry search when
-the derived relation is unavailable. There is still no persistent inverted
-index or relevance ranking. AssetText is an Iceberg-backed DerivedRelation, not
-a Form, publication coordinate, ACL authority, or second history store.
+projection for Unicode-normalized, case-insensitive substring matches. Search
+normalizes both the stored value and query with Unicode NFKC followed by
+Unicode lowercase; it does not rewrite stored content. It returns Entries,
+applies authorization before AssetText joins, and degrades to native Entry
+search when the derived relation is unavailable. There is still no persistent
+inverted index or relevance ranking. AssetText is an Iceberg-backed
+DerivedRelation, not a Form, publication coordinate, ACL authority, or second
+history store.
 
 `ugoite index stats` reports AssetText derived health. `ugoite index run` and
 `ugoite index run --component asset-text` rebuild it by scanning current

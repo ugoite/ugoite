@@ -9,6 +9,7 @@
 pub mod derived_relation;
 mod logical_storage;
 mod read_schema_provider;
+mod search_normalization;
 mod space_catalog;
 
 pub mod asset;

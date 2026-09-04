@@ -24,7 +24,7 @@ pub enum SearchSubCmd {
         space_path: String,
         #[arg(
             value_name = "QUERY",
-            help = "Plain-text query string to match against indexed entry content."
+            help = "Plain-text query string to match against Entry content."
         )]
         query: String,
     },

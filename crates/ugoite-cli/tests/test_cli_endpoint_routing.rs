@@ -780,7 +780,7 @@ fn test_form_and_search_req_ops_006_help_describes_required_inputs() {
     let search_stdout = String::from_utf8_lossy(&search_help.stdout);
     for needle in [
         "QUERY",
-        "Plain-text query string to match against indexed entry content",
+        "Plain-text query string to match against Entry content",
         "ugoite config current",
     ] {
         assert!(search_stdout.contains(needle), "{search_stdout}");
