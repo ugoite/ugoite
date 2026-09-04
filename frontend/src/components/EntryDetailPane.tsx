@@ -1367,6 +1367,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 <Show when={viewMode() === "preview"}>
                   <div class="ui-stack-lg">
                     <div
+                      role="region"
+                      aria-label={t("entryDetail.mode.preview")}
                       class="ui-preview ui-entry-preview"
                       innerHTML={renderMarkdownPreview(previewContent())}
                     />

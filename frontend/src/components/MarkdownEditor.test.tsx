@@ -163,8 +163,7 @@ describe("MarkdownEditor", () => {
 
     const textareas = document.querySelectorAll("textarea");
     expect(textareas).toHaveLength(1);
-    const preview = document.querySelector(".preview");
-    expect(preview).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Preview" })).toBeInTheDocument();
   });
 
   it("REQ-FE-005: split preview escapes raw HTML content", () => {
@@ -176,7 +175,7 @@ describe("MarkdownEditor", () => {
       />
     ));
 
-    const preview = document.querySelector(".preview");
+    const preview = screen.getByRole("region", { name: "Preview" });
     expect(preview).toBeInTheDocument();
     expect(preview?.querySelector("img")).not.toBeInTheDocument();
     expect(preview?.querySelector("script")).not.toBeInTheDocument();
@@ -191,7 +190,7 @@ describe("MarkdownEditor", () => {
       <MarkdownEditor content="# Preview" onChange={() => {}} mode="preview" />
     ));
 
-    expect(document.querySelector(".preview")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Preview" })).toBeInTheDocument();
     expect(document.querySelector("textarea")).not.toBeInTheDocument();
   });
 
@@ -234,6 +233,6 @@ describe("MarkdownEditor", () => {
     ));
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
     expect(textarea.value).toBe("");
-    expect(document.querySelector(".preview")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Preview" })).toBeInTheDocument();
   });
 });
