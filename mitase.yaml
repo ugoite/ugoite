@@ -154,7 +154,6 @@ inventory:
             - docs/spec/features/search.yaml
             - docs/spec/requirements/entry.yaml
             - docs/spec/requirements/form.yaml
-            - docs/spec/features/forms.yaml
             - docs/spec/requirements/index.yaml
             - docs/architecture/release/v0.1.md
             - docs/architecture/release/v0.1-knowledge-compatibility.md
