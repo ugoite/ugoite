@@ -60,10 +60,10 @@ domains; their corresponding legacy Foundation, Policy, Requirement, and
 Feature YAML are migration evidence only and cannot override the canonical
 representation. The API-specific legacy requirement registry is retired and is
 no longer part of Mitase's declared inventory. The canonical API graph is the
-only semantic authority for that domain. Asset-specific, Frontend, and E2E
-legacy requirement YAML are likewise no longer part of Mitase's declared
-inventory; they remain read-only migration snapshots until the broader
-`docs/spec` cleanup is complete.
+only semantic authority for that domain. Frontend and E2E legacy requirement
+YAML are likewise no longer part of Mitase's declared inventory; they remain
+read-only migration snapshots until the broader `docs/spec` cleanup is
+complete. The Asset requirement YAML has been retired entirely.
 The legacy Integrity requirement registry is no longer semantic authority and
 remains a read-only migration snapshot until the broader `docs/spec` cleanup is
 complete. The migrated Storage Space foundation records are likewise no longer
@@ -72,7 +72,9 @@ contract is now canonical; remaining Storage records continue to be migrated in
 focused slices. Changed-ownership enforcement remains staged
 until it can be scoped safely to the migrated slice.
 Other requirement and feature domains remain authoritative in their existing
-`docs/spec` records until migrated.
+`docs/spec` records until migrated. The retired Asset requirement registry is
+not retained as a second semantic source; its canonical replacement is the
+Mitase Asset graph described above.
 
 `docs/mitase` is an intentional Ugoite specification surface for the Mitase
 schema, not a second product authority. As legacy registry machinery and
