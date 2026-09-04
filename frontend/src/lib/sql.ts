@@ -161,7 +161,7 @@ export function sqlLintDiagnostics(query: string): Diagnostic[] {
       from: leadingWhitespace,
       to: leadingWhitespace + Math.min(trimmed.length, 6),
       severity: "error",
-      message: "Query must start with SELECT",
+      message: "Read-only query must start with SELECT",
     });
   }
 
@@ -171,7 +171,7 @@ export function sqlLintDiagnostics(query: string): Diagnostic[] {
       from: Math.max(0, query.length - 1),
       to: query.length,
       severity: "error",
-      message: "Query must include FROM",
+      message: "Read-only query must include FROM",
     });
   }
 

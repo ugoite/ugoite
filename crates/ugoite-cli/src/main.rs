@@ -42,7 +42,7 @@ enum Commands {
     ///
     /// Run `ugoite config current` to check whether you should pass `/root/spaces/<id>` in core mode or a bare `SPACE_ID` in backend/api mode.
     Search(commands::search::SearchCmd),
-    /// SQL linting and completion commands
+    /// SQL syntax linting and completion commands
     Sql(commands::sql::SqlCmd),
     /// Indexer operations
     Index(commands::index::IndexCmd),

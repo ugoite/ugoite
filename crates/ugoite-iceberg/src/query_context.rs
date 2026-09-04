@@ -1682,14 +1682,18 @@ fn validate_logical_plan(
     // this defense-in-depth check is deliberately limited to statement kinds
     // and the relations the planner resolved.
     match plan {
-        LogicalPlan::Explain(_) | LogicalPlan::Analyze(_) => bail!("EXPLAIN is not supported"),
+        LogicalPlan::Explain(_) | LogicalPlan::Analyze(_) => {
+            bail!("EXPLAIN is not supported for read-only query execution")
+        }
         LogicalPlan::Dml(_)
         | LogicalPlan::Ddl(_)
         | LogicalPlan::Copy(_)
         | LogicalPlan::Statement(_)
         | LogicalPlan::DescribeTable(_)
         | LogicalPlan::Extension(_)
-        | LogicalPlan::RecursiveQuery(_) => bail!("statement kind is not supported"),
+        | LogicalPlan::RecursiveQuery(_) => {
+            bail!("statement kind is not supported for read-only query execution")
+        }
         LogicalPlan::TableScan(scan) => {
             let relation = scan.table_name.to_string();
             if !authorized_relations.contains(&relation) {

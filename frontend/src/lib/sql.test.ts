@@ -24,6 +24,14 @@ describe("sql helpers", () => {
     expect(diagnostics).toHaveLength(0);
   });
 
+  it("reports the read-only policy separately from server syntax lint", () => {
+    expect(sqlLintDiagnostics("DROP TABLE entries").map((diag) => diag.message))
+      .toEqual([
+        "Read-only query must start with SELECT",
+        "Read-only query must include FROM",
+      ]);
+  });
+
   it("builds a starter query with the SQL session total order", () => {
     expect(buildSqlStarterQuery("form_entry")).toBe(
       'SELECT * FROM "form_entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50',

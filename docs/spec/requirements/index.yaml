@@ -181,7 +181,9 @@ requirements:
   title: Ugoite SQL Query Execution
   description: 'Execute read-only DataFusion SQL queries against authorized Iceberg Form relations via the
 
-    existing /spaces/{space_id}/query endpoint.
+    existing CLI/core query path and REST SQL-session endpoints. Execution MUST
+    enforce authorized relation resolution and reject DDL/DML even when the
+    same statement is accepted by syntax-only SQL linting.
 
     '
   related_spec:

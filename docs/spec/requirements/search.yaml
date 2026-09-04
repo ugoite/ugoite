@@ -53,6 +53,9 @@ requirements:
 
     for UI and CLI usage, sourced from a common config in the project root.
 
+    Linting is syntax/template validation only; it MUST NOT be treated as
+    relation authorization or read-only execution approval.
+
     '
   related_spec:
   - features/sql.md
