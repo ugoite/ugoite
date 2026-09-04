@@ -37,10 +37,14 @@ The E2E browser feature is represented by the canonical graph at
 `docs/mitase/features/e2e.yaml`; no legacy per-area E2E feature registry is
 authoritative for that domain.
 
-The OIDC authentication and external identity linking slice is represented by
-`docs/mitase/features/security.yaml` as `FEAT-SEC-005`. The OIDC portions of
-the legacy `features/auth.yaml` registry remain read-only migration evidence;
-the remaining authentication features continue to use their existing
+The OIDC authentication and external identity linking slice remains connected
+to the canonical security graph at `docs/mitase/features/security.yaml` as
+`FEAT-SEC-005`.
+
+The complete shipped authentication and operator credential surface is now
+represented by `docs/mitase/features/authentication.yaml`. Its planned
+account/agent boundary remains explicitly planned; the legacy
+`features/auth.yaml` registry is retired rather than retained as a second
 authority.
 
 The Space storage foundation, authenticated creation contract, and connector/access/routing/preference feature

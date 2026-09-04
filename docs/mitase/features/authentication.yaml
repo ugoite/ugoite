@@ -1,0 +1,334 @@
+schema: mitase/spec/v1
+kind: features
+namespace: authentication
+category: Authentication and operator credential surfaces
+features:
+  - id: FEAT-AUTH-001
+    title: Human authentication and operator credential surfaces
+    summary: Connect the supported Passkey, browser-session, membership, recovery, OIDC, MCP, and remote CLI authentication surfaces to their exact server and OpenAPI artifacts without introducing a Ugoite-specific specification kind.
+    status: implemented
+    bindings:
+      - id: implementation
+        role: implementation
+        facet: protocol
+        responsibility: Expose the authenticated MCP protocol handler through the canonical security implementation boundary.
+        targets:
+          - id: mcp-handler
+            adapter: rust
+            path: crates/ugoite-server/src/mcp.rs
+            selector: { kind: symbol, name: handle }
+            claims:
+              - kind: exposes
+                target: FEAT-SEC-001#binding.server/target.mcp-authentication
+      - id: server
+        role: operation
+        facet: backend
+        responsibility: Keep the shipped authentication and operator credential handlers connected to the canonical server boundary.
+        targets:
+          - id: authentication-config
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: auth_config }
+          - id: setup
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: auth_setup_start }
+          - id: passkey
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: auth_passkey_start }
+          - id: browser-session
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: auth_session }
+          - id: membership
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: invite_member }
+          - id: audit
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: list_audit_events }
+          - id: account-recovery
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: auth_recovery_start }
+          - id: space-access-recovery
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: owner_force_reset }
+          - id: oidc
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: oidc_start }
+          - id: device-authorization
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: oauth_device_authorization }
+          - id: protected-resource-metadata
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: oauth_protected_resource_metadata }
+      - id: mcp
+        role: operation
+        facet: protocol
+        responsibility: Keep authenticated MCP requests on the shipped protocol handler and its canonical access boundary.
+        targets:
+          - id: mcp-handler
+            adapter: rust
+            path: crates/ugoite-server/src/mcp.rs
+            selector: { kind: symbol, name: handle }
+      - id: client
+        role: operation
+        facet: frontend
+        responsibility: Keep browser setup, login, security settings, recovery, and device approval journeys connected to the authentication API surface.
+        targets:
+          - id: auth-client
+            adapter: typescript
+            path: frontend/src/lib/auth-api.ts
+            selector: { kind: symbol, name: authApi }
+          - id: login-route
+            adapter: typescript
+            path: frontend/src/routes/login.tsx
+            selector: { kind: file }
+          - id: security-settings
+            adapter: typescript
+            path: frontend/src/routes/settings/security.tsx
+            selector: { kind: file }
+          - id: account-recovery-route
+            adapter: typescript
+            path: frontend/src/routes/recover/account.tsx
+            selector: { kind: file }
+          - id: device-approval-route
+            adapter: typescript
+            path: frontend/src/routes/device.tsx
+            selector: { kind: file }
+      - id: contract
+        role: contract-source
+        facet: api
+        responsibility: Define the exact shipped authentication, session, device, recovery, and OAuth metadata operations in the authoritative OpenAPI artifact.
+        owns:
+          - id: openapi-source
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: file }
+        targets:
+          - id: auth-config
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /auth/config }
+          - id: auth-session
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /auth/session }
+          - id: auth-session-delete
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: delete, path: /auth/session }
+          - id: auth-sessions
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /auth/sessions }
+          - id: auth-session-revoke
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: delete, path: '/auth/sessions/{session_id}' }
+          - id: setup-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/setup/start }
+          - id: setup-finish
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/setup/finish }
+          - id: passkey-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/passkey/start }
+          - id: passkey-finish
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/passkey/finish }
+          - id: passkey-list
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /auth/passkeys }
+          - id: passkey-registration-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/passkeys/start }
+          - id: passkey-registration-finish
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/passkeys/finish }
+          - id: passkey-remove
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: delete, path: '/auth/passkeys/{credential_id}' }
+          - id: invitation-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/invitations/start }
+          - id: invitation-finish
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/invitations/finish }
+          - id: invitation-accept
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/invitations/accept }
+          - id: oidc-provider-list
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /auth/oidc/providers }
+          - id: oidc-provider-configure
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/oidc/providers }
+          - id: oidc-provider-disable
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: delete, path: '/auth/oidc/providers/{provider_id}' }
+          - id: oidc-link-list
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /auth/oidc/links }
+          - id: oidc-link-remove
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: delete, path: '/auth/oidc/links/{method_id}' }
+          - id: oidc-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/auth/oidc/{provider_id}/start' }
+          - id: oidc-link-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/auth/oidc/{provider_id}/link' }
+          - id: oidc-callback
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /auth/oidc/callback }
+          - id: recovery-totp-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/recovery/totp/start }
+          - id: recovery-totp-finish
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/recovery/totp/finish }
+          - id: account-recovery-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/recovery/start }
+          - id: account-recovery-finish
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/recovery/finish }
+          - id: owner-recovery-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/recovery/owner/start }
+          - id: owner-recovery-finish
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/recovery/owner/finish }
+          - id: node-audit
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /auth/audit }
+          - id: space-audit
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/audit' }
+          - id: device-list
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /auth/devices }
+          - id: device-remove
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: delete, path: '/auth/devices/{credential_id}' }
+          - id: device-authorization
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /oauth/device/authorization }
+          - id: device-pending
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /oauth/device/pending }
+          - id: device-approve
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /oauth/device/approve }
+          - id: oauth-token
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /oauth/token }
+          - id: oauth-authorize-get
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /oauth/authorize }
+          - id: oauth-authorize-post
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /oauth/authorize }
+          - id: oauth-revoke
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /oauth/revoke }
+          - id: oauth-resource-metadata
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /.well-known/oauth-protected-resource }
+          - id: oauth-server-metadata
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /.well-known/oauth-authorization-server }
+          - id: mcp-contract
+            adapter: declared
+            path: docs/architecture/api/mcp.md
+            selector: { kind: file }
+    contracts:
+      - id: authenticated-mcp
+        kind: custom
+        source: FEAT-AUTH-001#binding.contract/target.mcp-contract
+        participants:
+          - target: FEAT-AUTH-001#binding.implementation/target.mcp-handler
+            role: protocol
+          - target: FEAT-SEC-001#binding.server/target.mcp-authentication
+            role: backend
+        guarantees:
+          - REQ-SEC-003#criterion.protected-mcp
+
+  - id: FEAT-AUTH-002
+    title: Future account and agent principals
+    summary: Preserve the explicit future boundary for administrator account recovery and agent/service-account principals without presenting those capabilities as implemented v0.1 behavior.
+    status: planned
+    bindings:
+      - id: roadmap
+        role: contract-source
+        facet: governance
+        responsibility: Keep future account and agent credential boundaries documented without creating implementation bindings or compatibility behavior.
+        targets:
+          - id: future-boundary
+            adapter: declared
+            path: docs/architecture/security/authentication-authorization.md
+            selector: { kind: file }
+      - id: future-contracts
+        role: contract-source
+        facet: api
+        responsibility: Keep future account discovery and autonomous-agent credential endpoints explicitly planned without treating their existing route declarations as shipped support.
+        targets:
+          - id: account-list
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /auth/accounts }
+          - id: account-status
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/auth/accounts/{account_id}/status' }
+          - id: agent-token
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /oauth/agent/token }

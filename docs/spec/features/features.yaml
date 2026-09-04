@@ -23,11 +23,6 @@ files:
   - REQCAT-ASSET
   - REQCAT-SEARCH
   - REQCAT-STORAGE
-- kind: auth
-  file: auth.yaml
-  linked_requirements:
-  - REQCAT-SECURITY
-  - REQCAT-API
 - kind: search
   file: search.yaml
   linked_requirements:
