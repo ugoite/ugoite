@@ -43,14 +43,14 @@ the legacy `features/auth.yaml` registry remain read-only migration evidence;
 the remaining authentication features continue to use their existing
 authority.
 
-The Space storage foundation and connector/access/routing/preference feature
+The Space storage foundation, authenticated creation contract, and connector/access/routing/preference feature
 slice is represented by the canonical graph at
 `docs/mitase/features/storage.yaml` plus the shared API operation bindings in
 `docs/mitase/features/api.yaml`. Its corresponding legacy Space operation
 records remain read-only migration evidence for the migrated Storage slice.
-Duplicate-create conflict semantics remain in the legacy Space records until
-their HTTP 409 contract is reconciled with the current idempotent bootstrap
-retry behavior. The storage layout, DerivedRelation, and v0.1 Knowledge
+The canonical graph records HTTP 201 creation, HTTP 200 same-account retry,
+and HTTP 409 duplicate-slug conflict semantics; the legacy Space records are
+read-only evidence. The storage layout, DerivedRelation, and v0.1 Knowledge
 compatibility operations are now represented in `docs/mitase/features/storage.yaml`
 and remain here only as read-only migration evidence. Complete executable
 parity between every documented layout path and runtime creation remains an

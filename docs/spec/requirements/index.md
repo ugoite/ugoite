@@ -53,13 +53,14 @@ retained as a read-only migration snapshot. The canonical Integrity requirements
 at `docs/mitase/requirements/integrity.yaml` are the only semantic authority for
 the migrated Integrity domain.
 
-The Storage Space foundation and connector/access/routing/preference slice
-(`REQ-STO-001`, `REQ-STO-002`, `REQ-STO-003`, `REQ-STO-004`, `REQ-STO-006`,
+The Storage Space foundation, creation contract, and connector/access/routing/preference slice
+(`REQ-STO-001`, `REQ-STO-002`, `REQ-STO-003`, `REQ-STO-004`, `REQ-STO-005`, `REQ-STO-006`,
 `REQ-STO-007`, `REQ-STO-008`, `REQ-STO-009`, `REQ-STO-010`, and `REQ-STO-011`)
 is represented canonically at `docs/mitase/requirements/storage.yaml`.
-`REQ-STO-005` remains authoritative in this legacy registry because its broad
-HTTP 409 duplicate contract must first be reconciled with the current
-idempotent bootstrap-retry behavior. Storage layout synchronization,
+`REQ-STO-005` is now canonical: the same account-bound retry is HTTP 200,
+new creation is HTTP 201, and a different account's duplicate slug claim is
+HTTP 409 with `SPACE_ALREADY_EXISTS`. The legacy record remains a read-only
+migration snapshot. Storage layout synchronization,
 derived-relation, and Knowledge-compatibility requirements remain in this
 registry until their later migration slices are reviewed.
 The canonical Storage connector record preserves the connector-update and
