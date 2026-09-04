@@ -85,7 +85,7 @@ requirements:
     '
   related_spec:
   - ui/pages/space-search.yaml
-  - features/search.yaml
+  - ../../mitase/features/search.yaml
   priority: high
   status: implemented
   verification: traced
@@ -114,7 +114,7 @@ requirements:
     '
   related_spec:
   - ui/pages/space-search.yaml
-  - features/search.yaml
+  - ../../mitase/features/search.yaml
   - features/sql.md
   priority: high
   status: implemented
