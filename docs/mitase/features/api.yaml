@@ -209,10 +209,6 @@ features:
         facet: frontend
         responsibility: Keep the shipped TypeScript API adapters connected to the same protocol and HTTP contracts.
         targets:
-          - id: space-api
-            adapter: typescript
-            path: frontend/src/lib/space-api.ts
-            selector: { kind: symbol, name: spaceApi }
           - id: preferences-api
             adapter: typescript
             path: frontend/src/lib/preferences-api.ts
@@ -225,6 +221,25 @@ features:
             adapter: typescript
             path: frontend/src/lib/sql-session-api.ts
             selector: { kind: symbol, name: sqlSessionApi }
+      - id: frontend-implementation
+        role: implementation
+        facet: frontend
+        responsibility: Implement the Space and Entry API adapters used by the shipped frontend client.
+        targets:
+          - id: space-api
+            adapter: typescript
+            path: frontend/src/lib/space-api.ts
+            selector: { kind: symbol, name: spaceApi }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-001#criterion.space-lifecycle
+          - id: entry-api
+            adapter: typescript
+            path: frontend/src/lib/entry-api.ts
+            selector: { kind: symbol, name: entryApi }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-002#criterion.entry-lifecycle
       - id: cli
         role: operation
         facet: cli
@@ -311,7 +326,7 @@ features:
         participants:
           - target: FEAT-API-001#binding.backend/target.list-spaces
             role: backend
-          - target: FEAT-API-001#binding.frontend/target.space-api
+          - target: FEAT-API-001#binding.frontend-implementation/target.space-api
             role: client
           - target: FEAT-API-001#binding.cli/target.space-command
             role: operator
@@ -322,7 +337,7 @@ features:
         participants:
           - target: FEAT-API-001#binding.backend/target.create-space
             role: backend
-          - target: FEAT-API-001#binding.frontend/target.space-api
+          - target: FEAT-API-001#binding.frontend-implementation/target.space-api
             role: client
           - target: FEAT-API-001#binding.cli/target.space-command
             role: operator
@@ -333,7 +348,7 @@ features:
         participants:
           - target: FEAT-API-001#binding.backend/target.get-space
             role: backend
-          - target: FEAT-API-001#binding.frontend/target.space-api
+          - target: FEAT-API-001#binding.frontend-implementation/target.space-api
             role: client
           - target: FEAT-API-001#binding.cli/target.space-command
             role: operator

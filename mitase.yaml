@@ -30,6 +30,7 @@ inventory:
             - frontend/src/routes/recover/account.tsx
             - frontend/src/routes/recover/account.test.tsx
             - frontend/src/lib/entry-api.ts
+            - frontend/src/lib/client.test.ts
             - frontend/src/lib/form-api.ts
             - frontend/src/lib/search-api.ts
             - frontend/src/lib/space-api.ts
