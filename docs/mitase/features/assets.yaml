@@ -141,10 +141,45 @@ features:
             adapter: typescript
             path: frontend/src/lib/asset-api.ts
             selector: { kind: symbol, name: assetApi }
+      - id: frontend-implementation
+        role: implementation
+        facet: frontend
+        responsibility: Implement the shipped browser Asset API client for multipart upload, context-bound reads, and deletion.
+        targets:
+          - id: asset-api
+            adapter: typescript
+            path: frontend/src/lib/asset-api.ts
+            selector: { kind: symbol, name: assetApi }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ASSET-001#criterion.typed-reference
+              - kind: satisfies
+                criterion: REQ-ASSET-002#criterion.containing-entry-context
       - id: cli
         role: operation
         facet: cli
         responsibility: Keep local Asset upload and deletion workflows available through the Ugoite CLI operator surface while preserving the explicitly unavailable remote upload boundary.
+        targets:
+          - id: asset-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/asset.rs
+            selector: { kind: symbol, name: run }
+      - id: cli-implementation
+        role: implementation
+        facet: cli
+        responsibility: Implement the shipped local Asset upload and deletion commands while preserving the explicitly unavailable remote upload boundary.
+        targets:
+          - id: asset-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/asset.rs
+            selector: { kind: symbol, name: run }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ASSET-001#criterion.metadata-safe-name
+      - id: cli-contract
+        role: contract-source
+        facet: cli
+        responsibility: Define the local CLI Asset upload relation to the canonical Asset object boundary.
         targets:
           - id: asset-command
             adapter: rust
@@ -179,9 +214,11 @@ features:
         participants:
           - target: FEAT-ASSET-001#binding.service/target.save-asset-with-media-type
             role: service
+          - target: FEAT-ASSET-001#binding.core/target.upload-object
+            role: core
           - target: FEAT-ASSET-001#binding.server/target.upload-asset
             role: backend
-          - target: FEAT-ASSET-001#binding.frontend/target.asset-api
+          - target: FEAT-ASSET-001#binding.frontend-implementation/target.asset-api
             role: client
         guarantees: [REQ-ASSET-001#criterion.typed-reference]
       - id: read
@@ -190,9 +227,11 @@ features:
         participants:
           - target: FEAT-ASSET-001#binding.service/target.read-asset
             role: service
+          - target: FEAT-ASSET-001#binding.service-guard/target.read-context
+            role: service
           - target: FEAT-ASSET-001#binding.server/target.get-asset
             role: backend
-          - target: FEAT-ASSET-001#binding.frontend/target.asset-api
+          - target: FEAT-ASSET-001#binding.frontend-implementation/target.asset-api
             role: client
         guarantees: [REQ-ASSET-002#criterion.containing-entry-context]
       - id: delete
@@ -203,6 +242,15 @@ features:
             role: service
           - target: FEAT-ASSET-001#binding.server/target.delete-asset
             role: backend
-          - target: FEAT-ASSET-001#binding.frontend/target.asset-api
+          - target: FEAT-ASSET-001#binding.frontend-implementation/target.asset-api
             role: client
         guarantees: [REQ-ASSET-003#criterion.logical-deletion]
+      - id: local-cli-upload
+        kind: custom
+        source: FEAT-ASSET-001#binding.cli-contract/target.asset-command
+        participants:
+          - target: FEAT-ASSET-001#binding.core/target.upload-object
+            role: core
+          - target: FEAT-ASSET-001#binding.cli-implementation/target.asset-command
+            role: operator
+        guarantees: [REQ-ASSET-001#criterion.metadata-safe-name]
