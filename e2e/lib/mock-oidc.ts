@@ -25,6 +25,10 @@ function jsonResponse(value: unknown, status = 200): Response {
   });
 }
 
+function isLoopbackHost(host: string): boolean {
+  return host === "localhost" || host === "127.0.0.1";
+}
+
 export async function startMockOidcServer(
   subject: string,
 ): Promise<MockOidcServer> {
@@ -43,8 +47,12 @@ export async function startMockOidcServer(
   const authorizationCodes = new Map<string, string>();
   let issuer = "";
 
+  const advertisedHost = Deno.env.get("E2E_OIDC_MOCK_HOST")?.trim() ||
+    "127.0.0.1";
+  const bindHost = isLoopbackHost(advertisedHost) ? "127.0.0.1" : "0.0.0.0";
+
   const server = Deno.serve(
-    { hostname: "127.0.0.1", port: 0, onListen() {} },
+    { hostname: bindHost, port: 0, onListen() {} },
     async (request: Request) => {
       if (!issuer) throw new Error("mock OIDC issuer is not initialized");
       const url = new URL(request.url);
@@ -123,7 +131,7 @@ export async function startMockOidcServer(
     },
   );
   const address = server.addr as Deno.NetAddr;
-  issuer = `http://127.0.0.1:${address.port}`;
+  issuer = `http://${advertisedHost}:${address.port}`;
 
   return { issuer, close: () => server.shutdown() };
 }

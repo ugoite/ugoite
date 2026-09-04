@@ -30,6 +30,35 @@ export UGOITE_NODE_SECRET_KEY="${UGOITE_NODE_SECRET_KEY:-$(head -c 32 /dev/urand
 export FRONTEND_URL="$UGOITE_PUBLIC_ORIGIN"
 export BACKEND_URL="$UGOITE_PUBLIC_ORIGIN"
 
+detect_host_address() {
+  if command -v ipconfig >/dev/null 2>&1; then
+    for interface in en0 en1; do
+      address="$(ipconfig getifaddr "$interface" 2>/dev/null || true)"
+      case "$address" in
+        *.*) echo "$address"; return 0 ;;
+      esac
+    done
+  fi
+  if command -v ip >/dev/null 2>&1; then
+    address="$(ip route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([^ ]*\).*/\1/p' | head -n 1)"
+    case "$address" in
+      *.*) echo "$address"; return 0 ;;
+    esac
+  fi
+  if command -v hostname >/dev/null 2>&1; then
+    address="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    case "$address" in
+      *.*) echo "$address"; return 0 ;;
+    esac
+  fi
+  echo "127.0.0.1"
+}
+
+# The browser runs on the host while the composed backend runs in a container.
+# Advertise a host address that both sides can reach; direct-process E2E keeps
+# the mock on loopback by leaving this unset.
+export E2E_OIDC_MOCK_HOST="${E2E_OIDC_MOCK_HOST:-$(detect_host_address)}"
+
 ensure_playwright_browsers() {
   if [ "${UGOITE_SKIP_PLAYWRIGHT_DEPS:-}" = "1" ]; then
     echo "Skipping Playwright browser install because UGOITE_SKIP_PLAYWRIGHT_DEPS=1"
