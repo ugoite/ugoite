@@ -646,6 +646,10 @@ requirements:
                 criterion: REQ-SEC-014#criterion.recovery-audit-attribution
                 covers: [FEAT-SEC-003#binding.client/target.browser-recovery-journey]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/account-self-recovery.test.ts, test: replaces the credential generation and preserves the HumanAccount } }
+              - kind: verifies
+                criterion: REQ-SEC-016#criterion.recovery-removes-oidc
+                covers: [FEAT-SEC-003#binding.identity/target.recovery-finish]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/account-self-recovery.test.ts, test: replaces the credential generation and preserves the HumanAccount } }
           - id: recovery-error-boundary-case
             adapter: rust
             path: crates/ugoite-server/src/lib.rs

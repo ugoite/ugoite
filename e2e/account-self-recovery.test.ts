@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { getBackendUrl, waitForServers } from "./lib/client.ts";
+import { startMockOidcServer } from "./lib/mock-oidc.ts";
 import { totpCodeAt } from "./lib/totp.ts";
 import { addVirtualAuthenticator } from "./lib/webauthn.ts";
 
@@ -12,10 +13,43 @@ type RecoveryFixture = {
 test.describe("Account Self-Recovery", () => {
   test.beforeAll(async ({ request }) => await waitForServers(request));
 
-  test("replaces the credential generation and preserves the HumanAccount", async ({ browser }) => {
+  test("replaces the credential generation and preserves the HumanAccount", async ({ browser, request }) => {
     const fixture = JSON.parse(
       await Deno.readTextFile(".auth/account-recovery.json"),
     ) as RecoveryFixture;
+    const mockOidc = await startMockOidcServer("account-recovery-oidc-subject");
+    const configuredProvider = await request.post(
+      getBackendUrl("/auth/oidc/providers"),
+      { data: { issuer: mockOidc.issuer, client_id: "e2e-client" } },
+    );
+    const configuredProviderBody = await configuredProvider.text();
+    expect(configuredProvider.status(), configuredProviderBody).toBe(201);
+    const providerId = (JSON.parse(configuredProviderBody) as {
+      provider_id: string;
+    }).provider_id;
+    const linkedContext = await browser.newContext({
+      storageState: ".auth/session.json",
+    });
+    try {
+      const linkedAccountSession = await linkedContext.request.get(
+        getBackendUrl("/auth/session"),
+      );
+      expect(linkedAccountSession.ok()).toBeTruthy();
+      expect((await linkedAccountSession.json()).account.account_id).toBe(
+        fixture.accountId,
+      );
+      const linkResponse = await linkedContext.request.get(
+        getBackendUrl(`/auth/oidc/${providerId}/link`),
+      );
+      expect(linkResponse.ok(), await linkResponse.text()).toBeTruthy();
+      const beforeRecoveryLinks = await linkedContext.request.get(
+        getBackendUrl("/auth/oidc/links"),
+      );
+      expect(beforeRecoveryLinks.ok()).toBeTruthy();
+      expect(await beforeRecoveryLinks.json()).toHaveLength(1);
+    } finally {
+      await linkedContext.close();
+    }
     const target = await browser.newContext({
       storageState: { cookies: [], origins: [] },
     });
@@ -53,6 +87,11 @@ test.describe("Account Self-Recovery", () => {
         account: { account_id: string };
       };
       expect(sessionBody.account.account_id).toBe(fixture.accountId);
+      const afterRecoveryLinks = await target.request.get(
+        getBackendUrl("/auth/oidc/links"),
+      );
+      expect(afterRecoveryLinks.ok()).toBeTruthy();
+      expect(await afterRecoveryLinks.json()).toEqual([]);
 
       await page.getByRole("button", { name: "I saved the codes" }).click();
       await expect(page).toHaveURL(/\/spaces$/);
@@ -119,6 +158,7 @@ test.describe("Account Self-Recovery", () => {
       expect(recoveryEvent?.safe_metadata.method).toBe("recovery_code+totp");
     } finally {
       await target.close();
+      mockOidc.close();
     }
   });
 });
