@@ -335,8 +335,7 @@ requirements:
 
     '
   related_spec:
-  - features/spaces.yaml#space.list
-  - features/spaces.yaml#space.create
+  - ../../mitase/features/storage.yaml
   priority: medium
   status: implemented
   verification: traced

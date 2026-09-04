@@ -18,11 +18,12 @@ Operations, local-run, and quality-gate surfaces for `REQ-OPS-001` through
 records remain read-only migration evidence for this slice; later Operations
 requirements remain outside its scope.
 
-The API-specific legacy registries for spaces and SQL are retained for migration
-evidence but are no longer included in Mitase's declared inventory or linked
-from the shared `features.yaml` index. The preference registry is retired because
-its implemented API and storage semantics are represented by the canonical
-Mitase graphs. The shared index
+The legacy SQL registry is retained for migration evidence but is no longer
+included in Mitase's declared inventory or linked from the shared `features.yaml`
+index. The Spaces registry is retired because its implemented Space CRUD,
+membership, storage, and catalog Pin semantics are represented by the canonical
+Mitase graphs. The preference registry is retired because its implemented API
+and storage semantics are represented by the canonical Mitase graphs. The shared index
 remains because it also indexes unmigrated domains.
 
 The legacy Asset feature registry at `features/assets.yaml` is retained as a
@@ -52,11 +53,11 @@ authority.
 The Space storage foundation, authenticated creation contract, and connector/access/routing/preference feature
 slice is represented by the canonical graph at
 `docs/mitase/features/storage.yaml` plus the shared API operation bindings in
-`docs/mitase/features/api.yaml`. Its corresponding legacy Space operation
-records remain read-only migration evidence for the migrated Storage slice.
+`docs/mitase/features/api.yaml`. The former legacy Space operation registry is
+retired for the migrated Storage slice; remaining legacy requirement snapshots
+are read-only migration evidence.
 The canonical graph records HTTP 201 creation, HTTP 200 same-account retry,
-and HTTP 409 duplicate-slug conflict semantics; the legacy Space records are
-read-only evidence. The storage layout, DerivedRelation, and v0.1 Knowledge
+and HTTP 409 duplicate-slug conflict semantics. The storage layout, DerivedRelation, and v0.1 Knowledge
 compatibility operations are now represented in `docs/mitase/features/storage.yaml`
 and remain here only as read-only migration evidence. Complete executable
 parity between every documented layout path and runtime creation remains an

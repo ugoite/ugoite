@@ -340,7 +340,7 @@ requirements:
     '
   related_spec:
   - ../architecture/api/rest.md#endpoints
-  - features/spaces.yaml
+  - ../../mitase/requirements/api.yaml#REQ-API-009
   priority: medium
   status: planned
   verification: traced
@@ -385,7 +385,7 @@ requirements:
     '
   related_spec:
   - ../architecture/api/rest.md#endpoints
-  - features/spaces.yaml
+  - ../../mitase/requirements/api.yaml#REQ-API-010
   priority: medium
   status: planned
   verification: traced
