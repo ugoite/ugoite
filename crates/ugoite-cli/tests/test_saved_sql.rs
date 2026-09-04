@@ -68,6 +68,9 @@ fn test_saved_sql_req_api_006_crud() {
         "get stderr: {}",
         String::from_utf8_lossy(&get_output.stderr)
     );
+    let fetched: serde_json::Value =
+        serde_json::from_slice(&get_output.stdout).expect("get should return JSON");
+    assert_eq!(fetched["id"].as_str(), Some(created_id));
 
     // List saved queries
     let list_output = Command::new(ugoite_bin())
@@ -81,6 +84,75 @@ fn test_saved_sql_req_api_006_crud() {
         "list stderr: {}",
         String::from_utf8_lossy(&list_output.stderr)
     );
+    let listed: serde_json::Value =
+        serde_json::from_slice(&list_output.stdout).expect("list should return JSON");
+    assert!(
+        listed
+            .as_array()
+            .is_some_and(|items| items.iter().any(|item| item["id"] == created_id)),
+        "created saved SQL should be present in list: {listed}"
+    );
+
+    let parent_revision_id = created["revision_id"]
+        .as_str()
+        .filter(|revision| !revision.is_empty())
+        .expect("local create response should contain a revision id");
+    let update_output = Command::new(ugoite_bin())
+        .args([
+            "sql",
+            "saved-update",
+            &space_path,
+            created_id,
+            "--name",
+            "updated-query",
+            "--sql",
+            "SELECT * FROM updated_sql",
+            "--parent-revision-id",
+            parent_revision_id,
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        update_output.status.success(),
+        "update stderr: {}",
+        String::from_utf8_lossy(&update_output.stderr)
+    );
+    let updated: serde_json::Value =
+        serde_json::from_slice(&update_output.stdout).expect("update should return JSON");
+    assert_eq!(updated["id"].as_str(), Some(created_id));
+    assert_eq!(updated["name"].as_str(), Some("updated-query"));
+    assert_eq!(updated["sql"].as_str(), Some("SELECT * FROM updated_sql"));
+
+    let delete_output = Command::new(ugoite_bin())
+        .args(["sql", "saved-delete", &space_path, created_id])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        delete_output.status.success(),
+        "delete stderr: {}",
+        String::from_utf8_lossy(&delete_output.stderr)
+    );
+    let deleted: serde_json::Value =
+        serde_json::from_slice(&delete_output.stdout).expect("delete should return JSON");
+    assert_eq!(deleted["deleted"].as_bool(), Some(true));
+
+    let final_list_output = Command::new(ugoite_bin())
+        .args(["sql", "saved-list", &space_path])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        final_list_output.status.success(),
+        "final list stderr: {}",
+        String::from_utf8_lossy(&final_list_output.stderr)
+    );
+    let final_list: serde_json::Value =
+        serde_json::from_slice(&final_list_output.stdout).expect("final list should return JSON");
+    assert!(!final_list
+        .as_array()
+        .is_some_and(|items| items.iter().any(|item| item["id"] == created_id)));
 }
 
 /// REQ-API-007: Saved SQL query validation rejects invalid SQL.

@@ -54,6 +54,29 @@ requirements:
                 criterion: REQ-API-001#criterion.space-lifecycle
                 covers: [FEAT-API-001#binding.frontend-implementation/target.space-api]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "spaceApi.get returns a space" } }
+      - id: cli-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the CLI Space create routing through exact recording-server integration cases for backend and API modes.
+        targets:
+          - id: backend-create-space
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_create_space_req_api_001_routes_to_backend_post_spaces }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-001#criterion.space-lifecycle
+                covers: [FEAT-STO-001#binding.routing/target.space-command-routing]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_create_space_req_api_001_routes_to_backend_post_spaces } }
+          - id: api-create-space
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_create_space_req_api_001_routes_to_api_post_spaces }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-001#criterion.space-lifecycle
+                covers: [FEAT-STO-001#binding.routing/target.space-command-routing]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_create_space_req_api_001_routes_to_api_post_spaces } }
   - id: REQ-API-002
     title: Entry CRUD
     description: The API exposes creation, retrieval, update, and deletion of Entries while preserving the Entry lifecycle and revision semantics owned by the Entry domain.
@@ -177,6 +200,20 @@ requirements:
                 criterion: REQ-API-002#criterion.entry-lifecycle
                 covers: [FEAT-API-001#binding.frontend-implementation/target.entry-api]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should remove entry from list" } }
+      - id: cli-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the CLI Entry create routing through the exact recording-server integration case.
+        targets:
+          - id: create-entry
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_entry_create_req_api_002_routes_to_backend_post_entries }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+                covers: [FEAT-API-001#binding.cli-implementation/target.entry-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_entry_create_req_api_002_routes_to_backend_post_entries } }
 
   - id: REQ-API-003
     title: MCP resource content framing
@@ -245,6 +282,38 @@ requirements:
                   - FEAT-API-001#binding.core/target.update-sql
                   - FEAT-API-001#binding.core/target.delete-sql
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_saved_sql, test: test_saved_sql_req_api_006_crud } }
+      - id: cli-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the CLI saved SQL lifecycle and remote request contracts through exact integration cases.
+        targets:
+          - id: lifecycle
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_saved_sql.rs
+            selector: { kind: test, name: test_saved_sql_req_api_006_crud }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-006#criterion.saved-sql-lifecycle
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_saved_sql, test: test_saved_sql_req_api_006_crud } }
+          - id: remote-create
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_saved_sql_create_req_api_006_uses_server_generated_id }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-006#criterion.saved-sql-lifecycle
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_saved_sql_create_req_api_006_uses_server_generated_id } }
+          - id: remote-update
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_saved_sql_update_req_api_006_sends_parent_revision_without_author }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-006#criterion.saved-sql-lifecycle
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_saved_sql_update_req_api_006_sends_parent_revision_without_author } }
 
   - id: REQ-API-007
     title: Saved SQL template validation
