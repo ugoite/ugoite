@@ -35,6 +35,13 @@ read-only migration snapshot and is no longer included in Mitase's declared
 inventory. The canonical E2E requirements at `docs/mitase/requirements/e2e.yaml`
 are the only semantic authority for the migrated E2E domain.
 
+The OIDC external identity requirement `REQ-SEC-016` is represented canonically
+at `docs/mitase/requirements/security.yaml`. Its corresponding record in the
+legacy Security registry remains read-only migration evidence for this slice;
+the remaining Security requirements continue to use their existing authority.
+Space Access Recovery preservation of existing OIDC methods remains an explicit
+evidence gap pending an end-to-end regression test.
+
 The legacy Integrity requirement registry at `requirements/integrity.yaml` is
 retained as a read-only migration snapshot. The canonical Integrity requirements
 at `docs/mitase/requirements/integrity.yaml` are the only semantic authority for

@@ -720,6 +720,15 @@ async fn oidc_links_are_protected_and_provider_listing_is_publicly_redacted() {
     assert_eq!(json(providers).await, serde_json::json!([]));
 
     for request in [
+        Request::post("/auth/oidc/providers")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                r#"{"issuer":"https://issuer.example","client_id":"client"}"#,
+            ))
+            .unwrap(),
+        Request::delete(format!("/auth/oidc/providers/{}", Uuid::now_v7()))
+            .body(Body::empty())
+            .unwrap(),
         Request::get("/auth/oidc/links")
             .body(Body::empty())
             .unwrap(),

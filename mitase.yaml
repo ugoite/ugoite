@@ -19,8 +19,12 @@ inventory:
         typescript:
           roots:
             - frontend/src/lib/auth-api.ts
+            - frontend/src/lib/auth-route.ts
+            - frontend/src/lib/auth-route.test.ts
             - frontend/src/routes/login.tsx
             - frontend/src/routes/login.test.tsx
+            - frontend/src/routes/settings/security.tsx
+            - frontend/src/routes/settings/security.test.tsx
             - frontend/src/routes/setup.tsx
             - frontend/src/routes/setup.test.tsx
             - frontend/src/routes/recover/account.tsx
@@ -84,6 +88,7 @@ inventory:
             - e2e/account-self-recovery.test.ts
             - e2e/space-membership.test.ts
             - frontend/src/routes/spaces/join.tsx
+            - frontend/src/routes/spaces/join.test.tsx
             - docsite/src/ssot.test.ts
             - docsite/src/spec-integrity.test.ts
             - tools/coverage_gates_test.ts

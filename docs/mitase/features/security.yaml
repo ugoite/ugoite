@@ -187,6 +187,10 @@ features:
                 criterion: REQ-SEC-004#criterion.passwordless-primary
               - kind: satisfies
                 criterion: REQ-SEC-005#criterion.bootstrap-recovery-material
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.federated-session-boundary
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.protected-link-management
           - id: login-route
             adapter: typescript
             path: frontend/src/routes/login.tsx
@@ -323,6 +327,8 @@ features:
                 criterion: REQ-SEC-014#criterion.credential-replacement
               - kind: satisfies
                 criterion: REQ-SEC-014#criterion.stale-authority-invalidation
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.recovery-removes-oidc
           - id: recovery-code-rotation
             adapter: rust
             path: crates/ugoite-identity/src/node_identity.rs
@@ -691,3 +697,322 @@ features:
         guarantees:
           - REQ-SEC-008#criterion.attributed-append-only-audit
           - REQ-SEC-008#criterion.owner-authorized-audit-read
+
+  - id: FEAT-SEC-005
+    title: OIDC external identity authentication and linking
+    summary: Connect the OIDC authorization-code flow, invitation-gated account creation, federated session boundary, protected external identity management, recovery interaction, and exact identity, server, frontend, and OpenAPI evidence without introducing a Ugoite-specific specification kind.
+    status: implemented
+    bindings:
+      - id: identity
+        role: implementation
+        facet: identity
+        responsibility: Enforce provider discovery and validation, one-shot OIDC attempts, exact issuer-subject identity linking, invitation-gated account creation, federated sessions, first-Passkey bootstrap, protected unlinking, and recovery interaction.
+        targets:
+          - id: provider-configuration
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: configure_oidc_provider }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.secure-oidc-protocol
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.protected-link-management
+          - id: attempt-creation
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: save_oidc_attempt_with_session }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.secure-oidc-protocol
+          - id: attempt-consumption
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: consume_oidc_attempt }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.secure-oidc-protocol
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.protected-link-management
+          - id: login-completion
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: complete_oidc_login }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.exact-external-identity
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.invitation-gated-account
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.federated-session-boundary
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.protected-link-management
+          - id: first-passkey-bootstrap
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: start_bootstrap_passkey }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.federated-session-boundary
+          - id: first-passkey-finish
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: finish_bootstrap_passkey }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.federated-session-boundary
+          - id: link-list
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: list_oidc_links }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.protected-link-management
+          - id: unlink
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: unlink_oidc }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.protected-link-management
+      - id: server
+        role: implementation
+        facet: backend
+        responsibility: Expose OIDC provider administration, authorization starts, callbacks, first-Passkey bootstrap, and protected link management through the authenticated server boundary.
+        targets:
+          - id: provider-config
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: configure_oidc_provider }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.secure-oidc-protocol
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.protected-link-management
+          - id: provider-list
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: list_oidc_providers }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.secure-oidc-protocol
+          - id: provider-disable
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: disable_oidc_provider }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.protected-link-management
+          - id: authorization-start
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: start_oidc_authorization }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.secure-oidc-protocol
+          - id: link-start
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: oidc_link_start }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.protected-link-management
+          - id: oidc-callback
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: oidc_callback }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.secure-oidc-protocol
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.federated-session-boundary
+          - id: first-passkey-start
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: start_bootstrap_passkey }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.federated-session-boundary
+          - id: first-passkey-finish
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: finish_bootstrap_passkey }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.federated-session-boundary
+          - id: link-list
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: list_oidc_links }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.protected-link-management
+          - id: link-remove
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: unlink_oidc }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.protected-link-management
+      - id: client
+        role: implementation
+        facet: frontend
+        responsibility: Keep OIDC login continuation, provider choices, and protected external identity actions behind the current browser authentication and security settings journeys.
+        targets:
+          - id: safe-continuation
+            adapter: typescript
+            path: frontend/src/lib/auth-route.ts
+            selector: { kind: symbol, name: getSafeNextPath }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.federated-session-boundary
+          - id: login-route
+            adapter: typescript
+            path: frontend/src/routes/login.tsx
+            selector: { kind: symbol, name: LoginRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.federated-session-boundary
+          - id: security-settings
+            adapter: typescript
+            path: frontend/src/routes/settings/security.tsx
+            selector: { kind: symbol, name: SecuritySettingsRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.protected-link-management
+          - id: invitation-join
+            adapter: typescript
+            path: frontend/src/routes/spaces/join.tsx
+            selector: { kind: symbol, name: SpaceInvitationJoinRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.invitation-gated-account
+      - id: contract
+        role: contract-source
+        facet: api
+        responsibility: Keep the OIDC provider, authorization, callback, link, and invitation first-Passkey operations connected to the authoritative OpenAPI artifact.
+        targets:
+          - id: provider-list
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /auth/oidc/providers }
+          - id: provider-config
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/oidc/providers }
+          - id: provider-disable
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: delete, path: '/auth/oidc/providers/{provider_id}' }
+          - id: link-list
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /auth/oidc/links }
+          - id: link-remove
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: delete, path: '/auth/oidc/links/{method_id}' }
+          - id: authorization-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/auth/oidc/{provider_id}/start' }
+          - id: authorization-link-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/auth/oidc/{provider_id}/link' }
+          - id: callback
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: /auth/oidc/callback }
+          - id: first-passkey-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/passkeys/bootstrap/start }
+          - id: first-passkey-finish
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/passkeys/bootstrap/finish }
+    contracts:
+      - id: oidc-authentication
+        kind: http
+        source: FEAT-SEC-005#binding.contract/target.authorization-start
+        participants:
+          - target: FEAT-SEC-005#binding.identity/target.provider-configuration
+            role: identity
+          - target: FEAT-SEC-005#binding.identity/target.attempt-creation
+            role: identity
+          - target: FEAT-SEC-005#binding.identity/target.attempt-consumption
+            role: identity
+          - target: FEAT-SEC-005#binding.identity/target.login-completion
+            role: identity
+          - target: FEAT-SEC-005#binding.identity/target.first-passkey-bootstrap
+            role: identity
+          - target: FEAT-SEC-005#binding.identity/target.first-passkey-finish
+            role: identity
+          - target: FEAT-SEC-005#binding.server/target.provider-config
+            role: backend
+          - target: FEAT-SEC-005#binding.server/target.authorization-start
+            role: backend
+          - target: FEAT-SEC-005#binding.server/target.oidc-callback
+            role: backend
+          - target: FEAT-SEC-005#binding.server/target.first-passkey-start
+            role: backend
+          - target: FEAT-SEC-005#binding.server/target.first-passkey-finish
+            role: backend
+          - target: FEAT-SEC-002#binding.client/target.auth-client
+            role: client
+          - target: FEAT-SEC-005#binding.client/target.safe-continuation
+            role: continuation
+          - target: FEAT-SEC-005#binding.client/target.login-route
+            role: route
+          - target: FEAT-SEC-005#binding.client/target.invitation-join
+            role: invitation-route
+          - target: FEAT-SEC-005#binding.contract/target.authorization-start
+            role: contract
+          - target: FEAT-SEC-005#binding.contract/target.callback
+            role: contract
+          - target: FEAT-SEC-005#binding.contract/target.first-passkey-start
+            role: contract
+          - target: FEAT-SEC-005#binding.contract/target.first-passkey-finish
+            role: contract
+        guarantees:
+          - REQ-SEC-016#criterion.secure-oidc-protocol
+          - REQ-SEC-016#criterion.exact-external-identity
+          - REQ-SEC-016#criterion.invitation-gated-account
+          - REQ-SEC-016#criterion.federated-session-boundary
+      - id: oidc-link-management
+        kind: http
+        source: FEAT-SEC-005#binding.contract/target.link-list
+        participants:
+          - target: FEAT-SEC-003#binding.identity/target.recovery-finish
+            role: identity
+          - target: FEAT-SEC-005#binding.identity/target.login-completion
+            role: identity
+          - target: FEAT-SEC-005#binding.identity/target.link-list
+            role: identity
+          - target: FEAT-SEC-005#binding.identity/target.unlink
+            role: identity
+          - target: FEAT-SEC-005#binding.server/target.provider-disable
+            role: backend
+          - target: FEAT-SEC-005#binding.server/target.link-list
+            role: backend
+          - target: FEAT-SEC-005#binding.server/target.link-remove
+            role: backend
+          - target: FEAT-SEC-005#binding.server/target.link-start
+            role: backend
+          - target: FEAT-SEC-005#binding.client/target.security-settings
+            role: client
+          - target: FEAT-SEC-002#binding.client/target.auth-client
+            role: api-client
+          - target: FEAT-SEC-005#binding.contract/target.provider-config
+            role: contract
+          - target: FEAT-SEC-005#binding.contract/target.provider-disable
+            role: contract
+          - target: FEAT-SEC-005#binding.contract/target.link-list
+            role: contract
+          - target: FEAT-SEC-005#binding.contract/target.link-remove
+            role: contract
+          - target: FEAT-SEC-005#binding.contract/target.authorization-link-start
+            role: contract
+        guarantees:
+          - REQ-SEC-016#criterion.protected-link-management
+          - REQ-SEC-016#criterion.recovery-removes-oidc
