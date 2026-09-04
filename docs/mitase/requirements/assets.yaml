@@ -57,6 +57,38 @@ requirements:
                 criterion: REQ-ASSET-001#criterion.metadata-safe-name
                 covers: [FEAT-ASSET-001#binding.core/target.upload-object]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: upload_normalizes_the_display_name_without_leaking_storage_details } }
+      - id: adapter-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the shipped frontend Asset client and local CLI filename-safety adapter through exact tests without treating remote upload as shipped.
+        targets:
+          - id: frontend-upload-delete
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "uploads a typed asset reference and deletes by stable asset id" }
+            claims:
+              - kind: verifies
+                criterion: REQ-ASSET-001#criterion.typed-reference
+                covers: [FEAT-ASSET-001#binding.frontend-implementation/target.asset-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "uploads a typed asset reference and deletes by stable asset id" } }
+          - id: frontend-read
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "reads asset bytes with the containing Form and Entry context" }
+            claims:
+              - kind: verifies
+                criterion: REQ-ASSET-002#criterion.containing-entry-context
+                covers: [FEAT-ASSET-001#binding.frontend-implementation/target.asset-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "reads asset bytes with the containing Form and Entry context" } }
+          - id: cli-safe-name
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_assets.rs
+            selector: { kind: test, name: test_asset_req_asset_001_upload_strips_filename_traversal }
+            claims:
+              - kind: verifies
+                criterion: REQ-ASSET-001#criterion.metadata-safe-name
+                covers: [FEAT-ASSET-001#binding.cli-implementation/target.asset-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_assets, test: test_asset_req_asset_001_upload_strips_filename_traversal } }
 
   - id: REQ-ASSET-002
     title: Authorized asset byte reads
