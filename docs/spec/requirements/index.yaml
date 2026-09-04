@@ -20,7 +20,7 @@ requirements:
     publishes the current Iceberg build through its independent
     Relation Head without mutating the main Catalog Head.
   related_spec:
-  - architecture/overview.md#architecture-overview
+  - ../architecture/contracts/overview.md#architecture-overview
   - ../architecture/data-model/overview.md#search-query-and-derived-data
   priority: high
   status: implemented
@@ -140,7 +140,7 @@ requirements:
   title: Indexing watch loop
   description: A durable watch loop and generic per-entry incremental producer engine remain future work. Current maintenance uses explicit replace-all AssetText rebuilds; authoritative Entry writes never synchronously rebuild derived data.
   related_spec:
-  - architecture/overview.md#architecture-overview
+  - ../architecture/contracts/overview.md#architecture-overview
   priority: low
   status: planned
   verification: traced

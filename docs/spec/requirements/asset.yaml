@@ -47,7 +47,7 @@ requirements:
     Parser failure MUST NOT roll back Asset durability, and extraction MUST NOT
     create Form revisions or become an authorization source of truth.'
   related_spec:
-  - architecture/derived-relations.md
+  - ../architecture/contracts/derived-relations.md
   - features/search.yaml
   priority: high
   status: implemented

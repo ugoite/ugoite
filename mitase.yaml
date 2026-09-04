@@ -153,19 +153,19 @@ inventory:
             - docs/spec/versions/v0.1-knowledge-compatibility.md
             - docs/version/v0.1.yaml
             - docs/version/v0.2.yaml
-            - docs/spec/architecture/overview.md
-            - docs/spec/architecture/decisions.md
-            - docs/spec/architecture/stack.md
-            - docs/spec/architecture/future-proofing.md
-            - docs/spec/architecture/frontend-backend-interface.md
-            - docs/spec/architecture/space-catalog.md
+            - docs/architecture/contracts/overview.md
+            - docs/architecture/contracts/decisions.md
+            - docs/architecture/contracts/stack.md
+            - docs/architecture/contracts/future-proofing.md
+            - docs/architecture/contracts/frontend-backend-interface.md
+            - docs/architecture/contracts/space-catalog.md
             - crates/ugoite-server/src/openapi.json
             - docs/architecture/data-model/overview.md
             - docs/architecture/data-model/sql-sessions.md
             - docs/architecture/data-model/directory-structure.md
             - docs/architecture/data-model/directory-layout.yaml
             - docs/architecture/data-model/file-schemas.yaml
-            - docs/spec/architecture/derived-relations.md
+            - docs/architecture/contracts/derived-relations.md
             - docs/spec/features/index.md
             - docs/spec/features/sql.md
             - docs/spec/testing/strategy.md

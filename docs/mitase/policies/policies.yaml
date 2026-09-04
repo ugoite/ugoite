@@ -43,7 +43,7 @@ policies:
         targets:
           - id: architecture-overview
             adapter: declared
-            path: docs/spec/architecture/overview.md
+            path: docs/architecture/contracts/overview.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-001#rule.governance }]
           - id: data-model-overview
@@ -90,12 +90,12 @@ policies:
         targets:
           - id: architecture-overview
             adapter: declared
-            path: docs/spec/architecture/overview.md
+            path: docs/architecture/contracts/overview.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-002#rule.governance }]
           - id: architecture-decisions
             adapter: declared
-            path: docs/spec/architecture/decisions.md
+            path: docs/architecture/contracts/decisions.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-002#rule.governance }]
           - id: api-rest
@@ -120,12 +120,12 @@ policies:
         targets:
           - id: architecture-stack
             adapter: declared
-            path: docs/spec/architecture/stack.md
+            path: docs/architecture/contracts/stack.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-003#rule.governance }]
           - id: architecture-future-proofing
             adapter: declared
-            path: docs/spec/architecture/future-proofing.md
+            path: docs/architecture/contracts/future-proofing.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-003#rule.governance }]
           - id: testing-cicd
@@ -162,7 +162,7 @@ policies:
         targets:
           - id: architecture-interface
             adapter: declared
-            path: docs/spec/architecture/frontend-backend-interface.md
+            path: docs/architecture/contracts/frontend-backend-interface.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-004#rule.governance }]
           - id: api-rest
@@ -197,7 +197,7 @@ policies:
         targets:
           - id: architecture-stack
             adapter: declared
-            path: docs/spec/architecture/stack.md
+            path: docs/architecture/contracts/stack.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-005#rule.governance }]
           - id: api-surfaces
@@ -244,7 +244,7 @@ policies:
         targets:
           - id: architecture-interface
             adapter: declared
-            path: docs/spec/architecture/frontend-backend-interface.md
+            path: docs/architecture/contracts/frontend-backend-interface.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-006#rule.governance }]
           - id: ui-overview
@@ -422,7 +422,7 @@ policies:
             claims: [{ kind: documents, anchor: POL-010#rule.governance }]
           - id: architecture-future-proofing
             adapter: declared
-            path: docs/spec/architecture/future-proofing.md
+            path: docs/architecture/contracts/future-proofing.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-010#rule.governance }]
           - id: api-surfaces
@@ -607,12 +607,12 @@ policies:
         targets:
           - id: architecture-decisions
             adapter: declared
-            path: docs/spec/architecture/decisions.md
+            path: docs/architecture/contracts/decisions.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-014#rule.governance }]
           - id: architecture-future-proofing
             adapter: declared
-            path: docs/spec/architecture/future-proofing.md
+            path: docs/architecture/contracts/future-proofing.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-014#rule.governance }]
           - id: api-openapi
@@ -691,7 +691,7 @@ policies:
             claims: [{ kind: documents, anchor: POL-016#rule.governance }]
           - id: space-catalog
             adapter: declared
-            path: docs/spec/architecture/space-catalog.md
+            path: docs/architecture/contracts/space-catalog.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-016#rule.governance }]
   - id: POL-017

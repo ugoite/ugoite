@@ -88,10 +88,10 @@ describe("documentation single source of truth", () => {
     ).toBe("../sibling/");
     expect(
       rewriteDocLink(
-        "../architecture/overview.md",
+        "../architecture/contracts/overview.md",
         "/repo/docs/spec/quality/error-handling.md",
       ),
-    ).toBe("../../architecture/overview/");
+    ).toBe("../../architecture/contracts/overview/");
     expect(rewriteDocLink(null, "/repo/docs/index.md")).toBe(null);
     expect(rewriteDocLink("index.md", "/repo/docs/index.md")).toBe("./");
   });

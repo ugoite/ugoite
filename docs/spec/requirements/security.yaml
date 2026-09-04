@@ -243,7 +243,7 @@ requirements:
   related_spec:
   - ../architecture/data-model/overview.md#forms-and-entries
   - ../architecture/api/rest.md#endpoints
-  - architecture/frontend-backend-interface.md#frontendserver-interface
+  - ../architecture/contracts/frontend-backend-interface.md#frontendserver-interface
   - ../architecture/data-model/sql-sessions.md#saved-sql-and-materialized-view-metadata
   - stories/experimental.yaml
   priority: high

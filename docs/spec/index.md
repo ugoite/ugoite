@@ -87,7 +87,7 @@ rules have been reviewed.
   [UI specifications](ui/index.md).
 - **Requirements and stories:** [requirements](requirements/index.md) and
   [user stories](stories/index.md).
-- **Architecture contracts:** [architecture overview](architecture/overview.md),
+- **Architecture contracts:** [architecture overview](../architecture/contracts/overview.md),
   decisions, stack, future-proofing, and the Space catalog.
 - **Operations and quality:** [policy traceability](policies/index.md),
   [security](security/overview.md), [testing and CI](testing/strategy.md),

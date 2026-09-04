@@ -50,7 +50,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/decisions.md#adr-005-current-browser-is-server-backed
+  - ../architecture/contracts/decisions.md#adr-005-current-browser-is-server-backed
   priority: high
   status: implemented
   verification: traced

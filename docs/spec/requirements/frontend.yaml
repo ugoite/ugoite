@@ -49,7 +49,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/overview.md
+  - ../architecture/contracts/overview.md
   priority: medium
   status: implemented
   verification: traced
@@ -83,7 +83,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/overview.md
+  - ../architecture/contracts/overview.md
   priority: medium
   status: implemented
   verification: traced
@@ -172,7 +172,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#frontendserver-interface
+  - ../architecture/contracts/frontend-backend-interface.md#frontendserver-interface
   priority: high
   status: implemented
   verification: traced
@@ -198,7 +198,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/decisions.md#adr-005-current-browser-is-server-backed
+  - ../architecture/contracts/decisions.md#adr-005-current-browser-is-server-backed
   priority: high
   status: implemented
   verification: untraced
@@ -220,7 +220,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#frontendserver-interface
+  - ../architecture/contracts/frontend-backend-interface.md#frontendserver-interface
   priority: high
   status: implemented
   verification: traced
@@ -250,8 +250,8 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#frontendserver-interface
-  - architecture/decisions.md#adr-005-current-browser-is-server-backed
+  - ../architecture/contracts/frontend-backend-interface.md#frontendserver-interface
+  - ../architecture/contracts/decisions.md#adr-005-current-browser-is-server-backed
   priority: high
   status: implemented
   verification: traced
@@ -278,7 +278,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/overview.md
+  - ../architecture/contracts/overview.md
   priority: high
   status: implemented
   verification: traced
@@ -310,7 +310,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#frontendserver-interface
+  - ../architecture/contracts/frontend-backend-interface.md#frontendserver-interface
   priority: medium
   status: implemented
   verification: traced
@@ -345,7 +345,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md
+  - ../architecture/contracts/frontend-backend-interface.md
   priority: medium
   status: implemented
   verification: traced
@@ -491,7 +491,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#frontendserver-interface
+  - ../architecture/contracts/frontend-backend-interface.md#frontendserver-interface
   priority: high
   status: implemented
   verification: untraced
@@ -528,7 +528,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#frontendserver-interface
+  - ../architecture/contracts/frontend-backend-interface.md#frontendserver-interface
   priority: high
   status: implemented
   verification: traced
@@ -567,7 +567,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#frontendserver-interface
+  - ../architecture/contracts/frontend-backend-interface.md#frontendserver-interface
   priority: high
   status: implemented
   verification: untraced
@@ -806,7 +806,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#frontendserver-interface
+  - ../architecture/contracts/frontend-backend-interface.md#frontendserver-interface
   priority: high
   status: implemented
   verification: traced
@@ -847,7 +847,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#frontendserver-interface
+  - ../architecture/contracts/frontend-backend-interface.md#frontendserver-interface
   priority: critical
   status: implemented
   verification: traced
@@ -1058,7 +1058,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/overview.md
+  - ../architecture/contracts/overview.md
   - requirements/api.yaml
   priority: high
   status: implemented
@@ -1083,7 +1083,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/overview.md
+  - ../architecture/contracts/overview.md
   - requirements/api.yaml
   priority: high
   status: implemented
@@ -1145,7 +1145,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md
+  - ../architecture/contracts/frontend-backend-interface.md
   - requirements/frontend.yaml#REQ-FE-044
   priority: medium
   status: implemented
@@ -1177,7 +1177,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md
+  - ../architecture/contracts/frontend-backend-interface.md
   - requirements/api.yaml
   priority: medium
   status: implemented
@@ -1211,7 +1211,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#frontendserver-interface
+  - ../architecture/contracts/frontend-backend-interface.md#frontendserver-interface
   priority: medium
   status: implemented
   verification: traced
@@ -1244,7 +1244,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md
+  - ../architecture/contracts/frontend-backend-interface.md
   priority: medium
   status: implemented
   verification: traced
@@ -1276,7 +1276,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md
+  - ../architecture/contracts/frontend-backend-interface.md
   priority: medium
   status: implemented
   verification: traced
@@ -1304,7 +1304,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md
+  - ../architecture/contracts/frontend-backend-interface.md
   priority: medium
   status: implemented
   verification: traced
@@ -1338,7 +1338,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/overview.md
+  - ../architecture/contracts/overview.md
   priority: medium
   status: implemented
   verification: traced
@@ -1457,7 +1457,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md
+  - ../architecture/contracts/frontend-backend-interface.md
   - ../architecture/data-model/overview.md#markdown-mapping
   priority: medium
   status: implemented
@@ -1490,7 +1490,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md
+  - ../architecture/contracts/frontend-backend-interface.md
   priority: medium
   status: implemented
   verification: traced

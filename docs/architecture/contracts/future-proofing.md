@@ -1,12 +1,15 @@
 ---
-title: 'Future-proofing'
+title: "Future-proofing"
 ---
 
-Future work must preserve current invariants rather than create a second product model.
+Future work must preserve current invariants rather than create a second product
+model.
 
 ## Browser-local runtime
 
-A future browser adapter may persist a complete Space locally and optionally synchronize with a relay. It must define migrations, conflict handling, integrity, offline behavior, and recovery before being marked implemented.
+A future browser adapter may persist a complete Space locally and optionally
+synchronize with a relay. It must define migrations, conflict handling,
+integrity, offline behavior, and recovery before being marked implemented.
 
 ## Storage portability
 
@@ -16,16 +19,18 @@ compatible object stores share one model. Physical Iceberg internals remain in
 
 ## AI surfaces
 
-MCP may add resources, prompts, and tools only with explicit authorization and untrusted-content framing. AI functionality must not obtain hidden ownership over user data.
+MCP may add resources, prompts, and tools only with explicit authorization and
+untrusted-content framing. AI functionality must not obtain hidden ownership
+over user data.
 
 ## Derived projections
 
 DerivedRelation is the storage primitive for rebuildable OCR/text/embedding/
 graph-style projections. A producer must publish a semantic fingerprint,
 compatibility epoch, typed schema, source coordinate, and bounded rebuild
-contract. New builds swap through an independent Relation Head; they
-do not become Forms or alter the meaning of SpaceCheckpoint. AssetText is the
-first internal example and remains a searchable-text projection rather than a
+contract. New builds swap through an independent Relation Head; they do not
+become Forms or alter the meaning of SpaceCheckpoint. AssetText is the first
+internal example and remains a searchable-text projection rather than a
 full-text inverted index.
 
 ## Reversible Knowledge history
@@ -45,9 +50,10 @@ automatic asset purging, and retention/expiration are not implied by this model.
 
 ## Knowledge compatibility
 
-The [v0.1 Knowledge compatibility floor](../versions/v0.1-knowledge-compatibility.md)
-freezes semantic recoverability, not a physical file layout. Later versions
-must preserve Space ownership, a unique current-state authority, append-only
+The
+[v0.1 Knowledge compatibility floor](../../spec/versions/v0.1-knowledge-compatibility.md)
+freezes semantic recoverability, not a physical file layout. Later versions must
+preserve Space ownership, a unique current-state authority, append-only
 publication/history semantics, and adapter boundaries. The current
 `_ugoite/catalog/head.json` is one encoding of that authority, not a permanent
 wire format.

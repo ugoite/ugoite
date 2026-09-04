@@ -1,19 +1,19 @@
 - id: SPEC-ARCH-OVERVIEW
-  source_file: architecture/overview.md
+  source_file: ../architecture/contracts/overview.md
   linked_policies:
   - POL-001
   - POL-002
   linked_requirements:
   - REQCAT-STORAGE
 - id: SPEC-ARCH-STACK
-  source_file: architecture/stack.md
+  source_file: ../architecture/contracts/stack.md
   linked_policies:
   - POL-003
   - POL-005
   linked_requirements:
   - REQCAT-OPS
 - id: SPEC-ARCH-DECISIONS
-  source_file: architecture/decisions.md
+  source_file: ../architecture/contracts/decisions.md
   linked_policies:
   - POL-002
   - POL-014
@@ -21,14 +21,14 @@
   - REQCAT-API
   - REQCAT-STORAGE
 - id: SPEC-ARCH-SPACE-CATALOG
-  source_file: architecture/space-catalog.md
+  source_file: ../architecture/contracts/space-catalog.md
   linked_policies:
   - POL-001
   - POL-014
   linked_requirements:
   - REQCAT-STORAGE
 - id: SPEC-ARCH-DERIVED-RELATIONS
-  source_file: architecture/derived-relations.md
+  source_file: ../architecture/contracts/derived-relations.md
   linked_policies:
   - POL-001
   - POL-012
@@ -38,7 +38,7 @@
   - REQCAT-INDEX
   - REQCAT-SEARCH
 - id: SPEC-ARCH-INTERFACE
-  source_file: architecture/frontend-backend-interface.md
+  source_file: ../architecture/contracts/frontend-backend-interface.md
   linked_policies:
   - POL-004
   - POL-006
@@ -47,7 +47,7 @@
   - REQCAT-FRONTEND
   - REQCAT-SECURITY
 - id: SPEC-ARCH-FUTURE
-  source_file: architecture/future-proofing.md
+  source_file: ../architecture/contracts/future-proofing.md
   linked_policies:
   - POL-003
   - POL-010

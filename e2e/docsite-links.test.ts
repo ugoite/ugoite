@@ -85,7 +85,7 @@ function normalizeCrawlUrl(rawUrl: string): string {
 
   // Keep extensionless documentation routes as directory URLs. Removing the
   // trailing slash changes how relative Markdown links resolve in dev mode
-  // (for example, `architecture/overview/` from `/docs/spec/`).
+  // (for example, `architecture/contracts/overview/` from `/docs/spec/`).
   const finalSegment = url.pathname.split("/").at(-1) ?? "";
   if (
     url.pathname !== "/" &&
