@@ -26,10 +26,11 @@ Mitase graphs. The preference registry is retired because its implemented API
 and storage semantics are represented by the canonical Mitase graphs. The shared index
 remains because it also indexes unmigrated domains.
 
-The legacy Asset feature registry at `features/assets.yaml` is retained as a
-read-only migration snapshot and is no longer included in Mitase's declared
-inventory. The canonical Asset feature graph at `docs/mitase/features/assets.yaml`
-is the only semantic authority for the migrated Asset domain.
+The legacy Asset feature registry at `features/assets.yaml` is retired because
+the canonical Asset feature graph at `docs/mitase/features/assets.yaml` is the
+only semantic authority for the migrated Asset domain. The legacy Asset
+requirement registry remains separately documented as read-only migration
+evidence until the broader `docs/spec` cleanup is complete.
 
 The canonical Frontend feature graph at `docs/mitase/features/frontend.yaml` is
 the only semantic authority for the migrated Frontend domain. The legacy
