@@ -1,6 +1,8 @@
 mod common;
+use arrow_array::{Array, StringArray};
 use chrono::Utc;
 use common::setup_operator;
+use datafusion::prelude::SessionContext;
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_core::query::EntryScope;
@@ -706,6 +708,46 @@ async fn asset_text_parser_limit_is_recorded_without_rolling_back_authoritative_
     assert_eq!(stats["assets_referenced"], 1);
     assert_eq!(stats["assets_ready"], 0);
     assert_eq!(stats["assets_failed"], 1);
+
+    let context = SessionContext::new();
+    assert!(
+        derived_relation::register_asset_text_table(&context, &op, ws_path, "asset_text_test",)
+            .await?
+    );
+    let batches = context
+        .sql(
+            "SELECT asset_id, status, error_code FROM asset_text_test \
+             WHERE status = 'failed'",
+        )
+        .await?
+        .collect()
+        .await?;
+    let batch = batches
+        .first()
+        .expect("failed AssetText row must be persisted");
+    assert_eq!(batch.num_rows(), 1);
+    let asset_ids = batch
+        .column_by_name("asset_id")
+        .expect("AssetText rows contain asset_id")
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .expect("AssetText asset_id is a string");
+    let statuses = batch
+        .column_by_name("status")
+        .expect("AssetText rows contain status")
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .expect("AssetText status is a string");
+    let error_codes = batch
+        .column_by_name("error_code")
+        .expect("AssetText rows contain error_code")
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .expect("AssetText error_code is a string");
+    assert_eq!(asset_ids.value(0), reference.asset_id);
+    assert_eq!(statuses.value(0), "failed");
+    assert!(!error_codes.is_null(0));
+    assert_eq!(error_codes.value(0), "asset_parser_limit");
     assert_eq!(
         op.read(&catalog_head_path).await?.to_vec(),
         catalog_head_before,
