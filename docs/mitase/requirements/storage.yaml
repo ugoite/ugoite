@@ -770,3 +770,105 @@ requirements:
                 criterion: REQ-STO-014#criterion.append-only-history
                 covers: [FEAT-STO-001#binding.compatibility/target.fixture]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_knowledge_compatibility, test: v01_knowledge_fixture_is_semantically_recoverable } }
+
+  - id: REQ-STO-015
+    title: Space catalog Pin lifecycle
+    description: >-
+      Named Pins are immutable references to authoritative Space Catalog Heads.
+      The Space exposes the complete active Pin map, can capture the current
+      Catalog Head under a caller-supplied name, can remove one active Pin by
+      publishing a new Catalog Head, and can compare logical Entry revisions
+      between two active Pins without exposing manifest or data-file
+      differences.
+    priority: high
+    status: implemented
+    criteria:
+      - id: active-catalog-pins
+        kind: behavior
+        statement: Listing Pins returns the complete active Pin map from the authoritative Catalog Head rather than a separate registry or physical-file inventory.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
+      - id: named-catalog-pin
+        kind: behavior
+        statement: Creating a named Pin captures the exact current Catalog Head and records the creating principal without changing the pinned immutable publication.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-008#rule.governance, POL-014#rule.governance]
+      - id: pin-removal
+        kind: behavior
+        statement: Deleting a named Pin removes only that active Pin through a new authoritative Catalog Head publication and leaves other Pins and immutable publications unchanged.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-008#rule.governance, POL-014#rule.governance]
+      - id: logical-pin-diff
+        kind: behavior
+        statement: Pin diff compares logical Entry revisions between two active Pins and does not report manifest or data-file differences as user-facing knowledge changes.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
+      - id: pin-diff-contract
+        kind: quality
+        statement: The public immutable knowledge contract exposes Pin diff as a head-owned read and does not reintroduce the removed checkpoint read surface.
+        governed_by: [POL-002#rule.governance, POL-008#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: pin-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the authenticated Pin lifecycle, portable Pin coordinates, and head-owned public Pin diff contract through exact server and OpenAPI evidence.
+        targets:
+          - id: rest-lifecycle-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::issue_2037_authenticated_rest_pins_read_exact_immutable_state_and_delete }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-015#criterion.active-catalog-pins
+                covers:
+                  - FEAT-SPACE-001#binding.backend/target.list-pins
+                  - FEAT-SPACE-001#binding.service/target.list-pins
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::issue_2037_authenticated_rest_pins_read_exact_immutable_state_and_delete } }
+              - kind: verifies
+                criterion: REQ-STO-015#criterion.named-catalog-pin
+                covers:
+                  - FEAT-SPACE-001#binding.backend/target.create-pin
+                  - FEAT-SPACE-001#binding.service/target.create-pin
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::issue_2037_authenticated_rest_pins_read_exact_immutable_state_and_delete } }
+              - kind: verifies
+                criterion: REQ-STO-015#criterion.pin-removal
+                covers:
+                  - FEAT-SPACE-001#binding.backend/target.delete-pin
+                  - FEAT-SPACE-001#binding.service/target.delete-pin
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::issue_2037_authenticated_rest_pins_read_exact_immutable_state_and_delete } }
+          - id: coordinate-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::issue_2042_authenticated_changes_and_pins_return_portable_coordinates }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-015#criterion.named-catalog-pin
+                covers:
+                  - FEAT-SPACE-001#binding.backend/target.create-pin
+                  - FEAT-SPACE-001#binding.service/target.create-pin
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::issue_2042_authenticated_changes_and_pins_return_portable_coordinates } }
+          - id: pin-diff-contract-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: issue_2038_openapi_uses_head_owned_pins_for_immutable_knowledge_reads }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-015#criterion.pin-diff-contract
+                covers: [FEAT-SPACE-001#binding.backend/target.pin-diff]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: issue_2038_openapi_uses_head_owned_pins_for_immutable_knowledge_reads } }
+          - id: public-contract-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: issue_2037_openapi_publishes_the_public_knowledge_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-015#criterion.active-catalog-pins
+                covers: [FEAT-SPACE-001#binding.backend/target.list-pins]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: issue_2037_openapi_publishes_the_public_knowledge_contract } }
+          - id: pin-diff-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::issue_2307_authenticated_rest_pin_diff_returns_logical_entry_changes }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-015#criterion.logical-pin-diff
+                covers:
+                  - FEAT-SPACE-001#binding.backend/target.pin-diff
+                  - FEAT-SPACE-001#binding.service/target.diff-pins
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::issue_2307_authenticated_rest_pin_diff_returns_logical_entry_changes } }

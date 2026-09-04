@@ -10936,6 +10936,7 @@ mod authentication_regression_tests {
             .route("/spaces/{space_id}/apply", post(apply_operations))
             .route("/spaces/{space_id}/pins", get(list_pins).post(create_pin))
             .route("/spaces/{space_id}/pins/{pin_name}", delete(delete_pin))
+            .route("/spaces/{space_id}/pins/diff", get(pin_diff))
             .route("/spaces/{space_id}/entries/{entry_id}", get(get_entry))
             .route(
                 "/spaces/{space_id}/entries/{entry_id}/history",
@@ -15664,6 +15665,128 @@ mod authentication_regression_tests {
         .await?;
         assert_eq!(status, StatusCode::OK, "{pins_after_delete}");
         assert!(pins_after_delete.get("before-update").is_none());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn issue_2307_authenticated_rest_pin_diff_returns_logical_entry_changes(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-issue-2307-pin-diff-{}",
+            Uuid::now_v7()
+        ))?;
+        state.initialize_node().await?;
+        let principal_id = Uuid::from_u128(23070);
+        let space_id = state
+            .service
+            .create_space_for_principal("issue-2307-pin-diff", principal_id, "Route test")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        state
+            .identity
+            .seed_test_recovery_accounts(&[(principal_id, space_uid, principal_id)])
+            .await?;
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let route =
+            reversible_knowledge_route(state, local_knowledge_identity(principal_id, space_uid));
+
+        let create = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{
+                        "kind": "create",
+                        "id": "diff-entry",
+                        "markdown": knowledge_markdown("Diff entry", "before update")
+                    }]
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(create.0, StatusCode::OK, "{}", create.1);
+        let create_revision = create.1["operations"][0]["revision_id"]
+            .as_str()
+            .expect("create revision token")
+            .to_owned();
+
+        let mut before_pin_request = json_request(
+            Method::POST,
+            format!("/spaces/{space_id}/pins"),
+            json!({"name": "before-update"}),
+        );
+        before_pin_request.headers_mut().insert(
+            "idempotency-key",
+            HeaderValue::from_static("issue-2307-pin-before"),
+        );
+        let (status, before_pin) = route_json(route.clone(), before_pin_request).await?;
+        assert_eq!(status, StatusCode::OK, "{before_pin}");
+
+        let update = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{
+                        "kind": "update",
+                        "id": "diff-entry",
+                        "version_token": create_revision,
+                        "markdown": knowledge_markdown("Diff entry", "after update")
+                    }]
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(update.0, StatusCode::OK, "{}", update.1);
+
+        let mut after_pin_request = json_request(
+            Method::POST,
+            format!("/spaces/{space_id}/pins"),
+            json!({"name": "after-update"}),
+        );
+        after_pin_request.headers_mut().insert(
+            "idempotency-key",
+            HeaderValue::from_static("issue-2307-pin-after"),
+        );
+        let (status, after_pin) = route_json(route.clone(), after_pin_request).await?;
+        assert_eq!(status, StatusCode::OK, "{after_pin}");
+
+        let (status, diff) = route_json(
+            route,
+            Request::get(format!(
+                "/spaces/{space_id}/pins/diff?from=before-update&to=after-update"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{diff}");
+        let changes = diff["changes"].as_array().expect("logical diff changes");
+        assert_eq!(changes.len(), 1, "{diff}");
+        let change = &changes[0];
+        assert_eq!(change["entry_id"], "diff-entry");
+        assert_eq!(change["kind"], "updated");
+        assert_eq!(change["from"]["entry"]["external_id"], "diff-entry");
+        assert_eq!(change["to"]["entry"]["external_id"], "diff-entry");
+        assert_ne!(change["from_revision_id"], change["to_revision_id"]);
+        assert!(change.get("manifest").is_none());
+        assert!(change.get("data_files").is_none());
+        assert_ne!(
+            diff["from_coordinate_checksum"],
+            diff["to_coordinate_checksum"]
+        );
         Ok(())
     }
 

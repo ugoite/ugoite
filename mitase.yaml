@@ -133,6 +133,7 @@ inventory:
             - docs/mitase/features/authentication.yaml
             - docs/mitase/requirements/storage.yaml
             - docs/mitase/features/storage.yaml
+            - docs/mitase/features/spaces.yaml
             - docs/mitase/requirements/ops.yaml
             - docs/mitase/features/ops.yaml
             - docs/index.md

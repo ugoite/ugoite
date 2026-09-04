@@ -1,0 +1,150 @@
+schema: mitase/spec/v1
+kind: features
+namespace: spaces
+category: Space catalog Pins
+features:
+  - id: FEAT-SPACE-001
+    title: Space catalog Pin lifecycle
+    summary: Connect the active named Pin map, immutable Catalog Head capture and removal, logical Pin diff, and public HTTP contract to exact Ugoite artifacts without introducing a Ugoite-specific specification kind.
+    status: implemented
+    bindings:
+      - id: service
+        role: implementation
+        facet: service
+        responsibility: Implement Space Pin reads and mutations at the canonical Iceberg service boundary, including logical Entry-revision diffing between authorized active Pins.
+        targets:
+          - id: list-pins
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: list_pins }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-015#criterion.active-catalog-pins
+          - id: create-pin
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: create_pin }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-015#criterion.named-catalog-pin
+          - id: delete-pin
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: delete_pin }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-015#criterion.pin-removal
+          - id: diff-pins
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: diff_pins_authorized_for_principals }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-015#criterion.logical-pin-diff
+      - id: backend
+        role: implementation
+        facet: backend
+        responsibility: Expose authenticated Space Pin listing, capture, removal, and logical diff operations through the Rust server adapter.
+        targets:
+          - id: list-pins
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: list_pins }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-015#criterion.active-catalog-pins
+          - id: create-pin
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: create_pin }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-015#criterion.named-catalog-pin
+          - id: delete-pin
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: delete_pin }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-015#criterion.pin-removal
+          - id: pin-diff
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: pin_diff }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-015#criterion.logical-pin-diff
+              - kind: satisfies
+                criterion: REQ-STO-015#criterion.pin-diff-contract
+      - id: contract
+        role: contract-source
+        facet: api
+        responsibility: Define the four public Space Pin HTTP operations using the OpenAPI artifact owned by the API feature.
+        targets:
+          - id: pin-list
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/pins' }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-015#criterion.active-catalog-pins
+          - id: pin-create
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/pins' }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-015#criterion.named-catalog-pin
+          - id: pin-delete
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: delete, path: '/spaces/{space_id}/pins/{pin_name}' }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-015#criterion.pin-removal
+          - id: pin-diff
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/pins/diff' }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-015#criterion.pin-diff-contract
+    contracts:
+      - id: pin-list
+        kind: http
+        source: FEAT-SPACE-001#binding.contract/target.pin-list
+        participants:
+          - target: FEAT-SPACE-001#binding.service/target.list-pins
+            role: service
+          - target: FEAT-SPACE-001#binding.backend/target.list-pins
+            role: backend
+        guarantees: [REQ-STO-015#criterion.active-catalog-pins]
+      - id: pin-create
+        kind: http
+        source: FEAT-SPACE-001#binding.contract/target.pin-create
+        participants:
+          - target: FEAT-SPACE-001#binding.service/target.create-pin
+            role: service
+          - target: FEAT-SPACE-001#binding.backend/target.create-pin
+            role: backend
+        guarantees: [REQ-STO-015#criterion.named-catalog-pin]
+      - id: pin-delete
+        kind: http
+        source: FEAT-SPACE-001#binding.contract/target.pin-delete
+        participants:
+          - target: FEAT-SPACE-001#binding.service/target.delete-pin
+            role: service
+          - target: FEAT-SPACE-001#binding.backend/target.delete-pin
+            role: backend
+        guarantees: [REQ-STO-015#criterion.pin-removal]
+      - id: pin-diff
+        kind: http
+        source: FEAT-SPACE-001#binding.contract/target.pin-diff
+        participants:
+          - target: FEAT-SPACE-001#binding.service/target.diff-pins
+            role: service
+          - target: FEAT-SPACE-001#binding.backend/target.pin-diff
+            role: backend
+        guarantees:
+          - REQ-STO-015#criterion.logical-pin-diff
+          - REQ-STO-015#criterion.pin-diff-contract
