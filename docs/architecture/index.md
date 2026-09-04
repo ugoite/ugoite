@@ -19,6 +19,8 @@ are new: architecture names the owners and adapters around the Space model.
   [Security architecture](security/index.md).
 - **Release:** what is shipped now and what remains future scope in
   [Release architecture](release/index.md).
+- **Product:** how product outcomes and repository health are measured in
+  [Product architecture](product/success-metrics.md).
 - **API:** the REST, MCP, and operator-surface boundaries in
   [API architecture](api/rest.md).
 - **Data model:** portable Space persistence, forms, entries, and storage
@@ -31,4 +33,5 @@ are new: architecture names the owners and adapters around the Space model.
   live under [architecture contracts](contracts/overview.md).
 
 The groups are intentionally explanatory entry points. The executable
-requirements and implementation references remain in `docs/spec/`.
+requirements and implementation references are canonical in `docs/mitase/`; the
+remaining legacy domain registries are being retired in focused slices.

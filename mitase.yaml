@@ -149,8 +149,8 @@ inventory:
             - docs/spec/requirements/form.yaml
             - docs/spec/features/forms.yaml
             - docs/spec/requirements/index.yaml
-            - docs/spec/versions/v0.1.md
-            - docs/spec/versions/v0.1-knowledge-compatibility.md
+            - docs/architecture/release/v0.1.md
+            - docs/architecture/release/v0.1-knowledge-compatibility.md
             - docs/version/v0.1.yaml
             - docs/version/v0.2.yaml
             - docs/architecture/contracts/overview.md
@@ -170,7 +170,7 @@ inventory:
             - docs/spec/features/sql.md
             - docs/architecture/testing/strategy.md
             - docs/architecture/testing/ci-cd.md
-            - docs/spec/product/success-metrics.md
+            - docs/architecture/product/success-metrics.md
             - docs/architecture/quality/error-handling.md
             - docs/architecture/security/overview.md
             - docs/architecture/security/sandbox.md

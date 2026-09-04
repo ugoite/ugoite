@@ -196,6 +196,17 @@ export default defineConfig({
               ],
             },
             {
+              label: "Product",
+              collapsed: true,
+              items: [
+                {
+                  autogenerate: {
+                    directory: docsSidebarDirectory("architecture/product"),
+                  },
+                },
+              ],
+            },
+            {
               label: "API",
               collapsed: true,
               items: [
@@ -307,18 +318,6 @@ export default defineConfig({
                 {
                   autogenerate: {
                     directory: docsSidebarDirectory("spec/policies"),
-                    collapsed: true,
-                  },
-                },
-                {
-                  autogenerate: {
-                    directory: docsSidebarDirectory("spec/product"),
-                    collapsed: true,
-                  },
-                },
-                {
-                  autogenerate: {
-                    directory: docsSidebarDirectory("spec/versions"),
                     collapsed: true,
                   },
                 },

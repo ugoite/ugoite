@@ -33,16 +33,18 @@ Deno.test("REQ-OPS-026: all channel sources render versioned release notes", asy
 Deno.test("REQ-OPS-026: invalid channel sources fail before composition", async () => {
   const repoRoot = await Deno.makeTempDir({ prefix: "ugoite-release-notes-" });
   const sourcePath = `${repoRoot}/docs/version/changelog/stable.yaml`;
-  const docPath = `${repoRoot}/docs/spec/versions/changelog-stable.md`;
+  const docPath = `${repoRoot}/docs/architecture/release/changelog-stable.md`;
   await Deno.mkdir(`${repoRoot}/docs/version/changelog`, { recursive: true });
-  await Deno.mkdir(`${repoRoot}/docs/spec/versions`, { recursive: true });
+  await Deno.mkdir(`${repoRoot}/docs/architecture/release`, {
+    recursive: true,
+  });
   await Deno.writeTextFile(docPath, "---\ntitle: Stable\n---\n");
   await Deno.writeTextFile(
     sourcePath,
     [
       "channel: beta",
       "title: Stable",
-      "doc_path: docs/spec/versions/changelog-stable.md",
+      "doc_path: docs/architecture/release/changelog-stable.md",
       "summary: Summary",
       "release_notes:",
       "  intro: Intro",
@@ -83,7 +85,7 @@ Deno.test("REQ-OPS-026: invalid channel sources fail before composition", async 
     [
       "channel: stable",
       "title: Stable",
-      "doc_path: docs/spec/versions/changelog-stable.md",
+      "doc_path: docs/architecture/release/changelog-stable.md",
       "summary: Summary",
       "release_notes:",
       "  intro: Intro",

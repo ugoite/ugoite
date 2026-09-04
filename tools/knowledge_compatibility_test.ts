@@ -2,7 +2,7 @@ import { assertEquals } from "@std/assert/equals";
 import { validateKnowledgeCompatibilityReview } from "./knowledge_compatibility.ts";
 
 const contract = await Deno.readTextFile(
-  "docs/spec/versions/v0.1-knowledge-compatibility.md",
+  "docs/architecture/release/v0.1-knowledge-compatibility.md",
 );
 const template = await Deno.readTextFile(".github/pull_request_template.md");
 const validator = await Deno.readTextFile("tools/create_pr.ts");

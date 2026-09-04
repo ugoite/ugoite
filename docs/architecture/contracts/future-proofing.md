@@ -51,7 +51,7 @@ automatic asset purging, and retention/expiration are not implied by this model.
 ## Knowledge compatibility
 
 The
-[v0.1 Knowledge compatibility floor](../../spec/versions/v0.1-knowledge-compatibility.md)
+[v0.1 Knowledge compatibility floor](../release/v0.1-knowledge-compatibility.md)
 freezes semantic recoverability, not a physical file layout. Later versions must
 preserve Space ownership, a unique current-state authority, append-only
 publication/history semantics, and adapter boundaries. The current

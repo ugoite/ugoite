@@ -284,7 +284,7 @@ features:
         targets:
           - id: contract
             adapter: declared
-            path: docs/spec/versions/v0.1-knowledge-compatibility.md
+            path: docs/architecture/release/v0.1-knowledge-compatibility.md
             selector: { kind: file }
     contracts:
       - id: create-space

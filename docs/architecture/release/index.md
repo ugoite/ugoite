@@ -18,3 +18,11 @@ a product or support claim is safe to make.
   Rust/Deno consolidation and remaining future work.
 - [Release planner ref recovery](release-planner-recovery.md) defines the
   compare-before-delete procedure for an orphaned planner branch ref.
+- [Versioning overview](versioning.md) explains the current v0.1 and v0.2
+  release streams.
+- [v0.1 Foundation release](v0.1.md) records the frozen Knowledge boundary and
+  supported release scope.
+- [v0.1 Knowledge compatibility floor](v0.1-knowledge-compatibility.md) defines
+  semantic recoverability and authority invariants.
+- [Channel changelogs](changelog.md) separate stable, beta, and alpha release
+  guidance.

@@ -1,6 +1,6 @@
 channel: alpha
 title: Alpha Channel Changelog
-doc_path: docs/spec/versions/changelog-alpha.md
+doc_path: docs/architecture/release/changelog-alpha.md
 summary: 'Alpha releases communicate the earliest validated preview slice of Ugoite so experimentation stays explicit
   and reviewable.
 

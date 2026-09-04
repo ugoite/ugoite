@@ -55,7 +55,7 @@
   linked_requirements:
   - REQCAT-API
 - id: SPEC-VERSIONS-KNOWLEDGE-COMPAT
-  source_file: versions/v0.1-knowledge-compatibility.md
+  source_file: ../architecture/release/v0.1-knowledge-compatibility.md
   linked_policies:
   - POL-001
   - POL-013
@@ -216,7 +216,7 @@
   linked_requirements:
   - REQCAT-INTEGRITY
 - id: SPEC-PRODUCT-METRICS
-  source_file: product/success-metrics.md
+  source_file: ../architecture/product/success-metrics.md
   linked_policies:
   - POL-009
   - POL-013

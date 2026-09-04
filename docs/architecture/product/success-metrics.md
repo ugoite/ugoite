@@ -43,8 +43,8 @@ browser-local North Star and must not treat planned features as shipped.
 AssetText rebuild duration, parser failure/stale rates, derived recovery time,
 and authorized AssetText search latency are current metrics. A persistent
 inverted-index rebuild and watch-loop lag remain **future** metrics because
-AssetText is still a scan-oriented searchable-text projection with no
-relevance ranking.
+AssetText is still a scan-oriented searchable-text projection with no relevance
+ranking.
 
 ## Developer experience
 

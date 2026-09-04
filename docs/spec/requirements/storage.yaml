@@ -248,7 +248,7 @@ requirements:
   title: v0.1 Knowledge Semantic Compatibility Fixture
   description: The canonical v0.1 Knowledge fixture must remain semantically readable through the authoritative Space, publication, and append-only history paths. The fixture does not freeze physical storage encoding or require a pre-v1 migration reader.
   related_spec:
-  - ../versions/v0.1-knowledge-compatibility.md
+  - ../architecture/release/v0.1-knowledge-compatibility.md
   - ../architecture/contracts/space-catalog.md
   priority: high
   status: implemented

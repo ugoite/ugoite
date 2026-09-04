@@ -45,6 +45,10 @@ describe("documentation single source of truth", () => {
     );
     expect(config).toContain('docsSidebarDirectory("architecture/testing")');
     expect(config).toContain('docsSidebarDirectory("architecture/quality")');
+    expect(config).toContain('docsSidebarDirectory("architecture/product")');
+    expect(config).toContain('docsSidebarDirectory("architecture/release")');
+    expect(config).not.toContain('docsSidebarDirectory("spec/product")');
+    expect(config).not.toContain('docsSidebarDirectory("spec/versions")');
     expect(config).not.toContain("@astrojs/markdown-remark");
     expect(config).not.toContain("GITHUB_ACTIONS");
     expect(config).not.toContain("http://localhost");
