@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import {
   type DocsiteServer,
   startDocsiteServer,
@@ -28,8 +28,7 @@ test.describe("Docsite onboarding", () => {
         "A private, portable knowledge space built around operator-owned files.",
       ),
     ).toBeVisible();
-    await expect(page.getByRole("link", { name: "Container quick start" }))
-      .toBeVisible();
+    await expect(primaryQuickStartCta(page)).toBeVisible();
     await expect(page.getByRole("link", { name: "Run from source" }))
       .toBeVisible();
     await expect(page.getByRole("link", { name: "View on GitHub" }))
@@ -45,13 +44,13 @@ test.describe("Docsite onboarding", () => {
   test("REQ-E2E-008: the primary action opens the canonical quick-start document", async ({ page }) => {
     // Mitase evidence: REQ-E2E-008#criterion.start-paths.
     await page.goto(buildDocsiteUrl("/"), { waitUntil: "networkidle" });
-    await page.getByRole("link", { name: "Container quick start" }).click();
+    await primaryQuickStartCta(page).click();
 
     await expect(page).toHaveURL(
       /\/docs\/guide\/start\/container-quickstart\/$/,
     );
     await expect(
-      page.getByRole("heading", { level: 1, name: /container quickstart/i }),
+      page.getByRole("heading", { level: 1, name: /container quick start/i }),
     ).toBeVisible();
   });
 });
@@ -61,4 +60,11 @@ function buildDocsiteUrl(path: string): string {
     throw new Error("Docsite server is unavailable");
   }
   return docsiteServer.buildUrl(path);
+}
+
+function primaryQuickStartCta(page: Page) {
+  return page.getByRole("main").getByRole("link", {
+    name: "Container quick start",
+    exact: true,
+  });
 }
