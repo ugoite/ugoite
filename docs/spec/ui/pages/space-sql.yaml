@@ -19,6 +19,6 @@ components:
       title: SQL
       target_page: space-query-create
     - id: sql-empty-state-explanation
-      type: text
+      type: list
       title: Create a query to reuse it here.
       condition: no-saved-sql
