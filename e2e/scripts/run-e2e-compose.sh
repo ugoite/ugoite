@@ -35,29 +35,70 @@ detect_host_address() {
     for interface in en0 en1; do
       address="$(ipconfig getifaddr "$interface" 2>/dev/null || true)"
       case "$address" in
-        *.*) echo "$address"; return 0 ;;
+        *.*)
+          if [ "$address" != "127.0.0.1" ]; then
+            echo "$address"
+            return 0
+          fi
+          ;;
       esac
     done
   fi
   if command -v ip >/dev/null 2>&1; then
     address="$(ip route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([^ ]*\).*/\1/p' | head -n 1)"
     case "$address" in
-      *.*) echo "$address"; return 0 ;;
+      *.*)
+        if [ "$address" != "127.0.0.1" ]; then
+          echo "$address"
+          return 0
+        fi
+        ;;
     esac
   fi
   if command -v hostname >/dev/null 2>&1; then
     address="$(hostname -I 2>/dev/null | awk '{print $1}')"
     case "$address" in
-      *.*) echo "$address"; return 0 ;;
+      *.*)
+        if [ "$address" != "127.0.0.1" ]; then
+          echo "$address"
+          return 0
+        fi
+        ;;
     esac
   fi
-  echo "127.0.0.1"
+  return 1
+}
+
+is_container_reachable_host() {
+  case "$1" in
+    ""|localhost|127.0.0.1|0.0.0.0|::1) return 1 ;;
+    *[!A-Za-z0-9._-]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+resolve_oidc_mock_host() {
+  if [ -n "${E2E_OIDC_MOCK_HOST:-}" ]; then
+    if ! is_container_reachable_host "$E2E_OIDC_MOCK_HOST"; then
+      echo "✗ ERROR: E2E_OIDC_MOCK_HOST must be a non-loopback host name or IPv4 address reachable from the Compose container" >&2
+      return 1
+    fi
+    printf '%s\n' "$E2E_OIDC_MOCK_HOST"
+    return 0
+  fi
+
+  if ! address="$(detect_host_address)"; then
+    echo "✗ ERROR: could not determine a non-loopback host address for the Compose OIDC mock" >&2
+    echo "  Set E2E_OIDC_MOCK_HOST to a host name or IPv4 address reachable from the Compose container" >&2
+    return 1
+  fi
+  printf '%s\n' "$address"
 }
 
 # The browser runs on the host while the composed backend runs in a container.
 # Advertise a host address that both sides can reach; direct-process E2E keeps
 # the mock on loopback by leaving this unset.
-export E2E_OIDC_MOCK_HOST="${E2E_OIDC_MOCK_HOST:-$(detect_host_address)}"
+export E2E_OIDC_MOCK_HOST="$(resolve_oidc_mock_host)"
 
 ensure_playwright_browsers() {
   if [ "${UGOITE_SKIP_PLAYWRIGHT_DEPS:-}" = "1" ]; then
