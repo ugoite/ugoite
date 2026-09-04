@@ -10,10 +10,6 @@ components:
   - id: top-tabs
     type: tab-bar
     position: top-center-floating
-  - id: settings-button
-    type: floating-icon-button
-    position: top-right-floating
-    icon: settings
   body:
   - id: sql-detail-heading
     type: heading

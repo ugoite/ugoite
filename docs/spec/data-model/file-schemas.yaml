@@ -110,7 +110,7 @@ schemas:
         default_form:
           type: string
   user_preferences:
-    description: Portable user-scoped browser preferences.
+    description: Portable user-scoped browser preferences for selected Space and locale.
     path: users/{sha256(user_id)}/preferences.json
     schema:
       type: object
@@ -126,41 +126,6 @@ schemas:
           enum:
           - en
           - ja
-          - null
-        ui_theme:
-          type:
-          - string
-          - 'null'
-          enum:
-          - materialize
-          - classic
-          - pop
-          - null
-        color_mode:
-          type:
-          - string
-          - 'null'
-          enum:
-          - light
-          - dark
-          - null
-        primary_color:
-          type:
-          - string
-          - 'null'
-          enum:
-          - violet
-          - blue
-          - emerald
-          - amber
-          - null
-        content_width:
-          type:
-          - string
-          - 'null'
-          enum:
-          - standard
-          - wide
           - null
   response_hmac:
     description: Lazily created response-signing material.

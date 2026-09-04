@@ -17,20 +17,6 @@ components:
         - id: search
           label: search
           target_page: space-search
-    - id: settings-button
-      type: floating-icon-button
-      position: top-right-floating
-      icon: settings
-      menu:
-        id: ui-appearance-menu
-        color_modes:
-          - light
-          - dark
-        persist: localStorage
-        actions:
-          - id: open-space-settings
-            label: Space settings
-            target_page: space-settings
   body:
     - id: query-title-input
       type: text-input

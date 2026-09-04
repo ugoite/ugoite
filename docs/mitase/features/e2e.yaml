@@ -97,51 +97,28 @@ features:
 
   - id: FEAT-E2E-002
     title: Docsite and UI acceptance surfaces
-    summary: Connect the supported UI themes, Starlight docsite shell, repository documentation sources, and exact docsite Playwright/Vitest evidence.
+    summary: Connect the fixed v5 surface palette, operating system color mode, Starlight docsite shell, repository documentation sources, and exact browser/unit evidence.
     status: implemented
     bindings:
       - id: application
         role: implementation
         facet: frontend
-        responsibility: Keep the supported UI theme workflow connected to the Space dashboard, search, query, Entry, and settings routes.
+        responsibility: Keep the fixed v5 surface palette and operating system color mode connected to the Space browser surface.
         targets:
-          - id: theme-dashboard
+          - id: fixed-palette
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/dashboard.tsx
+            path: frontend/src/themes/registry.test.ts
             selector: { kind: file }
             claims:
               - kind: satisfies
-                criterion: REQ-E2E-003#criterion.theme-workflows
-              - kind: satisfies
-                criterion: REQ-E2E-003#criterion.color-mode-stability
-          - id: theme-search
+                criterion: REQ-E2E-003#criterion.fixed-palette-workflows
+          - id: system-color-mode
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/search.tsx
+            path: frontend/src/lib/color-mode.ts
             selector: { kind: file }
             claims:
               - kind: satisfies
-                criterion: REQ-E2E-003#criterion.theme-workflows
-          - id: theme-entry
-            adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/entries.tsx
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-E2E-003#criterion.theme-workflows
-          - id: theme-query
-            adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/queries/new.tsx
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-E2E-003#criterion.theme-workflows
-          - id: theme-settings
-            adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/settings.tsx
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-E2E-003#criterion.color-mode-stability
+                criterion: REQ-E2E-003#criterion.system-color-mode
       - id: docsite
         role: implementation
         facet: docsite

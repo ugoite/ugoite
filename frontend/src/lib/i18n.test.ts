@@ -13,12 +13,12 @@ describe("i18n", () => {
   });
 
   it("switches locale and translates labels", () => {
-    expect(t("themeMenu.language")).toBe("Language");
+    expect(t("settings.language")).toBe("Language");
 
     setLocale("ja");
 
     expect(locale()).toBe("ja");
-    expect(t("themeMenu.language")).toBe("言語");
+    expect(t("settings.language")).toBe("言語");
     expect(localStorage.getItem("ugoite-locale")).toBe("ja");
   });
 
@@ -46,7 +46,7 @@ describe("i18n", () => {
     expect(i18n.locale()).toBe("ja");
     expect(document.documentElement.lang).toBe("ja");
     expect(document.documentElement.dataset.locale).toBe("ja");
-    expect(i18n.t("themeMenu.language")).toBe("言語");
+    expect(i18n.t("settings.language")).toBe("言語");
   });
 
   it("REQ-FE-044: initializeLocale refreshes locale from stored preferences", async () => {
@@ -61,7 +61,7 @@ describe("i18n", () => {
     expect(i18n.locale()).toBe("ja");
     expect(document.documentElement.lang).toBe("ja");
     expect(document.documentElement.dataset.locale).toBe("ja");
-    expect(i18n.t("themeMenu.language")).toBe("言語");
+    expect(i18n.t("settings.language")).toBe("言語");
   });
 
   it("ignores invalid locale", () => {

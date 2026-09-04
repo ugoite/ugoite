@@ -52,7 +52,7 @@ describe("preferencesStore", () => {
     await initializePortablePreferences();
 
     expect(locale()).toBe("ja");
-    expect(t("themeMenu.language")).toBe("言語");
+    expect(t("settings.language")).toBe("言語");
     expect(document.documentElement.lang).toBe("ja");
     expect(localStorage.getItem("ugoite-locale")).toBe("ja");
   });
@@ -95,7 +95,7 @@ describe("preferencesStore", () => {
 
     expect(requestCount).toBe(0);
     expect(locale()).toBe("ja");
-    expect(t("themeMenu.language")).toBe("言語");
+    expect(t("settings.language")).toBe("言語");
     expect(document.documentElement.lang).toBe("ja");
   });
 
