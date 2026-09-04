@@ -19,6 +19,8 @@ are new: architecture names the owners and adapters around the Space model.
   [Security architecture](security/index.md).
 - **Release:** what is shipped now and what remains future scope in
   [Release architecture](release/index.md).
+- **API:** the REST, MCP, and operator-surface boundaries in
+  [API architecture](api/rest.md).
 - **Normative contracts:** implementation-facing architecture specifications
   live under the [architecture specification](../spec/architecture/overview.md).
 

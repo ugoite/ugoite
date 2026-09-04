@@ -16,7 +16,7 @@ requirements:
 
     '
   related_spec:
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   - data-model/overview.md#forms-and-entries
   priority: medium
   status: implemented
@@ -44,7 +44,7 @@ requirements:
 
     '
   related_spec:
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   - data-model/overview.md#forms-and-entries
   priority: medium
   status: implemented
@@ -70,7 +70,7 @@ requirements:
 
     '
   related_spec:
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   - data-model/overview.md#forms-and-entries
   priority: medium
   status: implemented
@@ -172,7 +172,7 @@ requirements:
   related_spec:
   - data-model/overview.md#markdown-mapping
   - data-model/file-schemas.yaml#form_definition
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   priority: high
   status: implemented
   verification: traced

@@ -25,7 +25,7 @@ requirements:
 
     '
   related_spec:
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   - data-model/directory-structure.md
   priority: medium
   status: implemented

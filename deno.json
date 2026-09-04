@@ -35,6 +35,7 @@
       "docsite/deno.json",
       "e2e/deno.json",
       "docs/architecture/principles/north-star.md",
+      "docs/architecture/api",
       "docs/architecture/release/release-rearchitecture.md",
       "docs/architecture/release/release-contract.md",
       "docs/architecture/release/release-scope.md"
@@ -43,8 +44,7 @@
       "target",
       "dist",
       ".output",
-      "node_modules",
-      "docs/spec/api/openapi.yaml"
+      "node_modules"
     ]
   },
   "lint": {

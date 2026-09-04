@@ -21,9 +21,6 @@ fn main() -> Result<()> {
 }
 
 fn openapi_generate() -> Result<()> {
-    let snapshot = fs::read_to_string("crates/ugoite-server/src/openapi.json")
-        .context("read server OpenAPI snapshot")?;
-    fs::write("docs/spec/api/openapi.yaml", snapshot).context("write docs OpenAPI snapshot")?;
     let generated = generated_openapi_types(&openapi_value()?)?;
     fs::create_dir_all("frontend/src/lib/generated").context("create frontend generated dir")?;
     fs::write("frontend/src/lib/generated/openapi-types.ts", generated)
@@ -36,11 +33,6 @@ fn openapi_check() -> Result<()> {
         .context("read server OpenAPI snapshot")?;
     let spec: Value = serde_json::from_str(&server).context("parse server OpenAPI snapshot")?;
     validate_openapi_contract(&spec)?;
-    let docs =
-        fs::read_to_string("docs/spec/api/openapi.yaml").context("read docs OpenAPI snapshot")?;
-    if normalize_newlines(&server) != normalize_newlines(&docs) {
-        bail!("OpenAPI drift detected; run `cargo run -p xtask -- openapi-generate`");
-    }
     let generated = generated_openapi_types(&spec)?;
     let committed = fs::read_to_string("frontend/src/lib/generated/openapi-types.ts")
         .context("read frontend OpenAPI metadata")?;

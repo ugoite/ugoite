@@ -1,6 +1,6 @@
 /**
  * Type definitions for the Ugoite API
- * Based on docs/spec/data-model/overview.md and docs/spec/api/rest.md
+ * Based on docs/spec/data-model/overview.md and docs/architecture/api/rest.md
  */
 
 /** Space metadata */

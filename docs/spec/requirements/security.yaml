@@ -65,8 +65,8 @@ requirements:
   description: 'Every protected REST and MCP request MUST require an authenticated user identity. Localhost mode and remote exposure configuration MUST NOT bypass authentication.'
   related_spec:
   - security/overview.md
-  - api/rest.md#authentication
-  - api/mcp.md#model-context-protocol-v1
+  - ../architecture/api/rest.md#authentication
+  - ../architecture/api/mcp.md#model-context-protocol-v1
   priority: high
   status: implemented
   verification: traced
@@ -97,8 +97,8 @@ requirements:
   description: 'The supported primary authentication mechanism MUST be Passkey/WebAuthn with passwordless login. WebAuthn assertions MUST be validated server-side with discoverable credentials and user verification required. OIDC linking is outside this requirement.'
   related_spec:
   - security/overview.md
-  - api/rest.md#authentication
-  - api/mcp.md#model-context-protocol-v1
+  - ../architecture/api/rest.md#authentication
+  - ../architecture/api/mcp.md#model-context-protocol-v1
   priority: high
   status: implemented
   verification: traced
@@ -129,7 +129,7 @@ requirements:
   description: 'Initial setup MUST use an expiring one-time secret stored only as a hash, MUST reject reuse, MUST create the administrator account and required initial Passkey state, MUST emit bootstrap-only recovery-code material once, and MUST create an authenticated opaque browser session. Account Self-Recovery is a separate explicitly enrolled flow.'
   related_spec:
   - security/overview.md
-  - api/rest.md#authentication
+  - ../architecture/api/rest.md#authentication
   priority: high
   status: implemented
   verification: traced
@@ -160,7 +160,7 @@ requirements:
   description: 'An active HumanAccount with enrolled recovery TOTP and issued Recovery Codes MUST be able to replace its Node-local credential generation using the exact Account ID, one currently valid Recovery Code, and a valid TOTP code. Successful recovery MUST preserve the HumanAccount and its Space bindings, replace its Passkeys, advance credential_generation, invalidate pre-recovery authentication authority, rotate all Recovery Codes, establish a new authenticated browser session, and emit attributable Node audit state. Recovery replaces credentials, not identity; TOTP remains recovery-only.'
   related_spec:
   - security/overview.md
-  - api/rest.md#authentication
+  - ../architecture/api/rest.md#authentication
   - stories/experimental.yaml
   priority: high
   status: implemented
@@ -196,7 +196,7 @@ requirements:
   description: 'OIDC authentication MUST use Authorization Code + PKCE S256, random state and nonce, provider discovery, HTTPS issuers, fixed callback redirect URI, short-lived one-shot attempts, and server-side ID Token validation. The canonical external identity key MUST be the exact (issuer, subject) pair; email and profile claims MUST NOT link or update a HumanAccount. Existing identities may log in, recent-Passkey sessions may link or unlink identities, and unknown identities may create an Account only through a valid Space Invitation. Invitation-created Accounts MUST have a narrow first-Passkey bootstrap path and then return to normal recent-Passkey credential rules. Federated sessions MUST use the ordinary opaque BrowserSession and MUST NOT authorize Passkey-required operations. Account Self-Recovery MUST remove linked OIDC methods; Owner-approved Space Access Recovery MUST NOT change them. Disabled providers MUST reject new and in-flight attempts.'
   related_spec:
   - security/overview.md
-  - api/rest.md#authentication
+  - ../architecture/api/rest.md#authentication
   - stories/experimental.yaml
   priority: high
   status: implemented
@@ -242,7 +242,7 @@ requirements:
     Asset access, reference resolution, and MCP results are produced.
   related_spec:
   - data-model/overview.md#forms-and-entries
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   - architecture/frontend-backend-interface.md#frontendserver-interface
   - data-model/sql-sessions.md#saved-sql-and-materialized-view-metadata
   - stories/experimental.yaml
@@ -285,7 +285,7 @@ requirements:
     '
   related_spec:
   - stories/experimental.yaml
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   priority: high
   status: implemented
   verification: traced
@@ -320,7 +320,7 @@ requirements:
     and exposed only to authorized Space owners.
   related_spec:
   - security/overview.md
-  - api/rest.md#authentication
+  - ../architecture/api/rest.md#authentication
   priority: high
   status: implemented
   verification: traced
@@ -357,8 +357,8 @@ requirements:
     outcomes MUST fail closed and remain auditable.
   related_spec:
   - security/overview.md
-  - api/rest.md#authentication
-  - api/mcp.md#model-context-protocol-v1
+  - ../architecture/api/rest.md#authentication
+  - ../architecture/api/mcp.md#model-context-protocol-v1
   priority: high
   status: planned
   verification: traced
@@ -450,7 +450,7 @@ requirements:
   description: An active human Space Owner may issue a tuple-bound, one-use approval for an active human principal in that Space. The target completes a five-minute WebAuthn registration, which creates a fresh HumanAccount and atomically replaces only the target Space Principal binding. The principal ID, membership, role, ACL, resource ownership, audit identity, old account credentials, sessions, and unrelated Space bindings are preserved; the old account simply loses authorization in the recovered Space.
   related_spec:
   - security/authentication-overview.yaml
-  - api/rest.md#authentication
+  - ../architecture/api/rest.md#authentication
   - stories/experimental.yaml
   priority: high
   status: implemented
@@ -525,8 +525,8 @@ requirements:
   description: The packaged Linux CLI may authenticate to one Remote Node through browser-approved device authorization, a fresh P-256 device key, opaque short-lived access credentials, rotating refresh credentials, and DPoP. REST credentials omit resource and use the Node issuer audience; MCP credentials use the exact {issuer}/mcp resource and audience. Credentials are Node-bound, action-scoped, and reject cross-resource use. CLI logout is local credential/key deletion; remote asset upload and generic OAuth compatibility remain future scope.
   related_spec:
   - security/authentication-overview.yaml
-  - api/rest.md#authentication
-  - api/mcp.md#authentication
+  - ../architecture/api/rest.md#authentication
+  - ../architecture/api/mcp.md#authentication
   priority: high
   status: implemented
   verification: traced

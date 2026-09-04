@@ -81,9 +81,9 @@ rules have been reviewed.
 - **Core model:** [data model](data-model/overview.md),
   [features](features/index.md), and the canonical machine-readable Foundation
   record at `docs/mitase/philosophies/foundation.yaml`.
-- **Interfaces:** [REST API](api/rest.md),
-  [OpenAPI](https://github.com/ugoite/ugoite/blob/main/docs/spec/api/openapi.yaml),
-  [MCP](api/mcp.md), [operator surfaces](api/operator-surfaces.md), and
+- **Interfaces:** [REST API](../architecture/api/rest.md),
+  [OpenAPI](https://github.com/ugoite/ugoite/blob/main/crates/ugoite-server/src/openapi.json),
+  [MCP](../architecture/api/mcp.md), [operator surfaces](../architecture/api/operator-surfaces.md), and
   [UI specifications](ui/index.md).
 - **Requirements and stories:** [requirements](requirements/index.md) and
   [user stories](stories/index.md).

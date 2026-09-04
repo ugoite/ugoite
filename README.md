@@ -39,8 +39,8 @@ small so it cannot drift into a second manual.
   and [operations](docs/guide/operate/server/operations.md)
 - **Develop:** [Local development](docs/guide/develop/local-dev-auth-login.md)
 - **Automate:** [CLI guide](docs/guide/automate/cli.md),
-  [REST and OpenAPI](docs/spec/api/rest.md), and the current
-  [MCP surface](docs/spec/api/mcp.md)
+  [REST and OpenAPI](docs/architecture/api/rest.md), and the current
+  [MCP surface](docs/architecture/api/mcp.md)
 - **Understand:** [Architecture](docs/architecture/index.md)
 - **Verify:** [Executable specification](docs/spec/index.md)
 
@@ -132,17 +132,18 @@ future scope.
 
 ## API and documentation
 
-- Human API summary: [`docs/spec/api/rest.md`](docs/spec/api/rest.md)
-- Generated OpenAPI snapshot:
-  [`docs/spec/api/openapi.yaml`](docs/spec/api/openapi.yaml)
-- MCP resource surface: [`docs/spec/api/mcp.md`](docs/spec/api/mcp.md)
+- Human API summary: [`docs/architecture/api/rest.md`](docs/architecture/api/rest.md)
+- Server OpenAPI artifact:
+  [`crates/ugoite-server/src/openapi.json`](crates/ugoite-server/src/openapi.json)
+- MCP resource surface: [`docs/architecture/api/mcp.md`](docs/architecture/api/mcp.md)
 - Architecture:
   [`docs/architecture/principles/north-star.md`](docs/architecture/principles/north-star.md)
 - Operator guides: [`docs/guide`](docs/guide)
 - Executable specification registry: [`docs/spec`](docs/spec)
 
-The server-generated `/openapi.json` is authoritative.
-`cargo run -p xtask -- openapi-check` verifies the checked-in YAML snapshot.
+The server-provided `crates/ugoite-server/src/openapi.json`, served at
+`/openapi.json`, is authoritative. `cargo run -p xtask -- openapi-check`
+verifies its contract and the generated frontend metadata.
 
 ## Distribution safety
 

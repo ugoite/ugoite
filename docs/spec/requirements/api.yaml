@@ -35,7 +35,7 @@ requirements:
 
     '
   related_spec:
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   priority: high
   status: implemented
   verification: traced
@@ -73,7 +73,7 @@ requirements:
 
     '
   related_spec:
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   priority: high
   status: implemented
   verification: traced
@@ -108,7 +108,7 @@ requirements:
   title: MCP Resource Content Framing
   description: MCP resource responses MUST label entry content as user-supplied untrusted data and strip raw HTML or script-like constructs before returning JSON payloads to AI clients.
   related_spec:
-  - api/mcp.md
+  - ../architecture/api/mcp.md
   - architecture/frontend-backend-interface.md
   priority: high
   status: implemented
@@ -217,7 +217,7 @@ requirements:
 
     '
   related_spec:
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   - features/sql.md#ugoite-sql
   priority: high
   status: implemented
@@ -259,7 +259,7 @@ requirements:
 
     '
   related_spec:
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   - features/sql.md#ugoite-sql
   priority: high
   status: implemented
@@ -295,7 +295,7 @@ requirements:
   title: SQL session query API
   description: The API creates SQL query sessions and exposes status, count, and paged rows. Session metadata persists one PublicationRef; result rows are evaluated from that fixed coordinate. No stream endpoint is shipped.
   related_spec:
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   priority: high
   status: implemented
   verification: traced
@@ -339,7 +339,7 @@ requirements:
 
     '
   related_spec:
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   - features/spaces.yaml
   priority: medium
   status: planned
@@ -384,7 +384,7 @@ requirements:
 
     '
   related_spec:
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   - features/spaces.yaml
   priority: medium
   status: planned
@@ -468,7 +468,7 @@ requirements:
 
     '
   related_spec:
-  - api/mcp.md
+  - ../architecture/api/mcp.md
   priority: high
   status: implemented
   verification: untraced
@@ -517,7 +517,7 @@ requirements:
     '
   related_spec:
   - index.md
-  - api/mcp.md
+  - ../architecture/api/mcp.md
   - architecture/overview.md
   - versions/index.md
   - ../version/v0.1/mvp.yaml
@@ -572,8 +572,8 @@ requirements:
   - philosophy/foundation.yaml
   - policies/policies.yaml
   - index.md
-  - api/mcp.md
-  - api/operator-surfaces.md
+  - ../architecture/api/mcp.md
+  - ../architecture/api/operator-surfaces.md
   priority: medium
   status: implemented
   verification: untraced

@@ -48,10 +48,13 @@ When a REST route changes:
 2. update `ugoite-api-client` when the operation is portable;
 3. update adapter and frontend tests;
 4. run `cargo run -p xtask -- openapi-generate`;
-5. update `docs/spec/features/*.yaml` and human documentation;
+5. update the relevant `docs/mitase` requirement/feature graph and human
+   documentation;
 6. run `mise run check`.
 
-The generated server document is authoritative; never hand-edit `docs/spec/api/openapi.yaml` without regenerating it.
+The server-provided `crates/ugoite-server/src/openapi.json`, served at
+`/openapi.json`, is authoritative. Never hand-edit generated frontend metadata;
+regenerate it with `cargo run -p xtask -- openapi-generate`.
 
 ## Requirements and tests
 
