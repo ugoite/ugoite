@@ -104,6 +104,11 @@ in GitHub Actions. The active `main only pr` repository ruleset must require
 the `ci-required` status-check context; a successful push-to-`main` run alone
 is not merge enforcement.
 
+The other required merge-queue checks preserve their event-specific contracts:
+the PR body gate resolves the associated pull request from the temporary queue
+ref and keeps the existing Dependabot exemption, while CodeQL still analyzes
+the queued source but does not upload SARIF to the temporary ref.
+
 The root Mise graph is the repository quality contract: `ci` composes
 `fmt:check`, `lint`, `check`, and `test`; `lint` composes Rust and Deno lint
 tasks; `check` composes Rust, Deno, and repository contract checks. Hosted lane

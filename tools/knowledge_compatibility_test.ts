@@ -13,6 +13,7 @@ const workflow = await Deno.readTextFile(
   ".github/workflows/pr-require-close-issue.yml",
 );
 const ciWorkflow = await Deno.readTextFile(".github/workflows/ci.yml");
+const codeqlWorkflow = await Deno.readTextFile(".github/workflows/codeql.yml");
 const requiredStatusChecks = JSON.parse(
   await Deno.readTextFile(".github/required-status-checks.json"),
 ) as {
@@ -104,6 +105,22 @@ Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
   requireText(workflow, "pr-(\\d+)", "PR validator");
   requireText(workflow, "context.ref", "PR validator");
   requireText(
+    workflow,
+    "let pullRequestAuthor = context.payload.pull_request?.user?.login;",
+    "PR validator",
+  );
+  requireText(workflow, "response.data.user?.login", "PR validator");
+  requireText(
+    workflow,
+    'pullRequestAuthor === "dependabot[bot]"',
+    "PR validator",
+  );
+  requireText(
+    workflow,
+    "skipping the human PR template gate",
+    "PR validator",
+  );
+  requireText(
     contract,
     "Every pull request that can affect Space ownership",
     "compatibility contract",
@@ -127,6 +144,11 @@ Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
   );
   requireText(webJob, "actions/setup-node@", "CI web job");
   requireText(webJob, "node-version: 24", "CI web job");
+  requireText(
+    codeqlWorkflow,
+    "upload: ${{ github.event_name == 'merge_group' && 'never' || 'always' }}",
+    "CodeQL workflow",
+  );
 });
 
 const compatibilityReviewCases = [
