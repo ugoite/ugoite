@@ -48,7 +48,7 @@ policies:
             claims: [{ kind: documents, anchor: POL-001#rule.governance }]
           - id: data-model-overview
             adapter: declared
-            path: docs/spec/data-model/overview.md
+            path: docs/architecture/data-model/overview.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-001#rule.governance }]
           - id: feature-sql
@@ -58,7 +58,7 @@ policies:
             claims: [{ kind: documents, anchor: POL-001#rule.governance }]
           - id: sql-sessions
             adapter: declared
-            path: docs/spec/data-model/sql-sessions.md
+            path: docs/architecture/data-model/sql-sessions.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-001#rule.governance }]
   - id: POL-002
@@ -286,7 +286,7 @@ policies:
         targets:
           - id: data-model-schema
             adapter: declared
-            path: docs/spec/data-model/file-schemas.yaml
+            path: docs/architecture/data-model/file-schemas.yaml
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-007#rule.governance }]
           - id: stories-core
@@ -622,7 +622,7 @@ policies:
             claims: [{ kind: documents, anchor: POL-014#rule.governance }]
           - id: data-model-directory
             adapter: declared
-            path: docs/spec/data-model/directory-structure.md
+            path: docs/architecture/data-model/directory-structure.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-014#rule.governance }]
           - id: knowledge-compatibility

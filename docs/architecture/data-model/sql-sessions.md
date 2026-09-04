@@ -1,5 +1,5 @@
 ---
-title: 'SQL sessions'
+title: "SQL sessions"
 ---
 
 The implementation persists query metadata through OpenDAL and re-evaluates
@@ -42,7 +42,7 @@ The file contains:
     "forms": [{
       "form_id": "form-uuid",
       "relation": "note",
-      "entry_scope": {"all_except": ["entry-hidden-from-session"]},
+      "entry_scope": { "all_except": ["entry-hidden-from-session"] },
       "columns": ["Body"],
       "system_columns": ["external_id", "title", "created_at", "updated_at"]
     }]
@@ -54,8 +54,13 @@ The file contains:
     "max_limit": 1000,
     "max_offset": 999
   },
-  "limits": {"max_rows": 1000, "max_memory_bytes": 67108864, "timeout_ms": 30000, "max_concurrency": 1},
-  "count": {"mode": "on_demand", "cached_at": null, "value": null}
+  "limits": {
+    "max_rows": 1000,
+    "max_memory_bytes": 67108864,
+    "timeout_ms": 30000,
+    "max_concurrency": 1
+  },
+  "count": { "mode": "on_demand", "cached_at": null, "value": null }
 }
 ```
 
@@ -64,8 +69,8 @@ single Form relation before it resolves a publication, then freezes that Form's
 publication metadata, columns, system columns, and provider-side Entry scope.
 When every principal has Space read access, the scope records only Entry-level
 denials as `all_except`; it never enumerates every readable Entry in metadata.
-Any explicit or sparse scope is capped at the session's 1,000-row hard limit
-and is rejected before session metadata is written when it exceeds that bound.
+Any explicit or sparse scope is capped at the session's 1,000-row hard limit and
+is rejected before session metadata is written when it exceeds that bound.
 `query_policy` is derived metadata, never execution authority. Status, count,
 and paged-row requests reparse the stored SQL, resolve the one Form from the
 publication's immutable metadata, and rebuild its scope, columns, and system
@@ -79,8 +84,8 @@ forbidden. There is no stream endpoint.
 
 The initial page surface accepts only one Form relation and an explicit total
 order ending in `_ugoite_id`. The API rejects joins, aggregates, `DISTINCT`,
-subqueries, and page ranges beyond the retained 1,000-row session window.
-Counts and pages remain bounded by the same DataFusion memory, timeout, and
+subqueries, and page ranges beyond the retained 1,000-row session window. Counts
+and pages remain bounded by the same DataFusion memory, timeout, and
 single-query concurrency limits.
 
 Sessions expire after ten minutes by default. Accessing an expired session

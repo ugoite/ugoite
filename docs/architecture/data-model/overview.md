@@ -1,5 +1,5 @@
 ---
-title: 'Data model overview'
+title: "Data model overview"
 ---
 
 Ugoite treats user-owned Space files as the persistence boundary. A **Space** is
@@ -9,8 +9,8 @@ becoming the Knowledge authority. Apache Iceberg owns one append-only table per
 stable Form ID.
 
 Node-local Space locators are kept separately at
-`_ugoite/space-bindings/{space_id}.json`; they are not part of a portable
-Space export.
+`_ugoite/space-bindings/{space_id}.json`; they are not part of a portable Space
+export.
 
 ## Authority layers
 
@@ -20,7 +20,9 @@ Space export.
   Iceberg metadata, and Iceberg revision tables are authoritative through the
   configured OpenDAL Space boundary.
 
-The browser is currently server-backed. It does not own an independent local Space database; the Rust server and core write to the configured OpenDAL operator.
+The browser is currently server-backed. It does not own an independent local
+Space database; the Rust server and core write to the configured OpenDAL
+operator.
 
 ## Current storage roots
 
@@ -38,19 +40,25 @@ users/{sha256(user_id)}/
   preferences.json
 ```
 
-See [directory-structure.md](directory-structure.md) and [directory-layout.yaml](https://github.com/ugoite/ugoite/blob/main/docs/spec/data-model/directory-layout.yaml) for the current repository-owned paths. These paths describe the current encoding, not the v0.1 semantic compatibility floor; Iceberg-internal filenames are deliberately not specified.
+See [directory-structure.md](directory-structure.md) and
+[directory-layout.yaml](https://github.com/ugoite/ugoite/blob/main/docs/architecture/data-model/directory-layout.yaml)
+for the current repository-owned paths. These paths describe the current
+encoding, not the v0.1 semantic compatibility floor; Iceberg-internal filenames
+are deliberately not specified.
 
 ## Spaces
 
 `meta.json` stores the Space identity and integrity key material; it does not
-store a physical storage descriptor. A Node-local binding, when configured,
-is kept outside the `spaces/{space_id}` prefix and is merged only into the
-runtime Space view. `settings.json` is created with `default_form: Entry`;
-portable membership, principal, policy, and authorization-audit state is
-stored in `security/principals.json`. Legacy membership-shaped settings are
-unsupported, and public Space patching cannot modify membership-managed keys.
+store a physical storage descriptor. A Node-local binding, when configured, is
+kept outside the `spaces/{space_id}` prefix and is merged only into the runtime
+Space view. `settings.json` is created with `default_form: Entry`; portable
+membership, principal, policy, and authorization-audit state is stored in
+`security/principals.json`. Legacy membership-shaped settings are unsupported,
+and public Space patching cannot modify membership-managed keys.
 
-Creating a Space also creates an `Entry` Form with a Markdown `Body` field. On local Unix filesystems, the Space directories are set to owner-only mode and metadata files to owner read/write mode.
+Creating a Space also creates an `Entry` Form with a Markdown `Body` field. On
+local Unix filesystems, the Space directories are set to owner-only mode and
+metadata files to owner read/write mode.
 
 ## Forms and Entries
 
@@ -61,7 +69,9 @@ A Form currently persists only:
 - `fields`;
 - `allow_extra_attributes` (`deny`, `allow_json`, or `allow_columns`).
 
-Form-level ACL fields are not persisted or enforced in this release. Field names cannot collide with reserved metadata columns. A `row_reference` field must name an existing, non-reserved target Form.
+Form-level ACL fields are not persisted or enforced in this release. Field names
+cannot collide with reserved metadata columns. A `row_reference` field must name
+an existing, non-reserved target Form.
 
 Each Form has an immutable UUID and one physical `form_<uuid>` Iceberg table.
 The display name is mutable metadata. Field IDs are stable Iceberg field IDs;
@@ -77,11 +87,11 @@ followed by Form fields. Entry attribution is system-managed: `author` is the
 original creator, `updated_by` is the actor for the latest revision, and
 `deleted_by` is the actor for the current tombstone only. Delete is a tombstone
 and restore is another revision. This is a breaking pre-v1 physical-schema
-change; a Space with the former attribution-free table schema must be
-recreated rather than silently interpreted with incomplete attribution.
-Current state is derived from the unique greatest version and is never a second
-source-of-truth table. Equal greatest versions are a visible corruption/conflict
-and never resolved by iteration order.
+change; a Space with the former attribution-free table schema must be recreated
+rather than silently interpreted with incomplete attribution. Current state is
+derived from the unique greatest version and is never a second source-of-truth
+table. Equal greatest versions are a visible corruption/conflict and never
+resolved by iteration order.
 
 Date, time, timestamp, UUID, and binary Form fields use their corresponding
 Iceberg primitive types. Markdown, SQL, row references, and ordinary strings
@@ -92,8 +102,7 @@ The timestamp types retain their distinct logical meanings. `timestamp` and
 `timestamp_ns` are timezone-less wall-clock values and preserve the entered
 local date-time. `timestamp_tz` and `timestamp_tz_ns` represent an instant,
 require an offset-bearing RFC3339 value at the domain boundary, and are stored
-normalized to UTC. The server never infers a timezone for a timezone-less
-value.
+normalized to UTC. The server never infers a timezone for a timezone-less value.
 
 ## Markdown mapping
 
@@ -103,22 +112,25 @@ The global template is:
 # {title}
 
 ## {field_name}
+
 {value}
 ```
 
-H2 sections are parsed according to the Form field type. Supported types are exposed by `GET /spaces/{space_id}/forms/types`; the Rust Form implementation is the source of truth. Unknown sections are rejected or retained according to `allow_extra_attributes`.
+H2 sections are parsed according to the Form field type. Supported types are
+exposed by `GET /spaces/{space_id}/forms/types`; the Rust Form implementation is
+the source of truth. Unknown sections are rejected or retained according to
+`allow_extra_attributes`.
 
 ## Search, query, and derived data
 
 Keyword search scans current Entry data and the authorized internal AssetText
 projection for Unicode-normalized, case-insensitive substring matches. Search
-normalizes both the stored value and query with Unicode NFKC followed by
-Unicode lowercase; it does not rewrite stored content. It returns Entries,
-applies authorization before AssetText joins, and degrades to native Entry
-search when the derived relation is unavailable. There is still no persistent
-inverted index or relevance ranking. AssetText is an Iceberg-backed
-DerivedRelation, not a Form, publication coordinate, ACL authority, or second
-history store.
+normalizes both the stored value and query with Unicode NFKC followed by Unicode
+lowercase; it does not rewrite stored content. It returns Entries, applies
+authorization before AssetText joins, and degrades to native Entry search when
+the derived relation is unavailable. There is still no persistent inverted index
+or relevance ranking. AssetText is an Iceberg-backed DerivedRelation, not a
+Form, publication coordinate, ACL authority, or second history store.
 
 `ugoite index stats` reports AssetText derived health. `ugoite index run` and
 `ugoite index run --component asset-text` rebuild it by scanning current
@@ -130,8 +142,7 @@ Saved SQL is represented through the reserved SQL metadata Form. A query session
 writes `sql_sessions/{session_id}/meta.json` with one reproducible
 `PublicationRef`; row and count requests resolve that coordinate and use bounded
 deterministic pagination. Session metadata remains derived state, not an
-alternate Catalog or result store. See
-[sql-sessions.md](sql-sessions.md).
+alternate Catalog or result store. See [sql-sessions.md](sql-sessions.md).
 
 ## Assets and integrity
 
@@ -165,11 +176,17 @@ Markdown-oriented Entry input represents these values as JSON in the field
 section, preserving the complete `AssetReference` object. For example:
 
 ```json
-{"asset_id":"019...","name":"report.pdf","media_type":"application/pdf","size_bytes":123456,"sha256":"..."}
+{
+  "asset_id": "019...",
+  "name": "report.pdf",
+  "media_type": "application/pdf",
+  "size_bytes": 123456,
+  "sha256": "..."
+}
 ```
 
-The editor treats byte upload and Entry revision commit as separate states:
-an uploaded reference remains provisional until the normal Entry create/update
+The editor treats byte upload and Entry revision commit as separate states: an
+uploaded reference remains provisional until the normal Entry create/update
 operation succeeds. Retrying a failed Entry save reuses that reference; closing
 the editor does not delete bytes automatically. Removing a reference only
 changes the Form-owned Entry value. Byte reads always use the containing

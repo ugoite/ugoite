@@ -153,7 +153,7 @@ requirements:
     '
   related_spec:
   - stories/core.yaml#STORY-002
-  - data-model/overview.md#markdown-mapping
+  - ../architecture/data-model/overview.md#markdown-mapping
   priority: high
   status: implemented
   verification: traced
@@ -229,7 +229,7 @@ requirements:
 
     '
   related_spec:
-  - data-model/directory-structure.md#lazy-paths
+  - ../architecture/data-model/directory-structure.md#lazy-paths
   priority: low
   status: implemented
   verification: untraced

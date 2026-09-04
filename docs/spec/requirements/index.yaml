@@ -21,7 +21,7 @@ requirements:
     Relation Head without mutating the main Catalog Head.
   related_spec:
   - architecture/overview.md#architecture-overview
-  - data-model/overview.md#search-query-and-derived-data
+  - ../architecture/data-model/overview.md#search-query-and-derived-data
   priority: high
   status: implemented
   verification: traced
@@ -46,7 +46,7 @@ requirements:
     '
   related_spec:
   - stories/core.yaml#STORY-002
-  - data-model/overview.md#forms-and-entries
+  - ../architecture/data-model/overview.md#forms-and-entries
   priority: medium
   status: implemented
   verification: traced
@@ -93,7 +93,7 @@ requirements:
   title: Persistent inverted-index generation
   description: Generating and storing a persistent inverted index remains planned. AssetText is a typed searchable-text projection and must not be described as an inverted index.
   related_spec:
-  - data-model/overview.md#search-query-and-derived-data
+  - ../architecture/data-model/overview.md#search-query-and-derived-data
   priority: medium
   status: planned
   verification: traced
@@ -116,7 +116,7 @@ requirements:
   description: Word count is computed by the shared text/domain helper and exposed in derived query records. It
     is not evidence that a persistent index rebuild exists.
   related_spec:
-  - data-model/overview.md#markdown-mapping
+  - ../architecture/data-model/overview.md#markdown-mapping
   priority: low
   status: implemented
   verification: traced
@@ -239,7 +239,7 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#markdown-mapping
+  - ../architecture/data-model/overview.md#markdown-mapping
   priority: high
   status: implemented
   verification: traced

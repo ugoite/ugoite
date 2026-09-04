@@ -611,7 +611,7 @@ requirements:
         targets:
           - id: layout-source
             adapter: declared
-            path: docs/spec/data-model/directory-layout.yaml
+            path: docs/architecture/data-model/directory-layout.yaml
             selector: { kind: file }
             claims:
               - kind: evidences

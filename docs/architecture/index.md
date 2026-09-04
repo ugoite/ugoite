@@ -21,6 +21,8 @@ are new: architecture names the owners and adapters around the Space model.
   [Release architecture](release/index.md).
 - **API:** the REST, MCP, and operator-surface boundaries in
   [API architecture](api/rest.md).
+- **Data model:** portable Space persistence, forms, entries, and storage
+  coordinates in [Data model architecture](data-model/overview.md).
 - **Normative contracts:** implementation-facing architecture specifications
   live under the [architecture specification](../spec/architecture/overview.md).
 

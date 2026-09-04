@@ -206,6 +206,17 @@ export default defineConfig({
                 },
               ],
             },
+            {
+              label: "Data model",
+              collapsed: true,
+              items: [
+                {
+                  autogenerate: {
+                    directory: docsSidebarDirectory("architecture/data-model"),
+                  },
+                },
+              ],
+            },
           ],
         },
         {
@@ -217,12 +228,6 @@ export default defineConfig({
               label: "Core model",
               collapsed: true,
               items: [
-                {
-                  autogenerate: {
-                    directory: docsSidebarDirectory("spec/data-model"),
-                    collapsed: true,
-                  },
-                },
                 {
                   autogenerate: {
                     directory: docsSidebarDirectory("spec/features"),

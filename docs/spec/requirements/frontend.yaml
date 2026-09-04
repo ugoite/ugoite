@@ -936,8 +936,8 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#forms-and-entries
-  - data-model/directory-structure.md#workspace-layout
+  - ../architecture/data-model/overview.md#forms-and-entries
+  - ../architecture/data-model/directory-structure.md#workspace-layout
   - stories/core.yaml#STORY-002
   priority: high
   status: implemented
@@ -1002,7 +1002,7 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#forms-and-entries
+  - ../architecture/data-model/overview.md#forms-and-entries
   - requirements/form.yaml#REQ-FORM-005
   priority: high
   status: implemented
@@ -1115,7 +1115,7 @@ requirements:
     '
   related_spec:
   - stories/core.yaml#STORY-002
-  - data-model/overview.md#markdown-mapping
+  - ../architecture/data-model/overview.md#markdown-mapping
   priority: medium
   status: implemented
   verification: traced
@@ -1458,7 +1458,7 @@ requirements:
     '
   related_spec:
   - architecture/frontend-backend-interface.md
-  - data-model/overview.md#markdown-mapping
+  - ../architecture/data-model/overview.md#markdown-mapping
   priority: medium
   status: implemented
   verification: traced
