@@ -156,6 +156,14 @@ const normalizeMockEntry = (entry: Entry): Entry => ({
   markdown: entry.markdown ?? entry.content,
 });
 
+const extractMockEntryTitle = (markdown: string): string => {
+  const titleLine = markdown.split(/\r?\n/).find((line) =>
+    /^#[ \t]+/.test(line)
+  );
+  if (titleLine !== undefined) return titleLine.replace(/^#[ \t]+/, "");
+  return markdown.split(/\r?\n/)[0] || "Untitled";
+};
+
 const createTestApiPredicate = <Params extends PathParams = PathParams>(
   path: string,
 ) => {
@@ -441,10 +449,7 @@ export const handlers = [
     const now = new Date().toISOString();
 
     // Extract title from markdown (first H1 or first line)
-    const titleMatch = body.markdown.match(/^#\s+(.+)$/m);
-    const title = titleMatch
-      ? titleMatch[1]
-      : body.markdown.split("\n")[0] || "Untitled";
+    const title = extractMockEntryTitle(body.markdown);
 
     // Extract properties from H2 headers
     const properties: Record<string, string> = {};
@@ -523,10 +528,7 @@ export const handlers = [
       const now = new Date().toISOString();
 
       // Extract title from markdown
-      const titleMatch = body.markdown.match(/^#\s+(.+)$/m);
-      const title = titleMatch
-        ? titleMatch[1]
-        : body.markdown.split("\n")[0] || "Untitled";
+      const title = extractMockEntryTitle(body.markdown);
 
       // Extract properties from H2 headers
       const properties: Record<string, string> = {};
