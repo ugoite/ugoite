@@ -32,6 +32,57 @@ describe("sql helpers", () => {
       ]);
   });
 
+  it("classifies read-only policy from the top-level statement form", () => {
+    expect(
+      sqlLintDiagnostics("INSERT INTO entries SELECT * FROM source").map((
+        diagnostic,
+      ) => diagnostic.message),
+    ).toEqual(["Read-only query must start with SELECT"]);
+
+    for (
+      const query of [
+        "INSERT INTO entries SELECT * FROM source",
+        "UPDATE entries SET title = 'changed'",
+        "DELETE FROM entries",
+        "CREATE TABLE entries (title TEXT)",
+        "ALTER TABLE entries ADD COLUMN title TEXT",
+        "DROP TABLE entries",
+      ]
+    ) {
+      expect(
+        sqlLintDiagnostics(query).some((diagnostic) =>
+          diagnostic.message === "Read-only query must start with SELECT"
+        ),
+        query,
+      ).toBe(true);
+    }
+  });
+
+  it("does not treat nested FROM clauses as the outer query's FROM", () => {
+    expect(
+      sqlLintDiagnostics("SELECT (SELECT 1 FROM entries)").some((diagnostic) =>
+        diagnostic.message === "Read-only query must include FROM"
+      ),
+    ).toBe(true);
+  });
+
+  it("accepts a SELECT whose top-level form is introduced by a CTE", () => {
+    expect(sqlLintDiagnostics("WITH rows AS (SELECT 1) SELECT * FROM rows"))
+      .toEqual(
+        [],
+      );
+  });
+
+  it("does not treat a CTE followed by DML as a read-only query", () => {
+    expect(
+      sqlLintDiagnostics(
+        "WITH source AS (SELECT * FROM entries) INSERT INTO entries SELECT * FROM source",
+      ).some((diagnostic) =>
+        diagnostic.message === "Read-only query must start with SELECT"
+      ),
+    ).toBe(true);
+  });
+
   it("builds a starter query with the SQL session total order", () => {
     expect(buildSqlStarterQuery("form_entry")).toBe(
       'SELECT * FROM "form_entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50',

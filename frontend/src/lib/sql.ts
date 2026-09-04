@@ -48,16 +48,113 @@ const SQL_LITERAL_OR_COMMENT_NODES = new Set([
   "String",
 ]);
 const SQL_QUOTED_IDENTIFIER_NODE = "QuotedIdentifier";
+const SQL_STATEMENT_FORM_KEYWORDS = new Set([
+  "alter",
+  "create",
+  "delete",
+  "drop",
+  "explain",
+  "insert",
+  "merge",
+  "select",
+  "truncate",
+  "update",
+]);
 
 type ParsedSql = {
   code: string;
+  statementForm: "select" | "non-select" | undefined;
+  statementKeywords: Set<string>;
   variableCode: string;
 };
+
+type SqlTreeCursor = {
+  type: { name: string };
+  from: number;
+  to: number;
+  firstChild(): boolean;
+  nextSibling(): boolean;
+  parent(): boolean;
+};
+
+type StatementSummary = {
+  form: "select" | "non-select";
+  keywords: Set<string>;
+};
+
+function readStatementSummary(
+  sql: string,
+  cursor: SqlTreeCursor,
+): StatementSummary | null {
+  if (!cursor.firstChild()) return null;
+
+  const keywords = new Set<string>();
+  let firstToken: string | null = null;
+  let statementFormToken: string | null = null;
+  do {
+    const nodeName = cursor.type.name;
+    if (SQL_LITERAL_OR_COMMENT_NODES.has(nodeName) || nodeName === ";") {
+      continue;
+    }
+
+    if (nodeName === "Keyword") {
+      const token = sql.slice(cursor.from, cursor.to).toLowerCase();
+      keywords.add(token);
+      if (firstToken === null) {
+        firstToken = token;
+      }
+      if (
+        statementFormToken === null &&
+        SQL_STATEMENT_FORM_KEYWORDS.has(token) &&
+        token !== "with"
+      ) {
+        // For a CTE, the statement's actual form is the first statement-form
+        // keyword after WITH. This keeps INSERT ... SELECT classified as
+        // INSERT while allowing WITH ... SELECT queries.
+        statementFormToken = token;
+      }
+    } else if (firstToken === null) {
+      // Identifiers, literals, operators, and parser errors cannot start a
+      // read-only query. The browser still only provides advisory feedback.
+      firstToken = "";
+    }
+  } while (cursor.nextSibling());
+  cursor.parent();
+
+  if (firstToken === null) return null;
+  return {
+    form: firstToken === "select" ||
+        (firstToken === "with" && statementFormToken === "select")
+      ? "select"
+      : "non-select",
+    keywords,
+  };
+}
+
+function readFirstStatementSummary(
+  sql: string,
+  cursor: SqlTreeCursor,
+): StatementSummary | null {
+  if (!cursor.firstChild()) return null;
+  do {
+    if (cursor.type.name === "Statement") {
+      const summary = readStatementSummary(sql, cursor);
+      if (summary) {
+        cursor.parent();
+        return summary;
+      }
+    }
+  } while (cursor.nextSibling());
+  cursor.parent();
+  return null;
+}
 
 function parseSql(sql: string): ParsedSql {
   const ignoredRanges: Array<[number, number]> = [];
   const quotedIdentifierRanges: Array<[number, number]> = [];
-  const cursor = StandardSQL.language.parser.parse(sql).cursor();
+  const tree = StandardSQL.language.parser.parse(sql);
+  const cursor = tree.cursor();
+  const statementSummary = readFirstStatementSummary(sql, tree.cursor());
 
   const visit = (): void => {
     if (SQL_LITERAL_OR_COMMENT_NODES.has(cursor.type.name)) {
@@ -90,6 +187,8 @@ function parseSql(sql: string): ParsedSql {
   const code = maskRanges(ignoredRanges);
   return {
     code,
+    statementForm: statementSummary?.form,
+    statementKeywords: statementSummary?.keywords ?? new Set<string>(),
     variableCode: maskRanges([...ignoredRanges, ...quotedIdentifierRanges]),
   };
 }
@@ -155,8 +254,10 @@ export function sqlLintDiagnostics(query: string): Diagnostic[] {
   }
 
   const parsedQuery = parseSql(query);
-  const selectMatch = /\bselect\b/i.exec(parsedQuery.code);
-  if (lintRules.require_select !== false && !selectMatch) {
+  if (
+    lintRules.require_select !== false &&
+    parsedQuery.statementForm !== "select"
+  ) {
     diagnostics.push({
       from: leadingWhitespace,
       to: leadingWhitespace + Math.min(trimmed.length, 6),
@@ -165,8 +266,10 @@ export function sqlLintDiagnostics(query: string): Diagnostic[] {
     });
   }
 
-  const fromMatch = /\bfrom\b/i.exec(parsedQuery.code);
-  if (lintRules.require_from !== false && !fromMatch) {
+  if (
+    lintRules.require_from !== false &&
+    !parsedQuery.statementKeywords.has("from")
+  ) {
     diagnostics.push({
       from: Math.max(0, query.length - 1),
       to: query.length,
