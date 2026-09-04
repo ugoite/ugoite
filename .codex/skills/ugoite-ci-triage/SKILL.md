@@ -10,7 +10,8 @@ authorize unrelated refactoring or a full repository test run.
 
 ## Triage order
 
-1. Read `AGENTS.md`, `docs/spec/testing/ci-cd.md`, and the relevant workflow.
+1. Read `AGENTS.md`, `docs/architecture/testing/ci-cd.md`, and the relevant
+   workflow.
 2. Identify the exact run, job, first failing step, and commit.
 3. Re-run the smallest failed command or endpoint locally.
 4. Compare the local command with the workflow environment and inputs.
@@ -18,8 +19,8 @@ authorize unrelated refactoring or a full repository test run.
    and the last visible request or log line.
 6. Classify the cause as implementation, test boundedness, environment, or
    infrastructure before editing.
-7. Change only the owning surface, add a focused regression test, and rerun
-   the bounded reproducer.
+7. Change only the owning surface, add a focused regression test, and rerun the
+   bounded reproducer.
 
 ## Hang boundaries
 
@@ -32,10 +33,10 @@ Pay special attention to synchronous calls inside async functions:
 
 An async timeout cannot fire while the executor thread is blocked in a
 synchronous call. Use `spawn_blocking` to keep the executor responsive, but do
-not treat it as termination: a stuck blocking closure can continue running.
-Use cooperative cancellation when the operation supports it; use a separate
-process or a platform-appropriate process-level timeout when the operation
-must be forcibly terminated.
+not treat it as termination: a stuck blocking closure can continue running. Use
+cooperative cancellation when the operation supports it; use a separate process
+or a platform-appropriate process-level timeout when the operation must be
+forcibly terminated.
 
 ## CI and review handoff
 
@@ -52,8 +53,8 @@ VALIDATION: <focused results>
 LIMITATIONS: <remaining limitations>
 ```
 
-Do not hide environment failures inside a code change. Do not run the full
-merge gate locally unless the changed surface and evidence justify it.
+Do not hide environment failures inside a code change. Do not run the full merge
+gate locally unless the changed surface and evidence justify it.
 
 If a PR is being prepared, keep the public PR body limited to externally safe
 facts. Put private environment details and raw diagnostics in the internal

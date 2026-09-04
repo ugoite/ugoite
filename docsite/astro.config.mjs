@@ -217,6 +217,28 @@ export default defineConfig({
                 },
               ],
             },
+            {
+              label: "Testing",
+              collapsed: true,
+              items: [
+                {
+                  autogenerate: {
+                    directory: docsSidebarDirectory("architecture/testing"),
+                  },
+                },
+              ],
+            },
+            {
+              label: "Quality",
+              collapsed: true,
+              items: [
+                {
+                  autogenerate: {
+                    directory: docsSidebarDirectory("architecture/quality"),
+                  },
+                },
+              ],
+            },
           ],
         },
         {
@@ -285,24 +307,6 @@ export default defineConfig({
                 {
                   autogenerate: {
                     directory: docsSidebarDirectory("spec/policies"),
-                    collapsed: true,
-                  },
-                },
-                {
-                  autogenerate: {
-                    directory: docsSidebarDirectory("spec/security"),
-                    collapsed: true,
-                  },
-                },
-                {
-                  autogenerate: {
-                    directory: docsSidebarDirectory("spec/testing"),
-                    collapsed: true,
-                  },
-                },
-                {
-                  autogenerate: {
-                    directory: docsSidebarDirectory("spec/quality"),
                     collapsed: true,
                   },
                 },

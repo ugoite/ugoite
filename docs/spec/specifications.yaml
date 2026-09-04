@@ -176,21 +176,21 @@
   - REQCAT-FRONTEND
   - REQCAT-FORM
 - id: SPEC-SECURITY-OVERVIEW
-  source_file: security/overview.md
+  source_file: ../architecture/security/overview.md
   linked_policies:
   - POL-010
   - POL-011
   linked_requirements:
   - REQCAT-SECURITY
 - id: SPEC-SECURITY-SANDBOX
-  source_file: security/sandbox.md
+  source_file: ../architecture/security/sandbox.md
   linked_policies:
   - POL-010
   - POL-011
   linked_requirements:
   - REQCAT-SECURITY
 - id: SPEC-TESTING-STRATEGY
-  source_file: testing/strategy.md
+  source_file: ../architecture/testing/strategy.md
   linked_policies:
   - POL-005
   - POL-008
@@ -200,7 +200,7 @@
   - REQCAT-INTEGRITY
   - REQCAT-OPS
 - id: SPEC-TESTING-CICD
-  source_file: testing/ci-cd.md
+  source_file: ../architecture/testing/ci-cd.md
   linked_policies:
   - POL-003
   - POL-005
@@ -210,7 +210,7 @@
   - REQCAT-E2E
   - REQCAT-OPS
 - id: SPEC-QUALITY-ERROR
-  source_file: quality/error-handling.md
+  source_file: ../architecture/quality/error-handling.md
   linked_policies:
   - POL-008
   linked_requirements:

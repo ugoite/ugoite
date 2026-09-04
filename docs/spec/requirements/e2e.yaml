@@ -19,7 +19,7 @@ requirements:
 
     '
   related_spec:
-  - testing/strategy.md
+  - ../architecture/testing/strategy.md
   priority: high
   status: implemented
   verification: untraced
@@ -41,7 +41,7 @@ requirements:
 
     '
   related_spec:
-  - testing/strategy.md
+  - ../architecture/testing/strategy.md
   priority: high
   status: implemented
   verification: untraced
@@ -95,7 +95,7 @@ requirements:
 
     '
   related_spec:
-  - testing/strategy.md
+  - ../architecture/testing/strategy.md
   priority: high
   status: implemented
   verification: traced
@@ -146,7 +146,7 @@ requirements:
 
     '
   related_spec:
-  - testing/strategy.md
+  - ../architecture/testing/strategy.md
   priority: high
   status: implemented
   verification: traced
@@ -171,7 +171,7 @@ requirements:
 
     '
   related_spec:
-  - testing/strategy.md
+  - ../architecture/testing/strategy.md
   priority: medium
   status: implemented
   verification: traced

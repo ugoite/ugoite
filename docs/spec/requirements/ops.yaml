@@ -20,7 +20,7 @@ requirements:
   title: Developer Guides for Local Runs
   description: Current English guides must cover root mise development, Docker Compose, CLI core/backend modes, and runtime prerequisites.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -34,7 +34,7 @@ requirements:
   title: Container Build Validation
   description: The single runtime image must be built and smoke-tested by an automated release gate. Local `ci:release` validates the build, and the hosted Release Publish workflow smoke-tests the published versioned image through the documented Compose quick start.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -51,7 +51,7 @@ requirements:
   title: Governance Taxonomy Link Integrity
   description: Governance and specification YAML must remain parseable and free of dangling identifiers.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -67,7 +67,7 @@ requirements:
   title: Version Milestone Definitions
   description: Version and milestone status must be represented under `docs/version` and distinguish implemented from planned work.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -81,7 +81,7 @@ requirements:
   title: Repository Lint and Hygiene Gates
   description: Root checks must cover formatting, Rust/Deno linting, architecture/OpenAPI drift, and repository artifact hygiene where configured.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -95,7 +95,7 @@ requirements:
   title: Rust Quality Gate Parity
   description: Root local and CI gates must run workspace formatting, Clippy, checks, and tests with the pinned Rust toolchain.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -112,7 +112,7 @@ requirements:
   title: Docsite Quality Gate Parity
   description: Docsite type/build and behavior tests must run through Deno and the root check/test gates.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -126,7 +126,7 @@ requirements:
   title: PR Template Validation Gates
   description: Non-draft, non-Dependabot pull requests must contain Summary, Related Issue, and Testing sections with a closing issue link.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -140,7 +140,7 @@ requirements:
   title: Deterministic Release Promotion
   description: An operator-selected verified candidate must keep canonical metadata and published installer paths synchronized with its exact source commit and artifact digests.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -154,7 +154,7 @@ requirements:
   title: Frontend Local Dev Proxy Readiness
   description: The integrated developer launcher must start the Rust server and make the browser `/api` route usable before normal interaction.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -170,7 +170,7 @@ requirements:
   title: Rust Target Cache Discipline
   description: Rust tasks must share the root `CARGO_TARGET_DIR` and use locked dependencies.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -184,7 +184,7 @@ requirements:
   title: Devcontainer Change Detection
   description: A hosted workflow should build/smoke the devcontainer only when relevant paths change while always emitting a required result. No such workflow is present.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: planned
@@ -206,7 +206,7 @@ requirements:
   description: Pull requests that can affect v0.1 Space ownership, authority, append-only history, adapter authority, or the canonical fixture must include a checked Knowledge Compatibility Review classification before merge.
   related_spec:
   - ../versions/v0.1-knowledge-compatibility.md
-  - testing/strategy.md
+  - ../architecture/testing/strategy.md
   priority: high
   status: implemented
   verification: traced
@@ -221,7 +221,7 @@ requirements:
   title: Native Required Status Check Contract
   description: Required status names must be versioned and match the CI and CodeQL summary jobs.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -235,7 +235,7 @@ requirements:
   title: CLI Language Classification Consistency
   description: Documentation and automation must classify the CLI as Rust.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -250,7 +250,7 @@ requirements:
   description: Development MUST use the same setup, WebAuthn, OIDC, browser-session, and device-authorization protocols
     as production. No product configuration may enable a fake identity or preconfigured credential.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: planned
@@ -275,7 +275,7 @@ requirements:
   title: Local Dev Sample-Data Seeding Workflow
   description: The root developer task `mise run seed` exposes the existing sample-data helper with configurable local root, Space ID, scenario, entry count, and seed inputs.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -291,7 +291,7 @@ requirements:
   title: Release Container Publishing and Quick Start
   description: Promotion publishes the verified runtime image digest without rebuilding and verifies the documented Compose quick start from the published versioned image and Compose assets.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -308,7 +308,7 @@ requirements:
   title: CLI Release Binaries and Install Path
   description: Candidate generation verifies checksum-verified CLI archives for supported platforms, and buildless promotion publishes those exact archives before the post-publication installer quick-start gate.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -326,7 +326,7 @@ requirements:
   title: Explicit Root Mise Task Surface
   description: All supported developer entrypoints must be declared in the root `mise.toml`; package-scoped mise tasks are not part of the current repository.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -340,7 +340,7 @@ requirements:
   title: Portable Rust WASM Gates
   description: '`ugoite-domain`, `ugoite-api-client`, and `ugoite-wasm` must compile for `wasm32-unknown-unknown` through the root check/release gates.'
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -354,7 +354,7 @@ requirements:
   title: Frontend Coverage Hard Gate
   description: The required hosted CI job runs the root frontend coverage task, whose Vitest V8 configuration hard-fails all coverage metrics at 100% for the portable Rust/WASM protocol boundary in `frontend/src/lib/ugoite-client/protocol.ts`; UI behavior remains covered by frontend behavior tests and E2E.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -370,7 +370,7 @@ requirements:
   title: Path-Aware Pull Request E2E Tiering
   description: Hosted CI may select E2E tiers by changed paths while merge/push retains smoke coverage. Current CI uses fixed pull-request and merge gates.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: planned
@@ -384,7 +384,7 @@ requirements:
   title: Repository-Native Candidate Promotion
   description: Release preparation uses version.txt as the canonical prepared-version authority, records verified candidate identity from exact manifest bytes, and promotes only matching candidate artifacts without rebuilding or repackaging.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../architecture/release/release-contract.md
   priority: high
   status: implemented
@@ -402,7 +402,7 @@ requirements:
   title: Public Installer Separation
   description: The public `packages/ugoite` installer must remain separate from repository development tooling.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -416,7 +416,7 @@ requirements:
   title: Docsite Coverage Hard Gate
   description: The required hosted CI job runs the root docsite coverage task, whose Vitest V8 configuration hard-fails all coverage metrics at 100% for authored docsite source while excluding framework-only wiring and test files.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -432,7 +432,7 @@ requirements:
   title: Published Release Quick-Start Verification
   description: Release automation downloads the published Compose and CLI assets and verifies the browser and CLI quick starts against the exact released version.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -450,7 +450,7 @@ requirements:
   title: Repository-Managed Stable Changelog Source
   description: The stable changelog source must not imply unpublished artifacts exist and must be rendered into the GitHub Release body after artifact and quick-start verification. Historical beta and alpha sources remain separate but are not normal public release channels. Reruns replace one marked repository-owned section without duplicating generated notes.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -467,7 +467,7 @@ requirements:
   title: Strict Lockfile Discipline
   description: Rust commands must use `--locked` and Deno workflows must use the committed lockfile without silently changing dependency resolution.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -481,7 +481,7 @@ requirements:
   title: Repository-Owned Helm Chart
   description: The Helm chart must deploy the single image, persistent `/data`, non-root defaults, and explicit auth secrets.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -495,7 +495,7 @@ requirements:
   title: Pre-Merge Release Quick-Start Verification
   description: A required hosted pre-merge release-like artifact test is desired; current merge CI runs builds and E2E smoke but not the full release quick start.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: planned
@@ -509,7 +509,7 @@ requirements:
   title: Immutable GitHub Action Pinning
   description: External GitHub Actions must be pinned to full commit SHAs.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -523,7 +523,7 @@ requirements:
   title: Contributor Setup and Hooks
   description: Historical mandatory local hook installation is superseded by explicit root mise commands and hosted required checks.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: superseded
@@ -537,7 +537,7 @@ requirements:
   title: Local Alternate-Runtime Test Strictness
   description: Historical alternate-runtime test strictness is superseded by the Rust/Deno workspace gates.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: superseded
@@ -551,7 +551,7 @@ requirements:
   title: Direct-Process E2E Cleanup
   description: Direct-process E2E scripts must only stop processes they started and fail clearly on occupied ports.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -565,7 +565,7 @@ requirements:
   title: Container Runtime Hardening
   description: Container and Helm defaults must run as non-root, drop capabilities, and protect persistent storage.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -579,7 +579,7 @@ requirements:
   title: Contributor Workflow Guide
   description: Contributor docs must explain architecture boundaries, spec updates, requirement traceability, and current root gates.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -593,7 +593,7 @@ requirements:
   title: Browser Walkthrough Form Terminology
   description: The browser walkthrough must use Form terminology.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -607,7 +607,7 @@ requirements:
   title: Browser Walkthrough Field Types
   description: The browser walkthrough must explain short structured fields versus longer Markdown fields.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -621,7 +621,7 @@ requirements:
   title: Browser Walkthrough Main Surfaces
   description: The browser walkthrough must explain Dashboard, Entries, Forms, Search, SQL, Assets, and Settings at a high level.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
@@ -635,7 +635,7 @@ requirements:
   title: Script-Driven Pull Request Creation
   description: A repository-owned script should validate a pull-request body before invoking GitHub tooling. No such script is present.
   related_spec:
-  - testing/ci-cd.md
+  - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: planned

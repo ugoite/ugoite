@@ -13,8 +13,8 @@ CI or storage, or the owning code path is not already known.
 - `AGENTS.md`
 - `README.md`
 - `docs/spec/index.md`
-- `docs/spec/testing/ci-cd.md`
-- `docs/spec/testing/strategy.md`
+- `docs/architecture/testing/ci-cd.md`
+- `docs/architecture/testing/strategy.md`
 - `mise.toml`
 - the relevant workflow under `.github/workflows/`
 
@@ -24,7 +24,8 @@ CI or storage, or the owning code path is not already known.
 - `ugoite-api-client`: transport-neutral remote operation protocol.
 - `ugoite-storage`: filesystem/object-store mechanics.
 - `ugoite-core`: application behavior.
-- `ugoite-iceberg`: storage-backed forms, entries, authorization, search, and derived relations.
+- `ugoite-iceberg`: storage-backed forms, entries, authorization, search, and
+  derived relations.
 - `ugoite-identity`: node authentication, recovery, OAuth, and credential state.
 - `ugoite-server`, `ugoite-cli`, `ugoite-wasm`: thin adapters.
 - `frontend`: SolidStart UI using the portable protocol.
@@ -44,8 +45,8 @@ Determine:
 3. Which source of truth and invariant must remain valid.
 4. Which root `mise.toml` task or focused crate test is the smallest useful
    validation.
-5. Whether the change affects the `quality`, `artifacts`, or `merge_group`
-   CI lane.
+5. Whether the change affects the `quality`, `artifacts`, or `merge_group` CI
+   lane.
 
 Only root tasks from `mise.toml` are valid. Use Deno tasks for frontend,
 docsite, and E2E work; do not invent package-scoped `mise` task names.

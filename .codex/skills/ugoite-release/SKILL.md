@@ -10,7 +10,7 @@ installed, or deployed.
 
 ## Read first
 
-- `docs/spec/testing/ci-cd.md`
+- `docs/architecture/testing/ci-cd.md`
 - `docs/guide/deploy/docker-compose.md`
 - `docs/guide/start/container-quickstart.md`
 - `docs/guide/deploy/helm-chart.md`
@@ -25,8 +25,8 @@ installed, or deployed.
 - Do not loosen reproducibility just to make a build pass.
 - Treat generated artifacts, installers, and release scripts as part of the
   contract.
-- When changing packaging or install behavior, verify the published path and
-  the source path separately.
+- When changing packaging or install behavior, verify the published path and the
+  source path separately.
 - If a release change affects quickstart or install docs, update the matching
   guide in the same change.
 

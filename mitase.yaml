@@ -168,12 +168,14 @@ inventory:
             - docs/architecture/contracts/derived-relations.md
             - docs/spec/features/index.md
             - docs/spec/features/sql.md
-            - docs/spec/testing/strategy.md
-            - docs/spec/testing/ci-cd.md
+            - docs/architecture/testing/strategy.md
+            - docs/architecture/testing/ci-cd.md
             - docs/spec/product/success-metrics.md
-            - docs/spec/quality/error-handling.md
-            - docs/spec/security/overview.md
-            - docs/spec/security/sandbox.md
+            - docs/architecture/quality/error-handling.md
+            - docs/architecture/security/overview.md
+            - docs/architecture/security/sandbox.md
+            - docs/architecture/security/dependency-audit.md
+            - docs/architecture/security/authentication-overview.yaml
             - docs/spec/stories/core.yaml
             - docs/spec/stories/advanced.yaml
             - docs/spec/stories/experimental.yaml

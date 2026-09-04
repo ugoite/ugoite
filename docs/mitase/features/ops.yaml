@@ -31,7 +31,7 @@ features:
                 anchor: REQ-OPS-002#criterion.release-container-validation
           - id: testing-ci-cd
             adapter: declared
-            path: docs/spec/testing/ci-cd.md
+            path: docs/architecture/testing/ci-cd.md
             selector: { kind: file }
             claims:
               - kind: documents
@@ -42,7 +42,7 @@ features:
                 anchor: REQ-OPS-007#criterion.docsite-gate
           - id: testing-strategy
             adapter: declared
-            path: docs/spec/testing/strategy.md
+            path: docs/architecture/testing/strategy.md
             selector: { kind: file }
             claims:
               - kind: documents
