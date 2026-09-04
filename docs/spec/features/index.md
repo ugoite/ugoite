@@ -16,6 +16,11 @@ The legacy Entry feature registry is retired; Entry lifecycle semantics are
 owned by `docs/mitase/features/entries.yaml` and its linked requirements, while
 the legacy Entry requirement registry remains read-only migration evidence.
 
+The legacy Form feature registry is retired; Form schema and operation
+semantics are owned by `docs/mitase/features/forms.yaml` and its linked
+requirements, while the legacy Form requirement registry remains read-only
+migration evidence.
+
 Operations, local-run, and quality-gate surfaces for `REQ-OPS-001` through
 `REQ-OPS-007` are represented canonically by
 `docs/mitase/features/ops.yaml`. The legacy
