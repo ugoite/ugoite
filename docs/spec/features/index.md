@@ -20,8 +20,8 @@ requirements remain outside its scope.
 
 The API-specific legacy registries for spaces, preferences, and SQL are retained
 for migration evidence but are no longer included in Mitase's declared
-inventory. The shared `features.yaml` index remains because it also indexes
-unmigrated domains.
+inventory or linked from the shared `features.yaml` index. The shared index
+remains because it also indexes unmigrated domains.
 
 The legacy Asset feature registry at `features/assets.yaml` is retained as a
 read-only migration snapshot and is no longer included in Mitase's declared

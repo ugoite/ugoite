@@ -7,16 +7,6 @@ conventions:
   - contracted_unavailable
   source_of_truth: crates/ugoite-server/src/lib.rs and server-generated /openapi.json
 files:
-- kind: spaces
-  file: spaces.yaml
-  linked_requirements:
-  - REQCAT-STORAGE
-  - REQCAT-API
-- kind: preferences
-  file: preferences.yaml
-  linked_requirements:
-  - REQCAT-STORAGE
-  - REQCAT-API
 - kind: entries
   file: entries.yaml
   linked_requirements:
@@ -43,9 +33,3 @@ files:
   linked_requirements:
   - REQCAT-SEARCH
   - REQCAT-API
-- kind: sql
-  file: sql.yaml
-  linked_requirements:
-  - REQCAT-SEARCH
-  - REQCAT-API
-  - REQCAT-FORM
