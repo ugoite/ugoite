@@ -209,11 +209,29 @@ test.describe("Entries CRUD", () => {
 		page,
 		request,
 	}) => {
-		const spaceId = `entries-first-form-${Date.now()}`;
+		const spaceName = `entries-first-form-${Date.now()}`;
 		const createSpace = await request.post(getBackendUrl("/spaces"), {
-			data: { name: spaceId },
+			data: { name: spaceName },
 		});
 		expect([200, 201, 409]).toContain(createSpace.status());
+
+		let spaceId: string;
+		if (createSpace.status() === 409) {
+			const spacesResponse = await request.get(getBackendUrl("/spaces"));
+			expect(spacesResponse.ok()).toBe(true);
+			const spaces = await spacesResponse.json() as Array<{
+				id: string;
+				name: string;
+			}>;
+			const existingSpace = spaces.find((space) => space.name === spaceName);
+			expect(existingSpace).toBeDefined();
+			spaceId = existingSpace!.id;
+		} else {
+			const createdSpace = await createSpace.json() as { id?: string };
+			expect(createdSpace.id).toBeTruthy();
+			spaceId = createdSpace.id!;
+		}
+		expect(spaceId).not.toBe(spaceName);
 
 		await page.goto(getFrontendUrl(`/spaces/${spaceId}/entries`), {
 			waitUntil: "domcontentloaded",
