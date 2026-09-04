@@ -459,3 +459,235 @@ features:
             role: backend
         guarantees:
           - REQ-SEC-014#criterion.recovery-audit-attribution
+
+  - id: FEAT-SEC-004
+    title: Space authorization, membership, and audit
+    summary: Connect Space-scoped authorization, invitation membership lifecycle, and owner-authorized audit reads across the shared authorization state, identity invitation flow, Rust service, server handlers, OpenAPI operations, browser routes, and exact repository artifacts.
+    status: implemented
+    bindings:
+      - id: authorization
+        role: implementation
+        facet: authorization
+        responsibility: Evaluate Space roles, explicit grants, resource parents, and lifecycle state before protected resource operations are admitted.
+        targets:
+          - id: authorizer
+            adapter: rust
+            path: crates/ugoite-iceberg/src/authorization.rs
+            selector: { kind: symbol, name: Authorizer }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-006#criterion.scoped-resource-actions
+              - kind: satisfies
+                criterion: REQ-SEC-006#criterion.grant-only-inheritance
+          - id: authorization-decision
+            adapter: rust
+            path: crates/ugoite-iceberg/src/authorization.rs
+            selector: { kind: symbol, name: effective_actions_for_state }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-006#criterion.scoped-resource-actions
+              - kind: satisfies
+                criterion: REQ-SEC-006#criterion.grant-only-inheritance
+          - id: authorized-resource-filter
+            adapter: rust
+            path: crates/ugoite-iceberg/src/authorization.rs
+            selector: { kind: symbol, name: filter_authorized_resources }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-006#criterion.filtered-before-materialization
+          - id: service-authorization-boundary
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: filter_json_resources_authorized_for_principals }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-006#criterion.filtered-before-materialization
+      - id: membership
+        role: implementation
+        facet: identity
+        responsibility: Issue and accept Space invitations while preserving one principal per existing account or Space binding.
+        targets:
+          - id: invitation-issue
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: issue_invitation }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-007#criterion.invitation-acceptance
+          - id: invitation-acceptance
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: accept_invitation_for_account }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-007#criterion.invitation-acceptance
+          - id: invitation-finalization
+            adapter: rust
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: symbol, name: finalize_invitation_binding }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-007#criterion.invitation-acceptance
+      - id: membership-server
+        role: implementation
+        facet: backend
+        responsibility: Expose authenticated membership listing, invitation issuance, role changes, and revocation through the protected Space server boundary.
+        targets:
+          - id: space-permission
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: require_space_action }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-006#criterion.scoped-resource-actions
+          - id: members-list
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: list_members }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-007#criterion.explicit-membership-state
+          - id: member-invite
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: invite_member }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-007#criterion.invitation-acceptance
+          - id: member-role-update
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: update_member_role }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-007#criterion.concurrency-safe-membership
+          - id: member-revoke
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: revoke_member }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-007#criterion.explicit-membership-state
+              - kind: satisfies
+                criterion: REQ-SEC-007#criterion.concurrency-safe-membership
+      - id: audit
+        role: implementation
+        facet: audit
+        responsibility: Append integrity-checked, attributed Space audit events and expose filtered audit reads only after owner-level authorization.
+        targets:
+          - id: audit-append
+            adapter: rust
+            path: crates/ugoite-iceberg/src/audit.rs
+            selector: { kind: symbol, name: append_audit_event }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-008#criterion.attributed-append-only-audit
+          - id: audit-list
+            adapter: rust
+            path: crates/ugoite-iceberg/src/audit.rs
+            selector: { kind: symbol, name: list_audit_events }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-008#criterion.owner-authorized-audit-read
+          - id: audit-server
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: list_audit_events }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-008#criterion.owner-authorized-audit-read
+      - id: contract
+        role: contract-source
+        facet: api
+        responsibility: Keep the authenticated membership and Space audit operations connected to the authoritative OpenAPI artifact.
+        targets:
+          - id: members-list
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/members' }
+          - id: member-invite
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/members/invitations' }
+          - id: member-role-update
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/members/{principal_id}/role' }
+          - id: member-revoke
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: delete, path: '/spaces/{space_id}/members/{principal_id}' }
+          - id: space-audit
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/audit' }
+      - id: client
+        role: implementation
+        facet: frontend
+        responsibility: Keep invitation acceptance connected to the protected browser route.
+        targets:
+          - id: invitation-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/join.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-007#criterion.invitation-acceptance
+    contracts:
+      - id: space-authorization
+        kind: http
+        source: FEAT-SEC-004#binding.contract/target.members-list
+        participants:
+          - target: FEAT-SEC-004#binding.authorization/target.authorizer
+            role: authorization
+          - target: FEAT-SEC-004#binding.authorization/target.authorization-decision
+            role: authorization
+          - target: FEAT-SEC-004#binding.authorization/target.authorized-resource-filter
+            role: authorization
+          - target: FEAT-SEC-004#binding.authorization/target.service-authorization-boundary
+            role: service
+          - target: FEAT-SEC-004#binding.membership-server/target.space-permission
+            role: backend
+        guarantees:
+          - REQ-SEC-006#criterion.scoped-resource-actions
+          - REQ-SEC-006#criterion.grant-only-inheritance
+          - REQ-SEC-006#criterion.filtered-before-materialization
+      - id: membership-lifecycle
+        kind: http
+        source: FEAT-SEC-004#binding.contract/target.member-invite
+        participants:
+          - target: FEAT-SEC-004#binding.membership/target.invitation-issue
+            role: identity
+          - target: FEAT-SEC-004#binding.membership/target.invitation-acceptance
+            role: identity
+          - target: FEAT-SEC-004#binding.membership/target.invitation-finalization
+            role: identity
+          - target: FEAT-SEC-004#binding.membership-server/target.members-list
+            role: backend
+          - target: FEAT-SEC-004#binding.membership-server/target.member-invite
+            role: backend
+          - target: FEAT-SEC-004#binding.membership-server/target.member-role-update
+            role: backend
+          - target: FEAT-SEC-004#binding.membership-server/target.member-revoke
+            role: backend
+          - target: FEAT-SEC-004#binding.client/target.invitation-route
+            role: client
+        guarantees:
+          - REQ-SEC-007#criterion.explicit-membership-state
+          - REQ-SEC-007#criterion.invitation-acceptance
+          - REQ-SEC-007#criterion.concurrency-safe-membership
+      - id: audit-visibility
+        kind: http
+        source: FEAT-SEC-004#binding.contract/target.space-audit
+        participants:
+          - target: FEAT-SEC-004#binding.audit/target.audit-append
+            role: audit
+          - target: FEAT-SEC-004#binding.audit/target.audit-list
+            role: audit
+          - target: FEAT-SEC-004#binding.audit/target.audit-server
+            role: backend
+          - target: FEAT-SEC-004#binding.membership-server/target.space-permission
+            role: authorization
+        guarantees:
+          - REQ-SEC-008#criterion.attributed-append-only-audit
+          - REQ-SEC-008#criterion.owner-authorized-audit-read
