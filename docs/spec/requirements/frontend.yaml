@@ -1059,7 +1059,7 @@ requirements:
     '
   related_spec:
   - ../architecture/contracts/overview.md
-  - requirements/api.yaml
+  - ../../mitase/requirements/api.yaml
   priority: high
   status: implemented
   verification: traced
@@ -1084,7 +1084,7 @@ requirements:
     '
   related_spec:
   - ../architecture/contracts/overview.md
-  - requirements/api.yaml
+  - ../../mitase/requirements/api.yaml
   priority: high
   status: implemented
   verification: traced
@@ -1178,7 +1178,7 @@ requirements:
     '
   related_spec:
   - ../architecture/contracts/frontend-backend-interface.md
-  - requirements/api.yaml
+  - ../../mitase/requirements/api.yaml
   priority: medium
   status: implemented
   verification: traced
