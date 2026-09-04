@@ -6,6 +6,10 @@ const scriptPath = new URL(
 ).pathname;
 const expectedSha = "a".repeat(40);
 const changedSha = "b".repeat(40);
+const expectedReadPath =
+  "api repos/ugoite/ugoite/git/ref/heads/release-planner-orphan --jq .object.sha";
+const expectedDeletePath =
+  "api --method DELETE repos/ugoite/ugoite/git/refs/heads/release-planner-orphan";
 
 type Harness = {
   root: string;
@@ -93,7 +97,7 @@ Deno.test("release planner recovery is a read-only dry run by default", async ()
     assertEquals(result.success, true);
     assertEquals(stdout.includes("Recovery target:"), true);
     assertEquals(stdout.includes("Dry run: no mutation performed"), true);
-    assertEquals(log.includes("--method DELETE"), false);
+    assertEquals(log.trim().split("\n"), [expectedReadPath]);
   });
 });
 
@@ -104,7 +108,11 @@ Deno.test("release planner recovery deletes only after a stable final comparison
     const log = await Deno.readTextFile(harness.logPath);
     assertEquals(result.success, true);
     assertEquals(stdout.includes("Deleted branch ref:"), true);
-    assertEquals(log.includes("api --method DELETE"), true);
+    assertEquals(log.trim().split("\n"), [
+      expectedReadPath,
+      expectedReadPath,
+      expectedDeletePath,
+    ]);
   });
 });
 
@@ -117,7 +125,10 @@ Deno.test("release planner recovery aborts when the ref changes before deletion"
       const log = await Deno.readTextFile(harness.logPath);
       assertEquals(result.success, false);
       assertEquals(stderr.includes("Ref changed during recovery check"), true);
-      assertEquals(log.includes("--method DELETE"), false);
+      assertEquals(log.trim().split("\n"), [
+        expectedReadPath,
+        expectedReadPath,
+      ]);
     },
   );
 });
