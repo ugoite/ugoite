@@ -19,10 +19,10 @@ graph connects generic guides, workflows, settings, registries, and exact
 docsite, repository-gate, and CLI evidence while preserving unverified
 completeness as an explicit gap.
 
-The legacy API requirement registry at `requirements/api.yaml` is retained as a
-read-only migration snapshot and is no longer included in Mitase's declared
-inventory. The canonical API requirements at `docs/mitase/requirements/api.yaml`
-are the only semantic authority for the migrated API domain.
+The legacy API requirement registry at `requirements/api.yaml` is retired and
+is no longer included in Mitase's declared inventory. The canonical API
+requirements at `docs/mitase/requirements/api.yaml` are the only semantic
+authority for the migrated API domain.
 
 The legacy Asset requirement registry at `requirements/asset.yaml` is retained
 as a read-only migration snapshot and is no longer included in Mitase's declared
