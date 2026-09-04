@@ -221,9 +221,10 @@ test.describe("Entries CRUD", () => {
 			expect(spacesResponse.ok()).toBe(true);
 			const spaces = await spacesResponse.json() as Array<{
 				id: string;
+				slug: string;
 				name: string;
 			}>;
-			const existingSpace = spaces.find((space) => space.name === spaceName);
+			const existingSpace = spaces.find((space) => space.slug === spaceName);
 			expect(existingSpace).toBeDefined();
 			spaceId = existingSpace!.id;
 		} else {
