@@ -4,7 +4,7 @@ title: 'Feature registry'
 
 `features.yaml` indexes per-area YAML files. Each operation records the canonical HTTP method/path and existing backend, frontend, core, and optional CLI source locations.
 
-The Entry, Form, Search, API, and Asset operation maps are represented canonically in
+The Entry, Form, Search, API, Asset, and Frontend operation maps are represented canonically in
 `docs/mitase/features`; this file and the legacy per-area registries remain
 read-only migration snapshots for those domains. Other domains remain
 authoritative here until their replacement review is complete. The canonical
@@ -27,6 +27,11 @@ The legacy Asset feature registry at `features/assets.yaml` is retained as a
 read-only migration snapshot and is no longer included in Mitase's declared
 inventory. The canonical Asset feature graph at `docs/mitase/features/assets.yaml`
 is the only semantic authority for the migrated Asset domain.
+
+The canonical Frontend feature graph at `docs/mitase/features/frontend.yaml` is
+the only semantic authority for the migrated Frontend domain. The legacy
+Frontend requirement registry remains read-only migration evidence until the
+broader `docs/spec` cleanup is complete.
 
 The E2E browser feature is represented by the canonical graph at
 `docs/mitase/features/e2e.yaml`; no legacy per-area E2E feature registry is

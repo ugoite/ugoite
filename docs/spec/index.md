@@ -51,16 +51,17 @@ rewriting the requirement to fit the available proof.
 
 ## Migrated domain authority
 
-Foundation, Policy, Search, Entry, Form, API, Asset, E2E, Integrity, and the
+Foundation, Policy, Search, Entry, Form, API, Asset, Frontend, E2E, Integrity, and the
 Storage Space foundation plus connector/access/routing/preference slice
 (excluding the unresolved duplicate-create conflict contract) are
 represented in the canonical Mitase records at `docs/mitase` for the current
 dogfood slice. These records are the semantic source of truth for the migrated
 domains; their corresponding legacy Foundation, Policy, Requirement, and
 Feature YAML are migration evidence only and cannot override the canonical
-representation. The API-specific, Asset-specific, and E2E legacy requirement and
-feature YAML are no longer part of Mitase's declared inventory; they remain
-read-only migration snapshots until the broader `docs/spec` cleanup is complete.
+representation. The API-specific, Asset-specific, Frontend, and E2E legacy
+requirement and feature YAML are no longer part of Mitase's declared inventory;
+they remain read-only migration snapshots until the broader `docs/spec` cleanup
+is complete.
 The legacy Integrity requirement registry is no longer semantic authority and
 remains a read-only migration snapshot until the broader `docs/spec` cleanup is
 complete. The migrated Storage Space foundation records are likewise no longer
