@@ -30,6 +30,14 @@ Root task composition:
 
 Hosted CI schedules the `ci-rust-check`, `ci-rust-test`, `ci-web`, and `artifacts` lanes in parallel, then the `ci-required` aggregator preserves the required status-check context. The three quality lanes run only `mise run ci:lane:rust-check`, `mise run ci:lane:rust-test`, and `mise run ci:lane:web`; they do not duplicate repository validation commands in GitHub Actions. The artifact lane runs only `mise run ci:artifacts` and owns Playwright/BuildKit setup plus verified artifact upload.
 
+The CodeQL `merge_group` lane still analyzes the queued head, but does not upload
+SARIF results because GitHub's merge-queue ref is ephemeral and cannot be
+resolved by the Code Scanning API. Pull-request and `main` push analyses retain
+their normal uploads. The PR policy workflow resolves the associated pull
+request for a merge-group event and skips the contributor-template check only
+for Dependabot pull requests; human pull requests remain subject to the full
+template, issue-link, and Knowledge Compatibility Review gate.
+
 The required Rust suite covers the memory and filesystem implementations. The
 optional `crates/ugoite-storage/tests/s3_contract.rs` integration test runs only
 when both `UGOITE_S3_TEST_ENDPOINT` and `UGOITE_S3_TEST_BUCKET` are configured;

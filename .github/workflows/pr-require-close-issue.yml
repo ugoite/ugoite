@@ -25,6 +25,7 @@ jobs:
           # pull_request_target and merge_group must never execute PR code.
           ref: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           sparse-checkout: |
+            tools/merge_queue_policy.ts
             tools/knowledge_compatibility.ts
           persist-credentials: false
 
@@ -32,8 +33,8 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
-            let body = context.payload.pull_request?.body || "";
-            if (!body && context.eventName === "merge_group") {
+            let pullRequest = context.payload.pull_request;
+            if (!pullRequest && context.eventName === "merge_group") {
               const mergeGroupRef = context.ref || context.payload.merge_group?.head_ref || "";
               const pullRequestNumber = mergeGroupRef.match(/(?:^|\/)pr-(\d+)(?:-|$)/)?.[1];
               if (pullRequestNumber) {
@@ -42,9 +43,21 @@ jobs:
                   repo: context.repo.repo,
                   pull_number: pullRequestNumber,
                 });
-                body = response.data.body || "";
+                pullRequest = response.data;
               }
             }
+
+            const { pathToFileURL } = await import("node:url");
+            const trustedPolicyUrl = pathToFileURL(
+              `${process.env.GITHUB_WORKSPACE}/tools/merge_queue_policy.ts`,
+            ).href;
+            const { isDependabotPullRequest } = await import(trustedPolicyUrl);
+            if (isDependabotPullRequest(pullRequest)) {
+              core.info("Skipping PR template validation for Dependabot pull request.");
+              return;
+            }
+
+            const body = pullRequest?.body || "";
             const errors = [];
 
             const requiredSections = [
@@ -76,7 +89,6 @@ jobs:
                 `Knowledge compatibility review requires Node 24; got ${process.versions.node}`,
               );
             }
-            const { pathToFileURL } = await import("node:url");
             const trustedValidatorUrl = pathToFileURL(
               `${process.env.GITHUB_WORKSPACE}/tools/knowledge_compatibility.ts`,
             ).href;

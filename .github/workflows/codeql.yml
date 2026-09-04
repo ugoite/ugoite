@@ -49,6 +49,10 @@ jobs:
         uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
         with:
           category: /language:${{ matrix.language }}
+          # GitHub merge-queue refs are ephemeral and cannot receive a Code
+          # Scanning upload. Keep analysis and the required check, but upload
+          # only for refs that Code Scanning can resolve.
+          upload: ${{ github.event_name == 'merge_group' && 'never' || 'always' }}
 
   required-check:
     name: codeql-required
