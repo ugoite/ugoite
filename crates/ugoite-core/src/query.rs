@@ -100,8 +100,9 @@ pub struct QueryLimits {
     pub max_rows: usize,
     pub timeout: Duration,
     pub max_concurrency: usize,
-    /// DataFusion built-in function names explicitly admitted by Core. UDFs
-    /// are never registered by the authorized query surface.
+    /// Function names explicitly admitted by Core. Callers cannot provide
+    /// UDF implementations; a storage adapter may register a fixed,
+    /// internally-owned function only for an adapter-owned derived plan.
     pub allowed_functions: BTreeSet<String>,
 }
 
