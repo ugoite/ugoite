@@ -293,7 +293,9 @@ async fn asset_text_search_authorized_inner(
             max_rows: crate::MAX_NORMAL_READ_ROWS,
             timeout: ASSET_TEXT_SEARCH_TIMEOUT,
             max_concurrency: 1,
-            allowed_functions: BTreeSet::from(["lower".to_string()]),
+            allowed_functions: BTreeSet::from([
+                crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME.to_string(),
+            ]),
         }) {
             Ok(context) => context,
             Err(_) => return Ok(None),
@@ -312,11 +314,7 @@ async fn asset_text_search_authorized_inner(
     if !registered {
         return Ok(None);
     }
-    let escaped = query
-        .replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_")
-        .replace('\'', "''");
+    let pattern = crate::index::sql_like_literal_for_search(query);
     let after_predicate = after
         .map(|(title, entry_id, form)| {
             format!(
@@ -328,7 +326,7 @@ async fn asset_text_search_authorized_inner(
         })
         .unwrap_or_default();
     let sql = format!(
-        "SELECT DISTINCT e.form, e.entry_id, e.title, e.created_at, e.updated_at FROM __ugoite_authorized_asset_refs e INNER JOIN __ugoite_internal_asset_text a ON e.asset_id = a.asset_id WHERE a.status = 'ready' AND a.text IS NOT NULL AND lower(a.text) LIKE lower('%{escaped}%') ESCAPE '\\'{after_predicate} ORDER BY e.title, e.entry_id, e.form LIMIT {limit}"
+        "SELECT DISTINCT e.form, e.entry_id, e.title, e.created_at, e.updated_at FROM __ugoite_authorized_asset_refs e INNER JOIN __ugoite_internal_asset_text a ON e.asset_id = a.asset_id WHERE a.status = 'ready' AND a.text IS NOT NULL AND ugoite_search_normalize(a.text) LIKE {pattern} ESCAPE '\\'{after_predicate} ORDER BY e.title, e.entry_id, e.form LIMIT {limit}"
     );
     // The provider streams bounded authorization pages into one DataFusion
     // scan. This keeps the authorization source bounded per batch while the

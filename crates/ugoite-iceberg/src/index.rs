@@ -572,7 +572,10 @@ pub(crate) async fn query_entry_candidates_authorized_after(
         None,
         Some(&searchable_scopes),
         None,
-        BTreeSet::from(["array_to_string".to_string(), "lower".to_string()]),
+        BTreeSet::from([
+            "array_to_string".to_string(),
+            crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME.to_string(),
+        ]),
         crate::MAX_NORMAL_READ_ROWS,
         false,
     )
@@ -605,7 +608,7 @@ async fn query_entry_candidates_in_context(
     let normalized_keyword = keyword
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(str::to_lowercase);
+        .map(crate::search_normalization::normalize_search_text);
     let mut branches = Vec::new();
     for (form_name, form) in forms {
         if normalized_form.is_some_and(|expected| expected != form_name) {
@@ -896,7 +899,10 @@ async fn query_entry_rows_authorized_internal(
         None,
         Some(relation_scopes),
         None,
-        BTreeSet::from(["array_to_string".to_string(), "lower".to_string()]),
+        BTreeSet::from([
+            "array_to_string".to_string(),
+            crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME.to_string(),
+        ]),
         response_limit.unwrap_or(i64::MAX as usize / 2),
         true,
     )
@@ -1558,22 +1564,22 @@ fn extra_attributes_column(batch: &arrow_array::RecordBatch, row: usize) -> Resu
 }
 
 fn searchable_keyword_predicate(form: &Value, form_name: &str, query: &str) -> Result<String> {
-    let pattern = sql_like_literal(query);
+    let pattern = sql_like_literal_for_search(query);
     let mut expressions = vec![
         format!(
-            "lower(\"_ugoite_id\") LIKE {pattern} ESCAPE {}",
+            "ugoite_search_normalize(\"_ugoite_id\") LIKE {pattern} ESCAPE {}",
             sql_string_literal("\\")
         ),
         format!(
-            "lower(\"_ugoite_title\") LIKE {pattern} ESCAPE {}",
+            "ugoite_search_normalize(\"_ugoite_title\") LIKE {pattern} ESCAPE {}",
             sql_string_literal("\\")
         ),
         format!(
-            "lower(array_to_string(\"_ugoite_tags\", ' ')) LIKE {pattern} ESCAPE {}",
+            "ugoite_search_normalize(array_to_string(\"_ugoite_tags\", ' ')) LIKE {pattern} ESCAPE {}",
             sql_string_literal("\\")
         ),
         format!(
-            "lower({}) LIKE {pattern} ESCAPE {}",
+            "ugoite_search_normalize({}) LIKE {pattern} ESCAPE {}",
             sql_string_literal(form_name),
             sql_string_literal("\\")
         ),
@@ -1591,7 +1597,7 @@ fn searchable_keyword_predicate(form: &Value, form_name: &str, query: &str) -> R
                 "string" | "markdown" | "sql" | "boolean" | "integer" | "long" | "float"
                 | "double" | "date" | "time" | "timestamp" | "timestamp_tz" | "timestamp_ns"
                 | "timestamp_tz_ns" | "row_reference" => format!(
-                    "lower(CAST({} AS VARCHAR)) LIKE {pattern} ESCAPE {}",
+                    "ugoite_search_normalize(CAST({} AS VARCHAR)) LIKE {pattern} ESCAPE {}",
                     quote_identifier(column),
                     sql_string_literal("\\")
                 ),
@@ -1621,7 +1627,7 @@ fn searchable_keyword_predicate(form: &Value, form_name: &str, query: &str) -> R
                             | "row_reference"
                     ) {
                         format!(
-                            "lower(array_to_string({}, ' ')) LIKE {pattern} ESCAPE {}",
+                            "ugoite_search_normalize(array_to_string({}, ' ')) LIKE {pattern} ESCAPE {}",
                             quote_identifier(column),
                             sql_string_literal("\\")
                         )
@@ -1780,6 +1786,10 @@ fn sql_like_literal(value: &str) -> String {
     }
     pattern.push('%');
     sql_string_literal(&pattern)
+}
+
+pub(crate) fn sql_like_literal_for_search(value: &str) -> String {
+    sql_like_literal(&crate::search_normalization::normalize_search_text(value))
 }
 
 pub async fn execute_sql_query_page(

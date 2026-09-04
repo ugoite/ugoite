@@ -3827,18 +3827,16 @@ pub async fn asset_text_search_matches(
             max_rows: MAX_ASSET_TEXT_MATCHES.saturating_add(1),
             timeout: Duration::from_secs(30),
             max_concurrency: 1,
-            allowed_functions: BTreeSet::from(["lower".to_string()]),
+            allowed_functions: BTreeSet::from([
+                crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME.to_string(),
+            ]),
         })?;
     if !register_asset_text_table(&context, op, ws_path, "__ugoite_internal_asset_text").await? {
         return Ok(None);
     }
-    let escaped = query
-        .replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_")
-        .replace('\'', "''");
+    let pattern = crate::index::sql_like_literal_for_search(query);
     let sql = format!(
-        "SELECT asset_id FROM __ugoite_internal_asset_text WHERE status = 'ready' AND text IS NOT NULL AND lower(text) LIKE lower('%{escaped}%') ESCAPE '\\' LIMIT {}",
+        "SELECT asset_id FROM __ugoite_internal_asset_text WHERE status = 'ready' AND text IS NOT NULL AND ugoite_search_normalize(text) LIKE {pattern} ESCAPE '\\' LIMIT {}",
         MAX_ASSET_TEXT_MATCHES.saturating_add(1)
     );
     let mut stream = context.sql(&sql).await?.execute_stream().await?;
@@ -4387,8 +4385,13 @@ mod tests {
             &json!({"name":"Notes","fields":{"Attachment":{"type":"asset_reference"}}}),
         )
         .await?;
-        let reference =
-            crate::asset::save_asset(&op, ws_path, "report.txt", "設備投資".as_bytes()).await?;
+        let reference = crate::asset::save_asset(
+            &op,
+            ws_path,
+            "report.txt",
+            "Ｕｇｏｉｔｅ 設備投資".as_bytes(),
+        )
+        .await?;
         let orphan =
             crate::asset::save_asset(&op, ws_path, "orphan.txt", "未参照秘密".as_bytes()).await?;
         let content = format!(
@@ -4441,9 +4444,21 @@ mod tests {
             .await?
             .expect("published AssetText relation");
         assert!(matches.contains(&reference.asset_id));
+        let normalized_matches = asset_text_search_matches(&op, ws_path, "ugoite")
+            .await?
+            .expect("published AssetText relation");
+        assert!(normalized_matches.contains(&reference.asset_id));
         let results = crate::search::search_entries(&op, ws_path, "設備投資", 10).await?;
         assert_eq!(
             results
+                .iter()
+                .map(|result| result.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["meeting-1"]
+        );
+        let normalized_results = crate::search::search_entries(&op, ws_path, "ugoite", 10).await?;
+        assert_eq!(
+            normalized_results
                 .iter()
                 .map(|result| result.id.as_str())
                 .collect::<Vec<_>>(),
