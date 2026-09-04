@@ -12434,6 +12434,62 @@ mod authentication_regression_tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn issue_2297_rest_sql_sessions_reject_non_read_only_dml_before_creation(
+    ) -> anyhow::Result<()> {
+        let principal_id = Uuid::from_u128(22970);
+        let (client, space_id, _space_uid) =
+            production_rest_fixture("issue-2297-sql-session-dml", principal_id, true).await?;
+
+        let (forms_status, forms) = client
+            .json(Method::GET, &format!("/spaces/{space_id}/forms"), None)
+            .await?;
+        assert_eq!(forms_status, StatusCode::OK, "{forms}");
+        let relation = forms
+            .as_array()
+            .and_then(|forms| forms.iter().find(|form| form["name"] == "Entry"))
+            .and_then(|form| form["sql_relation"].as_str())
+            .expect("seeded Form SQL relation");
+
+        for sql in [
+            format!("INSERT INTO \"{relation}\" SELECT * FROM \"{relation}\""),
+            format!("UPDATE \"{relation}\" SET field_100 = 'changed'"),
+            format!("DELETE FROM \"{relation}\""),
+        ] {
+            let (status, body) = client
+                .json(
+                    Method::POST,
+                    &format!("/spaces/{space_id}/sql-sessions"),
+                    Some(json!({"sql": sql})),
+                )
+                .await?;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+            assert_eq!(body["code"], "INVALID_INPUT", "{body}");
+            assert!(
+                body["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains("SELECT")),
+                "{body}"
+            );
+        }
+
+        // A read-only session still creates successfully after the rejected
+        // requests, proving the advisory/parser boundary did not leave a
+        // partially-created session behind.
+        let (status, session) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/sql-sessions"),
+                Some(json!({
+                    "sql": format!("SELECT * FROM \"{relation}\" ORDER BY _ugoite_id")
+                })),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::CREATED, "{session}");
+        assert!(session["id"].as_str().is_some(), "{session}");
+        Ok(())
+    }
+
     #[test]
     fn issue_2125_read_request_bounds_accept_edges_and_reject_over_limits() {
         let max_rows = ugoite_iceberg::MAX_NORMAL_READ_ROWS;

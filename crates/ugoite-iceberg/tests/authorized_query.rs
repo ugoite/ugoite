@@ -160,6 +160,27 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
         "rejected DDL must not mutate the authorized query source"
     );
 
+    // Syntax lint accepts parser-valid DML, but the authorized execution
+    // boundary must reject each statement before it can mutate the Space.
+    for sql in [
+        "INSERT INTO tasks SELECT * FROM tasks",
+        "UPDATE tasks SET field_100 = 'changed'",
+        "DELETE FROM tasks",
+    ] {
+        assert!(
+            context.execute(sql).await.is_err(),
+            "non-read-only DML must be rejected: {sql}"
+        );
+        let batches = context
+            .execute("SELECT * FROM tasks WHERE field_100 IS NOT NULL")
+            .await?;
+        assert_eq!(
+            batches.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+            1,
+            "rejected DML must not mutate the authorized query source: {sql}"
+        );
+    }
+
     for sql in [
         "SELECT entry_id FROM tasks",
         "SELECT t.entry_id FROM tasks AS t",
