@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-02-14"
+updated: "2026-09-04"
 page:
   id: space-sql
   title: Space SQL
@@ -7,19 +7,18 @@ page:
   implementation: implemented
 components:
   shared:
-    - id: top-tabs
-      type: tab-bar
-      position: top-center-floating
+    - id: space-shell
+      type: persistent-workspace-navigation
+      reference: ../components/space-shell.yaml
   body:
     - id: sql-empty-state
       type: heading
       title: Saved SQL
-    - id: search-recovery-action
+    - id: sql-create-action
       type: button
-      title: Open search
-    - id: dashboard-recovery-action
-      type: button
-      title: Back to dashboard
-    - id: entries-recovery-action
-      type: button
-      title: Browse entries
+      title: SQL
+      target_page: space-query-create
+    - id: sql-empty-state-explanation
+      type: text
+      title: Create a query to reuse it here.
+      condition: no-saved-sql

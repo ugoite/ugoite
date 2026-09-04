@@ -1359,7 +1359,7 @@ requirements:
   - SPEC-UI-PAGES
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-061
-  title: Saved SQL Placeholder Recovery Guidance
+  title: Saved SQL Empty State Guidance
   description: The saved SQL list route must load saved SQL entries, provide creation/navigation actions supported by the API, and surface the canonical empty-state explanation and actionable error state.
   related_spec:
   - ui/pages/space-sql.yaml
