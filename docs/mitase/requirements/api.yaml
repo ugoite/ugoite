@@ -21,6 +21,39 @@ requirements:
         kind: security
         statement: Space listing returns only Spaces authorized for the current principal.
         governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+    bindings:
+      - id: frontend-crud-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the frontend Space list and create adapters through exact MSW-backed Vitest cases; authorization filtering and immutable space_uid remain separate evidence.
+        targets:
+          - id: list-spaces
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "should return all spaces" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-001#criterion.space-lifecycle
+                covers: [FEAT-API-001#binding.frontend-implementation/target.space-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should return all spaces" } }
+          - id: create-space
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "should create a new space" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-001#criterion.space-lifecycle
+                covers: [FEAT-API-001#binding.frontend-implementation/target.space-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should create a new space" } }
+          - id: get-space
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "spaceApi.get returns a space" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-001#criterion.space-lifecycle
+                covers: [FEAT-API-001#binding.frontend-implementation/target.space-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "spaceApi.get returns a space" } }
   - id: REQ-API-002
     title: Entry CRUD
     description: The API exposes creation, retrieval, update, and deletion of Entries while preserving the Entry lifecycle and revision semantics owned by the Entry domain.
@@ -31,6 +64,57 @@ requirements:
         kind: behavior
         statement: The API exposes create, retrieve, update, and delete operations for Entries.
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: frontend-crud-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the frontend Entry list, create, retrieve, update, and delete adapters through exact MSW-backed Vitest cases.
+        targets:
+          - id: list-entries
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "should return all entries in space" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+                covers: [FEAT-API-001#binding.frontend-implementation/target.entry-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should return all entries in space" } }
+          - id: create-entry
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "should create a entry and extract title from markdown" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+                covers: [FEAT-API-001#binding.frontend-implementation/target.entry-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should create a entry and extract title from markdown" } }
+          - id: get-entry
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "should return full entry content" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+                covers: [FEAT-API-001#binding.frontend-implementation/target.entry-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should return full entry content" } }
+          - id: update-entry
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "should update entry with correct parent_revision_id" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+                covers: [FEAT-API-001#binding.frontend-implementation/target.entry-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should update entry with correct parent_revision_id" } }
+          - id: delete-entry
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "should remove entry from list" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+                covers: [FEAT-API-001#binding.frontend-implementation/target.entry-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should remove entry from list" } }
 
   - id: REQ-API-003
     title: MCP resource content framing
