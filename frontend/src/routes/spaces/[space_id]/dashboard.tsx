@@ -33,7 +33,16 @@ export default function SpaceDashboardRoute() {
   );
   const [columnTypes] = createResource(spaceId, formApi.listTypes);
   const entryForms = createMemo(() => filterCreatableEntryForms(forms() ?? []));
-  const formsAvailable = () => !forms.loading && !forms.error;
+  const formReadiness = createMemo<"loading" | "failed" | "empty" | "ready">(
+    () => {
+      if (forms.loading) return "loading";
+      if (forms.error) return "failed";
+      return entryForms().length > 0 ? "ready" : "empty";
+    },
+  );
+  const formsAvailable = () =>
+    formReadiness() === "ready" ||
+    formReadiness() === "empty";
   const spaceName = () => space()?.name || spaceId();
   const storeEntries = () => {
     const value = entryStore.entries as unknown;
@@ -92,6 +101,28 @@ export default function SpaceDashboardRoute() {
           <p>{t("dashboard.formsLoadFailed")}</p>
           <button class="btn" type="button" onClick={() => void refetchForms()}>
             {t("dashboard.retry")}
+          </button>
+        </section>
+      </Show>
+
+      <Show when={formReadiness() === "loading"}>
+        <section class="surface emptyState" role="status" aria-live="polite">
+          {t("dashboard.section.createEntry.loading")}
+        </section>
+      </Show>
+
+      <Show when={formReadiness() === "empty"}>
+        <section class="surface emptyState ui-stack-sm">
+          <p>{t("dashboard.section.createEntry.empty")}</p>
+          <p class="ui-muted">
+            {t("dashboard.section.createEntry.firstFormDescription")}
+          </p>
+          <button
+            class="btn"
+            type="button"
+            onClick={() => setShowFormDialog(true)}
+          >
+            {t("dashboard.section.createEntry.createFirstForm")}
           </button>
         </section>
       </Show>
