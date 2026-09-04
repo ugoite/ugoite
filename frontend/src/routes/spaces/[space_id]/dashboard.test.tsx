@@ -40,6 +40,44 @@ describe("v5 space Home", () => {
     expect(await screen.findByRole("link", { name: "Create your first entry with the browser walkthrough" }))
       .toHaveAttribute("href", "https://ugoite.github.io/ugoite/docs/guide/start/browser-first-entry");
   });
+  it("shows a loading state and keeps entry creation disabled until forms are ready", async () => {
+    let resolveForms: (forms: Array<{ name: string; version: number; template: string; fields: Record<string, never> }>) => void;
+    vi.mocked(formApi.list).mockReturnValue(new Promise((resolve) => {
+      resolveForms = resolve;
+    }));
+    render(() => <SpaceDashboardRoute />);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading forms...");
+    expect(screen.getAllByRole("button", { name: /Entry/ })[0]).toBeDisabled();
+
+    resolveForms!([{ name: "Notes", version: 1, template: "", fields: {} }]);
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: /Entry/ })[0]).toBeEnabled();
+    });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+  it("keeps entry creation disabled after a form load failure and offers retry", async () => {
+    let rejectForms: (reason?: unknown) => void;
+    vi.mocked(formApi.list).mockReturnValue(new Promise((_, reject) => {
+      rejectForms = reject;
+    }));
+    render(() => <SpaceDashboardRoute />);
+    rejectForms!(new Error("forms unavailable"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not load Forms",
+    );
+    expect(screen.getAllByRole("button", { name: /Entry/ })[0]).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+  it("distinguishes an empty form list from a failed form load", async () => {
+    vi.mocked(formApi.list).mockResolvedValue([]);
+    render(() => <SpaceDashboardRoute />);
+
+    expect(await screen.findByText("Start by creating your first form.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create your first form" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /Entry/ })[0]).toBeEnabled();
+  });
   it("does not show walkthrough guidance while existing entries are loading", async () => {
     const [mockEntries, setMockEntries] = createSignal<Array<{ id: string; title: string; form: string; updated_at: string; properties: Record<string, never>; tags: never[] }>>([]);
     let resolveLoad: () => void;

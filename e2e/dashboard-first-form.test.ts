@@ -29,8 +29,18 @@ test.describe("Dashboard starter-entry onboarding", () => {
 			data: { name: spaceId },
 		});
 		expect([200, 201, 409]).toContain(createSpace.status());
+		let createdSpaceId = "";
+		if (createSpace.status() === 201 || createSpace.status() === 200) {
+			createdSpaceId = ((await createSpace.json()) as { id: string }).id;
+		} else {
+			const spaces = await request.get(getBackendUrl("/spaces"));
+			expect(spaces.ok()).toBeTruthy();
+			const existing = (await spaces.json()) as Array<{ id: string; slug: string }>;
+			createdSpaceId = existing.find((space) => space.slug === spaceId)?.id ?? "";
+		}
+		expect(createdSpaceId).not.toBe("");
 
-		await page.goto(getFrontendUrl(`/spaces/${spaceId}/dashboard`), {
+		await page.goto(getFrontendUrl(`/spaces/${createdSpaceId}/dashboard`), {
 			waitUntil: "domcontentloaded",
 		});
 		await expect(page.locator("body")).toBeVisible();
@@ -51,7 +61,7 @@ test.describe("Dashboard starter-entry onboarding", () => {
 		await expect(page.locator("#entry-form")).toHaveValue("Entry");
 		await page.getByLabel("Title").fill("Starter quick note");
 		await page.getByRole("button", { name: "Create" }).click();
-		await page.waitForURL(new RegExp(`/spaces/${spaceId}/entries/[^/]+$`), {
+		await page.waitForURL(new RegExp(`/spaces/${createdSpaceId}/entries/[^/]+$`), {
 			timeout: 10_000,
 		});
 		await expect(
