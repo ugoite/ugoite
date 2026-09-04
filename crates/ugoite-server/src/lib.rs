@@ -9963,6 +9963,7 @@ pub fn openapi_snapshot() -> Value {
 mod security_headers_tests {
     use super::*;
     use http_body_util::BodyExt as _;
+    use tower::ServiceExt as _;
 
     #[test]
     fn account_recovery_credential_failures_share_authentication_error() {
@@ -10126,6 +10127,89 @@ mod security_headers_tests {
                 .unwrap(),
             trailers
         );
+    }
+
+    async fn streaming_response() -> Response {
+        Response::builder()
+            .header(header::CONTENT_TYPE, "text/event-stream")
+            .body(Body::from_stream(stream::iter([Ok::<Bytes, axum::Error>(
+                Bytes::from("data: {}\n\n"),
+            )])))
+            .unwrap()
+    }
+
+    async fn fallible_response() -> Response {
+        Response::builder()
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from_stream(stream::iter([
+                Ok::<Bytes, axum::Error>(Bytes::from("prefix")),
+                Err(axum::Error::new(std::io::Error::other("body failed"))),
+            ])))
+            .unwrap()
+    }
+
+    async fn oversized_response() -> Response {
+        Response::builder()
+            .body(Body::from(vec![0; MAX_SIGNED_RESPONSE_BYTES + 1]))
+            .unwrap()
+    }
+
+    async fn trailer_bearing_response() -> Response {
+        let mut trailers = HeaderMap::new();
+        trailers.insert("x-checksum", HeaderValue::from_static("abc"));
+        let body = http_body_util::Full::from(Bytes::from("body")).with_trailers(
+            std::future::ready(Some(Ok::<_, std::convert::Infallible>(trailers))),
+        );
+        Response::builder()
+            .header(header::TRAILER, "x-checksum")
+            .body(Body::new(body))
+            .unwrap()
+    }
+
+    async fn explicitly_unsigned_response() -> Response {
+        let mut response = Response::builder().body(Body::from("{}")).unwrap();
+        response.extensions_mut().insert(UnsignedResponse);
+        response
+    }
+
+    #[tokio::test]
+    async fn req_int_003_omits_signing_headers_for_unsigned_response_classes() {
+        let state = AppState::new_for_tests("memory://server-response-hmac-boundaries")
+            .expect("test state");
+        state
+            .initialize_node()
+            .await
+            .expect("initialize Node Identity");
+        let router = Router::new()
+            .route("/stream", get(streaming_response))
+            .route("/fallible", get(fallible_response))
+            .route("/oversized", get(oversized_response))
+            .route("/trailers", get(trailer_bearing_response))
+            .route("/explicitly-unsigned", get(explicitly_unsigned_response))
+            .layer(middleware::from_fn(mark_signable_api_response));
+        let app = app_layers(router, state);
+
+        for path in [
+            "/stream",
+            "/fallible",
+            "/oversized",
+            "/trailers",
+            "/explicitly-unsigned",
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .expect("response");
+            assert!(
+                response.headers().get(RESPONSE_KEY_ID_HEADER).is_none(),
+                "unsigned response must omit key ID: {path}"
+            );
+            assert!(
+                response.headers().get(RESPONSE_SIGNATURE_HEADER).is_none(),
+                "unsigned response must omit signature: {path}"
+            );
+        }
     }
 }
 
