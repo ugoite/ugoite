@@ -8831,6 +8831,16 @@ mod tests {
             )
             .await?;
         assert_eq!(completion.account.account_id, account_id);
+        assert!(service
+            .list_oidc_links(account_id)
+            .await?
+            .iter()
+            .any(|link| link["issuer"] == serde_json::json!(issuer)));
+        let login = service
+            .complete_oidc_login(provider_id, issuer, subject, &OidcAttemptPurpose::Login)
+            .await?;
+        assert_eq!(login.account.account_id, account_id);
+        assert!(login.session_id.is_some());
         let (invitation, _invitation_token) = service
             .issue_invitation(
                 account_id,

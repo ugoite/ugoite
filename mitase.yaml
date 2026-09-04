@@ -88,6 +88,7 @@ inventory:
             - e2e/account-self-recovery.test.ts
             - e2e/space-membership.test.ts
             - frontend/src/routes/spaces/join.tsx
+            - frontend/src/routes/spaces/join.test.tsx
             - docsite/src/ssot.test.ts
             - docsite/src/spec-integrity.test.ts
             - tools/coverage_gates_test.ts

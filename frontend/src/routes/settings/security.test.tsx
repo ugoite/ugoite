@@ -200,7 +200,11 @@ describe("SecuritySettingsRoute", () => {
   });
 
   it("lists OIDC links and keeps linking actions behind the security settings", async () => {
-    vi.mocked(authApi.listOidcProviders).mockResolvedValue([]);
+    vi.mocked(authApi.listOidcProviders).mockResolvedValue([{
+      provider_id: "provider-2",
+      issuer: "https://link.example/tenant-b",
+      client_id: "client",
+    }]);
     vi.mocked(authApi.listOidcLinks).mockResolvedValue([{
       method_id: "method-1",
       issuer: "https://id.example/tenant-a",
@@ -214,6 +218,10 @@ describe("SecuritySettingsRoute", () => {
     expect(screen.getByText("External sign-ins")).toBeInTheDocument();
     expect(screen.getByText("id.example/tenant-a", { exact: false }))
       .toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Link link.example/tenant-b" }),
+    );
+    expect(authApi.linkOidc).toHaveBeenCalledWith("provider-2");
     (screen.getByRole("button", { name: "Unlink" }) as HTMLButtonElement)
       .click();
     await waitFor(() =>

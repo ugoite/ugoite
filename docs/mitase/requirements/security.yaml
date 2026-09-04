@@ -696,13 +696,17 @@ requirements:
         governed_by: [POL-004#rule.governance, POL-011#rule.governance]
       - id: recovery-removes-oidc
         kind: security
-        statement: Account Self-Recovery removes linked OIDC methods while preserving the HumanAccount and its Space identity; Space Access Recovery does not alter external identity methods.
+        statement: Account Self-Recovery removes linked OIDC methods while preserving the HumanAccount and its Space identity.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: space-recovery-preserves-oidc
+        kind: security
+        statement: Owner-approved Space Access Recovery does not alter the recovered principal's existing external identity methods; an exact end-to-end verification remains an explicit evidence gap for this migration slice.
         governed_by: [POL-004#rule.governance, POL-011#rule.governance]
     bindings:
       - id: oidc-verification
         role: verification
         facet: verification
-        responsibility: Verify the OIDC protocol, exact external identity key, invitation gate, federated session boundary, protected link management, recovery interaction, and published contract through exact identity, server, browser, and API contract tests.
+        responsibility: Verify the OIDC protocol, exact external identity key, invitation gate, federated session boundary, protected link management, Account Self-Recovery interaction, and published contract through exact identity, server, browser, and API contract tests; Space Access Recovery preservation remains an explicit evidence gap in this slice.
         targets:
           - id: exact-identity-case
             adapter: rust
@@ -712,6 +716,10 @@ requirements:
               - kind: verifies
                 criterion: REQ-SEC-016#criterion.exact-external-identity
                 covers: [FEAT-SEC-005#binding.identity/target.login-completion]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::oidc_subject_links_to_exact_existing_account } }
+              - kind: verifies
+                criterion: REQ-SEC-016#criterion.protected-link-management
+                covers: [FEAT-SEC-005#binding.identity/target.link-list]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::oidc_subject_links_to_exact_existing_account } }
           - id: invitation-gate-case
             adapter: rust
@@ -818,7 +826,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-SEC-016#criterion.protected-link-management
-                covers: [FEAT-SEC-005#binding.identity/target.link-list, FEAT-SEC-005#binding.server/target.provider-list, FEAT-SEC-005#binding.server/target.provider-disable, FEAT-SEC-005#binding.server/target.link-list, FEAT-SEC-005#binding.server/target.link-remove]
+                covers: [FEAT-SEC-005#binding.server/target.provider-config, FEAT-SEC-005#binding.server/target.provider-disable, FEAT-SEC-005#binding.server/target.link-list, FEAT-SEC-005#binding.server/target.link-remove]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: oidc_links_are_protected_and_provider_listing_is_publicly_redacted } }
           - id: openapi-case
             adapter: rust
@@ -827,7 +835,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-SEC-016#criterion.secure-oidc-protocol
-                covers: [FEAT-SEC-005#binding.server/target.authorization-start, FEAT-SEC-005#binding.server/target.oidc-callback]
+                covers: [FEAT-SEC-005#binding.server/target.provider-list, FEAT-SEC-005#binding.server/target.authorization-start, FEAT-SEC-005#binding.server/target.oidc-callback]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: openapi_publishes_oidc_account_linking_and_bootstrap_surfaces } }
               - kind: verifies
                 criterion: REQ-SEC-016#criterion.protected-link-management
@@ -860,3 +868,12 @@ requirements:
                 criterion: REQ-SEC-016#criterion.federated-session-boundary
                 covers: [FEAT-SEC-005#binding.client/target.safe-continuation]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/auth-route.test.ts, test: stores and consumes a safe OIDC continuation path once } }
+          - id: invitation-join-case
+            adapter: typescript
+            path: frontend/src/routes/spaces/join.test.tsx
+            selector: { kind: test, name: starts OIDC login with the invitation token }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-016#criterion.invitation-gated-account
+                covers: [FEAT-SEC-005#binding.client/target.invitation-join]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/join.test.tsx, test: starts OIDC login with the invitation token } }

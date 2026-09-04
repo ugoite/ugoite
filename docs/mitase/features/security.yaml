@@ -786,13 +786,15 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SEC-016#criterion.secure-oidc-protocol
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.protected-link-management
           - id: provider-list
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
             selector: { kind: symbol, name: list_oidc_providers }
             claims:
               - kind: satisfies
-                criterion: REQ-SEC-016#criterion.protected-link-management
+                criterion: REQ-SEC-016#criterion.secure-oidc-protocol
           - id: provider-disable
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
@@ -877,6 +879,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SEC-016#criterion.protected-link-management
+          - id: invitation-join
+            adapter: typescript
+            path: frontend/src/routes/spaces/join.tsx
+            selector: { kind: symbol, name: SpaceInvitationJoinRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.invitation-gated-account
       - id: contract
         role: contract-source
         facet: api
@@ -955,6 +964,8 @@ features:
             role: continuation
           - target: FEAT-SEC-005#binding.client/target.login-route
             role: route
+          - target: FEAT-SEC-005#binding.client/target.invitation-join
+            role: invitation-route
           - target: FEAT-SEC-005#binding.contract/target.authorization-start
             role: contract
           - target: FEAT-SEC-005#binding.contract/target.callback
@@ -980,8 +991,6 @@ features:
             role: identity
           - target: FEAT-SEC-005#binding.identity/target.unlink
             role: identity
-          - target: FEAT-SEC-005#binding.server/target.provider-list
-            role: backend
           - target: FEAT-SEC-005#binding.server/target.provider-disable
             role: backend
           - target: FEAT-SEC-005#binding.server/target.link-list
@@ -994,8 +1003,6 @@ features:
             role: client
           - target: FEAT-SEC-002#binding.client/target.auth-client
             role: api-client
-          - target: FEAT-SEC-005#binding.contract/target.provider-list
-            role: contract
           - target: FEAT-SEC-005#binding.contract/target.provider-config
             role: contract
           - target: FEAT-SEC-005#binding.contract/target.provider-disable
