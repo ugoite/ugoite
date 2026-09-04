@@ -17,7 +17,7 @@ requirements:
     '
   related_spec:
   - ../architecture/api/rest.md#endpoints
-  - data-model/overview.md#forms-and-entries
+  - ../architecture/data-model/overview.md#forms-and-entries
   priority: medium
   status: implemented
   verification: traced
@@ -45,7 +45,7 @@ requirements:
     '
   related_spec:
   - ../architecture/api/rest.md#endpoints
-  - data-model/overview.md#forms-and-entries
+  - ../architecture/data-model/overview.md#forms-and-entries
   priority: medium
   status: implemented
   verification: traced
@@ -71,7 +71,7 @@ requirements:
     '
   related_spec:
   - ../architecture/api/rest.md#endpoints
-  - data-model/overview.md#forms-and-entries
+  - ../architecture/data-model/overview.md#forms-and-entries
   priority: medium
   status: implemented
   verification: untraced
@@ -94,8 +94,8 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#forms-and-entries
-  - data-model/file-schemas.yaml#form_definition
+  - ../architecture/data-model/overview.md#forms-and-entries
+  - ../architecture/data-model/file-schemas.yaml#form_definition
   priority: medium
   status: implemented
   verification: traced
@@ -120,8 +120,8 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#forms-and-entries
-  - data-model/file-schemas.yaml#form_definition
+  - ../architecture/data-model/overview.md#forms-and-entries
+  - ../architecture/data-model/file-schemas.yaml#form_definition
   priority: high
   status: implemented
   verification: traced
@@ -145,7 +145,7 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#forms-and-entries
+  - ../architecture/data-model/overview.md#forms-and-entries
   - features/sql.md#ugoite-sql
   priority: high
   status: implemented
@@ -170,8 +170,8 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#markdown-mapping
-  - data-model/file-schemas.yaml#form_definition
+  - ../architecture/data-model/overview.md#markdown-mapping
+  - ../architecture/data-model/file-schemas.yaml#form_definition
   - ../architecture/api/rest.md#endpoints
   priority: high
   status: implemented
@@ -197,7 +197,7 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#forms-and-entries
+  - ../architecture/data-model/overview.md#forms-and-entries
   priority: high
   status: planned
   verification: traced
@@ -228,8 +228,8 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#forms-and-entries
-  - data-model/directory-structure.md#iceberg-managed-form-storage
+  - ../architecture/data-model/overview.md#forms-and-entries
+  - ../architecture/data-model/directory-structure.md#iceberg-managed-form-storage
   priority: high
   status: implemented
   verification: traced

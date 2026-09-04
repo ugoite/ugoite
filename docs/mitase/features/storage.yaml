@@ -232,11 +232,11 @@ features:
         targets:
           - id: layout-source
             adapter: declared
-            path: docs/spec/data-model/directory-layout.yaml
+            path: docs/architecture/data-model/directory-layout.yaml
             selector: { kind: file }
           - id: directory-structure
             adapter: declared
-            path: docs/spec/data-model/directory-structure.md
+            path: docs/architecture/data-model/directory-structure.md
             selector: { kind: file }
       - id: derived
         role: implementation

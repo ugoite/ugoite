@@ -241,10 +241,10 @@ requirements:
     role inheritance and grant only named principals. Filtering MUST occur before search, SQL, aggregation, history,
     Asset access, reference resolution, and MCP results are produced.
   related_spec:
-  - data-model/overview.md#forms-and-entries
+  - ../architecture/data-model/overview.md#forms-and-entries
   - ../architecture/api/rest.md#endpoints
   - architecture/frontend-backend-interface.md#frontendserver-interface
-  - data-model/sql-sessions.md#saved-sql-and-materialized-view-metadata
+  - ../architecture/data-model/sql-sessions.md#saved-sql-and-materialized-view-metadata
   - stories/experimental.yaml
   priority: high
   status: implemented

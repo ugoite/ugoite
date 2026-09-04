@@ -78,7 +78,7 @@ unmigrated domains are retired, their corresponding `docs/spec` records may be
 removed after the equivalent canonical records, evidence, and scoped ownership
 rules have been reviewed.
 
-- **Core model:** [data model](data-model/overview.md),
+- **Core model:** [data model](../architecture/data-model/overview.md),
   [features](features/index.md), and the canonical machine-readable Foundation
   record at `docs/mitase/philosophies/foundation.yaml`.
 - **Interfaces:** [REST API](../architecture/api/rest.md),

@@ -99,7 +99,7 @@
   linked_requirements:
   - REQCAT-API
 - id: SPEC-DM-OVERVIEW
-  source_file: data-model/overview.md
+  source_file: ../architecture/data-model/overview.md
   linked_policies:
   - POL-001
   linked_requirements:
@@ -108,19 +108,19 @@
   - REQCAT-INTEGRITY
   - REQCAT-STORAGE
 - id: SPEC-DM-DIRECTORY
-  source_file: data-model/directory-structure.md
+  source_file: ../architecture/data-model/directory-structure.md
   linked_policies:
   - POL-014
   linked_requirements:
   - REQCAT-STORAGE
 - id: SPEC-DM-SQL-SESSIONS
-  source_file: data-model/sql-sessions.md
+  source_file: ../architecture/data-model/sql-sessions.md
   linked_policies:
   - POL-001
   linked_requirements:
   - REQCAT-API
 - id: SPEC-DM-SCHEMA
-  source_file: data-model/file-schemas.yaml
+  source_file: ../architecture/data-model/file-schemas.yaml
   linked_policies:
   - POL-007
   linked_requirements:

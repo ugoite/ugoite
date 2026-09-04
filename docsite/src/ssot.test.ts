@@ -40,7 +40,9 @@ describe("documentation single source of truth", () => {
     expect(config).toContain('docsSidebarDirectory("guide/start")');
     expect(config).toContain('docsSidebarDirectory("guide/operate/auth")');
     expect(config).toContain('docsSidebarDirectory("architecture/principles")');
-    expect(config).toContain('docsSidebarDirectory("spec/data-model")');
+    expect(config).toContain(
+      'docsSidebarDirectory("architecture/data-model")',
+    );
     expect(config).not.toContain("@astrojs/markdown-remark");
     expect(config).not.toContain("GITHUB_ACTIONS");
     expect(config).not.toContain("http://localhost");
@@ -52,8 +54,8 @@ describe("documentation single source of truth", () => {
     expect(docsSidebarDirectory("architecture/principles")).toBe(
       "../docs/architecture/principles",
     );
-    expect(docsSidebarDirectory("spec/data-model")).toBe(
-      "../docs/spec/data-model",
+    expect(docsSidebarDirectory("architecture/data-model")).toBe(
+      "../docs/architecture/data-model",
     );
   });
 

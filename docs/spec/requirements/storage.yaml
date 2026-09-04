@@ -51,7 +51,7 @@ requirements:
     URIs, and the resolver MUST reject malformed or cross-Space coordinates.'
   related_spec:
   - architecture/derived-relations.md
-  - data-model/directory-layout.yaml
+  - ../architecture/data-model/directory-layout.yaml
   priority: high
   status: implemented
   verification: traced
@@ -78,7 +78,7 @@ requirements:
   description: Creating a Space writes meta.json and settings.json, creates forms/, assets/, and sql_sessions/,
     and bootstraps the Entry Form through the Iceberg-backed Form store.
   related_spec:
-  - data-model/directory-structure.md
+  - ../architecture/data-model/directory-structure.md
   priority: high
   status: implemented
   verification: traced
@@ -136,7 +136,7 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#current-storage-roots
+  - ../architecture/data-model/overview.md#current-storage-roots
   priority: high
   status: implemented
   verification: traced
@@ -277,7 +277,7 @@ requirements:
 
     '
   related_spec:
-  - data-model/directory-structure.md#space-bootstrap
+  - ../architecture/data-model/directory-structure.md#space-bootstrap
   priority: high
   status: implemented
   verification: traced
@@ -405,9 +405,9 @@ requirements:
 
     '
   related_spec:
-  - data-model/directory-structure.md
-  - data-model/directory-layout.yaml
-  - data-model/file-schemas.yaml
+  - ../architecture/data-model/directory-structure.md
+  - ../architecture/data-model/directory-layout.yaml
+  - ../architecture/data-model/file-schemas.yaml
   priority: high
   status: implemented
   verification: untraced
