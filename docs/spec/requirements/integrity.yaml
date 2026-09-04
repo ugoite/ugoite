@@ -18,7 +18,7 @@ requirements:
 
     '
   related_spec:
-  - security/overview.md
+  - ../architecture/security/overview.md
   - ../architecture/data-model/overview.md#assets-and-integrity
   priority: high
   status: implemented
@@ -65,7 +65,7 @@ requirements:
     exposes the key ID and lowercase-hex signature in response headers. Streaming, fallible, and otherwise
     explicitly unsigned responses remain unsigned.
   related_spec:
-  - security/overview.md
+  - ../architecture/security/overview.md
   priority: low
   status: implemented
   verification: traced

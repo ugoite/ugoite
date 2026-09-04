@@ -14,4 +14,4 @@ with the data it protects.
   implementation-level overview of node identities, Passkeys, OIDC, CLI devices,
   agents, ACLs, and audit state.
 - The normative API and security contracts are grouped under the
-  [specification security overview](../../spec/security/overview.md).
+  [security overview](overview.md).

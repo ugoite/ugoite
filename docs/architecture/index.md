@@ -23,6 +23,10 @@ are new: architecture names the owners and adapters around the Space model.
   [API architecture](api/rest.md).
 - **Data model:** portable Space persistence, forms, entries, and storage
   coordinates in [Data model architecture](data-model/overview.md).
+- **Testing:** repository validation, CI lanes, and release-grade checks in
+  [Testing architecture](testing/strategy.md).
+- **Quality:** error contracts and fail-closed behavior in
+  [Quality architecture](quality/error-handling.md).
 - **Normative contracts:** implementation-facing architecture specifications
   live under [architecture contracts](contracts/overview.md).
 

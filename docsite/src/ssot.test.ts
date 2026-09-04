@@ -43,6 +43,8 @@ describe("documentation single source of truth", () => {
     expect(config).toContain(
       'docsSidebarDirectory("architecture/data-model")',
     );
+    expect(config).toContain('docsSidebarDirectory("architecture/testing")');
+    expect(config).toContain('docsSidebarDirectory("architecture/quality")');
     expect(config).not.toContain("@astrojs/markdown-remark");
     expect(config).not.toContain("GITHUB_ACTIONS");
     expect(config).not.toContain("http://localhost");
@@ -83,13 +85,13 @@ describe("documentation single source of truth", () => {
     expect(
       rewriteDocLink(
         "sibling.md",
-        "/repo/docs/spec/quality/error-handling.md",
+        "/repo/docs/architecture/quality/error-handling.md",
       ),
     ).toBe("../sibling/");
     expect(
       rewriteDocLink(
         "../architecture/contracts/overview.md",
-        "/repo/docs/spec/quality/error-handling.md",
+        "/repo/docs/architecture/quality/error-handling.md",
       ),
     ).toBe("../../architecture/contracts/overview/");
     expect(rewriteDocLink(null, "/repo/docs/index.md")).toBe(null);

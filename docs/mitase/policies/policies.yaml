@@ -130,7 +130,7 @@ policies:
             claims: [{ kind: documents, anchor: POL-003#rule.governance }]
           - id: testing-cicd
             adapter: declared
-            path: docs/spec/testing/ci-cd.md
+            path: docs/architecture/testing/ci-cd.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-003#rule.governance }]
   - id: POL-004
@@ -207,12 +207,12 @@ policies:
             claims: [{ kind: documents, anchor: POL-005#rule.governance }]
           - id: testing-strategy
             adapter: declared
-            path: docs/spec/testing/strategy.md
+            path: docs/architecture/testing/strategy.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-005#rule.governance }]
           - id: testing-cicd
             adapter: declared
-            path: docs/spec/testing/ci-cd.md
+            path: docs/architecture/testing/ci-cd.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-005#rule.governance }]
   - id: POL-006
@@ -328,17 +328,17 @@ policies:
         targets:
           - id: testing-strategy
             adapter: declared
-            path: docs/spec/testing/strategy.md
+            path: docs/architecture/testing/strategy.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-008#rule.governance }]
           - id: testing-cicd
             adapter: declared
-            path: docs/spec/testing/ci-cd.md
+            path: docs/architecture/testing/ci-cd.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-008#rule.governance }]
           - id: quality-errors
             adapter: declared
-            path: docs/spec/quality/error-handling.md
+            path: docs/architecture/quality/error-handling.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-008#rule.governance }]
   - id: POL-009
@@ -370,12 +370,12 @@ policies:
         targets:
           - id: testing-cicd
             adapter: declared
-            path: docs/spec/testing/ci-cd.md
+            path: docs/architecture/testing/ci-cd.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-009#rule.governance }]
           - id: testing-strategy
             adapter: declared
-            path: docs/spec/testing/strategy.md
+            path: docs/architecture/testing/strategy.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-009#rule.governance }]
           - id: product-metrics
@@ -412,12 +412,12 @@ policies:
         targets:
           - id: security-overview
             adapter: declared
-            path: docs/spec/security/overview.md
+            path: docs/architecture/security/overview.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-010#rule.governance }]
           - id: security-sandbox
             adapter: declared
-            path: docs/spec/security/sandbox.md
+            path: docs/architecture/security/sandbox.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-010#rule.governance }]
           - id: architecture-future-proofing
@@ -459,12 +459,12 @@ policies:
         targets:
           - id: security-overview
             adapter: declared
-            path: docs/spec/security/overview.md
+            path: docs/architecture/security/overview.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-011#rule.governance }]
           - id: security-sandbox
             adapter: declared
-            path: docs/spec/security/sandbox.md
+            path: docs/architecture/security/sandbox.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-011#rule.governance }]
           - id: api-mcp

@@ -109,7 +109,7 @@ requirements:
 
     '
   related_spec:
-  - security/overview.md
+  - ../architecture/security/overview.md
   priority: medium
   status: implemented
   verification: traced

@@ -7,10 +7,10 @@ sidebar:
 
 > v0.1 support boundary: Passkey/WebAuthn bootstrap and login, opaque browser
 > sessions, recovery-code + recovery-TOTP Account Self-Recovery, Space
-> membership/ACL enforcement, authenticated MCP access, authorized audit
-> reads, and invitation-gated OIDC authentication/account linking are
-> supported. Administrator recovery, agent principals, and audit mutation
-> remain future/reference architecture. TOTP is recovery-only.
+> membership/ACL enforcement, authenticated MCP access, authorized audit reads,
+> and invitation-gated OIDC authentication/account linking are supported.
+> Administrator recovery, agent principals, and audit mutation remain
+> future/reference architecture. TOTP is recovery-only.
 
 Ugoite has one production authentication architecture. There is no selectable
 development authentication mode, default credential, fixed password, or shared
@@ -73,9 +73,9 @@ unnecessary.
 
 First boot creates a 256-bit, 30-minute setup secret, stores its hash, and shows
 the setup URL once in the local log. Normal APIs return `423 Locked` until the
-initial Passkey setup is complete. Setup claims existing operator-created
-Spaces and creates a UUIDv7 `default` Space only when none exist. It does not
-rewrite an older Space layout.
+initial Passkey setup is complete. Setup claims existing operator-created Spaces
+and creates a UUIDv7 `default` Space only when none exist. It does not rewrite
+an older Space layout.
 
 Passkeys require discoverable credentials and user verification. Non-loopback
 deployments require HTTPS. Changing the canonical public origin or RP ID after
@@ -93,9 +93,8 @@ enables an exact comma-separated allowlist.
 
 Administrator recovery, account discovery, and operator overrides remain
 future/reference architecture. The supported OIDC authentication and account
-linking boundary is narrow. Account Self-Recovery is available only
-for a HumanAccount with explicitly enrolled recovery TOTP and issued Recovery
-Codes.
+linking boundary is narrow. Account Self-Recovery is available only for a
+HumanAccount with explicitly enrolled recovery TOTP and issued Recovery Codes.
 
 OIDC uses Authorization Code with PKCE, discovery, exact issuer/redirect checks,
 state, nonce, and signature validation. The account key is exact issuer plus
@@ -106,31 +105,31 @@ only through an unexpired Space Invitation; its display name is copied from the
 invitation, never from IdP profile claims. Existing accounts may link or unlink
 an OIDC issuer/subject pair only after recent Passkey authentication. The
 resulting session is an ordinary opaque Federated BrowserSession, which cannot
-perform Passkey-required operations. A just-created invited account can use
-its creation session to register exactly one first Passkey, after which normal
+perform Passkey-required operations. A just-created invited account can use its
+creation session to register exactly one first Passkey, after which normal
 credential rules apply. Provider disable is a soft disable that rejects new and
 in-flight attempts without deleting existing methods.
 
-Account Self-Recovery requires the exact Account ID, one currently valid
-offline Recovery Code, and a valid recovery-only TOTP code. Attempts are
-throttled and locked after five consecutive failures for 15 minutes. Neither
-factor works alone. Start only issues a short-lived WebAuthn replacement
-challenge; the code is consumed and all credential authority is replaced only
-when finish succeeds. Successful self-recovery preserves the HumanAccount and
-Space identity, advances credential generation, replaces the account's
-Passkeys, invalidates pre-recovery authentication authority, rotates all
-Recovery Codes, establishes a new browser session, and emits a secret-free
-Node audit event. A separate owner-approved Space access recovery accepts a
-15-minute token whose hash is authoritative; an encrypted bearer is retained
-only for a bounded one-time response window. It is issued by an active human
-Space Owner with a recent Passkey; the target completes a five-minute WebAuthn
-challenge. A fresh HumanAccount is created and only the target Space
-Principal's Node binding is replaced. Principal ID, membership, role, ACL,
-resource ownership, audit identity, old account credentials/sessions, and
-unrelated bindings are preserved. A durable recovery fence and binding
-revision reject stale or concurrent completion. A crash after the Node CAS
-leaves a `node_committed_space_fence_pending` marker; startup reconciliation
-completes the matching fence before another recovery mutation is accepted.
+Account Self-Recovery requires the exact Account ID, one currently valid offline
+Recovery Code, and a valid recovery-only TOTP code. Attempts are throttled and
+locked after five consecutive failures for 15 minutes. Neither factor works
+alone. Start only issues a short-lived WebAuthn replacement challenge; the code
+is consumed and all credential authority is replaced only when finish succeeds.
+Successful self-recovery preserves the HumanAccount and Space identity, advances
+credential generation, replaces the account's Passkeys, invalidates pre-recovery
+authentication authority, rotates all Recovery Codes, establishes a new browser
+session, and emits a secret-free Node audit event. A separate owner-approved
+Space access recovery accepts a 15-minute token whose hash is authoritative; an
+encrypted bearer is retained only for a bounded one-time response window. It is
+issued by an active human Space Owner with a recent Passkey; the target
+completes a five-minute WebAuthn challenge. A fresh HumanAccount is created and
+only the target Space Principal's Node binding is replaced. Principal ID,
+membership, role, ACL, resource ownership, audit identity, old account
+credentials/sessions, and unrelated bindings are preserved. A durable recovery
+fence and binding revision reject stale or concurrent completion. A crash after
+the Node CAS leaves a `node_committed_space_fence_pending` marker; startup
+reconciliation completes the matching fence before another recovery mutation is
+accepted.
 
 ## Space authorization
 
@@ -142,11 +141,11 @@ the Node control store. At least one active human owner is mandatory.
 Entry, Asset, Form, Saved SQL, search, link candidates, history, SQL sessions,
 counts, joins, aggregates, and MCP use the same core authorizer. Policies
 inherit the Space role by default and add explicit grants. There are no deny
-rules in this release. Typed Form references do not create an inferred ACL
-edge: Asset byte operations require an explicit caller-authorized containing
-Entry context before applying the Asset and Space resource policy. Query
-engines receive the authorized Entry ID set before filtering, pagination, joins,
-or aggregation.
+rules in this release. Typed Form references do not create an inferred ACL edge:
+Asset byte operations require an explicit caller-authorized containing Entry
+context before applying the Asset and Space resource policy. Query engines
+receive the authorized Entry ID set before filtering, pagination, joins, or
+aggregation.
 
 ## Authenticated MCP and Remote CLI credentials
 
@@ -154,30 +153,28 @@ Authenticated MCP access is supported when the client presents a valid
 server-issued scoped credential. Agent principals and human-approval flows
 described below remain future/reference architecture.
 
-`ugoite auth login` uses device authorization. The CLI creates a fresh P-256 key,
-shows a user code and verification URL, and polls at the server-provided
+`ugoite auth login` uses device authorization. The CLI creates a fresh P-256
+key, shows a user code and verification URL, and polls at the server-provided
 interval. Approval shows the device, Space, and action set and requires a recent
 Passkey. CLI access tokens are five-minute opaque credentials DPoP-bound to the
 device key; human MCP device credentials are resource-bound Bearer credentials
-or an explicitly presented DPoP credential.
-30-day refresh credentials rotate on every use. Reuse revokes the device grant.
-The private key uses the OS keychain where available and otherwise an owner-only
-file. The proof `htu` is checked against the configured canonical public URL
-plus the actual scheme, authority, and path; query and fragment are excluded.
-Client-supplied forwarding headers cannot replace it. REST CLI credentials omit
-`resource` and use the issuer audience; MCP credentials use exactly
-`{issuer}/mcp` for resource and audience.
+or an explicitly presented DPoP credential. 30-day refresh credentials rotate on
+every use. Reuse revokes the device grant. The private key uses the OS keychain
+where available and otherwise an owner-only file. The proof `htu` is checked
+against the configured canonical public URL plus the actual scheme, authority,
+and path; query and fragment are excluded. Client-supplied forwarding headers
+cannot replace it. REST CLI credentials omit `resource` and use the issuer
+audience; MCP credentials use exactly `{issuer}/mcp` for resource and audience.
 
 Agents are Space principals with a human sponsor, human owners, an expiry/review
 deadline, an autonomous/delegated mode, explicit grants, and independent public
 keys. Autonomous agents inherit no sponsor rights. Delegated requests evaluate
 the intersection of human policy, agent policy, token constraints, and resource
-policy. Agents cannot manage members or agents. An active human with the
-current permission can issue a
-single-use human approval for the exact supported delete/share mutation; the
-server binds it to the operation, resource, intent, actor credential, expiry,
-and lifecycle epochs before consuming it. Member, owner, agent, and
-Space-management changes remain Passkey-only.
+policy. Agents cannot manage members or agents. An active human with the current
+permission can issue a single-use human approval for the exact supported
+delete/share mutation; the server binds it to the operation, resource, intent,
+actor credential, expiry, and lifecycle epochs before consuming it. Member,
+owner, agent, and Space-management changes remain Passkey-only.
 
 OAuth authorization-server and protected-resource metadata are published under
 the standard `.well-known` paths. Ugoite resources accept only Ugoite-issued

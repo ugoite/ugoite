@@ -90,8 +90,8 @@ rules have been reviewed.
 - **Architecture contracts:** [architecture overview](../architecture/contracts/overview.md),
   decisions, stack, future-proofing, and the Space catalog.
 - **Operations and quality:** [policy traceability](policies/index.md),
-  [security](security/overview.md), [testing and CI](testing/strategy.md),
-  [quality](quality/error-handling.md),
+  [security](../architecture/security/overview.md), [testing and CI](../architecture/testing/strategy.md),
+  [quality](../architecture/quality/error-handling.md),
   [product metrics](product/success-metrics.md), and
   [versions](versions/index.md).
 

@@ -49,11 +49,10 @@ content.
 - Recovery one-time responses use `Cache-Control: no-store`. Treat
   `SPACE_RECOVERY_ALREADY_COMPLETED` as terminal; do not replay the token.
   `audit_status: pending` means the Space binding mutation committed and audit
-  delivery is queued.
-  `RECOVERY_FENCE_UNAVAILABLE` is a 409: a committed recovery marker still
-  holds an unreconciled Space fence and must be resolved by the restart-safe
-  reconciler. `RECOVERY_STORAGE_UNAVAILABLE` is a 503 only for failures before
-  the Node CAS commits any credential or code mutation.
+  delivery is queued. `RECOVERY_FENCE_UNAVAILABLE` is a 409: a committed
+  recovery marker still holds an unreconciled Space fence and must be resolved
+  by the restart-safe reconciler. `RECOVERY_STORAGE_UNAVAILABLE` is a 503 only
+  for failures before the Node CAS commits any credential or code mutation.
 
-See [frontend–backend interface](../../architecture/contracts/frontend-backend-interface.md)
-for transport ownership and protocol decoding.
+See [frontend–backend interface](../contracts/frontend-backend-interface.md) for
+transport ownership and protocol decoding.

@@ -181,7 +181,7 @@ requirements:
   description: Requirements and tests should be linked by stable REQ IDs and validated automatically. Current tests contain IDs, but no complete repository gate validates every YAML mapping.
   related_spec:
   - requirements/index.md
-  - testing/strategy.md
+  - ../architecture/testing/strategy.md
   priority: high
   status: planned
   verification: untraced

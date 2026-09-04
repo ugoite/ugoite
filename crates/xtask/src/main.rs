@@ -366,8 +366,8 @@ fn docs_current_stack_check() -> Result<()> {
         "docs/spec/index.md",
         "docs/architecture/contracts/overview.md",
         "docs/architecture/contracts/stack.md",
-        "docs/spec/testing/ci-cd.md",
-        "docs/spec/testing/strategy.md",
+        "docs/architecture/testing/ci-cd.md",
+        "docs/architecture/testing/strategy.md",
         "docs/guide",
         "docsite/src/pages/app",
     ] {
