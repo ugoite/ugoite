@@ -24,11 +24,10 @@ test.describe("Docsite onboarding", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Ugoite" }))
       .toBeVisible();
     await expect(
-      page.getByText(
-        "A private, portable knowledge space built around operator-owned files.",
-      ),
+      page.getByText(/private, portable Knowledge Space for humans and AI/i),
     ).toBeVisible();
     await expect(primaryQuickStartCta(page)).toBeVisible();
+    await expect(page.getByText(/operator-owned Space/i)).toBeVisible();
     await expect(page.getByRole("link", { name: "Run from source" }))
       .toBeVisible();
     await expect(page.getByRole("link", { name: "View on GitHub" }))
