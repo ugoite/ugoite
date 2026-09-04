@@ -99,6 +99,26 @@ features:
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
             selector: { kind: symbol, name: get_space }
+          - id: create-entry
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: create_entry }
+          - id: list-entries
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: list_entries }
+          - id: get-entry
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: get_entry }
+          - id: create-entry-authorized
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: create_entry_authorized_for_principals }
+          - id: update-entry-authorized
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: update_entry_authorized_for_principals }
           - id: get-preferences
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
@@ -143,6 +163,46 @@ features:
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
             selector: { kind: symbol, name: get_sql_session_rows_authorized_for_principals }
+      - id: service-implementation
+        role: implementation
+        facet: service
+        responsibility: Implement the API Entry service paths exercised by the canonical service-boundary tests.
+        targets:
+          - id: create-entry
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: create_entry }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+          - id: list-entries
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: list_entries }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+          - id: get-entry
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: get_entry }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+          - id: create-entry-authorized
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: create_entry_authorized_for_principals }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+          - id: update-entry-authorized
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: update_entry_authorized_for_principals }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-002#criterion.entry-lifecycle
       - id: backend
         role: operation
         facet: backend
@@ -160,6 +220,26 @@ features:
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
             selector: { kind: symbol, name: get_space }
+          - id: list-entries
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: list_entries }
+          - id: create-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: create_entry }
+          - id: get-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: get_entry }
+          - id: update-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: update_entry }
+          - id: delete-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: delete_entry }
           - id: get-preferences
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
@@ -204,6 +284,39 @@ features:
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
             selector: { kind: symbol, name: delete_sql }
+      - id: backend-implementation
+        role: implementation
+        facet: backend
+        responsibility: Implement the API Entry handlers exercised by the canonical backend route tests.
+        targets:
+          - id: create-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: create_entry }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+          - id: get-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: get_entry }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+          - id: update-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: update_entry }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+          - id: delete-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: delete_entry }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-002#criterion.entry-lifecycle
       - id: frontend
         role: operation
         facet: frontend
@@ -275,6 +388,26 @@ features:
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: get, path: '/spaces/{space_id}' }
+          - id: list-entries
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/entries' }
+          - id: create-entry
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/entries' }
+          - id: get-entry
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: get, path: '/spaces/{space_id}/entries/{entry_id}' }
+          - id: update-entry
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: put, path: '/spaces/{space_id}/entries/{entry_id}' }
+          - id: delete-entry
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: delete, path: '/spaces/{space_id}/entries/{entry_id}' }
           - id: get-preferences
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
@@ -353,6 +486,59 @@ features:
           - target: FEAT-API-001#binding.cli/target.space-command
             role: operator
         guarantees: [REQ-API-001#criterion.space-lifecycle, REQ-API-001#criterion.stable-space-identity]
+      - id: create-entry
+        kind: http
+        source: FEAT-API-001#binding.contract/target.create-entry
+        participants:
+          - target: FEAT-API-001#binding.service-implementation/target.create-entry
+            role: service
+          - target: FEAT-API-001#binding.backend-implementation/target.create-entry
+            role: backend
+          - target: FEAT-API-001#binding.frontend-implementation/target.entry-api
+            role: client
+        guarantees: [REQ-API-002#criterion.entry-lifecycle]
+      - id: list-entries
+        kind: http
+        source: FEAT-API-001#binding.contract/target.list-entries
+        participants:
+          - target: FEAT-API-001#binding.service-implementation/target.list-entries
+            role: service
+          - target: FEAT-API-001#binding.backend/target.list-entries
+            role: backend
+          - target: FEAT-API-001#binding.frontend-implementation/target.entry-api
+            role: client
+        guarantees: [REQ-API-002#criterion.entry-lifecycle]
+      - id: get-entry
+        kind: http
+        source: FEAT-API-001#binding.contract/target.get-entry
+        participants:
+          - target: FEAT-API-001#binding.service-implementation/target.get-entry
+            role: service
+          - target: FEAT-API-001#binding.backend-implementation/target.get-entry
+            role: backend
+          - target: FEAT-API-001#binding.frontend-implementation/target.entry-api
+            role: client
+        guarantees: [REQ-API-002#criterion.entry-lifecycle]
+      - id: update-entry
+        kind: http
+        source: FEAT-API-001#binding.contract/target.update-entry
+        participants:
+          - target: FEAT-API-001#binding.service-implementation/target.update-entry-authorized
+            role: service
+          - target: FEAT-API-001#binding.backend-implementation/target.update-entry
+            role: backend
+          - target: FEAT-API-001#binding.frontend-implementation/target.entry-api
+            role: client
+        guarantees: [REQ-API-002#criterion.entry-lifecycle]
+      - id: delete-entry
+        kind: http
+        source: FEAT-API-001#binding.contract/target.delete-entry
+        participants:
+          - target: FEAT-API-001#binding.backend-implementation/target.delete-entry
+            role: backend
+          - target: FEAT-API-001#binding.frontend-implementation/target.entry-api
+            role: client
+        guarantees: [REQ-API-002#criterion.entry-lifecycle]
       - id: get-preferences
         kind: http
         source: FEAT-API-001#binding.contract/target.get-preferences
