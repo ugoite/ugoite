@@ -428,7 +428,7 @@ requirements:
     '
   related_spec:
   - ../architecture/contracts/frontend-backend-interface.md
-  - features/preferences.yaml
+  - ../../mitase/features/api.yaml
   priority: medium
   status: implemented
   verification: untraced

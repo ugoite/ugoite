@@ -371,7 +371,7 @@ requirements:
     '
   related_spec:
   - ../architecture/contracts/overview.md
-  - features/preferences.yaml
+  - ../../mitase/features/storage.yaml
   priority: medium
   status: implemented
   verification: traced
