@@ -44,8 +44,9 @@ remains because it also indexes unmigrated domains.
 The legacy Asset feature registry at `features/assets.yaml` is retired because
 the canonical Asset feature graph at `docs/mitase/features/assets.yaml` is the
 only semantic authority for the migrated Asset domain. The legacy Asset
-requirement registry remains separately documented as read-only migration
-evidence until the broader `docs/spec` cleanup is complete.
+requirement registry is retired; the canonical Asset requirements at
+`docs/mitase/requirements/assets.yaml` are the sole semantic authority for that
+domain.
 
 The canonical Frontend feature graph at `docs/mitase/features/frontend.yaml` is
 the only semantic authority for the migrated Frontend domain. The legacy
