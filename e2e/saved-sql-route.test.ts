@@ -16,7 +16,7 @@ test.describe("Saved SQL route", () => {
     spaceId = await getDefaultSpaceId(request);
   });
 
-  test("REQ-FE-061: saved SQL route provides recovery links instead of a dead end", async ({ page }) => {
+  test("REQ-FE-061: saved SQL route explains its empty state and keeps current navigation", async ({ page }) => {
     await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql`), {
       waitUntil: "domcontentloaded",
     });
@@ -28,21 +28,14 @@ test.describe("Saved SQL route", () => {
     await expect(page.getByText("Create a query to reuse it here.", {
       exact: true,
     })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Open Search" }))
-      .toHaveAttribute(
-        "href",
-        `/spaces/${spaceId}/search`,
-      );
-    await expect(page.getByRole("link", { name: "Back to Dashboard" }))
-      .toHaveAttribute(
-        "href",
-        `/spaces/${spaceId}/dashboard`,
-      );
-    await expect(page.getByRole("link", { name: "Browse Entries" }))
-      .toHaveAttribute(
-        "href",
-        `/spaces/${spaceId}/entries`,
-      );
+    await expect(page.getByRole("link", { name: "SQL" }))
+      .toHaveAttribute("href", `/spaces/${spaceId}/queries/new`);
+    await expect(page.getByRole("link", { name: "Search" }).first())
+      .toHaveAttribute("href", `/spaces/${spaceId}/search`);
+    await expect(page.getByRole("link", { name: "Forms" }).first())
+      .toHaveAttribute("href", `/spaces/${spaceId}/forms`);
+    await expect(page.getByRole("link", { name: "Home" }).first())
+      .toHaveAttribute("href", `/spaces/${spaceId}/dashboard`);
   });
 
   test("REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to entries", async ({ page, request }) => {
