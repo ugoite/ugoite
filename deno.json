@@ -23,6 +23,7 @@
     "e2e:smoke": "bash e2e/scripts/run-e2e-parity.sh smoke",
     "e2e:asset-owned": "bash e2e/scripts/run-e2e-parity.sh asset-owned",
     "e2e:smoke-and-asset-owned": "bash e2e/scripts/run-e2e-parity.sh smoke-and-asset-owned",
+    "e2e:owner-recovery": "bash e2e/scripts/run-e2e-parity.sh owner-recovery",
     "e2e:full": "bash e2e/scripts/run-e2e-parity.sh full",
     "e2e:static": "E2E_FRONTEND_MODE=static E2E_ENFORCE_CI_GATES=true bash e2e/scripts/run-e2e.sh smoke"
   },

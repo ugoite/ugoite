@@ -3,8 +3,8 @@
 # Used by local `mise run e2e` and by GitHub Actions e2e-ci.yml.
 #
 # Usage: ./e2e/scripts/run-e2e-compose.sh [test-type]
-#   test-type: "smoke", "asset-owned", "smoke-and-asset-owned", "entries",
-#     "screenshot", or "full" (default)
+#   test-type: "smoke", "asset-owned", "smoke-and-asset-owned",
+#     "owner-recovery", "entries", "screenshot", or "full" (default)
 #
 # Environment variables:
 #   E2E_BUILD_IMAGES: "true" (default) to build local images before startup;
@@ -216,6 +216,9 @@ case "$TEST_TYPE" in
   smoke-and-asset-owned)
     run_e2e_task smoke-and-asset-owned "$base_report_file"
     ;;
+  owner-recovery)
+    run_e2e_task owner-recovery "$base_report_file"
+    ;;
   entries)
     run_e2e_task entries "$base_report_file"
     ;;
@@ -227,7 +230,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./run-e2e-compose.sh [smoke|asset-owned|smoke-and-asset-owned|entries|screenshot|full]"
+    echo "Usage: ./run-e2e-compose.sh [smoke|asset-owned|smoke-and-asset-owned|owner-recovery|entries|screenshot|full]"
     exit 1
     ;;
 esac

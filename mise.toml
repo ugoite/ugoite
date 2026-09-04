@@ -319,6 +319,10 @@ run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2
 [tasks."test:e2e:smoke-and-asset-owned"]
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:smoke-and-asset-owned"
 
+[tasks."test:e2e:owner-recovery"]
+description = "Run the required owner-approved Space access recovery E2E"
+run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:owner-recovery"
+
 [tasks.e2e]
 description = "Run CI-parity E2E tests, preferring Docker Compose and falling back to host processes"
 run = "deno task e2e:full"
@@ -450,6 +454,7 @@ run = [
   { tasks = [
     "test:docsite:e2e:navigation",
     "test:e2e:smoke-and-asset-owned",
+    "test:e2e:owner-recovery",
     "version:check",
   ] },
 ]
