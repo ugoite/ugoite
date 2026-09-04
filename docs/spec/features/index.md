@@ -12,6 +12,10 @@ feature graph retains core/service, backend, frontend, CLI, and HTTP contract
 surfaces rather than treating a core implementation target as the whole
 capability.
 
+The legacy Entry feature registry is retired; Entry lifecycle semantics are
+owned by `docs/mitase/features/entries.yaml` and its linked requirements, while
+the legacy Entry requirement registry remains read-only migration evidence.
+
 Operations, local-run, and quality-gate surfaces for `REQ-OPS-001` through
 `REQ-OPS-007` are represented canonically by
 `docs/mitase/features/ops.yaml`. The legacy
