@@ -2968,7 +2968,7 @@
     },
     "/spaces/{space_id}/sql-sessions": {
       "post": {
-        "summary": "Create SQL session",
+        "summary": "Create read-only SQL session",
         "parameters": [
           {
             "$ref": "#/components/parameters/SpaceId"
@@ -3088,7 +3088,7 @@
             }
           },
           "422": {
-            "description": "Invalid SQL",
+            "description": "Invalid or non-read-only SQL",
             "headers": {
               "X-Ugoite-Key-Id": {
                 "$ref": "#/components/headers/X-Ugoite-Key-Id"

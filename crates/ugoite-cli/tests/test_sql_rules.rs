@@ -28,6 +28,7 @@ fn test_cli_sql_lint_reports_errors() {
     assert!(output.status.success());
     let body: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(body["valid"], false);
+    assert_eq!(body["syntax_valid"], false);
     assert!(body["reason"].as_str().unwrap().contains("parse"));
 }
 
@@ -40,6 +41,16 @@ fn test_cli_sql_lint_uses_datafusion_for_valid_select_and_empty_input() {
     assert!(valid.status.success());
     let valid_body: serde_json::Value = serde_json::from_slice(&valid.stdout).unwrap();
     assert_eq!(valid_body["valid"], true);
+    assert_eq!(valid_body["syntax_valid"], true);
+
+    let ddl = Command::new(ugoite_bin())
+        .args(["sql", "lint", "DROP TABLE entries"])
+        .output()
+        .expect("failed to execute DDL syntax lint");
+    assert!(ddl.status.success());
+    let ddl_body: serde_json::Value = serde_json::from_slice(&ddl.stdout).unwrap();
+    assert_eq!(ddl_body["syntax_valid"], true);
+    assert_eq!(ddl_body["valid"], true);
 
     let empty = Command::new(ugoite_bin())
         .args(["sql", "lint", ""])
@@ -48,6 +59,7 @@ fn test_cli_sql_lint_uses_datafusion_for_valid_select_and_empty_input() {
     assert!(empty.status.success());
     let empty_body: serde_json::Value = serde_json::from_slice(&empty.stdout).unwrap();
     assert_eq!(empty_body["valid"], false);
+    assert_eq!(empty_body["syntax_valid"], false);
 }
 
 /// REQ-SRCH-003: SQL completion suggests table names.

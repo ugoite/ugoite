@@ -145,6 +145,14 @@ ugoite sql saved-list /path/to/workspace/spaces/team-notes
 ugoite sql saved-get /path/to/workspace/spaces/team-notes recent-notes
 ```
 
+`sql lint` is a parser-only check. A `syntax_valid: true` result means that
+DataFusion accepted the SQL syntax and template placeholders; it does not
+resolve Forms or authorize execution. The older `valid` field is an equivalent
+alias for existing CLI consumers. `ugoite query` is the read-only execution
+surface and separately validates authorized Form relations, columns, functions,
+and statement kind, so syntactically valid DDL/DML such as `DROP TABLE` is still
+rejected without changing the Space.
+
 Use `query` for an ad-hoc read-only DataFusion SQL session over Iceberg Forms:
 
 ```bash

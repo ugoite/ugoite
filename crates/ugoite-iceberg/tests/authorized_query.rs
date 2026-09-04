@@ -148,6 +148,18 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
         1
     );
 
+    // DataFusion accepts the statement syntactically, but the authorized
+    // execution context must reject DDL without mutating the Space.
+    assert!(context.execute("DROP TABLE tasks").await.is_err());
+    let batches = context
+        .execute("SELECT * FROM tasks WHERE field_100 IS NOT NULL")
+        .await?;
+    assert_eq!(
+        batches.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        1,
+        "rejected DDL must not mutate the authorized query source"
+    );
+
     for sql in [
         "SELECT entry_id FROM tasks",
         "SELECT t.entry_id FROM tasks AS t",

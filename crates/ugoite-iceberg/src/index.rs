@@ -452,8 +452,11 @@ fn is_sql_parameter_name(name: &str) -> bool {
         && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
 }
 
-/// Validate SQL using the same DataFusion parser used for query execution.
-/// Relation and column resolution intentionally remain an execution concern.
+/// Validate SQL syntax using the same DataFusion parser used for query
+/// execution. Relation/column resolution and read-only execution policy are
+/// intentionally separate concerns enforced by `AuthorizedQueryContext`.
+/// Therefore parser-valid DDL/DML, such as `DROP TABLE entries`, is accepted
+/// here and rejected only when an authorized query is planned for execution.
 pub fn validate_sql_syntax(sql: &str) -> Result<()> {
     use datafusion::sql::parser::DFParser;
 
@@ -2645,7 +2648,7 @@ fn map_sql_error(error: anyhow::Error) -> anyhow::Error {
     let message = match error.downcast_ref::<AuthorizedQueryError>() {
         Some(AuthorizedQueryError::InvalidQuery { .. }) => "invalid SQL query",
         Some(AuthorizedQueryError::UnauthorizedQueryFeature { .. }) => {
-            "unsupported SQL relation, statement, or function"
+            "SQL uses an unsupported or non-read-only relation, statement, or function"
         }
         Some(AuthorizedQueryError::ResourceLimitExceeded { .. }) => {
             "SQL query exceeds the configured resource limit"
@@ -3674,7 +3677,7 @@ async fn build_record(
 #[cfg(test)]
 mod tests {
     use super::{
-        asset_reference_projection, datafusion_parameters, filter_literal,
+        asset_reference_projection, datafusion_parameters, filter_literal, map_sql_error,
         sql_session_page_relation,
     };
     use arrow_array::{ArrayRef, RecordBatch, StringArray};
@@ -3685,6 +3688,25 @@ mod tests {
     use serde_json::{json, Map, Value};
     use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Arc;
+
+    #[test]
+    fn mapped_query_policy_errors_explain_non_read_only_rejection() {
+        let error: anyhow::Error =
+            crate::query_context::AuthorizedQueryError::UnauthorizedQueryFeature {
+                source: anyhow::anyhow!(
+                    "statement kind is not supported for read-only query execution"
+                ),
+            }
+            .into();
+        let mapped = map_sql_error(error);
+        assert_eq!(
+            mapped
+                .downcast_ref::<ugoite_core::error::AppError>()
+                .expect("query policy errors map to AppError")
+                .message(),
+            "SQL uses an unsupported or non-read-only relation, statement, or function"
+        );
+    }
 
     #[test]
     fn sql_session_relation_parser_uses_identifier_value_without_quotes() {

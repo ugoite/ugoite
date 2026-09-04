@@ -9,6 +9,16 @@ Ugoite exposes two related surfaces:
 
 The CLI `ugoite query <space> --sql ...` executes directly in core mode or creates/reads a remote SQL session in backend/API mode. Remote session metadata is admitted only after the server's authoritative storage boundary verifies the configured non-local operator; unsupported or unverified storage returns `STORAGE_MUTATION_UNAVAILABLE` before creating session state. SQL is parsed, planned, optimized, and executed by DataFusion over Iceberg Form providers. Each Form is exposed under its lowercase name with its Form fields plus the reserved system columns `_ugoite_id`, `_ugoite_title`, `_ugoite_created_at`, and `_ugoite_updated_at`; there is no cross-Form aggregate relation.
 
+`ugoite sql lint <sql>` is intentionally parser-only. Its `syntax_valid: true`
+result means that DataFusion accepted the SQL syntax and Ugoite template
+placeholders; it does not resolve a Form, check authorization, or authorize
+execution. The CLI's `valid` field is an equivalent alias for existing
+consumers. The `ugoite query` command and REST SQL-session endpoints then apply
+the execution contract below, so parser-valid DDL/DML (for example, `DROP TABLE
+entries`) is rejected as non-read-only and cannot mutate a Space. Browser lint
+feedback is advisory and the same server/core execution policy remains the
+authority when a query is saved or run.
+
 Only one read-only DataFusion statement is accepted. The query context exposes only
 authorized Form relations and explicitly allowlisted functions, then applies
 Iceberg/DataFusion projection, predicate, and limit pushdown. Unsupported

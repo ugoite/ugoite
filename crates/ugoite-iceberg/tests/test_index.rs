@@ -299,6 +299,9 @@ fn sql_template_normalization_ignores_literals_identifiers_and_comments() -> any
     assert!(index::validate_sql_syntax("SELEC broken").is_err());
     assert!(index::validate_sql_syntax("").is_err());
     assert!(index::validate_sql_syntax("SELECT 1").is_ok());
+    // Syntax lint deliberately does not enforce the separate read-only
+    // execution policy. The authorized query context rejects this statement.
+    assert!(index::validate_sql_syntax("DROP TABLE entries").is_ok());
     Ok(())
 }
 
