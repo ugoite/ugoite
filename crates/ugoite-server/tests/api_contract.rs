@@ -985,6 +985,48 @@ fn test_space_req_sto_009_openapi_documents_authenticated_space_listing() {
 }
 
 #[test]
+/// REQ-STO-005
+fn issue_2212_openapi_documents_space_creation_outcomes() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let operation = &snapshot["paths"]["/spaces"]["post"];
+
+    assert_eq!(
+        operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/SpaceCreateRequest"
+    );
+    assert_eq!(
+        operation["responses"]["200"]["description"],
+        "Existing Space returned for an idempotent retry by the same bound account"
+    );
+    assert_eq!(
+        operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/SpaceCreateResponse"
+    );
+    assert_eq!(
+        operation["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/SpaceCreateResponse"
+    );
+    assert_eq!(
+        operation["responses"]["409"]["description"],
+        "The Space slug is already owned by another account"
+    );
+    assert_eq!(
+        operation["responses"]["409"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/ErrorResponse"
+    );
+    for field in ["id", "slug", "space_uid", "name", "path"] {
+        assert!(
+            snapshot["components"]["schemas"]["SpaceCreateResponse"]["required"]
+                .as_array()
+                .expect("SpaceCreateResponse required fields")
+                .iter()
+                .any(|value| value == field),
+            "SpaceCreateResponse must require {field}"
+        );
+    }
+}
+
+#[test]
 fn issue_2125_openapi_documents_entry_list_and_keyword_search_bounds() {
     let snapshot = ugoite_server::openapi_snapshot();
     let limit = &snapshot["components"]["parameters"]["Limit"];
