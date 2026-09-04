@@ -173,6 +173,8 @@ features:
                 criterion: REQ-STO-010#criterion.explicit-core-root
               - kind: satisfies
                 criterion: REQ-STO-010#criterion.routing-help-contract
+              - kind: satisfies
+                criterion: REQ-API-001#criterion.space-lifecycle
       - id: preferences
         role: implementation
         facet: storage
