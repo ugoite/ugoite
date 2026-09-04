@@ -117,7 +117,10 @@ describe("executable documentation sources", () => {
   });
 
   test("REQ-API-013: MCP documentation describes the shipped semantic facade", async () => {
-    const source = await fs.readFile(path.join(specRoot, "api/mcp.md"), "utf8");
+    const source = await fs.readFile(
+      path.join(repoRoot, "docs/architecture/api/mcp.md"),
+      "utf8",
+    );
     expect(source).toContain("POST /mcp");
     expect(source).toContain("ugoite.search");
     expect(source).toContain("ugoite://entry/{id}");

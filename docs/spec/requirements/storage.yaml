@@ -167,7 +167,7 @@ requirements:
 
     '
   related_spec:
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   priority: medium
   status: implemented
   verification: traced
@@ -201,7 +201,7 @@ requirements:
     '
   related_spec:
   - stories/core.yaml#STORY-003
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   priority: medium
   status: implemented
   verification: traced
@@ -303,7 +303,7 @@ requirements:
     incomplete Space directories through the core listing rules. Node administration does not grant Space read access.
     Unexpected storage errors are returned rather than converted to false success.
   related_spec:
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   priority: high
   status: implemented
   verification: untraced

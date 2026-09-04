@@ -65,7 +65,7 @@
   - REQCAT-OPS
   - REQCAT-STORAGE
 - id: SPEC-API-REST
-  source_file: api/rest.md
+  source_file: ../architecture/api/rest.md
   linked_policies:
   - POL-002
   - POL-004
@@ -76,14 +76,14 @@
   - REQCAT-INDEX
   - REQCAT-SEARCH
 - id: SPEC-API-MCP
-  source_file: api/mcp.md
+  source_file: ../architecture/api/mcp.md
   linked_policies:
   - POL-011
   - POL-015
   linked_requirements:
   - REQCAT-API
 - id: SPEC-API-SURFACES
-  source_file: api/operator-surfaces.md
+  source_file: ../architecture/api/operator-surfaces.md
   linked_policies:
   - POL-004
   - POL-005
@@ -92,7 +92,7 @@
   linked_requirements:
   - REQCAT-API
 - id: SPEC-API-OPENAPI
-  source_file: api/openapi.yaml
+  source_file: ../../crates/ugoite-server/src/openapi.json
   linked_policies:
   - POL-004
   - POL-014

@@ -592,7 +592,7 @@ requirements:
     '
   related_spec:
   - stories/core.yaml#STORY-005
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   priority: medium
   status: implemented
   verification: traced
@@ -622,7 +622,7 @@ requirements:
 
     '
   related_spec:
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   priority: medium
   status: implemented
   verification: traced

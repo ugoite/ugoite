@@ -100,7 +100,7 @@ policies:
             claims: [{ kind: documents, anchor: POL-002#rule.governance }]
           - id: api-rest
             adapter: declared
-            path: docs/spec/api/rest.md
+            path: docs/architecture/api/rest.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-002#rule.governance }]
   - id: POL-003
@@ -167,17 +167,17 @@ policies:
             claims: [{ kind: documents, anchor: POL-004#rule.governance }]
           - id: api-rest
             adapter: declared
-            path: docs/spec/api/rest.md
+            path: docs/architecture/api/rest.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-004#rule.governance }]
           - id: api-openapi
             adapter: declared
-            path: docs/spec/api/openapi.yaml
+            path: crates/ugoite-server/src/openapi.json
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-004#rule.governance }]
           - id: api-surfaces
             adapter: declared
-            path: docs/spec/api/operator-surfaces.md
+            path: docs/architecture/api/operator-surfaces.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-004#rule.governance }]
   - id: POL-005
@@ -202,7 +202,7 @@ policies:
             claims: [{ kind: documents, anchor: POL-005#rule.governance }]
           - id: api-surfaces
             adapter: declared
-            path: docs/spec/api/operator-surfaces.md
+            path: docs/architecture/api/operator-surfaces.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-005#rule.governance }]
           - id: testing-strategy
@@ -427,7 +427,7 @@ policies:
             claims: [{ kind: documents, anchor: POL-010#rule.governance }]
           - id: api-surfaces
             adapter: declared
-            path: docs/spec/api/operator-surfaces.md
+            path: docs/architecture/api/operator-surfaces.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-010#rule.governance }]
   - id: POL-011
@@ -469,7 +469,7 @@ policies:
             claims: [{ kind: documents, anchor: POL-011#rule.governance }]
           - id: api-mcp
             adapter: declared
-            path: docs/spec/api/mcp.md
+            path: docs/architecture/api/mcp.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-011#rule.governance }]
   - id: POL-012
@@ -511,7 +511,7 @@ policies:
             claims: [{ kind: documents, anchor: POL-012#rule.governance }]
           - id: api-rest
             adapter: declared
-            path: docs/spec/api/rest.md
+            path: docs/architecture/api/rest.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-012#rule.governance }]
   - id: POL-013
@@ -617,7 +617,7 @@ policies:
             claims: [{ kind: documents, anchor: POL-014#rule.governance }]
           - id: api-openapi
             adapter: declared
-            path: docs/spec/api/openapi.yaml
+            path: crates/ugoite-server/src/openapi.json
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-014#rule.governance }]
           - id: data-model-directory
@@ -647,14 +647,14 @@ policies:
         targets:
           - id: api-mcp
             adapter: declared
-            path: docs/spec/api/mcp.md
+            path: docs/architecture/api/mcp.md
             selector: { kind: file }
             claims:
               - kind: documents
                 anchor: POL-015#rule.governance
           - id: api-surfaces
             adapter: declared
-            path: docs/spec/api/operator-surfaces.md
+            path: docs/architecture/api/operator-surfaces.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-015#rule.governance }]
   - id: POL-016

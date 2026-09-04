@@ -71,7 +71,7 @@ requirements:
     '
   related_spec:
   - stories/core.yaml#STORY-005
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   priority: high
   status: implemented
   verification: traced
@@ -162,7 +162,7 @@ requirements:
   description: GET /spaces/{space_id}/search performs case-insensitive substring matching over current Entry data and the authorized AssetText projection. It returns Entries, does not expose AssetText rows, and does not consult a persistent inverted index or rank by relevance.
   related_spec:
   - stories/core.yaml#STORY-005
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   priority: medium
   status: implemented
   verification: untraced
@@ -186,7 +186,7 @@ requirements:
     '
   related_spec:
   - features/sql.md
-  - api/rest.md#endpoints
+  - ../architecture/api/rest.md#endpoints
   priority: high
   status: implemented
   verification: traced

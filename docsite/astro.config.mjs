@@ -195,6 +195,17 @@ export default defineConfig({
                 },
               ],
             },
+            {
+              label: "API",
+              collapsed: true,
+              items: [
+                {
+                  autogenerate: {
+                    directory: docsSidebarDirectory("architecture/api"),
+                  },
+                },
+              ],
+            },
           ],
         },
         {
@@ -224,12 +235,6 @@ export default defineConfig({
               label: "Interfaces",
               collapsed: true,
               items: [
-                {
-                  autogenerate: {
-                    directory: docsSidebarDirectory("spec/api"),
-                    collapsed: true,
-                  },
-                },
                 {
                   autogenerate: {
                     directory: docsSidebarDirectory("spec/ui"),

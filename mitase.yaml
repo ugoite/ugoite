@@ -131,6 +131,9 @@ inventory:
             - docs/index.md
             - docs/guide/start/container-quickstart.md
             - docs/guide/operate/server/operations.md
+            - docs/architecture/api/rest.md
+            - docs/architecture/api/mcp.md
+            - docs/architecture/api/operator-surfaces.md
             - docker-compose.release.yaml
             - docsite/astro.config.mjs
             - docsite/src/content.config.ts
@@ -156,10 +159,7 @@ inventory:
             - docs/spec/architecture/future-proofing.md
             - docs/spec/architecture/frontend-backend-interface.md
             - docs/spec/architecture/space-catalog.md
-            - docs/spec/api/rest.md
-            - docs/spec/api/openapi.yaml
-            - docs/spec/api/operator-surfaces.md
-            - docs/spec/api/mcp.md
+            - crates/ugoite-server/src/openapi.json
             - docs/spec/data-model/overview.md
             - docs/spec/data-model/sql-sessions.md
             - docs/spec/data-model/directory-structure.md

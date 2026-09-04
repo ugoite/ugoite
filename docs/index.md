@@ -61,7 +61,8 @@ runtime is shipped.
   [local development login guide](guide/develop/local-dev-auth-login.md) and the
   [architecture overview](spec/architecture/overview.md).
 - **Automate it:** use the [CLI guide](guide/automate/cli.md),
-  [REST API](spec/api/rest.md), or current [MCP surface](spec/api/mcp.md).
+  [REST API](architecture/api/rest.md), or current
+  [MCP surface](architecture/api/mcp.md).
 - **Verify it:** browse the [executable specification](spec/index.md), whose
   registries point back to implementation and tests.
 
