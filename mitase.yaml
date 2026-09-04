@@ -19,8 +19,12 @@ inventory:
         typescript:
           roots:
             - frontend/src/lib/auth-api.ts
+            - frontend/src/lib/auth-route.ts
+            - frontend/src/lib/auth-route.test.ts
             - frontend/src/routes/login.tsx
             - frontend/src/routes/login.test.tsx
+            - frontend/src/routes/settings/security.tsx
+            - frontend/src/routes/settings/security.test.tsx
             - frontend/src/routes/setup.tsx
             - frontend/src/routes/setup.test.tsx
             - frontend/src/routes/recover/account.tsx
