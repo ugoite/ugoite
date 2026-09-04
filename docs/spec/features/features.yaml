@@ -6,9 +6,4 @@ conventions:
   - implemented
   - contracted_unavailable
   source_of_truth: crates/ugoite-server/src/lib.rs and server-generated /openapi.json
-files:
-- kind: search
-  file: search.yaml
-  linked_requirements:
-  - REQCAT-SEARCH
-  - REQCAT-API
+files: []

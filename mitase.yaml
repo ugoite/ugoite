@@ -151,7 +151,6 @@ inventory:
             - docs/spec/philosophy/foundation.yaml
             - docs/spec/policies/policies.yaml
             - docs/spec/requirements/search.yaml
-            - docs/spec/features/search.yaml
             - docs/spec/requirements/entry.yaml
             - docs/spec/requirements/form.yaml
             - docs/spec/requirements/index.yaml

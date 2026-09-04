@@ -4,13 +4,14 @@ title: 'Feature registry'
 
 `features.yaml` indexes per-area YAML files. Each operation records the canonical HTTP method/path and existing backend, frontend, core, and optional CLI source locations.
 
-The Entry, Form, Search, API, Asset, and Frontend operation maps are represented canonically in
-`docs/mitase/features`; this file and the legacy per-area registries remain
-read-only migration snapshots for those domains. Other domains remain
-authoritative here until their replacement review is complete. The canonical
-feature graph retains core/service, backend, frontend, CLI, and HTTP contract
-surfaces rather than treating a core implementation target as the whole
-capability.
+The Entry, Form, Search, API, Asset, and Frontend operation maps are
+represented canonically in `docs/mitase/features`. Retired per-area feature
+registries are not second authorities; remaining legacy requirements and other
+evidence stay read-only until the broader `docs/spec` cleanup is complete.
+Other domains remain authoritative here until their replacement review is
+complete. The canonical feature graph retains core/service, backend,
+frontend, CLI, and HTTP contract surfaces rather than treating a core
+implementation target as the whole capability.
 
 The legacy Entry feature registry is retired; Entry lifecycle semantics are
 owned by `docs/mitase/features/entries.yaml` and its linked requirements, while
@@ -19,6 +20,11 @@ the legacy Entry requirement registry remains read-only migration evidence.
 The legacy Form feature registry is retired; Form schema and operation
 semantics are owned by `docs/mitase/features/forms.yaml` and its linked
 requirements, while the legacy Form requirement registry remains read-only
+migration evidence.
+
+The legacy Search feature registry is retired; keyword and structured-query
+semantics are owned by `docs/mitase/features/search.yaml` and its linked
+requirements, while the legacy Search requirement registry remains read-only
 migration evidence.
 
 Operations, local-run, and quality-gate surfaces for `REQ-OPS-001` through
