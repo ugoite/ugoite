@@ -363,14 +363,33 @@ test.describe("Entries CRUD", () => {
 		request,
 	}) => {
 		const timestamp = Date.now();
-		const spaceId = `row-reference-picker-${timestamp}`;
+		const spaceName = `row-reference-picker-${timestamp}`;
 		const projectAlphaId = `project-alpha-${timestamp}`;
 		const projectBetaId = `project-beta-${timestamp}`;
 		const taskTitle = `Task referencing alpha project ${timestamp}`;
 		const createSpace = await request.post(getBackendUrl("/spaces"), {
-			data: { name: spaceId },
+			data: { name: spaceName },
 		});
 		expect([200, 201, 409]).toContain(createSpace.status());
+
+		let spaceId: string;
+		if (createSpace.status() === 409) {
+			const spacesResponse = await request.get(getBackendUrl("/spaces"));
+			expect(spacesResponse.ok()).toBe(true);
+			const spaces = await spacesResponse.json() as Array<{
+				id: string;
+				slug: string;
+				name: string;
+			}>;
+			const existingSpace = spaces.find((space) => space.slug === spaceName);
+			expect(existingSpace).toBeDefined();
+			spaceId = existingSpace!.id;
+		} else {
+			const createdSpace = await createSpace.json() as { id?: string };
+			expect(createdSpace.id).toBeTruthy();
+			spaceId = createdSpace.id!;
+		}
+		expect(spaceId).not.toBe(spaceName);
 
 		const createProjectForm = await request.post(getBackendUrl(`/spaces/${spaceId}/forms`), {
 			data: {
@@ -760,6 +779,7 @@ test.describe("Entries CRUD", () => {
 		await page.goto(`/spaces/${spaceId}/entries/${created.id}`);
 		await page.waitForLoadState("networkidle");
 		await settleUiLoading(page);
+		await page.getByRole("tab", { name: "Preview" }).click();
 
 		const preview = page.locator(".preview").first();
 		await expect(preview).toBeVisible();
