@@ -33,6 +33,12 @@ describe("sql helpers", () => {
   });
 
   it("classifies read-only policy from the top-level statement form", () => {
+    expect(
+      sqlLintDiagnostics("INSERT INTO entries SELECT * FROM source").map((
+        diagnostic,
+      ) => diagnostic.message),
+    ).toEqual(["Read-only query must start with SELECT"]);
+
     for (
       const query of [
         "INSERT INTO entries SELECT * FROM source",
