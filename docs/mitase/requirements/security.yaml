@@ -640,7 +640,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-SEC-014#criterion.credential-replacement
-                covers: [FEAT-SEC-003#binding.client/target.account-recovery-route]
+                covers: [FEAT-SEC-003#binding.client/target.account-recovery-route, FEAT-SEC-003#binding.identity/target.recovery-finish, FEAT-SEC-003#binding.identity/target.recovery-code-rotation]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/account-self-recovery.test.ts, test: replaces the credential generation and preserves the HumanAccount } }
               - kind: verifies
                 criterion: REQ-SEC-014#criterion.recovery-audit-attribution
