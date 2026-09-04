@@ -21,7 +21,7 @@ policies:
         targets:
           - id: foundation-precedence-evidence
             adapter: declared
-            path: docs/spec/versions/v0.1.md
+            path: docs/architecture/release/v0.1.md
             selector: { kind: file }
             claims:
               - kind: evidences
@@ -380,7 +380,7 @@ policies:
             claims: [{ kind: documents, anchor: POL-009#rule.governance }]
           - id: product-metrics
             adapter: declared
-            path: docs/spec/product/success-metrics.md
+            path: docs/architecture/product/success-metrics.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-009#rule.governance }]
   - id: POL-010
@@ -553,7 +553,7 @@ policies:
             claims: [{ kind: documents, anchor: POL-013#rule.governance }]
           - id: product-metrics
             adapter: declared
-            path: docs/spec/product/success-metrics.md
+            path: docs/architecture/product/success-metrics.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-013#rule.governance }]
           - id: stories-experimental
@@ -627,7 +627,7 @@ policies:
             claims: [{ kind: documents, anchor: POL-014#rule.governance }]
           - id: knowledge-compatibility
             adapter: declared
-            path: docs/spec/versions/v0.1-knowledge-compatibility.md
+            path: docs/architecture/release/v0.1-knowledge-compatibility.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-014#rule.governance }]
   - id: POL-015
@@ -686,7 +686,7 @@ policies:
         targets:
           - id: knowledge-compatibility
             adapter: declared
-            path: docs/spec/versions/v0.1-knowledge-compatibility.md
+            path: docs/architecture/release/v0.1-knowledge-compatibility.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-016#rule.governance }]
           - id: space-catalog
@@ -711,7 +711,7 @@ policies:
         targets:
           - id: knowledge-portability-contract
             adapter: declared
-            path: docs/spec/versions/v0.1-knowledge-compatibility.md
+            path: docs/architecture/release/v0.1-knowledge-compatibility.md
             selector: { kind: file }
             claims:
               - kind: evidences

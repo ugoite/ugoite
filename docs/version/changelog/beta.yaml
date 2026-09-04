@@ -1,6 +1,6 @@
 channel: beta
 title: Beta Channel Changelog
-doc_path: docs/spec/versions/changelog-beta.md
+doc_path: docs/architecture/release/changelog-beta.md
 summary: 'Beta releases communicate the near-stable prerelease slice of Ugoite for broader validation before operator-facing
   support.
 

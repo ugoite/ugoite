@@ -1,6 +1,6 @@
 channel: stable
 title: Stable Channel Changelog
-doc_path: docs/spec/versions/changelog-stable.md
+doc_path: docs/architecture/release/changelog-stable.md
 summary: 'Stable releases communicate the supported, operator-ready slice of Ugoite with durable upgrade and deployment
   guidance.
 

@@ -205,7 +205,7 @@ requirements:
   title: Knowledge Compatibility Review Gate
   description: Pull requests that can affect v0.1 Space ownership, authority, append-only history, adapter authority, or the canonical fixture must include a checked Knowledge Compatibility Review classification before merge.
   related_spec:
-  - ../versions/v0.1-knowledge-compatibility.md
+  - ../architecture/release/v0.1-knowledge-compatibility.md
   - ../architecture/testing/strategy.md
   priority: high
   status: implemented

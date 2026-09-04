@@ -8,7 +8,7 @@ close: # (or: closes #)
 
 ## Knowledge Compatibility Review
 
-Review the [v0.1 Knowledge compatibility floor](../docs/spec/versions/v0.1-knowledge-compatibility.md)
+Review the [v0.1 Knowledge compatibility floor](../docs/architecture/release/v0.1-knowledge-compatibility.md)
 before selecting exactly one classification.
 
 - [ ] No effect on the v0.1 Knowledge semantic contract.

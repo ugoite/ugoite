@@ -1,5 +1,5 @@
 ---
-title: 'Changelog channels'
+title: "Changelog channels"
 ---
 
 The repository keeps separate stable, beta, and alpha source files so historical

@@ -92,8 +92,8 @@ rules have been reviewed.
 - **Operations and quality:** [policy traceability](policies/index.md),
   [security](../architecture/security/overview.md), [testing and CI](../architecture/testing/strategy.md),
   [quality](../architecture/quality/error-handling.md),
-  [product metrics](product/success-metrics.md), and
-  [versions](versions/index.md).
+  [product metrics](../architecture/product/success-metrics.md), and
+  [versions](../architecture/release/versioning.md).
 
 Use the [operator guides](../guide/index.md) for procedures. This section
 describes the repository specification boundary; the migrated dogfood

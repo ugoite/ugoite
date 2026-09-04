@@ -519,11 +519,11 @@ requirements:
   - index.md
   - ../architecture/api/mcp.md
   - ../architecture/contracts/overview.md
-  - versions/index.md
+  - ../architecture/release/versioning.md
   - ../version/v0.1/mvp.yaml
   - ../version/v0.2.yaml
   - ../version/unknown/roadmap.yaml
-  - versions/v0.2.md
+  - ../architecture/release/v0.2.md
   priority: medium
   status: implemented
   verification: traced
