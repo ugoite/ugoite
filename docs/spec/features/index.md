@@ -63,6 +63,10 @@ compatibility operations are now represented in `docs/mitase/features/storage.ya
 and remain here only as read-only migration evidence. Complete executable
 parity between every documented layout path and runtime creation remains an
 explicit follow-up rather than an inferred guarantee.
+The legacy DerivedRelation feature registry is retired; its semantic authority
+is the canonical storage and Asset graph in `docs/mitase/features`, while the
+remaining legacy requirement snapshots continue as read-only migration
+evidence.
 The connector feature records the existing server and settings surfaces plus
 the shared connection probe; mandatory pre-commit sequencing remains an
 explicit evidence gap. The accessible-listing feature similarly keeps runtime
