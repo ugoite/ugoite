@@ -18,9 +18,11 @@ Operations, local-run, and quality-gate surfaces for `REQ-OPS-001` through
 records remain read-only migration evidence for this slice; later Operations
 requirements remain outside its scope.
 
-The API-specific legacy registries for spaces, preferences, and SQL are retained
-for migration evidence but are no longer included in Mitase's declared
-inventory or linked from the shared `features.yaml` index. The shared index
+The API-specific legacy registries for spaces and SQL are retained for migration
+evidence but are no longer included in Mitase's declared inventory or linked
+from the shared `features.yaml` index. The preference registry is retired because
+its implemented API and storage semantics are represented by the canonical
+Mitase graphs. The shared index
 remains because it also indexes unmigrated domains.
 
 The legacy Asset feature registry at `features/assets.yaml` is retained as a
