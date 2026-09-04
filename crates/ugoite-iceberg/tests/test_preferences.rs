@@ -14,10 +14,6 @@ async fn test_preferences_req_sto_011_default_values() -> anyhow::Result<()> {
 
     assert_eq!(preferences.selected_space_id, None);
     assert_eq!(preferences.locale, None);
-    assert_eq!(preferences.ui_theme, None);
-    assert_eq!(preferences.color_mode, None);
-    assert_eq!(preferences.primary_color, None);
-    assert_eq!(preferences.content_width, None);
 
     Ok(())
 }
@@ -34,43 +30,25 @@ async fn test_preferences_req_sto_011_patch_roundtrip_uses_hashed_user_path() ->
         user_id,
         &json!({
             "selected_space_id": "space-1",
-            "locale": "ja",
-            "ui_theme": "classic"
+            "locale": "ja"
         }),
     )
     .await?;
 
     assert_eq!(initial.selected_space_id.as_deref(), Some("space-1"));
     assert_eq!(initial.locale, Some(preferences::LocalePreference::Ja));
-    assert_eq!(
-        initial.ui_theme,
-        Some(preferences::UiThemePreference::Classic)
-    );
 
     let updated = preferences::patch_user_preferences(
         &op,
         user_id,
         &json!({
-            "color_mode": "dark",
-            "primary_color": "blue",
-            "content_width": "wide"
+            "selected_space_id": "space-2"
         }),
     )
     .await?;
 
-    assert_eq!(updated.selected_space_id.as_deref(), Some("space-1"));
-    assert_eq!(
-        updated.color_mode,
-        Some(preferences::ColorModePreference::Dark)
-    );
-    assert_eq!(
-        updated.content_width,
-        Some(preferences::ContentWidthPreference::Wide)
-    );
-    assert_eq!(
-        updated.primary_color,
-        Some(preferences::PrimaryColorPreference::Blue)
-    );
+    assert_eq!(updated.selected_space_id.as_deref(), Some("space-2"));
+    assert_eq!(updated.locale, Some(preferences::LocalePreference::Ja));
 
     let user_hash = hex::encode(Sha256::digest(user_id.as_bytes()));
     let hashed_path = format!("users/{user_hash}/preferences.json");
@@ -79,13 +57,27 @@ async fn test_preferences_req_sto_011_patch_roundtrip_uses_hashed_user_path() ->
     assert!(!op.exists(&raw_path).await?);
 
     let stored = preferences::get_user_preferences(&op, user_id).await?;
-    assert_eq!(stored.selected_space_id.as_deref(), Some("space-1"));
+    assert_eq!(stored.selected_space_id.as_deref(), Some("space-2"));
     assert_eq!(stored.locale, Some(preferences::LocalePreference::Ja));
-    assert_eq!(
-        stored.color_mode,
-        Some(preferences::ColorModePreference::Dark)
-    );
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn retired_appearance_preferences_are_rejected() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+
+    let error = preferences::patch_user_preferences(
+        &op,
+        "appearance-user",
+        &json!({"ui_theme": "classic"}),
+    )
+    .await
+    .expect_err("retired product theme preferences must not be accepted");
+
+    assert!(error
+        .to_string()
+        .contains("Unknown preference field: ui_theme"));
     Ok(())
 }
 
@@ -93,18 +85,18 @@ async fn test_preferences_req_sto_011_patch_roundtrip_uses_hashed_user_path() ->
 async fn concurrent_preference_patches_preserve_both_updates() -> anyhow::Result<()> {
     let op = setup_operator()?;
     let locale_patch = json!({"locale": "ja"});
-    let theme_patch = json!({"ui_theme": "pop"});
+    let selected_space_patch = json!({"selected_space_id": "space-2"});
 
-    let (locale, theme) = tokio::join!(
+    let (locale, selected_space) = tokio::join!(
         preferences::patch_user_preferences(&op, "concurrent-user", &locale_patch),
-        preferences::patch_user_preferences(&op, "concurrent-user", &theme_patch,),
+        preferences::patch_user_preferences(&op, "concurrent-user", &selected_space_patch,),
     );
     locale?;
-    theme?;
+    selected_space?;
 
     let stored = preferences::get_user_preferences(&op, "concurrent-user").await?;
     assert_eq!(stored.locale, Some(preferences::LocalePreference::Ja));
-    assert_eq!(stored.ui_theme, Some(preferences::UiThemePreference::Pop));
+    assert_eq!(stored.selected_space_id.as_deref(), Some("space-2"));
 
     Ok(())
 }

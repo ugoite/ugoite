@@ -58,10 +58,12 @@ requirements:
   - SPEC-TESTING-CICD
   - SPEC-UI-OVERVIEW
   id: REQ-E2E-003
-  title: Theme-aware UI Flows
-  description: 'The UI MUST support core space workflows across all supported themes and
+  title: Fixed Surface Palette UI Flows
+  description: 'The UI MUST keep the approved v5 surface palette usable across the
 
-    color modes, including navigation, query flows, and entry detail access.
+    operating system light and dark color modes, including Space navigation and
+
+    the dashboard route.
 
     '
   related_spec:
@@ -70,7 +72,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: e2e/ui-themes.test.ts
+  - file: e2e/ui-surface.test.ts
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.

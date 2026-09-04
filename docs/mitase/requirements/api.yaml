@@ -420,7 +420,7 @@ requirements:
 
   - id: REQ-API-011
     title: Portable user preferences API
-    description: The API exposes authenticated GET /preferences/me and PATCH /preferences/me operations for portable user preferences, including selected Space, locale, UI theme, color mode, and primary color. selected_space_id inputs are validated and dependency failures are returned explicitly.
+    description: The API exposes authenticated GET /preferences/me and PATCH /preferences/me operations for portable user preferences, including selected Space and locale. selected_space_id inputs are validated and dependency failures are returned explicitly.
     priority: medium
     status: implemented
     criteria:

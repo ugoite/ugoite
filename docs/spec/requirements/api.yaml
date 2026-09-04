@@ -419,9 +419,7 @@ requirements:
   title: Portable user preferences API
   description: 'The API MUST expose authenticated `GET /preferences/me` and `PATCH /preferences/me`
 
-    operations for portable user preferences, including selected space, locale,
-
-    UI theme, color mode, and primary color.
+    operations for portable user preferences, including selected space and locale.
 
     The API MUST validate `selected_space_id` inputs and return explicit 500
 

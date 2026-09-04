@@ -16,56 +16,14 @@ pub enum LocalePreference {
     Ja,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum UiThemePreference {
-    Materialize,
-    Classic,
-    Pop,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ColorModePreference {
-    Light,
-    Dark,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum PrimaryColorPreference {
-    Violet,
-    Blue,
-    Emerald,
-    Amber,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ContentWidthPreference {
-    Standard,
-    Wide,
-}
-
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct UserPreferences {
     pub selected_space_id: Option<String>,
     pub locale: Option<LocalePreference>,
-    pub ui_theme: Option<UiThemePreference>,
-    pub color_mode: Option<ColorModePreference>,
-    pub primary_color: Option<PrimaryColorPreference>,
-    pub content_width: Option<ContentWidthPreference>,
 }
 
-const USER_PREFERENCE_FIELDS: &[&str] = &[
-    "selected_space_id",
-    "locale",
-    "ui_theme",
-    "color_mode",
-    "primary_color",
-    "content_width",
-];
+const USER_PREFERENCE_FIELDS: &[&str] = &["selected_space_id", "locale"];
 
 fn hashed_user_segment(user_id: &str) -> String {
     let mut hasher = Sha256::new();

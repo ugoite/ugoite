@@ -94,82 +94,55 @@ requirements:
                 runner: { runner: e2e-playwright, arguments: { file: e2e/smoke.test.ts, test: GET /spaces/:space_id/entries returns list } }
 
   - id: REQ-E2E-003
-    title: Theme-aware UI flows
-    description: The UI supports the core Space workflows across all supported UI themes and both supported color modes, including navigation, query flows, and Entry detail access.
+    title: Fixed surface palette UI flows
+    description: The UI keeps the approved v5 surface palette usable across the operating system light and dark color modes, including Space navigation and the dashboard route.
     priority: high
     status: implemented
     criteria:
-      - id: theme-workflows
+      - id: fixed-palette-workflows
         kind: behavior
-        statement: The core Space workflow remains usable in the materialize, classic, and pop UI themes, including navigation, query flows, and Entry detail access.
+        statement: The dashboard remains usable with the single approved v5 surface palette; product-specific theme variants are not part of the v0.1 UI contract.
         governed_by: [POL-004#rule.governance, POL-006#rule.governance, POL-014#rule.governance]
-      - id: color-mode-stability
+      - id: system-color-mode
         kind: quality
-        statement: Each supported UI theme workflow can switch between light and dark color modes without losing the active Space workflow.
+        statement: The fixed surface palette follows the operating system's light or dark color preference without losing the active Space workflow.
         governed_by: [POL-006#rule.governance, POL-014#rule.governance]
     bindings:
-      - id: theme-verification
+      - id: surface-verification
         role: verification
         facet: verification
-        responsibility: Verify the supported UI themes, navigation, query flows, Entry detail access, and light/dark color modes through exact Playwright cases.
+        responsibility: Verify the fixed surface palette, Space navigation, and operating system light/dark color modes through exact Playwright cases.
         targets:
-          - id: materialize-case
+          - id: light-mode-case
             adapter: typescript
-            path: e2e/ui-themes.test.ts
-            selector: { kind: test, name: 'REQ-E2E-003: UI flows work in materialize theme' }
+            path: e2e/ui-surface.test.ts
+            selector: { kind: test, name: 'REQ-E2E-003: the fixed surface palette follows the light system color mode' }
             claims:
               - kind: verifies
-                criterion: REQ-E2E-003#criterion.theme-workflows
+                criterion: REQ-E2E-003#criterion.fixed-palette-workflows
                 covers:
-                  - FEAT-E2E-002#binding.application/target.theme-dashboard
-                  - FEAT-E2E-002#binding.application/target.theme-search
-                  - FEAT-E2E-002#binding.application/target.theme-entry
-                  - FEAT-E2E-002#binding.application/target.theme-query
-                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-themes.test.ts, test: 'REQ-E2E-003: UI flows work in materialize theme' } }
+                  - FEAT-E2E-002#binding.application/target.fixed-palette
+                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-surface.test.ts, test: 'REQ-E2E-003: the fixed surface palette follows the light system color mode' } }
               - kind: verifies
-                criterion: REQ-E2E-003#criterion.color-mode-stability
+                criterion: REQ-E2E-003#criterion.system-color-mode
                 covers:
-                  - FEAT-E2E-002#binding.application/target.theme-dashboard
-                  - FEAT-E2E-002#binding.application/target.theme-settings
-                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-themes.test.ts, test: 'REQ-E2E-003: UI flows work in materialize theme' } }
-          - id: classic-case
+                  - FEAT-E2E-002#binding.application/target.system-color-mode
+                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-surface.test.ts, test: 'REQ-E2E-003: the fixed surface palette follows the light system color mode' } }
+          - id: dark-mode-case
             adapter: typescript
-            path: e2e/ui-themes.test.ts
-            selector: { kind: test, name: 'REQ-E2E-003: UI flows work in classic theme' }
+            path: e2e/ui-surface.test.ts
+            selector: { kind: test, name: 'REQ-E2E-003: the fixed surface palette follows the dark system color mode' }
             claims:
               - kind: verifies
-                criterion: REQ-E2E-003#criterion.theme-workflows
+                criterion: REQ-E2E-003#criterion.fixed-palette-workflows
                 covers:
-                  - FEAT-E2E-002#binding.application/target.theme-dashboard
-                  - FEAT-E2E-002#binding.application/target.theme-search
-                  - FEAT-E2E-002#binding.application/target.theme-entry
-                  - FEAT-E2E-002#binding.application/target.theme-query
-                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-themes.test.ts, test: 'REQ-E2E-003: UI flows work in classic theme' } }
+                  - FEAT-E2E-002#binding.application/target.fixed-palette
+                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-surface.test.ts, test: 'REQ-E2E-003: the fixed surface palette follows the dark system color mode' } }
               - kind: verifies
-                criterion: REQ-E2E-003#criterion.color-mode-stability
+                criterion: REQ-E2E-003#criterion.system-color-mode
                 covers:
-                  - FEAT-E2E-002#binding.application/target.theme-dashboard
-                  - FEAT-E2E-002#binding.application/target.theme-settings
-                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-themes.test.ts, test: 'REQ-E2E-003: UI flows work in classic theme' } }
-          - id: pop-case
-            adapter: typescript
-            path: e2e/ui-themes.test.ts
-            selector: { kind: test, name: 'REQ-E2E-003: UI flows work in pop theme' }
-            claims:
-              - kind: verifies
-                criterion: REQ-E2E-003#criterion.theme-workflows
-                covers:
-                  - FEAT-E2E-002#binding.application/target.theme-dashboard
-                  - FEAT-E2E-002#binding.application/target.theme-search
-                  - FEAT-E2E-002#binding.application/target.theme-entry
-                  - FEAT-E2E-002#binding.application/target.theme-query
-                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-themes.test.ts, test: 'REQ-E2E-003: UI flows work in pop theme' } }
-              - kind: verifies
-                criterion: REQ-E2E-003#criterion.color-mode-stability
-                covers:
-                  - FEAT-E2E-002#binding.application/target.theme-dashboard
-                  - FEAT-E2E-002#binding.application/target.theme-settings
-                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-themes.test.ts, test: 'REQ-E2E-003: UI flows work in pop theme' } }
+                  - FEAT-E2E-002#binding.application/target.system-color-mode
+                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-surface.test.ts, test: 'REQ-E2E-003: the fixed surface palette follows the dark system color mode' } }
 
   - id: REQ-E2E-004
     title: Dynamic navigation stability
