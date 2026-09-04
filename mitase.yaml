@@ -31,6 +31,10 @@ inventory:
             - frontend/src/routes/setup.test.tsx
             - frontend/src/routes/recover/account.tsx
             - frontend/src/routes/recover/account.test.tsx
+            - frontend/src/routes/recover/index.tsx
+            - frontend/src/routes/recover.test.tsx
+            - frontend/src/components/AuditLogViewer.tsx
+            - frontend/src/components/AuditLogViewer.test.tsx
             - frontend/src/lib/entry-api.ts
             - frontend/src/lib/client.test.ts
             - frontend/src/lib/form-api.ts

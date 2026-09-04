@@ -57,6 +57,10 @@ features:
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
             selector: { kind: symbol, name: owner_force_reset }
+          - id: authorization
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: require_space_action }
           - id: oidc
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
@@ -102,6 +106,22 @@ features:
           - id: device-approval-route
             adapter: typescript
             path: frontend/src/routes/device.tsx
+            selector: { kind: file }
+          - id: setup-route
+            adapter: typescript
+            path: frontend/src/routes/setup.tsx
+            selector: { kind: file }
+          - id: invitation-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/join.tsx
+            selector: { kind: file }
+          - id: recovery-route
+            adapter: typescript
+            path: frontend/src/routes/recover/index.tsx
+            selector: { kind: file }
+          - id: audit-viewer
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.tsx
             selector: { kind: file }
       - id: contract
         role: contract-source
@@ -209,6 +229,14 @@ features:
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: get, path: /auth/oidc/callback }
+          - id: oidc-first-passkey-start
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/passkeys/bootstrap/start }
+          - id: oidc-first-passkey-finish
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: /auth/passkeys/bootstrap/finish }
           - id: recovery-totp-start
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
