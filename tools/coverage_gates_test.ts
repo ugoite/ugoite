@@ -103,6 +103,7 @@ function assertAggregateWorkflow(workflow: string, mise: string): void {
   const webLane = taskBlock(mise, "ci:lane:web");
   const releaseBuild = taskBlock(mise, "build:rust:release");
   const artifactsTask = taskBlock(mise, "ci:artifacts");
+  const artifactsE2eTask = taskBlock(mise, "ci:artifacts:e2e");
   const mergeTask = taskBlock(mise, "ci:merge");
 
   assertContainsAll(
@@ -196,11 +197,19 @@ function assertAggregateWorkflow(workflow: string, mise: string): void {
       '{ task = "build" }',
       '{ task = "package" }',
       '{ task = "verify" }',
-      '"test:docsite:e2e:navigation"',
-      '"test:e2e:smoke-and-asset-owned"',
-      '"version:check"',
+      '{ task = "ci:artifacts:e2e" }',
     ],
     "artifact CI task",
+  );
+  assertContainsAll(
+    artifactsE2eTask,
+    [
+      '{ task = "test:docsite:e2e:navigation" }',
+      '{ task = "test:e2e:smoke-and-asset-owned" }',
+      '{ task = "test:e2e:owner-recovery" }',
+      '{ task = "version:check" }',
+    ],
+    "artifact E2E task",
   );
   assertContainsAll(
     mergeTask,

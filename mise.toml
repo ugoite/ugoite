@@ -319,6 +319,10 @@ run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2
 [tasks."test:e2e:smoke-and-asset-owned"]
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:smoke-and-asset-owned"
 
+[tasks."test:e2e:owner-recovery"]
+description = "Run the required owner-approved Space access recovery E2E"
+run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:owner-recovery"
+
 [tasks.e2e]
 description = "Run CI-parity E2E tests, preferring Docker Compose and falling back to host processes"
 run = "deno task e2e:full"
@@ -432,6 +436,15 @@ run = "deno run -A tools/release.ts promote"
 description = "Update mutable distribution aliases after publication verification"
 run = "deno run -A tools/release.ts promote-aliases"
 
+[tasks."ci:artifacts:e2e"]
+description = "Run merge-gated docsite and browser E2E checks sequentially"
+run = [
+  { task = "test:docsite:e2e:navigation" },
+  { task = "test:e2e:smoke-and-asset-owned" },
+  { task = "test:e2e:owner-recovery" },
+  { task = "version:check" },
+]
+
 [tasks.ci]
 description = "Run the repository quality gate"
 run = [
@@ -447,11 +460,7 @@ run = [
   { task = "build" },
   { task = "package" },
   { task = "verify" },
-  { tasks = [
-    "test:docsite:e2e:navigation",
-    "test:e2e:smoke-and-asset-owned",
-    "version:check",
-  ] },
+  { task = "ci:artifacts:e2e" },
 ]
 
 [tasks."ci:lane:rust-check"]
