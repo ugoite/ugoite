@@ -163,6 +163,92 @@ requirements:
                 covers: [FEAT-STO-001#binding.domain/target.storage-config]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-domain, harness: test_coverage, test: test_space_req_sto_004_storage_type_and_root_normalizes_local_and_remote_uris } }
 
+  - id: REQ-STO-005
+    title: Space creation retry and duplicate conflict
+    description: The authenticated POST /spaces operation creates a new Space with HTTP 201, returns the existing Space with HTTP 200 only when the same Node account retries an already-bound Space creation, and rejects another account attempting the existing slug with HTTP 409. A complete bootstrap with a missing final Node binding remains recoverable through the same authenticated creation path.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: new-space-created
+        kind: behavior
+        statement: A valid new Space slug creates the Space and returns its immutable identity with HTTP 201.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: bound-account-retry
+        kind: behavior
+        statement: A retry from the Node account already bound to the Space slug returns the same immutable Space identity with HTTP 200 and does not create another Space.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: duplicate-slug-conflict
+        kind: security
+        statement: An account that is not already bound to an existing Space slug receives the explicit SPACE_ALREADY_EXISTS conflict with HTTP 409 and cannot claim that slug.
+        governed_by: [POL-002#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: missing-binding-recovery
+        kind: quality
+        statement: An already complete Space whose final Node binding is missing can be repaired by the authenticated creation retry without rebuilding or replacing the Space.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: creation-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the authenticated Space creation outcomes, duplicate admission boundary, recovery behavior, and published OpenAPI contract through exact server tests.
+        targets:
+          - id: behavior-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::space_creation_api_distinguishes_bound_retry_from_duplicate_slug }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-005#criterion.new-space-created
+                covers: [FEAT-STO-001#binding.space-api/target.create-space-api]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::space_creation_api_distinguishes_bound_retry_from_duplicate_slug } }
+              - kind: verifies
+                criterion: REQ-STO-005#criterion.bound-account-retry
+                covers: [FEAT-STO-001#binding.space-api/target.create-space-api]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::space_creation_api_distinguishes_bound_retry_from_duplicate_slug } }
+              - kind: verifies
+                criterion: REQ-STO-005#criterion.duplicate-slug-conflict
+                covers: [FEAT-STO-001#binding.space-api/target.create-space-api]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::space_creation_api_distinguishes_bound_retry_from_duplicate_slug } }
+          - id: recovery-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::space_creation_retry_repairs_a_missing_node_binding }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-005#criterion.missing-binding-recovery
+                covers: [FEAT-STO-001#binding.space-api/target.create-space-api]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::space_creation_retry_repairs_a_missing_node_binding } }
+          - id: openapi-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: issue_2212_openapi_documents_space_creation_outcomes }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-005#criterion.new-space-created
+                covers: [FEAT-STO-001#binding.space-api/target.create-space-api]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: issue_2212_openapi_documents_space_creation_outcomes } }
+              - kind: verifies
+                criterion: REQ-STO-005#criterion.bound-account-retry
+                covers: [FEAT-STO-001#binding.space-api/target.create-space-api]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: issue_2212_openapi_documents_space_creation_outcomes } }
+              - kind: verifies
+                criterion: REQ-STO-005#criterion.duplicate-slug-conflict
+                covers: [FEAT-STO-001#binding.space-api/target.create-space-api]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: issue_2212_openapi_documents_space_creation_outcomes } }
+      - id: contract
+        role: contract-source
+        facet: api
+        responsibility: Publish the authenticated POST /spaces request and its creation, retry, and duplicate-conflict responses as the authoritative HTTP contract.
+        owns:
+          - id: openapi-source
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: file }
+        targets:
+          - id: create-space
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces' }
+
   - id: REQ-STO-007
     title: Backend-neutral Space I/O
     description: Authoritative Space I/O remains behind the Rust OpenDAL-backed storage and core boundary and is exercised with local filesystem and in-memory operators. Adapter configuration and Unix permission setup are bounded integration concerns, not alternate persistence models.

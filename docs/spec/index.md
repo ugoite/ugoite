@@ -52,8 +52,8 @@ rewriting the requirement to fit the available proof.
 ## Migrated domain authority
 
 Foundation, Policy, Search, Entry, Form, API, Asset, Frontend, E2E, Integrity, and the
-Storage Space foundation plus connector/access/routing/preference slice
-(excluding the unresolved duplicate-create conflict contract) are
+Storage Space foundation, authenticated creation contract, plus
+connector/access/routing/preference slice are
 represented in the canonical Mitase records at `docs/mitase` for the current
 dogfood slice. These records are the semantic source of truth for the migrated
 domains; their corresponding legacy Foundation, Policy, Requirement, and
@@ -66,7 +66,7 @@ The legacy Integrity requirement registry is no longer semantic authority and
 remains a read-only migration snapshot until the broader `docs/spec` cleanup is
 complete. The migrated Storage Space foundation records are likewise no longer
 semantic authority in their legacy registry. The duplicate-create conflict
-contract and remaining Storage records continue to be migrated or reconciled in
+contract is now canonical; remaining Storage records continue to be migrated in
 focused slices. Changed-ownership enforcement remains staged
 until it can be scoped safely to the migrated slice.
 Other requirement and feature domains remain authoritative in their existing
