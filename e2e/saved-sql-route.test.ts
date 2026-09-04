@@ -1,64 +1,60 @@
 import { expect, test } from "@playwright/test";
 import {
-	ensureDefaultForm,
-	getBackendUrl,
-	getDefaultFormRelation,
-	getDefaultSpaceId,
-	getFrontendUrl,
-	waitForServers,
+  ensureDefaultForm,
+  getBackendUrl,
+  getDefaultFormRelation,
+  getDefaultSpaceId,
+  getFrontendUrl,
+  waitForServers,
 } from "./lib/client.ts";
 
 test.describe("Saved SQL route", () => {
-	let spaceId = "";
+  let spaceId = "";
 
-	test.beforeAll(async ({ request }) => {
-		await waitForServers(request);
-		spaceId = await getDefaultSpaceId(request);
-	});
+  test.beforeAll(async ({ request }) => {
+    await waitForServers(request);
+    spaceId = await getDefaultSpaceId(request);
+  });
 
-  test("REQ-FE-061: saved SQL route provides recovery links instead of a dead end", async ({ page }) => {
+  test("REQ-FE-061: saved SQL route explains its empty state and keeps current navigation", async ({ page }) => {
     await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql`), {
       waitUntil: "domcontentloaded",
     });
 
     await expect(page.getByRole("heading", { level: 1, name: "Saved SQL" }))
       .toBeVisible();
-    await expect(page.getByText(/named-query management/i)).toBeVisible();
-    await expect(page.getByRole("link", { name: "Open Search" }))
-      .toHaveAttribute(
-        "href",
-        `/spaces/${spaceId}/search`,
-      );
-    await expect(page.getByRole("link", { name: "Back to Dashboard" }))
-      .toHaveAttribute(
-        "href",
-        `/spaces/${spaceId}/dashboard`,
-      );
-    await expect(page.getByRole("link", { name: "Browse Entries" }))
-      .toHaveAttribute(
-        "href",
-        `/spaces/${spaceId}/entries`,
-      );
-    await expect(page.getByText("Saved SQL management is not yet in the UI."))
-      .toHaveCount(0);
+    await expect(page.getByText("No saved SQL", { exact: true }))
+      .toBeVisible();
+    await expect(page.getByText("Create a query to reuse it here.", {
+      exact: true,
+    })).toBeVisible();
+    await expect(page.getByRole("link", { name: "SQL" }))
+      .toHaveAttribute("href", `/spaces/${spaceId}/queries/new`);
+    await expect(page.getByRole("link", { name: "Search" }).first())
+      .toHaveAttribute("href", `/spaces/${spaceId}/search`);
+    await expect(page.getByRole("link", { name: "Forms" }).first())
+      .toHaveAttribute("href", `/spaces/${spaceId}/forms`);
+    await expect(page.getByRole("link", { name: "Home" }).first())
+      .toHaveAttribute("href", `/spaces/${spaceId}/dashboard`);
   });
 
-	test("REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to entries", async ({
-		page,
-		request,
-	}) => {
-		await ensureDefaultForm(request, spaceId);
-		const relation = await getDefaultFormRelation(request, spaceId);
-		const sqlCreate = await request.post(getBackendUrl(`/spaces/${spaceId}/sql`), {
-			data: {
-				name: `Saved Detail Query ${Date.now()}`,
-				kind: "user-query",
-				sql: `SELECT * FROM "${relation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 1`,
-				variables: [],
-			},
-		});
-		expect([200, 201]).toContain(sqlCreate.status());
-		const savedSql = (await sqlCreate.json()) as { id: string };
+  test("REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to entries", async ({ page, request }) => {
+    await ensureDefaultForm(request, spaceId);
+    const relation = await getDefaultFormRelation(request, spaceId);
+    const sqlCreate = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/sql`),
+      {
+        data: {
+          name: `Saved Detail Query ${Date.now()}`,
+          kind: "user-query",
+          sql:
+            `SELECT * FROM "${relation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 1`,
+          variables: [],
+        },
+      },
+    );
+    expect([200, 201]).toContain(sqlCreate.status());
+    const savedSql = (await sqlCreate.json()) as { id: string };
 
     try {
       await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSql.id}`), {
