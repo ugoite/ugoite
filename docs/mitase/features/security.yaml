@@ -381,6 +381,13 @@ features:
         facet: frontend
         responsibility: Keep the browser Account Self-Recovery journey connected to the recovery API and display rotated Recovery Codes once before returning to the requested route.
         targets:
+          - id: recovery-settings
+            adapter: typescript
+            path: frontend/src/routes/settings/security.tsx
+            selector: { kind: symbol, name: CredentialSettings }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-014#criterion.recovery-factor-enrollment
           - id: account-recovery-route
             adapter: typescript
             path: frontend/src/routes/recover/account.tsx
@@ -455,6 +462,8 @@ features:
             role: backend
           - target: FEAT-SEC-003#binding.server/target.totp-finish
             role: backend
+          - target: FEAT-SEC-003#binding.client/target.recovery-settings
+            role: client
         guarantees:
           - REQ-SEC-014#criterion.recovery-factor-enrollment
       - id: recovery-audit
