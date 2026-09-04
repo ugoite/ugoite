@@ -438,31 +438,33 @@ test.describe("Entries CRUD", () => {
 		await page.waitForLoadState("networkidle");
 
 		const newEntryButton = page.getByRole("button", { name: "New entry" });
-		const createEntryDialog = page.getByRole("dialog");
 		await expect(newEntryButton).toBeEnabled();
 		await newEntryButton.click();
+		await expect(page).toHaveURL(
+			new RegExp(`/spaces/${spaceId}/entries/new$`),
+		);
 		await expect(
-			createEntryDialog.getByRole("heading", { name: "Create New Entry" }),
+			page.getByRole("heading", { name: "Create New Entry" }),
 		).toBeVisible({ timeout: 10_000 });
 
-		await createEntryDialog.getByLabel("Title").fill(taskTitle);
-		await createEntryDialog.getByLabel("Form").selectOption("Task");
-		const summaryInput = createEntryDialog.locator("#webform-1-summary");
-		const projectInput = createEntryDialog.locator("#webform-0-project");
+		await page.getByLabel("Title").fill(taskTitle);
+		await page.getByLabel("Form").selectOption("Task");
+		const summaryInput = page.locator("#entry-field-0-summary");
+		const projectInput = page.locator("#entry-field-1-project");
 		await expect(summaryInput).toBeVisible();
 		await summaryInput.fill("Choose the alpha project by search");
 		await expect(summaryInput).toHaveValue("Choose the alpha project by search");
 		await projectInput.fill("alpha");
 
-		const alphaOption = createEntryDialog.getByRole("button", {
+		const alphaOption = page.getByRole("button", {
 			name: new RegExp(`Alpha Project ${timestamp}.*${projectAlphaId}`),
 		});
 		await expect(alphaOption).toBeVisible();
 		await alphaOption.click();
-		await expect(createEntryDialog.getByText(projectAlphaId)).toBeVisible();
+		await expect(page.getByText(projectAlphaId)).toBeVisible();
 		await expect(summaryInput).toHaveValue("Choose the alpha project by search");
 
-		await createEntryDialog.getByRole("button", { name: "Create" }).click();
+		await page.getByRole("button", { name: "Save" }).click();
 		await expect(page).toHaveURL(new RegExp(`/spaces/${spaceId}/entries/[^/]+$`));
 
 		const entriesResponse = await request.get(getBackendUrl(`/spaces/${spaceId}/entries`));
