@@ -48,7 +48,7 @@ requirements:
     create Form revisions or become an authorization source of truth.'
   related_spec:
   - ../architecture/contracts/derived-relations.md
-  - features/search.yaml
+  - ../../mitase/features/search.yaml
   priority: high
   status: implemented
   verification: traced
