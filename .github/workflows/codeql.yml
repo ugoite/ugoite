@@ -49,6 +49,8 @@ jobs:
         uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
         with:
           category: /language:${{ matrix.language }}
+          # merge_group refs are temporary and cannot receive uploaded SARIF results.
+          upload: ${{ github.event_name != 'merge_group' }}
 
   required-check:
     name: codeql-required

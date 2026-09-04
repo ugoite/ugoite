@@ -33,7 +33,8 @@ jobs:
         with:
           script: |
             let body = context.payload.pull_request?.body || "";
-            if (!body && context.eventName === "merge_group") {
+            let pullRequestAuthor = context.payload.pull_request?.user?.login;
+            if (context.eventName === "merge_group") {
               const mergeGroupRef = context.ref || context.payload.merge_group?.head_ref || "";
               const pullRequestNumber = mergeGroupRef.match(/(?:^|\/)pr-(\d+)(?:-|$)/)?.[1];
               if (pullRequestNumber) {
@@ -42,8 +43,15 @@ jobs:
                   repo: context.repo.repo,
                   pull_number: pullRequestNumber,
                 });
-                body = response.data.body || "";
+                pullRequestAuthor = response.data.user?.login;
+                if (!body) {
+                  body = response.data.body || "";
+                }
               }
+            }
+            if (pullRequestAuthor === "dependabot[bot]") {
+              core.info("Dependabot pull requests use generated bodies; skipping the human PR template gate.");
+              return;
             }
             const errors = [];
 
