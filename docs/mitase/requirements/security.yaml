@@ -575,6 +575,15 @@ requirements:
                 criterion: REQ-SEC-014#criterion.recovery-factor-enrollment
                 covers: [FEAT-SEC-003#binding.identity/target.totp-enrollment]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::recovery_secret_is_authenticated_encryption } }
+          - id: recovery-settings-ui-case
+            adapter: typescript
+            path: frontend/src/routes/settings/security.test.tsx
+            selector: { kind: test, name: sets up the recovery-only authenticator without adding a login method }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-014#criterion.recovery-factor-enrollment
+                covers: [FEAT-SEC-003#binding.client/target.recovery-settings]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/settings/security.test.tsx, test: sets up the recovery-only authenticator without adding a login method } }
           - id: recovery-start-case
             adapter: rust
             path: crates/ugoite-identity/src/node_identity.rs
