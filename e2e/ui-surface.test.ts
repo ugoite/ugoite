@@ -28,7 +28,7 @@ test.describe("Fixed surface palette", () => {
     );
     await expect(page.getByRole("link", { name: "Home" }).first())
       .toBeVisible();
-    await expect(page.getByRole("heading", { name: "default" }))
+    await expect(page.getByRole("heading", { name: "Home" }))
       .toBeVisible();
   });
 
@@ -46,7 +46,7 @@ test.describe("Fixed surface palette", () => {
     );
     await expect(page.getByRole("link", { name: "Home" }).first())
       .toBeVisible();
-    await expect(page.getByRole("heading", { name: "default" }))
+    await expect(page.getByRole("heading", { name: "Home" }))
       .toBeVisible();
   });
 });
