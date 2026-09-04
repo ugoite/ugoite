@@ -35,11 +35,10 @@ detect_host_address() {
     for interface in en0 en1; do
       address="$(ipconfig getifaddr "$interface" 2>/dev/null || true)"
       case "$address" in
+        127.*) ;;
         *.*)
-          if [ "$address" != "127.0.0.1" ]; then
-            echo "$address"
-            return 0
-          fi
+          echo "$address"
+          return 0
           ;;
       esac
     done
@@ -47,22 +46,20 @@ detect_host_address() {
   if command -v ip >/dev/null 2>&1; then
     address="$(ip route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([^ ]*\).*/\1/p' | head -n 1)"
     case "$address" in
+      127.*) ;;
       *.*)
-        if [ "$address" != "127.0.0.1" ]; then
-          echo "$address"
-          return 0
-        fi
+        echo "$address"
+        return 0
         ;;
     esac
   fi
   if command -v hostname >/dev/null 2>&1; then
     address="$(hostname -I 2>/dev/null | awk '{print $1}')"
     case "$address" in
+      127.*) ;;
       *.*)
-        if [ "$address" != "127.0.0.1" ]; then
-          echo "$address"
-          return 0
-        fi
+        echo "$address"
+        return 0
         ;;
     esac
   fi
@@ -71,7 +68,7 @@ detect_host_address() {
 
 is_container_reachable_host() {
   case "$1" in
-    ""|localhost|127.0.0.1|0.0.0.0|::1) return 1 ;;
+    ""|localhost|127.*|0.0.0.0|::1) return 1 ;;
     *[!A-Za-z0-9._-]*) return 1 ;;
     *) return 0 ;;
   esac
@@ -98,7 +95,10 @@ resolve_oidc_mock_host() {
 # The browser runs on the host while the composed backend runs in a container.
 # Advertise a host address that both sides can reach; direct-process E2E keeps
 # the mock on loopback by leaving this unset.
-export E2E_OIDC_MOCK_HOST="$(resolve_oidc_mock_host)"
+if ! resolved_oidc_mock_host="$(resolve_oidc_mock_host)"; then
+  exit 1
+fi
+export E2E_OIDC_MOCK_HOST="$resolved_oidc_mock_host"
 
 ensure_playwright_browsers() {
   if [ "${UGOITE_SKIP_PLAYWRIGHT_DEPS:-}" = "1" ]; then
