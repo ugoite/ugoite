@@ -44,13 +44,11 @@ Change/Run/Undo rules.
 
 ## Where Ugoite is going
 
-:::note[Target, not a v0.1 feature]
-Knowledge can become portable, inspectable views and task-specific tools. The
-current v0.1 release establishes the authority boundary only: browser-local
-persistence, optional synchronization, View/Application definitions, and
-renderers remain future work. No general application builder or arbitrary code
-runtime is shipped.
-:::
+:::note[Target, not a v0.1 feature] Knowledge can become portable, inspectable
+views and task-specific tools. The current v0.1 release establishes the
+authority boundary only: browser-local persistence, optional synchronization,
+View/Application definitions, and renderers remain future work. No general
+application builder or arbitrary code runtime is shipped. :::
 
 ## Choose a path
 
@@ -59,7 +57,7 @@ runtime is shipped.
   [operations](guide/operate/server/operations.md).
 - **Develop it:** follow the
   [local development login guide](guide/develop/local-dev-auth-login.md) and the
-  [architecture overview](spec/architecture/overview.md).
+  [architecture overview](architecture/contracts/overview.md).
 - **Automate it:** use the [CLI guide](guide/automate/cli.md),
   [REST API](architecture/api/rest.md), or current
   [MCP surface](architecture/api/mcp.md).
@@ -76,14 +74,14 @@ remain planned work. :::
   path.
 - The server exposes REST, the small authenticated MCP semantic facade, and
   static browser hosting.
-- v0.1 supports mandatory browser authentication with Passkey/WebAuthn,
-  opaque sessions, owner-approved Space access recovery, Remote CLI device/DPoP
+- v0.1 supports mandatory browser authentication with Passkey/WebAuthn, opaque
+  sessions, owner-approved Space access recovery, Remote CLI device/DPoP
   credentials, recovery-code + recovery-TOTP Account Self-Recovery, Space
-  membership/ACL enforcement, authenticated MCP access, authorized audit
-  reads, and invitation-gated OIDC authentication/account linking.
+  membership/ACL enforcement, authenticated MCP access, authorized audit reads,
+  and invitation-gated OIDC authentication/account linking.
 - Administrator recovery, agent/service-account flows, generic OAuth client
-  compatibility, audit CRUD, and remote CLI asset upload remain
-  outside the supported v0.1 release contract. TOTP is recovery-only.
+  compatibility, audit CRUD, and remote CLI asset upload remain outside the
+  supported v0.1 release contract. TOTP is recovery-only.
 
 ## Source-of-truth rules
 

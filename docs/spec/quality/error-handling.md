@@ -55,5 +55,5 @@ content.
   reconciler. `RECOVERY_STORAGE_UNAVAILABLE` is a 503 only for failures before
   the Node CAS commits any credential or code mutation.
 
-See [frontend–backend interface](../architecture/frontend-backend-interface.md)
+See [frontend–backend interface](../../architecture/contracts/frontend-backend-interface.md)
 for transport ownership and protocol decoding.

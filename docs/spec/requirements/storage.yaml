@@ -22,7 +22,7 @@ requirements:
     be avoided. Local authoritative mutations use the single-process serializer; non-local mutations require runtime
     evidence for exact reads, conditional create/replacement, stale rejection, and one-winner concurrent CAS.'
   related_spec:
-  - architecture/overview.md#architecture-overview
+  - ../architecture/contracts/overview.md#architecture-overview
   - stories/core.yaml#STORY-003
   priority: high
   status: implemented
@@ -50,7 +50,7 @@ requirements:
     data coordinates MUST use canonical `ugoite://{space_uid}/{space-relative-key}`
     URIs, and the resolver MUST reject malformed or cross-Space coordinates.'
   related_spec:
-  - architecture/derived-relations.md
+  - ../architecture/contracts/derived-relations.md
   - ../architecture/data-model/directory-layout.yaml
   priority: high
   status: implemented
@@ -227,8 +227,8 @@ requirements:
     with local filesystem and in-memory operators. Adapter configuration files and Unix permission setup are bounded
     exceptions, not alternate persistence models.
   related_spec:
-  - architecture/overview.md#architecture-overview
-  - architecture/decisions.md#adr-006-one-release-image
+  - ../architecture/contracts/overview.md#architecture-overview
+  - ../architecture/contracts/decisions.md#adr-006-one-release-image
   priority: high
   status: implemented
   verification: untraced
@@ -249,7 +249,7 @@ requirements:
   description: The canonical v0.1 Knowledge fixture must remain semantically readable through the authoritative Space, publication, and append-only history paths. The fixture does not freeze physical storage encoding or require a pre-v1 migration reader.
   related_spec:
   - ../versions/v0.1-knowledge-compatibility.md
-  - architecture/space-catalog.md
+  - ../architecture/contracts/space-catalog.md
   priority: high
   status: implemented
   verification: traced
@@ -370,7 +370,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/overview.md
+  - ../architecture/contracts/overview.md
   - features/preferences.yaml
   priority: medium
   status: implemented

@@ -109,7 +109,7 @@ requirements:
   description: MCP resource responses MUST label entry content as user-supplied untrusted data and strip raw HTML or script-like constructs before returning JSON payloads to AI clients.
   related_spec:
   - ../architecture/api/mcp.md
-  - architecture/frontend-backend-interface.md
+  - ../architecture/contracts/frontend-backend-interface.md
   priority: high
   status: implemented
   verification: untraced
@@ -427,7 +427,7 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md
+  - ../architecture/contracts/frontend-backend-interface.md
   - features/preferences.yaml
   priority: medium
   status: implemented
@@ -518,7 +518,7 @@ requirements:
   related_spec:
   - index.md
   - ../architecture/api/mcp.md
-  - architecture/overview.md
+  - ../architecture/contracts/overview.md
   - versions/index.md
   - ../version/v0.1/mvp.yaml
   - ../version/v0.2.yaml

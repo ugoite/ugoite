@@ -364,8 +364,8 @@ fn docs_current_stack_check() -> Result<()> {
     for root in [
         "README.md",
         "docs/spec/index.md",
-        "docs/spec/architecture/overview.md",
-        "docs/spec/architecture/stack.md",
+        "docs/architecture/contracts/overview.md",
+        "docs/architecture/contracts/stack.md",
         "docs/spec/testing/ci-cd.md",
         "docs/spec/testing/strategy.md",
         "docs/guide",

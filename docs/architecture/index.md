@@ -24,7 +24,7 @@ are new: architecture names the owners and adapters around the Space model.
 - **Data model:** portable Space persistence, forms, entries, and storage
   coordinates in [Data model architecture](data-model/overview.md).
 - **Normative contracts:** implementation-facing architecture specifications
-  live under the [architecture specification](../spec/architecture/overview.md).
+  live under [architecture contracts](contracts/overview.md).
 
 The groups are intentionally explanatory entry points. The executable
 requirements and implementation references remain in `docs/spec/`.

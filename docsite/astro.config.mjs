@@ -272,7 +272,7 @@ export default defineConfig({
               items: [
                 {
                   autogenerate: {
-                    directory: docsSidebarDirectory("spec/architecture"),
+                    directory: docsSidebarDirectory("architecture/contracts"),
                     collapsed: true,
                   },
                 },
