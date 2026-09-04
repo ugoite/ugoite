@@ -461,23 +461,6 @@ struct TestReference {
 }
 
 #[derive(Debug, Deserialize)]
-struct AuthFeatureCatalog {
-    apis: Vec<AuthApiRecord>,
-}
-
-#[derive(Debug, Deserialize)]
-struct AuthApiRecord {
-    id: String,
-    status: String,
-    backend: AuthBackendRecord,
-}
-
-#[derive(Debug, Deserialize)]
-struct AuthBackendRecord {
-    file: String,
-}
-
-#[derive(Debug, Deserialize)]
 struct UserManagementRelease {
     status: String,
     requirement_ids: Vec<String>,
@@ -566,39 +549,9 @@ fn supported_check() -> Result<()> {
         }
     }
 
-    let auth_text = fs::read_to_string("docs/spec/features/auth.yaml")
-        .context("read authentication feature registry")?;
-    let auth: AuthFeatureCatalog =
-        serde_yaml::from_str(&auth_text).context("parse authentication feature registry")?;
-    let allowed_statuses = ["supported", "internal", "experimental", "future"];
-    let mut feature_ids = std::collections::BTreeSet::new();
-    for api in &auth.apis {
-        if !feature_ids.insert(api.id.as_str()) {
-            bail!("authentication feature {} is duplicated", api.id);
-        }
-        if !allowed_statuses.contains(&api.status.as_str()) {
-            bail!(
-                "authentication feature {} has invalid status {}",
-                api.id,
-                api.status
-            );
-        }
-        if !Path::new(&api.backend.file).is_file() {
-            bail!(
-                "authentication feature {} references missing backend {}",
-                api.id,
-                api.backend.file
-            );
-        }
-    }
-    if auth.apis.is_empty() {
-        bail!("authentication feature registry is empty");
-    }
-
     println!(
-        "supported contract: {} requirements traced, {} authentication APIs classified",
-        supported_ids.len(),
-        auth.apis.len()
+        "supported contract: {} requirements traced; authentication surface is validated by Mitase",
+        supported_ids.len()
     );
     Ok(())
 }

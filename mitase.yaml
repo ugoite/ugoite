@@ -23,12 +23,18 @@ inventory:
             - frontend/src/lib/auth-route.test.ts
             - frontend/src/routes/login.tsx
             - frontend/src/routes/login.test.tsx
+            - frontend/src/routes/device.tsx
+            - frontend/src/routes/device.test.tsx
             - frontend/src/routes/settings/security.tsx
             - frontend/src/routes/settings/security.test.tsx
             - frontend/src/routes/setup.tsx
             - frontend/src/routes/setup.test.tsx
             - frontend/src/routes/recover/account.tsx
             - frontend/src/routes/recover/account.test.tsx
+            - frontend/src/routes/recover/index.tsx
+            - frontend/src/routes/recover.test.tsx
+            - frontend/src/components/AuditLogViewer.tsx
+            - frontend/src/components/AuditLogViewer.test.tsx
             - frontend/src/lib/entry-api.ts
             - frontend/src/lib/client.test.ts
             - frontend/src/lib/form-api.ts
@@ -124,6 +130,7 @@ inventory:
             - docs/mitase/features/e2e.yaml
             - docs/mitase/requirements/security.yaml
             - docs/mitase/features/security.yaml
+            - docs/mitase/features/authentication.yaml
             - docs/mitase/requirements/storage.yaml
             - docs/mitase/features/storage.yaml
             - docs/mitase/requirements/ops.yaml
