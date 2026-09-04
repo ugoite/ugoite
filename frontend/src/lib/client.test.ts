@@ -195,6 +195,16 @@ describe("entryApi", () => {
       expect(entries[0].properties).toHaveProperty("Attendees");
     });
 
+    it("should preserve an empty H1 title in the mock response", async () => {
+      await entryApi.create("test-ws", {
+        markdown: "# \n\n## Status\nReady",
+      });
+
+      const entries = await entryApi.list("test-ws");
+      expect(entries).toHaveLength(1);
+      expect(entries[0].title).toBe("");
+    });
+
     it("should extract H2 headers as properties", async () => {
       const result = await entryApi.create("test-ws", {
         markdown: "# Task\n\n## Status\nPending\n\n## Priority\nHigh",

@@ -192,6 +192,52 @@ describe("EntryDetailPane", () => {
     expect(markdown).not.toContain("# Untitled");
   });
 
+  it("does not let an empty title bypass active required-field validation", async () => {
+    const createMock = entryApi.create as ReturnType<typeof vi.fn>;
+    createMock.mockResolvedValue({
+      id: "untitled-task-entry",
+      revision_id: "untitled-task-revision",
+    });
+    const form: Form = {
+      name: "Task",
+      version: 1,
+      template: "# Task\n\n## Status\n",
+      fields: { Status: { type: "string", required: true } },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const title = await screen.findByLabelText("Title");
+    fireEvent.input(title, { target: { value: "" } });
+    expect(title).toHaveValue("");
+    expect(screen.getByRole("heading", { name: "Untitled" }))
+      .toBeInTheDocument();
+
+    const save = screen.getByRole("button", { name: "Save" });
+    fireEvent.click(save);
+
+    expect(createMock).not.toHaveBeenCalled();
+    const status = screen.getByLabelText("Status");
+    expect(status).toHaveAttribute("aria-invalid", "true");
+    expect(document.activeElement).toBe(status);
+
+    fireEvent.input(status, { target: { value: "Ready" } });
+    fireEvent.click(save);
+
+    await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
+    const markdown = createMock.mock.calls[0][1].markdown as string;
+    expect(markdown).toContain("\n# \n");
+    expect(markdown).not.toContain("# Untitled");
+  });
+
   it("blocks create until every active required field has a value", async () => {
     const createMock = entryApi.create as ReturnType<typeof vi.fn>;
     createMock.mockResolvedValue({
