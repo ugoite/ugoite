@@ -106,6 +106,8 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
               spellcheck={false}
             />
             <div
+              role="region"
+              aria-label="Preview"
               class="preview ui-preview w-1/2 h-full"
               innerHTML={renderMarkdownPreview(props.content)}
             />
@@ -128,6 +130,8 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
             }
           >
             <div
+              role="region"
+              aria-label="Preview"
               class="preview ui-preview h-full"
               innerHTML={renderMarkdownPreview(props.content)}
             />

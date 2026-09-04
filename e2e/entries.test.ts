@@ -783,7 +783,7 @@ test.describe("Entries CRUD", () => {
 		await settleUiLoading(page);
 		await page.getByRole("tab", { name: "Preview" }).click();
 
-		const preview = page.locator(".preview").first();
+		const preview = page.getByRole("region", { name: "Preview" });
 		await expect(preview).toBeVisible();
 		await expect(preview.locator("img")).toHaveCount(0);
 		await expect(preview).toContainText('<img src=x onerror="window.__ugoiteXss=\'ran\'">');
