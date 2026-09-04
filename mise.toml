@@ -436,6 +436,15 @@ run = "deno run -A tools/release.ts promote"
 description = "Update mutable distribution aliases after publication verification"
 run = "deno run -A tools/release.ts promote-aliases"
 
+[tasks."ci:artifacts:e2e"]
+description = "Run merge-gated docsite and browser E2E checks sequentially"
+run = [
+  { task = "test:docsite:e2e:navigation" },
+  { task = "test:e2e:smoke-and-asset-owned" },
+  { task = "test:e2e:owner-recovery" },
+  { task = "version:check" },
+]
+
 [tasks.ci]
 description = "Run the repository quality gate"
 run = [
@@ -451,12 +460,7 @@ run = [
   { task = "build" },
   { task = "package" },
   { task = "verify" },
-  { tasks = [
-    "test:docsite:e2e:navigation",
-    "test:e2e:smoke-and-asset-owned",
-    "test:e2e:owner-recovery",
-    "version:check",
-  ] },
+  { task = "ci:artifacts:e2e" },
 ]
 
 [tasks."ci:lane:rust-check"]
