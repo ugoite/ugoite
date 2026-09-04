@@ -302,6 +302,16 @@ fn sql_template_normalization_ignores_literals_identifiers_and_comments() -> any
     // Syntax lint deliberately does not enforce the separate read-only
     // execution policy. The authorized query context rejects this statement.
     assert!(index::validate_sql_syntax("DROP TABLE entries").is_ok());
+    for sql in [
+        "INSERT INTO entries SELECT * FROM entries",
+        "UPDATE entries SET field_100 = 'changed'",
+        "DELETE FROM entries",
+    ] {
+        assert!(
+            index::validate_sql_syntax(sql).is_ok(),
+            "parser-valid DML must remain accepted by syntax lint: {sql}"
+        );
+    }
     Ok(())
 }
 

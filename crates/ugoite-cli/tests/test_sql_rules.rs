@@ -52,6 +52,21 @@ fn test_cli_sql_lint_uses_datafusion_for_valid_select_and_empty_input() {
     assert_eq!(ddl_body["syntax_valid"], true);
     assert_eq!(ddl_body["valid"], true);
 
+    for sql in [
+        "INSERT INTO entries SELECT * FROM entries",
+        "UPDATE entries SET field_100 = 'changed'",
+        "DELETE FROM entries",
+    ] {
+        let output = Command::new(ugoite_bin())
+            .args(["sql", "lint", sql])
+            .output()
+            .expect("failed to execute DML syntax lint");
+        assert!(output.status.success());
+        let body: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(body["syntax_valid"], true, "{sql}");
+        assert_eq!(body["valid"], true, "{sql}");
+    }
+
     let empty = Command::new(ugoite_bin())
         .args(["sql", "lint", ""])
         .output()
