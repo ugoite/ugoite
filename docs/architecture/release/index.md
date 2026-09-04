@@ -16,3 +16,5 @@ a product or support claim is safe to make.
   candidate verification, and buildless promotion.
 - [Release rearchitecture status](release-rearchitecture.md) records the
   Rust/Deno consolidation and remaining future work.
+- [Release planner ref recovery](release-planner-recovery.md) defines the
+  compare-before-delete procedure for an orphaned planner branch ref.
