@@ -84,8 +84,8 @@ above that bound are rejected with `422 INVALID_INPUT`; the server does not
 silently reduce them. Keyword search requires `q` and accepts at most 8,192
 UTF-8 bytes. Search applies Unicode NFKC normalization followed by Unicode
 lowercase to both the query and searchable Entry/AssetText values before
-performing a substring match. The `offset` parameter remains available for the existing ordered
-Entry list paging behavior.
+performing a substring match. The `offset` parameter remains available for
+the existing ordered Entry list paging behavior.
 CLI/agent delete and policy requests must include the approval header. The
 server canonicalizes the route and strict mutation intent, hashes it with
 SHA-256, atomically consumes the approval, and records the lifecycle in the
