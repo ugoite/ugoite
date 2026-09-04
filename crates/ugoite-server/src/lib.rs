@@ -3881,7 +3881,12 @@ fn redact_oidc_provider_secret(mut value: Value) -> Value {
 fn normalized_oidc_issuer(issuer: &str) -> anyhow::Result<String> {
     let normalized = issuer.trim().trim_end_matches('/');
     let parsed = url::Url::parse(normalized).context("invalid OIDC issuer URL")?;
-    if parsed.scheme() != "https"
+    let loopback_test_issuer = oidc_loopback_test_mode()
+        && parsed.scheme() == "http"
+        && parsed
+            .host_str()
+            .is_some_and(|host| is_loopback_host(host) || is_e2e_mock_host(host));
+    if (!loopback_test_issuer && parsed.scheme() != "https")
         || parsed.host_str().is_none()
         || !parsed.username().is_empty()
         || parsed.password().is_some()
@@ -3894,12 +3899,14 @@ fn normalized_oidc_issuer(issuer: &str) -> anyhow::Result<String> {
 }
 
 fn validate_oidc_endpoint(url: &url::Url, name: &str) -> anyhow::Result<()> {
-    // The in-process mock issuer used by server tests is intentionally plain
-    // HTTP on loopback. Production provider configuration and all non-test
+    // The in-process and E2E mock issuers are intentionally plain HTTP on a
+    // test-only host. Production provider configuration and all non-test
     // endpoints remain HTTPS-only.
-    if cfg!(test)
+    if (cfg!(test) || oidc_loopback_test_mode())
         && url.scheme() == "http"
-        && matches!(url.host_str(), Some("127.0.0.1" | "localhost"))
+        && url
+            .host_str()
+            .is_some_and(|host| is_loopback_host(host) || is_e2e_mock_host(host))
     {
         return Ok(());
     }
@@ -3907,6 +3914,22 @@ fn validate_oidc_endpoint(url: &url::Url, name: &str) -> anyhow::Result<()> {
         anyhow::bail!("OIDC {name} endpoint must use https")
     }
     Ok(())
+}
+
+fn oidc_loopback_test_mode() -> bool {
+    env::var("UGOITE_E2E_TEST_MODE").is_ok_and(|value| value == "true")
+}
+
+fn is_e2e_mock_host(host: &str) -> bool {
+    oidc_loopback_test_mode()
+        && env::var("E2E_OIDC_MOCK_HOST").is_ok_and(|value| value.trim().eq_ignore_ascii_case(host))
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
 }
 
 fn validate_oidc_metadata(metadata: &CoreProviderMetadata) -> anyhow::Result<()> {

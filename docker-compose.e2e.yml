@@ -16,4 +16,6 @@ services:
       - UGOITE_PUBLIC_ORIGIN=${UGOITE_PUBLIC_ORIGIN:-http://localhost:8000}
       - UGOITE_API_BASE_URL=${UGOITE_API_BASE_URL:-http://localhost:8000/api}
       - UGOITE_WEBAUTHN_RP_ID=${UGOITE_WEBAUTHN_RP_ID:-localhost}
+      - UGOITE_E2E_TEST_MODE=true
+      - E2E_OIDC_MOCK_HOST=${E2E_OIDC_MOCK_HOST:-}
       - UGOITE_NODE_SECRET_KEY=${UGOITE_NODE_SECRET_KEY:?E2E runner must provide a node secret}

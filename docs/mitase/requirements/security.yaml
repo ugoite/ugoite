@@ -700,13 +700,13 @@ requirements:
         governed_by: [POL-004#rule.governance, POL-011#rule.governance]
       - id: space-recovery-preserves-oidc
         kind: security
-        statement: Owner-approved Space Access Recovery does not alter the recovered principal's existing external identity methods; an exact end-to-end verification remains an explicit evidence gap for this migration slice.
+        statement: Owner-approved Space Access Recovery does not alter the recovered principal's existing external identity methods.
         governed_by: [POL-004#rule.governance, POL-011#rule.governance]
     bindings:
       - id: oidc-verification
         role: verification
         facet: verification
-        responsibility: Verify the OIDC protocol, exact external identity key, invitation gate, federated session boundary, protected link management, Account Self-Recovery interaction, and published contract through exact identity, server, browser, and API contract tests; Space Access Recovery preservation remains an explicit evidence gap in this slice.
+        responsibility: Verify the OIDC protocol, exact external identity key, invitation gate, federated session boundary, protected link management, recovery interactions, and published contract through exact identity, server, browser, and API contract tests.
         targets:
           - id: exact-identity-case
             adapter: rust
@@ -877,3 +877,12 @@ requirements:
                 criterion: REQ-SEC-016#criterion.invitation-gated-account
                 covers: [FEAT-SEC-005#binding.client/target.invitation-join]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/join.test.tsx, test: starts OIDC login with the invitation token } }
+          - id: space-recovery-preservation-case
+            adapter: typescript
+            path: e2e/owner-space-recovery.test.ts
+            selector: { kind: test, name: req_sec_012_013_owner_space_access_recovery_supported_journey }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-016#criterion.space-recovery-preserves-oidc
+                covers: [FEAT-SEC-005#binding.client/target.space-recovery-journey]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/owner-space-recovery.test.ts, test: req_sec_012_013_owner_space_access_recovery_supported_journey } }

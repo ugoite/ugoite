@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { getBackendUrl, waitForServers } from "./lib/client.ts";
+import { startMockOidcServer } from "./lib/mock-oidc.ts";
 import { addVirtualAuthenticator } from "./lib/webauthn.ts";
 
 type Member = {
@@ -52,6 +53,7 @@ test.describe("Owner-approved Space access recovery", () => {
       );
     }
 
+    const mockOidc = await startMockOidcServer("space-recovery-subject");
     const target = await browser.newContext({
       storageState: { cookies: [], origins: [] },
     });
@@ -61,6 +63,16 @@ test.describe("Owner-approved Space access recovery", () => {
     const authenticatorId = await addVirtualAuthenticator(cdp);
 
     try {
+      const configuredProvider = await request.post(
+        getBackendUrl("/auth/oidc/providers"),
+        { data: { issuer: mockOidc.issuer, client_id: "e2e-client" } },
+      );
+      const configuredProviderBody = await configuredProvider.text();
+      expect(configuredProvider.status(), configuredProviderBody).toBe(201);
+      const providerId = (JSON.parse(configuredProviderBody) as {
+        provider_id: string;
+      }).provider_id;
+
       // The first invitation creates the target's original HumanAccount and
       // binding; the second binds that same account to another Space.
       await page.goto(invitations[0]);
@@ -69,6 +81,21 @@ test.describe("Owner-approved Space access recovery", () => {
       await page.goto(invitations[1]);
       await page.getByRole("button", { name: "Accept invitation" }).click();
       await expect(page).toHaveURL(/\/spaces$/);
+
+      const linkResponse = await target.request.get(
+        getBackendUrl(`/auth/oidc/${providerId}/link`),
+      );
+      expect(linkResponse.ok(), await linkResponse.text()).toBeTruthy();
+      const beforeOidcLinksResponse = await target.request.get(
+        getBackendUrl("/auth/oidc/links"),
+      );
+      expect(beforeOidcLinksResponse.ok()).toBeTruthy();
+      const beforeOidcLinks = await beforeOidcLinksResponse.json() as Array<{
+        method_id: string;
+        issuer: string;
+      }>;
+      expect(beforeOidcLinks).toHaveLength(1);
+      expect(beforeOidcLinks[0].issuer).toBe(mockOidc.issuer);
 
       const oldSession = await target.request.get(
         getBackendUrl("/auth/session"),
@@ -144,6 +171,11 @@ test.describe("Owner-approved Space access recovery", () => {
       const freshAccountId =
         ((await freshSession.json()).account.account_id) as string;
       expect(freshAccountId).not.toBe(oldAccountId);
+      const freshOidcLinks = await target.request.get(
+        getBackendUrl("/auth/oidc/links"),
+      );
+      expect(freshOidcLinks.ok()).toBeTruthy();
+      expect(await freshOidcLinks.json()).toEqual([]);
       expect(
         (await target.request.get(getBackendUrl(`/spaces/${recoveredSpaceId}`)))
           .status(),
@@ -177,6 +209,11 @@ test.describe("Owner-approved Space access recovery", () => {
       // recovered Space binding is intentionally no longer available to it.
       await target.clearCookies();
       await target.addCookies([oldCookie!]);
+      const afterOidcLinksResponse = await target.request.get(
+        getBackendUrl("/auth/oidc/links"),
+      );
+      expect(afterOidcLinksResponse.ok()).toBeTruthy();
+      expect(await afterOidcLinksResponse.json()).toEqual(beforeOidcLinks);
       await expect(
         (await target.request.get(getBackendUrl("/auth/session"))).json(),
       ).resolves.toMatchObject({
@@ -239,6 +276,7 @@ test.describe("Owner-approved Space access recovery", () => {
       );
     } finally {
       await target.close();
+      mockOidc.close();
     }
   });
 });

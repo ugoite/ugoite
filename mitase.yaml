@@ -86,6 +86,8 @@ inventory:
             - e2e/docsite-onboarding.test.ts
             - e2e/global-setup.ts
             - e2e/account-self-recovery.test.ts
+            - e2e/owner-space-recovery.test.ts
+            - e2e/lib/mock-oidc.ts
             - e2e/space-membership.test.ts
             - frontend/src/routes/spaces/join.tsx
             - frontend/src/routes/spaces/join.test.tsx
