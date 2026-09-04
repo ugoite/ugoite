@@ -124,3 +124,4 @@ features:
           - REQ-INT-001#criterion.revision-signature
           - REQ-INT-003#criterion.scoped-response-material
           - REQ-INT-003#criterion.eligible-response-signature
+          - REQ-INT-003#criterion.unsigned-response-boundary
