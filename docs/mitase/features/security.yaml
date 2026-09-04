@@ -744,6 +744,8 @@ features:
                 criterion: REQ-SEC-016#criterion.invitation-gated-account
               - kind: satisfies
                 criterion: REQ-SEC-016#criterion.federated-session-boundary
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.protected-link-management
           - id: first-passkey-bootstrap
             adapter: rust
             path: crates/ugoite-identity/src/node_identity.rs
@@ -758,7 +760,7 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SEC-016#criterion.federated-session-boundary
-          - id: link-completion
+          - id: link-list
             adapter: rust
             path: crates/ugoite-identity/src/node_identity.rs
             selector: { kind: symbol, name: list_oidc_links }
@@ -805,6 +807,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SEC-016#criterion.secure-oidc-protocol
+          - id: link-start
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: oidc_link_start }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.protected-link-management
           - id: oidc-callback
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
@@ -965,7 +974,9 @@ features:
         participants:
           - target: FEAT-SEC-003#binding.identity/target.recovery-finish
             role: identity
-          - target: FEAT-SEC-005#binding.identity/target.link-completion
+          - target: FEAT-SEC-005#binding.identity/target.login-completion
+            role: identity
+          - target: FEAT-SEC-005#binding.identity/target.link-list
             role: identity
           - target: FEAT-SEC-005#binding.identity/target.unlink
             role: identity
@@ -976,6 +987,8 @@ features:
           - target: FEAT-SEC-005#binding.server/target.link-list
             role: backend
           - target: FEAT-SEC-005#binding.server/target.link-remove
+            role: backend
+          - target: FEAT-SEC-005#binding.server/target.link-start
             role: backend
           - target: FEAT-SEC-005#binding.client/target.security-settings
             role: client
@@ -990,6 +1003,8 @@ features:
           - target: FEAT-SEC-005#binding.contract/target.link-list
             role: contract
           - target: FEAT-SEC-005#binding.contract/target.link-remove
+            role: contract
+          - target: FEAT-SEC-005#binding.contract/target.authorization-link-start
             role: contract
         guarantees:
           - REQ-SEC-016#criterion.protected-link-management

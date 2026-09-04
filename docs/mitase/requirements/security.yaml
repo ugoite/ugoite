@@ -778,7 +778,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-SEC-016#criterion.protected-link-management
-                covers: [FEAT-SEC-005#binding.identity/target.link-completion]
+                covers: [FEAT-SEC-005#binding.identity/target.login-completion]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::oidc_link_attempt_is_rejected_after_credential_authority_changes } }
           - id: recovery-oidc-case
             adapter: rust
@@ -818,7 +818,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-SEC-016#criterion.protected-link-management
-                covers: [FEAT-SEC-005#binding.server/target.provider-list, FEAT-SEC-005#binding.server/target.provider-disable, FEAT-SEC-005#binding.server/target.link-list, FEAT-SEC-005#binding.server/target.link-remove]
+                covers: [FEAT-SEC-005#binding.identity/target.link-list, FEAT-SEC-005#binding.server/target.provider-list, FEAT-SEC-005#binding.server/target.provider-disable, FEAT-SEC-005#binding.server/target.link-list, FEAT-SEC-005#binding.server/target.link-remove]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: oidc_links_are_protected_and_provider_listing_is_publicly_redacted } }
           - id: openapi-case
             adapter: rust
@@ -828,6 +828,10 @@ requirements:
               - kind: verifies
                 criterion: REQ-SEC-016#criterion.secure-oidc-protocol
                 covers: [FEAT-SEC-005#binding.server/target.authorization-start, FEAT-SEC-005#binding.server/target.oidc-callback]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: openapi_publishes_oidc_account_linking_and_bootstrap_surfaces } }
+              - kind: verifies
+                criterion: REQ-SEC-016#criterion.protected-link-management
+                covers: [FEAT-SEC-005#binding.server/target.link-start]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: openapi_publishes_oidc_account_linking_and_bootstrap_surfaces } }
           - id: login-route-case
             adapter: typescript
