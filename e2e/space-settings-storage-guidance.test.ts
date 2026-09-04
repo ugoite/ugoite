@@ -1,12 +1,16 @@
 import { expect, test } from "@playwright/test";
-import { getDefaultSpaceId, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import {
+  getDefaultSpaceId,
+  getFrontendUrl,
+  waitForServers,
+} from "./lib/client.ts";
 
 test.describe("Space settings storage guidance", () => {
-	let spaceId = "";
+  let spaceId = "";
 
   test.beforeAll(async ({ request }) => {
     await waitForServers(request);
-		spaceId = await getDefaultSpaceId(request);
+    spaceId = await getDefaultSpaceId(request);
   });
 
   test("REQ-FE-017: storage settings explain that configuration does not move the current Space", async ({ page }) => {
@@ -14,6 +18,12 @@ test.describe("Space settings storage guidance", () => {
       waitUntil: "networkidle",
     });
 
+    await page.getByRole("button", { name: "Storage", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Storage", exact: true }))
+      .toBeVisible();
+    await expect(page.getByText("Storage topology", { exact: true }))
+      .toBeVisible();
+    await expect(page.getByText(/^(file|s3):\/\//i)).toBeVisible();
     await expect(page.getByText(/saved configuration metadata only/i))
       .toBeVisible();
     await expect(
