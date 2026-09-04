@@ -1380,12 +1380,30 @@
       "post": {
         "summary": "Create a space owned by the authenticated identity",
         "responses": {
-          "201": {
-            "description": "Created",
+          "200": {
+            "description": "Existing Space returned for an idempotent retry by the same bound account",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonValue"
+                  "$ref": "#/components/schemas/SpaceCreateResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "201": {
+            "description": "Space created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpaceCreateResponse"
                 }
               }
             },
@@ -1464,7 +1482,14 @@
             }
           },
           "409": {
-            "description": "Conflict",
+            "description": "The Space slug is already owned by another account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
             "headers": {
               "X-Ugoite-Key-Id": {
                 "$ref": "#/components/headers/X-Ugoite-Key-Id"
@@ -1522,12 +1547,12 @@
             }
           }
         },
-        "requestBody": {
+          "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JsonValue"
+                "$ref": "#/components/schemas/SpaceCreateRequest"
               }
             }
           }
@@ -12218,12 +12243,21 @@
         "type": "object",
         "required": [
           "id",
+          "slug",
+          "space_uid",
           "name",
           "path"
         ],
         "properties": {
           "id": {
             "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "space_uid": {
+            "type": "string",
+            "format": "uuid"
           },
           "name": {
             "type": "string"

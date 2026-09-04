@@ -7788,6 +7788,21 @@ async fn ensure_local_space_owner_binding(
             }
             return Ok((space_uid, false));
         }
+        if !state
+            .identity
+            .bindings_for_space(space_uid)
+            .await
+            .map_err(auth_error)?
+            .is_empty()
+        {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                json!({
+                    "code": "SPACE_ALREADY_EXISTS",
+                    "message": format!("Space slug already exists: {slug}"),
+                }),
+            ));
+        }
         state
             .identity
             .bind_local_owner(space_uid, principal_id, account_id)
@@ -14543,6 +14558,56 @@ mod authentication_regression_tests {
         .await
         .expect_err("incomplete Space bootstrap must not be finalized by recovery");
         assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
+        Ok(())
+    }
+
+    #[tokio::test]
+    /// REQ-STO-005
+    async fn space_creation_api_distinguishes_bound_retry_from_duplicate_slug() -> anyhow::Result<()>
+    {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-space-create-contract-{}",
+            Uuid::now_v7()
+        ))?;
+        state.initialize_node().await?;
+        let account_id = Uuid::now_v7();
+        let first = create_space(
+            State(state.clone()),
+            Extension(passkey_identity(account_id)),
+            Json(SpaceCreate {
+                name: "contract-space".to_string(),
+            }),
+        )
+        .await
+        .expect("first Space creation should succeed");
+        assert_eq!(first.0, StatusCode::CREATED);
+        let Json(first_body) = first.1;
+        let first_uid = first_body["space_uid"].clone();
+
+        let retry = create_space(
+            State(state.clone()),
+            Extension(passkey_identity(account_id)),
+            Json(SpaceCreate {
+                name: "contract-space".to_string(),
+            }),
+        )
+        .await
+        .expect("same bound account retry should succeed");
+        assert_eq!(retry.0, StatusCode::OK);
+        let Json(retry_body) = retry.1;
+        assert_eq!(retry_body["space_uid"], first_uid);
+
+        let duplicate = create_space(
+            State(state),
+            Extension(passkey_identity(Uuid::now_v7())),
+            Json(SpaceCreate {
+                name: "contract-space".to_string(),
+            }),
+        )
+        .await
+        .expect_err("a different account must not claim an existing Space slug");
+        assert_eq!(duplicate.status, StatusCode::CONFLICT);
+        assert_eq!(duplicate.detail["code"], "SPACE_ALREADY_EXISTS");
         Ok(())
     }
 
