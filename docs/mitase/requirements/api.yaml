@@ -65,6 +65,68 @@ requirements:
         statement: The API exposes create, retrieve, update, and delete operations for Entries.
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
     bindings:
+      - id: service-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the service Entry create, list, retrieve, and delegated update paths through exact Rust integration cases; deletion and full authorization policy coverage remain separate evidence.
+        targets:
+          - id: create-and-list-entries
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_service.rs
+            selector: { kind: test, name: test_service_boundary_covers_primary_adapter_operations }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+                covers:
+                  - FEAT-API-001#binding.service-implementation/target.create-entry
+                  - FEAT-API-001#binding.service-implementation/target.list-entries
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_service, test: test_service_boundary_covers_primary_adapter_operations } }
+          - id: retrieve-and-authorized-update
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_service.rs
+            selector: { kind: test, name: authorized_entry_writes_apply_form_entry_and_delegated_principal_policies }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+                covers:
+                  - FEAT-API-001#binding.service-implementation/target.get-entry
+                  - FEAT-API-001#binding.service-implementation/target.create-entry-authorized
+                  - FEAT-API-001#binding.service-implementation/target.update-entry-authorized
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_service, test: authorized_entry_writes_apply_form_entry_and_delegated_principal_policies } }
+      - id: backend-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the backend Entry create, retrieve, update, and delete handlers through exact Rust route tests; CLI and frontend evidence remain separate bindings.
+        targets:
+          - id: create-and-update-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::entry_routes_keep_input_errors_typed_and_create_atomic }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+                covers:
+                  - FEAT-API-001#binding.backend-implementation/target.create-entry
+                  - FEAT-API-001#binding.backend-implementation/target.update-entry
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::entry_routes_keep_input_errors_typed_and_create_atomic } }
+          - id: retrieve-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::issue_2037_authenticated_rest_apply_supports_create_update_remove }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+                covers: [FEAT-API-001#binding.backend-implementation/target.get-entry]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::issue_2037_authenticated_rest_apply_supports_create_update_remove } }
+          - id: delete-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::delete_route_records_the_authenticated_principal_as_actor }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+                covers: [FEAT-API-001#binding.backend-implementation/target.delete-entry]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::delete_route_records_the_authenticated_principal_as_actor } }
       - id: frontend-crud-verification
         role: verification
         facet: verification
