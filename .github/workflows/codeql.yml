@@ -50,7 +50,7 @@ jobs:
         with:
           category: /language:${{ matrix.language }}
           # merge_group refs are temporary and cannot receive uploaded SARIF results.
-          upload: ${{ github.event_name != 'merge_group' }}
+          upload: ${{ github.event_name == 'merge_group' && 'never' || 'always' }}
 
   required-check:
     name: codeql-required

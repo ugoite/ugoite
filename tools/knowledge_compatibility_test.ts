@@ -146,7 +146,7 @@ Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
   requireText(webJob, "node-version: 24", "CI web job");
   requireText(
     codeqlWorkflow,
-    "upload: ${{ github.event_name != 'merge_group' }}",
+    "upload: ${{ github.event_name == 'merge_group' && 'never' || 'always' }}",
     "CodeQL workflow",
   );
 });
