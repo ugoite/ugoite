@@ -886,6 +886,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SEC-016#criterion.invitation-gated-account
+          - id: space-recovery-journey
+            adapter: typescript
+            path: e2e/owner-space-recovery.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SEC-016#criterion.space-recovery-preserves-oidc
       - id: contract
         role: contract-source
         facet: api
@@ -1001,6 +1008,8 @@ features:
             role: backend
           - target: FEAT-SEC-005#binding.client/target.security-settings
             role: client
+          - target: FEAT-SEC-005#binding.client/target.space-recovery-journey
+            role: verification
           - target: FEAT-SEC-002#binding.client/target.auth-client
             role: api-client
           - target: FEAT-SEC-005#binding.contract/target.provider-config
@@ -1016,3 +1025,4 @@ features:
         guarantees:
           - REQ-SEC-016#criterion.protected-link-management
           - REQ-SEC-016#criterion.recovery-removes-oidc
+          - REQ-SEC-016#criterion.space-recovery-preserves-oidc

@@ -39,8 +39,9 @@ The OIDC external identity requirement `REQ-SEC-016` is represented canonically
 at `docs/mitase/requirements/security.yaml`. Its corresponding record in the
 legacy Security registry remains read-only migration evidence for this slice;
 the remaining Security requirements continue to use their existing authority.
-Space Access Recovery preservation of existing OIDC methods remains an explicit
-evidence gap pending an end-to-end regression test.
+The owner-approved Space Access Recovery regression now verifies that the old
+account's OIDC methods remain unchanged while the recovered Space binding moves
+to the fresh account.
 
 The legacy Integrity requirement registry at `requirements/integrity.yaml` is
 retained as a read-only migration snapshot. The canonical Integrity requirements

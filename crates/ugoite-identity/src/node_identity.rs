@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
+    env,
     future::Future,
     sync::Arc,
 };
@@ -44,6 +45,17 @@ const SESSION_ABSOLUTE_DAYS: i64 = 30;
 const INVITATION_LIFETIME_HOURS: i64 = 72;
 const TOTP_ENROLLMENT_LIFETIME_MINUTES: i64 = 10;
 const OIDC_ATTEMPT_LIFETIME_MINUTES: i64 = 10;
+
+fn oidc_loopback_test_mode() -> bool {
+    env::var("UGOITE_E2E_TEST_MODE").is_ok_and(|value| value == "true")
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -6271,7 +6283,10 @@ impl NodeIdentityService {
         }
         let issuer = issuer.trim().trim_end_matches('/');
         let parsed_issuer = Url::parse(issuer).context("invalid OIDC issuer URL")?;
-        if parsed_issuer.scheme() != "https"
+        let loopback_test_issuer = (cfg!(test) || oidc_loopback_test_mode())
+            && parsed_issuer.scheme() == "http"
+            && parsed_issuer.host_str().is_some_and(is_loopback_host);
+        if (!loopback_test_issuer && parsed_issuer.scheme() != "https")
             || parsed_issuer.host_str().is_none()
             || !parsed_issuer.username().is_empty()
             || parsed_issuer.password().is_some()
