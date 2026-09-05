@@ -71,6 +71,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-STO-004#criterion.service-space-listing
+              - kind: satisfies
+                criterion: REQ-API-001#criterion.space-lifecycle
           - id: mutation-admission
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
@@ -96,6 +98,10 @@ features:
                 criterion: REQ-STO-005#criterion.duplicate-slug-conflict
               - kind: satisfies
                 criterion: REQ-STO-005#criterion.missing-binding-recovery
+              - kind: satisfies
+                criterion: REQ-API-001#criterion.space-lifecycle
+              - kind: satisfies
+                criterion: REQ-API-001#criterion.stable-space-identity
       - id: domain
         role: implementation
         facet: domain

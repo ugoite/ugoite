@@ -89,18 +89,6 @@ features:
         facet: service
         responsibility: Connect the canonical Iceberg service methods to saved SQL and SQL-session implementations.
         targets:
-          - id: list-spaces
-            adapter: rust
-            path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: list_space_ids }
-          - id: create-space
-            adapter: rust
-            path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: create_space_for_principal }
-          - id: get-space
-            adapter: rust
-            path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: get_space }
           - id: create-entry
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
@@ -165,6 +153,29 @@ features:
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
             selector: { kind: symbol, name: get_sql_session_rows_authorized_for_principals }
+      - id: space-service-implementation
+        role: implementation
+        facet: service
+        responsibility: Implement the Space service lifecycle used by the canonical API operations and immutable identity boundary.
+        targets:
+          - id: create-space
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: create_space_for_principal }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-001#criterion.space-lifecycle
+              - kind: satisfies
+                criterion: REQ-API-001#criterion.stable-space-identity
+          - id: get-space
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: get_space }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-001#criterion.space-lifecycle
+              - kind: satisfies
+                criterion: REQ-API-001#criterion.stable-space-identity
       - id: service-implementation
         role: implementation
         facet: service
@@ -210,18 +221,6 @@ features:
         facet: backend
         responsibility: Expose the API-owned operations through the Rust server adapter.
         targets:
-          - id: list-spaces
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: list_spaces }
-          - id: create-space
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: create_space }
-          - id: get-space
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: get_space }
           - id: list-entries
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
@@ -286,6 +285,20 @@ features:
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
             selector: { kind: symbol, name: delete_sql }
+      - id: space-backend-implementation
+        role: implementation
+        facet: backend
+        responsibility: Implement the authenticated Space HTTP handlers exercised by the canonical Space lifecycle contract.
+        targets:
+          - id: get-space
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: get_space }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-001#criterion.space-lifecycle
+              - kind: satisfies
+                criterion: REQ-API-001#criterion.stable-space-identity
       - id: backend-implementation
         role: implementation
         facet: backend
@@ -467,7 +480,9 @@ features:
         kind: http
         source: FEAT-API-001#binding.contract/target.list-spaces
         participants:
-          - target: FEAT-API-001#binding.backend/target.list-spaces
+          - target: FEAT-STO-001#binding.service/target.list-space-ids
+            role: service
+          - target: FEAT-E2E-001#binding.server/target.list-spaces
             role: backend
           - target: FEAT-API-001#binding.frontend-implementation/target.space-api
             role: client
@@ -478,7 +493,9 @@ features:
         kind: http
         source: FEAT-API-001#binding.contract/target.create-space
         participants:
-          - target: FEAT-API-001#binding.backend/target.create-space
+          - target: FEAT-API-001#binding.space-service-implementation/target.create-space
+            role: service
+          - target: FEAT-STO-001#binding.space-api/target.create-space-api
             role: backend
           - target: FEAT-API-001#binding.frontend-implementation/target.space-api
             role: client
@@ -489,7 +506,30 @@ features:
         kind: http
         source: FEAT-API-001#binding.contract/target.get-space
         participants:
-          - target: FEAT-API-001#binding.backend/target.get-space
+          - target: FEAT-API-001#binding.space-service-implementation/target.get-space
+            role: service
+          - target: FEAT-API-001#binding.space-backend-implementation/target.get-space
+            role: backend
+          - target: FEAT-API-001#binding.frontend-implementation/target.space-api
+            role: client
+          - target: FEAT-STO-001#binding.routing/target.space-command-routing
+            role: operator
+        guarantees: [REQ-API-001#criterion.space-lifecycle, REQ-API-001#criterion.stable-space-identity]
+      - id: space-lifecycle
+        kind: http
+        source: FEAT-API-001#binding.contract/target.list-spaces
+        participants:
+          - target: FEAT-STO-001#binding.service/target.list-space-ids
+            role: service
+          - target: FEAT-API-001#binding.space-service-implementation/target.create-space
+            role: service
+          - target: FEAT-API-001#binding.space-service-implementation/target.get-space
+            role: service
+          - target: FEAT-E2E-001#binding.server/target.list-spaces
+            role: backend
+          - target: FEAT-STO-001#binding.space-api/target.create-space-api
+            role: backend
+          - target: FEAT-API-001#binding.space-backend-implementation/target.get-space
             role: backend
           - target: FEAT-API-001#binding.frontend-implementation/target.space-api
             role: client
