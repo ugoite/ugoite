@@ -161,7 +161,7 @@ features:
           - id: create-space
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: create_space_for_principal }
+            selector: { kind: symbol, name: create_space_for_principal_with_name }
             claims:
               - kind: satisfies
                 criterion: REQ-API-001#criterion.space-lifecycle

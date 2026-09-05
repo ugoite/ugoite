@@ -14905,6 +14905,22 @@ mod authentication_regression_tests {
             .as_str()
             .expect("created Space must expose space_uid")
             .to_string();
+        let outsider_account_id = Uuid::now_v7();
+        let outsider = create_space(
+            State(state.clone()),
+            Extension(passkey_identity(outsider_account_id)),
+            Json(SpaceCreate {
+                slug: "read-contract-outsider-space".to_string(),
+                name: "Outsider Space".to_string(),
+            }),
+        )
+        .await
+        .expect("second Space creation should succeed before authorization verification");
+        let Json(outsider_body) = outsider.1;
+        let outsider_uid = outsider_body["space_uid"]
+            .as_str()
+            .expect("outsider Space must expose space_uid")
+            .to_string();
 
         let Json(listed) = list_spaces(
             State(state.clone()),
@@ -14917,6 +14933,11 @@ mod authentication_regression_tests {
             .expect("Space listing must be an array")
             .iter()
             .any(|space| space["space_uid"] == space_uid));
+        assert!(!listed
+            .as_array()
+            .expect("Space listing must be an array")
+            .iter()
+            .any(|space| space["space_uid"] == outsider_uid));
 
         let Json(retrieved) = get_space(
             State(state),
