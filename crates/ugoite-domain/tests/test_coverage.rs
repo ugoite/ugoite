@@ -99,7 +99,7 @@ fn test_space_req_sto_004_storage_type_and_root_normalizes_local_and_remote_uris
 }
 
 #[test]
-/// REQ-IDX-005
+/// REQ-SRCH-007
 fn test_text_req_idx_005_word_count_portable_for_minimum_coverage_gate() {
     assert_eq!(compute_word_count("One two three"), 3);
     assert_eq!(compute_word_count("  tabs\tand\nnewlines  still count "), 5);

@@ -1,5 +1,5 @@
 //! Integration tests for indexer operations.
-//! REQ-IDX-001, REQ-IDX-002, REQ-IDX-003, REQ-IDX-004, REQ-IDX-005, REQ-IDX-006, REQ-ENTRY-004
+//! REQ-SRCH-007, REQ-FORM-011, REQ-SRCH-006, REQ-ENTRY-004
 
 use std::process::Command;
 
@@ -70,7 +70,7 @@ fn setup_space_with_entries(
     (root, space_path, config_path, relation)
 }
 
-/// REQ-IDX-001: Indexer run rebuilds the internal DerivedRelation.
+/// REQ-SRCH-007: Indexer run rebuilds the internal DerivedRelation.
 #[test]
 fn test_indexer_run_once() {
     let dir = tempfile::tempdir().unwrap();
@@ -89,7 +89,7 @@ fn test_indexer_run_once() {
     );
 }
 
-/// REQ-IDX-001: Aggregate stats include all entries.
+/// REQ-SRCH-007: Aggregate stats include all entries.
 #[test]
 fn test_aggregate_stats() {
     let dir = tempfile::tempdir().unwrap();
@@ -108,7 +108,7 @@ fn test_aggregate_stats() {
     );
 }
 
-/// REQ-IDX-001: Aggregate stats include field usage information.
+/// REQ-SRCH-007: Aggregate stats include field usage information.
 #[test]
 fn test_aggregate_stats_includes_field_usage() {
     let dir = tempfile::tempdir().unwrap();
@@ -229,7 +229,7 @@ fn test_extract_properties_precedence() {
     assert!(get_output.status.success());
 }
 
-/// REQ-IDX-003: Query index returns matching entries.
+/// REQ-SRCH-006: Query index returns matching entries.
 #[test]
 fn test_query_index() {
     let dir = tempfile::tempdir().unwrap();
@@ -253,7 +253,7 @@ fn test_query_index() {
     );
 }
 
-/// REQ-IDX-003: Query index filters by tag.
+/// REQ-SRCH-006: Query index filters by tag.
 #[test]
 fn test_query_index_by_tag() {
     let dir = tempfile::tempdir().unwrap();
@@ -277,7 +277,7 @@ fn test_query_index_by_tag() {
     );
 }
 
-/// REQ-IDX-002: Validate entry properties - missing required fields detected.
+/// REQ-FORM-011: Validate entry properties - missing required fields detected.
 #[test]
 fn test_validate_properties_missing_required() {
     let dir = tempfile::tempdir().unwrap();
@@ -328,7 +328,7 @@ fn test_validate_properties_missing_required() {
     assert!(output.status.success() || !output.status.success());
 }
 
-/// REQ-IDX-002: Validate entry properties - valid entry passes validation.
+/// REQ-FORM-011: Validate entry properties - valid entry passes validation.
 #[test]
 fn test_validate_properties_valid() {
     let dir = tempfile::tempdir().unwrap();
@@ -383,7 +383,7 @@ fn test_validate_properties_valid() {
     );
 }
 
-/// REQ-IDX-004: AssetText rebuild does not claim to be an inverted index.
+/// REQ-SRCH-007: AssetText rebuild does not claim to be an inverted index.
 #[test]
 fn test_indexer_generates_inverted_index() {
     let dir = tempfile::tempdir().unwrap();
@@ -398,7 +398,7 @@ fn test_indexer_generates_inverted_index() {
     assert!(output.status.success(), "{output:?}");
 }
 
-/// REQ-IDX-005: Derived rebuild remains separate from word-count helpers.
+/// REQ-SRCH-007: Derived rebuild remains separate from word-count helpers.
 #[test]
 fn test_indexer_computes_word_count() {
     let dir = tempfile::tempdir().unwrap();
@@ -413,7 +413,7 @@ fn test_indexer_computes_word_count() {
     assert!(output.status.success(), "{output:?}");
 }
 
-/// REQ-IDX-006: Indexer watch loop triggers re-indexing on file changes.
+/// CLI index command availability.
 #[test]
 fn test_indexer_watch_loop_triggers_run() {
     // This test verifies the index command is available and lists its subcommands

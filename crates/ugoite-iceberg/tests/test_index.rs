@@ -5,7 +5,7 @@ use ugoite_iceberg::integrity::FakeIntegrityProvider;
 use ugoite_iceberg::{entry, form, index, space};
 
 #[tokio::test]
-/// REQ-IDX-001
+/// REQ-SRCH-007
 async fn test_index_req_idx_001_reindex_writes_index_files() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "test-space", "/tmp").await?;
@@ -29,7 +29,7 @@ async fn test_index_req_idx_001_reindex_writes_index_files() -> anyhow::Result<(
 }
 
 #[test]
-/// REQ-IDX-001
+/// REQ-FORM-011
 fn test_index_req_idx_001_extract_properties_returns_object() {
     let markdown = "# Title";
     let props = index::extract_properties(markdown);
@@ -37,7 +37,7 @@ fn test_index_req_idx_001_extract_properties_returns_object() {
 }
 
 #[tokio::test]
-/// REQ-IDX-002
+/// REQ-FORM-011
 async fn test_index_req_idx_002_validate_properties() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "test-space", "/tmp").await?;
@@ -67,7 +67,7 @@ async fn test_index_req_idx_002_validate_properties() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-/// REQ-IDX-003
+/// REQ-SRCH-006
 async fn test_index_req_idx_003_query_index() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "test-ws", "/tmp").await?;
@@ -79,7 +79,7 @@ async fn test_index_req_idx_003_query_index() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-/// REQ-IDX-004
+/// REQ-SRCH-007
 async fn test_index_req_idx_004_inverted_index_generation() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "test-ws", "/tmp").await?;
@@ -94,7 +94,7 @@ async fn test_index_req_idx_004_inverted_index_generation() -> anyhow::Result<()
 }
 
 #[tokio::test]
-/// REQ-IDX-008
+/// REQ-SRCH-006
 async fn test_index_req_idx_008_query_sql() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "test-sql-ws", "/tmp").await?;
@@ -160,7 +160,7 @@ async fn test_index_req_idx_008_query_sql() -> anyhow::Result<()> {
 }
 
 #[test]
-/// REQ-IDX-005
+/// REQ-SRCH-007
 fn test_index_req_idx_005_word_count() {
     let content = "One two three";
     let count = index::compute_word_count(content);
@@ -168,7 +168,7 @@ fn test_index_req_idx_005_word_count() {
 }
 
 #[tokio::test]
-/// REQ-IDX-009
+/// REQ-SRCH-006
 async fn test_index_req_idx_009_query_sql_joins() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "test-sql-join", "/tmp").await?;
@@ -225,7 +225,7 @@ async fn test_index_req_idx_009_query_sql_joins() -> anyhow::Result<()> {
 }
 
 #[test]
-/// REQ-IDX-010
+/// REQ-FORM-011
 fn test_index_req_idx_010_rich_content_parsing() -> anyhow::Result<()> {
     let class_def = serde_json::json!({
         "name": "Meeting",
@@ -396,7 +396,7 @@ fn timestamp_types_reject_values_with_the_wrong_timezone_contract() -> anyhow::R
 }
 
 #[tokio::test]
-/// REQ-IDX-001
+/// REQ-SRCH-007
 async fn test_index_req_idx_001_get_space_stats() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "stats-space", "/tmp").await?;
