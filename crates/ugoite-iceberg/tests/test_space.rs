@@ -8,6 +8,7 @@ use serde_json::Value;
 #[cfg(unix)]
 use tempfile::tempdir;
 use ugoite_iceberg::{form, space};
+use uuid::Uuid;
 
 #[tokio::test]
 /// REQ-STO-002, REQ-STO-004
@@ -290,6 +291,12 @@ async fn space_metadata_identity_must_match_directory_and_uuidv7_contract() -> a
     space::create_space(&op, "identity-contract", "/tmp").await?;
     let meta_path = "spaces/identity-contract/meta.json";
     let original: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
+    let original_uid = Uuid::parse_str(
+        original["space_uid"]
+            .as_str()
+            .expect("created Space metadata must expose space_uid"),
+    )?;
+    assert_eq!(original_uid.get_version_num(), 7);
 
     let mut wrong_directory = original.clone();
     wrong_directory["space_id"] = Value::String("another-space".to_string());
