@@ -58,6 +58,8 @@ features:
               - kind: satisfies
                 criterion: REQ-API-008#criterion.fixed-publication-coordinate
               - kind: satisfies
+                criterion: REQ-API-008#criterion.read-only-authorized-execution
+              - kind: satisfies
                 criterion: REQ-API-007#criterion.parameterized-execution
               - kind: satisfies
                 criterion: REQ-STO-012#criterion.lazy-path-boundary
