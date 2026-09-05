@@ -259,3 +259,57 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-020#criterion.hybrid-filtering
+
+  - id: FEAT-FE-006
+    title: SQL editor and query session clients
+    summary: Connect the browser SQL editor, shared SQL rules, saved-query client, and SQL-session client to exact frontend verification evidence.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep SQL editing, shared lint and completion rules, saved-query lifecycle calls, and SQL-session result access connected to the shipped frontend artifacts.
+        targets:
+          - id: sql-editor
+            adapter: typescript
+            path: frontend/src/components/SqlQueryEditor.tsx
+            selector: { kind: symbol, name: SqlQueryEditor }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-036#criterion.editor-contract
+              - kind: satisfies
+                criterion: REQ-FE-036#criterion.schema-completion
+          - id: sql-helpers
+            adapter: typescript
+            path: frontend/src/lib/sql.ts
+            selector: { kind: symbol, name: sqlLintDiagnostics }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-036#criterion.editor-contract
+              - kind: satisfies
+                criterion: REQ-FE-036#criterion.shared-rules
+          - id: shared-sql-rules
+            adapter: declared
+            path: shared/sql/ugoite-sql-rules.json
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-036#criterion.shared-rules
+          - id: saved-sql-client
+            adapter: typescript
+            path: frontend/src/lib/sql-api.ts
+            selector: { kind: symbol, name: sqlApi }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-050#criterion.saved-query-lifecycle
+              - kind: satisfies
+                criterion: REQ-FE-050#criterion.typed-errors
+          - id: sql-session-client
+            adapter: typescript
+            path: frontend/src/lib/sql-session-api.ts
+            selector: { kind: symbol, name: sqlSessionApi }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-051#criterion.session-lifecycle
+              - kind: satisfies
+                criterion: REQ-FE-051#criterion.typed-errors
