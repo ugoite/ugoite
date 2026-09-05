@@ -697,6 +697,31 @@ requirements:
                 criterion: REQ-FE-034#criterion.navigation-loading
                 covers: [FEAT-FE-003#binding.frontend/target.entry-detail-route]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/entries.test.ts, test: "REQ-FE-034: Multi-entry navigation should not get stuck in loading state" } }
+  - id: REQ-FE-035
+    title: Robust Entry Navigation and Recovery
+    description: Entry navigation resolves failed or slow loading states within a bounded flow and leaves the user able to retry or return to a stable route.
+    priority: high
+    status: implemented
+    criteria:
+      - id: navigation-recovery
+        kind: behavior
+        statement: Entry navigation does not remain in an unresolved loading state and provides a recoverable path when navigation cannot complete normally.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: navigation-recovery-verification
+        role: verification
+        facet: verification
+        responsibility: Verify bounded Entry navigation and recovery through the exact Playwright test.
+        targets:
+          - id: navigation-timeout-recovery
+            adapter: typescript
+            path: e2e/entries.test.ts
+            selector: { kind: test, name: "REQ-FE-035: Navigation timeout handling and recovery" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-035#criterion.navigation-recovery
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entries.test.ts, test: "REQ-FE-035: Navigation timeout handling and recovery" } }
   - id: REQ-FE-038
     title: Form Validation Feedback in Editor
     description: Form validation failures are shown as readable warnings while the current Entry draft remains available for correction.
