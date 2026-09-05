@@ -129,6 +129,7 @@ sources = [
 outputs = [
   "frontend/.output/public/index.html",
   "frontend/.output/public/_build/ugoite-manifest.js",
+  "frontend/.output/public/build-info.json",
 ]
 run = [
   "bash scripts/activate-ugoite-wasm.sh release",
@@ -196,7 +197,9 @@ if [[ "${UGOITE_IMAGE_PREBUILT:-false}" == "true" ]]; then
   prebuilt=true
 fi
 if [[ "${UGOITE_IMAGE_USE_BUILDX:-false}" == "true" || -n "${UGOITE_IMAGE_CACHE_FROM:-}" || -n "${UGOITE_IMAGE_CACHE_TO:-}" ]]; then
+  source_sha="${UGOITE_SOURCE_SHA:-$(git rev-parse HEAD)}"
   cmd=(docker buildx build --tag "$tag" --load)
+  cmd+=(--build-arg "UGOITE_SOURCE_SHA=$source_sha")
   if [[ "$prebuilt" == "true" ]]; then
     cmd+=(--target runtime-prebuilt)
   fi
@@ -212,10 +215,11 @@ if [[ "${UGOITE_IMAGE_USE_BUILDX:-false}" == "true" || -n "${UGOITE_IMAGE_CACHE_
   cmd+=(.)
   "${cmd[@]}"
 else
+  source_sha="${UGOITE_SOURCE_SHA:-$(git rev-parse HEAD)}"
   if [[ "$prebuilt" == "true" ]]; then
-    docker build --tag "$tag" --target runtime-prebuilt .
+    docker build --build-arg "UGOITE_SOURCE_SHA=$source_sha" --tag "$tag" --target runtime-prebuilt .
   else
-    docker build --tag "$tag" .
+    docker build --build-arg "UGOITE_SOURCE_SHA=$source_sha" --tag "$tag" .
   fi
 fi'"""
 

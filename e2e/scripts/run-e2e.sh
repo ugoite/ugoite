@@ -23,15 +23,36 @@ export BROWSERSLIST_IGNORE_OLD_DATA=true
 TEST_TYPE="${1:-full}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+CHECKOUT_SOURCE_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+if [ -n "${UGOITE_SOURCE_SHA:-}" ] && [ "$UGOITE_SOURCE_SHA" != "$CHECKOUT_SOURCE_SHA" ]; then
+  echo "✗ ERROR: UGOITE_SOURCE_SHA does not match the checkout under test"
+  echo "  expected: $CHECKOUT_SOURCE_SHA"
+  echo "  received: $UGOITE_SOURCE_SHA"
+  exit 1
+fi
+export UGOITE_SOURCE_SHA="$CHECKOUT_SOURCE_SHA"
 PROXY_TIMEOUT_MS="${UGOITE_PROXY_TIMEOUT_MS:-30000}"
 ENFORCE_CI_GATES="${E2E_ENFORCE_CI_GATES:-false}"
 FRONTEND_MODE="${E2E_FRONTEND_MODE:-static}"
+
+free_port() {
+  deno eval 'const listener = Deno.listen({ hostname: "127.0.0.1", port: 0 }); console.log((listener.addr as Deno.NetAddr).port); listener.close();'
+}
+
 if [ "$FRONTEND_MODE" = "static" ]; then
-  FRONTEND_URL="${FRONTEND_URL:-http://localhost:8000}"
+  if [ -z "${FRONTEND_URL:-}" ] && [ -z "${BACKEND_URL:-}" ]; then
+    E2E_PORT="$(free_port)"
+    FRONTEND_URL="http://localhost:$E2E_PORT"
+    BACKEND_URL="$FRONTEND_URL"
+  elif [ -z "${FRONTEND_URL:-}" ]; then
+    FRONTEND_URL="$BACKEND_URL"
+  elif [ -z "${BACKEND_URL:-}" ]; then
+    BACKEND_URL="$FRONTEND_URL"
+  fi
 else
-  FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}"
+  BACKEND_URL="${BACKEND_URL:-http://localhost:$(free_port)}"
+  FRONTEND_URL="${FRONTEND_URL:-http://localhost:$(free_port)}"
 fi
-BACKEND_URL="${BACKEND_URL:-http://localhost:8000}"
 export FRONTEND_URL
 export BACKEND_URL
 
@@ -91,7 +112,7 @@ ensure_port_available "$FRONTEND_PORT" "Frontend"
 
 E2E_STORAGE_ROOT="${E2E_STORAGE_ROOT:-}"
 if [ -z "$E2E_STORAGE_ROOT" ]; then
-  E2E_STORAGE_ROOT="/tmp/ugoite-e2e"
+  E2E_STORAGE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/ugoite-e2e.XXXXXX")"
   CLEANUP_E2E_STORAGE=true
 else
   CLEANUP_E2E_STORAGE=false
@@ -111,6 +132,11 @@ ensure_playwright_browsers() {
 ensure_playwright_browsers
 
 STATIC_DIR=""
+DEV_BUILD_INFO_PATH=""
+if [ "$FRONTEND_MODE" != "dev" ]; then
+  echo "Removing generated frontend output before build..."
+  rm -rf "$ROOT_DIR/frontend/.output"
+fi
 if [ "$FRONTEND_MODE" = "static" ]; then
   echo "Building static frontend..."
   cd "$ROOT_DIR"
@@ -119,6 +145,10 @@ if [ "$FRONTEND_MODE" = "static" ]; then
     frontend/.output/public/_build/.vite/manifest.json \
     frontend/.output/public/index.html
   STATIC_DIR="$ROOT_DIR/frontend/.output/public"
+elif [ "$FRONTEND_MODE" = "dev" ]; then
+  DEV_BUILD_INFO_PATH="$ROOT_DIR/frontend/public/build-info.json"
+  echo "Generating development frontend provenance..."
+  deno run -A frontend/scripts/generate-build-info.ts "$DEV_BUILD_INFO_PATH"
 fi
 
 echo "Starting backend server..."
@@ -128,6 +158,7 @@ BACKEND_ENV=(
   "UGOITE_SERVER_ADDRESS=0.0.0.0:$BACKEND_PORT"
   "UGOITE_PUBLIC_ORIGIN=$FRONTEND_URL"
   "UGOITE_E2E_TEST_MODE=true"
+  "UGOITE_SOURCE_SHA=$UGOITE_SOURCE_SHA"
   "UGOITE_WEBAUTHN_RP_ID=$(node -e 'console.log(new URL(process.argv[1]).hostname)' "$FRONTEND_URL")"
   "UGOITE_API_BASE_URL=$FRONTEND_URL/api"
   "UGOITE_NODE_SECRET_KEY=${UGOITE_NODE_SECRET_KEY:-$(head -c 32 /dev/urandom | base64)}"
@@ -164,6 +195,9 @@ cleanup() {
     kill "$FRONTEND_PID" 2>/dev/null || true
   fi
   wait "${BACKEND_PID:-}" "${FRONTEND_PID:-}" 2>/dev/null || true
+  if [ -n "$DEV_BUILD_INFO_PATH" ]; then
+    rm -f "$DEV_BUILD_INFO_PATH"
+  fi
   echo "Servers stopped."
   if [ "$CLEANUP_E2E_STORAGE" = true ]; then
     rm -rf "$E2E_STORAGE_ROOT"

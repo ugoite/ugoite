@@ -7,6 +7,33 @@ import { totpCodeAt } from "./lib/totp.ts";
 
 const SETUP_TIMEOUT_MS = 30_000;
 
+async function assertBuildProvenance(
+  page: import("@playwright/test").Page,
+  frontendUrl: string,
+): Promise<void> {
+  const expectedSourceSha = process.env.UGOITE_SOURCE_SHA?.trim();
+  if (!expectedSourceSha || !/^[0-9a-f]{40}$/.test(expectedSourceSha)) {
+    throw new Error("UGOITE_SOURCE_SHA must identify the checkout under test");
+  }
+
+  const backendUrl = (process.env.BACKEND_URL?.trim() || frontendUrl).replace(
+    /\/$/,
+    "",
+  );
+  const health = await page.request.get(`${backendUrl}/health`);
+  expect(health.ok()).toBeTruthy();
+  expect(health.headers()["x-ugoite-source-sha"]).toBe(expectedSourceSha);
+
+  const buildInfo = await page.request.get(
+    new URL("/build-info.json", frontendUrl).toString(),
+  );
+  expect(buildInfo.ok()).toBeTruthy();
+  expect(await buildInfo.json()).toMatchObject({
+    schema_version: 1,
+    source_sha: expectedSourceSha,
+  });
+}
+
 async function setupDiagnostics(
   page: import("@playwright/test").Page,
   browserErrors: string[],
@@ -65,6 +92,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   const firstAuthenticator = await addVirtualAuthenticator(cdp);
 
   try {
+    await assertBuildProvenance(page, baseURL);
     const setupResponse = await page.goto(
       `${baseURL}/setup#secret=${encodeURIComponent(setupSecret)}`,
     );

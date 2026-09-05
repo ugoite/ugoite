@@ -94,6 +94,7 @@ const MAX_SIGNED_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_STARTUP_REFRESH_REARM_RETRIES: usize = 8;
 const RESPONSE_KEY_ID_HEADER: HeaderName = HeaderName::from_static("x-ugoite-key-id");
 const RESPONSE_SIGNATURE_HEADER: HeaderName = HeaderName::from_static("x-ugoite-signature");
+const SOURCE_SHA_HEADER: HeaderName = HeaderName::from_static("x-ugoite-source-sha");
 const OIDC_STATE_COOKIE: &str = "ugoite_oidc_state";
 
 #[derive(Clone, Debug)]
@@ -457,6 +458,11 @@ impl SecurityHeadersPolicy {
             HeaderName::from_static("permissions-policy"),
             HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
         );
+        if let Ok(source_sha) = env::var("UGOITE_SOURCE_SHA") {
+            if let Ok(value) = HeaderValue::from_str(source_sha.trim()) {
+                headers.insert(SOURCE_SHA_HEADER, value);
+            }
+        }
         if self.hsts {
             headers.insert(
                 HeaderName::from_static("strict-transport-security"),

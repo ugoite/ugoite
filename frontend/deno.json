@@ -1,8 +1,8 @@
 {
   "tasks": {
     "dev": "deno run -A npm:vinxi dev",
-    "build": "deno cache npm:solid-js@^1.9.10 npm:tailwindcss@4.3.0 && sh -c 'mkdir -p node_modules && for pkg in solid-js tailwindcss; do test -e node_modules/$pkg || tar -C ../node_modules -chf - $pkg | tar -C node_modules -xf -; done' && deno run -A npm:vinxi build",
-    "check": "deno check app.config.ts error-handler.ts scripts/generate-static-index.ts vitest.config.ts",
+    "build": "deno cache npm:solid-js@^1.9.10 npm:tailwindcss@4.3.0 && sh -c 'mkdir -p node_modules && for pkg in solid-js tailwindcss; do test -e node_modules/$pkg || tar -C ../node_modules -chf - $pkg | tar -C node_modules -xf -; done' && deno run -A npm:vinxi build && deno run -A scripts/generate-build-info.ts",
+    "check": "deno check app.config.ts error-handler.ts scripts/generate-build-info.ts scripts/generate-static-index.ts vitest.config.ts",
     "start": "deno run -A npm:vinxi start",
     "test": "deno run -A npm:vitest run",
     "coverage": "deno run -A npm:vitest run --coverage --maxWorkers=1"

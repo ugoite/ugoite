@@ -18,6 +18,7 @@ backend/.coverage
 frontend/coverage/
 frontend/.vinxi/
 frontend/.output/
+frontend/public/build-info.json
 frontend/dist/
 docsite/coverage/
 e2e/test-results/
