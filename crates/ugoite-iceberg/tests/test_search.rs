@@ -162,6 +162,87 @@ async fn test_search_req_srch_002_fallback_scan() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+/// REQ-SRCH-002
+async fn test_search_req_srch_002_stale_derived_fallback() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let ws_path = "spaces/search-stale-derived";
+    space::create_space(&op, "search-stale-derived", "/tmp").await?;
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Entry",
+            "template": "# Entry\n\n## Body\n",
+            "fields": {"Body": {"type": "markdown"}},
+        }),
+    )
+    .await?;
+    ugoite_iceberg::derived_relation::rebuild_asset_text(&op, ws_path).await?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "stale-derived-entry",
+        "---\nform: Entry\n---\n# Stale derived entry\n\n## Body\nstale fallback needle",
+        "author",
+        &ugoite_iceberg::integrity::FakeIntegrityProvider,
+    )
+    .await?;
+
+    let results = search::search_entries(
+        &op,
+        ws_path,
+        "stale fallback needle",
+        ugoite_iceberg::MAX_NORMAL_READ_ROWS,
+    )
+    .await?;
+    assert_eq!(
+        results
+            .iter()
+            .map(|result| result.id.as_str())
+            .collect::<Vec<_>>(),
+        ["stale-derived-entry"]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-SRCH-002
+async fn test_search_req_srch_002_corrupt_derived_fallback() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let ws_path = "spaces/search-corrupt-derived";
+    space::create_space(&op, "search-corrupt-derived", "/tmp").await?;
+    create_test_entry(
+        &op,
+        ws_path,
+        "corrupt-derived-entry",
+        "corrupt fallback needle",
+    )
+    .await?;
+    ugoite_iceberg::derived_relation::rebuild_asset_text(&op, ws_path).await?;
+    let head_path = format!(
+        "{ws_path}/_ugoite/derived/relations/{}/head.json",
+        ugoite_domain::derived_relation::DerivedRelationId::ASSET_TEXT
+    );
+    op.write(&head_path, b"{not valid json".to_vec()).await?;
+
+    let results = search::search_entries(
+        &op,
+        ws_path,
+        "corrupt fallback needle",
+        ugoite_iceberg::MAX_NORMAL_READ_ROWS,
+    )
+    .await?;
+    assert_eq!(
+        results
+            .iter()
+            .map(|result| result.id.as_str())
+            .collect::<Vec<_>>(),
+        ["corrupt-derived-entry"]
+    );
+    Ok(())
+}
+
+#[tokio::test]
 /// Issue 2135: an empty Form with unsupported projection types must not break
 /// keyword search for an ordinary Form in the same Space.
 async fn search_ignores_incompatible_empty_form() -> anyhow::Result<()> {

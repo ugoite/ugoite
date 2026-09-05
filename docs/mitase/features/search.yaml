@@ -24,6 +24,12 @@ features:
                 criterion: REQ-SRCH-002#criterion.current-entry-scan
               - kind: satisfies
                 criterion: REQ-SRCH-002#criterion.authorized-assettext-projection
+              - kind: satisfies
+                criterion: REQ-SRCH-002#criterion.missing-derived-fallback
+              - kind: satisfies
+                criterion: REQ-SRCH-002#criterion.stale-derived-fallback
+              - kind: satisfies
+                criterion: REQ-SRCH-002#criterion.corrupt-derived-fallback
           - id: query-index
             adapter: rust
             path: crates/ugoite-iceberg/src/index.rs
@@ -79,6 +85,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SRCH-001#criterion.keyword-search
+              - kind: satisfies
+                criterion: REQ-SRCH-001#criterion.http-search-operation
       - id: frontend
         role: implementation
         facet: frontend
@@ -135,6 +143,40 @@ features:
             adapter: rust
             path: crates/ugoite-cli/src/commands/index.rs
             selector: { kind: symbol, name: query_cmd }
+      - id: cli-implementation
+        role: implementation
+        facet: cli
+        responsibility: Implement the Search query and explicit derived-relation rebuild commands exposed by the Ugoite CLI.
+        targets:
+          - id: index-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/index.rs
+            selector: { kind: symbol, name: run }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-007#criterion.derived-rebuild
+              - kind: satisfies
+                criterion: REQ-SRCH-007#criterion.derived-boundary
+          - id: query-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/index.rs
+            selector: { kind: symbol, name: query_cmd }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-006#criterion.query-operation
+      - id: cli-contract
+        role: contract-source
+        facet: cli
+        responsibility: Define the local CLI query and explicit derived-relation rebuild boundary.
+        targets:
+          - id: index-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/index.rs
+            selector: { kind: symbol, name: run }
+          - id: query-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/index.rs
+            selector: { kind: symbol, name: query_cmd }
       - id: contract
         role: contract-source
         facet: api
@@ -177,6 +219,8 @@ features:
         kind: http
         source: FEAT-SRCH-001#binding.contract/target.query-contract
         participants:
+          - target: FEAT-SRCH-001#binding.core/target.query-index
+            role: implementation
           - target: FEAT-SRCH-001#binding.service/target.query-service
             role: service
           - target: FEAT-SRCH-001#binding.server/target.query-handler
@@ -185,4 +229,17 @@ features:
             role: client
           - target: FEAT-SRCH-001#binding.cli/target.query-command
             role: operator
+          - target: FEAT-SRCH-001#binding.cli-implementation/target.query-command
+            role: operator
         guarantees: [REQ-SRCH-006#criterion.query-operation]
+      - id: local-index-rebuild
+        kind: custom
+        source: FEAT-SRCH-001#binding.cli-contract/target.index-command
+        participants:
+          - target: FEAT-SRCH-001#binding.derived/target.reindex
+            role: implementation
+          - target: FEAT-SRCH-001#binding.cli-implementation/target.index-command
+            role: operator
+        guarantees:
+          - REQ-SRCH-007#criterion.derived-rebuild
+          - REQ-SRCH-007#criterion.derived-boundary
