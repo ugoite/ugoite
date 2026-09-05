@@ -313,3 +313,34 @@ features:
                 criterion: REQ-FE-051#criterion.session-lifecycle
               - kind: satisfies
                 criterion: REQ-FE-051#criterion.typed-errors
+
+  - id: FEAT-FE-007
+    title: Saved SQL route workflows
+    summary: Connect the saved SQL list and detail routes to exact frontend and browser verification for empty/error guidance, query metadata, and supported run actions.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep saved SQL list and detail navigation, read-only query review, and supported variable-free or variable-input actions connected to the shipped routes.
+        targets:
+          - id: sql-index-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/index.tsx
+            selector: { kind: symbol, name: SpaceSqlIndexRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-061#criterion.list-and-create-action
+              - kind: satisfies
+                criterion: REQ-FE-061#criterion.empty-state
+              - kind: satisfies
+                criterion: REQ-FE-061#criterion.load-error
+          - id: sql-detail-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx
+            selector: { kind: symbol, name: SpaceSqlDetailRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-062#criterion.detail-summary
+              - kind: satisfies
+                criterion: REQ-FE-062#criterion.supported-actions

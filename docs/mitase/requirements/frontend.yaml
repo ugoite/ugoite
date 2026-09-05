@@ -1406,3 +1406,119 @@ requirements:
                 criterion: REQ-FE-051#criterion.typed-errors
                 covers: [FEAT-FE-006#binding.frontend/target.sql-session-client]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-session-api.test.ts, test: "throws on rows failure" } }
+
+  - id: REQ-FE-061
+    title: Saved SQL List Route Guidance
+    description: The saved SQL list route loads saved queries, provides the supported creation and navigation actions, and explains both the empty and load-error states.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: list-and-create-action
+        kind: behavior
+        statement: The saved SQL route loads the current Space's saved queries and links the user to the supported saved-query creation flow and saved-query detail routes.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: empty-state
+        kind: behavior
+        statement: When no saved SQL exists, the route explains the reusable-query empty state and keeps the explicit create action available.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: load-error
+        kind: quality
+        statement: A saved SQL list load failure is surfaced as a localized, user-facing error instead of an empty successful state.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: saved-sql-list-verification
+        role: verification
+        facet: verification
+        responsibility: Verify saved SQL list loading, creation/navigation actions, empty-state guidance, localized failure feedback, and the browser navigation journey through exact frontend tests.
+        targets:
+          - id: list-actions
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
+            selector: { kind: test, name: "REQ-FE-061: saved SQL route provides the v5 list and create action" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-061#criterion.list-and-create-action
+                covers: [FEAT-FE-007#binding.frontend/target.sql-index-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/index.test.tsx", test: "REQ-FE-061: saved SQL route provides the v5 list and create action" } }
+              - kind: verifies
+                criterion: REQ-FE-061#criterion.empty-state
+                covers: [FEAT-FE-007#binding.frontend/target.sql-index-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/index.test.tsx", test: "REQ-FE-061: saved SQL route provides the v5 list and create action" } }
+          - id: list-error
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
+            selector: { kind: test, name: "REQ-FE-061: saved SQL route shows a canonical load error" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-061#criterion.load-error
+                covers: [FEAT-FE-007#binding.frontend/target.sql-index-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/index.test.tsx", test: "REQ-FE-061: saved SQL route shows a canonical load error" } }
+          - id: browser-list
+            adapter: typescript
+            path: e2e/saved-sql-route.test.ts
+            selector: { kind: test, name: "REQ-FE-061: saved SQL route explains its empty state and keeps current navigation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-061#criterion.list-and-create-action
+                covers: [FEAT-FE-007#binding.frontend/target.sql-index-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-061: saved SQL route explains its empty state and keeps current navigation" } }
+              - kind: verifies
+                criterion: REQ-FE-061#criterion.empty-state
+                covers: [FEAT-FE-007#binding.frontend/target.sql-index-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-061: saved SQL route explains its empty state and keeps current navigation" } }
+
+  - id: REQ-FE-062
+    title: Saved SQL Detail Route Actions
+    description: The saved SQL detail route loads and presents the saved query text and metadata, then exposes only the supported variable-free run or variable-input flow.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: detail-summary
+        kind: behavior
+        statement: The saved SQL detail route displays the saved query name, timestamps, variables, and read-only query text instead of placeholder content.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: supported-actions
+        kind: behavior
+        statement: A variable-free saved query runs through a SQL session and routes to Entry results, while a query with variables links to the existing variable-input flow.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: saved-sql-detail-verification
+        role: verification
+        facet: verification
+        responsibility: Verify saved SQL detail rendering, read-only query review, variable-input navigation, variable-free session execution, and the browser journey through exact frontend tests.
+        targets:
+          - id: detail-summary
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
+            selector: { kind: test, name: "REQ-FE-062: saved SQL detail renders a read-only query summary and supported actions" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.detail-summary
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail renders a read-only query summary and supported actions" } }
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.supported-actions
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail renders a read-only query summary and supported actions" } }
+          - id: detail-run
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
+            selector: { kind: test, name: "REQ-FE-062: saved SQL detail runs variable-free queries through SQL sessions" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.supported-actions
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail runs variable-free queries through SQL sessions" } }
+          - id: browser-detail
+            adapter: typescript
+            path: e2e/saved-sql-route.test.ts
+            selector: { kind: test, name: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to entries" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.detail-summary
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to entries" } }
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.supported-actions
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to entries" } }
