@@ -707,3 +707,139 @@ requirements:
                 criterion: REQ-FE-053#criterion.localized-guidance
                 covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "REQ-FE-053: renders the form-first editor in Japanese" } }
+  - id: REQ-FE-043
+    title: Sample data error formatting
+    description: Frontend API and creation dialogs present structured validation failures as human-readable messages without exposing object placeholders.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: readable-errors
+        kind: quality
+        statement: Structured API validation failures are rendered as readable user-facing messages and never as the literal string [object Object].
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: error-formatting-verification
+        role: verification
+        facet: verification
+        responsibility: Verify structured API error formatting in the API client and creation dialogs through exact frontend tests.
+        targets:
+          - id: api-validation-error
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "should surface validation errors without object placeholders [REQ-FE-043]" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-043#criterion.readable-errors
+                covers: [FEAT-API-001#binding.frontend-implementation/target.space-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should surface validation errors without object placeholders [REQ-FE-043]" } }
+          - id: form-submit-error
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-043: create-form dialog renders rejected submit errors inline" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-043#criterion.readable-errors
+                covers: [FEAT-FE-004#binding.frontend/target.create-dialogs]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-043: create-form dialog renders rejected submit errors inline" } }
+          - id: entry-submit-error
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-043: create-entry dialog renders rejected submit errors inline" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-043#criterion.readable-errors
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-043: create-entry dialog renders rejected submit errors inline" } }
+          - id: markdown-submit-error
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-043: create-entry markdown dialog renders rejected submit errors inline" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-043#criterion.readable-errors
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-043: create-entry markdown dialog renders rejected submit errors inline" } }
+
+  - id: REQ-FE-044
+    title: Frontend multilingual dictionary and locale switching
+    description: Frontend UI labels use the shared English and Japanese dictionary, allow locale switching, and persist the selected locale through portable preferences with localStorage only as fallback or migration state.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: dictionary-localization
+        kind: behavior
+        statement: Shared frontend surfaces render dictionary-backed English and Japanese labels and update their visible copy when the active locale changes.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: portable-locale
+        kind: behavior
+        statement: The selected locale is loaded from and persisted through portable user preferences, while localStorage remains a fallback or migration layer.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: localization-verification
+        role: verification
+        facet: verification
+        responsibility: Verify shared dictionary rendering, locale switching, and portable locale preference hydration through exact frontend tests.
+        targets:
+          - id: dictionary-switch
+            adapter: typescript
+            path: frontend/src/lib/i18n.test.ts
+            selector: { kind: test, name: "REQ-FE-044: initializeLocale refreshes locale from stored preferences" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-044#criterion.dictionary-localization
+                covers: [FEAT-FE-004#binding.frontend/target.locale-dictionary]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/i18n.test.ts, test: "REQ-FE-044: initializeLocale refreshes locale from stored preferences" } }
+          - id: dictionary-completeness
+            adapter: typescript
+            path: frontend/src/lib/i18n.test.ts
+            selector: { kind: test, name: "REQ-FE-044: keeps the English and Japanese key sets identical" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-044#criterion.dictionary-localization
+                covers: [FEAT-FE-004#binding.frontend/target.locale-dictionary]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/i18n.test.ts, test: "REQ-FE-044: keeps the English and Japanese key sets identical" } }
+          - id: portable-locale-hydration
+            adapter: typescript
+            path: frontend/src/lib/preferences-store.test.ts
+            selector: { kind: test, name: "REQ-FE-044: initializes locale from portable preferences and refreshes local fallback" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-044#criterion.portable-locale
+                covers: [FEAT-FE-001#binding.frontend/target.portable-preferences-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/preferences-store.test.ts, test: "REQ-FE-044: initializes locale from portable preferences and refreshes local fallback" } }
+          - id: localized-list
+            adapter: typescript
+            path: frontend/src/components/ListPanel.test.tsx
+            selector: { kind: test, name: "REQ-FE-044: localizes entry list controls and empty state in Japanese" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-044#criterion.dictionary-localization
+                covers: [FEAT-FE-002#binding.frontend/target.list-panel]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "REQ-FE-044: localizes entry list controls and empty state in Japanese" } }
+          - id: localized-search
+            adapter: typescript
+            path: frontend/src/components/SearchBar.test.tsx
+            selector: { kind: test, name: "REQ-FE-044: renders localized zero-result fallback when count is nullish" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-044#criterion.dictionary-localization
+                covers: [FEAT-FE-004#binding.frontend/target.search-bar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SearchBar.test.tsx, test: "REQ-FE-044: renders localized zero-result fallback when count is nullish" } }
+          - id: localized-create-form
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-044: localizes create-form dialog copy in Japanese" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-044#criterion.dictionary-localization
+                covers: [FEAT-FE-004#binding.frontend/target.create-dialogs]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-044: localizes create-form dialog copy in Japanese" } }
+          - id: localized-create-entry
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-044: localizes create-entry dialog copy in Japanese" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-044#criterion.dictionary-localization
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-044: localizes create-entry dialog copy in Japanese" } }
