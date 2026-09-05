@@ -1453,6 +1453,15 @@ requirements:
                 criterion: REQ-FE-061#criterion.load-error
                 covers: [FEAT-FE-007#binding.frontend/target.sql-index-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/index.test.tsx", test: "REQ-FE-061: saved SQL route shows a canonical load error" } }
+          - id: list-detail-link
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
+            selector: { kind: test, name: "REQ-FE-061: saved SQL route links a saved query to its detail route" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-061#criterion.list-and-create-action
+                covers: [FEAT-FE-007#binding.frontend/target.sql-index-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/index.test.tsx", test: "REQ-FE-061: saved SQL route links a saved query to its detail route" } }
           - id: browser-list
             adapter: typescript
             path: e2e/saved-sql-route.test.ts

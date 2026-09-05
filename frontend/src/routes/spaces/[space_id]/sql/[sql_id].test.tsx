@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { http, HttpResponse } from "msw";
 import SpaceSqlDetailRoute from "./[sql_id]";
+import { formatDateLabel } from "~/lib/date-format";
 import {
   resetMockData,
   seedForm,
@@ -71,6 +72,10 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     expect(await screen.findByRole("heading", { name: "Recent Search" }))
       .toBeInTheDocument();
     expect(screen.getByText("Search / Saved SQL")).toBeInTheDocument();
+    expect(screen.getByText(formatDateLabel("2025-03-02T00:00:00Z")))
+      .toBeInTheDocument();
+    expect(screen.getByText(formatDateLabel("2025-03-01T00:00:00Z")))
+      .toBeInTheDocument();
     expect(screen.getByTestId("sql-editor")).toHaveAttribute(
       "data-disabled",
       "true",
