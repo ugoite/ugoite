@@ -22,6 +22,27 @@ features:
                 criterion: REQ-SRCH-001#criterion.keyword-search
               - kind: satisfies
                 criterion: REQ-SRCH-002#criterion.current-entry-scan
+      - id: derived
+        role: implementation
+        facet: derived
+        responsibility: Keep explicit AssetText rebuilds, derived-only boundaries, and related operator surfaces connected to the canonical index implementation.
+        targets:
+          - id: reindex
+            adapter: rust
+            path: crates/ugoite-iceberg/src/index.rs
+            selector: { kind: symbol, name: reindex_all }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-007#criterion.derived-rebuild
+              - kind: satisfies
+                criterion: REQ-SRCH-007#criterion.derived-boundary
+          - id: word-count
+            adapter: rust
+            path: crates/ugoite-domain/src/text.rs
+            selector: { kind: symbol, name: compute_word_count }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-007#criterion.word-count-separation
       - id: server
         role: operation
         facet: backend
