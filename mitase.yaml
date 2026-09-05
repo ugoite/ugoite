@@ -35,8 +35,14 @@ inventory:
             - frontend/src/routes/recover.test.tsx
             - frontend/src/components/AuditLogViewer.tsx
             - frontend/src/components/AuditLogViewer.test.tsx
+            - frontend/src/components/create-dialogs.tsx
+            - frontend/src/components/create-dialogs.test.tsx
+            - frontend/src/components/SearchBar.tsx
+            - frontend/src/components/SearchBar.test.tsx
             - frontend/src/lib/entry-api.ts
             - frontend/src/lib/client.test.ts
+            - frontend/src/lib/i18n.ts
+            - frontend/src/lib/i18n.test.ts
             - frontend/src/lib/form-api.ts
             - frontend/src/lib/search-api.ts
             - frontend/src/lib/space-api.ts

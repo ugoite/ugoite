@@ -42,6 +42,8 @@ features:
                 criterion: REQ-FE-003#criterion.portable-selection
               - kind: satisfies
                 criterion: REQ-FE-003#criterion.local-fallback
+              - kind: satisfies
+                criterion: REQ-FE-044#criterion.portable-locale
           - id: local-preferences
             adapter: typescript
             path: frontend/src/lib/preferences-local.ts
@@ -88,6 +90,8 @@ features:
                 criterion: REQ-FE-004#criterion.display
               - kind: satisfies
                 criterion: REQ-FE-008#criterion.selection
+              - kind: satisfies
+                criterion: REQ-FE-044#criterion.dictionary-localization
           - id: entry-store
             adapter: typescript
             path: frontend/src/lib/entry-store.ts
@@ -169,3 +173,45 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-052#criterion.form-derived-guidance
+  - id: FEAT-FE-004
+    title: Shared frontend feedback and locale surfaces
+    summary: Connect structured API error presentation, shared UI localization, and portable locale preference hydration to exact frontend implementation and verification evidence.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep shared frontend error feedback and locale behavior connected to the shipped dialogs, list surfaces, API client, dictionary, and portable preference store.
+        targets:
+          - id: create-dialogs
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.tsx
+            selector: { kind: symbol, name: CreateFormDialog }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-043#criterion.readable-errors
+              - kind: satisfies
+                criterion: REQ-FE-044#criterion.dictionary-localization
+          - id: entry-dialog
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.tsx
+            selector: { kind: symbol, name: CreateEntryDialog }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-043#criterion.readable-errors
+              - kind: satisfies
+                criterion: REQ-FE-044#criterion.dictionary-localization
+          - id: search-bar
+            adapter: typescript
+            path: frontend/src/components/SearchBar.tsx
+            selector: { kind: symbol, name: SearchBar }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-044#criterion.dictionary-localization
+          - id: locale-dictionary
+            adapter: typescript
+            path: frontend/src/lib/i18n.ts
+            selector: { kind: symbol, name: t }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-044#criterion.dictionary-localization

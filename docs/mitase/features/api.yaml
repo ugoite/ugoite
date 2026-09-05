@@ -346,6 +346,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-API-001#criterion.space-lifecycle
+              - kind: satisfies
+                criterion: REQ-FE-043#criterion.readable-errors
           - id: entry-api
             adapter: typescript
             path: frontend/src/lib/entry-api.ts
