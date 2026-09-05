@@ -1003,7 +1003,7 @@ requirements:
     '
   related_spec:
   - ../architecture/data-model/overview.md#forms-and-entries
-  - requirements/form.yaml#REQ-FORM-005
+  - ../../mitase/requirements/forms.yaml#REQ-FORM-005
   priority: high
   status: implemented
   verification: traced
@@ -1034,7 +1034,7 @@ requirements:
     '
   related_spec:
   - stories/core.yaml#STORY-002
-  - requirements/form.yaml#REQ-FORM-005
+  - ../../mitase/requirements/forms.yaml#REQ-FORM-005
   priority: medium
   status: implemented
   verification: traced
