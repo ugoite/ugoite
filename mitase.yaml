@@ -39,10 +39,16 @@ inventory:
             - frontend/src/components/create-dialogs.test.tsx
             - frontend/src/components/SearchBar.tsx
             - frontend/src/components/SearchBar.test.tsx
+            - frontend/src/components/FormList.tsx
+            - frontend/src/components/FormList.test.tsx
+            - frontend/src/components/FormTable.tsx
+            - frontend/src/components/FormTable.test.tsx
             - frontend/src/lib/entry-api.ts
             - frontend/src/lib/client.test.ts
             - frontend/src/lib/i18n.ts
             - frontend/src/lib/i18n.test.ts
+            - frontend/src/lib/search-store.ts
+            - frontend/src/lib/search-store.test.ts
             - frontend/src/lib/form-api.ts
             - frontend/src/lib/search-api.ts
             - frontend/src/lib/space-api.ts
