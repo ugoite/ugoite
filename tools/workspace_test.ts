@@ -1,5 +1,71 @@
 import { assertEquals } from "@std/assert/equals";
 
+Deno.test("REQ-OPS-019: supported developer entrypoints use the root Mise surface", async () => {
+  const rootMise = await Deno.readTextFile("mise.toml");
+  for (
+    const task of ["setup", "fmt", "fmt:check", "lint", "check", "test", "ci"]
+  ) {
+    assertEquals(
+      rootMise.includes(`[tasks.${task}]`) ||
+        rootMise.includes(`[tasks."${task}"]`),
+      true,
+      `root mise task ${task} must exist`,
+    );
+  }
+
+  const output = await new Deno.Command("git", {
+    args: ["ls-files", "*mise.toml"],
+    stdout: "piped",
+  }).output();
+  assertEquals(new TextDecoder().decode(output.stdout).trim(), "mise.toml");
+});
+
+Deno.test("REQ-OPS-023: public installer remains separate from repository development tooling", async () => {
+  const packageManifest = JSON.parse(
+    await Deno.readTextFile("packages/ugoite/package.json"),
+  ) as {
+    name?: string;
+    private?: boolean;
+    publishConfig?: { registry?: string };
+    bin?: Record<string, string>;
+  };
+  assertEquals(packageManifest.name, "@ugoite/ugoite");
+  assertEquals(packageManifest.private, false);
+  assertEquals(
+    packageManifest.publishConfig?.registry,
+    "https://npm.pkg.github.com",
+  );
+  assertEquals(packageManifest.bin?.["ugoite-install"], "./bin/ugoite-install");
+
+  const readme = await Deno.readTextFile("packages/ugoite/README.md");
+  assertEquals(
+    readme.includes("npx --package @ugoite/ugoite@<version> ugoite-install"),
+    true,
+  );
+  assertEquals(
+    readme.includes(
+      "Do not use this package as a replacement for `mise`, Rust, or Deno",
+    ),
+    true,
+  );
+
+  const rootMise = await Deno.readTextFile("mise.toml");
+  for (
+    const task of [
+      "package:npm",
+      "verify:npm",
+      "release:candidate",
+      "release:promote",
+    ]
+  ) {
+    assertEquals(
+      rootMise.includes(`[tasks.\"${task}\"]`),
+      true,
+      `root release task ${task} must exist`,
+    );
+  }
+});
+
 Deno.test("Phase 1 workspace has one root toolchain and Deno lockfile", async () => {
   const rootMise = await Deno.readTextFile("mise.toml");
   assertEquals(rootMise.includes('deno = "2.8.3"'), true);

@@ -768,3 +768,281 @@ requirements:
             claims:
               - kind: evidences
                 anchor: REQ-OPS-018#criterion.cli-release-installation
+
+  - id: REQ-OPS-019
+    title: Explicit Root Mise Task Surface
+    description: All supported developer entrypoints are declared in the root mise.toml; package-scoped mise tasks are not part of the current repository.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: root-mise-surface
+        kind: quality
+        statement: The repository exposes its supported developer entrypoints through the root Mise task surface and does not require package-scoped Mise entrypoints.
+        governed_by: [POL-005#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: root-mise-surface-evidence
+        role: evidence
+        facet: developer-entrypoints
+        responsibility: Connect the root task declaration and workspace entrypoint checks as generic evidence for the current repository task surface. This slice does not add a second task runner contract.
+        targets:
+          - id: root-mise
+            adapter: declared
+            path: mise.toml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-019#criterion.root-mise-surface
+          - id: workspace-entrypoint-check
+            adapter: typescript
+            path: tools/workspace_test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-019#criterion.root-mise-surface
+      - id: root-mise-surface-verification
+        role: verification
+        facet: repository-test
+        responsibility: Verify the exact supported developer task surface and the absence of package-scoped Mise entrypoints through the repository workspace test.
+        targets:
+          - id: root-mise-surface-test
+            adapter: typescript
+            path: tools/workspace_test.ts
+            selector: { kind: test, name: 'REQ-OPS-019: supported developer entrypoints use the root Mise surface' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-019#criterion.root-mise-surface
+                covers: [FEAT-OPS-001#binding.automation/target.root-mise]
+                runner: { runner: deno-test-file, arguments: { file: tools/workspace_test.ts, test: 'REQ-OPS-019: supported developer entrypoints use the root Mise surface' } }
+
+  - id: REQ-OPS-020
+    title: Portable Rust WASM Gates
+    description: ugoite-domain, ugoite-api-client, and ugoite-wasm compile for wasm32-unknown-unknown through the root check and release gates.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: portable-wasm-gates
+        kind: quality
+        statement: The root task graph includes locked wasm32-unknown-unknown checks for the portable Rust crates and hosted CI exercises that root gate composition.
+        governed_by: [POL-002#rule.governance, POL-005#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: portable-wasm-gate-verification
+        role: verification
+        facet: repository-test
+        responsibility: Verify the exact root and hosted task composition that includes the portable WASM checks. The test records the configured gate; it does not move compilation or CI execution into Mitase.
+        targets:
+          - id: wasm-gate-composition-test
+            adapter: typescript
+            path: tools/coverage_gates_test.ts
+            selector: { kind: test, name: 'CI aggregate tasks own test coverage and lane scheduling' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-020#criterion.portable-wasm-gates
+                covers: [FEAT-OPS-001#binding.automation/target.root-mise, FEAT-OPS-001#binding.automation/target.ci-workflow]
+                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: CI aggregate tasks own test coverage and lane scheduling } }
+
+  - id: REQ-OPS-021
+    title: Frontend Coverage Hard Gate
+    description: The required hosted CI job runs the root frontend coverage task, whose Vitest V8 configuration hard-fails all coverage metrics at 100% for the portable Rust/WASM protocol boundary; UI behavior remains covered by frontend behavior tests and E2E.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: frontend-coverage-gate
+        kind: quality
+        statement: The frontend coverage configuration and root task keep the portable Rust/WASM protocol boundary at 100% coverage and are included in the canonical repository test gate.
+        governed_by: [POL-002#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: frontend-coverage-verification
+        role: verification
+        facet: frontend-test
+        responsibility: Verify the exact frontend coverage configuration and root-task contract through the dedicated coverage-gate test.
+        targets:
+          - id: frontend-coverage-test
+            adapter: typescript
+            path: tools/coverage_gates_test.ts
+            selector: { kind: test, name: 'REQ-OPS-021: frontend coverage remains a canonical test contract' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-021#criterion.frontend-coverage-gate
+                covers: [FEAT-OPS-001#binding.migrated-ops-coverage/target.frontend-coverage-config, FEAT-OPS-001#binding.automation/target.root-mise]
+                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: 'REQ-OPS-021: frontend coverage remains a canonical test contract' } }
+
+  - id: REQ-OPS-022
+    title: Path-Aware Pull Request E2E Tiering
+    description: Hosted CI may select E2E tiers by changed paths while merge and push retain smoke coverage; current CI uses fixed pull-request and merge gates.
+    priority: medium
+    status: planned
+    criteria:
+      - id: path-aware-e2e-tiering
+        kind: quality
+        statement: The repository records the planned path-aware E2E tiering boundary while preserving fixed smoke coverage for pull-request, merge-group, and push validation until a changed-path selector is introduced.
+        governed_by: [POL-005#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: path-aware-e2e-tiering-evidence
+        role: evidence
+        facet: planned-work
+        responsibility: Preserve the current CI workflow as evidence for the planned tiering criterion without claiming that a hosted changed-path selector already exists.
+        targets:
+          - id: ci-workflow
+            adapter: declared
+            path: .github/workflows/ci.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-022#criterion.path-aware-e2e-tiering
+
+  - id: REQ-OPS-023
+    title: Public Installer Separation
+    description: The public packages/ugoite installer remains separate from repository development tooling.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: public-installer-separation
+        kind: quality
+        statement: The public CLI installer package is a release-facing artifact and its documented usage does not replace the repository's development toolchain.
+        governed_by: [POL-005#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: public-installer-evidence
+        role: evidence
+        facet: release-installer
+        responsibility: Connect the public installer package documentation and root release tasks as generic evidence for the separation boundary; package publishing remains external repository tooling.
+        targets:
+          - id: installer-package
+            adapter: declared
+            path: packages/ugoite/package.json
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-023#criterion.public-installer-separation
+          - id: installer-readme
+            adapter: declared
+            path: packages/ugoite/README.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-023#criterion.public-installer-separation
+      - id: public-installer-separation-verification
+        role: verification
+        facet: repository-test
+        responsibility: Verify the public installer package metadata, release-facing documentation, and root release task boundary through the exact workspace test.
+        targets:
+          - id: public-installer-separation-test
+            adapter: typescript
+            path: tools/workspace_test.ts
+            selector: { kind: test, name: 'REQ-OPS-023: public installer remains separate from repository development tooling' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-023#criterion.public-installer-separation
+                covers: [FEAT-OPS-001#binding.public-installer/target.installer-package, FEAT-OPS-001#binding.public-installer/target.installer-readme]
+                runner: { runner: deno-test-file, arguments: { file: tools/workspace_test.ts, test: 'REQ-OPS-023: public installer remains separate from repository development tooling' } }
+
+  - id: REQ-OPS-024
+    title: Docsite Coverage Hard Gate
+    description: The required hosted CI job runs the root docsite coverage task, whose Vitest V8 configuration hard-fails all coverage metrics at 100% for authored docsite source while excluding framework-only wiring and test files.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: docsite-coverage-gate
+        kind: quality
+        statement: The docsite coverage configuration and root task keep authored docsite source at 100% coverage and are included in the canonical repository test gate.
+        governed_by: [POL-006#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: docsite-coverage-verification
+        role: verification
+        facet: docsite-test
+        responsibility: Verify the exact docsite coverage configuration and root-task contract through the dedicated coverage-gate test.
+        targets:
+          - id: docsite-coverage-test
+            adapter: typescript
+            path: tools/coverage_gates_test.ts
+            selector: { kind: test, name: 'REQ-OPS-024: docsite coverage remains a canonical test contract' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-024#criterion.docsite-coverage-gate
+                covers: [FEAT-OPS-001#binding.migrated-ops-coverage/target.docsite-coverage-config, FEAT-OPS-001#binding.automation/target.root-mise]
+                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: 'REQ-OPS-024: docsite coverage remains a canonical test contract' } }
+
+  - id: REQ-OPS-044
+    title: Repository-Native Candidate Promotion
+    description: Release preparation uses version.txt as the canonical prepared-version authority, records verified candidate identity from exact manifest bytes, and promotes only matching candidate artifacts without rebuilding or repackaging.
+    priority: high
+    status: implemented
+    criteria:
+      - id: repository-native-release-promotion
+        kind: quality
+        statement: Candidate creation and publication preserve one prepared version, one exact source revision, one manifest-derived candidate identity, and the exact verified artifact bytes across promotion surfaces.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: repository-native-release-evidence
+        role: evidence
+        facet: release-promotion
+        responsibility: Connect the version authority, candidate workflow, publish workflow, and release implementation as generic Artifacts. Release execution remains owned by repository workflows and scripts.
+        targets:
+          - id: version-authority
+            adapter: declared
+            path: version.txt
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-044#criterion.repository-native-release-promotion
+          - id: candidate-workflow
+            adapter: declared
+            path: .github/workflows/release-candidate.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-044#criterion.repository-native-release-promotion
+          - id: publish-workflow
+            adapter: declared
+            path: .github/workflows/release-publish.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-044#criterion.repository-native-release-promotion
+          - id: release-implementation
+            adapter: typescript
+            path: tools/release.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-044#criterion.repository-native-release-promotion
+      - id: repository-native-release-verification
+        role: verification
+        facet: release-test
+        responsibility: Verify version authority, split workflows, exact candidate identity, tamper detection, and candidate manifest coverage through the exact release-contract tests.
+        targets:
+          - id: version-authority-test
+            adapter: typescript
+            path: tools/release_contract_test.ts
+            selector: { kind: test, name: 'REQ-OPS-044: version.txt is the only prepared-version authority' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-044#criterion.repository-native-release-promotion
+                covers: [FEAT-OPS-001#binding.repository-native-release/target.version-authority]
+                runner: { runner: deno-test-file, arguments: { file: tools/release_contract_test.ts, test: 'REQ-OPS-044: version.txt is the only prepared-version authority' } }
+          - id: release-workflow-test
+            adapter: typescript
+            path: tools/release_contract_test.ts
+            selector: { kind: test, name: 'REQ-OPS-044: repository-native release tasks and split workflows are present' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-044#criterion.repository-native-release-promotion
+                covers: [FEAT-OPS-001#binding.repository-native-release/target.candidate-workflow, FEAT-OPS-001#binding.repository-native-release/target.publish-workflow, FEAT-OPS-001#binding.repository-native-release/target.release-implementation]
+                runner: { runner: deno-test-file, arguments: { file: tools/release_contract_test.ts, test: 'REQ-OPS-044: repository-native release tasks and split workflows are present' } }
+          - id: candidate-identity-test
+            adapter: typescript
+            path: tools/release_contract_test.ts
+            selector: { kind: test, name: 'REQ-OPS-044: candidate ID is the exact manifest digest and tampering fails' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-044#criterion.repository-native-release-promotion
+                covers: [FEAT-OPS-001#binding.repository-native-release/target.release-implementation]
+                runner: { runner: deno-test-file, arguments: { file: tools/release_contract_test.ts, test: 'REQ-OPS-044: candidate ID is the exact manifest digest and tampering fails' } }
+          - id: candidate-writer-test
+            adapter: typescript
+            path: tools/release_contract_test.ts
+            selector: { kind: test, name: 'REQ-OPS-044: candidate writer records every promotion surface' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-044#criterion.repository-native-release-promotion
+                covers: [FEAT-OPS-001#binding.repository-native-release/target.release-implementation]
+                runner: { runner: deno-test-file, arguments: { file: tools/release_contract_test.ts, test: 'REQ-OPS-044: candidate writer records every promotion surface' } }
