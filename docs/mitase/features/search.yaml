@@ -22,6 +22,8 @@ features:
                 criterion: REQ-SRCH-001#criterion.keyword-search
               - kind: satisfies
                 criterion: REQ-SRCH-002#criterion.current-entry-scan
+              - kind: satisfies
+                criterion: REQ-SRCH-002#criterion.authorized-assettext-projection
           - id: query-index
             adapter: rust
             path: crates/ugoite-iceberg/src/index.rs
@@ -65,6 +67,18 @@ features:
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
             selector: { kind: symbol, name: query_entries }
+      - id: server-implementation
+        role: implementation
+        facet: backend
+        responsibility: Implement the authenticated Search HTTP handler and delegate keyword results to the authorized service boundary.
+        targets:
+          - id: search-handler
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: search_entries }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-001#criterion.keyword-search
       - id: frontend
         role: implementation
         facet: frontend
@@ -144,9 +158,13 @@ features:
         kind: http
         source: FEAT-SRCH-001#binding.contract/target.search-contract
         participants:
+          - target: FEAT-SRCH-001#binding.core/target.search-entries
+            role: implementation
           - target: FEAT-SRCH-001#binding.service/target.keyword-service
             role: service
           - target: FEAT-SRCH-001#binding.server/target.search-handler
+            role: backend
+          - target: FEAT-SRCH-001#binding.server-implementation/target.search-handler
             role: backend
           - target: FEAT-SRCH-001#binding.frontend/target.search-api
             role: client
