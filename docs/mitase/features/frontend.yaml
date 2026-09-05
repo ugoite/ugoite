@@ -316,13 +316,13 @@ features:
 
   - id: FEAT-FE-007
     title: Saved SQL route workflows
-    summary: Connect the saved SQL list and detail routes to exact frontend and browser verification for empty/error guidance, query metadata, and supported run actions.
+    summary: Connect the saved SQL list, creation, and detail routes to exact frontend and browser verification for starter-query guidance, query metadata, and supported run actions.
     status: implemented
     bindings:
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep saved SQL list and detail navigation, read-only query review, and supported variable-free or variable-input actions connected to the shipped routes.
+        responsibility: Keep saved SQL list and creation actions, detail navigation, read-only query review, and supported variable-free or variable-input actions connected to the shipped routes.
         targets:
           - id: sql-index-route
             adapter: typescript
@@ -344,3 +344,12 @@ features:
                 criterion: REQ-FE-062#criterion.detail-summary
               - kind: satisfies
                 criterion: REQ-FE-062#criterion.supported-actions
+          - id: sql-create-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/queries/new.tsx
+            selector: { kind: symbol, name: SpaceQueryCreateRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-063#criterion.starter-query
+              - kind: satisfies
+                criterion: REQ-FE-063#criterion.explicit-save-and-run

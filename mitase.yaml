@@ -109,6 +109,7 @@ inventory:
             - frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx
             - frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
             - frontend/src/routes/spaces/[space_id]/queries/new.tsx
+            - frontend/src/routes/spaces/[space_id]/queries/new.test.tsx
             - frontend/src/routes/spaces/[space_id]/settings.tsx
             - e2e/ui-surface.test.ts
             - e2e/saved-sql-route.test.ts
