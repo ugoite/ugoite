@@ -54,7 +54,11 @@ inventory:
             - frontend/src/lib/space-api.ts
             - frontend/src/lib/preferences-api.ts
             - frontend/src/lib/sql-api.ts
+            - frontend/src/lib/sql-api.test.ts
             - frontend/src/lib/sql-session-api.ts
+            - frontend/src/lib/sql-session-api.test.ts
+            - frontend/src/lib/sql.ts
+            - frontend/src/lib/sql.test.ts
             - frontend/src/lib/asset-api.ts
             - frontend/src/components/SpaceSettings.tsx
             - frontend/src/components/SpaceSettings.test.tsx
@@ -83,6 +87,8 @@ inventory:
             - frontend/src/components/EntryDetailPane.test.tsx
             - frontend/src/components/MarkdownEditor.tsx
             - frontend/src/components/MarkdownEditor.test.tsx
+            - frontend/src/components/SqlQueryEditor.tsx
+            - frontend/src/components/SqlQueryEditor.test.tsx
             - frontend/src/lib/markdown.ts
             - frontend/src/lib/markdown.test.ts
             - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.tsx
@@ -176,6 +182,7 @@ inventory:
             - docs/architecture/contracts/future-proofing.md
             - docs/architecture/contracts/frontend-backend-interface.md
             - docs/architecture/contracts/space-catalog.md
+            - shared/sql/ugoite-sql-rules.json
             - crates/ugoite-server/src/openapi.json
             - docs/architecture/data-model/overview.md
             - docs/architecture/data-model/sql-sessions.md

@@ -1150,3 +1150,196 @@ requirements:
                 criterion: REQ-FE-031#criterion.inline-edit-selection
                 covers: [FEAT-FE-005#binding.frontend/target.form-table]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-FE-031: keyboard copy shortcut" } }
+
+  - id: REQ-FE-036
+    title: SQL Query Editor
+    description: The frontend provides a Ugoite SQL editor with syntax highlighting, lint feedback, and schema-backed completion using the shared SQL rules.
+    priority: high
+    status: implemented
+    criteria:
+      - id: editor-contract
+        kind: behavior
+        statement: The SQL editor renders without CodeMirror extension errors, propagates document changes, and reports parser and read-only diagnostics for the current query.
+        governed_by: [POL-001#rule.governance, POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+      - id: schema-completion
+        kind: behavior
+        statement: Backend Form metadata becomes the SQL schema used by the editor so table and field completion is limited to the current Form relations and columns.
+        governed_by: [POL-001#rule.governance, POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+      - id: shared-rules
+        kind: quality
+        statement: The frontend SQL helper loads the repository's shared Ugoite SQL rules rather than defining a second editor-only rule source.
+        governed_by: [POL-001#rule.governance, POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+    bindings:
+      - id: sql-editor-verification
+        role: verification
+        facet: verification
+        responsibility: Verify SQL editor construction, document updates, diagnostics, Form schema completion data, and shared rule loading through exact frontend tests.
+        targets:
+          - id: editor-rendering
+            adapter: typescript
+            path: frontend/src/components/SqlQueryEditor.test.tsx
+            selector: { kind: test, name: "should render without runtime errors" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-036#criterion.editor-contract
+                covers: [FEAT-FE-006#binding.frontend/target.sql-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlQueryEditor.test.tsx, test: "should render without runtime errors" } }
+          - id: editor-updates
+            adapter: typescript
+            path: frontend/src/components/SqlQueryEditor.test.tsx
+            selector: { kind: test, name: "propagates editor updates through the change listener" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-036#criterion.editor-contract
+                covers: [FEAT-FE-006#binding.frontend/target.sql-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlQueryEditor.test.tsx, test: "propagates editor updates through the change listener" } }
+          - id: sql-diagnostics
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: "should flag missing select clause" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-036#criterion.editor-contract
+                covers: [FEAT-FE-006#binding.frontend/target.sql-helpers]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "should flag missing select clause" } }
+          - id: sql-schema
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: "should include form fields in schema" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-036#criterion.schema-completion
+                covers: [FEAT-FE-006#binding.frontend/target.sql-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "should include form fields in schema" } }
+          - id: shared-rules
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: "should accept valid select queries" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-036#criterion.shared-rules
+                covers: [FEAT-FE-006#binding.frontend/target.sql-helpers, FEAT-FE-006#binding.frontend/target.shared-sql-rules]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "should accept valid select queries" } }
+
+  - id: REQ-FE-050
+    title: SQL Query Management API Client
+    description: The frontend SQL query API client supports typed list, create, get, update, and delete operations for saved SQL queries and preserves revision conflicts on updates.
+    priority: high
+    status: implemented
+    criteria:
+      - id: saved-query-lifecycle
+        kind: behavior
+        statement: The saved SQL client exposes list, create, get, update, and delete operations with the server's saved-query payload and revision contract.
+        governed_by: [POL-001#rule.governance, POL-009#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+      - id: typed-errors
+        kind: quality
+        statement: Saved SQL client failures remain typed protocol errors with server status and detail available to the frontend caller.
+        governed_by: [POL-001#rule.governance, POL-009#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+    bindings:
+      - id: saved-sql-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the saved SQL client lifecycle, revision handling, and typed failure propagation through exact frontend tests.
+        targets:
+          - id: saved-query-list
+            adapter: typescript
+            path: frontend/src/lib/sql-api.test.ts
+            selector: { kind: test, name: "lists SQL entries (empty by default)" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-050#criterion.saved-query-lifecycle
+                covers: [FEAT-FE-006#binding.frontend/target.saved-sql-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-api.test.ts, test: "lists SQL entries (empty by default)" } }
+          - id: saved-query-mutations
+            adapter: typescript
+            path: frontend/src/lib/sql-api.test.ts
+            selector: { kind: test, name: "updates a SQL entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-050#criterion.saved-query-lifecycle
+                covers: [FEAT-FE-006#binding.frontend/target.saved-sql-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-api.test.ts, test: "updates a SQL entry" } }
+          - id: saved-query-revision
+            adapter: typescript
+            path: frontend/src/lib/sql-api.test.ts
+            selector: { kind: test, name: "enforces the saved SQL update revision contract in the mock server" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-050#criterion.saved-query-lifecycle
+                covers: [FEAT-FE-006#binding.frontend/target.saved-sql-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-api.test.ts, test: "enforces the saved SQL update revision contract in the mock server" } }
+          - id: saved-query-errors
+            adapter: typescript
+            path: frontend/src/lib/sql-api.test.ts
+            selector: { kind: test, name: "throws on list failure" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-050#criterion.typed-errors
+                covers: [FEAT-FE-006#binding.frontend/target.saved-sql-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-api.test.ts, test: "throws on list failure" } }
+
+  - id: REQ-FE-051
+    title: SQL Session Management API Client
+    description: The frontend SQL session API client supports typed creation, retrieval, count, and paged row queries, including safe projection of Entry-shaped session rows.
+    priority: high
+    status: implemented
+    criteria:
+      - id: session-lifecycle
+        kind: behavior
+        statement: The SQL session client creates and retrieves sessions, counts results, and requests paged rows with the server's offset, limit, and total-count contract.
+        governed_by: [POL-001#rule.governance, POL-009#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+      - id: typed-errors
+        kind: quality
+        statement: SQL session client failures and invalid Entry projections are surfaced as typed errors instead of silently producing invalid records.
+        governed_by: [POL-001#rule.governance, POL-009#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+    bindings:
+      - id: sql-session-verification
+        role: verification
+        facet: verification
+        responsibility: Verify SQL session lifecycle, paged result metadata, Entry projection validation, and typed failure propagation through exact frontend tests.
+        targets:
+          - id: session-create
+            adapter: typescript
+            path: frontend/src/lib/sql-session-api.test.ts
+            selector: { kind: test, name: "creates a SQL session" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-051#criterion.session-lifecycle
+                covers: [FEAT-FE-006#binding.frontend/target.sql-session-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-session-api.test.ts, test: "creates a SQL session" } }
+          - id: session-pagination
+            adapter: typescript
+            path: frontend/src/lib/sql-session-api.test.ts
+            selector: { kind: test, name: "fetches rows from a session" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-051#criterion.session-lifecycle
+                covers: [FEAT-FE-006#binding.frontend/target.sql-session-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-session-api.test.ts, test: "fetches rows from a session" } }
+          - id: session-entry-projection
+            adapter: typescript
+            path: frontend/src/lib/sql-session-api.test.ts
+            selector: { kind: test, name: "maps backend SQL system and field columns into an Entry card record" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-051#criterion.session-lifecycle
+                covers: [FEAT-FE-006#binding.frontend/target.sql-session-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-session-api.test.ts, test: "maps backend SQL system and field columns into an Entry card record" } }
+          - id: session-projection-error
+            adapter: typescript
+            path: frontend/src/lib/sql-session-api.test.ts
+            selector: { kind: test, name: "rejects arbitrary SQL projections instead of creating an empty Entry card" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-051#criterion.typed-errors
+                covers: [FEAT-FE-006#binding.frontend/target.sql-session-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-session-api.test.ts, test: "rejects arbitrary SQL projections instead of creating an empty Entry card" } }
+          - id: session-errors
+            adapter: typescript
+            path: frontend/src/lib/sql-session-api.test.ts
+            selector: { kind: test, name: "throws on rows failure" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-051#criterion.typed-errors
+                covers: [FEAT-FE-006#binding.frontend/target.sql-session-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-session-api.test.ts, test: "throws on rows failure" } }
