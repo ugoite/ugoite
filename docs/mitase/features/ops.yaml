@@ -328,3 +328,137 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-OPS-012#criterion.devcontainer-change-detection
+      - id: ops-seeding
+        role: implementation
+        facet: local-seeding
+        responsibility: Connect the root sample-data task and its repository helper to the exact workspace tests that verify the local seeding contract.
+        targets:
+          - id: seed-helper
+            adapter: declared
+            path: scripts/dev-seed.sh
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-016#criterion.local-sample-data-seeding
+      - id: ops-seeding-task-evidence
+        role: evidence
+        facet: local-seeding
+        responsibility: Record the root seed task as generic repository evidence without claiming a separate implementation owner for the shared mise artifact.
+        targets:
+          - id: seed-task
+            adapter: declared
+            path: mise.toml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-016#criterion.local-sample-data-seeding
+      - id: migrated-ops-release-evidence
+        role: evidence
+        facet: release-installation
+        responsibility: Connect the release promotion and quick-start scripts to the selected Operations requirements as generic repository Artifacts. Release execution remains owned by repository workflows and scripts.
+        targets:
+          - id: release-publish-workflow
+            adapter: declared
+            path: .github/workflows/release-publish.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-017#criterion.release-container-promotion
+              - kind: evidences
+                anchor: REQ-OPS-018#criterion.cli-release-installation
+          - id: container-quickstart-script
+            adapter: declared
+            path: scripts/verify-release-container-quickstart.sh
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-017#criterion.release-container-promotion
+          - id: cli-install-script
+            adapter: declared
+            path: scripts/install-ugoite-cli.sh
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-018#criterion.cli-release-installation
+          - id: cli-quickstart-script
+            adapter: declared
+            path: scripts/verify-release-cli-quickstart.sh
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-018#criterion.cli-release-installation
+      - id: auth-development-evidence
+        role: evidence
+        facet: development-authentication
+        responsibility: Preserve the existing development authentication evidence and its explicit planned status through generic Rust, frontend, and E2E Artifacts. This binding does not assert production-parity completeness.
+        targets:
+          - id: auth-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/auth.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-cli-test
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-public-pages
+            adapter: typescript
+            path: e2e/public-pages.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-smoke
+            adapter: typescript
+            path: e2e/smoke.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-api-test
+            adapter: typescript
+            path: frontend/src/lib/api.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-origin-test
+            adapter: typescript
+            path: frontend/src/lib/frontend-origin.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-about-test
+            adapter: typescript
+            path: frontend/src/routes/about.test.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-api-route-test
+            adapter: typescript
+            path: frontend/src/routes/api/[...path].test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-index-test
+            adapter: typescript
+            path: frontend/src/routes/index.test.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-spaces-index-test
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.test.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication

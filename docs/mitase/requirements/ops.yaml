@@ -586,3 +586,185 @@ requirements:
                 criterion: REQ-OPS-043#criterion.knowledge-compatibility-gate
                 covers: [FEAT-OPS-001#binding.migrated-ops-verification/target.knowledge-compatibility]
                 runner: { runner: deno-test-file, arguments: { file: tools/knowledge_compatibility_test.ts, test: Knowledge Compatibility Review is a checked PR gate } }
+
+  - id: REQ-OPS-015
+    title: Production Authentication in Development
+    description: Development must use the same setup, WebAuthn, OIDC, browser-session, and device-authorization protocols as production without fake identities or preconfigured credentials.
+    priority: medium
+    status: planned
+    criteria:
+      - id: production-authentication
+        kind: security
+        statement: Development authentication remains aligned with the production setup, WebAuthn, OIDC, browser-session, and device-authorization protocols; the current migrated slice preserves evidence without claiming parity completeness.
+        governed_by: [POL-003#rule.governance, POL-004#rule.governance, POL-005#rule.governance]
+    bindings:
+      - id: production-authentication-evidence
+        role: evidence
+        facet: authentication
+        responsibility: Preserve the existing CLI, frontend, and E2E authentication evidence while keeping the legacy planned status and its explicit completeness boundary.
+        targets:
+          - id: auth-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/auth.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-cli-test
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-public-pages
+            adapter: typescript
+            path: e2e/public-pages.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-smoke
+            adapter: typescript
+            path: e2e/smoke.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-api-test
+            adapter: typescript
+            path: frontend/src/lib/api.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-origin-test
+            adapter: typescript
+            path: frontend/src/lib/frontend-origin.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-about-test
+            adapter: typescript
+            path: frontend/src/routes/about.test.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-api-route-test
+            adapter: typescript
+            path: frontend/src/routes/api/[...path].test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-index-test
+            adapter: typescript
+            path: frontend/src/routes/index.test.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-spaces-index-test
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.test.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+
+  - id: REQ-OPS-016
+    title: Local Dev Sample-Data Seeding Workflow
+    description: The root developer task mise run seed exposes the sample-data helper with configurable local root, Space ID, scenario, entry count, and seed inputs.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: local-sample-data-seeding
+        kind: behavior
+        statement: The root seed task invokes the repository helper and forwards the supported sample-data inputs while protecting existing UUID-backed Spaces from overwrite.
+        governed_by: [POL-005#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: sample-data-seeding-verification
+        role: verification
+        facet: deno-test
+        responsibility: Verify the root seed task and helper forwarding/protection behavior through the exact workspace tests.
+        targets:
+          - id: sample-data-seeding-test
+            adapter: typescript
+            path: tools/workspace_test.ts
+            selector: { kind: file }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-016#criterion.local-sample-data-seeding
+                covers: [FEAT-OPS-001#binding.ops-seeding/target.seed-helper]
+                runner: { runner: deno-test-file, arguments: { file: tools/workspace_test.ts, test: dev-seed forwards arguments and protects UUID-backed Spaces } }
+
+  - id: REQ-OPS-017
+    title: Release Container Publishing and Quick Start
+    description: Promotion publishes the verified runtime image digest without rebuilding and verifies the documented Compose quick start from the published versioned image and Compose assets.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: release-container-promotion
+        kind: behavior
+        statement: The release publish workflow promotes the verified image and runs the published container quick-start verification against the exact versioned release assets.
+        governed_by: [POL-003#rule.governance, POL-005#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: release-container-promotion-evidence
+        role: evidence
+        facet: release-gate
+        responsibility: Connect the release publish workflow and container quick-start script as generic evidence; release execution remains external repository tooling.
+        targets:
+          - id: release-publish-workflow
+            adapter: declared
+            path: .github/workflows/release-publish.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-017#criterion.release-container-promotion
+          - id: container-quickstart-script
+            adapter: declared
+            path: scripts/verify-release-container-quickstart.sh
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-017#criterion.release-container-promotion
+
+  - id: REQ-OPS-018
+    title: CLI Release Binaries and Install Path
+    description: Candidate generation verifies checksum-verified CLI archives for supported platforms, and buildless promotion publishes those exact archives before the post-publication installer quick-start gate.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: cli-release-installation
+        kind: behavior
+        statement: The release publish workflow promotes verified CLI archives and the installer quick-start script verifies the published version and checksum-backed install path without rebuilding.
+        governed_by: [POL-005#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: cli-release-installation-evidence
+        role: evidence
+        facet: cli-release
+        responsibility: Connect the release publish workflow, public installer, and CLI quick-start verifier as generic repository evidence; release execution remains external repository tooling.
+        targets:
+          - id: release-publish-workflow
+            adapter: declared
+            path: .github/workflows/release-publish.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-018#criterion.cli-release-installation
+          - id: cli-install-script
+            adapter: declared
+            path: scripts/install-ugoite-cli.sh
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-018#criterion.cli-release-installation
+          - id: cli-quickstart-script
+            adapter: declared
+            path: scripts/verify-release-cli-quickstart.sh
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-018#criterion.cli-release-installation
