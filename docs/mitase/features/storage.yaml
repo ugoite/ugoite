@@ -157,6 +157,17 @@ features:
                 criterion: REQ-STO-006#criterion.connector-updates
               - kind: satisfies
                 criterion: REQ-STO-006#criterion.validation-endpoint
+              - kind: satisfies
+                criterion: REQ-FE-017#criterion.storage-configuration
+              - kind: satisfies
+                criterion: REQ-FE-060#criterion.topology-separation
+          - id: storage-topology
+            adapter: typescript
+            path: frontend/src/lib/storage-topology.ts
+            selector: { kind: symbol, name: summarizeSpaceStorage }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-060#criterion.topology-summary
       - id: contract
         role: contract-source
         facet: api

@@ -62,6 +62,25 @@ features:
                 criterion: REQ-FE-002#criterion.no-implicit-creation
               - kind: satisfies
                 criterion: REQ-FE-002#criterion.explicit-create-action
+              - kind: satisfies
+                criterion: REQ-FE-056#criterion.contextual-auth
+  - id: FEAT-FE-012
+    title: Calm Space dashboard state
+    summary: Connect the Space dashboard metadata fallback and resolved title transition to exact frontend verification evidence.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep Space metadata loading calm by rendering a stable identifier fallback and replacing it with the resolved Space name without a persistent loading banner.
+        targets:
+          - id: dashboard-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/dashboard.tsx
+            selector: { kind: symbol, name: SpaceDashboardRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-058#criterion.calm-loading
   - id: FEAT-FE-002
     title: Entry browsing and selection
     summary: Connect Entry list rendering, selected-entry highlighting, selection callbacks, and the plain Entries route to exact frontend verification evidence.

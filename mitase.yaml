@@ -76,6 +76,8 @@ inventory:
             - frontend/src/lib/asset-api.ts
             - frontend/src/components/SpaceSettings.tsx
             - frontend/src/components/SpaceSettings.test.tsx
+            - frontend/src/lib/storage-topology.ts
+            - frontend/src/lib/storage-topology.test.ts
             - frontend/src/components/SpaceSelector.tsx
             - frontend/src/components/SpaceSelector.test.tsx
             - frontend/src/components/EntryList.tsx
@@ -125,6 +127,7 @@ inventory:
             - e2e/smoke.test.ts
             - e2e/navigation.test.ts
             - frontend/src/routes/spaces/[space_id]/dashboard.tsx
+            - frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
             - frontend/src/routes/spaces/[space_id]/entries.tsx
             - frontend/src/routes/spaces/[space_id]/sql/index.tsx
             - frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
@@ -136,6 +139,7 @@ inventory:
             - e2e/ui-surface.test.ts
             - e2e/public-pages.test.ts
             - e2e/saved-sql-route.test.ts
+            - e2e/space-settings-storage-guidance.test.ts
             - e2e/docsite-mobile-nav.test.ts
             - e2e/docsite-links.test.ts
             - e2e/docsite-theme-controls.test.ts

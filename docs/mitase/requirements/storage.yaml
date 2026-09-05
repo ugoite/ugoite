@@ -333,6 +333,14 @@ requirements:
                 criterion: REQ-STO-006#criterion.connector-updates
                 covers: [FEAT-STO-001#binding.connector-ui/target.storage-settings]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SpaceSettings.test.tsx, test: renders storage values and saves only storage configuration } }
+              - kind: verifies
+                criterion: REQ-FE-017#criterion.storage-configuration
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-settings]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SpaceSettings.test.tsx, test: renders storage values and saves only storage configuration } }
+              - kind: verifies
+                criterion: REQ-FE-060#criterion.topology-separation
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-settings]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SpaceSettings.test.tsx, test: renders storage values and saves only storage configuration } }
           - id: connector-test-case
             adapter: typescript
             path: frontend/src/components/SpaceSettings.test.tsx
@@ -340,6 +348,10 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-STO-006#criterion.validation-endpoint
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-settings]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SpaceSettings.test.tsx, test: tests the edited storage connection } }
+              - kind: verifies
+                criterion: REQ-FE-017#criterion.storage-configuration
                 covers: [FEAT-STO-001#binding.connector-ui/target.storage-settings]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SpaceSettings.test.tsx, test: tests the edited storage connection } }
           - id: unsupported-scheme-case
