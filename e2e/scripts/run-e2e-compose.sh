@@ -19,10 +19,23 @@ TEST_TYPE="${1:-full}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.e2e.yml"
+CHECKOUT_SOURCE_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+if [ -n "${UGOITE_SOURCE_SHA:-}" ] && [ "$UGOITE_SOURCE_SHA" != "$CHECKOUT_SOURCE_SHA" ]; then
+  echo "✗ ERROR: UGOITE_SOURCE_SHA does not match the checkout under test"
+  echo "  expected: $CHECKOUT_SOURCE_SHA"
+  echo "  received: $UGOITE_SOURCE_SHA"
+  exit 1
+fi
+export UGOITE_SOURCE_SHA="$CHECKOUT_SOURCE_SHA"
 PROXY_TIMEOUT_MS="${UGOITE_PROXY_TIMEOUT_MS:-30000}"
 BUILD_IMAGES="${E2E_BUILD_IMAGES:-true}"
 export UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS"
-export E2E_COMPOSE_PORT="${E2E_COMPOSE_PORT:-18000}"
+
+free_port() {
+  deno eval 'const listener = Deno.listen({ hostname: "127.0.0.1", port: 0 }); console.log((listener.addr as Deno.NetAddr).port); listener.close();'
+}
+
+export E2E_COMPOSE_PORT="${E2E_COMPOSE_PORT:-$(free_port)}"
 export UGOITE_PUBLIC_ORIGIN="http://localhost:${E2E_COMPOSE_PORT}"
 export UGOITE_API_BASE_URL="${UGOITE_PUBLIC_ORIGIN}/api"
 export UGOITE_WEBAUTHN_RP_ID="localhost"

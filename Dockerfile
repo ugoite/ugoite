@@ -2,6 +2,8 @@
 
 FROM denoland/deno:2.9.6 AS frontend-build
 WORKDIR /repo
+ARG UGOITE_SOURCE_SHA=unknown
+ENV UGOITE_SOURCE_SHA=${UGOITE_SOURCE_SHA}
 ENV CARGO_TARGET_DIR=target/rust
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl build-essential nodejs \
@@ -34,6 +36,8 @@ RUN cargo build -p ugoite-cli --release --locked
 
 FROM ubuntu:26.04 AS runtime-base
 WORKDIR /app
+ARG UGOITE_SOURCE_SHA=unknown
+ENV UGOITE_SOURCE_SHA=${UGOITE_SOURCE_SHA}
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && rm -rf /var/lib/apt/lists/* \
