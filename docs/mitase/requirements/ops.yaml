@@ -286,3 +286,303 @@ requirements:
                 criterion: REQ-OPS-007#criterion.docsite-gate
                 covers: [FEAT-OPS-001#binding.automation/target.root-mise, FEAT-OPS-001#binding.automation/target.ci-workflow]
                 runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: CI aggregate tasks own test coverage and lane scheduling } }
+
+  - id: REQ-OPS-008
+    title: PR Template Validation Gates
+    description: Non-draft, non-Dependabot pull requests must contain Summary, Related Issue, and Testing sections with a closing issue link.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: pr-template-gates
+        kind: quality
+        statement: The repository defines the required pull-request sections and a trusted workflow validates the closing issue link and knowledge-compatibility classification for eligible pull requests.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: pr-template-gate-evidence
+        role: evidence
+        facet: pull-request-gate
+        responsibility: Connect the public pull-request template and trusted validation workflow to the gate contract. The workflow remains repository tooling and is not executed by Mitase.
+        targets:
+          - id: pull-request-template
+            adapter: declared
+            path: .github/pull_request_template.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-008#criterion.pr-template-gates
+          - id: close-issue-workflow
+            adapter: declared
+            path: .github/workflows/pr-require-close-issue.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-008#criterion.pr-template-gates
+
+  - id: REQ-OPS-009
+    title: Deterministic Release Promotion
+    description: An operator-selected verified candidate must keep canonical metadata and published installer paths synchronized with its exact source commit and artifact digests.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: deterministic-release-promotion
+        kind: quality
+        statement: Release candidate creation selects one exact source revision, records candidate and artifact identities, and publication promotes those verified bytes without rebuilding or repackaging.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: deterministic-release-evidence
+        role: evidence
+        facet: release-promotion
+        responsibility: Connect the release contract, candidate workflow, publish workflow, and release implementation to the deterministic promotion boundary. This slice records the existing contract without moving release execution into Mitase.
+        targets:
+          - id: release-contract
+            adapter: declared
+            path: docs/architecture/release/release-contract.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-009#criterion.deterministic-release-promotion
+          - id: candidate-workflow
+            adapter: declared
+            path: .github/workflows/release-candidate.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-009#criterion.deterministic-release-promotion
+          - id: publish-workflow
+            adapter: declared
+            path: .github/workflows/release-publish.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-009#criterion.deterministic-release-promotion
+          - id: release-implementation
+            adapter: typescript
+            path: tools/release.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-009#criterion.deterministic-release-promotion
+
+  - id: REQ-OPS-010
+    title: Frontend Local Dev Proxy Readiness
+    description: The integrated developer launcher must start the Rust server and make the browser `/api` route usable before normal interaction.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: frontend-dev-proxy-readiness
+        kind: behavior
+        statement: Frontend development either points contributors to the canonical root launcher or configures an explicit backend proxy whose `/api` route rewrites to the server API boundary.
+        governed_by: [POL-005#rule.governance]
+    bindings:
+      - id: frontend-dev-proxy-verification
+        role: verification
+        facet: frontend-vitest
+        responsibility: Verify the development error guidance, explicit backend proxy, production no-proxy boundary, and empty process environment behavior through the exact frontend configuration tests.
+        targets:
+          - id: missing-backend-guidance
+            adapter: typescript
+            path: frontend/src/app.config.test.ts
+            selector: { kind: test, name: 'REQ-OPS-010: missing BACKEND_URL points contributors to the canonical root dev workflow' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-010#criterion.frontend-dev-proxy-readiness
+                covers: [FEAT-OPS-001#binding.migrated-ops-verification/target.frontend-proxy]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/app.config.test.ts, test: 'REQ-OPS-010: missing BACKEND_URL points contributors to the canonical root dev workflow' } }
+          - id: backend-proxy-config
+            adapter: typescript
+            path: frontend/src/app.config.test.ts
+            selector: { kind: test, name: 'REQ-OPS-010: backend proxy settings are wired when frontend-only dev mode targets a backend' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-010#criterion.frontend-dev-proxy-readiness
+                covers: [FEAT-OPS-001#binding.migrated-ops-verification/target.frontend-proxy]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/app.config.test.ts, test: 'REQ-OPS-010: backend proxy settings are wired when frontend-only dev mode targets a backend' } }
+          - id: production-proxy-boundary
+            adapter: typescript
+            path: frontend/src/app.config.test.ts
+            selector: { kind: test, name: 'REQ-OPS-010: non-development imports keep an empty proxy map when no backend URL is configured' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-010#criterion.frontend-dev-proxy-readiness
+                covers: [FEAT-OPS-001#binding.migrated-ops-verification/target.frontend-proxy]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/app.config.test.ts, test: 'REQ-OPS-010: non-development imports keep an empty proxy map when no backend URL is configured' } }
+          - id: empty-process-environment
+            adapter: typescript
+            path: frontend/src/app.config.test.ts
+            selector: { kind: test, name: 'REQ-OPS-010: config falls back to an empty env object when process.env is unavailable' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-010#criterion.frontend-dev-proxy-readiness
+                covers: [FEAT-OPS-001#binding.migrated-ops-verification/target.frontend-proxy]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/app.config.test.ts, test: 'REQ-OPS-010: config falls back to an empty env object when process.env is unavailable' } }
+
+  - id: REQ-OPS-011
+    title: Rust Target Cache Discipline
+    description: Rust tasks must share the root `CARGO_TARGET_DIR` and use locked dependencies.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: rust-cache-discipline
+        kind: quality
+        statement: Repository-owned Rust task and workflow surfaces use the portable root target directory contract and locked dependency resolution rather than silently creating an alternate repository cache contract.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: rust-cache-evidence
+        role: evidence
+        facet: rust-build-contract
+        responsibility: Connect the root task graph and hosted Rust workflows to the cache and lockfile discipline. Developer-selected intermediate build sharing remains external tooling and is not made a Mitase responsibility.
+        targets:
+          - id: root-rust-task-graph
+            adapter: declared
+            path: mise.toml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-011#criterion.rust-cache-discipline
+          - id: hosted-rust-gates
+            adapter: declared
+            path: .github/workflows/ci.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-011#criterion.rust-cache-discipline
+
+  - id: REQ-OPS-012
+    title: Devcontainer Change Detection
+    description: A hosted workflow should build/smoke the devcontainer only when relevant paths change while always emitting a required result. No such workflow is present.
+    priority: medium
+    status: planned
+    criteria:
+      - id: devcontainer-change-detection
+        kind: quality
+        statement: A future hosted devcontainer gate should select relevant changes while always publishing its required result; the current repository does not provide that workflow.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: devcontainer-planned-surface
+        role: evidence
+        facet: planned-work
+        responsibility: Record the current devcontainer configuration and dependency automation as the existing planning surface without claiming that the requested hosted change-detection workflow exists.
+        targets:
+          - id: devcontainer-config
+            adapter: declared
+            path: .devcontainer/devcontainer.json
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-012#criterion.devcontainer-change-detection
+          - id: devcontainer-dependency-updates
+            adapter: declared
+            path: .github/dependabot.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-012#criterion.devcontainer-change-detection
+
+  - id: REQ-OPS-013
+    title: Native Required Status Check Contract
+    description: Required status names must be versioned and match the CI and CodeQL summary jobs.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: required-status-contract
+        kind: quality
+        statement: The repository records the required status contexts and their workflow summary jobs as one versioned contract for pull-request and merge-group validation.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: required-status-evidence
+        role: evidence
+        facet: hosted-gate-contract
+        responsibility: Connect the versioned status-check declaration and the CI, CodeQL, and pull-request workflows that publish the declared summary contexts.
+        targets:
+          - id: required-status-declaration
+            adapter: declared
+            path: .github/required-status-checks.json
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-013#criterion.required-status-contract
+          - id: ci-summary-workflow
+            adapter: declared
+            path: .github/workflows/ci.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-013#criterion.required-status-contract
+          - id: codeql-summary-workflow
+            adapter: declared
+            path: .github/workflows/codeql.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-013#criterion.required-status-contract
+          - id: pr-gate-workflow
+            adapter: declared
+            path: .github/workflows/pr-require-close-issue.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-013#criterion.required-status-contract
+
+  - id: REQ-OPS-014
+    title: CLI Language Classification Consistency
+    description: Documentation and automation must classify the CLI as Rust.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: cli-language-classification
+        kind: quality
+        statement: Repository architecture, build, and release surfaces consistently identify `ugoite-cli` as the Rust CLI adapter.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: cli-language-evidence
+        role: evidence
+        facet: language-classification
+        responsibility: Connect the architecture documentation, Rust workspace membership, and Rust build/release automation that establish the CLI language classification.
+        targets:
+          - id: stack-contract
+            adapter: declared
+            path: docs/architecture/contracts/stack.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-014#criterion.cli-language-classification
+          - id: rust-workspace
+            adapter: declared
+            path: Cargo.toml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-014#criterion.cli-language-classification
+          - id: cli-release-workflow
+            adapter: declared
+            path: .github/workflows/release-candidate.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-014#criterion.cli-language-classification
+
+  - id: REQ-OPS-043
+    title: Knowledge Compatibility Review Gate
+    description: Pull requests that can affect v0.1 Space ownership, authority, append-only history, adapter authority, or the canonical fixture must include a checked Knowledge Compatibility Review classification before merge.
+    priority: high
+    status: implemented
+    criteria:
+      - id: knowledge-compatibility-gate
+        kind: quality
+        statement: The trusted pull-request validation path checks exactly one valid Knowledge Compatibility Review classification against the repository's v0.1 semantic contract before merge.
+        governed_by: [POL-008#rule.governance, POL-013#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+    bindings:
+      - id: knowledge-compatibility-verification
+        role: verification
+        facet: deno-test
+        responsibility: Verify that the PR template, trusted validator, workflow, and required status declaration enforce the Knowledge Compatibility Review gate through the exact repository test.
+        targets:
+          - id: knowledge-compatibility-test
+            adapter: typescript
+            path: tools/knowledge_compatibility_test.ts
+            selector: { kind: file }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-043#criterion.knowledge-compatibility-gate
+                covers: [FEAT-OPS-001#binding.migrated-ops-verification/target.knowledge-compatibility]
+                runner: { runner: deno-test-file, arguments: { file: tools/knowledge_compatibility_test.ts, test: Knowledge Compatibility Review is a checked PR gate } }
