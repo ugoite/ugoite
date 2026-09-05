@@ -60,10 +60,10 @@ domains; their corresponding legacy Foundation, Policy, Requirement, and
 Feature YAML are migration evidence only and cannot override the canonical
 representation. The API-specific legacy requirement registry is retired and is
 no longer part of Mitase's declared inventory. The canonical API graph is the
-only semantic authority for that domain. Frontend and E2E legacy requirement
-YAML are likewise no longer part of Mitase's declared inventory; they remain
-read-only migration snapshots until the broader `docs/spec` cleanup is
-complete. The Asset requirement YAML has been retired entirely.
+only semantic authority for that domain. Frontend legacy requirement YAML is
+likewise no longer part of Mitase's declared inventory; it remains a read-only
+migration snapshot until the broader `docs/spec` cleanup is complete. The Asset
+and E2E requirement YAML have been retired entirely.
 The legacy Integrity requirement registry is no longer semantic authority and
 remains a read-only migration snapshot until the broader `docs/spec` cleanup is
 complete. The migrated Storage Space foundation records are likewise no longer
