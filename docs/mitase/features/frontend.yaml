@@ -120,6 +120,8 @@ features:
                 criterion: REQ-FE-008#criterion.selection
               - kind: satisfies
                 criterion: REQ-FE-012#criterion.consecutive-saves
+              - kind: satisfies
+                criterion: REQ-FE-006#criterion.server-backed-optimistic-mutation
           - id: entries-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/entries/index.tsx"

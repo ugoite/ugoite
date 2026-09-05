@@ -482,6 +482,40 @@ requirements:
                 criterion: REQ-FE-005A#criterion.missing-content
                 covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "renders split mode with null content" } }
+  - id: REQ-FE-006
+    title: Optimistic Updates
+    description: Supported frontend mutations may update the current UI optimistically while the same server-backed request completes; this does not introduce offline storage or background synchronization.
+    priority: high
+    status: implemented
+    criteria:
+      - id: server-backed-optimistic-mutation
+        kind: behavior
+        statement: Supported Entry mutations reflect the expected result in the current UI before the server-backed request completes, while remaining part of the same request flow rather than an offline synchronization system.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: optimistic-mutation-verification
+        role: verification
+        facet: verification
+        responsibility: Verify optimistic Entry update and deletion behavior through exact entry-store tests.
+        targets:
+          - id: optimistic-update
+            adapter: typescript
+            path: frontend/src/lib/entry-store.test.ts
+            selector: { kind: test, name: "should apply optimistic updates during update" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-006#criterion.server-backed-optimistic-mutation
+                covers: [FEAT-FE-002#binding.frontend/target.entry-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-store.test.ts, test: "should apply optimistic updates during update" } }
+          - id: optimistic-delete
+            adapter: typescript
+            path: frontend/src/lib/entry-store.test.ts
+            selector: { kind: test, name: "should delete entry optimistically" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-006#criterion.server-backed-optimistic-mutation
+                covers: [FEAT-FE-002#binding.frontend/target.entry-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-store.test.ts, test: "should delete entry optimistically" } }
   - id: REQ-FE-009
     title: Conflict Refresh Guidance
     description: On a revision conflict, the frontend informs the user, keeps the current draft visible, and requires an explicit refresh before loading the latest server revision.
