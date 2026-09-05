@@ -173,6 +173,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-052#criterion.form-derived-guidance
+              - kind: satisfies
+                criterion: REQ-FE-030#criterion.form-aware-add-row
   - id: FEAT-FE-004
     title: Shared frontend feedback and locale surfaces
     summary: Connect structured API error presentation, shared UI localization, and portable locale preference hydration to exact frontend implementation and verification evidence.
@@ -208,6 +210,10 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-044#criterion.dictionary-localization
+              - kind: satisfies
+                criterion: REQ-FE-014#criterion.search-input
+              - kind: satisfies
+                criterion: REQ-FE-014#criterion.keyboard-shortcut
           - id: locale-dictionary
             adapter: typescript
             path: frontend/src/lib/i18n.ts
@@ -215,3 +221,35 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-044#criterion.dictionary-localization
+  - id: FEAT-FE-005
+    title: Form grid interaction surfaces
+    summary: Connect the Form grid's search, sorting, filtering, CSV export, Add Row flow, and inline editing behavior to exact frontend verification evidence.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep Form grid interaction behavior connected to the shipped FormTable and search store implementation.
+        targets:
+          - id: form-table
+            adapter: typescript
+            path: frontend/src/components/FormTable.tsx
+            selector: { kind: symbol, name: FormTable }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-019#criterion.multi-column-sort
+              - kind: satisfies
+                criterion: REQ-FE-020#criterion.hybrid-filtering
+              - kind: satisfies
+                criterion: REQ-FE-021#criterion.context-aware-export
+              - kind: satisfies
+                criterion: REQ-FE-030#criterion.form-aware-add-row
+              - kind: satisfies
+                criterion: REQ-FE-031#criterion.inline-edit-selection
+          - id: search-store
+            adapter: typescript
+            path: frontend/src/lib/search-store.ts
+            selector: { kind: symbol, name: createSearchStore }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-020#criterion.hybrid-filtering
