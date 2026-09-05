@@ -1,8 +1,9 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@solidjs/testing-library";
+import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import AboutRoute from "./about";
+import IndexRoute from "./index";
 vi.mock("@solidjs/router", () => ({
   A: (props: Record<string, unknown>) => {
     const { children, ...rest } = props;
@@ -37,5 +38,22 @@ describe("concept public pages", () => {
         .toBeInTheDocument()
     );
     expect(screen.getAllByText("ホーム").length).toBeGreaterThan(0);
+  });
+
+  it("REQ-FE-064: public landing pages render the selected locale", async () => {
+    setLocale("ja");
+
+    render(() => <IndexRoute />);
+    expect(
+      screen.getByText("ローカルファーストの知識を、検索と自動化のために構造化"),
+    ).toBeInTheDocument();
+
+    cleanup();
+    render(() => <AboutRoute />);
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Ugoite について" }))
+        .toBeInTheDocument()
+    );
+    expect(screen.getByText("ローカルファーストの所有権")).toBeInTheDocument();
   });
 });
