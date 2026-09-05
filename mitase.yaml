@@ -79,6 +79,10 @@ inventory:
             - frontend/src/lib/color-mode.ts
             - frontend/src/themes/registry.test.ts
             - frontend/src/routes/index.tsx
+            - frontend/src/routes/index.test.tsx
+            - frontend/src/routes/about.tsx
+            - frontend/src/routes/about.test.tsx
+            - frontend/src/routes/public-pages.test.tsx
             - frontend/src/routes/spaces/index.tsx
             - frontend/src/routes/spaces/index.test.tsx
             - frontend/src/routes/spaces/[space_id]/entries/index.tsx
@@ -112,6 +116,7 @@ inventory:
             - frontend/src/routes/spaces/[space_id]/queries/new.test.tsx
             - frontend/src/routes/spaces/[space_id]/settings.tsx
             - e2e/ui-surface.test.ts
+            - e2e/public-pages.test.ts
             - e2e/saved-sql-route.test.ts
             - e2e/docsite-mobile-nav.test.ts
             - e2e/docsite-links.test.ts

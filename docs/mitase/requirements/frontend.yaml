@@ -1454,6 +1454,41 @@ requirements:
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063: new saved SQL starts with a runnable total-ordered query" } }
 
+  - id: REQ-FE-064
+    title: Public Landing Page Localization
+    description: The public root and About routes render their user-facing copy through the shared locale dictionary and honor the selected locale on first load.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: public-locale
+        kind: behavior
+        statement: The public root and About routes render localized copy and preserve the selected locale without requiring an authenticated or portable-preference request.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: public-locale-verification
+        role: verification
+        facet: verification
+        responsibility: Verify selected-locale rendering for both public landing routes through the exact frontend and browser tests.
+        targets:
+          - id: public-routes
+            adapter: typescript
+            path: frontend/src/routes/public-pages.test.tsx
+            selector: { kind: test, name: "REQ-FE-064: public landing pages render the selected locale" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-064#criterion.public-locale
+                covers: [FEAT-FE-004#binding.frontend/target.public-index-route, FEAT-FE-004#binding.frontend/target.public-about-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/public-pages.test.tsx", test: "REQ-FE-064: public landing pages render the selected locale" } }
+          - id: browser-public-routes
+            adapter: typescript
+            path: e2e/public-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-064: public landing pages respect the saved Japanese locale" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-064#criterion.public-locale
+                covers: [FEAT-FE-004#binding.frontend/target.public-index-route, FEAT-FE-004#binding.frontend/target.public-about-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/public-pages.test.ts, test: "REQ-FE-064: public landing pages respect the saved Japanese locale" } }
+
   - id: REQ-FE-061
     title: Saved SQL List Route Guidance
     description: The saved SQL list route loads saved queries, provides the supported creation and navigation actions, and explains both the empty and load-error states.

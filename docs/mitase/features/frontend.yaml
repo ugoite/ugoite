@@ -227,6 +227,20 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-044#criterion.dictionary-localization
+          - id: public-index-route
+            adapter: typescript
+            path: frontend/src/routes/index.tsx
+            selector: { kind: symbol, name: IndexRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-064#criterion.public-locale
+          - id: public-about-route
+            adapter: typescript
+            path: frontend/src/routes/about.tsx
+            selector: { kind: symbol, name: About }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-064#criterion.public-locale
   - id: FEAT-FE-005
     title: Form grid interaction surfaces
     summary: Connect the Form grid's search, sorting, filtering, CSV export, Add Row flow, and inline editing behavior to exact frontend verification evidence.
