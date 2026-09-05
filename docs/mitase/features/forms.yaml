@@ -37,6 +37,22 @@ features:
                 criterion: REQ-FORM-006#criterion.reserved-forms
               - kind: satisfies
                 criterion: REQ-FORM-007#criterion.row-reference
+          - id: extract-properties
+            adapter: rust
+            path: crates/ugoite-iceberg/src/index.rs
+            selector: { kind: symbol, name: extract_properties }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FORM-011#criterion.typed-property-conversion
+          - id: validate-properties
+            adapter: rust
+            path: crates/ugoite-iceberg/src/index.rs
+            selector: { kind: symbol, name: validate_properties }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FORM-011#criterion.typed-property-conversion
+              - kind: satisfies
+                criterion: REQ-FORM-011#criterion.validation-warning-boundary
       - id: service
         role: operation
         facet: service
