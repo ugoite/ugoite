@@ -432,3 +432,10 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-066#criterion.single-shell
+          - id: space-shell
+            adapter: typescript
+            path: frontend/src/components/SpaceShell.tsx
+            selector: { kind: symbol, name: SpaceShell }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-066#criterion.single-shell

@@ -32,6 +32,8 @@ inventory:
             - frontend/src/components/GlobalShell.navigation.test.tsx
             - frontend/src/components/Nav.tsx
             - frontend/src/components/Nav.test.tsx
+            - frontend/src/components/SpaceShell.tsx
+            - frontend/src/components/SpaceShell.test.tsx
             - frontend/src/routes/api/[...path].test.ts
             - frontend/src/routes/device.tsx
             - frontend/src/routes/device.test.tsx

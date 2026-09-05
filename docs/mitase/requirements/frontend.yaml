@@ -1772,6 +1772,15 @@ requirements:
                 criterion: REQ-FE-066#criterion.single-shell
                 covers: [FEAT-FE-009#binding.frontend/target.root-nav]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/components/Nav.test.tsx", test: "leaves navigation to the v5 page shells" } }
+          - id: space-shell-navigation
+            adapter: typescript
+            path: frontend/src/components/SpaceShell.test.tsx
+            selector: { kind: test, name: "renders the four persistent navigation destinations and children" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-066#criterion.single-shell
+                covers: [FEAT-FE-009#binding.frontend/target.space-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/SpaceShell.test.tsx", test: "renders the four persistent navigation destinations and children" } }
           - id: duplicate-global-current-link
             adapter: typescript
             path: frontend/src/components/GlobalShell.navigation.test.tsx
