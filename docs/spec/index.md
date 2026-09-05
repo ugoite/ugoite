@@ -71,6 +71,10 @@ The legacy Search requirement registry is also retired; the canonical Search
 graph at `docs/mitase/requirements/search.yaml` is the only semantic authority
 for keyword search, structured query, frontend search behavior, and derived
 relation maintenance.
+The legacy Entry requirement registry is also retired; the canonical Entry
+graph at `docs/mitase/requirements/entries.yaml` is the only semantic authority
+for Entry creation, revision, mutation, history, Markdown extraction, and
+interface behavior.
 The legacy Integrity requirement registry is no longer semantic authority and
 remains a read-only migration snapshot until the broader `docs/spec` cleanup is
 complete. The migrated Storage Space foundation records are likewise no longer
