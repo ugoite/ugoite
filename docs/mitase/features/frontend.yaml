@@ -748,6 +748,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-entry-detail-index
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
           - id: route-entry-history
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history.tsx

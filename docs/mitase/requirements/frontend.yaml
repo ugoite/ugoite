@@ -2340,6 +2340,7 @@ requirements:
                   - FEAT-FE-013#binding.frontend/target.route-dashboard
                   - FEAT-FE-013#binding.frontend/target.route-space-entry-list
                   - FEAT-FE-013#binding.frontend/target.route-entry-detail
+                  - FEAT-FE-013#binding.frontend/target.route-entry-detail-index
                   - FEAT-FE-013#binding.frontend/target.route-entry-history
                   - FEAT-FE-013#binding.frontend/target.route-entry-revision
                   - FEAT-FE-013#binding.frontend/target.route-entry-history-index
