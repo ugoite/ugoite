@@ -43,6 +43,16 @@ describe("/spaces/:space_id/sql", () => {
     );
   });
 
+  it("REQ-FE-061: saved SQL route shows a canonical load error", async () => {
+    vi.mocked(sqlApi.list).mockRejectedValueOnce(new Error("backend down"));
+
+    render(() => <SpaceSqlRoute />);
+
+    expect(
+      await screen.findByText("Failed to load saved SQL.", { exact: false }),
+    ).toBeInTheDocument();
+  });
+
   it("uses the selected locale for structured history names and dates", async () => {
     const entry: SqlEntry = {
       id: "history-1",

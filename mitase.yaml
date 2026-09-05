@@ -104,9 +104,14 @@ inventory:
             - e2e/navigation.test.ts
             - frontend/src/routes/spaces/[space_id]/dashboard.tsx
             - frontend/src/routes/spaces/[space_id]/entries.tsx
+            - frontend/src/routes/spaces/[space_id]/sql/index.tsx
+            - frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
+            - frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx
+            - frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
             - frontend/src/routes/spaces/[space_id]/queries/new.tsx
             - frontend/src/routes/spaces/[space_id]/settings.tsx
             - e2e/ui-surface.test.ts
+            - e2e/saved-sql-route.test.ts
             - e2e/docsite-mobile-nav.test.ts
             - e2e/docsite-links.test.ts
             - e2e/docsite-theme-controls.test.ts
