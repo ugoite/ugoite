@@ -1981,3 +1981,143 @@ requirements:
                 criterion: REQ-FE-059#criterion.system-appearance
                 covers: [FEAT-FE-011#binding.frontend/target.color-mode]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/color-mode.test.ts, test: "updates the document when the operating system preference changes" } }
+  - id: REQ-FE-056
+    title: Contextual Spaces Auth Guidance
+    description: "The /spaces route keeps authentication guidance contextual: normal listings remain free of persistent auth copy, while failed loads show concise guidance appropriate to the error."
+    priority: medium
+    status: implemented
+    criteria:
+      - id: contextual-auth
+        kind: behavior
+        statement: The /spaces route does not show persistent authentication guidance during normal rendering, and displays concise contextual guidance only when loading fails.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: contextual-auth-verification
+        role: verification
+        facet: verification
+        responsibility: Verify normal Space listing and failed-load authentication guidance through exact frontend route tests.
+        targets:
+          - id: normal-listing
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.test.tsx
+            selector: { kind: test, name: "REQ-FE-056: does not show persistent auth guidance during normal space listing" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-056#criterion.contextual-auth
+                covers: [FEAT-FE-001#binding.frontend/target.spaces-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/index.test.tsx, test: "REQ-FE-056: does not show persistent auth guidance during normal space listing" } }
+          - id: forbidden-error
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.test.tsx
+            selector: { kind: test, name: "REQ-FE-056: shows concise auth errors only when space loading fails" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-056#criterion.contextual-auth
+                covers: [FEAT-FE-001#binding.frontend/target.spaces-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/index.test.tsx, test: "REQ-FE-056: shows concise auth errors only when space loading fails" } }
+          - id: auth-link
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.test.tsx
+            selector: { kind: test, name: "REQ-FE-056: links auth guidance to Local Dev Auth/Login when auth fails" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-056#criterion.contextual-auth
+                covers: [FEAT-FE-001#binding.frontend/target.spaces-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/index.test.tsx, test: "REQ-FE-056: links auth guidance to Local Dev Auth/Login when auth fails" } }
+  - id: REQ-FE-058
+    title: Calm Dashboard Loading Treatment
+    description: The Space dashboard keeps meaningful shell content visible while metadata loads, using the Space identifier as a stable fallback before replacing it with the resolved name.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: calm-loading
+        kind: behavior
+        statement: While Space metadata is unresolved, the dashboard renders a stable identifier and no persistent loading banner; after resolution it renders the backend-reported Space name.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: calm-dashboard-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the dashboard identifier fallback and resolved Space title transition through the exact frontend test.
+        targets:
+          - id: metadata-fallback
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
+            selector: { kind: test, name: "REQ-FE-058: keeps the dashboard title calm while space metadata resolves" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-058#criterion.calm-loading
+                covers: [FEAT-FE-012#binding.frontend/target.dashboard-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/dashboard.test.tsx", test: "REQ-FE-058: keeps the dashboard title calm while space metadata resolves" } }
+  - id: REQ-FE-017
+    title: Space Storage Configuration
+    description: Space settings save storage connector metadata independently from the current topology and provide an explicit connection-validation action before treating a proposed connector as usable.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: storage-configuration
+        kind: behavior
+        statement: Space settings display current storage topology separately from saved storage_config metadata, save only the edited configuration, and expose explicit connection validation with user-facing feedback.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: storage-configuration-verification
+        role: verification
+        facet: verification
+        responsibility: Verify storage metadata saving, explicit connection validation, and the browser guidance through exact frontend and browser tests.
+        targets:
+          - id: browser-guidance
+            adapter: typescript
+            path: e2e/space-settings-storage-guidance.test.ts
+            selector: { kind: test, name: "REQ-FE-017: storage settings explain that configuration does not move the current Space" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-017#criterion.storage-configuration
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-settings]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/space-settings-storage-guidance.test.ts, test: "REQ-FE-017: storage settings explain that configuration does not move the current Space" } }
+  - id: REQ-FE-060
+    title: Space Storage Topology Visibility
+    description: Authenticated frontend surfaces show backend-reported storage topology with user-facing labels and keep it distinct from saved storage_config metadata.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: topology-summary
+        kind: behavior
+        statement: The frontend maps backend local, S3, relative, and unknown storage metadata to stable user-facing topology labels and normalized URIs.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: topology-separation
+        kind: behavior
+        statement: Space settings show the current topology separately from saved storage_config metadata and explain that editing saved metadata does not move the current Space.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: storage-topology-verification
+        role: verification
+        facet: verification
+        responsibility: Verify storage topology normalization and its separation from saved configuration through exact frontend tests.
+        targets:
+          - id: local-topology
+            adapter: typescript
+            path: frontend/src/lib/storage-topology.test.ts
+            selector: { kind: test, name: "REQ-FE-060: summarizes backend local storage as local filesystem" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-060#criterion.topology-summary
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-topology]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/storage-topology.test.ts, test: "REQ-FE-060: summarizes backend local storage as local filesystem" } }
+          - id: remote-topology
+            adapter: typescript
+            path: frontend/src/lib/storage-topology.test.ts
+            selector: { kind: test, name: "REQ-FE-060: summarizes backend s3 storage as remote object store" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-060#criterion.topology-summary
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-topology]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/storage-topology.test.ts, test: "REQ-FE-060: summarizes backend s3 storage as remote object store" } }
+          - id: node-local-topology
+            adapter: typescript
+            path: frontend/src/lib/storage-topology.test.ts
+            selector: { kind: test, name: "REQ-FE-060: reads the v3 Node-local binding from storage_config" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-060#criterion.topology-summary
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-topology]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/storage-topology.test.ts, test: "REQ-FE-060: reads the v3 Node-local binding from storage_config" } }
