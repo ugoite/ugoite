@@ -239,6 +239,19 @@ requirements:
                 criterion: REQ-ASSET-004#criterion.no-derived-authority
                 covers: [FEAT-ASSET-001#binding.derived/target.asset-text-rebuild]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: asset_text_search_applies_asset_policy_with_entry_parent } }
+              - kind: verifies
+                criterion: REQ-SRCH-002#criterion.authorized-assettext-projection
+                covers: [FEAT-SRCH-001#binding.core/target.search-entries]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: asset_text_search_applies_asset_policy_with_entry_parent } }
+          - id: bounded-search-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_asset.rs
+            selector: { kind: test, name: asset_text_search_finds_an_authorized_match_after_ten_thousand_entries }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-002#criterion.authorized-assettext-projection
+                covers: [FEAT-SRCH-001#binding.core/target.search-entries]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: asset_text_search_finds_an_authorized_match_after_ten_thousand_entries } }
           - id: parser-limit-durability-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_asset.rs
