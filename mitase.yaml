@@ -101,6 +101,8 @@ inventory:
             - frontend/src/routes/spaces/index.test.tsx
             - frontend/src/routes/spaces/[space_id]/entries/index.tsx
             - frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
+            - frontend/src/routes/spaces/[space_id]/forms/index.tsx
+            - frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
             - frontend/src/components/EntryDetailPane.tsx
             - frontend/src/components/EntryDetailPane.test.tsx
             - frontend/src/components/MarkdownEditor.tsx
