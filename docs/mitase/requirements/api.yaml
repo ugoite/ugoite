@@ -359,6 +359,10 @@ requirements:
         kind: behavior
         statement: The API exposes SQL session status, count, and paged row reads without shipping a stream endpoint.
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: read-only-authorized-execution
+        kind: security
+        statement: SQL session creation resolves only authorized Form relations and rejects non-read-only DDL or DML before a session is created.
+        governed_by: [POL-001#rule.governance, POL-011#rule.governance, POL-012#rule.governance]
     bindings:
       - id: sql-session-verification
         role: verification
@@ -395,6 +399,15 @@ requirements:
                   - FEAT-API-001#binding.core/target.count-sql-session
                   - FEAT-API-001#binding.core/target.rows-sql-session
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_sessions, test: test_sql_sessions_req_api_008_scopes_rows_before_limit } }
+          - id: read-only-dml-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::issue_2297_rest_sql_sessions_reject_non_read_only_dml_before_creation }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-008#criterion.read-only-authorized-execution
+                covers: [FEAT-API-001#binding.core/target.create-sql-session]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::issue_2297_rest_sql_sessions_reject_non_read_only_dml_before_creation } }
 
   - id: REQ-API-009
     title: Sample data Space generation

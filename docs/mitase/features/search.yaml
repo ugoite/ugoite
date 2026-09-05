@@ -22,6 +22,15 @@ features:
                 criterion: REQ-SRCH-001#criterion.keyword-search
               - kind: satisfies
                 criterion: REQ-SRCH-002#criterion.current-entry-scan
+          - id: query-index
+            adapter: rust
+            path: crates/ugoite-iceberg/src/index.rs
+            selector: { kind: symbol, name: query_index }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-006#criterion.query-operation
+              - kind: satisfies
+                criterion: REQ-SRCH-006#criterion.core-query-execution
       - id: derived
         role: implementation
         facet: derived
