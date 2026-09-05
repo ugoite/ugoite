@@ -61,8 +61,7 @@ Feature YAML are migration evidence only and cannot override the canonical
 representation. The API-specific legacy requirement registry is retired and is
 no longer part of Mitase's declared inventory. The canonical API graph is the
 only semantic authority for that domain. Frontend legacy requirement YAML is
-likewise no longer part of Mitase's declared inventory; it remains a read-only
-migration snapshot until the broader `docs/spec` cleanup is complete. The Asset
+likewise retired and no longer part of Mitase's declared inventory. The Asset
 and E2E requirement YAML have been retired entirely. The legacy Indexer
 requirement registry is likewise retired; its canonical Search and Form graphs
 are the only semantic authority for derived indexing, structured query,
