@@ -560,6 +560,159 @@ features:
                 criterion: REQ-FE-040#criterion.registry-shape
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-assets
+            adapter: declared
+            path: docs/spec/ui/pages/space-assets.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-dashboard
+            adapter: declared
+            path: docs/spec/ui/pages/space-dashboard.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-entries-object
+            adapter: declared
+            path: docs/spec/ui/pages/space-entries-object.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-entry-detail
+            adapter: declared
+            path: docs/spec/ui/pages/space-entry-detail.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-entry-history
+            adapter: declared
+            path: docs/spec/ui/pages/space-entry-history.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-entry-new
+            adapter: declared
+            path: docs/spec/ui/pages/space-entry-new.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-entry-restore
+            adapter: declared
+            path: docs/spec/ui/pages/space-entry-restore.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-entry-revision
+            adapter: declared
+            path: docs/spec/ui/pages/space-entry-revision.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-form-grid
+            adapter: declared
+            path: docs/spec/ui/pages/space-form-grid.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-form-types
+            adapter: declared
+            path: docs/spec/ui/pages/space-form-types.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-query-create
+            adapter: declared
+            path: docs/spec/ui/pages/space-query-create.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-query-variables
+            adapter: declared
+            path: docs/spec/ui/pages/space-query-variables.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-search
+            adapter: declared
+            path: docs/spec/ui/pages/space-search.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-settings
+            adapter: declared
+            path: docs/spec/ui/pages/space-settings.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-sql-detail
+            adapter: declared
+            path: docs/spec/ui/pages/space-sql-detail.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-sql
+            adapter: declared
+            path: docs/spec/ui/pages/space-sql.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-test-connection
+            adapter: declared
+            path: docs/spec/ui/pages/space-test-connection.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
           - id: space-chrome
             adapter: declared
             path: docs/spec/ui/components/space-shell.yaml
@@ -567,3 +720,157 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.shared-chrome
+          - id: route-assets
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/assets.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-dashboard
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/dashboard.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-space-entry-list
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/entries.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-entry-detail
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/entries/[entry_id].tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-entry-history
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-entry-revision
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-entry-history-index
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-entry-detail-restore
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/restore.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-entry-index
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/entries/index.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-entry-new
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/entries/new.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-forms
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/forms.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-forms-index
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/forms/index.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-form-types
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/forms/types.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-space-home
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/index.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-query-variables
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/queries/[query_id]/variables.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-query-create
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/queries/new.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-search
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/search.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-settings
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/settings.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-sql
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-sql-detail
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-sql-index
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/index.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-test-connection
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/test-connection.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage

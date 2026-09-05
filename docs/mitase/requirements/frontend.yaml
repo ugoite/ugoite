@@ -2272,7 +2272,25 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-FE-040#criterion.registry-shape
-                covers: [FEAT-FE-013#binding.frontend/target.page-registry]
+                covers:
+                  - FEAT-FE-013#binding.frontend/target.page-registry
+                  - FEAT-FE-013#binding.frontend/target.page-space-assets
+                  - FEAT-FE-013#binding.frontend/target.page-space-dashboard
+                  - FEAT-FE-013#binding.frontend/target.page-space-entries-object
+                  - FEAT-FE-013#binding.frontend/target.page-space-entry-detail
+                  - FEAT-FE-013#binding.frontend/target.page-space-entry-history
+                  - FEAT-FE-013#binding.frontend/target.page-space-entry-new
+                  - FEAT-FE-013#binding.frontend/target.page-space-entry-restore
+                  - FEAT-FE-013#binding.frontend/target.page-space-entry-revision
+                  - FEAT-FE-013#binding.frontend/target.page-space-form-grid
+                  - FEAT-FE-013#binding.frontend/target.page-space-form-types
+                  - FEAT-FE-013#binding.frontend/target.page-space-query-create
+                  - FEAT-FE-013#binding.frontend/target.page-space-query-variables
+                  - FEAT-FE-013#binding.frontend/target.page-space-search
+                  - FEAT-FE-013#binding.frontend/target.page-space-settings
+                  - FEAT-FE-013#binding.frontend/target.page-space-sql-detail
+                  - FEAT-FE-013#binding.frontend/target.page-space-sql
+                  - FEAT-FE-013#binding.frontend/target.page-space-test-connection
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: loads UI page specs" } }
           - id: component-types
             adapter: typescript
@@ -2299,7 +2317,47 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-FE-040#criterion.route-coverage
-                covers: [FEAT-FE-013#binding.frontend/target.page-registry]
+                covers:
+                  - FEAT-FE-013#binding.frontend/target.page-registry
+                  - FEAT-FE-013#binding.frontend/target.page-space-assets
+                  - FEAT-FE-013#binding.frontend/target.page-space-dashboard
+                  - FEAT-FE-013#binding.frontend/target.page-space-entries-object
+                  - FEAT-FE-013#binding.frontend/target.page-space-entry-detail
+                  - FEAT-FE-013#binding.frontend/target.page-space-entry-history
+                  - FEAT-FE-013#binding.frontend/target.page-space-entry-new
+                  - FEAT-FE-013#binding.frontend/target.page-space-entry-restore
+                  - FEAT-FE-013#binding.frontend/target.page-space-entry-revision
+                  - FEAT-FE-013#binding.frontend/target.page-space-form-grid
+                  - FEAT-FE-013#binding.frontend/target.page-space-form-types
+                  - FEAT-FE-013#binding.frontend/target.page-space-query-create
+                  - FEAT-FE-013#binding.frontend/target.page-space-query-variables
+                  - FEAT-FE-013#binding.frontend/target.page-space-search
+                  - FEAT-FE-013#binding.frontend/target.page-space-settings
+                  - FEAT-FE-013#binding.frontend/target.page-space-sql-detail
+                  - FEAT-FE-013#binding.frontend/target.page-space-sql
+                  - FEAT-FE-013#binding.frontend/target.page-space-test-connection
+                  - FEAT-FE-013#binding.frontend/target.route-assets
+                  - FEAT-FE-013#binding.frontend/target.route-dashboard
+                  - FEAT-FE-013#binding.frontend/target.route-space-entry-list
+                  - FEAT-FE-013#binding.frontend/target.route-entry-detail
+                  - FEAT-FE-013#binding.frontend/target.route-entry-history
+                  - FEAT-FE-013#binding.frontend/target.route-entry-revision
+                  - FEAT-FE-013#binding.frontend/target.route-entry-history-index
+                  - FEAT-FE-013#binding.frontend/target.route-entry-detail-restore
+                  - FEAT-FE-013#binding.frontend/target.route-entry-index
+                  - FEAT-FE-013#binding.frontend/target.route-entry-new
+                  - FEAT-FE-013#binding.frontend/target.route-forms
+                  - FEAT-FE-013#binding.frontend/target.route-forms-index
+                  - FEAT-FE-013#binding.frontend/target.route-form-types
+                  - FEAT-FE-013#binding.frontend/target.route-space-home
+                  - FEAT-FE-013#binding.frontend/target.route-query-variables
+                  - FEAT-FE-013#binding.frontend/target.route-query-create
+                  - FEAT-FE-013#binding.frontend/target.route-search
+                  - FEAT-FE-013#binding.frontend/target.route-settings
+                  - FEAT-FE-013#binding.frontend/target.route-sql
+                  - FEAT-FE-013#binding.frontend/target.route-sql-detail
+                  - FEAT-FE-013#binding.frontend/target.route-sql-index
+                  - FEAT-FE-013#binding.frontend/target.route-test-connection
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates docs pages map to implemented routes" } }
           - id: implemented-routes
             adapter: typescript

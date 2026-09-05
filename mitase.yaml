@@ -122,6 +122,10 @@ inventory:
             - frontend/src/routes/spaces/[space_id]/entries/new.test.tsx
             - e2e/entries.test.ts
             - frontend/src/routes/spaces/[space_id]/entries/[entry_id].tsx
+            - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history.tsx
+            - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].tsx
+            - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.tsx
+            - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/restore.tsx
             - frontend/src/routes/spaces/[space_id]/search.tsx
             - frontend/src/routes/spaces/[space_id]/search.test.tsx
             - e2e/search-ui.test.ts
@@ -130,13 +134,20 @@ inventory:
             - frontend/src/routes/spaces/[space_id]/dashboard.tsx
             - frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
             - frontend/src/routes/spaces/[space_id]/entries.tsx
+            - frontend/src/routes/spaces/[space_id]/assets.tsx
+            - frontend/src/routes/spaces/[space_id]/forms.tsx
             - frontend/src/routes/spaces/[space_id]/sql/index.tsx
             - frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
             - frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx
             - frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
             - frontend/src/routes/spaces/[space_id]/queries/new.tsx
             - frontend/src/routes/spaces/[space_id]/queries/new.test.tsx
+            - frontend/src/routes/spaces/[space_id]/queries/[query_id]/variables.tsx
             - frontend/src/routes/spaces/[space_id]/settings.tsx
+            - frontend/src/routes/spaces/[space_id]/sql.tsx
+            - frontend/src/routes/spaces/[space_id]/test-connection.tsx
+            - frontend/src/routes/spaces/[space_id]/forms/types.tsx
+            - frontend/src/routes/spaces/[space_id]/index.tsx
             - e2e/ui-surface.test.ts
             - e2e/public-pages.test.ts
             - e2e/saved-sql-route.test.ts
@@ -238,7 +249,24 @@ inventory:
             - docs/spec/stories/advanced.yaml
             - docs/spec/stories/experimental.yaml
             - docs/spec/ui/index.md
+            - docs/spec/ui/pages/space-assets.yaml
+            - docs/spec/ui/pages/space-dashboard.yaml
+            - docs/spec/ui/pages/space-entries-object.yaml
+            - docs/spec/ui/pages/space-entry-detail.yaml
+            - docs/spec/ui/pages/space-entry-history.yaml
+            - docs/spec/ui/pages/space-entry-new.yaml
+            - docs/spec/ui/pages/space-entry-restore.yaml
+            - docs/spec/ui/pages/space-entry-revision.yaml
+            - docs/spec/ui/pages/space-form-grid.yaml
+            - docs/spec/ui/pages/space-form-types.yaml
             - docs/spec/ui/pages/space-home.yaml
+            - docs/spec/ui/pages/space-query-create.yaml
+            - docs/spec/ui/pages/space-query-variables.yaml
+            - docs/spec/ui/pages/space-search.yaml
+            - docs/spec/ui/pages/space-settings.yaml
+            - docs/spec/ui/pages/space-sql-detail.yaml
+            - docs/spec/ui/pages/space-sql.yaml
+            - docs/spec/ui/pages/space-test-connection.yaml
             - docs/spec/ui/components/space-shell.yaml
             - .github/workflows/ci.yml
             - .github/workflows/release-publish.yml
