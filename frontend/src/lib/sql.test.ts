@@ -24,6 +24,15 @@ describe("sql helpers", () => {
     expect(diagnostics).toHaveLength(0);
   });
 
+  it("uses the shared SQL rules for linting", () => {
+    const diagnostics = sqlLintDiagnostics(
+      'SELECT * FROM "form_00000000000000000000000000000001" LIMIT invalid',
+    );
+    expect(diagnostics.map((diagnostic) => diagnostic.message)).toContain(
+      "LIMIT value should be a number or parameter",
+    );
+  });
+
   it("reports the read-only policy separately from server syntax lint", () => {
     expect(sqlLintDiagnostics("DROP TABLE entries").map((diag) => diag.message))
       .toEqual([

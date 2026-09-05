@@ -1220,6 +1220,24 @@ requirements:
                 criterion: REQ-FE-036#criterion.shared-rules
                 covers: [FEAT-FE-006#binding.frontend/target.sql-helpers, FEAT-FE-006#binding.frontend/target.shared-sql-rules]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "should accept valid select queries" } }
+          - id: shared-rules-lint
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: "uses the shared SQL rules for linting" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-036#criterion.shared-rules
+                covers: [FEAT-FE-006#binding.frontend/target.sql-helpers, FEAT-FE-006#binding.frontend/target.shared-sql-rules]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "uses the shared SQL rules for linting" } }
+          - id: sql-read-only-policy
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: "reports the read-only policy separately from server syntax lint" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-036#criterion.editor-contract
+                covers: [FEAT-FE-006#binding.frontend/target.sql-helpers]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "reports the read-only policy separately from server syntax lint" } }
 
   - id: REQ-FE-050
     title: SQL Query Management API Client
@@ -1250,6 +1268,24 @@ requirements:
                 criterion: REQ-FE-050#criterion.saved-query-lifecycle
                 covers: [FEAT-FE-006#binding.frontend/target.saved-sql-client]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-api.test.ts, test: "lists SQL entries (empty by default)" } }
+          - id: saved-query-create
+            adapter: typescript
+            path: frontend/src/lib/sql-api.test.ts
+            selector: { kind: test, name: "creates a SQL entry and returns id/revisionId" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-050#criterion.saved-query-lifecycle
+                covers: [FEAT-FE-006#binding.frontend/target.saved-sql-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-api.test.ts, test: "creates a SQL entry and returns id/revisionId" } }
+          - id: saved-query-get
+            adapter: typescript
+            path: frontend/src/lib/sql-api.test.ts
+            selector: { kind: test, name: "gets a SQL entry by id" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-050#criterion.saved-query-lifecycle
+                covers: [FEAT-FE-006#binding.frontend/target.saved-sql-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-api.test.ts, test: "gets a SQL entry by id" } }
           - id: saved-query-mutations
             adapter: typescript
             path: frontend/src/lib/sql-api.test.ts
@@ -1277,6 +1313,15 @@ requirements:
                 criterion: REQ-FE-050#criterion.typed-errors
                 covers: [FEAT-FE-006#binding.frontend/target.saved-sql-client]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-api.test.ts, test: "throws on list failure" } }
+          - id: saved-query-delete
+            adapter: typescript
+            path: frontend/src/lib/sql-api.test.ts
+            selector: { kind: test, name: "deletes a SQL entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-050#criterion.saved-query-lifecycle
+                covers: [FEAT-FE-006#binding.frontend/target.saved-sql-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-api.test.ts, test: "deletes a SQL entry" } }
 
   - id: REQ-FE-051
     title: SQL Session Management API Client
@@ -1307,6 +1352,24 @@ requirements:
                 criterion: REQ-FE-051#criterion.session-lifecycle
                 covers: [FEAT-FE-006#binding.frontend/target.sql-session-client]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-session-api.test.ts, test: "creates a SQL session" } }
+          - id: session-get
+            adapter: typescript
+            path: frontend/src/lib/sql-session-api.test.ts
+            selector: { kind: test, name: "gets a SQL session by id" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-051#criterion.session-lifecycle
+                covers: [FEAT-FE-006#binding.frontend/target.sql-session-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-session-api.test.ts, test: "gets a SQL session by id" } }
+          - id: session-count
+            adapter: typescript
+            path: frontend/src/lib/sql-session-api.test.ts
+            selector: { kind: test, name: "counts rows in a session" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-051#criterion.session-lifecycle
+                covers: [FEAT-FE-006#binding.frontend/target.sql-session-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-session-api.test.ts, test: "counts rows in a session" } }
           - id: session-pagination
             adapter: typescript
             path: frontend/src/lib/sql-session-api.test.ts
