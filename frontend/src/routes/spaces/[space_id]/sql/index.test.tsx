@@ -53,6 +53,25 @@ describe("/spaces/:space_id/sql", () => {
     ).toBeInTheDocument();
   });
 
+  it("REQ-FE-061: saved SQL route links a saved query to its detail route", async () => {
+    vi.mocked(sqlApi.list).mockResolvedValueOnce([{
+      id: "saved/query",
+      name: "Recent Query",
+      kind: "user-query",
+      metadata: null,
+      sql: "SELECT 1",
+      variables: [],
+      created_at: "2026-03-01T00:00:00Z",
+      updated_at: "2026-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    }]);
+
+    render(() => <SpaceSqlRoute />);
+
+    expect(await screen.findByRole("link", { name: /Recent Query/ }))
+      .toHaveAttribute("href", "/spaces/default/sql/saved%2Fquery");
+  });
+
   it("uses the selected locale for structured history names and dates", async () => {
     const entry: SqlEntry = {
       id: "history-1",
