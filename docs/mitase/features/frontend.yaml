@@ -99,6 +99,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-008#criterion.selection
+              - kind: satisfies
+                criterion: REQ-FE-012#criterion.consecutive-saves
           - id: entries-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/entries/index.tsx"
@@ -127,6 +129,10 @@ features:
                 criterion: REQ-FE-009#criterion.conflict-guidance
               - kind: satisfies
                 criterion: REQ-FE-010#criterion.preserve-draft
+              - kind: satisfies
+                criterion: REQ-FE-011#criterion.selection-and-refresh-sync
+              - kind: satisfies
+                criterion: REQ-FE-013#criterion.server-persistence
               - kind: satisfies
                 criterion: REQ-FE-038#criterion.validation-feedback
               - kind: satisfies
