@@ -40,6 +40,12 @@ structured-query semantics are represented by the canonical Search and Form
 requirements at `docs/mitase/requirements/search.yaml` and
 `docs/mitase/requirements/forms.yaml`.
 
+The legacy Search requirement registry at `requirements/search.yaml` is retired
+and is no longer included in Mitase's declared inventory. The canonical Search
+requirements at `docs/mitase/requirements/search.yaml` are the only semantic
+authority for keyword search, structured query, frontend search behavior, and
+derived relation maintenance.
+
 The legacy Frontend requirement registry at `requirements/frontend.yaml` is
 retained as a read-only migration snapshot and is no longer included in Mitase's
 declared inventory. The canonical Frontend requirements at

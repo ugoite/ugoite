@@ -67,6 +67,10 @@ and E2E requirement YAML have been retired entirely. The legacy Indexer
 requirement registry is likewise retired; its canonical Search and Form graphs
 are the only semantic authority for derived indexing, structured query,
 word-count, and validation behavior.
+The legacy Search requirement registry is also retired; the canonical Search
+graph at `docs/mitase/requirements/search.yaml` is the only semantic authority
+for keyword search, structured query, frontend search behavior, and derived
+relation maintenance.
 The legacy Integrity requirement registry is no longer semantic authority and
 remains a read-only migration snapshot until the broader `docs/spec` cleanup is
 complete. The migrated Storage Space foundation records are likewise no longer
