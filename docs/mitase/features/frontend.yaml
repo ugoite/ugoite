@@ -396,3 +396,39 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-065#criterion.protocol-binding
+
+  - id: FEAT-FE-009
+    title: Auth-aware global navigation
+    summary: Connect public sign-in visibility, authenticated account controls, explicit session exit, and single-shell navigation ownership to exact frontend evidence.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep signed-out global navigation, authenticated account controls, and the retired root navigation slot connected to the shipped shell and account artifacts.
+        targets:
+          - id: global-shell
+            adapter: typescript
+            path: frontend/src/components/GlobalShell.tsx
+            selector: { kind: symbol, name: GlobalShell }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-066#criterion.public-sign-in
+              - kind: satisfies
+                criterion: REQ-FE-066#criterion.explicit-session-exit
+              - kind: satisfies
+                criterion: REQ-FE-066#criterion.single-shell
+          - id: account-menu
+            adapter: typescript
+            path: frontend/src/components/AccountMenu.tsx
+            selector: { kind: symbol, name: AccountMenu }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-066#criterion.explicit-session-exit
+          - id: root-nav
+            adapter: typescript
+            path: frontend/src/components/Nav.tsx
+            selector: { kind: symbol, name: Nav }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-066#criterion.single-shell

@@ -1718,3 +1718,66 @@ requirements:
                 criterion: REQ-FE-062#criterion.supported-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to entries" } }
+
+  - id: REQ-FE-066
+    title: Auth-Aware Global Navigation Session Controls
+    description: The global frontend navigation shows a sign-in entry point only for signed-out visitors, exposes an explicit account control for authenticated sessions, and clears the browser session before returning to the login route. The root navigation slot remains empty so the global and Space shells remain the only navigation owners.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: public-sign-in
+        kind: behavior
+        statement: A public GlobalShell renders a sign-in link to /login and does not render the authenticated account control.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: explicit-session-exit
+        kind: security
+        statement: An authenticated account control signs out only after the explicit menu action, clears the browser session through the auth client, and returns the user to /login.
+        governed_by: [POL-004#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-011#rule.governance]
+      - id: single-shell
+        kind: custom
+        statement: The root Nav slot remains empty so GlobalShell and SpaceShell own the shipped navigation without a duplicate header.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: auth-navigation-verification
+        role: verification
+        facet: verification
+        responsibility: Verify signed-out navigation, explicit session exit, and single-shell ownership through exact frontend component tests.
+        targets:
+          - id: public-link
+            adapter: typescript
+            path: frontend/src/components/GlobalShell.test.tsx
+            selector: { kind: test, name: "shows a sign-in link when used for a public route" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-066#criterion.public-sign-in
+                covers: [FEAT-FE-009#binding.frontend/target.global-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/GlobalShell.test.tsx", test: "shows a sign-in link when used for a public route" } }
+          - id: explicit-sign-out
+            adapter: typescript
+            path: frontend/src/components/GlobalShell.test.tsx
+            selector: { kind: test, name: "signs out only from the explicit menu action" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-066#criterion.explicit-session-exit
+                covers:
+                  - FEAT-FE-009#binding.frontend/target.global-shell
+                  - FEAT-FE-009#binding.frontend/target.account-menu
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/GlobalShell.test.tsx", test: "signs out only from the explicit menu action" } }
+          - id: root-navigation-slot
+            adapter: typescript
+            path: frontend/src/components/Nav.test.tsx
+            selector: { kind: test, name: "leaves navigation to the v5 page shells" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-066#criterion.single-shell
+                covers: [FEAT-FE-009#binding.frontend/target.root-nav]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/Nav.test.tsx", test: "leaves navigation to the v5 page shells" } }
+          - id: duplicate-global-current-link
+            adapter: typescript
+            path: frontend/src/components/GlobalShell.navigation.test.tsx
+            selector: { kind: test, name: "does not mark duplicate global links as current" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-066#criterion.single-shell
+                covers: [FEAT-FE-009#binding.frontend/target.global-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/GlobalShell.navigation.test.tsx", test: "does not mark duplicate global links as current" } }
