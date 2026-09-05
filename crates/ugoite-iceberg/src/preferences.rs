@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_storage::{
     CasOutcome, CreateOutcome, OpendalPublicationStore, OpendalStorage, PublicationError,
     PublicationStore, SpaceKey, StorageBackend,
@@ -25,6 +26,14 @@ pub struct UserPreferences {
 
 const USER_PREFERENCE_FIELDS: &[&str] = &["selected_space_id", "locale"];
 
+fn invalid_patch_error(message: impl std::fmt::Display) -> anyhow::Error {
+    AppError::invalid_input(
+        ErrorCode::InvalidInput,
+        format!("Invalid preferences patch: {message}"),
+    )
+    .into()
+}
+
 fn hashed_user_segment(user_id: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(user_id.as_bytes());
@@ -42,16 +51,31 @@ fn preferences_path(user_id: &str) -> String {
 
 fn validate_patch(patch: &Value) -> Result<&serde_json::Map<String, Value>> {
     let Some(patch_obj) = patch.as_object() else {
-        return Err(anyhow!("preferences patch must be a JSON object"));
+        return Err(invalid_patch_error("payload must be a JSON object"));
     };
 
     for key in patch_obj.keys() {
         if !USER_PREFERENCE_FIELDS.contains(&key.as_str()) {
-            return Err(anyhow!("Unknown preference field: {key}"));
+            return Err(invalid_patch_error(format!(
+                "Unknown preference field: {key}"
+            )));
         }
     }
 
     Ok(patch_obj)
+}
+
+fn apply_patch(current: UserPreferences, patch: &Value) -> Result<UserPreferences> {
+    let patch_obj = validate_patch(patch)?;
+    let mut merged = serde_json::to_value(current)?;
+    let Some(merged_obj) = merged.as_object_mut() else {
+        return Err(anyhow!("preferences payload must serialize to an object"));
+    };
+    for (key, value) in patch_obj {
+        merged_obj.insert(key.clone(), value.clone());
+    }
+    serde_json::from_value(merged)
+        .map_err(|error| invalid_patch_error(format!("invalid field value: {error}")))
 }
 
 async fn get_user_preferences_with_storage<S: StorageBackend + ?Sized>(
@@ -75,7 +99,6 @@ async fn patch_user_preferences_with_publication(
     user_id: &str,
     patch: &Value,
 ) -> Result<UserPreferences> {
-    let patch_obj = validate_patch(patch)?;
     let user_hash = hashed_user_segment(user_id);
     let key = SpaceKey::parse(&preferences_path_for_hash(&user_hash))?;
     let publication = OpendalPublicationStore::new(operator.clone());
@@ -93,14 +116,7 @@ async fn patch_user_preferences_with_publication(
             Some(object) => serde_json::from_slice::<UserPreferences>(&object.bytes)?,
             None => UserPreferences::default(),
         };
-        let mut merged = serde_json::to_value(current_preferences)?;
-        let Some(merged_obj) = merged.as_object_mut() else {
-            return Err(anyhow!("preferences payload must serialize to an object"));
-        };
-        for (key, value) in patch_obj {
-            merged_obj.insert(key.clone(), value.clone());
-        }
-        let preferences: UserPreferences = serde_json::from_value(merged)?;
+        let preferences = apply_patch(current_preferences, patch)?;
         let bytes = serde_json::to_vec_pretty(&preferences)?;
 
         let write_result = match current.as_ref() {
@@ -162,4 +178,42 @@ pub async fn patch_user_preferences(
         .await
         .map_err(crate::iceberg_store::storage_mutation_unavailable)?;
     patch_user_preferences_with_publication(op, user_id, patch).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{apply_patch, LocalePreference, UserPreferences};
+    use serde_json::json;
+    use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
+
+    #[test]
+    fn invalid_preference_patches_are_client_validation_errors() {
+        for patch in [
+            json!(["ja"]),
+            json!({"unknown_key": "value"}),
+            json!({"locale": "fr"}),
+            json!({"locale": 42}),
+            json!({"selected_space_id": 42}),
+        ] {
+            let error = apply_patch(UserPreferences::default(), &patch)
+                .expect_err("invalid patch should be rejected");
+            let app_error = error
+                .downcast_ref::<AppError>()
+                .expect("validation should preserve its application error");
+            assert_eq!(app_error.kind(), ErrorKind::InvalidInput);
+            assert_eq!(app_error.code(), ErrorCode::InvalidInput);
+        }
+    }
+
+    #[test]
+    fn valid_preference_patches_merge_without_replacing_other_fields() {
+        let current = UserPreferences {
+            selected_space_id: Some("space-a".to_string()),
+            locale: Some(LocalePreference::En),
+        };
+        let updated =
+            apply_patch(current, &json!({"locale": "ja"})).expect("valid patch should be accepted");
+        assert_eq!(updated.selected_space_id.as_deref(), Some("space-a"));
+        assert_eq!(updated.locale, Some(LocalePreference::Ja));
+    }
 }
