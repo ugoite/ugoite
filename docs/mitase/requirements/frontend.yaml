@@ -1407,6 +1407,53 @@ requirements:
                 covers: [FEAT-FE-006#binding.frontend/target.sql-session-client]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-session-api.test.ts, test: "throws on rows failure" } }
 
+  - id: REQ-FE-063
+    title: Saved SQL Creation Starter and Save Flow
+    description: The saved SQL creation route provides a runnable total-ordered starter query for the selected Form relation and saves an explicitly named or generated query through the supported API before exposing the query for execution.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: starter-query
+        kind: behavior
+        statement: When a creatable Form relation is available, the saved SQL creation route starts with a runnable query ordered by the server-backed update timestamp and stable entry identifier with a bounded result limit.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: explicit-save-and-run
+        kind: behavior
+        statement: An explicit save submits the normalized saved-query payload and makes the created query available through the supported detail and Entry-result run flow.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: saved-sql-create-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the saved SQL creation starter query, normalized save payload, and browser journey through exact frontend and browser tests.
+        targets:
+          - id: create-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/queries/new.test.tsx
+            selector: { kind: test, name: "REQ-FE-063: uses a runnable Form relation starter with session ordering" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-063#criterion.starter-query
+                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/queries/new.test.tsx", test: "REQ-FE-063: uses a runnable Form relation starter with session ordering" } }
+              - kind: verifies
+                criterion: REQ-FE-063#criterion.explicit-save-and-run
+                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/queries/new.test.tsx", test: "REQ-FE-063: uses a runnable Form relation starter with session ordering" } }
+          - id: browser-create
+            adapter: typescript
+            path: e2e/saved-sql-route.test.ts
+            selector: { kind: test, name: "REQ-FE-063: new saved SQL starts with a runnable total-ordered query" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-063#criterion.starter-query
+                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063: new saved SQL starts with a runnable total-ordered query" } }
+              - kind: verifies
+                criterion: REQ-FE-063#criterion.explicit-save-and-run
+                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063: new saved SQL starts with a runnable total-ordered query" } }
+
   - id: REQ-FE-061
     title: Saved SQL List Route Guidance
     description: The saved SQL list route loads saved queries, provides the supported creation and navigation actions, and explains both the empty and load-error states.
