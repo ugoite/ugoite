@@ -165,11 +165,14 @@ inventory:
             - frontend/src/routes/spaces/join.test.tsx
             - frontend/src/app.config.test.ts
             - frontend/app.config.ts
+            - frontend/src/lib/api.test.ts
+            - frontend/src/lib/frontend-origin.test.ts
             - docsite/src/ssot.test.ts
             - docsite/src/spec-integrity.test.ts
             - tools/coverage_gates_test.ts
             - tools/knowledge_compatibility_test.ts
             - tools/release.ts
+            - tools/workspace_test.ts
         openapi:
           roots:
             - crates/ugoite-server/src/openapi.json
@@ -279,6 +282,9 @@ inventory:
             - .devcontainer/devcontainer.json
             - Cargo.toml
             - mise.toml
+            - scripts/dev-seed.sh
+            - scripts/install-ugoite-cli.sh
+            - scripts/verify-release-cli-quickstart.sh
             - docs/architecture/release/release-contract.md
             - scripts/ci/mitase-check.sh
             - scripts/verify-release-container-quickstart.sh
