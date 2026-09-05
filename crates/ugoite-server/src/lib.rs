@@ -14453,6 +14453,51 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
+    async fn saved_sql_get_returns_not_found_after_delete() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-saved-sql-get-deleted")?;
+        let principal_id = Uuid::from_u128(1874);
+        let space_id = state
+            .service
+            .create_space_for_principal("saved-sql-get-deleted", principal_id, "Route test")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let sql_id = Uuid::from_u128(2332).to_string();
+        state
+            .service
+            .create_saved_sql(
+                &space_id,
+                &sql_id,
+                &saved_sql::SqlPayload {
+                    name: Some("Deleted query".to_string()),
+                    kind: saved_sql::SqlKind::UserQuery,
+                    metadata: None,
+                    sql: "SELECT 1".to_string(),
+                    variables: json!([]),
+                },
+                &principal_id.to_string(),
+            )
+            .await?;
+        state
+            .service
+            .delete_saved_sql(&space_id, &sql_id, &principal_id.to_string())
+            .await?;
+
+        let route = Router::new()
+            .route("/spaces/{space_id}/sql/{sql_id}", get(get_sql))
+            .layer(Extension(content_identity(principal_id, space_uid)))
+            .with_state(state);
+        let response = route
+            .oneshot(Request::get(format!("/spaces/{space_id}/sql/{sql_id}")).body(Body::empty())?)
+            .await?;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        let body: Value = serde_json::from_slice(&body)?;
+        assert_eq!(body["code"], "ENTRY_NOT_FOUND");
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn invitation_finalization_converges_after_space_membership_commit() -> anyhow::Result<()>
     {
         let state = AppState::new_for_tests("memory://server-invitation-saga")?;
