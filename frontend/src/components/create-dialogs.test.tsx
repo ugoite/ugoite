@@ -1791,6 +1791,59 @@ describe("CreateEntryDialog", () => {
     ).toBeInTheDocument();
   });
 
+  it("REQ-FE-065: chat mode blocks unresolved row_reference searches before submit", async () => {
+    const onSubmit = vi.fn();
+    vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([]);
+    const forms: Form[] = [
+      {
+        name: "Task",
+        version: 1,
+        fields: {
+          Summary: { type: "string", required: true },
+          Project: {
+            type: "row_reference",
+            required: false,
+            target_form: "Project",
+          },
+        },
+        template: "# Task\n\n## Summary\n\n## Project\n",
+      },
+    ];
+
+    render(() => (
+      <CreateEntryDialog
+        open={true}
+        forms={forms}
+        spaceId="default"
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    ));
+
+    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+      target: { value: "Chat unresolved reference" },
+    });
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Task" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+    fireEvent.input(screen.getByLabelText(/Summary/), {
+      target: { value: "Investigate chat guard" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next question" }));
+    fireEvent.input(screen.getByLabelText(/Project/), {
+      target: { value: "alpha" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        "Please select a saved entry for row_reference field: Project.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("REQ-FE-053: keeps web-form guidance free of Markdown-only instructions", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
