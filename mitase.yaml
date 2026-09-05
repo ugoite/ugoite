@@ -216,7 +216,6 @@ inventory:
             - docs/spec/requirements/search.yaml
             - docs/spec/requirements/entry.yaml
             - docs/spec/requirements/form.yaml
-            - docs/spec/requirements/index.yaml
             - docs/architecture/release/v0.1.md
             - docs/architecture/release/v0.1-knowledge-compatibility.md
             - docs/version/v0.1.yaml

@@ -51,7 +51,7 @@ rewriting the requirement to fit the available proof.
 
 ## Migrated domain authority
 
-Foundation, Policy, Search, Entry, Form, API, Asset, Frontend, E2E, Integrity, and the
+Foundation, Policy, Search, Entry, Form, Indexer, API, Asset, Frontend, E2E, Integrity, and the
 Storage Space foundation, authenticated creation contract, plus
 connector/access/routing/preference slice are
 represented in the canonical Mitase records at `docs/mitase` for the current
@@ -63,7 +63,10 @@ no longer part of Mitase's declared inventory. The canonical API graph is the
 only semantic authority for that domain. Frontend legacy requirement YAML is
 likewise no longer part of Mitase's declared inventory; it remains a read-only
 migration snapshot until the broader `docs/spec` cleanup is complete. The Asset
-and E2E requirement YAML have been retired entirely.
+and E2E requirement YAML have been retired entirely. The legacy Indexer
+requirement registry is likewise retired; its canonical Search and Form graphs
+are the only semantic authority for derived indexing, structured query,
+word-count, and validation behavior.
 The legacy Integrity requirement registry is no longer semantic authority and
 remains a read-only migration snapshot until the broader `docs/spec` cleanup is
 complete. The migrated Storage Space foundation records are likewise no longer

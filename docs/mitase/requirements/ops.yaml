@@ -95,7 +95,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-OPS-003#criterion.taxonomy-integrity
-                covers: [FEAT-OPS-001#binding.registries/target.taxonomy-registry, FEAT-OPS-001#binding.registries/target.requirements-registry]
+                covers: [FEAT-OPS-001#binding.registries/target.taxonomy-registry]
                 runner: { runner: docsite-vitest-file, arguments: { file: src/spec-integrity.test.ts, test: 'REQ-OPS-003: requirement IDs, related documents, and test references resolve' } }
 
   - id: REQ-OPS-004
