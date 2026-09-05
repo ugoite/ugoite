@@ -13,6 +13,10 @@ requirements:
         kind: behavior
         statement: Users can search current authorized entries by keyword and receive matching entry summaries.
         governed_by: [POL-012#rule.governance, POL-011#rule.governance, POL-016#rule.governance]
+      - id: http-search-operation
+        kind: behavior
+        statement: The Search HTTP operation enforces Space read authorization and returns matching Entry summaries through the documented route.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance, POL-012#rule.governance, POL-016#rule.governance]
     bindings:
       - id: keyword-test
         role: verification
@@ -69,6 +73,28 @@ requirements:
                 criterion: REQ-SRCH-002#criterion.current-entry-scan
                 covers: [FEAT-SRCH-001#binding.core/target.search-entries]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_search, test: test_search_req_srch_002_fallback_scan } }
+              - kind: verifies
+                criterion: REQ-SRCH-002#criterion.missing-derived-fallback
+                covers: [FEAT-SRCH-001#binding.core/target.search-entries]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_search, test: test_search_req_srch_002_fallback_scan } }
+          - id: stale-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_search.rs
+            selector: { kind: test, name: test_search_req_srch_002_stale_derived_fallback }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-002#criterion.stale-derived-fallback
+                covers: [FEAT-SRCH-001#binding.core/target.search-entries]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_search, test: test_search_req_srch_002_stale_derived_fallback } }
+          - id: corrupt-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_search.rs
+            selector: { kind: test, name: test_search_req_srch_002_corrupt_derived_fallback }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-002#criterion.corrupt-derived-fallback
+                covers: [FEAT-SRCH-001#binding.core/target.search-entries]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_search, test: test_search_req_srch_002_corrupt_derived_fallback } }
   - id: REQ-SRCH-003
     title: Ugoite SQL lint and completion rules
     description: The system MUST provide shared Ugoite SQL linting and completion rules for UI and CLI usage, sourced from a common config in the project root.
@@ -209,6 +235,15 @@ requirements:
                 criterion: REQ-SRCH-006#criterion.core-query-execution
                 covers: [FEAT-SRCH-001#binding.core/target.query-index]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_index, test: test_index_req_idx_009_query_sql_joins } }
+          - id: cli-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_indexer.rs
+            selector: { kind: test, name: test_query_index }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-006#criterion.query-operation
+                covers: [FEAT-SRCH-001#binding.cli-implementation/target.query-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_indexer, test: test_query_index } }
   - id: REQ-SRCH-007
     title: Derived relation maintenance
     description: The index operator surface rebuilds the current AssetText DerivedRelation from authoritative Entry references, while derived parsing and word-count helpers remain separate concerns.
@@ -255,6 +290,19 @@ requirements:
                 criterion: REQ-SRCH-007#criterion.derived-boundary
                 covers: [FEAT-SRCH-001#binding.derived/target.reindex]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_index, test: test_index_req_idx_004_inverted_index_generation } }
+          - id: cli-rebuild-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_indexer.rs
+            selector: { kind: test, name: test_indexer_run_once }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-007#criterion.derived-rebuild
+                covers: [FEAT-SRCH-001#binding.cli-implementation/target.index-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_indexer, test: test_indexer_run_once } }
+              - kind: verifies
+                criterion: REQ-SRCH-007#criterion.derived-boundary
+                covers: [FEAT-SRCH-001#binding.cli-implementation/target.index-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_indexer, test: test_indexer_run_once } }
           - id: word-count-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_index.rs
@@ -264,6 +312,15 @@ requirements:
                 criterion: REQ-SRCH-007#criterion.word-count-separation
                 covers: [FEAT-SRCH-001#binding.derived/target.word-count]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_index, test: test_index_req_idx_005_word_count } }
+          - id: portable-word-count-case
+            adapter: rust
+            path: crates/ugoite-domain/tests/test_text.rs
+            selector: { kind: test, name: test_text_req_idx_005_word_count_portable }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-007#criterion.word-count-separation
+                covers: [FEAT-SRCH-001#binding.derived/target.word-count]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-domain, harness: test_text, test: test_text_req_idx_005_word_count_portable } }
   - id: REQ-SRCH-008
     title: Future incremental index maintenance
     description: A persistent inverted index and a durable watch loop remain future capabilities. The current product uses explicit AssetText rebuilds and does not claim either capability.

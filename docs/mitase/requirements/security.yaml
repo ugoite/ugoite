@@ -383,6 +383,10 @@ requirements:
                 criterion: REQ-SRCH-001#criterion.keyword-search
                 covers: [FEAT-SRCH-001#binding.server-implementation/target.search-handler]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::test_search_req_sec_006_authorization_filter_before_search } }
+              - kind: verifies
+                criterion: REQ-SRCH-001#criterion.http-search-operation
+                covers: [FEAT-SRCH-001#binding.server-implementation/target.search-handler]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::test_search_req_sec_006_authorization_filter_before_search } }
           - id: mcp-filter-case
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
