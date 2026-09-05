@@ -225,6 +225,19 @@ features:
                 criterion: REQ-FE-044#criterion.dictionary-localization
               - kind: satisfies
                 criterion: REQ-FE-067#criterion.dialog-workspace
+              - kind: satisfies
+                criterion: REQ-FE-039#criterion.reserved-metadata
+              - kind: satisfies
+                criterion: REQ-FE-055#criterion.responsive-layout
+          - id: edit-form-dialog
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.tsx
+            selector: { kind: symbol, name: EditFormDialog }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-039#criterion.reserved-metadata
+              - kind: satisfies
+                criterion: REQ-FE-055#criterion.responsive-layout
           - id: entry-dialog
             adapter: typescript
             path: frontend/src/components/create-dialogs.tsx
@@ -238,6 +251,8 @@ features:
                 criterion: REQ-FE-065#criterion.search-and-store
               - kind: satisfies
                 criterion: REQ-FE-065#criterion.submission-guard
+              - kind: satisfies
+                criterion: REQ-FE-057#criterion.chat-flow
           - id: search-bar
             adapter: typescript
             path: frontend/src/components/SearchBar.tsx
