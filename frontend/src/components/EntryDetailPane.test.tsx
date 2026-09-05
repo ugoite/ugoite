@@ -1,6 +1,7 @@
 // REQ-FE-038: Form validation feedback in editor
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { EntryDetailPane } from "./EntryDetailPane";
 import { entryApi, RevisionConflictError } from "~/lib/ugoite-client";
@@ -41,6 +42,81 @@ describe("EntryDetailPane", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     setLocale("en");
+  });
+
+  it("REQ-FE-011: synchronizes editor content when the selected entry changes", async () => {
+    const [entryId, setEntryId] = createSignal("entry-1");
+    (entryApi.get as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_spaceId: string, id: string) => ({
+        id,
+        title: id === "entry-1" ? "First Entry" : "Second Entry",
+        form: null,
+        content: id === "entry-1" ? "# First Entry" : "# Second Entry",
+        revision_id: id === "entry-1" ? "rev-1" : "rev-2",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      }),
+    );
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={entryId}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const textarea = await screen.findByPlaceholderText(
+      "Start writing in Markdown...",
+    );
+    expect(textarea).toHaveValue("# First Entry");
+
+    fireEvent.input(textarea, { target: { value: "# Unsaved Draft" } });
+    setEntryId("entry-2");
+
+    await waitFor(() => expect(entryApi.get).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(textarea).toHaveValue("# Second Entry"));
+  });
+
+  it("REQ-FE-011: reloads content when the user explicitly refreshes", async () => {
+    vi.stubGlobal("confirm", () => true);
+    (entryApi.get as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        id: "entry-1",
+        title: "First Entry",
+        form: null,
+        content: "# First Entry",
+        revision_id: "rev-1",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      })
+      .mockResolvedValueOnce({
+        id: "entry-1",
+        title: "Refreshed Entry",
+        form: null,
+        content: "# Refreshed Entry",
+        revision_id: "rev-2",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-1"}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const textarea = await screen.findByPlaceholderText(
+      "Start writing in Markdown...",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reload latest version" }),
+    );
+
+    await waitFor(() => expect(entryApi.get).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(textarea).toHaveValue("# Refreshed Entry"));
   });
 
   it("REQ-FE-052: edits form fields without requiring Markdown knowledge", async () => {
@@ -1239,6 +1315,46 @@ describe("EntryDetailPane", () => {
     await waitFor(() => {
       expect(entryApi.update).toHaveBeenCalled();
       expect(onAfterSave).toHaveBeenCalled();
+    });
+    expect(entryApi.update).toHaveBeenCalledWith("default", "entry-1", {
+      markdown: "Updated content",
+      parent_revision_id: "rev-1",
+    });
+  });
+
+  it("REQ-FE-013: sends current Markdown and parent revision to the server", async () => {
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-1",
+      title: "Test Entry",
+      form: null,
+      content: "# Test Entry",
+      revision_id: "rev-1",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    (entryApi.update as ReturnType<typeof vi.fn>).mockResolvedValue({
+      revision_id: "rev-2",
+    });
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-1"}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const textarea = await screen.findByPlaceholderText(
+      "Start writing in Markdown...",
+    );
+    fireEvent.input(textarea, { target: { value: "# Persisted Markdown" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(entryApi.update).toHaveBeenCalledWith("default", "entry-1", {
+        markdown: "# Persisted Markdown",
+        parent_revision_id: "rev-1",
+      });
     });
   });
 

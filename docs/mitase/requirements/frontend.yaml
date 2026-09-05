@@ -542,6 +542,90 @@ requirements:
                 criterion: REQ-FE-010#criterion.preserve-draft
                 covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "keeps edits made during a save marked as unsaved" } }
+  - id: REQ-FE-011
+    title: Editor Content Sync on Entry Switch and Explicit Refresh
+    description: The editor loads server content when the selected Entry changes or the user explicitly refreshes, while preserving the current draft during unrelated resource updates and save completion.
+    priority: high
+    status: implemented
+    criteria:
+      - id: selection-and-refresh-sync
+        kind: behavior
+        statement: Entry selection changes and an explicit Refresh action replace the editor content with the selected server revision; unrelated save completion does not implicitly replace the draft.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: editor-sync-verification
+        role: verification
+        facet: verification
+        responsibility: Verify selected-entry and explicit-refresh synchronization through exact Entry detail tests.
+        targets:
+          - id: selection-change
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.test.tsx
+            selector: { kind: test, name: "REQ-FE-011: synchronizes editor content when the selected entry changes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-011#criterion.selection-and-refresh-sync
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "REQ-FE-011: synchronizes editor content when the selected entry changes" } }
+          - id: explicit-refresh
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.test.tsx
+            selector: { kind: test, name: "REQ-FE-011: reloads content when the user explicitly refreshes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-011#criterion.selection-and-refresh-sync
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "REQ-FE-011: reloads content when the user explicitly refreshes" } }
+  - id: REQ-FE-012
+    title: Consecutive Save Support
+    description: Multiple consecutive saves on the same Entry use the revision returned by each successful save as the parent revision for the next update.
+    priority: high
+    status: implemented
+    criteria:
+      - id: consecutive-saves
+        kind: behavior
+        statement: A sequence of successful Entry saves advances the local revision identity so every subsequent save uses the current server revision.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: consecutive-save-verification
+        role: verification
+        facet: verification
+        responsibility: Verify consecutive Entry saves advance revision identity through the exact store test.
+        targets:
+          - id: consecutive-saves
+            adapter: typescript
+            path: frontend/src/lib/entry-store.test.ts
+            selector: { kind: test, name: "should support consecutive saves with updated revision_id" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-012#criterion.consecutive-saves
+                covers: [FEAT-FE-002#binding.frontend/target.entry-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-store.test.ts, test: "should support consecutive saves with updated revision_id" } }
+  - id: REQ-FE-013
+    title: Save Must Actually Persist to Server
+    description: Saving an Entry sends the current edited Markdown and the current parent revision to the server so the edited content is persisted.
+    priority: high
+    status: implemented
+    criteria:
+      - id: server-persistence
+        kind: behavior
+        statement: The Entry save request contains the current editor Markdown and the revision identity required for server persistence.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: server-persistence-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the current editor Markdown and parent revision are sent during save through the exact Entry detail test.
+        targets:
+          - id: save-content
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.test.tsx
+            selector: { kind: test, name: "REQ-FE-013: sends current Markdown and parent revision to the server" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-013#criterion.server-persistence
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "REQ-FE-013: sends current Markdown and parent revision to the server" } }
   - id: REQ-FE-033
     title: Entry Detail Navigation
     description: Selecting or opening an Entry reaches the detail view and correctly handles encoded Entry identifiers.
