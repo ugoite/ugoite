@@ -153,6 +153,10 @@ requirements:
                 criterion: REQ-STO-004#criterion.service-space-listing
                 covers: [FEAT-STO-001#binding.service/target.list-space-ids]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_004_list_spaces_from_directory } }
+              - kind: verifies
+                criterion: REQ-API-001#criterion.space-lifecycle
+                covers: [FEAT-STO-001#binding.service/target.list-space-ids]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_004_list_spaces_from_directory } }
           - id: domain-storage-config-case
             adapter: rust
             path: crates/ugoite-domain/tests/test_coverage.rs
@@ -207,6 +211,18 @@ requirements:
               - kind: verifies
                 criterion: REQ-STO-005#criterion.duplicate-slug-conflict
                 covers: [FEAT-STO-001#binding.space-api/target.create-space-api]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::space_creation_api_distinguishes_bound_retry_from_duplicate_slug } }
+              - kind: verifies
+                criterion: REQ-API-001#criterion.space-lifecycle
+                covers:
+                  - FEAT-API-001#binding.space-service-implementation/target.create-space
+                  - FEAT-STO-001#binding.space-api/target.create-space-api
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::space_creation_api_distinguishes_bound_retry_from_duplicate_slug } }
+              - kind: verifies
+                criterion: REQ-API-001#criterion.stable-space-identity
+                covers:
+                  - FEAT-API-001#binding.space-service-implementation/target.create-space
+                  - FEAT-STO-001#binding.space-api/target.create-space-api
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::space_creation_api_distinguishes_bound_retry_from_duplicate_slug } }
           - id: recovery-case
             adapter: rust

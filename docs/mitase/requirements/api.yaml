@@ -54,6 +54,44 @@ requirements:
                 criterion: REQ-API-001#criterion.space-lifecycle
                 covers: [FEAT-API-001#binding.frontend-implementation/target.space-api]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "spaceApi.get returns a space" } }
+      - id: identity-verification
+        role: verification
+        facet: verification
+        responsibility: Verify immutable Space metadata identity and UUIDv7 validation through the exact Iceberg integration case.
+        targets:
+          - id: metadata-identity
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: space_metadata_identity_must_match_directory_and_uuidv7_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-001#criterion.stable-space-identity
+                covers: [FEAT-API-001#binding.space-service-implementation/target.get-space]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: space_metadata_identity_must_match_directory_and_uuidv7_contract } }
+      - id: space-read-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the authenticated Space list and retrieve handlers through the exact server contract case.
+        targets:
+          - id: list-and-retrieve-space
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::space_read_api_returns_authorized_spaces_and_immutable_identity }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-001#criterion.space-lifecycle
+                covers:
+                  - FEAT-STO-001#binding.service/target.list-space-ids
+                  - FEAT-E2E-001#binding.server/target.list-spaces
+                  - FEAT-API-001#binding.space-service-implementation/target.get-space
+                  - FEAT-API-001#binding.space-backend-implementation/target.get-space
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::space_read_api_returns_authorized_spaces_and_immutable_identity } }
+              - kind: verifies
+                criterion: REQ-API-001#criterion.stable-space-identity
+                covers:
+                  - FEAT-API-001#binding.space-service-implementation/target.get-space
+                  - FEAT-API-001#binding.space-backend-implementation/target.get-space
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::space_read_api_returns_authorized_spaces_and_immutable_identity } }
       - id: cli-verification
         role: verification
         facet: verification

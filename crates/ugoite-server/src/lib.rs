@@ -14882,6 +14882,55 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
+    async fn space_read_api_returns_authorized_spaces_and_immutable_identity() -> anyhow::Result<()>
+    {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-space-read-contract-{}",
+            Uuid::now_v7()
+        ))?;
+        state.initialize_node().await?;
+        let account_id = Uuid::now_v7();
+        let created = create_space(
+            State(state.clone()),
+            Extension(passkey_identity(account_id)),
+            Json(SpaceCreate {
+                slug: "read-contract-space".to_string(),
+                name: "Read contract space".to_string(),
+            }),
+        )
+        .await
+        .expect("Space creation should succeed before read verification");
+        let Json(created_body) = created.1;
+        let space_uid = created_body["space_uid"]
+            .as_str()
+            .expect("created Space must expose space_uid")
+            .to_string();
+
+        let Json(listed) = list_spaces(
+            State(state.clone()),
+            Extension(passkey_identity(account_id)),
+        )
+        .await
+        .expect("authorized Space listing should succeed");
+        assert!(listed
+            .as_array()
+            .expect("Space listing must be an array")
+            .iter()
+            .any(|space| space["space_uid"] == space_uid));
+
+        let Json(retrieved) = get_space(
+            State(state),
+            Extension(passkey_identity(account_id)),
+            Path(space_uid.clone()),
+        )
+        .await
+        .expect("authorized Space retrieval should succeed");
+        assert_eq!(retrieved["space_uid"], space_uid);
+        assert_eq!(retrieved["slug"], "read-contract-space");
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn non_local_space_creation_rejects_before_recovery_or_binding() -> anyhow::Result<()> {
         let state = AppState::new_for_tests("s3://ugoite-test-bucket/server-space")?;
         let error =
