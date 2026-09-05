@@ -170,6 +170,60 @@ describe("FormTable", () => {
     });
   });
 
+  it("REQ-FE-020: combines global and column filters", async () => {
+    const entryForm = {
+      name: "Test",
+      fields: { tag: { type: "string" } },
+    } as any;
+    const entries = [
+      {
+        id: "1",
+        title: "Apple",
+        properties: { tag: "fruit" },
+        updated_at: "2026-01-01",
+      },
+      {
+        id: "2",
+        title: "Apple Pie",
+        properties: { tag: "dessert" },
+        updated_at: "2026-01-01",
+      },
+      {
+        id: "3",
+        title: "Carrot",
+        properties: { tag: "fruit" },
+        updated_at: "2026-01-01",
+      },
+    ];
+
+    vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+    const { getByPlaceholderText } = render(() => (
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
+    ));
+
+    await waitFor(() => {
+      expect(document.querySelectorAll("tbody tr").length).toBe(3);
+    });
+
+    fireEvent.input(getByPlaceholderText("Global Search..."), {
+      target: { value: "apple" },
+    });
+    const columnFilters = document.querySelectorAll("input.ui-table-filter");
+    fireEvent.input(columnFilters[1], { target: { value: "fruit" } });
+
+    await waitFor(() => {
+      const rows = document.querySelectorAll("tbody tr");
+      expect(rows.length).toBe(1);
+      expect(rows[0]).toHaveTextContent("Apple");
+      expect(rows[0]).toHaveTextContent("fruit");
+    });
+  });
+
   it("REQ-FE-021: exports filtered data to CSV", async () => {
     const entryForm = {
       name: "Test",
@@ -178,8 +232,14 @@ describe("FormTable", () => {
     const entries = [
       {
         id: "1",
-        title: "ExportMe",
+        title: "Keep Me",
         properties: { price: 100 },
+        updated_at: "2026-01-01",
+      },
+      {
+        id: "2",
+        title: "Drop Me",
+        properties: { price: 200 },
         updated_at: "2026-01-01",
       },
     ];
@@ -187,7 +247,11 @@ describe("FormTable", () => {
     vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
 
     // Mock URL.createObjectURL/revokeObjectURL
-    const createSpy = vi.fn().mockReturnValue("blob:test");
+    let exportedBlob: Blob | undefined;
+    const createSpy = vi.fn().mockImplementation((blob: Blob) => {
+      exportedBlob = blob;
+      return "blob:test";
+    });
     const revokeSpy = vi.fn();
     global.URL.createObjectURL = createSpy;
     global.URL.revokeObjectURL = revokeSpy;
@@ -203,7 +267,7 @@ describe("FormTable", () => {
       return el;
     });
 
-    const { getByText } = render(() => (
+    const { getByPlaceholderText, getByText } = render(() => (
       <FormTable
         spaceId="ws"
         entryForm={entryForm}
@@ -214,10 +278,25 @@ describe("FormTable", () => {
 
     await waitFor(() => expect(getByText("Export CSV")).toBeInTheDocument());
 
+    fireEvent.input(getByPlaceholderText("Global Search..."), {
+      target: { value: "Keep" },
+    });
+    await waitFor(() => {
+      const rows = document.querySelectorAll("tbody tr");
+      expect(rows.length).toBe(1);
+      expect(rows[0]).toHaveTextContent("Keep Me");
+    });
+
     fireEvent.click(getByText("Export CSV"));
 
     expect(createSpy).toHaveBeenCalled();
     expect(linkClickSpy).toHaveBeenCalled();
+    expect(exportedBlob).toBeInstanceOf(Blob);
+    const csvContent = await exportedBlob!.text();
+    expect(csvContent).toContain(
+      '"Keep Me","100","2026-01-01T00:00:00.000Z"',
+    );
+    expect(csvContent).not.toContain("Drop Me");
   });
 
   it("REQ-FE-030: Add Row button opens the canonical entry editor", async () => {

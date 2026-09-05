@@ -961,6 +961,15 @@ requirements:
                 criterion: REQ-FE-020#criterion.hybrid-filtering
                 covers: [FEAT-FE-005#binding.frontend/target.search-store]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/search-store.test.ts, test: "query index returns filtered results" } }
+          - id: combined-filter
+            adapter: typescript
+            path: frontend/src/components/FormTable.test.tsx
+            selector: { kind: test, name: "REQ-FE-020: combines global and column filters" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-020#criterion.hybrid-filtering
+                covers: [FEAT-FE-005#binding.frontend/target.form-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-FE-020: combines global and column filters" } }
 
   - id: REQ-FE-021
     title: Context-aware CSV Export
