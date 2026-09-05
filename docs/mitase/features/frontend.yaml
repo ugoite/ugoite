@@ -110,6 +110,10 @@ features:
                 criterion: REQ-FE-004#criterion.display
               - kind: satisfies
                 criterion: REQ-FE-008#criterion.selection
+              - kind: satisfies
+                criterion: REQ-FE-067#criterion.plain-entry-workspace
+              - kind: satisfies
+                criterion: REQ-FE-067#criterion.sql-session-surface
   - id: FEAT-FE-003
     title: Entry detail and Markdown editing
     summary: Connect the Entry detail workspace, Markdown editor, form-aware guidance, conflict handling, and safe preview behavior to exact frontend verification evidence.
@@ -200,6 +204,8 @@ features:
                 criterion: REQ-FE-043#criterion.readable-errors
               - kind: satisfies
                 criterion: REQ-FE-044#criterion.dictionary-localization
+              - kind: satisfies
+                criterion: REQ-FE-067#criterion.dialog-workspace
           - id: entry-dialog
             adapter: typescript
             path: frontend/src/components/create-dialogs.tsx
@@ -439,3 +445,25 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-066#criterion.single-shell
+
+  - id: FEAT-FE-010
+    title: Unified Form and Entry workspace
+    summary: Connect the Forms route's single Form selector/grid workspace and visible action affordances to exact frontend evidence while the shared Entry route and dialogs remain canonical collaborators.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep the ordinary Form workspace and its visible action affordances connected to the shipped Forms route.
+        targets:
+          - id: forms-workspace
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/forms/index.tsx
+            selector: { kind: symbol, name: SpaceFormsIndexPane }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-067#criterion.form-grid
+              - kind: satisfies
+                criterion: REQ-FE-067#criterion.dialog-workspace
+              - kind: satisfies
+                criterion: REQ-FE-067#criterion.icon-actions

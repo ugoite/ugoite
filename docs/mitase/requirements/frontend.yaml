@@ -292,6 +292,10 @@ requirements:
                 criterion: REQ-FE-004#criterion.display
                 covers: [FEAT-FE-002#binding.frontend/target.entries-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "REQ-FE-037: loads the plain Entry list without redirecting" } }
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.plain-entry-workspace
+                covers: [FEAT-FE-002#binding.frontend/target.entries-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "REQ-FE-037: loads the plain Entry list without redirecting" } }
   - id: REQ-FE-008
     title: Entry Selection and Highlight
     description: The frontend highlights the selected Entry and lets the user select an Entry to load its detail view.
@@ -351,6 +355,10 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-FE-008#criterion.selection
+                covers: [FEAT-FE-002#binding.frontend/target.entries-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "REQ-FE-054: keeps the dedicated SQL session result route" } }
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.sql-session-surface
                 covers: [FEAT-FE-002#binding.frontend/target.entries-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "REQ-FE-054: keeps the dedicated SQL session result route" } }
   - id: REQ-FE-005
@@ -1790,3 +1798,67 @@ requirements:
                 criterion: REQ-FE-066#criterion.single-shell
                 covers: [FEAT-FE-009#binding.frontend/target.global-shell]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/components/GlobalShell.navigation.test.tsx", test: "does not mark duplicate global links as current" } }
+
+  - id: REQ-FE-067
+    title: Unified Form and Entry Workspace
+    description: The Forms route presents one ordinary Form selector and the selected Form Entry grid, the plain Entries route remains a portable-client compatibility surface without redirecting to Forms, SQL-session results remain dedicated, and Form/Entry dialogs retain usable action layout and visible icon affordances.
+    priority: high
+    status: implemented
+    criteria:
+      - id: form-grid
+        kind: behavior
+        statement: The Forms route presents one Form selector and the selected Form Entry grid without a second Entries view or nested view tabs.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: plain-entry-workspace
+        kind: behavior
+        statement: The plain Space Entries route loads the Entry list and first-entry flow through the portable client without redirecting to Forms.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: sql-session-surface
+        kind: behavior
+        statement: A session query parameter keeps the dedicated SQL-session result surface at the Entries route rather than collapsing it into the ordinary Form workspace.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: dialog-workspace
+        kind: quality
+        statement: Form creation and editing dialogs retain usable desktop action layout and preserve the explicit Form/Entry workflow.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: icon-actions
+        kind: custom
+        statement: Compact Form workspace actions expose visible icons alongside their accessible labels.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: unified-workspace-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the single Form workspace, plain Entries compatibility route, dedicated SQL-session result surface, dialog layout, and visible action icons through exact frontend tests.
+        targets:
+          - id: form-workspace
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
+            selector: { kind: test, name: "renders one Form workspace without duplicate view tabs" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.form-grid
+                covers: [FEAT-FE-010#binding.frontend/target.forms-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "renders one Form workspace without duplicate view tabs" } }
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.icon-actions
+                covers: [FEAT-FE-010#binding.frontend/target.forms-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "renders one Form workspace without duplicate view tabs" } }
+          - id: form-edit-workspace
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
+            selector: { kind: test, name: "opens and submits the edit Form dialog" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.dialog-workspace
+                covers: [FEAT-FE-010#binding.frontend/target.forms-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "opens and submits the edit Form dialog" } }
+          - id: dialog-action-layout
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "keeps form dialog actions at their intrinsic height" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.dialog-workspace
+                covers: [FEAT-FE-004#binding.frontend/target.create-dialogs]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "keeps form dialog actions at their intrinsic height" } }
