@@ -251,6 +251,7 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
     directory_id: &str,
     space_uid: uuid::Uuid,
     slug: &str,
+    display_name: &str,
     _root_path: &str,
 ) -> Result<()> {
     validate_space_path_segment(directory_id)?;
@@ -280,7 +281,7 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
         "space_uid": space_uid,
         "slug": slug,
         "id": directory_id,
-        "name": slug,
+        "name": display_name,
         "created_at": created_at,
         "hmac_key_id": hmac_key_id,
         "hmac_key": hmac_key,
@@ -310,7 +311,7 @@ pub async fn create_space(op: &Operator, name: &str, root_path: &str) -> Result<
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{name}")).await?;
     let storage = OpendalStorage::from_operator(op);
-    create_space_with_storage(&storage, name, uuid::Uuid::now_v7(), name, root_path).await?;
+    create_space_with_storage(&storage, name, uuid::Uuid::now_v7(), name, name, root_path).await?;
     let ws_path = format!("spaces/{name}");
     // Bootstrap a user-creatable starter form so first-entry authoring works immediately.
     form::upsert_form(op, &ws_path, &starter_entry_form_definition()).await?;
@@ -328,6 +329,16 @@ pub async fn create_space_with_identity(
     slug: &str,
     root_path: &str,
 ) -> Result<()> {
+    create_space_with_identity_and_name(op, space_id, slug, slug, root_path).await
+}
+
+pub async fn create_space_with_identity_and_name(
+    op: &Operator,
+    space_id: uuid::Uuid,
+    slug: &str,
+    display_name: &str,
+    root_path: &str,
+) -> Result<()> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     if space_id.get_version() != Some(uuid::Version::SortRand) {
         return Err(anyhow!("UUID-addressed Space identity must be a UUIDv7"));
@@ -335,7 +346,15 @@ pub async fn create_space_with_identity(
     let directory_id = space_id.to_string();
     crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{directory_id}")).await?;
     let storage = OpendalStorage::from_operator(op);
-    create_space_with_storage(&storage, &directory_id, space_id, slug, root_path).await?;
+    create_space_with_storage(
+        &storage,
+        &directory_id,
+        space_id,
+        slug,
+        display_name,
+        root_path,
+    )
+    .await?;
     let ws_path = format!("spaces/{directory_id}");
     form::upsert_form(op, &ws_path, &starter_entry_form_definition()).await?;
     apply_local_space_permissions(op, &directory_id)?;
@@ -350,6 +369,7 @@ pub async fn repair_space_with_identity(
     op: &Operator,
     space_uid: uuid::Uuid,
     slug: &str,
+    display_name: &str,
     root_path: &str,
 ) -> Result<()> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
@@ -363,7 +383,8 @@ pub async fn repair_space_with_identity(
     let storage = OpendalStorage::from_operator(op);
     let meta_path = format!("spaces/{directory_id}/meta.json");
     if !storage.exists(&meta_path).await? {
-        return create_space_with_identity(op, space_uid, slug, root_path).await;
+        return create_space_with_identity_and_name(op, space_uid, slug, display_name, root_path)
+            .await;
     }
 
     let meta = ensure_space_identity(&storage, &directory_id).await?;

@@ -81,13 +81,19 @@ describe("/spaces", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+    fireEvent.input(screen.getByLabelText("Space name"), {
+      target: { value: "プロジェクトメモ 📝" },
+    });
     fireEvent.input(screen.getByLabelText("Space ID"), {
       target: { value: "my-space" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Create space" }));
 
     await waitFor(() => {
-      expect(spaceApi.create).toHaveBeenCalledWith("my-space");
+      expect(spaceApi.create).toHaveBeenCalledWith({
+        name: "プロジェクトメモ 📝",
+        slug: "my-space",
+      });
       expect(navigateMock).toHaveBeenCalledWith("/spaces/my-space/dashboard");
     });
   });
@@ -101,11 +107,14 @@ describe("/spaces", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Create space" }));
 
+    expect(screen.getByLabelText("Space name")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("e.g. Project notes"))
+      .toBeInTheDocument();
     expect(screen.getByLabelText("Space ID")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("e.g. team-notes")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Use letters, numbers, hyphens, or underscores. This becomes the space URL and storage ID.",
+        "Use letters, numbers, hyphens, or underscores. This is the stable URL and storage identifier.",
       ),
     ).toBeInTheDocument();
   });
@@ -127,6 +136,9 @@ describe("/spaces", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+    fireEvent.input(screen.getByLabelText("Space name"), {
+      target: { value: "My space" },
+    });
     fireEvent.input(screen.getByLabelText("Space ID"), {
       target: { value: "My Space" },
     });
@@ -161,6 +173,9 @@ describe("/spaces", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+    fireEvent.input(screen.getByLabelText("Space name"), {
+      target: { value: "My space" },
+    });
     fireEvent.input(screen.getByLabelText("Space ID"), {
       target: { value: "my-space" },
     });

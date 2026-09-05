@@ -47,7 +47,10 @@ describe("spaceApi", () => {
 
   describe("create", () => {
     it("should create a new space", async () => {
-      const result = await spaceApi.create("my-space");
+      const result = await spaceApi.create({
+        name: "my-space",
+        slug: "my-space",
+      });
       expect(result.id).toBe("my-space");
       expect(result.name).toBe("my-space");
 
@@ -57,10 +60,11 @@ describe("spaceApi", () => {
     });
 
     it("should throw error for duplicate space", async () => {
-      await spaceApi.create("my-space");
-      await expect(spaceApi.create("my-space")).rejects.toThrow(
-        "already exists",
-      );
+      await spaceApi.create({ name: "my-space", slug: "my-space" });
+      await expect(spaceApi.create({ name: "my-space", slug: "my-space" }))
+        .rejects.toThrow(
+          "already exists",
+        );
     });
 
     it("should surface validation errors without object placeholders [REQ-FE-043]", async () => {
@@ -80,16 +84,18 @@ describe("spaceApi", () => {
           )),
       );
 
-      await expect(spaceApi.create("")).rejects.toThrow(
+      await expect(spaceApi.create({ name: "", slug: "" })).rejects.toThrow(
         "Input should be at least 1 character",
       );
-      await expect(spaceApi.create("")).rejects.not.toThrow("[object Object]");
+      await expect(spaceApi.create({ name: "", slug: "" })).rejects.not.toThrow(
+        "[object Object]",
+      );
     });
   });
 
   describe("patch and test connection", () => {
     it("patches space metadata and settings", async () => {
-      await spaceApi.create("patched");
+      await spaceApi.create({ name: "patched", slug: "patched" });
       const updated = await spaceApi.patch("patched", {
         storage_config: { uri: "file:///tmp/data" },
         settings: { default_form: "Meeting" },
@@ -100,7 +106,7 @@ describe("spaceApi", () => {
     });
 
     it("tests storage connection", async () => {
-      await spaceApi.create("patched");
+      await spaceApi.create({ name: "patched", slug: "patched" });
       const result = await spaceApi.testConnection("patched", {
         storage_config: { uri: "file:///tmp/data" },
       });
@@ -482,14 +488,14 @@ describe("joinUrl", () => {
 describe("spaceApi members", () => {
   it("lists members", async () => {
     resetMockData();
-    await spaceApi.create("ws-members");
+    await spaceApi.create({ name: "ws-members", slug: "ws-members" });
     const members = await spaceApi.listMembers("ws-members");
     expect(Array.isArray(members)).toBe(true);
   });
 
   it("invites a member", async () => {
     resetMockData();
-    await spaceApi.create("ws-invite");
+    await spaceApi.create({ name: "ws-invite", slug: "ws-invite" });
     const result = await spaceApi.inviteMember("ws-invite", {
       label: "User One",
       role: "editor",
@@ -499,7 +505,7 @@ describe("spaceApi members", () => {
 
   it("updates member role", async () => {
     resetMockData();
-    await spaceApi.create("ws-role");
+    await spaceApi.create({ name: "ws-role", slug: "ws-role" });
     const result = await spaceApi.updateMemberRole("ws-role", "user1", {
       role: "viewer",
     });
@@ -508,7 +514,7 @@ describe("spaceApi members", () => {
 
   it("revokes member", async () => {
     resetMockData();
-    await spaceApi.create("ws-revoke");
+    await spaceApi.create({ name: "ws-revoke", slug: "ws-revoke" });
     const result = await spaceApi.revokeMember("ws-revoke", "user1");
     expect(result.state).toBe("revoked");
   });
@@ -539,7 +545,7 @@ describe("error paths", () => {
 
   it("spaceApi.get returns a space", async () => {
     resetMockData();
-    await spaceApi.create("existing-space");
+    await spaceApi.create({ name: "existing-space", slug: "existing-space" });
     const space = await spaceApi.get("existing-space");
     expect(space.id).toBe("existing-space");
   });
@@ -948,7 +954,9 @@ describe("error paths", () => {
         () => HttpResponse.json({ message: "No detail here" }, { status: 422 }),
       ),
     );
-    await expect(spaceApi.create("test-no-detail")).rejects.toThrow(
+    await expect(
+      spaceApi.create({ name: "test-no-detail", slug: "test-no-detail" }),
+    ).rejects.toThrow(
       "Failed to create space",
     );
   });

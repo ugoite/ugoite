@@ -146,6 +146,14 @@ fn spawn_recording_server(
     (format!("http://{}", addr), rx, handle)
 }
 
+fn request_json_body(request: &str) -> serde_json::Value {
+    let body = request
+        .split_once("\r\n\r\n")
+        .map(|(_, body)| body)
+        .expect("request has an HTTP body");
+    serde_json::from_str(body).expect("request body is JSON")
+}
+
 /// REQ-STO-001: Config set/show round-trips correctly.
 #[test]
 fn test_cli_config_set_and_show() {
@@ -264,7 +272,9 @@ fn test_create_space_req_api_001_routes_to_backend_post_spaces() {
         !request.contains("POST /spaces/my-space HTTP/1.1"),
         "{request}"
     );
-    assert!(request.contains(r#"{"name":"my-space"}"#), "{request}");
+    let body = request_json_body(&request);
+    assert_eq!(body["slug"].as_str(), Some("my-space"));
+    assert_eq!(body["name"].as_str(), Some("my-space"));
 }
 
 /// REQ-API-001: create-space routes to POST /spaces in api mode.
@@ -306,7 +316,9 @@ fn test_create_space_req_api_001_routes_to_api_post_spaces() {
         !request.contains("POST /spaces/api-space HTTP/1.1"),
         "{request}"
     );
-    assert!(request.contains(r#"{"name":"api-space"}"#), "{request}");
+    let body = request_json_body(&request);
+    assert_eq!(body["slug"].as_str(), Some("api-space"));
+    assert_eq!(body["name"].as_str(), Some("api-space"));
 }
 
 /// REQ-API-002: entry create routes to POST /spaces/{space_id}/entries in backend mode.

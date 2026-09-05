@@ -7699,6 +7699,7 @@ async fn list_spaces(
 
 #[derive(Deserialize)]
 struct SpaceCreate {
+    slug: String,
     name: String,
 }
 
@@ -7711,20 +7712,32 @@ async fn create_space(
         .ensure_authoritative_mutation_contract()
         .map_err(ApiError::from_core)?;
     require_recent_passkey(&identity)?;
-    validate_id(&payload.name, "space_id")?;
+    validate_id(&payload.slug, "space_id")?;
+    if payload.name.trim().is_empty() {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "space name must not be empty",
+        ));
+    }
     if !identity.node_admin {
         return Err(ApiError::new(
             StatusCode::FORBIDDEN,
             "node admin role is required to create a Space",
         ));
     }
-    let (space_uid, created) = ensure_local_space_owner_binding(
+    let (space_uid, created) = ensure_local_space_owner_binding_with_name(
         &state,
-        &payload.name,
+        &payload.slug,
         identity.account_id,
         &identity.display_name,
+        &payload.name,
     )
     .await?;
+    let metadata = state
+        .service
+        .get_space(&space_uid.to_string())
+        .await
+        .map_err(ApiError::from_core)?;
     Ok((
         if created {
             StatusCode::CREATED
@@ -7733,9 +7746,9 @@ async fn create_space(
         },
         Json(json!({
             "id": space_uid,
-            "slug": payload.name,
+            "slug": metadata["slug"],
             "space_uid": space_uid,
-            "name": payload.name,
+            "name": metadata["name"],
             "path": state.workspace(&space_uid.to_string())
         })),
     ))
@@ -7745,11 +7758,23 @@ async fn create_space(
 /// scaffold and authorization owner are durable enough to identify the retry
 /// target; the Node binding is then an idempotent final step. This is limited
 /// to the authenticated Node-administrator route.
+#[cfg(test)]
 async fn ensure_local_space_owner_binding(
     state: &AppState,
     slug: &str,
     account_id: Uuid,
-    display_name: &str,
+    owner_display_name: &str,
+) -> ApiResult<(Uuid, bool)> {
+    ensure_local_space_owner_binding_with_name(state, slug, account_id, owner_display_name, slug)
+        .await
+}
+
+async fn ensure_local_space_owner_binding_with_name(
+    state: &AppState,
+    slug: &str,
+    account_id: Uuid,
+    owner_display_name: &str,
+    space_name: &str,
 ) -> ApiResult<(Uuid, bool)> {
     Authorizer::new(state.service.operator().clone())
         .ensure_authoritative_mutation_contract()
@@ -7777,7 +7802,7 @@ async fn ensure_local_space_owner_binding(
         // initializes ownership only when the authorization file is genuinely
         // absent; malformed, legacy, or mismatched state must fail closed.
         let principal_id = authorizer
-            .ensure_owner(&existing_id, space_uid, display_name)
+            .ensure_owner(&existing_id, space_uid, owner_display_name)
             .await
             .map_err(ApiError::from_core)?;
         if let Some(bound_principal) = state
@@ -7820,7 +7845,7 @@ async fn ensure_local_space_owner_binding(
     let principal_id = Uuid::now_v7();
     let space_uid = state
         .service
-        .create_space_for_principal(slug, principal_id, display_name)
+        .create_space_for_principal_with_name(slug, principal_id, owner_display_name, space_name)
         .await
         .map_err(ApiError::from_core)?;
     state
@@ -14815,7 +14840,8 @@ mod authentication_regression_tests {
             State(state.clone()),
             Extension(passkey_identity(account_id)),
             Json(SpaceCreate {
-                name: "contract-space".to_string(),
+                slug: "contract-space".to_string(),
+                name: "契約スペース 📝".to_string(),
             }),
         )
         .await
@@ -14828,7 +14854,8 @@ mod authentication_regression_tests {
             State(state.clone()),
             Extension(passkey_identity(account_id)),
             Json(SpaceCreate {
-                name: "contract-space".to_string(),
+                slug: "contract-space".to_string(),
+                name: "別の表示名".to_string(),
             }),
         )
         .await
@@ -14836,12 +14863,15 @@ mod authentication_regression_tests {
         assert_eq!(retry.0, StatusCode::OK);
         let Json(retry_body) = retry.1;
         assert_eq!(retry_body["space_uid"], first_uid);
+        assert_eq!(retry_body["slug"], "contract-space");
+        assert_eq!(retry_body["name"], "契約スペース 📝");
 
         let duplicate = create_space(
             State(state),
             Extension(passkey_identity(Uuid::now_v7())),
             Json(SpaceCreate {
-                name: "contract-space".to_string(),
+                slug: "contract-space".to_string(),
+                name: "別アカウント".to_string(),
             }),
         )
         .await

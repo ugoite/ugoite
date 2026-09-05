@@ -211,7 +211,7 @@ test.describe("Entries CRUD", () => {
 	}) => {
 		const spaceName = `entries-first-form-${Date.now()}`;
 		const createSpace = await request.post(getBackendUrl("/spaces"), {
-			data: { name: spaceName },
+			data: { slug: spaceName, name: "Entries first-form test" },
 		});
 		expect([200, 201, 409]).toContain(createSpace.status());
 
@@ -368,7 +368,7 @@ test.describe("Entries CRUD", () => {
 		const projectBetaId = `project-beta-${timestamp}`;
 		const taskTitle = `Task referencing alpha project ${timestamp}`;
 		const createSpace = await request.post(getBackendUrl("/spaces"), {
-			data: { name: spaceName },
+			data: { slug: spaceName, name: "Entries relation test" },
 		});
 		expect([200, 201, 409]).toContain(createSpace.status());
 
@@ -496,7 +496,7 @@ test.describe("Entries CRUD", () => {
 		const entryIds: string[] = [];
 
 		const createSpace = await request.post(getBackendUrl("/spaces"), {
-			data: { name: spaceSlug },
+			data: { slug: spaceSlug, name: "Entries media test" },
 		});
 		expect([200, 201, 409]).toContain(createSpace.status());
 		const createdSpace = (await createSpace.json()) as { id: string };

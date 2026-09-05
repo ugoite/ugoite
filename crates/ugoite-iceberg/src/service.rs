@@ -111,6 +111,7 @@ const MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES: usize = 256 * 1024 * 1024;
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
 struct SpaceSlugClaim {
     slug: String,
+    space_name: String,
     space_id: String,
     state: String,
     claim_id: Uuid,
@@ -542,14 +543,16 @@ impl UgoiteService {
     /// an explicit creation-recovery path can resume the same immutable Space
     /// instead of reusing an ambiguous slug.
     async fn claim_space_slug(&self, slug: &str, space_id: &str) -> Result<SpaceSlugClaim> {
-        self.claim_space_slug_with_owner(slug, space_id, None).await
+        self.claim_space_slug_with_owner_and_name(slug, space_id, None, slug)
+            .await
     }
 
-    async fn claim_space_slug_with_owner(
+    async fn claim_space_slug_with_owner_and_name(
         &self,
         slug: &str,
         space_id: &str,
         owner: Option<(Uuid, String)>,
+        space_name: &str,
     ) -> Result<SpaceSlugClaim> {
         self.operator.create_dir(SPACE_SLUG_CLAIMS_DIR).await?;
         let _claim_lock = acquire_local_space_slug_claim_lock(&self.operator, slug).await?;
@@ -557,6 +560,7 @@ impl UgoiteService {
         let now = Utc::now();
         let claim_record = SpaceSlugClaim {
             slug: slug.to_string(),
+            space_name: space_name.to_string(),
             space_id: space_id.to_string(),
             state: "pending".to_string(),
             claim_id: Uuid::now_v7(),
@@ -992,6 +996,7 @@ impl UgoiteService {
                         &self.operator,
                         space_uid,
                         slug,
+                        &claim.space_name,
                         &self.root_uri,
                     )
                     .await?;
@@ -1034,6 +1039,17 @@ impl UgoiteService {
         principal_id: Uuid,
         display_name: &str,
     ) -> Result<Uuid> {
+        self.create_space_for_principal_with_name(slug, principal_id, display_name, slug)
+            .await
+    }
+
+    pub async fn create_space_for_principal_with_name(
+        &self,
+        slug: &str,
+        principal_id: Uuid,
+        owner_display_name: &str,
+        space_name: &str,
+    ) -> Result<Uuid> {
         let creation_lock = SPACE_CREATION_SERIALIZER
             .get_or_init(|| Arc::new(AsyncMutex::new(())))
             .clone();
@@ -1059,16 +1075,24 @@ impl UgoiteService {
         let space_uid = Uuid::now_v7();
         let space_id = space_uid.to_string();
         let claim = self
-            .claim_space_slug_with_owner(
+            .claim_space_slug_with_owner_and_name(
                 slug,
                 &space_id,
-                Some((principal_id, display_name.to_string())),
+                Some((principal_id, owner_display_name.to_string())),
+                space_name,
             )
             .await?;
         let lease = self.start_space_slug_claim_heartbeat(&claim);
-        space::create_space_with_identity(&self.operator, space_uid, slug, &self.root_uri).await?;
+        space::create_space_with_identity_and_name(
+            &self.operator,
+            space_uid,
+            slug,
+            space_name,
+            &self.root_uri,
+        )
+        .await?;
         Authorizer::new(self.operator.clone())
-            .initialize_owner(&space_id, space_uid, principal_id, display_name)
+            .initialize_owner(&space_id, space_uid, principal_id, owner_display_name)
             .await?;
         lease.ensure_held()?;
         self.commit_space_slug_claim(slug, &space_id, claim.claim_id)
@@ -4251,20 +4275,27 @@ mod tests {
         let service = UgoiteService::new("memory://principal-slug-claim-recovery")?;
         let space_uid = Uuid::now_v7();
         let principal_id = Uuid::now_v7();
+        let space_name = "復旧ノート 📝";
         service
-            .claim_space_slug_with_owner(
+            .claim_space_slug_with_owner_and_name(
                 "principal-recovery",
                 &space_uid.to_string(),
                 Some((principal_id, "Recovered owner".to_string())),
+                space_name,
             )
             .await?;
-        space::create_space_with_identity(
+        space::create_space_with_identity_and_name(
             service.operator(),
             space_uid,
             "principal-recovery",
+            space_name,
             service.root_uri(),
         )
         .await?;
+        service
+            .operator
+            .delete(&format!("spaces/{space_uid}/meta.json"))
+            .await?;
         service
             .expire_space_slug_claim_for_test("principal-recovery")
             .await?;
@@ -4274,6 +4305,10 @@ mod tests {
                 .recover_space_id_by_slug("principal-recovery")
                 .await?,
             Some(space_uid.to_string())
+        );
+        assert_eq!(
+            service.get_space(&space_uid.to_string()).await?["name"],
+            space_name
         );
         let state = Authorizer::new(service.operator().clone())
             .state(&space_uid.to_string())

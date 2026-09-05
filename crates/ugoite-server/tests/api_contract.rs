@@ -1024,6 +1024,15 @@ fn issue_2212_openapi_documents_space_creation_outcomes() {
             "SpaceCreateResponse must require {field}"
         );
     }
+    assert_eq!(
+        snapshot["components"]["schemas"]["SpaceCreateRequest"]["required"],
+        serde_json::json!(["slug", "name"])
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["SpaceCreateRequest"]["properties"]["name"]
+            ["description"],
+        "Human-facing Space display name; Unicode is supported."
+    );
 }
 
 #[test]

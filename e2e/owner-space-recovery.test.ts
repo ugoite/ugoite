@@ -32,7 +32,7 @@ test.describe("Owner-approved Space access recovery", () => {
     const spaceIds = new Map<string, string>();
     for (const spaceId of [recoveredSpace, unrelatedSpace]) {
       const created = await request.post(getBackendUrl("/spaces"), {
-        data: { name: spaceId },
+        data: { slug: spaceId, name: `Recovery ${spaceId}` },
       });
       expect(created.status()).toBe(201);
       spaceIds.set(spaceId, ((await created.json()) as { id: string }).id);
