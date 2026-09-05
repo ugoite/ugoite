@@ -99,6 +99,29 @@ describe("preferencesStore", () => {
     expect(document.documentElement.lang).toBe("ja");
   });
 
+  it("REQ-FE-064: public locale initialization avoids portable preference requests", async () => {
+    let requestCount = 0;
+    const { server } = await import("~/test/mocks/server");
+    const { http, HttpResponse } = await import("msw");
+    server.use(
+      http.get(testApiUrl("/preferences/me"), () => {
+        requestCount += 1;
+        return HttpResponse.json({ locale: "ja" });
+      }),
+    );
+    localStorage.setItem("ugoite-locale", "ja");
+
+    const { initializePortablePreferencesForPath } = await import(
+      "./preferences-store"
+    );
+    const { locale } = await import("./i18n");
+    await initializePortablePreferencesForPath("/");
+
+    expect(requestCount).toBe(0);
+    expect(locale()).toBe("ja");
+    expect(document.documentElement.lang).toBe("ja");
+  });
+
   it("REQ-FE-003: authenticated routes hydrate portable preferences through route-aware initialization", async () => {
     seedPreferences({ selected_space_id: "space-remote" });
 

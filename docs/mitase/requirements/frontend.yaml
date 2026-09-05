@@ -1488,6 +1488,15 @@ requirements:
                 criterion: REQ-FE-064#criterion.public-locale
                 covers: [FEAT-FE-004#binding.frontend/target.public-index-route, FEAT-FE-004#binding.frontend/target.public-about-route]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/public-pages.test.ts, test: "REQ-FE-064: public landing pages respect the saved Japanese locale" } }
+          - id: public-locale-request-absence
+            adapter: typescript
+            path: frontend/src/lib/preferences-store.test.ts
+            selector: { kind: test, name: "REQ-FE-064: public locale initialization avoids portable preference requests" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-064#criterion.public-locale
+                covers: [FEAT-FE-004#binding.frontend/target.public-locale-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/lib/preferences-store.test.ts", test: "REQ-FE-064: public locale initialization avoids portable preference requests" } }
 
   - id: REQ-FE-061
     title: Saved SQL List Route Guidance
