@@ -14498,6 +14498,54 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
+    async fn preferences_patch_returns_validation_errors_for_invalid_payloads() -> anyhow::Result<()>
+    {
+        let state = AppState::new_for_tests("memory://server-preferences-invalid-patch")?;
+        let principal_id = Uuid::from_u128(2333);
+        let space_id = state
+            .service
+            .create_space_for_principal("preferences-invalid-patch", principal_id, "Route test")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = Router::new()
+            .route("/preferences/me", axum::routing::patch(patch_preferences))
+            .layer(Extension(content_identity(principal_id, space_uid)))
+            .with_state(state);
+
+        let valid = route
+            .clone()
+            .oneshot(
+                Request::patch("/preferences/me")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(json!({"locale": "ja"}).to_string()))?,
+            )
+            .await?;
+        assert_eq!(valid.status(), StatusCode::OK);
+
+        for payload in [
+            json!({"locale": "fr"}),
+            json!({"unknown_key": "value"}),
+            json!(["ja"]),
+            json!({"locale": 42}),
+        ] {
+            let response = route
+                .clone()
+                .oneshot(
+                    Request::patch("/preferences/me")
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(payload.to_string()))?,
+                )
+                .await?;
+            assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+            let body: Value = serde_json::from_slice(&body)?;
+            assert_eq!(body["code"], "INVALID_INPUT");
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn invitation_finalization_converges_after_space_membership_commit() -> anyhow::Result<()>
     {
         let state = AppState::new_for_tests("memory://server-invitation-saga")?;
