@@ -163,9 +163,13 @@ inventory:
             - e2e/space-membership.test.ts
             - frontend/src/routes/spaces/join.tsx
             - frontend/src/routes/spaces/join.test.tsx
+            - frontend/src/app.config.test.ts
+            - frontend/app.config.ts
             - docsite/src/ssot.test.ts
             - docsite/src/spec-integrity.test.ts
             - tools/coverage_gates_test.ts
+            - tools/knowledge_compatibility_test.ts
+            - tools/release.ts
         openapi:
           roots:
             - crates/ugoite-server/src/openapi.json
@@ -265,12 +269,23 @@ inventory:
             - docs/spec/ui/pages/space-test-connection.yaml
             - docs/spec/ui/components/space-shell.yaml
             - .github/workflows/ci.yml
+            - .github/workflows/codeql.yml
+            - .github/workflows/pr-require-close-issue.yml
+            - .github/workflows/release-candidate.yml
             - .github/workflows/release-publish.yml
+            - .github/pull_request_template.md
+            - .github/required-status-checks.json
+            - .github/dependabot.yml
+            - .devcontainer/devcontainer.json
+            - Cargo.toml
             - mise.toml
+            - docs/architecture/release/release-contract.md
             - scripts/ci/mitase-check.sh
             - scripts/verify-release-container-quickstart.sh
             - tools/knowledge_compatibility.ts
+            - tools/knowledge_compatibility_test.ts
             - tools/coverage_gates_test.ts
+            - tools/release.ts
             - docsite/src/spec-integrity.test.ts
             - crates/ugoite-core/src/lib.rs
             - crates/ugoite-server/src/lib.rs
@@ -281,6 +296,7 @@ inventory:
             - crates/ugoite-iceberg/src/search.rs
             - crates/ugoite-konase/src/agent_runtime.rs
             - frontend/src/lib/search-api.ts
+            - frontend/app.config.ts
             - crates/ugoite-iceberg/tests/fixtures/v0.1-knowledge.json
 validation:
   preset: strict

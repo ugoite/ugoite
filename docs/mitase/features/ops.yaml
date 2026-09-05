@@ -175,3 +175,156 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-OPS-006#criterion.cli-surface
+
+      - id: migrated-ops-tail
+        role: evidence
+        facet: operations
+        responsibility: Connect the next migrated Operations requirements to generic repository artifacts and exact verification evidence. Remaining legacy Operations records continue as migration evidence until later slices complete the domain.
+        targets:
+          - id: pull-request-template
+            adapter: declared
+            path: .github/pull_request_template.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-008#criterion.pr-template-gates
+          - id: close-issue-workflow
+            adapter: declared
+            path: .github/workflows/pr-require-close-issue.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-008#criterion.pr-template-gates
+          - id: release-contract
+            adapter: declared
+            path: docs/architecture/release/release-contract.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-009#criterion.deterministic-release-promotion
+          - id: candidate-workflow
+            adapter: declared
+            path: .github/workflows/release-candidate.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-009#criterion.deterministic-release-promotion
+              - kind: evidences
+                anchor: REQ-OPS-014#criterion.cli-language-classification
+          - id: publish-workflow
+            adapter: declared
+            path: .github/workflows/release-publish.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-009#criterion.deterministic-release-promotion
+          - id: release-implementation
+            adapter: typescript
+            path: tools/release.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-009#criterion.deterministic-release-promotion
+          - id: frontend-proxy
+            adapter: typescript
+            path: frontend/app.config.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-010#criterion.frontend-dev-proxy-readiness
+          - id: rust-cache
+            adapter: declared
+            path: mise.toml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-011#criterion.rust-cache-discipline
+          - id: hosted-rust-gates
+            adapter: declared
+            path: .github/workflows/ci.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-011#criterion.rust-cache-discipline
+              - kind: evidences
+                anchor: REQ-OPS-013#criterion.required-status-contract
+          - id: required-status
+            adapter: declared
+            path: .github/required-status-checks.json
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-013#criterion.required-status-contract
+          - id: codeql-summary
+            adapter: declared
+            path: .github/workflows/codeql.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-013#criterion.required-status-contract
+          - id: pr-status-gate
+            adapter: declared
+            path: .github/workflows/pr-require-close-issue.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-013#criterion.required-status-contract
+          - id: stack-contract
+            adapter: declared
+            path: docs/architecture/contracts/stack.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-014#criterion.cli-language-classification
+          - id: rust-workspace
+            adapter: declared
+            path: Cargo.toml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-014#criterion.cli-language-classification
+          - id: knowledge-compatibility
+            adapter: typescript
+            path: tools/knowledge_compatibility_test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-043#criterion.knowledge-compatibility-gate
+      - id: migrated-ops-verification
+        role: implementation
+        facet: operations-verification
+        responsibility: Connect the exact frontend configuration and compatibility-gate tests to the generic implementation artifacts they verify.
+        targets:
+          - id: frontend-proxy
+            adapter: typescript
+            path: frontend/app.config.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-010#criterion.frontend-dev-proxy-readiness
+          - id: knowledge-compatibility
+            adapter: typescript
+            path: tools/knowledge_compatibility_test.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-043#criterion.knowledge-compatibility-gate
+      - id: planned-ops-evidence
+        role: evidence
+        facet: planned-work
+        responsibility: Record the current devcontainer and dependency-update surfaces as evidence for the planned change-detection criterion without claiming that a hosted workflow exists.
+        targets:
+          - id: devcontainer
+            adapter: declared
+            path: .devcontainer/devcontainer.json
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-012#criterion.devcontainer-change-detection
+          - id: devcontainer-dependency-updates
+            adapter: declared
+            path: .github/dependabot.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-012#criterion.devcontainer-change-detection
