@@ -22,7 +22,7 @@ stories:
   - mcp: ugoite://form/{id}
   requirements:
   - REQ-ENTRY-006
-  - REQ-IDX-002
+  - REQ-FORM-011
   status: implemented
 - id: STORY-003
   title: Bring Your Own Cloud
@@ -75,9 +75,9 @@ stories:
   - rest: GET /spaces/{space_id}/search?q=query
   - rest: POST /spaces/{space_id}/query
   requirements:
-  - REQ-IDX-003
-  - REQ-IDX-004
-  - REQ-IDX-007
+  - REQ-SRCH-006
+  - REQ-SRCH-008
+  - REQ-SRCH-001
   status: implemented
   implementation_notes: Keyword matching is case-insensitive substring search over current Entry data and the
     authorized AssetText projection when available; relevance ranking and persistent inverted indexes are not

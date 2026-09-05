@@ -72,13 +72,6 @@ features:
             claims:
               - kind: documents
                 anchor: REQ-OPS-003#criterion.taxonomy-integrity
-          - id: requirements-registry
-            adapter: declared
-            path: docs/spec/requirements/index.yaml
-            selector: { kind: file }
-            claims:
-              - kind: documents
-                anchor: REQ-OPS-003#criterion.taxonomy-integrity
       - id: registries
         role: implementation
         facet: documentation
@@ -87,13 +80,6 @@ features:
           - id: taxonomy-registry
             adapter: declared
             path: docs/spec/features/features.yaml
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-OPS-003#criterion.taxonomy-integrity
-          - id: requirements-registry
-            adapter: declared
-            path: docs/spec/requirements/index.yaml
             selector: { kind: file }
             claims:
               - kind: satisfies
