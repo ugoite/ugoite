@@ -47,6 +47,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SRCH-004#criterion.keyword-first-route
+              - kind: satisfies
+                criterion: REQ-FE-065#criterion.bounded-lookup
           - id: search-route
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/search.tsx
