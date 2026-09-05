@@ -227,6 +227,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-044#criterion.dictionary-localization
+          - id: public-locale-store
+            adapter: typescript
+            path: frontend/src/lib/preferences-store.ts
+            selector: { kind: symbol, name: initializePortablePreferencesForPath }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-064#criterion.public-locale
           - id: public-index-route
             adapter: typescript
             path: frontend/src/routes/index.tsx
