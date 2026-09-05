@@ -195,6 +195,8 @@ features:
                 criterion: REQ-FE-033#criterion.encoded-entry-id
               - kind: satisfies
                 criterion: REQ-FE-034#criterion.navigation-loading
+              - kind: satisfies
+                criterion: REQ-FE-035#criterion.navigation-recovery
           - id: new-entry-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/entries/new.tsx"
