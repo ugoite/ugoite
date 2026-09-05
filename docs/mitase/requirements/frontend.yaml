@@ -2121,3 +2121,168 @@ requirements:
                 criterion: REQ-FE-060#criterion.topology-summary
                 covers: [FEAT-STO-001#binding.connector-ui/target.storage-topology]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/storage-topology.test.ts, test: "REQ-FE-060: reads the v3 Node-local binding from storage_config" } }
+  - id: REQ-FE-039
+    title: Reserved Metadata Column Guardrails
+    description: Form authoring prevents collisions with reserved metadata names and only shows reserved-name guidance when the entered form or column name requires it.
+    priority: high
+    status: implemented
+    criteria:
+      - id: reserved-metadata
+        kind: behavior
+        statement: Create and edit Form dialogs reject reserved metadata column names and keep reserved-name guidance hidden until a reserved name is entered.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: reserved-metadata-verification
+        role: verification
+        facet: verification
+        responsibility: Verify reserved metadata rejection and contextual guidance in both Form authoring dialogs through exact frontend tests.
+        targets:
+          - id: reserved-column
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-039: blocks reserved metadata column names" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-039#criterion.reserved-metadata
+                covers: [FEAT-FE-004#binding.frontend/target.create-dialogs]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-039: blocks reserved metadata column names" } }
+          - id: create-guidance
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-039: hides reserved-name guidance until a reserved name is entered in create form" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-039#criterion.reserved-metadata
+                covers: [FEAT-FE-004#binding.frontend/target.create-dialogs]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-039: hides reserved-name guidance until a reserved name is entered in create form" } }
+          - id: edit-guidance
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-039: hides reserved-name guidance until a reserved name is entered in edit form" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-039#criterion.reserved-metadata
+                covers: [FEAT-FE-004#binding.frontend/target.edit-form-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-039: hides reserved-name guidance until a reserved name is entered in edit form" } }
+  - id: REQ-FE-055
+    title: Responsive Form Column Editor Layout
+    description: Form creation and editing dialogs keep the column name input readable on narrow layouts while secondary controls remain available.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: responsive-layout
+        kind: behavior
+        statement: Create and edit Form dialogs preserve a comfortably editable column name input on narrow layouts instead of collapsing it beside secondary controls.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: responsive-layout-verification
+        role: verification
+        facet: verification
+        responsibility: Verify readable column editor layout in both Form authoring dialogs through exact frontend tests.
+        targets:
+          - id: create-layout
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-055: keeps create-form column inputs readable on narrow layouts" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-055#criterion.responsive-layout
+                covers: [FEAT-FE-004#binding.frontend/target.create-dialogs]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-055: keeps create-form column inputs readable on narrow layouts" } }
+          - id: edit-layout
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-055: keeps edit-form column inputs readable on narrow layouts" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-055#criterion.responsive-layout
+                covers: [FEAT-FE-004#binding.frontend/target.edit-form-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-055: keeps edit-form column inputs readable on narrow layouts" } }
+  - id: REQ-FE-057
+    title: Full Create-Entry Chat Flow
+    description: Chat-mode entry creation walks through optional and required Form fields predictably, keeps completion rules explicit, and submits the collected answers.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: chat-flow
+        kind: behavior
+        statement: Chat mode lets users answer, skip, review, and navigate optional fields while requiring non-empty answers for required fields before submitting collected entry input.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: chat-flow-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the complete chat question flow, required-field guardrails, review navigation, optional-field skipping, and submission through exact frontend tests.
+        targets:
+          - id: optional-fields
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-057: chat mode walks through optional fields instead of only required ones" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-057#criterion.chat-flow
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-057: chat mode walks through optional fields instead of only required ones" } }
+          - id: deprecated-required
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-057: chat mode treats deprecated required fields as optional" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-057#criterion.chat-flow
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-057: chat mode treats deprecated required fields as optional" } }
+          - id: step-pills
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-057: chat step pills react to answers and current step" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-057#criterion.chat-flow
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-057: chat step pills react to answers and current step" } }
+          - id: review-navigation
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-057: chat step pills let users jump back to answered questions" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-057#criterion.chat-flow
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-057: chat step pills let users jump back to answered questions" } }
+          - id: required-advance
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-057: chat mode blocks advancing past an empty required field" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-057#criterion.chat-flow
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-057: chat mode blocks advancing past an empty required field" } }
+          - id: required-skip
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-057: chat mode blocks skipping a required field" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-057#criterion.chat-flow
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-057: chat mode blocks skipping a required field" } }
+          - id: submit-answers
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-057: chat mode submits answered required and optional fields" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-057#criterion.chat-flow
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-057: chat mode submits answered required and optional fields" } }
+          - id: clear-optional
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-057: skipping an optional chat field clears its draft answer" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-057#criterion.chat-flow
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-057: skipping an optional chat field clears its draft answer" } }
