@@ -467,3 +467,38 @@ features:
                 criterion: REQ-FE-067#criterion.dialog-workspace
               - kind: satisfies
                 criterion: REQ-FE-067#criterion.icon-actions
+  - id: FEAT-FE-011
+    title: Fixed surface palette and system appearance
+    summary: Connect the fixed v5 surface palette, shared surface-token enforcement, and operating-system color mode to exact frontend implementation and verification evidence.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep the fixed surface palette, token-only surface styling, and operating-system color mode connected to the shipped stylesheet and frontend utilities.
+        targets:
+          - id: surface-contract
+            adapter: typescript
+            path: frontend/src/themes/registry.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-041#criterion.fixed-palette
+              - kind: satisfies
+                criterion: REQ-FE-041#criterion.system-appearance
+              - kind: satisfies
+                criterion: REQ-FE-059#criterion.system-appearance
+          - id: surface-usage-contract
+            adapter: typescript
+            path: frontend/src/themes/usage.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-042#criterion.surface-tokens
+          - id: color-mode
+            adapter: typescript
+            path: frontend/src/lib/color-mode.ts
+            selector: { kind: symbol, name: initializeColorMode }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-059#criterion.system-appearance

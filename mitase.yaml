@@ -91,7 +91,9 @@ inventory:
             - frontend/src/lib/preferences-local.ts
             - frontend/src/lib/preferences-local.test.ts
             - frontend/src/lib/color-mode.ts
+            - frontend/src/lib/color-mode.test.ts
             - frontend/src/themes/registry.test.ts
+            - frontend/src/themes/usage.test.ts
             - frontend/src/routes/index.tsx
             - frontend/src/routes/index.test.tsx
             - frontend/src/routes/about.tsx
