@@ -38,18 +38,11 @@ features:
                 criterion: REQ-SRCH-007#criterion.derived-boundary
           - id: word-count
             adapter: rust
-            path: crates/ugoite-iceberg/src/index.rs
-            selector: { kind: symbol, name: aggregate_stats }
+            path: crates/ugoite-domain/src/text.rs
+            selector: { kind: symbol, name: compute_word_count }
             claims:
               - kind: satisfies
                 criterion: REQ-SRCH-007#criterion.word-count-separation
-          - id: index-command
-            adapter: rust
-            path: crates/ugoite-cli/src/commands/index.rs
-            selector: { kind: symbol, name: run }
-            claims:
-              - kind: satisfies
-                criterion: REQ-SRCH-007#criterion.derived-rebuild
       - id: server
         role: operation
         facet: backend

@@ -172,11 +172,11 @@ requirements:
         governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-012#rule.governance, POL-014#rule.governance]
       - id: derived-boundary
         kind: quality
-        statement: AssetText remains a replaceable derived relation and does not become a second authority for current Entry data or authorization.
-        governed_by: [POL-001#rule.governance, POL-011#rule.governance, POL-012#rule.governance, POL-014#rule.governance]
+        statement: AssetText rebuild keeps the current derived relation distinct from a persistent inverted-index artifact.
+        governed_by: [POL-001#rule.governance, POL-012#rule.governance, POL-014#rule.governance]
       - id: word-count-separation
         kind: quality
-        statement: Word-count and Markdown extraction helpers remain separate from derived-relation rebuild orchestration.
+        statement: Word counts are computed by a shared pure text helper independently of derived-relation rebuild orchestration.
         governed_by: [POL-002#rule.governance, POL-012#rule.governance, POL-014#rule.governance]
     bindings:
       - id: derived-verification
@@ -184,15 +184,6 @@ requirements:
         facet: verification
         responsibility: Verify derived-relation publication, the absence of legacy inverted-index files, and the separation of rebuild and word-count helpers through exact Rust integration cases.
         targets:
-          - id: cli-rebuild-case
-            adapter: rust
-            path: crates/ugoite-cli/tests/test_indexer.rs
-            selector: { kind: test, name: test_indexer_run_once }
-            claims:
-              - kind: verifies
-                criterion: REQ-SRCH-007#criterion.derived-rebuild
-                covers: [FEAT-SRCH-001#binding.derived/target.index-command]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_indexer, test: test_indexer_run_once } }
           - id: rebuild-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_index.rs
