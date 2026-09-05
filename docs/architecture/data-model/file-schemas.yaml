@@ -84,10 +84,13 @@ schemas:
           description: Immutable UUIDv7 Space identity.
         slug:
           type: string
+          description: Stable ASCII URL/storage identifier using letters, digits, '-' or '_'.
         id:
           type: string
+          description: Immutable UUIDv7 directory identity exposed by the API.
         name:
           type: string
+          description: Human-facing display name; Unicode is supported.
         created_at:
           type: number
         hmac_key_id:

@@ -19,11 +19,13 @@ export const spaceApi = {
     return await protocolFetch<Space[]>("space.list");
   },
 
-  async create(name: string): Promise<{ id: string; name: string }> {
-    return await protocolFetch<{ id: string; name: string }>(
+  async create(
+    payload: { name: string; slug: string },
+  ): Promise<{ id: string; name: string; slug: string }> {
+    return await protocolFetch<{ id: string; name: string; slug: string }>(
       "space.create",
       {},
-      { name },
+      payload,
     );
   },
 

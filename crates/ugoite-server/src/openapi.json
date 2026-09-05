@@ -12231,11 +12231,17 @@
       "SpaceCreateRequest": {
         "type": "object",
         "required": [
+          "slug",
           "name"
         ],
         "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Stable ASCII URL/storage identifier using letters, digits, '-' or '_'."
+          },
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "Human-facing Space display name; Unicode is supported."
           }
         }
       },

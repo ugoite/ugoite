@@ -52,11 +52,11 @@ relation directories are lazy and are not part of bootstrap.
 ```json
 {
   "schema_version": 3,
-  "space_id": "space-main",
+  "space_id": "019c1234-5678-7abc-8def-0123456789ab",
   "space_uid": "019c1234-5678-7abc-8def-0123456789ab",
   "slug": "space-main",
-  "id": "space-main",
-  "name": "space-main",
+  "id": "019c1234-5678-7abc-8def-0123456789ab",
+  "name": "プロジェクトメモ 📝",
   "created_at": 1762000000.123,
   "hmac_key_id": "key-...",
   "hmac_key": "base64-encoded-secret",
@@ -65,6 +65,9 @@ relation directories are lazy and are not part of bootstrap.
 ```
 
 The typed `SpaceMeta` view exposes only portable identity and creation metadata;
+`space_uid`/`id` are the immutable machine identity, `slug` is the constrained
+URL/storage identifier, and `name` is the user-facing display name and may use
+Unicode;
 it never contains a physical backend binding. The raw runtime response may merge
 `settings.json` and a Node-local `storage_config` binding. The binding is stored
 outside the `spaces/{id}` prefix and is not part of a Space copy.

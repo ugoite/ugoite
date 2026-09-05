@@ -299,8 +299,8 @@ export const handlers = [
 
   // Create space
   testHttp.post("/spaces", async ({ request }) => {
-    const body = (await request.json()) as { name: string };
-    const id = body.name;
+    const body = (await request.json()) as { name: string; slug: string };
+    const id = body.slug;
 
     if (mockSpaces.has(id)) {
       return HttpResponse.json({ detail: "Space already exists" }, {
@@ -311,6 +311,7 @@ export const handlers = [
     const space: Space = {
       id,
       name: body.name,
+      slug: body.slug,
       created_at: new Date().toISOString(),
     };
     mockSpaces.set(id, space);
@@ -319,7 +320,9 @@ export const handlers = [
     mockAssets.set(id, new Map());
     mockForms.set(id, new Map());
 
-    return HttpResponse.json({ id, name: body.name }, { status: 201 });
+    return HttpResponse.json({ id, name: body.name, slug: body.slug }, {
+      status: 201,
+    });
   }),
 
   // List forms

@@ -48,7 +48,7 @@ function SpaceCards(props: { label: string; spaces: readonly Space[] }) {
             </span>
             <span>
               <b>{space.name || space.id}</b>
-              <small>ID: {space.id}</small>
+              <small>ID: {space.slug || space.id}</small>
             </span>
             <div class="flex flex-wrap gap-2">
               <A
@@ -84,6 +84,7 @@ export default function SpacesIndexRoute() {
     }
   });
   const [showCreateForm, setShowCreateForm] = createSignal(false);
+  const [newSpaceName, setNewSpaceName] = createSignal("");
   const [newSpaceId, setNewSpaceId] = createSignal("");
   const [createError, setCreateError] = createSignal<string | null>(null);
   const [requiresPasskey, setRequiresPasskey] = createSignal(false);
@@ -120,13 +121,14 @@ export default function SpacesIndexRoute() {
 
   const closeCreateForm = () => {
     setShowCreateForm(false);
+    setNewSpaceName("");
     setNewSpaceId("");
     setCreateError(null);
     setRequiresPasskey(false);
   };
 
-  const createSpace = async (spaceId: string) => {
-    const created = await spaceApi.create(spaceId);
+  const createSpace = async (name: string, slug: string) => {
+    const created = await spaceApi.create({ name, slug });
     await refetchSpaces();
     closeCreateForm();
     navigate(`/spaces/${created.id}/dashboard`);
@@ -134,8 +136,13 @@ export default function SpacesIndexRoute() {
 
   const handleCreateSpace = async (event: Event) => {
     event.preventDefault();
-    const spaceId = newSpaceId().trim();
-    if (!spaceId) {
+    const name = newSpaceName().trim();
+    const slug = newSpaceId().trim();
+    if (!name) {
+      setCreateError(t("spacesPage.spaceNameRequired"));
+      return;
+    }
+    if (!slug) {
       setCreateError(t("spacesPage.spaceIdRequired"));
       return;
     }
@@ -143,7 +150,7 @@ export default function SpacesIndexRoute() {
     setCreateError(null);
     setRequiresPasskey(false);
     try {
-      await createSpace(spaceId);
+      await createSpace(name, slug);
     } catch (error) {
       setRequiresPasskey(
         typeof error === "object" && error !== null &&
@@ -156,13 +163,14 @@ export default function SpacesIndexRoute() {
   };
 
   const reauthenticateAndCreate = async () => {
-    const spaceId = newSpaceId().trim();
-    if (!spaceId) return;
+    const name = newSpaceName().trim();
+    const slug = newSpaceId().trim();
+    if (!name || !slug) return;
     setIsCreating(true);
     setCreateError(null);
     try {
       await authApi.loginWithPasskey();
-      await createSpace(spaceId);
+      await createSpace(name, slug);
     } catch (error) {
       setCreateError(normalizeCreateError(error));
     } finally {
@@ -215,11 +223,25 @@ export default function SpacesIndexRoute() {
                 </p>
               </div>
               <div class="ui-field">
-                <label class="ui-label" for="space-name">
+                <label class="ui-label" for="space-display-name">
+                  {t("spacesPage.spaceName")}
+                </label>
+                <input
+                  id="space-display-name"
+                  type="text"
+                  class="ui-input"
+                  value={newSpaceName()}
+                  onInput={(event) =>
+                    setNewSpaceName(event.currentTarget.value)}
+                  placeholder={t("spacesPage.spaceNamePlaceholder")}
+                />
+              </div>
+              <div class="ui-field">
+                <label class="ui-label" for="space-id">
                   {t("spacesPage.spaceId")}
                 </label>
                 <input
-                  id="space-name"
+                  id="space-id"
                   type="text"
                   class="ui-input"
                   value={newSpaceId()}
@@ -257,7 +279,8 @@ export default function SpacesIndexRoute() {
                 <button
                   type="submit"
                   class="ui-button ui-button-primary text-sm"
-                  disabled={!newSpaceId().trim() || isCreating()}
+                  disabled={!newSpaceName().trim() || !newSpaceId().trim() ||
+                    isCreating()}
                 >
                   {isCreating()
                     ? t("spacesPage.creating")

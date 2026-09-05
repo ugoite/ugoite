@@ -26,7 +26,7 @@ test.describe("Dashboard starter-entry onboarding", () => {
 	}) => {
 		const spaceId = `dashboard-first-form-${Date.now()}`;
 		const createSpace = await request.post(getBackendUrl("/spaces"), {
-			data: { name: spaceId },
+			data: { slug: spaceId, name: "Dashboard first-entry test" },
 		});
 		expect([200, 201, 409]).toContain(createSpace.status());
 		let createdSpaceId = "";

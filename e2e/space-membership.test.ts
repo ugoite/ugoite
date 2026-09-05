@@ -8,7 +8,7 @@ test.describe("Space Membership", () => {
   test("REQ-SEC-007: one-use invitation registers a real Passkey and can be revoked", async ({ browser, request }) => {
     const spaceSlug = `e2e-members-${Date.now()}`;
     const created = await request.post(getBackendUrl("/spaces"), {
-      data: { name: spaceSlug },
+      data: { slug: spaceSlug, name: "Membership test" },
     });
     expect(created.status()).toBe(201);
     const { id: spaceId } = await created.json() as { id: string };
@@ -73,7 +73,7 @@ test.describe("Space Membership", () => {
   test("REQ-SEC-007: an existing Space member can retry the same invitation idempotently", async ({ page, request }) => {
     const spaceSlug = `e2e-existing-member-${Date.now()}`;
     const created = await request.post(getBackendUrl("/spaces"), {
-      data: { name: spaceSlug },
+      data: { slug: spaceSlug, name: "Existing member test" },
     });
     expect(created.status()).toBe(201);
     const { id: spaceId } = await created.json() as { id: string };

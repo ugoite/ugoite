@@ -215,7 +215,7 @@ pub async fn create_space_cmd(
             &base,
             "space.create",
             serde_json::json!({}),
-            Some(serde_json::json!({"name": space_id})),
+            Some(serde_json::json!({"slug": space_id, "name": space_id})),
         )
         .await?;
         print_json(&result);
@@ -240,7 +240,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                     &base,
                     "space.create",
                     serde_json::json!({}),
-                    Some(serde_json::json!({"name": requested_slug})),
+                    Some(serde_json::json!({"slug": requested_slug, "name": requested_slug})),
                 )
                 .await?;
                 print_json(&result);

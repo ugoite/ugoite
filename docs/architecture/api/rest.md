@@ -76,10 +76,15 @@ release does not provide a local authentication bypass.
 
 Space CRUD, membership, Entries, Forms, Saved SQL, Assets, search, query, SQL
 sessions, MCP, agents, and resource policies are represented in OpenAPI. The
-SQL-session endpoints and the CLI/core `query` path are read-only DataFusion
-execution surfaces: they resolve only authorized Form relations and reject
-DDL/DML. Syntax-only linting is a separate concern and does not authorize a
-statement to execute. `PUT /spaces/{space_id}/policies/{kind}/{resource_id}`
+`POST /spaces` request separates the human-facing `name` from the stable ASCII
+`slug`: `name` may contain Unicode, while `slug` is restricted to the
+storage-safe identifier characters. The response also includes the immutable
+UUIDv7 `space_uid` used for the Space directory identity. The checked-in
+`/openapi.json` schema is authoritative for the exact request and response
+shape. The SQL-session endpoints and the CLI/core `query` path are read-only
+DataFusion execution surfaces: they resolve only authorized Form relations and
+reject DDL/DML. Syntax-only linting is a separate concern and does not authorize
+a statement to execute. `PUT /spaces/{space_id}/policies/{kind}/{resource_id}`
 updates grant-only ACLs for `entry` or `asset`. Entry list and keyword search
 responses use the normal current-entry read bound: the optional `limit` defaults
 to 100 and accepts at most 10,000 entries. Values above that bound are rejected
