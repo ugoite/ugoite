@@ -209,6 +209,10 @@ features:
                 criterion: REQ-FE-043#criterion.readable-errors
               - kind: satisfies
                 criterion: REQ-FE-044#criterion.dictionary-localization
+              - kind: satisfies
+                criterion: REQ-FE-065#criterion.search-and-store
+              - kind: satisfies
+                criterion: REQ-FE-065#criterion.submission-guard
           - id: search-bar
             adapter: typescript
             path: frontend/src/components/SearchBar.tsx
@@ -374,3 +378,21 @@ features:
                 criterion: REQ-FE-063#criterion.starter-query
               - kind: satisfies
                 criterion: REQ-FE-063#criterion.explicit-save-and-run
+
+  - id: FEAT-FE-008
+    title: Row-reference lookup transport
+    summary: Connect row-reference search requests and their Rust/WASM protocol encoding to exact frontend verification evidence.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep target-form row-reference lookup and immutable Space-scoped protocol encoding connected to the shipped frontend client and shared protocol artifacts.
+        targets:
+          - id: row-reference-protocol
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.ts
+            selector: { kind: symbol, name: prepareApiRequest }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-065#criterion.protocol-binding

@@ -51,6 +51,8 @@ inventory:
             - frontend/src/lib/search-store.test.ts
             - frontend/src/lib/form-api.ts
             - frontend/src/lib/search-api.ts
+            - frontend/src/lib/ugoite-client/protocol.ts
+            - frontend/src/lib/ugoite-client/protocol.test.ts
             - frontend/src/lib/space-api.ts
             - frontend/src/lib/preferences-api.ts
             - frontend/src/lib/sql-api.ts

@@ -1498,6 +1498,102 @@ requirements:
                 covers: [FEAT-FE-004#binding.frontend/target.public-locale-store]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/lib/preferences-store.test.ts", test: "REQ-FE-064: public locale initialization avoids portable preference requests" } }
 
+  - id: REQ-FE-065
+    title: Searchable Row Reference Picker
+    description: Create-entry flows for row_reference fields let users search and choose target-form entries by human-readable metadata while storing the stable referenced entry_id and blocking submission until a typed search is resolved to a saved target entry.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: search-and-store
+        kind: behavior
+        statement: Web and chat create-entry modes let users search a target Form and store the selected stable entry_id rather than the display label.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: submission-guard
+        kind: security
+        statement: A row_reference search that has not been resolved to a selected target entry blocks web and chat submission.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: bounded-lookup
+        kind: behavior
+        statement: Row-reference lookup requests are scoped to the target Form, use the bounded picker limit, omit blank keyword queries, and surface backend failures to the picker.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: protocol-binding
+        kind: behavior
+        statement: Row-reference lookup protocol requests preserve the immutable Space ID and encode the target Form, limit, and optional keyword as the supported entry.options request.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: row-reference-verification
+        role: verification
+        facet: verification
+        responsibility: Verify web/chat row-reference selection, submission guarding, bounded lookup behavior, protocol encoding, and the browser journey through exact frontend and browser tests.
+        targets:
+          - id: web-picker
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-065: row_reference fields offer a searchable picker while storing stable entry ids" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-065#criterion.search-and-store
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "REQ-FE-065: row_reference fields offer a searchable picker while storing stable entry ids" } }
+          - id: chat-picker
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-065: chat mode stores the selected row_reference entry id" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-065#criterion.search-and-store
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "REQ-FE-065: chat mode stores the selected row_reference entry id" } }
+          - id: submission-guard
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-065: row_reference searches must resolve to a saved entry before submit" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-065#criterion.submission-guard
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "REQ-FE-065: row_reference searches must resolve to a saved entry before submit" } }
+          - id: bounded-options
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "REQ-FE-065: row_reference picker options request bounded form-scoped summaries" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-065#criterion.bounded-lookup
+                covers: [FEAT-SRCH-001#binding.frontend/target.search-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/lib/client.test.ts", test: "REQ-FE-065: row_reference picker options request bounded form-scoped summaries" } }
+          - id: blank-options
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "REQ-FE-065: row_reference picker options omit blank keyword queries" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-065#criterion.bounded-lookup
+                covers: [FEAT-SRCH-001#binding.frontend/target.search-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/lib/client.test.ts", test: "REQ-FE-065: row_reference picker options omit blank keyword queries" } }
+          - id: protocol-space
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector: { kind: test, name: "REQ-FE-065: sends row-reference lookups with the immutable Space ID" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-065#criterion.protocol-binding
+                covers: [FEAT-FE-008#binding.frontend/target.row-reference-protocol]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/lib/ugoite-client/protocol.test.ts", test: "REQ-FE-065: sends row-reference lookups with the immutable Space ID" } }
+          - id: browser-picker
+            adapter: typescript
+            path: e2e/entries.test.ts
+            selector: { kind: test, name: "REQ-FE-065: create-entry uses a searchable row_reference picker and stores the selected entry_id" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-065#criterion.search-and-store
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entries.test.ts, test: "REQ-FE-065: create-entry uses a searchable row_reference picker and stores the selected entry_id" } }
+              - kind: verifies
+                criterion: REQ-FE-065#criterion.bounded-lookup
+                covers: [FEAT-SRCH-001#binding.frontend/target.search-api]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entries.test.ts, test: "REQ-FE-065: create-entry uses a searchable row_reference picker and stores the selected entry_id" } }
+
   - id: REQ-FE-061
     title: Saved SQL List Route Guidance
     description: The saved SQL list route loads saved queries, provides the supported creation and navigation actions, and explains both the empty and load-error states.
