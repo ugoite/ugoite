@@ -73,9 +73,9 @@ account's OIDC methods remain unchanged while the recovered Space binding moves
 to the fresh account.
 
 The legacy Integrity requirement registry at `requirements/integrity.yaml` is
-retained as a read-only migration snapshot. The canonical Integrity requirements
-at `docs/mitase/requirements/integrity.yaml` are the only semantic authority for
-the migrated Integrity domain.
+retired and is no longer included in Mitase's declared inventory. The canonical
+Integrity requirements at `docs/mitase/requirements/integrity.yaml` are the only
+semantic authority for the Integrity domain.
 
 The Storage Space foundation, creation contract, and connector/access/routing/preference slice
 (`REQ-STO-001`, `REQ-STO-002`, `REQ-STO-003`, `REQ-STO-004`, `REQ-STO-005`, `REQ-STO-006`,

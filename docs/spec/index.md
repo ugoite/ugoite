@@ -82,10 +82,10 @@ The legacy Frontend requirement registry is also retired; the canonical
 Frontend graph at `docs/mitase/requirements/frontend.yaml` is the only semantic
 authority for routes, components, interaction surfaces, API clients, and exact
 Frontend verification evidence.
-The legacy Integrity requirement registry is no longer semantic authority and
-remains a read-only migration snapshot until the broader `docs/spec` cleanup is
-complete. The migrated Storage Space foundation records are likewise no longer
-semantic authority in their legacy registry. The duplicate-create conflict
+The legacy Integrity requirement registry is likewise retired and no longer
+part of Mitase's declared inventory. The migrated Storage Space foundation
+records are likewise no longer semantic authority in their legacy registry. The
+duplicate-create conflict
 contract is now canonical; remaining Storage records continue to be migrated in
 focused slices. Changed-ownership enforcement remains staged
 until it can be scoped safely to the migrated slice.
