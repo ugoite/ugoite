@@ -1561,6 +1561,15 @@ requirements:
                 criterion: REQ-FE-065#criterion.submission-guard
                 covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "REQ-FE-065: row_reference searches must resolve to a saved entry before submit" } }
+          - id: chat-submission-guard
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-065: chat mode blocks unresolved row_reference searches before submit" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-065#criterion.submission-guard
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "REQ-FE-065: chat mode blocks unresolved row_reference searches before submit" } }
           - id: bounded-options
             adapter: typescript
             path: frontend/src/lib/client.test.ts
@@ -1570,6 +1579,15 @@ requirements:
                 criterion: REQ-FE-065#criterion.bounded-lookup
                 covers: [FEAT-SRCH-001#binding.frontend/target.search-api]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/lib/client.test.ts", test: "REQ-FE-065: row_reference picker options request bounded form-scoped summaries" } }
+          - id: lookup-failure
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-065: row_reference pickers surface load errors when reference lookup fails" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-065#criterion.bounded-lookup
+                covers: [FEAT-SRCH-001#binding.frontend/target.search-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "REQ-FE-065: row_reference pickers surface load errors when reference lookup fails" } }
           - id: blank-options
             adapter: typescript
             path: frontend/src/lib/client.test.ts
