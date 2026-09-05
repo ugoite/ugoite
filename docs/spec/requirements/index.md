@@ -29,10 +29,10 @@ is no longer included in Mitase's declared inventory. The canonical Asset
 requirements at `docs/mitase/requirements/assets.yaml` are the only semantic
 authority for the migrated Asset domain.
 
-The legacy E2E requirement registry at `requirements/e2e.yaml` is retained as a
-read-only migration snapshot and is no longer included in Mitase's declared
-inventory. The canonical E2E requirements at `docs/mitase/requirements/e2e.yaml`
-are the only semantic authority for the migrated E2E domain.
+The legacy E2E requirement registry at `requirements/e2e.yaml` is retired and
+is no longer included in Mitase's declared inventory. The canonical E2E
+requirements at `docs/mitase/requirements/e2e.yaml` are the only semantic
+authority for the migrated E2E domain.
 
 The legacy Frontend requirement registry at `requirements/frontend.yaml` is
 retained as a read-only migration snapshot and is no longer included in Mitase's
