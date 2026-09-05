@@ -1862,3 +1862,122 @@ requirements:
                 criterion: REQ-FE-067#criterion.dialog-workspace
                 covers: [FEAT-FE-004#binding.frontend/target.create-dialogs]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "keeps form dialog actions at their intrinsic height" } }
+  - id: REQ-FE-041
+    title: Fixed Surface Palette
+    description: The frontend uses one approved v5 surface palette with responsive shell tokens and dark-mode surfaces, without reintroducing retired theme or accent variants.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: fixed-palette
+        kind: behavior
+        statement: The frontend stylesheet defines the approved v5 palette, shell dimensions, and responsive breakpoint, and does not import retired theme stylesheets.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: system-appearance
+        kind: behavior
+        statement: Dark mode swaps the approved surfaces and foregrounds while retaining the fixed palette and omitting product-specific theme or accent variants.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: fixed-palette-verification
+        role: verification
+        facet: verification
+        responsibility: Verify fixed palette, responsive shell, and dark-mode stylesheet invariants through exact frontend tests.
+        targets:
+          - id: palette-contract
+            adapter: typescript
+            path: frontend/src/themes/registry.test.ts
+            selector: { kind: test, name: "uses the approved concept palette" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-041#criterion.fixed-palette
+                covers: [FEAT-FE-011#binding.frontend/target.surface-contract]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/themes/registry.test.ts, test: "uses the approved concept palette" } }
+          - id: shell-contract
+            adapter: typescript
+            path: frontend/src/themes/registry.test.ts
+            selector: { kind: test, name: "uses the approved shell dimensions and responsive breakpoint" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-041#criterion.fixed-palette
+                covers: [FEAT-FE-011#binding.frontend/target.surface-contract]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/themes/registry.test.ts, test: "uses the approved shell dimensions and responsive breakpoint" } }
+          - id: retired-themes
+            adapter: typescript
+            path: frontend/src/themes/registry.test.ts
+            selector: { kind: test, name: "does not import the retired theme stylesheets" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-041#criterion.fixed-palette
+                covers: [FEAT-FE-011#binding.frontend/target.surface-contract]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/themes/registry.test.ts, test: "does not import the retired theme stylesheets" } }
+          - id: dark-surfaces
+            adapter: typescript
+            path: frontend/src/themes/registry.test.ts
+            selector: { kind: test, name: "keeps dark-mode surfaces readable without theme or accent variants" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-041#criterion.system-appearance
+                covers: [FEAT-FE-011#binding.frontend/target.surface-contract]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/themes/registry.test.ts, test: "keeps dark-mode surfaces readable without theme or accent variants" } }
+              - kind: verifies
+                criterion: REQ-FE-059#criterion.system-appearance
+                covers: [FEAT-FE-011#binding.frontend/target.surface-contract]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/themes/registry.test.ts, test: "keeps dark-mode surfaces readable without theme or accent variants" } }
+  - id: REQ-FE-042
+    title: Surface Token Coverage Enforcement
+    description: Surface-aware components use shared UI tokens instead of raw color utilities or inline color styles.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: surface-tokens
+        kind: quality
+        statement: Surface-aware frontend components contain no raw Tailwind color utilities or inline color styles, so the fixed palette remains centrally governed.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: surface-token-verification
+        role: verification
+        facet: verification
+        responsibility: Verify token-only surface styling through the exact frontend source scan tests.
+        targets:
+          - id: raw-color-utilities
+            adapter: typescript
+            path: frontend/src/themes/usage.test.ts
+            selector: { kind: test, name: "REQ-FE-042: avoids raw color utilities in surface-aware components" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-042#criterion.surface-tokens
+                covers: [FEAT-FE-011#binding.frontend/target.surface-usage-contract]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/themes/usage.test.ts, test: "REQ-FE-042: avoids raw color utilities in surface-aware components" } }
+          - id: inline-color-styles
+            adapter: typescript
+            path: frontend/src/themes/usage.test.ts
+            selector: { kind: test, name: "REQ-FE-042: avoids inline color styles in surface-aware components" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-042#criterion.surface-tokens
+                covers: [FEAT-FE-011#binding.frontend/target.surface-usage-contract]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/themes/usage.test.ts, test: "REQ-FE-042: avoids inline color styles in surface-aware components" } }
+  - id: REQ-FE-059
+    title: System Appearance
+    description: The frontend follows the operating-system color preference for its fixed surface palette and does not expose product-specific appearance, theme, accent, or content-width controls.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: system-appearance
+        kind: behavior
+        statement: The frontend initializes and updates the document color mode from the operating-system preference while retaining the fixed surface palette and without product-specific appearance controls.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: system-appearance-verification
+        role: verification
+        facet: verification
+        responsibility: Verify operating-system color preference hydration and live updates through exact frontend tests.
+        targets:
+          - id: color-mode-updates
+            adapter: typescript
+            path: frontend/src/lib/color-mode.test.ts
+            selector: { kind: test, name: "updates the document when the operating system preference changes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-059#criterion.system-appearance
+                covers: [FEAT-FE-011#binding.frontend/target.color-mode]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/color-mode.test.ts, test: "updates the document when the operating system preference changes" } }
