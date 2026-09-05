@@ -62,7 +62,7 @@ requirements:
       - id: content-scan-test
         role: verification
         facet: verification
-        responsibility: Verify current Entry content scanning through the exact integration test; authorized AssetText projection is evidenced by the Asset domain test, while missing, stale, and corrupt derived-state fallback criteria remain unverified until criterion-specific evidence is available.
+        responsibility: Verify current Entry content scanning, authorized AssetText projection, and missing, stale, and corrupt derived-state fallback behavior through the exact domain and integration tests.
         targets:
           - id: case
             adapter: rust
