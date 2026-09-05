@@ -167,10 +167,13 @@ inventory:
             - frontend/app.config.ts
             - frontend/src/lib/api.test.ts
             - frontend/src/lib/frontend-origin.test.ts
+            - frontend/vitest.config.ts
+            - docsite/vitest.config.ts
             - docsite/src/ssot.test.ts
             - docsite/src/spec-integrity.test.ts
             - tools/coverage_gates_test.ts
             - tools/knowledge_compatibility_test.ts
+            - tools/release_contract_test.ts
             - tools/release.ts
             - tools/workspace_test.ts
         openapi:
@@ -282,6 +285,9 @@ inventory:
             - .devcontainer/devcontainer.json
             - Cargo.toml
             - mise.toml
+            - version.txt
+            - packages/ugoite/package.json
+            - packages/ugoite/README.md
             - scripts/dev-seed.sh
             - scripts/install-ugoite-cli.sh
             - scripts/verify-release-cli-quickstart.sh

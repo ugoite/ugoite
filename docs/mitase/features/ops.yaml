@@ -119,6 +119,14 @@ features:
                 criterion: REQ-OPS-006#criterion.root-rust-gate
               - kind: satisfies
                 criterion: REQ-OPS-007#criterion.docsite-gate
+              - kind: satisfies
+                criterion: REQ-OPS-019#criterion.root-mise-surface
+              - kind: satisfies
+                criterion: REQ-OPS-020#criterion.portable-wasm-gates
+              - kind: satisfies
+                criterion: REQ-OPS-021#criterion.frontend-coverage-gate
+              - kind: satisfies
+                criterion: REQ-OPS-024#criterion.docsite-coverage-gate
           - id: ci-workflow
             adapter: declared
             path: .github/workflows/ci.yml
@@ -130,6 +138,8 @@ features:
                 criterion: REQ-OPS-006#criterion.root-rust-gate
               - kind: satisfies
                 criterion: REQ-OPS-007#criterion.docsite-gate
+              - kind: satisfies
+                criterion: REQ-OPS-020#criterion.portable-wasm-gates
       - id: release-evidence
         role: evidence
         facet: release-gate
@@ -225,6 +235,8 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-OPS-009#criterion.deterministic-release-promotion
+              - kind: satisfies
+                criterion: REQ-OPS-044#criterion.repository-native-release-promotion
           - id: frontend-proxy
             adapter: typescript
             path: frontend/app.config.ts
@@ -248,6 +260,8 @@ features:
                 anchor: REQ-OPS-011#criterion.rust-cache-discipline
               - kind: evidences
                 anchor: REQ-OPS-013#criterion.required-status-contract
+              - kind: evidences
+                anchor: REQ-OPS-022#criterion.path-aware-e2e-tiering
           - id: required-status
             adapter: declared
             path: .github/required-status-checks.json
@@ -309,6 +323,77 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-OPS-043#criterion.knowledge-compatibility-gate
+      - id: migrated-ops-coverage
+        role: implementation
+        facet: quality-gates
+        responsibility: Connect the frontend and docsite coverage configurations to the exact repository tests that verify their 100 percent coverage contracts.
+        targets:
+          - id: frontend-coverage-config
+            adapter: typescript
+            path: frontend/vitest.config.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-021#criterion.frontend-coverage-gate
+          - id: docsite-coverage-config
+            adapter: typescript
+            path: docsite/vitest.config.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-024#criterion.docsite-coverage-gate
+      - id: public-installer
+        role: implementation
+        facet: release-installer
+        responsibility: Keep the public CLI installer package metadata separate from repository development tooling while release workflows remain external.
+        targets:
+          - id: installer-package
+            adapter: declared
+            path: packages/ugoite/package.json
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-023#criterion.public-installer-separation
+          - id: installer-readme
+            adapter: declared
+            path: packages/ugoite/README.md
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-023#criterion.public-installer-separation
+      - id: repository-native-release
+        role: implementation
+        facet: release-promotion
+        responsibility: Keep the prepared version authority and release implementation connected to the repository-native candidate promotion contract. Candidate and publish execution remains owned by repository workflows.
+        targets:
+          - id: version-authority
+            adapter: declared
+            path: version.txt
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-044#criterion.repository-native-release-promotion
+          - id: candidate-workflow
+            adapter: declared
+            path: .github/workflows/release-candidate.yml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-044#criterion.repository-native-release-promotion
+          - id: publish-workflow
+            adapter: declared
+            path: .github/workflows/release-publish.yml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-044#criterion.repository-native-release-promotion
+          - id: release-implementation
+            adapter: typescript
+            path: tools/release.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-044#criterion.repository-native-release-promotion
       - id: planned-ops-evidence
         role: evidence
         facet: planned-work
