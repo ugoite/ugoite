@@ -540,3 +540,30 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-059#criterion.system-appearance
+
+  - id: FEAT-FE-013
+    title: UI specification registry
+    summary: Connect the declarative UI page registry, shared Space chrome declaration, and their consistency tests to exact frontend specification evidence.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep declarative UI page and shared Space chrome artifacts connected to the frontend registry tests that validate their structure and route coverage.
+        targets:
+          - id: page-registry
+            adapter: declared
+            path: docs/spec/ui/pages/space-home.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: space-chrome
+            adapter: declared
+            path: docs/spec/ui/components/space-shell.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.shared-chrome

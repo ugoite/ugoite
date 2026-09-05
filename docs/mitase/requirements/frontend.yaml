@@ -2241,6 +2241,93 @@ requirements:
                 criterion: REQ-FE-039#criterion.reserved-metadata
                 covers: [FEAT-FE-004#binding.frontend/target.edit-form-dialog]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-039: hides reserved-name guidance until a reserved name is entered in edit form" } }
+  - id: REQ-FE-040
+    title: UI Specification Registry Validation
+    description: The declarative frontend UI page registry remains consistent with its supported component vocabulary, implemented routes, and shared Space chrome.
+    priority: high
+    status: implemented
+    criteria:
+      - id: registry-shape
+        kind: quality
+        statement: UI page YAML declares required page metadata, supported component types, and links to existing page identifiers.
+        governed_by: [POL-006#rule.governance, POL-008#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: route-coverage
+        kind: quality
+        statement: Every documented UI page maps to an implemented frontend route, every implemented Space route is documented, and implemented page declarations do not retain placeholder route content.
+        governed_by: [POL-006#rule.governance, POL-008#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: shared-chrome
+        kind: behavior
+        statement: The shared Space chrome declaration keeps the sidebar, workspace top bar, and mobile navigation at the approved positions, dimensions, and destinations.
+        governed_by: [POL-006#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: ui-registry-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the declarative UI page registry, route coverage, placeholder guard, and shared Space chrome through exact frontend tests.
+        targets:
+          - id: page-metadata
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-040: loads UI page specs" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.registry-shape
+                covers: [FEAT-FE-013#binding.frontend/target.page-registry]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: loads UI page specs" } }
+          - id: component-types
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-040: validates component types" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.registry-shape
+                covers: [FEAT-FE-013#binding.frontend/target.page-registry]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates component types" } }
+          - id: page-links
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-040: validates page links" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.registry-shape
+                covers: [FEAT-FE-013#binding.frontend/target.page-registry]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates page links" } }
+          - id: documented-routes
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-040: validates docs pages map to implemented routes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.route-coverage
+                covers: [FEAT-FE-013#binding.frontend/target.page-registry]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates docs pages map to implemented routes" } }
+          - id: implemented-routes
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-040: validates implemented routes are documented" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.route-coverage
+                covers: [FEAT-FE-013#binding.frontend/target.page-registry]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates implemented routes are documented" } }
+          - id: placeholder-routes
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-040: implemented page specs reject placeholder route content" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.route-coverage
+                covers: [FEAT-FE-013#binding.frontend/target.page-registry]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: implemented page specs reject placeholder route content" } }
+          - id: shared-space-chrome
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-040: validates shared space chrome" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.shared-chrome
+                covers: [FEAT-FE-013#binding.frontend/target.space-chrome]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates shared space chrome" } }
   - id: REQ-FE-055
     title: Responsive Form Column Editor Layout
     description: Form creation and editing dialogs keep the column name input readable on narrow layouts while secondary controls remain available.

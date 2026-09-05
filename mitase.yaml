@@ -94,6 +94,7 @@ inventory:
             - frontend/src/lib/preferences-local.test.ts
             - frontend/src/lib/color-mode.ts
             - frontend/src/lib/color-mode.test.ts
+            - frontend/src/spec/ui-pages.test.ts
             - frontend/src/themes/registry.test.ts
             - frontend/src/themes/usage.test.ts
             - frontend/src/routes/index.tsx
@@ -238,6 +239,7 @@ inventory:
             - docs/spec/stories/experimental.yaml
             - docs/spec/ui/index.md
             - docs/spec/ui/pages/space-home.yaml
+            - docs/spec/ui/components/space-shell.yaml
             - .github/workflows/ci.yml
             - .github/workflows/release-publish.yml
             - mise.toml
