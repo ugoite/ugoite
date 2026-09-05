@@ -46,6 +46,12 @@ requirements at `docs/mitase/requirements/search.yaml` are the only semantic
 authority for keyword search, structured query, frontend search behavior, and
 derived relation maintenance.
 
+The legacy Entry requirement registry at `requirements/entry.yaml` is retired
+and is no longer included in Mitase's declared inventory. The canonical Entry
+requirements at `docs/mitase/requirements/entries.yaml` are the only semantic
+authority for Entry creation, revision, mutation, history, Markdown extraction,
+and interface behavior.
+
 The legacy Frontend requirement registry at `requirements/frontend.yaml` is
 retained as a read-only migration snapshot and is no longer included in Mitase's
 declared inventory. The canonical Frontend requirements at
