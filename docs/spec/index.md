@@ -79,6 +79,10 @@ The legacy Form requirement registry is also retired; the canonical Form graph
 at `docs/mitase/requirements/forms.yaml` is the only semantic authority for
 Form schema governance, CRUD operations, reserved metadata, row references,
 attribution, and typed property conversion.
+The legacy Frontend requirement registry is also retired; the canonical
+Frontend graph at `docs/mitase/requirements/frontend.yaml` is the only semantic
+authority for routes, components, interaction surfaces, API clients, and exact
+Frontend verification evidence.
 The legacy Integrity requirement registry is no longer semantic authority and
 remains a read-only migration snapshot until the broader `docs/spec` cleanup is
 complete. The migrated Storage Space foundation records are likewise no longer
