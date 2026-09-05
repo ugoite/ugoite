@@ -59,10 +59,10 @@ authority for Form schema governance, CRUD operations, reserved metadata, row
 references, attribution, and typed property conversion.
 
 The legacy Frontend requirement registry at `requirements/frontend.yaml` is
-retained as a read-only migration snapshot and is no longer included in Mitase's
-declared inventory. The canonical Frontend requirements at
-`docs/mitase/requirements/frontend.yaml` are the only semantic authority for
-the migrated Frontend domain.
+retired and is no longer included in Mitase's declared inventory. The canonical
+Frontend requirements at `docs/mitase/requirements/frontend.yaml` are the only
+semantic authority for routes, components, interaction surfaces, API clients,
+and exact Frontend verification evidence.
 
 The OIDC external identity requirement `REQ-SEC-016` is represented canonically
 at `docs/mitase/requirements/security.yaml`. Its corresponding record in the
