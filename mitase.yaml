@@ -23,6 +23,18 @@ inventory:
             - frontend/src/lib/auth-route.test.ts
             - frontend/src/routes/login.tsx
             - frontend/src/routes/login.test.tsx
+            - frontend/src/lib/auth-api.test.ts
+            - frontend/src/components/AccountMenu.tsx
+            - frontend/src/components/AuthGate.tsx
+            - frontend/src/components/AuthGate.test.tsx
+            - frontend/src/components/GlobalShell.tsx
+            - frontend/src/components/GlobalShell.test.tsx
+            - frontend/src/components/GlobalShell.navigation.test.tsx
+            - frontend/src/components/Nav.tsx
+            - frontend/src/components/Nav.test.tsx
+            - frontend/src/components/SpaceShell.tsx
+            - frontend/src/components/SpaceShell.test.tsx
+            - frontend/src/routes/api/[...path].test.ts
             - frontend/src/routes/device.tsx
             - frontend/src/routes/device.test.tsx
             - frontend/src/routes/settings/security.tsx
