@@ -2,7 +2,7 @@ use crate::entry;
 use crate::form;
 use crate::index;
 use crate::integrity::IntegrityProvider;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -18,6 +18,14 @@ fn validation_error(message: impl std::fmt::Display) -> anyhow::Error {
     AppError::invalid_input(
         ErrorCode::InvalidInput,
         format!("{SQL_VALIDATION_PREFIX}: {message}"),
+    )
+    .into()
+}
+
+fn sql_entry_not_found(sql_id: &str) -> anyhow::Error {
+    AppError::not_found(
+        ErrorCode::EntryNotFound,
+        format!("Entry not found: {sql_id}"),
     )
     .into()
 }
@@ -398,7 +406,7 @@ pub async fn get_sql(op: &Operator, ws_path: &str, sql_id: &str) -> Result<Value
     ensure_sql_form(op, ws_path).await?;
     let row = entry::read_entry_row(op, ws_path, SQL_FORM_NAME, sql_id).await?;
     if row.deleted {
-        return Err(anyhow!("SQL entry not found: {}", sql_id));
+        return Err(sql_entry_not_found(sql_id));
     }
     sql_entry_from_row(&row)
 }
@@ -515,7 +523,7 @@ pub async fn update_sql<I: IntegrityProvider>(
     let form_def = form::read_form_definition(op, ws_path, SQL_FORM_NAME).await?;
     let mut row = entry::read_entry_row(op, ws_path, SQL_FORM_NAME, sql_id).await?;
     if row.deleted {
-        return Err(anyhow!("SQL entry not found: {}", sql_id));
+        return Err(sql_entry_not_found(sql_id));
     }
 
     if parent_revision_id.trim().is_empty() {
@@ -601,7 +609,7 @@ pub async fn delete_sql(op: &Operator, ws_path: &str, sql_id: &str, actor: &str)
     let form_def = form::read_form_definition(op, ws_path, SQL_FORM_NAME).await?;
     let mut row = entry::read_entry_row(op, ws_path, SQL_FORM_NAME, sql_id).await?;
     if row.deleted {
-        return Err(anyhow!("SQL entry not found: {}", sql_id));
+        return Err(sql_entry_not_found(sql_id));
     }
 
     let mut delete_ts = entry::now_ts();
