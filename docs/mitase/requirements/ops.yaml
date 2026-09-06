@@ -1010,7 +1010,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-OPS-025#criterion.published-release-quickstarts
-                covers: [FEAT-OPS-001#binding.migrated-ops-025-028/target.published-quickstart-workflow, FEAT-OPS-001#binding.migrated-ops-025-028/target.published-container-quickstart, FEAT-OPS-001#binding.migrated-ops-025-028/target.published-cli-quickstart]
+                covers: [FEAT-OPS-001#binding.repository-native-release/target.publish-workflow, FEAT-OPS-001#binding.migrated-ops-025-028/target.published-container-quickstart, FEAT-OPS-001#binding.migrated-ops-025-028/target.published-cli-quickstart]
                 runner: { runner: deno-test-file, arguments: { file: tools/release_contract_test.ts, test: 'REQ-OPS-025: published quick-start checks run after promotion' } }
 
   - id: REQ-OPS-026
@@ -1076,7 +1076,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-OPS-026#criterion.channel-changelog-sources
-                covers: [FEAT-OPS-001#binding.migrated-ops-025-028/target.channel-release-notes, FEAT-OPS-001#binding.migrated-ops-025-028/target.release-notes-tool, FEAT-OPS-001#binding.migrated-ops-025-028/target.release-notes-publish-workflow]
+                covers: [FEAT-OPS-001#binding.migrated-ops-025-028/target.channel-release-notes, FEAT-OPS-001#binding.migrated-ops-025-028/target.beta-changelog-source, FEAT-OPS-001#binding.migrated-ops-025-028/target.alpha-changelog-source, FEAT-OPS-001#binding.migrated-ops-025-028/target.release-notes-tool, FEAT-OPS-001#binding.repository-native-release/target.publish-workflow]
                 runner: { runner: deno-test-file, arguments: { file: tools/release-notes_test.ts, test: 'REQ-OPS-026: workflow updates notes after artifact quick-start verification' } }
 
   - id: REQ-OPS-027
@@ -1142,7 +1142,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-OPS-027#criterion.strict-lockfiles
-                covers: [FEAT-OPS-001#binding.migrated-ops-025-028/target.locked-root-mise, FEAT-OPS-001#binding.migrated-ops-025-028/target.locked-ci-workflow, FEAT-OPS-001#binding.migrated-ops-025-028/target.locked-release-workflow, FEAT-OPS-001#binding.migrated-ops-025-028/target.cargo-lock, FEAT-OPS-001#binding.migrated-ops-025-028/target.deno-lock]
+                covers: [FEAT-OPS-001#binding.automation/target.root-mise, FEAT-OPS-001#binding.automation/target.ci-workflow, FEAT-OPS-001#binding.repository-native-release/target.candidate-workflow, FEAT-OPS-001#binding.migrated-ops-025-028/target.cargo-lock, FEAT-OPS-001#binding.migrated-ops-025-028/target.deno-lock]
                 runner: { runner: deno-test-file, arguments: { file: tools/workspace_test.ts, test: 'REQ-OPS-027: repository tasks keep dependency resolution locked' } }
 
   - id: REQ-OPS-028
