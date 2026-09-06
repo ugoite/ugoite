@@ -66,6 +66,36 @@ Deno.test("REQ-OPS-023: public installer remains separate from repository develo
   }
 });
 
+Deno.test("REQ-OPS-027: repository tasks keep dependency resolution locked", async () => {
+  const mise = await Deno.readTextFile("mise.toml");
+  const ci = await Deno.readTextFile(".github/workflows/ci.yml");
+  const candidate = await Deno.readTextFile(
+    ".github/workflows/release-candidate.yml",
+  );
+  const deno = await Deno.readTextFile("deno.json");
+
+  assertEquals((await Deno.stat("Cargo.lock")).isFile, true);
+  assertEquals((await Deno.stat("deno.lock")).isFile, true);
+  for (
+    const command of [
+      "cargo fetch --locked",
+      "cargo check --workspace --all-targets --all-features --locked",
+      "cargo nextest run --workspace --locked",
+      "cargo test --workspace --doc --locked",
+    ]
+  ) {
+    assertEquals(mise.includes(command), true, command);
+  }
+  assertEquals(
+    candidate.includes("cargo build -p ugoite-cli --release --locked"),
+    true,
+  );
+  assertEquals(ci.includes("deno task e2e:install:browsers"), true);
+  assertEquals(deno.includes('"test": "deno test -A tools/*_test.ts'), true);
+  assertEquals(deno.includes('"check": "deno check tools/**/*.ts'), true);
+  assertEquals(deno.includes("--no-lock"), false);
+});
+
 Deno.test("Phase 1 workspace has one root toolchain and Deno lockfile", async () => {
   const rootMise = await Deno.readTextFile("mise.toml");
   assertEquals(rootMise.includes('deno = "2.8.3"'), true);

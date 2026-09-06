@@ -961,6 +961,249 @@ requirements:
                 covers: [FEAT-OPS-001#binding.migrated-ops-coverage/target.docsite-coverage-config, FEAT-OPS-001#binding.automation/target.root-mise]
                 runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: 'REQ-OPS-024: docsite coverage remains a canonical test contract' } }
 
+  - id: REQ-OPS-025
+    title: Published Release Quick-Start Verification
+    description: Release automation downloads the published Compose and CLI assets and verifies the browser and CLI quick starts against the exact released version.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: published-release-quickstarts
+        kind: quality
+        statement: The release workflow runs the published container and CLI quick-start checks after promotion and passes the selected release source and tag to both checks.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: published-release-quickstart-evidence
+        role: evidence
+        facet: release-gate
+        responsibility: Connect the publish workflow and its two public quick-start scripts as generic release Artifacts. Publication remains owned by repository workflows.
+        targets:
+          - id: published-quickstart-workflow
+            adapter: declared
+            path: .github/workflows/release-publish.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-025#criterion.published-release-quickstarts
+          - id: published-container-quickstart
+            adapter: declared
+            path: scripts/verify-release-container-quickstart.sh
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-025#criterion.published-release-quickstarts
+          - id: published-cli-quickstart
+            adapter: declared
+            path: scripts/verify-release-cli-quickstart.sh
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-025#criterion.published-release-quickstarts
+      - id: published-release-quickstart-verification
+        role: verification
+        facet: release-test
+        responsibility: Verify the post-promotion ordering and exact release identity inputs through the repository-owned release contract test.
+        targets:
+          - id: published-quickstart-contract-test
+            adapter: typescript
+            path: tools/release_contract_test.ts
+            selector: { kind: test, name: 'REQ-OPS-025: published quick-start checks run after promotion' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-025#criterion.published-release-quickstarts
+                covers: [FEAT-OPS-001#binding.repository-native-release/target.publish-workflow, FEAT-OPS-001#binding.migrated-ops-025-028/target.published-container-quickstart, FEAT-OPS-001#binding.migrated-ops-025-028/target.published-cli-quickstart]
+                runner: { runner: deno-test-file, arguments: { file: tools/release_contract_test.ts, test: 'REQ-OPS-025: published quick-start checks run after promotion' } }
+
+  - id: REQ-OPS-026
+    title: Repository-Managed Channel Changelog Sources
+    description: Stable, beta, and alpha changelog sources remain separate, do not imply unpublished artifacts exist, and are rendered into the matching GitHub Release body after artifact and quick-start verification. Reruns replace one marked repository-owned section without duplicating generated notes.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: channel-changelog-sources
+        kind: quality
+        statement: Release notes select the source matching the release channel and update one repository-owned section only after published quick-start verification.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: channel-changelog-evidence
+        role: evidence
+        facet: release-notes
+        responsibility: Connect channel source documents, the release-notes implementation, and the publish workflow as generic release Artifacts.
+        targets:
+          - id: stable-changelog-source
+            adapter: declared
+            path: docs/version/changelog/stable.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-026#criterion.channel-changelog-sources
+          - id: beta-changelog-source
+            adapter: declared
+            path: docs/version/changelog/beta.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-026#criterion.channel-changelog-sources
+          - id: alpha-changelog-source
+            adapter: declared
+            path: docs/version/changelog/alpha.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-026#criterion.channel-changelog-sources
+          - id: release-notes-tool
+            adapter: typescript
+            path: tools/release-notes.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-026#criterion.channel-changelog-sources
+          - id: release-notes-publish-workflow
+            adapter: declared
+            path: .github/workflows/release-publish.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-026#criterion.channel-changelog-sources
+      - id: channel-changelog-verification
+        role: verification
+        facet: release-test
+        responsibility: Verify channel selection, source validation, idempotent marked-section replacement, and workflow ordering through the exact release-notes tests.
+        targets:
+          - id: channel-changelog-test
+            adapter: typescript
+            path: tools/release-notes_test.ts
+            selector: { kind: test, name: 'REQ-OPS-026: workflow updates notes after artifact quick-start verification' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-026#criterion.channel-changelog-sources
+                covers: [FEAT-OPS-001#binding.migrated-ops-025-028/target.channel-release-notes, FEAT-OPS-001#binding.migrated-ops-025-028/target.beta-changelog-source, FEAT-OPS-001#binding.migrated-ops-025-028/target.alpha-changelog-source, FEAT-OPS-001#binding.migrated-ops-025-028/target.release-notes-tool, FEAT-OPS-001#binding.repository-native-release/target.publish-workflow]
+                runner: { runner: deno-test-file, arguments: { file: tools/release-notes_test.ts, test: 'REQ-OPS-026: workflow updates notes after artifact quick-start verification' } }
+
+  - id: REQ-OPS-027
+    title: Strict Lockfile Discipline
+    description: Rust commands use `--locked` and Deno workflows use the committed lockfile without silently changing dependency resolution.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: strict-lockfiles
+        kind: quality
+        statement: The repository keeps Cargo.lock and deno.lock under version control, uses locked Cargo commands in root and release tasks, and does not opt out of Deno lockfile resolution.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: strict-lockfile-evidence
+        role: evidence
+        facet: dependency-resolution
+        responsibility: Connect the root task graph and hosted release/CI workflows to the committed dependency lockfiles as generic repository Artifacts.
+        targets:
+          - id: strict-lockfile-mise
+            adapter: declared
+            path: mise.toml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-027#criterion.strict-lockfiles
+          - id: strict-lockfile-ci
+            adapter: declared
+            path: .github/workflows/ci.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-027#criterion.strict-lockfiles
+          - id: strict-lockfile-release
+            adapter: declared
+            path: .github/workflows/release-candidate.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-027#criterion.strict-lockfiles
+          - id: cargo-lock
+            adapter: declared
+            path: Cargo.lock
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-027#criterion.strict-lockfiles
+          - id: deno-lock
+            adapter: declared
+            path: deno.lock
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-027#criterion.strict-lockfiles
+      - id: strict-lockfile-verification
+        role: verification
+        facet: repository-test
+        responsibility: Verify the lockfile presence, locked Rust task commands, Deno workspace task surface, and absence of an explicit lock opt-out through the exact workspace test.
+        targets:
+          - id: strict-lockfile-test
+            adapter: typescript
+            path: tools/workspace_test.ts
+            selector: { kind: test, name: 'REQ-OPS-027: repository tasks keep dependency resolution locked' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-027#criterion.strict-lockfiles
+                covers: [FEAT-OPS-001#binding.automation/target.root-mise, FEAT-OPS-001#binding.automation/target.ci-workflow, FEAT-OPS-001#binding.repository-native-release/target.candidate-workflow, FEAT-OPS-001#binding.migrated-ops-025-028/target.cargo-lock, FEAT-OPS-001#binding.migrated-ops-025-028/target.deno-lock]
+                runner: { runner: deno-test-file, arguments: { file: tools/workspace_test.ts, test: 'REQ-OPS-027: repository tasks keep dependency resolution locked' } }
+
+  - id: REQ-OPS-028
+    title: Repository-Owned Helm Chart
+    description: The Helm chart deploys the single image, persistent `/data`, non-root defaults, and explicit auth secrets.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: repository-owned-helm-chart
+        kind: quality
+        statement: The repository-owned chart renders one Ugoite runtime image with persistent `/data`, non-root and dropped-capability defaults, and an optional explicit Secret reference for node authentication.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: repository-owned-helm-evidence
+        role: evidence
+        facet: deployment
+        responsibility: Connect the chart metadata, defaults, deployment, and persistent-volume template as generic deployment Artifacts. Helm execution remains external repository tooling.
+        targets:
+          - id: helm-chart
+            adapter: declared
+            path: charts/ugoite/Chart.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-028#criterion.repository-owned-helm-chart
+          - id: helm-values
+            adapter: declared
+            path: charts/ugoite/values.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-028#criterion.repository-owned-helm-chart
+          - id: helm-deployment
+            adapter: declared
+            path: charts/ugoite/templates/deployment.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-028#criterion.repository-owned-helm-chart
+          - id: helm-pvc
+            adapter: declared
+            path: charts/ugoite/templates/pvc.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-028#criterion.repository-owned-helm-chart
+      - id: repository-owned-helm-verification
+        role: verification
+        facet: release-test
+        responsibility: Verify the chart's single-image, persistence, security, and explicit-secret contract through the exact release contract test.
+        targets:
+          - id: helm-contract-test
+            adapter: typescript
+            path: tools/release_contract_test.ts
+            selector: { kind: test, name: 'REQ-OPS-028: repository-owned Helm chart keeps the runtime contract' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-028#criterion.repository-owned-helm-chart
+                covers: [FEAT-OPS-001#binding.migrated-ops-025-028/target.helm-chart, FEAT-OPS-001#binding.migrated-ops-025-028/target.helm-values, FEAT-OPS-001#binding.migrated-ops-025-028/target.helm-deployment, FEAT-OPS-001#binding.migrated-ops-025-028/target.helm-pvc]
+                runner: { runner: deno-test-file, arguments: { file: tools/release_contract_test.ts, test: 'REQ-OPS-028: repository-owned Helm chart keeps the runtime contract' } }
+
   - id: REQ-OPS-044
     title: Repository-Native Candidate Promotion
     description: Release preparation uses version.txt as the canonical prepared-version authority, records verified candidate identity from exact manifest bytes, and promotes only matching candidate artifacts without rebuilding or repackaging.

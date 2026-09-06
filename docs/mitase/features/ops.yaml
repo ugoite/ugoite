@@ -127,6 +127,8 @@ features:
                 criterion: REQ-OPS-021#criterion.frontend-coverage-gate
               - kind: satisfies
                 criterion: REQ-OPS-024#criterion.docsite-coverage-gate
+              - kind: satisfies
+                criterion: REQ-OPS-027#criterion.strict-lockfiles
           - id: ci-workflow
             adapter: declared
             path: .github/workflows/ci.yml
@@ -140,6 +142,8 @@ features:
                 criterion: REQ-OPS-007#criterion.docsite-gate
               - kind: satisfies
                 criterion: REQ-OPS-020#criterion.portable-wasm-gates
+              - kind: satisfies
+                criterion: REQ-OPS-027#criterion.strict-lockfiles
       - id: release-evidence
         role: evidence
         facet: release-gate
@@ -380,6 +384,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-OPS-044#criterion.repository-native-release-promotion
+              - kind: satisfies
+                criterion: REQ-OPS-027#criterion.strict-lockfiles
           - id: publish-workflow
             adapter: declared
             path: .github/workflows/release-publish.yml
@@ -387,6 +393,10 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-OPS-044#criterion.repository-native-release-promotion
+              - kind: satisfies
+                criterion: REQ-OPS-025#criterion.published-release-quickstarts
+              - kind: satisfies
+                criterion: REQ-OPS-026#criterion.channel-changelog-sources
           - id: release-implementation
             adapter: typescript
             path: tools/release.ts
@@ -394,6 +404,95 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-OPS-044#criterion.repository-native-release-promotion
+      - id: migrated-ops-025-028
+        role: implementation
+        facet: release-and-deployment
+        responsibility: Connect published quick-start verification, channel release notes, strict dependency resolution, and the repository-owned Helm chart to generic repository Artifacts. Release and deployment execution remain external repository tooling.
+        targets:
+          - id: published-container-quickstart
+            adapter: declared
+            path: scripts/verify-release-container-quickstart.sh
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-025#criterion.published-release-quickstarts
+          - id: published-cli-quickstart
+            adapter: declared
+            path: scripts/verify-release-cli-quickstart.sh
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-025#criterion.published-release-quickstarts
+          - id: channel-release-notes
+            adapter: declared
+            path: docs/version/changelog/stable.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-026#criterion.channel-changelog-sources
+          - id: beta-changelog-source
+            adapter: declared
+            path: docs/version/changelog/beta.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-026#criterion.channel-changelog-sources
+          - id: alpha-changelog-source
+            adapter: declared
+            path: docs/version/changelog/alpha.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-026#criterion.channel-changelog-sources
+          - id: release-notes-tool
+            adapter: typescript
+            path: tools/release-notes.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-026#criterion.channel-changelog-sources
+          - id: cargo-lock
+            adapter: declared
+            path: Cargo.lock
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-027#criterion.strict-lockfiles
+          - id: deno-lock
+            adapter: declared
+            path: deno.lock
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-027#criterion.strict-lockfiles
+          - id: helm-chart
+            adapter: declared
+            path: charts/ugoite/Chart.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-028#criterion.repository-owned-helm-chart
+          - id: helm-values
+            adapter: declared
+            path: charts/ugoite/values.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-028#criterion.repository-owned-helm-chart
+          - id: helm-deployment
+            adapter: declared
+            path: charts/ugoite/templates/deployment.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-028#criterion.repository-owned-helm-chart
+          - id: helm-pvc
+            adapter: declared
+            path: charts/ugoite/templates/pvc.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-028#criterion.repository-owned-helm-chart
       - id: planned-ops-evidence
         role: evidence
         facet: planned-work
@@ -547,3 +646,50 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-OPS-015#criterion.production-authentication
+
+      - id: release-contracts
+        role: contract-source
+        facet: release-promotion
+        responsibility: Define the repository-owned release contract that connects promotion workflows, verification checks, channel notes, and dependency lockfiles.
+        targets:
+          - id: release-promotion-contract
+            adapter: declared
+            path: docs/architecture/release/release-contract.md
+            selector: { kind: file }
+
+    contracts:
+      - id: published-release-quickstarts
+        kind: custom
+        source: FEAT-OPS-001#binding.release-contracts/target.release-promotion-contract
+        participants:
+          - target: FEAT-OPS-001#binding.migrated-ops-025-028/target.published-container-quickstart
+            role: container
+          - target: FEAT-OPS-001#binding.migrated-ops-025-028/target.published-cli-quickstart
+            role: cli
+        guarantees: [REQ-OPS-025#criterion.published-release-quickstarts]
+      - id: channel-release-notes
+        kind: custom
+        source: FEAT-OPS-001#binding.release-contracts/target.release-promotion-contract
+        participants:
+          - target: FEAT-OPS-001#binding.migrated-ops-025-028/target.channel-release-notes
+            role: stable-source
+          - target: FEAT-OPS-001#binding.migrated-ops-025-028/target.beta-changelog-source
+            role: beta-source
+          - target: FEAT-OPS-001#binding.migrated-ops-025-028/target.alpha-changelog-source
+            role: alpha-source
+          - target: FEAT-OPS-001#binding.migrated-ops-025-028/target.release-notes-tool
+            role: renderer
+        guarantees: [REQ-OPS-026#criterion.channel-changelog-sources]
+      - id: strict-lockfiles
+        kind: custom
+        source: FEAT-OPS-001#binding.release-contracts/target.release-promotion-contract
+        participants:
+          - target: FEAT-OPS-001#binding.automation/target.ci-workflow
+            role: ci
+          - target: FEAT-OPS-001#binding.repository-native-release/target.candidate-workflow
+            role: release
+          - target: FEAT-OPS-001#binding.migrated-ops-025-028/target.cargo-lock
+            role: rust-lock
+          - target: FEAT-OPS-001#binding.migrated-ops-025-028/target.deno-lock
+            role: deno-lock
+        guarantees: [REQ-OPS-027#criterion.strict-lockfiles]
