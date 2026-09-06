@@ -28,6 +28,64 @@ async function writeArtifact(
   };
 }
 
+Deno.test("REQ-OPS-025: published quick-start checks run after promotion", async () => {
+  const workflow = await readText(".github/workflows/release-publish.yml");
+  const promoteStart = workflow.indexOf("\n  promote:\n");
+  const quickStartStart = workflow.indexOf(
+    "\n  verify-published-quickstarts:\n",
+  );
+  const quickStartEnd = workflow.indexOf(
+    "\n  publish-channel-release-notes:\n",
+    quickStartStart,
+  );
+  assertEquals(promoteStart >= 0, true, "promotion job must exist");
+  assertEquals(
+    quickStartStart > promoteStart,
+    true,
+    "published quick-start checks must follow promotion",
+  );
+  const quickStartJob = workflow.slice(
+    quickStartStart,
+    quickStartEnd < 0 ? undefined : quickStartEnd,
+  );
+  for (
+    const script of [
+      "scripts/verify-release-container-quickstart.sh",
+      "scripts/verify-release-cli-quickstart.sh",
+    ]
+  ) {
+    assertEquals(
+      quickStartJob.includes(script),
+      true,
+      `published quick-start job must run ${script}`,
+    );
+  }
+  assertEquals(quickStartJob.includes("UGOITE_RELEASE_SHA"), true);
+  assertEquals(quickStartJob.includes("UGOITE_RELEASE_TAG"), true);
+});
+
+Deno.test("REQ-OPS-028: repository-owned Helm chart keeps the runtime contract", async () => {
+  const chart = await readText("charts/ugoite/Chart.yaml");
+  const values = await readText("charts/ugoite/values.yaml");
+  const deployment = await readText("charts/ugoite/templates/deployment.yaml");
+  const pvc = await readText("charts/ugoite/templates/pvc.yaml");
+
+  assertEquals(chart.includes("type: application"), true);
+  assertEquals(values.includes("repository: ghcr.io/ugoite/ugoite"), true);
+  assertEquals(values.includes("mountPath: /data"), true);
+  assertEquals(values.includes("runAsNonRoot: true"), true);
+  assertEquals(values.includes("drop:\n      - ALL"), true);
+  assertEquals(values.includes('existingSecret: ""'), true);
+  assertEquals((deployment.match(/^\s+image:/gm) ?? []).length, 1);
+  assertEquals(
+    deployment.includes("mountPath: {{ .Values.persistence.mountPath"),
+    true,
+  );
+  assertEquals(deployment.includes("secretKeyRef:"), true);
+  assertEquals(pvc.includes("resources:"), true);
+  assertEquals(pvc.includes("requests:"), true);
+});
+
 Deno.test("REQ-OPS-044: version.txt is the only prepared-version authority", async () => {
   const version = (await readText("version.txt")).trim();
   const cargo = await readText("Cargo.toml");

@@ -394,6 +394,116 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-OPS-044#criterion.repository-native-release-promotion
+      - id: migrated-ops-025-028
+        role: implementation
+        facet: release-and-deployment
+        responsibility: Connect published quick-start verification, channel release notes, strict dependency resolution, and the repository-owned Helm chart to generic repository Artifacts. Release and deployment execution remain external repository tooling.
+        targets:
+          - id: published-quickstart-workflow
+            adapter: declared
+            path: .github/workflows/release-publish.yml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-025#criterion.published-release-quickstarts
+          - id: published-container-quickstart
+            adapter: declared
+            path: scripts/verify-release-container-quickstart.sh
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-025#criterion.published-release-quickstarts
+          - id: published-cli-quickstart
+            adapter: declared
+            path: scripts/verify-release-cli-quickstart.sh
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-025#criterion.published-release-quickstarts
+          - id: channel-release-notes
+            adapter: declared
+            path: docs/version/changelog/stable.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-026#criterion.channel-changelog-sources
+          - id: release-notes-tool
+            adapter: typescript
+            path: tools/release-notes.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-026#criterion.channel-changelog-sources
+          - id: release-notes-publish-workflow
+            adapter: declared
+            path: .github/workflows/release-publish.yml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-026#criterion.channel-changelog-sources
+          - id: locked-root-mise
+            adapter: declared
+            path: mise.toml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-027#criterion.strict-lockfiles
+          - id: locked-ci-workflow
+            adapter: declared
+            path: .github/workflows/ci.yml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-027#criterion.strict-lockfiles
+          - id: locked-release-workflow
+            adapter: declared
+            path: .github/workflows/release-candidate.yml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-027#criterion.strict-lockfiles
+          - id: cargo-lock
+            adapter: declared
+            path: Cargo.lock
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-027#criterion.strict-lockfiles
+          - id: deno-lock
+            adapter: declared
+            path: deno.lock
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-027#criterion.strict-lockfiles
+          - id: helm-chart
+            adapter: declared
+            path: charts/ugoite/Chart.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-028#criterion.repository-owned-helm-chart
+          - id: helm-values
+            adapter: declared
+            path: charts/ugoite/values.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-028#criterion.repository-owned-helm-chart
+          - id: helm-deployment
+            adapter: declared
+            path: charts/ugoite/templates/deployment.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-028#criterion.repository-owned-helm-chart
+          - id: helm-pvc
+            adapter: declared
+            path: charts/ugoite/templates/pvc.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-028#criterion.repository-owned-helm-chart
       - id: planned-ops-evidence
         role: evidence
         facet: planned-work

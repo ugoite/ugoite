@@ -175,6 +175,8 @@ inventory:
             - tools/knowledge_compatibility_test.ts
             - tools/release_contract_test.ts
             - tools/release.ts
+            - tools/release-notes.ts
+            - tools/release-notes_test.ts
             - tools/workspace_test.ts
         openapi:
           roots:
@@ -284,20 +286,35 @@ inventory:
             - .github/dependabot.yml
             - .devcontainer/devcontainer.json
             - Cargo.toml
+            - Cargo.lock
+            - deno.json
+            - deno.lock
             - mise.toml
             - version.txt
+            - charts/ugoite/Chart.yaml
+            - charts/ugoite/values.yaml
+            - charts/ugoite/templates/deployment.yaml
+            - charts/ugoite/templates/pvc.yaml
             - packages/ugoite/package.json
             - packages/ugoite/README.md
             - scripts/dev-seed.sh
             - scripts/install-ugoite-cli.sh
             - scripts/verify-release-cli-quickstart.sh
             - docs/architecture/release/release-contract.md
+            - docs/architecture/release/changelog-stable.md
+            - docs/architecture/release/changelog-beta.md
+            - docs/architecture/release/changelog-alpha.md
+            - docs/version/changelog/stable.yaml
+            - docs/version/changelog/beta.yaml
+            - docs/version/changelog/alpha.yaml
             - scripts/ci/mitase-check.sh
             - scripts/verify-release-container-quickstart.sh
             - tools/knowledge_compatibility.ts
             - tools/knowledge_compatibility_test.ts
             - tools/coverage_gates_test.ts
             - tools/release.ts
+            - tools/release-notes.ts
+            - tools/release-notes_test.ts
             - docsite/src/spec-integrity.test.ts
             - crates/ugoite-core/src/lib.rs
             - crates/ugoite-server/src/lib.rs

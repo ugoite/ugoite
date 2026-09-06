@@ -90,9 +90,9 @@ contract is now canonical; remaining Storage records continue to be migrated in
 focused slices. Changed-ownership enforcement remains staged
 until it can be scoped safely to the migrated slice.
 The canonical Operations graph now represents `REQ-OPS-001` through
-`REQ-OPS-024`, together with `REQ-OPS-043` and `REQ-OPS-044`; later Operations
-records remain migration evidence until their focused Mitase slices are
-reviewed.
+`REQ-OPS-028`, together with `REQ-OPS-043` and `REQ-OPS-044`; later Operations
+records remain read-only migration evidence until their focused Mitase slices
+are reviewed.
 Other requirement and feature domains remain authoritative in their existing
 `docs/spec` records until migrated. The retired Asset requirement registry is
 not retained as a second semantic source; its canonical replacement is the
