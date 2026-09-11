@@ -1861,7 +1861,7 @@ async fn auth_invitation_start(
         .identity
         .start_invitation_registration(&payload.invitation_token)
         .await
-        .map_err(auth_error)?;
+        .map_err(invitation_api_error)?;
     Ok(Json(
         serde_json::to_value(result).map_err(|error| auth_error(error.into()))?,
     ))
@@ -1887,7 +1887,7 @@ async fn auth_invitation_finish(
             &payload.credential,
         )
         .await
-        .map_err(auth_error)?;
+        .map_err(invitation_api_error)?;
     bind_invited_account(
         &state,
         &result.account,
@@ -1901,11 +1901,17 @@ async fn auth_invitation_finish(
             result.invitation.invitation_id,
             result.account.account_id,
             result.invitation.accepted_principal_id().ok_or_else(|| {
-                ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
+                ApiError::new(
+                    StatusCode::CONFLICT,
+                    json!({
+                        "code": "INVITATION_NOT_PENDING",
+                        "message": "Invitation state changed during acceptance",
+                    }),
+                )
             })?,
         )
         .await
-        .map_err(auth_error)?;
+        .map_err(invitation_api_error)?;
     Ok((
         StatusCode::CREATED,
         [(
@@ -1927,7 +1933,7 @@ async fn auth_invitation_accept_existing(
         .identity
         .accept_invitation_for_account(&payload.invitation_token, identity.account_id)
         .await
-        .map_err(auth_error)?;
+        .map_err(invitation_api_error)?;
     bind_invited_account(&state, &account, &invitation, BindingMethod::Invite).await?;
     state
         .identity
@@ -1935,11 +1941,17 @@ async fn auth_invitation_accept_existing(
             invitation.invitation_id,
             account.account_id,
             invitation.accepted_principal_id().ok_or_else(|| {
-                ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
+                ApiError::new(
+                    StatusCode::CONFLICT,
+                    json!({
+                        "code": "INVITATION_NOT_PENDING",
+                        "message": "Invitation state changed during acceptance",
+                    }),
+                )
             })?,
         )
         .await
-        .map_err(auth_error)?;
+        .map_err(invitation_api_error)?;
     Ok((
         StatusCode::CREATED,
         Json(json!({
@@ -3795,6 +3807,64 @@ async fn auth_owner_recovery_finish(
         })),
     )
         .into_response())
+}
+
+/// Map Space invitation failures to stable user-facing errors.
+///
+/// Invitation handlers receive opaque identity errors, so this classifier keeps
+/// the same substring style as `owner_recovery_api_error` and reuses the shared
+/// invitation `ErrorCode` vocabulary: expiry reads as gone, consumed invitations
+/// read as no longer pending, and unknown tokens read as not found. Storage and
+/// recovery-fence failures keep their existing mapping. Anything unrecognized
+/// stays a generic authentication failure.
+fn invitation_api_error(error: anyhow::Error) -> ApiError {
+    let message = error.to_string();
+    let lower = message.to_lowercase();
+    if message.contains("RECOVERY_FENCE_UNAVAILABLE") {
+        return recovery_fence_unavailable();
+    }
+    if lower.contains("compare-and-swap")
+        || lower.contains("control-store")
+        || lower.contains("control object")
+        || lower.contains("node control write")
+        || lower.contains("invalid stored timestamp")
+        || lower.contains("storage")
+        || lower.contains("failed to read")
+        || lower.contains("failed to write")
+    {
+        return recovery_storage_unavailable();
+    }
+    let (status, code, reason) = if message.contains("has expired") {
+        (
+            StatusCode::GONE,
+            "INVITATION_EXPIRED",
+            "Invitation has expired",
+        )
+    } else if message.contains("already used") || message.contains("invalid or used") {
+        (
+            StatusCode::CONFLICT,
+            "INVITATION_NOT_PENDING",
+            "Invitation is no longer pending",
+        )
+    } else if message.contains("is invalid") || message.contains("not found") {
+        (
+            StatusCode::NOT_FOUND,
+            "INVITATION_NOT_FOUND",
+            "Invitation was not found",
+        )
+    } else if message.contains("stale")
+        || message.contains("does not match")
+        || message.contains("incomplete")
+    {
+        (
+            StatusCode::CONFLICT,
+            "INVITATION_NOT_PENDING",
+            "Invitation state changed during acceptance",
+        )
+    } else {
+        return auth_error(error);
+    };
+    ApiError::new(status, json!({ "code": code, "message": reason }))
 }
 
 fn owner_recovery_api_error(error: anyhow::Error) -> ApiError {
@@ -15491,6 +15561,66 @@ mod authentication_regression_tests {
             assert_eq!(body["code"], "INVALID_INPUT");
         }
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn invitation_failures_read_as_expiry_reuse_or_invalid() {
+        for (message, status, code) in [
+            (
+                "invitation has expired",
+                StatusCode::GONE,
+                "INVITATION_EXPIRED",
+            ),
+            (
+                "invitation was already used",
+                StatusCode::CONFLICT,
+                "INVITATION_NOT_PENDING",
+            ),
+            (
+                "invitation is invalid or used",
+                StatusCode::CONFLICT,
+                "INVITATION_NOT_PENDING",
+            ),
+            (
+                "invitation is invalid",
+                StatusCode::NOT_FOUND,
+                "INVITATION_NOT_FOUND",
+            ),
+            (
+                "invitation not found",
+                StatusCode::NOT_FOUND,
+                "INVITATION_NOT_FOUND",
+            ),
+            (
+                "invitation acceptance is stale",
+                StatusCode::CONFLICT,
+                "INVITATION_NOT_PENDING",
+            ),
+            (
+                "invitation acceptance is incomplete",
+                StatusCode::CONFLICT,
+                "INVITATION_NOT_PENDING",
+            ),
+            (
+                "invitation acceptance does not match finalization",
+                StatusCode::CONFLICT,
+                "INVITATION_NOT_PENDING",
+            ),
+            (
+                "unexpected identity failure",
+                StatusCode::UNAUTHORIZED,
+                "AUTHENTICATION_FAILED",
+            ),
+        ] {
+            let response = invitation_api_error(anyhow::anyhow!(message)).into_response();
+            assert_eq!(response.status(), status, "status for {message:?}");
+            let (_, body) = response.into_parts();
+            let body = axum::body::to_bytes(body, usize::MAX)
+                .await
+                .expect("readable error body");
+            let body: Value = serde_json::from_slice(&body).expect("JSON error body");
+            assert_eq!(body["code"], code, "code for {message:?}");
+        }
     }
 
     #[tokio::test]
