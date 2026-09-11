@@ -10,7 +10,6 @@ support, and product claims stay aligned with the implementation.
 ## Included
 
 - local CLI core mode over operator-owned Spaces;
-- remote CLI asset upload through the authenticated REST `file` multipart part;
 - Rust REST server with entries, forms, assets, preferences, search, saved SQL,
   and SQL query sessions;
 - server-backed browser application;

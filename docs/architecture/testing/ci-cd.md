@@ -85,6 +85,8 @@ releases use `release:prepare compatible|breaking`, which compares the prepared
 version with the latest stable tag before updating projections. A compatible
 change advances the patch; a breaking change advances the minor. Preparation
 never creates a tag, release, or registry artifact.
+The current prepared compatible patch is `0.1.1`; publication remains a
+separate operator-controlled candidate and promotion workflow.
 
 `Release Candidate` checks out one exact source SHA, verifies that it is
 reachable from `main` and has a successful `ci-required` check, then builds and

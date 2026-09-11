@@ -37,7 +37,9 @@ readers or migrations unless a later feature explicitly requires them.
 Stable `v<version>` Git tags are the published-version ledger. Historical
 alpha/beta tags are not used to calculate the next stable version. The first
 stable release promotes the already prepared `0.1.0` without another prepare
-operation.
+operation. The prepared `0.1.1` release line is a compatible patch and keeps the
+Space compatibility identity at `0.1`; it does not require migration or
+re-encoding.
 
 Release platform support is tiered. The current Tier 1 set is the four CLI
 targets (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`,

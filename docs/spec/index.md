@@ -5,8 +5,8 @@ sidebar:
   order: 1
 ---
 
-**Updated:** 2026-06-29\
-**Implementation status:** Rust/Deno v0.1 stream in progress
+**Updated:** 2026-09-12\
+**Implementation status:** Rust/Deno v0.1.1 release preparation
 
 Ugoite is a private, portable Knowledge Space for humans and AI. Its foundation
 is expressed as three boundaries: **Knowledge persists**, **Work may
@@ -31,10 +31,9 @@ derived or disposable.
   the v0.1 security boundary.
 - Browser-local persistence and optional sync are planned.
 - administrator recovery, account discovery, agent/service-account principals,
-  generic OAuth client compatibility, and audit CRUD remain future or limited
-  capability. Remote CLI asset upload uses the authenticated REST `file`
-  multipart part. TOTP is a recovery-only
-  factor and is not a normal login method.
+  generic OAuth client compatibility, audit CRUD, and remote CLI asset upload
+  remain future or limited capability. TOTP is a recovery-only factor and is
+  not a normal login method.
 - View/Application Definitions, renderers, low-code composition, and
   Knowledge-to-tools runtime behavior are future scope. v0.1 freezes their
   authority boundary but does not ship an application builder.
