@@ -652,6 +652,28 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     return markdownWithoutAssetSections(editorContent(), assetFieldNames);
   });
 
+  const previewFieldEntries = createMemo(() =>
+    Object.entries(currentForm()?.fields || {}).filter(
+      ([, fieldDef]) =>
+        fieldDef.type !== "asset_reference" &&
+        !isAssetReferenceListField(fieldDef),
+    )
+  );
+
+  const additionalPreviewContent = createMemo(() => {
+    const form = currentForm();
+    if (!form) return "";
+    const knownFieldNames = new Set(
+      Object.keys(form.fields || {}).map(normalizeFieldName),
+    );
+    return parseMarkdownH2Sections(editorContent())
+      .filter((section) =>
+        !knownFieldNames.has(normalizeFieldName(section.title))
+      )
+      .map((section) => `## ${section.title}\n${section.content}`)
+      .join("\n\n");
+  });
+
   const persistedFieldValue = (fieldName: string) => {
     const sections = new Map<string, string>();
     for (const section of parseMarkdownH2Sections(lastSavedContent())) {
@@ -947,7 +969,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     const formName = formDef?.name;
     const title = draftTitle();
     const fields: Record<string, unknown> = formDef
-      ? (buildStructuredEntryFields(formDef, draftFields()) as Record<string, unknown>)
+      ? (buildStructuredEntryFields(formDef, draftFields()) as Record<
+        string,
+        unknown
+      >)
       : Object.fromEntries(
         Object.entries(draftFields()).filter(
           ([name, value]) => !name.startsWith("__") && value.trim(),
@@ -1242,6 +1267,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
               <div class="ui-entry-save-area">
                 <span
                   class="text-sm"
+                  role="status"
+                  aria-live="polite"
                   classList={{
                     "ui-warning": isDirty(),
                     "ui-muted": !isDirty(),
@@ -1285,7 +1312,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
             </Show>
 
             <div class="ui-entry-workspace">
-              <main class="ui-entry-main ui-card">
+              <main class="ui-entry-main">
                 <div class="ui-entry-main-header">
                   <div>
                     <h2 class="text-lg font-semibold">
@@ -1303,51 +1330,67 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                         : t("entryDetail.sourceDescription")}
                     </p>
                   </div>
-                  <div class="ui-entry-mode-tabs" role="tablist">
-                    <Show when={currentForm()}>
+                  <div class="ui-entry-view-controls">
+                    <div
+                      class="ui-entry-mode-tabs"
+                      role="tablist"
+                      aria-label={t("entryDetail.viewModes")}
+                    >
+                      <Show when={currentForm()}>
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={viewMode() === "fields"}
+                          aria-controls="entry-fields-panel"
+                          class="ui-entry-mode-tab"
+                          classList={{
+                            "ui-entry-mode-tab-active": viewMode() === "fields",
+                          }}
+                          onClick={() => setViewMode("fields")}
+                        >
+                          {t("entryDetail.mode.fields")}
+                        </button>
+                      </Show>
                       <button
                         type="button"
                         role="tab"
-                        aria-selected={viewMode() === "fields"}
+                        aria-selected={viewMode() === "preview"}
+                        aria-controls="entry-preview-panel"
                         class="ui-entry-mode-tab"
                         classList={{
-                          "ui-entry-mode-tab-active": viewMode() === "fields",
+                          "ui-entry-mode-tab-active": viewMode() === "preview",
                         }}
-                        onClick={() => setViewMode("fields")}
+                        onClick={() => setViewMode("preview")}
                       >
-                        {t("entryDetail.mode.fields")}
+                        {t("entryDetail.mode.preview")}
                       </button>
-                    </Show>
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={viewMode() === "preview"}
-                      class="ui-entry-mode-tab"
-                      classList={{
-                        "ui-entry-mode-tab-active": viewMode() === "preview",
-                      }}
-                      onClick={() => setViewMode("preview")}
+                    </div>
+                    <details
+                      class="ui-entry-source-disclosure"
+                      open={viewMode() === "source"}
                     >
-                      {t("entryDetail.mode.preview")}
-                    </button>
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={viewMode() === "source"}
-                      class="ui-entry-mode-tab"
-                      classList={{
-                        "ui-entry-mode-tab-active": viewMode() === "source",
-                      }}
-                      onClick={() => setViewMode("source")}
-                    >
-                      {t("entryDetail.mode.source")}
-                    </button>
+                      <summary>{t("entryDetail.advanced")}</summary>
+                      <button
+                        type="button"
+                        aria-pressed={viewMode() === "source"}
+                        aria-controls="entry-source-panel"
+                        class="ui-entry-source-trigger"
+                        onClick={() => setViewMode("source")}
+                      >
+                        {t("entryDetail.mode.source")}
+                      </button>
+                    </details>
                   </div>
                 </div>
 
                 <Show when={viewMode() === "fields" && currentForm()}>
                   {(entryForm) => (
-                    <div class="ui-entry-form-body">
+                    <div
+                      id="entry-fields-panel"
+                      role="tabpanel"
+                      aria-label={t("entryDetail.mode.fields")}
+                      class="ui-entry-form-body"
+                    >
                       <div class="ui-entry-field ui-entry-title-field">
                         <div class="ui-entry-field-heading">
                           <label class="ui-label" for="entry-title-editor">
@@ -1481,13 +1524,71 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 </Show>
 
                 <Show when={viewMode() === "preview"}>
-                  <div class="ui-stack-lg">
-                    <div
-                      role="region"
-                      aria-label={t("entryDetail.mode.preview")}
-                      class="ui-preview ui-entry-preview"
-                      innerHTML={renderMarkdownPreview(previewContent())}
-                    />
+                  <div
+                    id="entry-preview-panel"
+                    role="tabpanel"
+                    aria-label={t("entryDetail.mode.preview")}
+                    class="ui-stack-lg"
+                  >
+                    <Show
+                      when={currentForm()}
+                      fallback={
+                        <div
+                          role="region"
+                          aria-label={t("entryDetail.mode.preview")}
+                          class="ui-preview ui-entry-preview"
+                          innerHTML={renderMarkdownPreview(previewContent())}
+                        />
+                      }
+                    >
+                      {() => (
+                        <div
+                          role="region"
+                          aria-label={t("entryDetail.previewFieldsHeading")}
+                          class="ui-entry-preview ui-entry-preview-fields"
+                        >
+                          <h3 class="ui-entry-preview-title">
+                            {editorTitle() || t("common.untitled")}
+                          </h3>
+                          <div class="ui-entry-preview-field-list">
+                            <For each={previewFieldEntries()}>
+                              {([fieldName]) => (
+                                <section class="ui-entry-preview-field">
+                                  <h4 class="ui-entry-preview-field-name">
+                                    {fieldName}
+                                  </h4>
+                                  <div
+                                    class="ui-preview ui-entry-preview-field-value"
+                                    innerHTML={renderMarkdownPreview(
+                                      fieldValue(fieldName).trim() ||
+                                        t("entryDetail.emptyField"),
+                                    )}
+                                  />
+                                </section>
+                              )}
+                            </For>
+                            <Show when={previewFieldEntries().length === 0}>
+                              <p class="ui-muted">
+                                {t("entryDetail.noFields")}
+                              </p>
+                            </Show>
+                          </div>
+                          <Show when={additionalPreviewContent()}>
+                            <details class="ui-entry-preview-additional">
+                              <summary>
+                                {t("entryDetail.additionalContent")}
+                              </summary>
+                              <div
+                                class="ui-preview mt-3"
+                                innerHTML={renderMarkdownPreview(
+                                  additionalPreviewContent(),
+                                )}
+                              />
+                            </details>
+                          </Show>
+                        </div>
+                      )}
+                    </Show>
                     <Show when={previewAssetFields().length > 0}>
                       <div
                         class="ui-stack-md"
@@ -1525,7 +1626,12 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 </Show>
 
                 <Show when={viewMode() === "source"}>
-                  <div class="ui-entry-source-body">
+                  <div
+                    id="entry-source-panel"
+                    role="tabpanel"
+                    aria-label={t("entryDetail.mode.source")}
+                    class="ui-entry-source-body"
+                  >
                     <textarea
                       class="ui-editor ui-entry-source-editor"
                       value={editorContent()}
@@ -1545,6 +1651,26 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
               </main>
 
               <aside class="ui-entry-sidebar">
+                <Show when={!isCreateMode()}>
+                  <section class="ui-entry-secondary-action">
+                    <A
+                      href={`/spaces/${props.spaceId()}/entries/${
+                        encodeURIComponent(props.entryId?.() ?? "")
+                      }/history`}
+                      class="ui-entry-history-action"
+                    >
+                      <span>
+                        <strong class="ui-entry-history-label">
+                          {t("entryDetail.history")}
+                        </strong>
+                        <span class="ui-entry-history-description">
+                          {t("entryDetail.historyDescription")}
+                        </span>
+                      </span>
+                      <span aria-hidden="true">›</span>
+                    </A>
+                  </section>
+                </Show>
                 <section class="ui-card ui-entry-side-card">
                   <h2 class="ui-entry-side-heading">
                     {t("entryDetail.detailsHeading")}
@@ -1573,13 +1699,20 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                         <dd>{formatEntryDate(currentEntry().updated_at)}</dd>
                       </div>
                     </Show>
-                    <Show when={!isCreateMode()}>
-                      <div>
-                        <dt>{t("entryDetail.entryId")}</dt>
-                        <dd class="font-mono break-all">{currentEntry().id}</dd>
-                      </div>
-                    </Show>
                   </dl>
+                  <Show when={!isCreateMode()}>
+                    <details class="ui-entry-technical-details">
+                      <summary>{t("entryDetail.technicalDetails")}</summary>
+                      <dl class="ui-entry-detail-list ui-entry-technical-list">
+                        <div>
+                          <dt>{t("entryDetail.entryId")}</dt>
+                          <dd class="font-mono break-all">
+                            {currentEntry().id}
+                          </dd>
+                        </div>
+                      </dl>
+                    </details>
+                  </Show>
                 </section>
 
                 <section class="ui-card ui-entry-side-card">
@@ -1588,15 +1721,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                   </h2>
                   <div class="ui-entry-action-list">
                     <Show when={!isCreateMode()}>
-                      <A
-                        href={`/spaces/${props.spaceId()}/entries/${
-                          encodeURIComponent(props.entryId?.() ?? "")
-                        }/history`}
-                        class="ui-entry-action"
-                      >
-                        <span>{t("entryDetail.history")}</span>
-                        <span aria-hidden="true">›</span>
-                      </A>
                       <button
                         type="button"
                         class="ui-entry-action"
