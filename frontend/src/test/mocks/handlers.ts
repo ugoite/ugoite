@@ -471,7 +471,7 @@ export const handlers = [
         properties[key] = value;
       }
     } else {
-      title = body.title || "Untitled";
+      title = body.title ?? "Untitled";
       tags = body.tags || [];
       properties = {};
       const rawFields = (body.fields || {}) as Record<string, unknown>;
@@ -572,7 +572,7 @@ export const handlers = [
         }
       } else {
         const existing = mockEntryIndex.get(spaceId)?.get(entryId);
-        title = body.title || existing?.title || "Untitled";
+        title = body.title ?? existing?.title ?? "Untitled";
         properties = {};
         const rawFields = (body.fields || {}) as Record<string, unknown>;
         for (const [key, value] of Object.entries(rawFields)) {

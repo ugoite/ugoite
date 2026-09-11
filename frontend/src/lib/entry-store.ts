@@ -119,17 +119,22 @@ export function createEntryStore(spaceId: () => string) {
 
     const originalEntry = currentEntries[entryIndex];
 
-    // Extract title from markdown for optimistic update
+    // Extract title for optimistic update: structured payloads carry it
+    // directly; legacy Markdown falls back to H1 parsing.
     // Use indexOf-based extraction to prevent ReDoS vulnerability
     let title = originalEntry.title;
-    const lines = payload.markdown.split(/\r?\n/);
-    for (const line of lines) {
-      if (line.startsWith("# ") || line.startsWith("#\t")) {
-        const spaceIdx = line.indexOf(" ");
-        const tabIdx = line.indexOf("\t");
-        const idx = spaceIdx !== -1 ? spaceIdx : tabIdx;
-        title = line.slice(idx + 1).trim();
-        break;
+    if (payload.title !== undefined) {
+      title = payload.title;
+    } else if (payload.markdown !== undefined) {
+      const lines = payload.markdown.split(/\r?\n/);
+      for (const line of lines) {
+        if (line.startsWith("# ") || line.startsWith("#\t")) {
+          const spaceIdx = line.indexOf(" ");
+          const tabIdx = line.indexOf("\t");
+          const idx = spaceIdx !== -1 ? spaceIdx : tabIdx;
+          title = line.slice(idx + 1).trim();
+          break;
+        }
       }
     }
 

@@ -26,6 +26,7 @@ import {
 } from "~/lib/markdown";
 import {
   buildEntryMarkdownFromFields,
+  buildStructuredEntryFields,
   parseMarkdownFrontmatterTags,
   parseMarkdownToStructuredDraft,
 } from "~/lib/entry-input";
@@ -940,15 +941,18 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setValidationError(null);
     // Structured wire authority when the Form is known; formless notes keep
     // the Markdown compatibility path. Empty titles stay empty (Untitled is
-    // presentation only, matching the legacy `# ` save).
-    const formName = currentForm()?.name ?? props.createForm?.()?.name;
+    // presentation only, matching the legacy `# ` save). Field values share
+    // the webform builder so trimming and zoned-timestamp normalization agree.
+    const formDef = currentForm() ?? props.createForm?.();
+    const formName = formDef?.name;
     const title = draftTitle();
-    const rawFields = draftFields();
-    const fields: Record<string, unknown> = {};
-    for (const [name, value] of Object.entries(rawFields)) {
-      if (name.startsWith("__") || !value.trim()) continue;
-      fields[name] = value;
-    }
+    const fields: Record<string, unknown> = formDef
+      ? (buildStructuredEntryFields(formDef, draftFields()) as Record<string, unknown>)
+      : Object.fromEntries(
+        Object.entries(draftFields()).filter(
+          ([name, value]) => !name.startsWith("__") && value.trim(),
+        ),
+      );
     const contentToSave = editorContent();
     try {
       // Structured wire authority when the Form is known; the same

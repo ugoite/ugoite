@@ -228,9 +228,9 @@ describe("EntryDetailPane", () => {
       title: "Planning ",
       tags: [],
       fields: {
-        Summary: "Project ",
-        Notes: "Details \n",
-        Items: "one\ntwo\n",
+        Summary: "Project",
+        Notes: "Details",
+        Items: "one\ntwo",
       },
     });
     expect(onCreated).toHaveBeenCalledWith({
