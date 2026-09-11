@@ -2866,6 +2866,23 @@ impl UgoiteService {
         .await
     }
 
+    /// Typed structured Search through the authorized query policy. Logical
+    /// criteria only; relation/column resolution and escaping stay in the
+    /// trusted adapter.
+    pub async fn search_structured(
+        &self,
+        space_id: &str,
+        criteria: &ugoite_core::structured_search::StructuredSearch,
+    ) -> Result<Vec<Value>> {
+        self.validate_complete_space(space_id).await?;
+        crate::structured_search::search_structured(
+            &self.operator,
+            &self.workspace_path(space_id),
+            criteria,
+        )
+        .await
+    }
+
     pub async fn execute_sql_query(&self, space_id: &str, sql: &str) -> Result<Vec<Value>> {
         index::validate_read_only_sql(sql)?;
         self.validate_complete_space(space_id).await?;
@@ -3287,6 +3304,36 @@ impl UgoiteService {
                     &self.operator,
                     &self.workspace_path(space_id),
                     &filter.to_string(),
+                    &scopes,
+                )
+                .await
+            })
+            .await
+    }
+
+    /// Authorized structured Search. Permission filtering is applied before
+    /// query execution via form scopes; core direct and authorized paths
+    /// return the same Entry set/order for identical criteria.
+    pub async fn search_structured_authorized_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        criteria: &ugoite_core::structured_search::StructuredSearch,
+    ) -> Result<Vec<Value>> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        let authorizer = Authorizer::new(self.operator.clone());
+        // Clone criteria for the state-lock closure.
+        let criteria = criteria.clone();
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let scopes = self
+                    .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                crate::structured_search::search_structured_with_scopes(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    &criteria,
                     &scopes,
                 )
                 .await

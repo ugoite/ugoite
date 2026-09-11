@@ -2274,6 +2274,33 @@ pub async fn query_index_authorized_by_form_scopes(
     query_index_with_form_scopes(op, ws_path, query, relation_scopes).await
 }
 
+/// Trusted structured-Search page execution. SQL and parameters are produced
+/// exclusively by the `structured_search` adapter; callers never supply
+/// relation names, column names, or SQL fragments.
+pub(crate) async fn query_structured_search_page_with_parameters(
+    op: &Operator,
+    ws_path: &str,
+    sql: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    offset: usize,
+    limit: usize,
+) -> Result<(Vec<Value>, u64)> {
+    execute_datafusion_sql_page(
+        op,
+        ws_path,
+        sql,
+        EntryScope::AllCurrent,
+        None,
+        Some(relation_scopes),
+        None,
+        offset,
+        limit,
+        parameters,
+    )
+    .await
+}
+
 async fn query_index_with_form_scopes(
     op: &Operator,
     ws_path: &str,
@@ -3667,7 +3694,7 @@ async fn query_entries_with_form_scopes(
     Ok(entries)
 }
 
-async fn all_current_form_scopes(
+pub(crate) async fn all_current_form_scopes(
     op: &Operator,
     ws_path: &str,
 ) -> Result<BTreeMap<String, EntryScope>> {
