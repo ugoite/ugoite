@@ -26,5 +26,4 @@ docs above remain the procedure source.
 
 Validation stays at the repository root with `mise run fmt`, `mise run lint`,
 `mise run check`, and `mise run test`. Docsite-focused work uses
-`deno task
---cwd docsite check` and `deno task --cwd docsite build`.
+`deno task --cwd docsite check` and `deno task --cwd docsite build`.

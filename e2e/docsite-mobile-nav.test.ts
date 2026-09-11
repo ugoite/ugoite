@@ -151,16 +151,16 @@ async function expectSidebarToContainLinks(
       .toBeVisible();
   }
 
-  await openSidebarGroup(page, "Get started");
+  await openSidebarGroup(page, "Get started", "/docs/get-started/");
   await expect(
     sidebar.locator('a[href$="/docs/get-started/"]'),
   ).toBeVisible();
-  await openSidebarGroup(page, "Use Ugoite");
+  await openSidebarGroup(page, "Use Ugoite", "/docs/use/");
   await expect(
     sidebar.locator('a[href$="/docs/use/"]'),
   ).toBeVisible();
   if (options.expectSpecificationLink) {
-    await openSidebarGroup(page, "Specification");
+    await openSidebarGroup(page, "Specification", "/docs/spec/");
     await expect(
       sidebar.locator('a[href$="/docs/spec/"]'),
     ).toBeVisible();
@@ -170,11 +170,14 @@ async function expectSidebarToContainLinks(
 async function openSidebarGroup(
   page: Page,
   label: string,
+  hrefSuffix: string,
 ): Promise<void> {
   const sidebar = page.locator("#starlight__sidebar");
-  const summary = sidebar.locator("summary").filter({ hasText: label }).first();
-  if (await summary.isVisible()) {
-    // Expand collapsed groups; already-expanded groups keep their links visible.
-    await summary.click().catch(() => {});
+  const link = sidebar.locator(`a[href$="${hrefSuffix}"]`);
+  if (await link.isVisible()) {
+    return;
   }
+  const summary = sidebar.locator("summary").filter({ hasText: label }).first();
+  await summary.click();
+  await expect(link).toBeVisible();
 }
