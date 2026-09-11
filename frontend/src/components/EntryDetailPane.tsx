@@ -24,7 +24,12 @@ import {
   replaceFirstH1,
   updateH2Section,
 } from "~/lib/markdown";
-import { buildEntryMarkdownFromFields } from "~/lib/entry-input";
+import {
+  buildEntryMarkdownFromFields,
+  buildStructuredEntryFields,
+  parseMarkdownFrontmatterTags,
+  parseMarkdownToStructuredDraft,
+} from "~/lib/entry-input";
 import {
   entryApi,
   RevisionConflictError,
@@ -162,12 +167,6 @@ function markdownWithoutAssetSections(
     if (!omitSection) output.push(line);
   }
   return output.join("\n");
-}
-
-function readMarkdownTitle(markdown: string, fallback = "") {
-  const heading = markdown.split(/\r?\n/).find((line) => /^#\s+/.test(line));
-  if (!heading) return fallback;
-  return heading.replace(/^#\s+/, "");
 }
 
 function buildEditorGuidance(form: Form | null, markdown: string) {
@@ -460,6 +459,15 @@ function EntryRowReferenceField(props: {
 
 export function EntryDetailPane(props: EntryDetailPaneProps) {
   const [editorContent, setEditorContent] = createSignal("");
+  // Structured draft is the single authority in this pane. Fields view edits
+  // it directly; source view is compatibility ingress that parses back into
+  // it; preview and save derive from it. `editorContent` remains as the
+  // source textarea buffer kept in sync.
+  const [draftTitle, setDraftTitle] = createSignal("");
+  const [draftFields, setDraftFields] = createSignal<Record<string, string>>(
+    {},
+  );
+  const [draftTags, setDraftTags] = createSignal<string[]>([]);
   const [lastSavedContent, setLastSavedContent] = createSignal("");
   const [isDirty, setIsDirty] = createSignal(false);
   const [isSaving, setIsSaving] = createSignal(false);
@@ -581,9 +589,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     return map;
   });
 
-  const editorTitle = createMemo(() =>
-    readMarkdownTitle(editorContent(), entry()?.title || "")
-  );
+  // Structured draft is the authority; `parsedSections` remains for
+  // persisted-content comparisons only. Empty stays empty so the heading
+  // shows Untitled as presentation only (never saved as "Untitled").
+  const editorTitle = createMemo(() => draftTitle());
   const editorGuidance = createMemo(() =>
     buildEditorGuidance(currentForm(), editorContent())
   );
@@ -614,8 +623,21 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     return true;
   };
 
-  const fieldValue = (fieldName: string) =>
-    parsedSections().get(normalizeFieldName(fieldName)) ?? "";
+  // Required hints are computed from the structured draft (single authority),
+  // not from Markdown text. The shared Rust boundary re-validates on save.
+  const showMissingRequiredValidationForDraft = () => {
+    const form = currentForm();
+    if (!form) return false;
+    const missing = Object.entries(form.fields || {})
+      .filter(([fieldName, fieldDef]) => {
+        if (!isActiveRequiredField(fieldDef)) return false;
+        return isMissingRequiredValue(fieldDef, draftFields()[fieldName] ?? "");
+      })
+      .map(([fieldName]) => fieldName);
+    return showMissingRequiredValidation(missing);
+  };
+
+  const fieldValue = (fieldName: string) => draftFields()[fieldName] ?? "";
 
   const previewAssetFields = createMemo(() =>
     Object.entries(currentForm()?.fields || {}).filter(([, fieldDef]) =>
@@ -653,10 +675,15 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       return;
     }
     const content = loadedEntry.content ?? "";
+    const draft = parseMarkdownToStructuredDraft(content);
+    const tags = parseMarkdownFrontmatterTags(content) ?? [];
     setLastLoadedEntryId(loadedEntry.id);
     setLastLoadedResourceRevisionId(loadedEntry.revision_id);
     setCurrentRevisionId(isCreateMode() ? null : loadedEntry.revision_id);
     setAssetEditorGeneration((generation) => generation + 1);
+    setDraftTitle(draft.title || loadedEntry.title || "");
+    setDraftFields(draft.fields);
+    setDraftTags(tags);
     setEditorContent(content);
     setLastSavedContent(isCreateMode() ? "" : content);
     setIsDirty(isCreateMode());
@@ -673,7 +700,36 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setDefaultedViewEntryId(loadedEntry.id);
   });
 
+  const syncEditorFromDraft = (
+    title: string,
+    fields: Record<string, string>,
+  ) => {
+    // Keep the source buffer derived from the structured draft so preview
+    // and source stay consistent. Unknown sections/frontmatter survive
+    // because surgery applies to the previous buffer.
+    let content = replaceFirstH1(editorContent(), title);
+    const previousSections = new Set(
+      parseMarkdownH2Sections(editorContent()).map((section) => section.title),
+    );
+    for (const [name, value] of Object.entries(fields)) {
+      content = updateH2Section(content, name, value);
+      previousSections.delete(name);
+    }
+    void previousSections;
+    setEditorContent(content);
+    setIsDirty(content !== lastSavedContent());
+    setConflictMessage(null);
+    setValidationError(null);
+  };
+
   const handleContentChange = (content: string) => {
+    // Source view is compatibility ingress: parse back into the structured
+    // draft, which remains the single authority.
+    const draft = parseMarkdownToStructuredDraft(content);
+    const tags = parseMarkdownFrontmatterTags(content);
+    setDraftTitle(draft.title || entry()?.title || "");
+    setDraftFields(draft.fields);
+    if (tags !== null) setDraftTags(tags);
     setEditorContent(content);
     setIsDirty(content !== lastSavedContent());
     setConflictMessage(null);
@@ -681,11 +737,14 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   };
 
   const handleTitleChange = (title: string) => {
-    handleContentChange(replaceFirstH1(editorContent(), title));
+    setDraftTitle(title);
+    syncEditorFromDraft(title, draftFields());
   };
 
   const handleFieldChange = (fieldName: string, value: string) => {
-    handleContentChange(updateH2Section(editorContent(), fieldName, value));
+    const next = { ...draftFields(), [fieldName]: value };
+    setDraftFields(next);
+    syncEditorFromDraft(draftTitle(), next);
   };
 
   const assetFieldState = (fieldName: string, multiple: boolean) => {
@@ -843,7 +902,15 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     }
     /* v8 ignore stop */
 
-    if (showMissingRequiredValidation(editorGuidance().missingRequired)) {
+    // TS required hints fail fast for UX; the shared Rust boundary remains
+    // the final authority and surfaces 422 warnings via
+    // `parseEntryValidationError`. Boolean/list/timestamp guidance stays as
+    // presentation hints only.
+    if (
+      currentForm() &&
+      draftFields() &&
+      showMissingRequiredValidationForDraft()
+    ) {
       return;
     }
 
@@ -860,18 +927,52 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       return;
     }
 
-    // Asset validation yields to the event loop, so the draft may have
-    // changed while it was running. Never submit a newly invalid draft.
-    if (showMissingRequiredValidation(editorGuidance().missingRequired)) {
+    // The draft may have changed during async asset validation.
+    if (
+      currentForm() &&
+      draftFields() &&
+      showMissingRequiredValidationForDraft()
+    ) {
       setIsSaving(false);
       return;
     }
 
     setConflictMessage(null);
     setValidationError(null);
+    // Structured wire authority when the Form is known; formless notes keep
+    // the Markdown compatibility path. Empty titles stay empty (Untitled is
+    // presentation only, matching the legacy `# ` save). Field values share
+    // the webform builder so trimming and zoned-timestamp normalization agree.
+    const formDef = currentForm() ?? props.createForm?.();
+    const formName = formDef?.name;
+    const title = draftTitle();
+    const fields: Record<string, unknown> = formDef
+      ? (buildStructuredEntryFields(formDef, draftFields()) as Record<string, unknown>)
+      : Object.fromEntries(
+        Object.entries(draftFields()).filter(
+          ([name, value]) => !name.startsWith("__") && value.trim(),
+        ),
+      );
     const contentToSave = editorContent();
     try {
-      const result = context.create
+      // Structured wire authority when the Form is known; the same
+      // `entry.create`/`entry.update` operations carry either shape.
+      const result = formName
+        ? context.create
+          ? await entryApi.create(context.wsId, {
+            form: formName,
+            title,
+            tags: draftTags(),
+            fields,
+          })
+          : await entryApi.update(context.wsId, context.entryId!, {
+            form: formName,
+            title,
+            tags: draftTags(),
+            fields,
+            parent_revision_id: context.revisionId!,
+          })
+        : context.create
         ? await entryApi.create(context.wsId, { markdown: contentToSave })
         : await entryApi.update(context.wsId, context.entryId!, {
           markdown: contentToSave,
@@ -893,7 +994,13 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     /* v8 ignore start */
     if (isDirty() && !confirm(t("entryDetail.confirmDiscard"))) return;
     /* v8 ignore stop */
-    setEditorContent(lastSavedContent());
+    const content = lastSavedContent();
+    const draft = parseMarkdownToStructuredDraft(content);
+    const tags = parseMarkdownFrontmatterTags(content) ?? [];
+    setDraftTitle(draft.title || entry()?.title || "");
+    setDraftFields(draft.fields);
+    setDraftTags(tags);
+    setEditorContent(content);
     setAssetEditorGeneration((generation) => generation + 1);
     setIsDirty(false);
     setConflictMessage(null);

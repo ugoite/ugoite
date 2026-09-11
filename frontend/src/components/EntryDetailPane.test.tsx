@@ -224,8 +224,14 @@ describe("EntryDetailPane", () => {
 
     await waitFor(() => expect(entryApi.create).toHaveBeenCalled());
     expect(entryApi.create).toHaveBeenCalledWith("default", {
-      markdown:
-        "---\nform: Meeting\n---\n\n# Planning \n\n## Summary\nProject \n\n## Notes\nDetails \n\n\n## Items\none\ntwo\n\n",
+      form: "Meeting",
+      title: "Planning ",
+      tags: [],
+      fields: {
+        Summary: "Project",
+        Notes: "Details",
+        Items: "one\ntwo",
+      },
     });
     expect(onCreated).toHaveBeenCalledWith({
       id: "created-entry",
@@ -267,9 +273,9 @@ describe("EntryDetailPane", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
-    const markdown = createMock.mock.calls[0][1].markdown as string;
-    expect(markdown).toContain("\n# \n");
-    expect(markdown).not.toContain("# Untitled");
+    const payload = createMock.mock.calls[0][1] as Record<string, unknown>;
+    expect(payload.title).toBe("");
+    expect(JSON.stringify(payload)).not.toContain("Untitled");
   });
 
   it("does not let an empty title bypass active required-field validation", async () => {
@@ -313,9 +319,10 @@ describe("EntryDetailPane", () => {
     fireEvent.click(save);
 
     await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
-    const markdown = createMock.mock.calls[0][1].markdown as string;
-    expect(markdown).toContain("\n# \n");
-    expect(markdown).not.toContain("# Untitled");
+    const payload = createMock.mock.calls[0][1] as Record<string, unknown>;
+    expect(payload.title).toBe("");
+    expect(JSON.stringify(payload)).not.toContain("Untitled");
+    expect((payload.fields as Record<string, unknown>).Status).toBe("Ready");
   });
 
   it("blocks create until every active required field has a value", async () => {
@@ -584,7 +591,10 @@ describe("EntryDetailPane", () => {
 
     await waitFor(() => expect(entryApi.create).toHaveBeenCalled());
     expect(entryApi.create).toHaveBeenCalledWith("default", {
-      markdown: "---\nform: Meeting\n---\n\n# Meeting\n\n## Date\n2026-08-03\n",
+      form: "Meeting",
+      title: "Meeting",
+      tags: [],
+      fields: { Date: "2026-08-03" },
     });
   });
 
@@ -682,7 +692,10 @@ describe("EntryDetailPane", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(entryApi.create).toHaveBeenCalled());
     expect(entryApi.create).toHaveBeenCalledWith("default", {
-      markdown: expect.stringContaining(JSON.stringify(uploaded)),
+      form: "Contract",
+      title: "Contract",
+      tags: [],
+      fields: { contract: expect.stringContaining(JSON.stringify(uploaded)) },
     });
     expect(onCreated).toHaveBeenCalledWith({
       id: "contract-entry",
@@ -855,9 +868,15 @@ describe("EntryDetailPane", () => {
     await screen.findByText("pending-preview.pdf");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(entryApi.create).toHaveBeenCalledTimes(1));
-    expect(entryApi.create).toHaveBeenCalledWith("default", {
-      markdown: expect.stringContaining(JSON.stringify(uploaded)),
-    });
+    expect(entryApi.create).toHaveBeenCalledWith(
+      "default",
+      expect.objectContaining({
+        form: "PreviewAsset",
+        fields: expect.objectContaining({
+          thumbnail: expect.stringContaining(JSON.stringify(uploaded)),
+        }),
+      }),
+    );
   });
 
   it("reuses the uploaded reference when Entry save is retried", async () => {
@@ -946,11 +965,15 @@ describe("EntryDetailPane", () => {
 
     await waitFor(() => expect(entryApi.create).toHaveBeenCalledTimes(1));
     expect(entryApi.update).not.toHaveBeenCalled();
-    expect(entryApi.create).toHaveBeenCalledWith("default", {
-      markdown: expect.stringContaining("## test number\n0"),
-    });
-    expect(createMock.mock.calls[0][1].markdown).toContain(
-      "## ts\n2026-08-21T10:48",
+    expect(entryApi.create).toHaveBeenCalledWith(
+      "default",
+      expect.objectContaining({
+        form: "Entry",
+        fields: expect.objectContaining({
+          "test number": "0",
+          ts: "2026-08-21T10:48",
+        }),
+      }),
     );
     expect(onCreated).toHaveBeenCalledWith({
       id: "created-entry",
