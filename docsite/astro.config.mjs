@@ -83,7 +83,6 @@ export default defineConfig({
         {
           label: "Specification",
           items: [
-            { slug: "docs/spec/index" },
             {
               autogenerate: { directory: docsSidebarDirectory("spec") },
             },
