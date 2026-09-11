@@ -165,6 +165,32 @@ impl AppError {
         Self::new(ErrorKind::Conflict, code, message)
     }
 
+    pub fn conflict_with_detail(
+        code: ErrorCode,
+        message: impl Into<String>,
+        detail: Value,
+    ) -> Self {
+        let mut error = Self::conflict(code, message);
+        error.detail = Some(detail);
+        error
+    }
+
+    /// Canonical recovery detail for stale-revision conflicts.
+    ///
+    /// `current_revision_id` lets callers reload; `recovery_action` tells
+    /// humans and machines the deterministic next step. Exact failures are
+    /// identified by `code`, never by parsing the message.
+    pub fn revision_conflict(current_revision_id: &str, expected: &str, got: &str) -> Self {
+        Self::conflict_with_detail(
+            ErrorCode::RevisionConflict,
+            format!("Revision conflict: expected {expected}, got {got}"),
+            serde_json::json!({
+                "current_revision_id": current_revision_id,
+                "recovery_action": "reload_and_retry",
+            }),
+        )
+    }
+
     pub fn expired(code: ErrorCode, message: impl Into<String>) -> Self {
         Self::new(ErrorKind::Expired, code, message)
     }

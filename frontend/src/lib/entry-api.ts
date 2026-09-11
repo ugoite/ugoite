@@ -30,9 +30,11 @@ const currentRevisionIdFromError = (
   error: UgoiteApiError,
 ): string | undefined => {
   if (!error.payload || typeof error.payload !== "object") return undefined;
-  const value = (error.payload as Record<string, unknown>)[
-    "current_revision_id"
-  ];
+  const payload = error.payload as Record<string, unknown>;
+  // Canonical contract carries `current_revision_id` under `detail`;
+  // top-level is kept for older payloads (0.1.x compat, never broken).
+  const detail = payload.detail as Record<string, unknown> | undefined;
+  const value = payload["current_revision_id"] ?? detail?.["current_revision_id"];
   return typeof value === "string" ? value : undefined;
 };
 
