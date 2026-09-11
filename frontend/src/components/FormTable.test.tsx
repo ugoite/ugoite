@@ -325,7 +325,7 @@ describe("FormTable", () => {
     const onAddRow = vi.fn();
     const createSpy = vi.spyOn(entryApi, "create");
 
-    const { getByText, getByTitle } = render(() => (
+    const { getByTitle, getByText } = render(() => (
       <FormTable
         spaceId="ws"
         entryForm={entryForm}
@@ -367,7 +367,7 @@ describe("FormTable", () => {
     } as any);
     const updateSpy = vi.spyOn(entryApi, "update").mockResolvedValue({} as any);
 
-    const { getByText, getByTitle } = render(() => (
+    const { getByTitle } = render(() => (
       <FormTable
         spaceId="ws"
         entryForm={entryForm}
@@ -615,7 +615,7 @@ describe("FormTable", () => {
     ];
     vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
 
-    const { getByTitle } = render(() => (
+    render(() => (
       <FormTable
         spaceId="ws"
         entryForm={entryForm}
