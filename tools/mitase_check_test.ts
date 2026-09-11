@@ -138,6 +138,17 @@ Deno.test("Mitase bootstrap verifies, caches, and executes the archive", async (
     const first = await runScript(harness);
     assertEquals(first.success, true, new TextDecoder().decode(first.stderr));
     assertEquals(await Deno.readTextFile(harness.marker), "check .\n");
+
+    const cachedBinary =
+      `${harness.root}/cache/mitase/0.1.3/x86_64-unknown-linux-gnu/mitase`;
+    await Deno.writeTextFile(cachedBinary, "corrupt cached binary\n");
+    await Deno.chmod(cachedBinary, 0o755);
+    const recovered = await runScript(harness);
+    assertEquals(
+      recovered.success,
+      true,
+      new TextDecoder().decode(recovered.stderr),
+    );
     await Deno.remove(`${harness.root}/bin/curl`);
     const cached = await runScript(harness);
     assertEquals(cached.success, true, new TextDecoder().decode(cached.stderr));

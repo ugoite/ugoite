@@ -77,7 +77,12 @@ verify_version() {
   fi
 }
 
-if [[ ! -x "$pinned_bin" ]]; then
+cache_valid=false
+if [[ -x "$pinned_bin" ]] && verify_version "$pinned_bin" >/dev/null 2>&1; then
+  cache_valid=true
+fi
+
+if [[ "$cache_valid" != true ]]; then
   for command in curl tar install; do
     if ! command -v "$command" >/dev/null 2>&1; then
       printf 'Mitase bootstrap requires %s\n' "$command" >&2
