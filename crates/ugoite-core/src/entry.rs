@@ -79,13 +79,24 @@ pub fn structured_fields_to_draft(
 /// Parse legacy Markdown into the shared draft shape.
 ///
 /// Frontmatter supplies `form` and `tags`; the first `# ` line supplies the
-/// title; every `## ` section supplies one raw string field.
+/// title; every `## ` section supplies one raw string field. Frontmatter keys
+/// other than `form`/`tags` are kept as field candidates (sections win),
+/// matching the long-standing `extract_properties` behavior where frontmatter
+/// flows into properties.
 pub fn legacy_markdown_to_draft(markdown: &str, fallback_title: &str) -> StructuredEntryDraft {
     let (frontmatter, sections) = parse_markdown(markdown);
     let title = extract_title(markdown, fallback_title);
     let form_name = extract_form(&frontmatter);
     let tags = extract_tags(&frontmatter);
     let mut fields = BTreeMap::new();
+    if let Some(map) = frontmatter.as_object() {
+        for (key, value) in map {
+            if key == "form" || key == "tags" {
+                continue;
+            }
+            fields.insert(key.clone(), value.clone());
+        }
+    }
     if let Some(map) = sections.as_object() {
         for (key, value) in map {
             // Sections are raw strings by construction; keep them verbatim so
@@ -101,6 +112,16 @@ pub fn legacy_markdown_to_draft(markdown: &str, fallback_title: &str) -> Structu
         fields,
         extra_attributes: BTreeMap::new(),
     }
+}
+
+/// Whether legacy Markdown frontmatter explicitly carries `tags`.
+///
+/// Updates keep stored tags when `tags` is absent; an explicit `tags: []`
+/// clears them. This preserves the long-standing compatibility rule without
+/// letting storage parse Markdown itself.
+pub fn markdown_frontmatter_has_tags(markdown: &str) -> bool {
+    let (frontmatter, _) = parse_markdown(markdown);
+    frontmatter.get("tags").is_some()
 }
 
 /// Validate and normalize one draft against its Form.

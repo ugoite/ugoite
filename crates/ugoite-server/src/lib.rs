@@ -8754,7 +8754,16 @@ fn redact_sensitive_storage_config(value: &mut Value) {
 struct EntryCreate {
     id: Option<String>,
     #[serde(alias = "content")]
-    markdown: String,
+    markdown: Option<String>,
+    // Additive structured payload converging on the same D1 draft path.
+    // Either `markdown` (legacy) or structured `form` (+ optional title/tags/
+    // fields) is required; both together are rejected deterministically.
+    form: Option<String>,
+    title: Option<String>,
+    tags: Option<Vec<String>>,
+    fields: Option<BTreeMap<String, Value>>,
+    #[serde(default)]
+    extra_attributes: Option<BTreeMap<String, Value>>,
 }
 
 async fn create_entry(
@@ -8765,8 +8774,66 @@ async fn create_entry(
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let entry_id = payload.id.unwrap_or_else(|| Uuid::new_v4().to_string());
     validate_id(&entry_id, "entry_id")?;
+    // Presence, not emptiness, selects the path: an explicit `markdown: ""`
+    // is still a legacy payload with title fallback, not a missing payload.
+    let has_markdown = payload.markdown.is_some();
+    let has_structured = payload.form.is_some()
+        || payload.title.is_some()
+        || payload.tags.is_some()
+        || payload.fields.is_some()
+        || payload.extra_attributes.is_some();
+    if has_markdown && has_structured {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "specify either markdown or structured fields, not both",
+        ));
+    }
+    let Some(markdown) = payload.markdown.clone() else {
+        // Structured path: form is required, everything else defaults.
+        let Some(form) = payload.form.clone() else {
+            return Err(ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "either markdown or structured form/fields is required",
+            ));
+        };
+        let title = payload.title.clone();
+        let tags = payload.tags.clone().unwrap_or_default();
+        let fields = payload.fields.clone().unwrap_or_default();
+        let extra = payload.extra_attributes.clone().unwrap_or_default();
+        let entry_id_for_write = entry_id.clone();
+        let service = state.service.clone();
+        let space_id_for_write = space_id.clone();
+        let created = with_authorized_service_mutation(
+            &state,
+            &space_id,
+            &identity,
+            Action::Create,
+            None,
+            |principal_id, principals| async move {
+                service
+                    .create_structured_entry_authorized_for_principals(
+                        &space_id_for_write,
+                        &entry_id_for_write,
+                        title.clone(),
+                        form.clone(),
+                        tags.clone(),
+                        fields.clone(),
+                        extra.clone(),
+                        &principal_id.to_string(),
+                        &principals,
+                    )
+                    .await
+                    .map_err(ApiError::from_core)
+            },
+        )
+        .await?;
+        return Ok((
+            StatusCode::CREATED,
+            Json(json!({"id": entry_id, "revision_id": created["revision_id"]})),
+        ));
+    };
+    let _ = has_markdown;
     let entry_id_for_write = entry_id.clone();
-    let markdown = payload.markdown.clone();
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
     let created = with_authorized_service_mutation(
@@ -9284,8 +9351,17 @@ struct EntryReadQuery {
 
 #[derive(Deserialize)]
 struct EntryUpdate {
-    markdown: String,
+    markdown: Option<String>,
     parent_revision_id: Option<String>,
+    // Additive structured update: full field replacement, title/tags fall back
+    // to stored values when omitted. Either `markdown` or structured fields is
+    // required; both together are rejected deterministically.
+    form: Option<String>,
+    title: Option<String>,
+    tags: Option<Vec<String>>,
+    fields: Option<BTreeMap<String, Value>>,
+    #[serde(default)]
+    extra_attributes: Option<BTreeMap<String, Value>>,
 }
 
 async fn update_entry(
@@ -9295,9 +9371,66 @@ async fn update_entry(
     Json(payload): Json<EntryUpdate>,
 ) -> ApiResult<Json<Value>> {
     validate_id(&entry_id, "entry_id")?;
+    let has_markdown = payload.markdown.is_some();
+    let has_structured = payload.form.is_some()
+        || payload.title.is_some()
+        || payload.tags.is_some()
+        || payload.fields.is_some()
+        || payload.extra_attributes.is_some();
+    if has_markdown && has_structured {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "specify either markdown or structured fields, not both",
+        ));
+    }
+    if let Some(markdown) = payload.markdown.clone() {
+        let entry_id_for_write = entry_id.clone();
+        let parent_revision_id = payload.parent_revision_id.clone();
+        let service = state.service.clone();
+        let space_id_for_write = space_id.clone();
+        let value = with_authorized_service_mutation(
+            &state,
+            &space_id,
+            &identity,
+            Action::Update,
+            Some(ResourceRef {
+                kind: ResourceKind::Entry,
+                id: entry_id.clone(),
+                parent: None,
+            }),
+            |principal_id, principals| async move {
+                service
+                    .update_entry_authorized_for_principals(
+                        &space_id_for_write,
+                        &entry_id_for_write,
+                        &markdown,
+                        parent_revision_id.as_deref(),
+                        &principal_id.to_string(),
+                        &principals,
+                    )
+                    .await
+                    .map_err(ApiError::from_core)
+            },
+        )
+        .await?;
+        return Ok(Json(
+            json!({"id": entry_id, "revision_id": value["revision_id"]}),
+        ));
+    }
+    // Structured path.
+    if payload.fields.is_none() && payload.extra_attributes.is_none() {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "either markdown or structured fields is required",
+        ));
+    }
     let entry_id_for_write = entry_id.clone();
-    let markdown = payload.markdown.clone();
     let parent_revision_id = payload.parent_revision_id.clone();
+    let form = payload.form.clone();
+    let title = payload.title.clone();
+    let tags = payload.tags.clone();
+    let fields = payload.fields.clone().unwrap_or_default();
+    let extra = payload.extra_attributes.clone().unwrap_or_default();
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
     let value = with_authorized_service_mutation(
@@ -9312,10 +9445,14 @@ async fn update_entry(
         }),
         |principal_id, principals| async move {
             service
-                .update_entry_authorized_for_principals(
+                .update_structured_entry_authorized_for_principals(
                     &space_id_for_write,
                     &entry_id_for_write,
-                    &markdown,
+                    title.clone(),
+                    form.clone(),
+                    tags.clone(),
+                    fields.clone(),
+                    extra.clone(),
                     parent_revision_id.as_deref(),
                     &principal_id.to_string(),
                     &principals,
@@ -13902,6 +14039,135 @@ mod authentication_regression_tests {
             .expect("revision array");
         assert_eq!(revisions.len(), 1);
         assert_eq!(revisions[0]["revision_id"], created_revision_id);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn structured_entry_routes_share_the_draft_path_with_markdown() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-structured-entry")?;
+        let principal_id = Uuid::from_u128(1873);
+        let space_id = state
+            .service
+            .create_space_for_principal("structured-entry", principal_id, "Route test")
+            .await?
+            .to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Note",
+                    "fields": {
+                        "Body": {"type": "string"},
+                        "Done": {"type": "boolean"}
+                    },
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = Router::new()
+            .route("/spaces/{space_id}/entries", post(create_entry))
+            .route("/spaces/{space_id}/entries/{entry_id}", put(update_entry))
+            .layer(Extension(content_identity(principal_id, space_uid)))
+            .with_state(state.clone());
+
+        // Legacy and structured creates agree on durable content.
+        let legacy_response = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/entries"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": "legacy-note",
+                            "markdown": "---\nform: Note\n---\n# Title\n\n## Body\nhello\n\n## Done\ntrue\n"
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await
+            .expect("legacy create");
+        assert_eq!(legacy_response.status(), StatusCode::CREATED);
+
+        let structured_response = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/entries"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": "structured-note",
+                            "form": "Note",
+                            "title": "Title",
+                            "fields": {"Body": "hello", "Done": true}
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await
+            .expect("structured create");
+        assert_eq!(structured_response.status(), StatusCode::CREATED);
+
+        let legacy = state.service.get_entry(&space_id, "legacy-note").await?;
+        let structured = state
+            .service
+            .get_entry(&space_id, "structured-note")
+            .await?;
+        assert_eq!(legacy["title"], structured["title"]);
+        assert_eq!(legacy["sections"], structured["sections"]);
+
+        // Mixed payloads are rejected deterministically.
+        let mixed_response = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/entries"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": "mixed-note",
+                            "markdown": "---\nform: Note\n---\n# T\n",
+                            "form": "Note",
+                            "fields": {"Body": "x"}
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await
+            .expect("mixed create");
+        assert_eq!(mixed_response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        // Structured update replaces fields like legacy update.
+        let current = state
+            .service
+            .get_entry(&space_id, "structured-note")
+            .await?;
+        let revision_id = current["revision_id"]
+            .as_str()
+            .expect("revision")
+            .to_string();
+        let update_response = route
+            .oneshot(
+                Request::put(format!("/spaces/{space_id}/entries/structured-note"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "form": "Note",
+                            "title": "Title",
+                            "fields": {"Body": "edited", "Done": false},
+                            "parent_revision_id": revision_id
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await
+            .expect("structured update");
+        assert_eq!(update_response.status(), StatusCode::OK);
+        let updated = state
+            .service
+            .get_entry(&space_id, "structured-note")
+            .await?;
+        assert_eq!(updated["sections"]["Body"], "edited");
         Ok(())
     }
 

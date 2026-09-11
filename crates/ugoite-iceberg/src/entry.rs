@@ -6,10 +6,10 @@ use crate::{IcebergWorkspace, PublicationRef, RevisionView, SpaceCheckpoint};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use opendal::Operator;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use ugoite_core::entry as core_entry;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
 use ugoite_domain::change::ChangeCommand;
@@ -264,112 +264,9 @@ fn from_timestamp_micros(micros: i64) -> f64 {
     micros as f64 / 1_000_000.0
 }
 
-fn extract_title(content: &str, fallback: &str) -> String {
-    for line in content.lines() {
-        if let Some(stripped) = line.strip_prefix("# ") {
-            return stripped.trim().to_string();
-        }
-    }
-    fallback.to_string()
-}
-
-fn extract_frontmatter(content: &str) -> (Value, String) {
-    let re = Regex::new(r"(?s)^---\s*\n(.*?)\n---\s*\n").unwrap();
-    if let Some(caps) = re.captures(content) {
-        let yaml_str = caps.get(1).unwrap().as_str();
-        let fm_yaml: Option<serde_yaml::Value> = serde_yaml::from_str(yaml_str).ok();
-        let fm_json = fm_yaml
-            .and_then(|y| serde_json::to_value(y).ok())
-            .unwrap_or_else(|| Value::Object(Map::new()));
-        let end = caps.get(0).unwrap().end();
-        return (fm_json, content[end..].to_string());
-    }
-    (Value::Object(Map::new()), content.to_string())
-}
-
-fn extract_sections(body: &str) -> Value {
-    let mut sections: Map<String, Value> = Map::new();
-    let header_re = Regex::new(r"^##\s+(.+)$").unwrap();
-    let mut current_key: Option<String> = None;
-    let mut buffer: Vec<String> = Vec::new();
-
-    for line in body.lines() {
-        if let Some(caps) = header_re.captures(line) {
-            if let Some(key) = current_key.take() {
-                sections.insert(key, Value::String(buffer.join("\n").trim().to_string()));
-            }
-            current_key = Some(caps.get(1).unwrap().as_str().trim().to_string());
-            buffer.clear();
-            continue;
-        }
-
-        if line.starts_with('#') {
-            if let Some(key) = current_key.take() {
-                sections.insert(key, Value::String(buffer.join("\n").trim().to_string()));
-            }
-            buffer.clear();
-            continue;
-        }
-
-        if current_key.is_some() {
-            buffer.push(line.to_string());
-        }
-    }
-
-    if let Some(key) = current_key {
-        sections.insert(key, Value::String(buffer.join("\n").trim().to_string()));
-    }
-
-    Value::Object(sections)
-}
-
-fn parse_markdown(content: &str) -> (Value, Value) {
-    let (frontmatter, body) = extract_frontmatter(content);
-    let sections = extract_sections(&body);
-    (frontmatter, sections)
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ExtraAttributesPolicy {
-    Deny,
-    AllowJson,
-    AllowColumns,
-}
-
-fn extra_attributes_policy(form_def: &Value) -> ExtraAttributesPolicy {
-    match form_def
-        .get("allow_extra_attributes")
-        .and_then(|v| v.as_str())
-    {
-        Some("allow_json") => ExtraAttributesPolicy::AllowJson,
-        Some("allow_columns") => ExtraAttributesPolicy::AllowColumns,
-        _ => ExtraAttributesPolicy::Deny,
-    }
-}
-
-fn collect_extra_attributes(sections: &Value, form_set: &HashSet<String>) -> (Vec<String>, Value) {
-    let mut extras = Vec::new();
-    let mut entries = Vec::new();
-
-    if let Some(section_map) = sections.as_object() {
-        for (key, value) in section_map {
-            if !form_set.contains(key) {
-                extras.push(key.clone());
-                entries.push((key.clone(), value.clone()));
-            }
-        }
-    }
-
-    extras.sort();
-    entries.sort_by(|a, b| a.0.cmp(&b.0));
-
-    let mut map = Map::new();
-    for (key, value) in entries {
-        map.insert(key, value);
-    }
-
-    (extras, Value::Object(map))
-}
+// Markdown compatibility parsing lives in `ugoite-core::entry` (D1). This
+// persistence adapter only renders the existing 0.1 representation for reads
+// and delegates every mutation through the shared draft boundary.
 
 pub(crate) fn merge_entry_fields(fields: &Value, extra_attributes: &Value) -> Value {
     let mut merged = Map::new();
@@ -1197,24 +1094,6 @@ pub async fn append_revision_batch_for_form(
     append_revision_rows_to_workspace(op, ws_path, rows, &form_def).await
 }
 
-fn extract_tags(frontmatter: &Value) -> Vec<String> {
-    match frontmatter.get("tags") {
-        Some(Value::Array(items)) => items
-            .iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect(),
-        Some(Value::String(tag)) => vec![tag.to_string()],
-        _ => Vec::new(),
-    }
-}
-
-fn extract_form(frontmatter: &Value) -> Option<String> {
-    frontmatter
-        .get("form")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-}
-
 pub async fn create_entry<I: IntegrityProvider>(
     op: &Operator,
     ws_path: &str,
@@ -1274,6 +1153,57 @@ pub async fn create_entry_with_scopes_and_change<I: IntegrityProvider>(
         .expect("a one-entry create batch must return one entry"))
 }
 
+/// Draft-based create request converging on the single D1 prepare path.
+#[derive(Debug, Clone)]
+pub struct EntryDraftRequest {
+    pub entry_id: String,
+    pub draft: core_entry::StructuredEntryDraft,
+}
+
+/// Structured single create converging on the same D1 draft path as Markdown.
+///
+/// `title` defaults to `entry_id` when `None`. This is additive: the legacy
+/// `{ markdown }` alias is untouched.
+#[allow(clippy::too_many_arguments)]
+pub async fn create_structured_entry_with_scopes_and_change<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    title: Option<String>,
+    form_name: String,
+    tags: Vec<String>,
+    fields: BTreeMap<String, Value>,
+    extra_attributes: BTreeMap<String, Value>,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+    change: Option<ChangeCommand>,
+) -> Result<EntryMeta> {
+    let draft = core_entry::structured_fields_to_draft(
+        title.unwrap_or_else(|| entry_id.to_string()),
+        Some(form_name),
+        tags,
+        fields,
+        extra_attributes,
+    );
+    let mut entries = create_draft_entries_with_scopes_and_change(
+        op,
+        ws_path,
+        vec![EntryDraftRequest {
+            entry_id: entry_id.to_string(),
+            draft,
+        }],
+        author,
+        integrity,
+        relation_scopes,
+        change,
+    )
+    .await?;
+    Ok(entries
+        .pop()
+        .expect("a one-entry structured batch must return one entry"))
+}
+
 /// Creates one explicit batch. Each Form represented in the batch publishes
 /// one upstream Iceberg snapshot after all entries have been validated.
 pub async fn create_entries<I: IntegrityProvider>(
@@ -1315,6 +1245,36 @@ pub async fn create_entries_with_scopes_and_change<I: IntegrityProvider>(
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
     change: Option<ChangeCommand>,
 ) -> Result<Vec<EntryMeta>> {
+    // Legacy batch is compatibility ingress: every Markdown request becomes a
+    // draft first so it shares the single D1 path with structured creates.
+    let drafts = requests
+        .into_iter()
+        .map(|request| EntryDraftRequest {
+            draft: core_entry::legacy_markdown_to_draft(&request.content, &request.entry_id),
+            entry_id: request.entry_id,
+        })
+        .collect();
+    create_draft_entries_with_scopes_and_change(
+        op,
+        ws_path,
+        drafts,
+        author,
+        integrity,
+        relation_scopes,
+        change,
+    )
+    .await
+}
+
+pub async fn create_draft_entries_with_scopes_and_change<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    requests: Vec<EntryDraftRequest>,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+    change: Option<ChangeCommand>,
+) -> Result<Vec<EntryMeta>> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     crate::iceberg_store::ensure_mutation_admitted(op, ws_path).await?;
     if requests.is_empty() {
@@ -1337,11 +1297,11 @@ pub async fn create_entries_with_scopes_and_change<I: IntegrityProvider>(
     let mut batches = BTreeMap::<String, (Value, Vec<RevisionRow>)>::new();
     let mut entries = Vec::with_capacity(requests.len());
     for request in requests {
-        let (entry, form_name, form_def, revision) = prepare_entry(
+        let (entry, form_name, form_def, revision) = prepare_entry_from_draft(
             op,
             ws_path,
             &request.entry_id,
-            &request.content,
+            request.draft,
             author,
             integrity,
         )
@@ -1563,62 +1523,49 @@ fn reject_cross_form_forward_references(
     Ok(())
 }
 
-async fn prepare_entry<I: IntegrityProvider>(
+/// Single D1-backed prepare path for creates.
+///
+/// Both legacy Markdown and structured payloads converge here via
+/// [`ugoite_core::entry::StructuredEntryDraft`]; there is no second mutation
+/// implementation. Storage encoding, Space version, and history semantics are
+/// unchanged.
+async fn prepare_entry_from_draft<I: IntegrityProvider>(
     op: &Operator,
     ws_path: &str,
     entry_id: &str,
-    content: &str,
+    draft: core_entry::StructuredEntryDraft,
     author: &str,
     integrity: &I,
 ) -> Result<(EntryMeta, String, Value, RevisionRow)> {
-    let (frontmatter, sections) = parse_markdown(content);
-    let form_name = extract_form(&frontmatter)
+    let form_name = draft
+        .form_name
+        .clone()
         .ok_or_else(|| invalid_entry_input("Form is required for entry creation"))?;
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-
-    let form_fields = form_field_names(&form_def);
-    let form_set: HashSet<String> = form_fields.iter().cloned().collect();
-    let policy = extra_attributes_policy(&form_def);
-    let (extras, extra_attributes) = collect_extra_attributes(&sections, &form_set);
-    if !extras.is_empty() && policy == ExtraAttributesPolicy::Deny {
-        return Err(AppError::invalid_input_with_detail(
-            ErrorCode::UnknownFormFields,
-            "Entry contains unknown form fields",
-            json!({"fields": extras}),
-        )
-        .into());
-    }
-
-    let properties = index::extract_properties(content);
-    let (casted, warnings) = index::validate_properties(&properties, &form_def)?;
-    if !warnings.is_empty() {
-        return Err(AppError::invalid_input_with_detail(
-            ErrorCode::FormValidationFailed,
-            "Entry form validation failed",
-            json!({"warnings": warnings}),
-        )
-        .into());
-    }
+    let domain_form = form::to_domain_form(&form_def)?;
+    let normalized = core_entry::normalize_and_validate_draft(&domain_form, &draft)
+        .map_err(anyhow::Error::from)?;
 
     let mut fields = Map::new();
-    if let Some(obj) = properties.as_object() {
-        for (key, value) in obj {
-            if form_set.contains(key) {
-                fields.insert(key.clone(), value.clone());
-            }
+    for field in &domain_form.fields {
+        if let Some(value) = normalized.values.get(&field.id) {
+            fields.insert(
+                field.name.clone(),
+                serde_json::to_value(value).context("serialize normalized field value")?,
+            );
         }
     }
-    if let Some(obj) = casted.as_object() {
-        for (key, value) in obj {
-            if form_set.contains(key) {
-                fields.insert(key.clone(), value.clone());
-            }
-        }
-    }
-
-    let title = extract_title(content, entry_id);
-    let tags = extract_tags(&frontmatter);
+    let extra_attributes = Value::Object(
+        normalized
+            .extra_attributes
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect(),
+    );
+    let title = normalized.title.clone();
+    let tags = normalized.tags.clone();
     let fields = Value::Object(fields);
+    let form_fields = form_field_names(&form_def);
     let reconstructed_markdown = render_markdown(
         &title,
         &form_name,
@@ -2505,12 +2452,112 @@ pub async fn update_entry_authorized<I: IntegrityProvider>(
     .await
 }
 
+/// Structured update converging on the same D1 draft path as Markdown.
+///
+/// `title`/`tags` fall back to the stored row when `None`; `form_name` must
+/// match the stored Form when `Some`. Fields replace the stored field set.
+#[allow(clippy::too_many_arguments)]
+pub async fn update_structured_entry_authorized_with_change<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    title: Option<String>,
+    form_name: Option<String>,
+    tags: Option<Vec<String>>,
+    fields: BTreeMap<String, Value>,
+    extra_attributes: BTreeMap<String, Value>,
+    parent_revision_id: Option<&str>,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+    change: Option<ChangeCommand>,
+) -> Result<Value> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    let stored_form = find_entry_form(op, ws_path, entry_id)
+        .await?
+        .ok_or_else(|| entry_not_found(entry_id))?;
+    let stored_row = read_entry_row(op, ws_path, &stored_form, entry_id).await?;
+    if let Some(name) = form_name.as_deref() {
+        if name != stored_form {
+            return Err(invalid_entry_input("Form change is not supported"));
+        }
+    }
+    let draft = core_entry::structured_fields_to_draft(
+        title.unwrap_or_else(|| stored_row.title.clone()),
+        Some(form_name.unwrap_or_else(|| stored_form.clone())),
+        tags.unwrap_or_else(|| stored_row.tags.clone()),
+        fields,
+        extra_attributes,
+    );
+    apply_update_from_draft(
+        op,
+        ws_path,
+        entry_id,
+        draft,
+        parent_revision_id,
+        author,
+        integrity,
+        relation_scopes,
+        change,
+    )
+    .await
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn update_entry_authorized_with_change<I: IntegrityProvider>(
     op: &Operator,
     ws_path: &str,
     entry_id: &str,
     content: &str,
+    parent_revision_id: Option<&str>,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+    change: Option<ChangeCommand>,
+) -> Result<Value> {
+    // Legacy Markdown is compatibility ingress: title falls back to the stored
+    // title and missing `tags` keeps stored tags, then shares the D1 path.
+    // Tag presence is asked from core so storage never parses Markdown itself.
+    let stored_form = find_entry_form(op, ws_path, entry_id).await?;
+    let fallback_title = match stored_form.as_deref() {
+        Some(form_name) => match read_entry_row(op, ws_path, form_name, entry_id).await {
+            Ok(row) => row.title.clone(),
+            Err(_) => entry_id.to_string(),
+        },
+        None => entry_id.to_string(),
+    };
+    let mut draft = core_entry::legacy_markdown_to_draft(content, &fallback_title);
+    if !core_entry::markdown_frontmatter_has_tags(content) {
+        if let Some(form_name) = stored_form.as_deref() {
+            if let Ok(row) = read_entry_row(op, ws_path, form_name, entry_id).await {
+                draft.tags = row.tags.clone();
+            }
+        }
+    }
+    // `legacy_markdown_to_draft` requires form; surface the legacy message.
+    if draft.form_name.is_none() {
+        return Err(invalid_entry_input("Form is required for entry update"));
+    }
+    apply_update_from_draft(
+        op,
+        ws_path,
+        entry_id,
+        draft,
+        parent_revision_id,
+        author,
+        integrity,
+        relation_scopes,
+        change,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn apply_update_from_draft<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    draft: core_entry::StructuredEntryDraft,
     parent_revision_id: Option<&str>,
     author: &str,
     integrity: &I,
@@ -2541,61 +2588,43 @@ pub async fn update_entry_authorized_with_change<I: IntegrityProvider>(
         }
     }
 
-    let (frontmatter, sections) = parse_markdown(content);
-    let updated_form = extract_form(&frontmatter)
-        .ok_or_else(|| invalid_entry_input("Form is required for entry update"))?;
-    if updated_form != form_name {
-        return Err(invalid_entry_input("Form change is not supported"));
+    if let Some(updated_form) = draft.form_name.clone() {
+        if updated_form != form_name {
+            return Err(invalid_entry_input("Form change is not supported"));
+        }
+    } else {
+        return Err(invalid_entry_input("Form is required for entry update"));
     }
 
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-    let form_fields = form_field_names(&form_def);
-    let form_set: HashSet<String> = form_fields.iter().cloned().collect();
-    let policy = extra_attributes_policy(&form_def);
-    let (extras, extra_attributes) = collect_extra_attributes(&sections, &form_set);
-    if !extras.is_empty() && policy == ExtraAttributesPolicy::Deny {
-        return Err(AppError::invalid_input_with_detail(
-            ErrorCode::UnknownFormFields,
-            "Entry contains unknown form fields",
-            json!({"fields": extras}),
-        )
-        .into());
+    let domain_form = form::to_domain_form(&form_def)?;
+    // Fill title fallback for drafts that arrive without an H1/title.
+    let mut draft = draft;
+    if draft.title.is_empty() {
+        draft.title.clone_from(&row.title);
     }
-
-    let properties = index::extract_properties(content);
-    let (casted, warnings) = index::validate_properties(&properties, &form_def)?;
-    if !warnings.is_empty() {
-        return Err(AppError::invalid_input_with_detail(
-            ErrorCode::FormValidationFailed,
-            "Entry form validation failed",
-            json!({"warnings": warnings}),
-        )
-        .into());
-    }
-
+    let normalized = core_entry::normalize_and_validate_draft(&domain_form, &draft)
+        .map_err(anyhow::Error::from)?;
     let mut fields = Map::new();
-    if let Some(obj) = properties.as_object() {
-        for (key, value) in obj {
-            if form_set.contains(key) {
-                fields.insert(key.clone(), value.clone());
-            }
+    for field in &domain_form.fields {
+        if let Some(value) = normalized.values.get(&field.id) {
+            fields.insert(
+                field.name.clone(),
+                serde_json::to_value(value).context("serialize normalized field value")?,
+            );
         }
     }
-    if let Some(obj) = casted.as_object() {
-        for (key, value) in obj {
-            if form_set.contains(key) {
-                fields.insert(key.clone(), value.clone());
-            }
-        }
-    }
-
-    let title = extract_title(content, &row.title);
-    let tags = if frontmatter.get("tags").is_some() {
-        extract_tags(&frontmatter)
-    } else {
-        row.tags.clone()
-    };
+    let extra_attributes = Value::Object(
+        normalized
+            .extra_attributes
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect(),
+    );
+    let title = normalized.title.clone();
+    let tags = normalized.tags.clone();
     let fields = Value::Object(fields);
+    let form_fields = form_field_names(&form_def);
     let reconstructed_markdown = render_markdown(
         &title,
         &form_name,
