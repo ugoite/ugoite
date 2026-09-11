@@ -6,13 +6,15 @@ use std::{env, fs, path::Path, process::Command};
 fn main() -> Result<()> {
     let mut args = env::args().skip(1);
     let Some(command) = args.next() else {
-        println!("usage: cargo run -p xtask -- <openapi-generate|openapi-check|architecture-check|docs-current-stack-check|supported-check|legacy-auth-check>");
+        println!("usage: cargo run -p xtask -- <openapi-generate|openapi-check|architecture-check|space-compat-check|release-authority-check|docs-current-stack-check|supported-check|legacy-auth-check>");
         return Ok(());
     };
     match command.as_str() {
         "openapi-generate" => openapi_generate(),
         "openapi-check" => openapi_check(),
         "architecture-check" => architecture_check(),
+        "space-compat-check" => space_compat_check(),
+        "release-authority-check" => release_authority_check(),
         "docs-current-stack-check" => docs_current_stack_check(),
         "supported-check" => supported_check(),
         "legacy-auth-check" => legacy_auth_check(),
@@ -609,6 +611,542 @@ fn legacy_auth_check() -> Result<()> {
     Ok(())
 }
 
+fn space_compat_check() -> Result<()> {
+    let source = fs::read_to_string("crates/ugoite-domain/src/space.rs")
+        .context("read Space version authority")?;
+    let mut violations = Vec::new();
+    let current = match parse_current_space_version(&source) {
+        Ok(version) => Some(version),
+        Err(error) => {
+            violations.push(format!("{error:#}"));
+            None
+        }
+    };
+    if let Some(current) = &current {
+        if current != "0.1" {
+            violations.push(format!(
+                "CURRENT_SPACE_VERSION must stay \"0.1\" while Space 0.1 is the frozen compatibility identity, found \"{current}\""
+            ));
+        }
+        match parse_supported_space_versions(&source, current) {
+            Ok(supported) => {
+                if supported != vec!["0.1".to_string()] {
+                    violations.push(format!(
+                        "SUPPORTED_SPACE_VERSIONS must stay exactly [\"0.1\"], found {supported:?}"
+                    ));
+                }
+            }
+            Err(error) => violations.push(format!("{error:#}")),
+        }
+    }
+    if let Err(error) = check_classify_space_version_body(&source) {
+        violations.push(format!("{error:#}"));
+    }
+    match fs::read_to_string("fixtures/spaces/0.1/expected.json") {
+        Ok(text) => {
+            if let Err(error) = check_fixture_meta_json(&text, "fixtures/spaces/0.1/expected.json")
+            {
+                violations.push(format!("{error:#}"));
+            }
+        }
+        Err(error) => violations.push(format!("read canonical Space fixture: {error:#}")),
+    }
+    match fs::read_dir("fixtures/spaces/0.1/spaces") {
+        Ok(entries) => {
+            let mut fixture_count = 0usize;
+            for entry in entries {
+                let entry = entry.context("read canonical Space fixture entry")?;
+                let meta_path = entry.path().join("meta.json");
+                if !meta_path.is_file() {
+                    continue;
+                }
+                let text = fs::read_to_string(&meta_path)
+                    .with_context(|| format!("read {}", meta_path.to_string_lossy()))?;
+                if let Err(error) = check_fixture_meta_json(&text, &meta_path.to_string_lossy()) {
+                    violations.push(format!("{error:#}"));
+                }
+                fixture_count += 1;
+            }
+            if fixture_count == 0 {
+                violations.push(
+                    "fixtures/spaces/0.1/spaces must contain at least one meta.json bootstrap fixture"
+                        .to_string(),
+                );
+            }
+        }
+        Err(error) => violations.push(format!("read canonical Space fixture: {error:#}")),
+    }
+    if !Path::new("fixtures/spaces/0.1/README.md").is_file() {
+        violations.push(
+            "fixtures/spaces/0.1/README.md must exist as frozen compatibility evidence".to_string(),
+        );
+    }
+    match fs::read_to_string("crates/ugoite-domain/tests/test_space_version.rs") {
+        Ok(regression) => {
+            if let Err(error) = check_space_regression_coverage(&regression) {
+                violations.push(format!("{error:#}"));
+            }
+        }
+        Err(error) => violations.push(format!("read Space regression coverage: {error:#}")),
+    }
+    match fs::read_to_string("docs/architecture/contracts/space-compatibility.md") {
+        Ok(contract) => {
+            if let Err(error) = check_space_contract_doc(&contract) {
+                violations.push(format!("{error:#}"));
+            }
+        }
+        Err(error) => violations.push(format!("read Space compatibility contract: {error:#}")),
+    }
+    if !violations.is_empty() {
+        bail!("{}", violations.join("\n"));
+    }
+    println!("space compatibility: Space 0.1 identity, fixture, metadata contract, and regression coverage agree");
+    Ok(())
+}
+
+fn parse_current_space_version(source: &str) -> Result<String> {
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("pub const CURRENT_SPACE_VERSION") {
+            return extract_rust_string_value(trimmed).context("parse CURRENT_SPACE_VERSION value");
+        }
+    }
+    bail!("CURRENT_SPACE_VERSION is missing from crates/ugoite-domain/src/space.rs")
+}
+
+fn extract_rust_string_value(line: &str) -> Result<String> {
+    let Some(start) = line.find('"') else {
+        bail!("expected a quoted string value in: {line}")
+    };
+    let Some(end) = line.rfind('"') else {
+        bail!("expected a quoted string value in: {line}")
+    };
+    if start == end {
+        bail!("expected a quoted string value in: {line}")
+    }
+    Ok(line[start + 1..end].to_string())
+}
+
+fn parse_supported_space_versions(source: &str, current: &str) -> Result<Vec<String>> {
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("pub const SUPPORTED_SPACE_VERSIONS") {
+            continue;
+        }
+        let Some(eq) = trimmed.find('=') else {
+            bail!("expected an assignment in: {trimmed}")
+        };
+        let rhs = &trimmed[eq + 1..];
+        let Some(list_start) = rhs.find("&[") else {
+            bail!("expected a slice literal in: {trimmed}")
+        };
+        let Some(list_end) = rhs.rfind(']') else {
+            bail!("expected a slice literal in: {trimmed}")
+        };
+        let mut supported = Vec::new();
+        for item in rhs[list_start + 2..list_end].split(',') {
+            let item = item.trim();
+            if item.is_empty() {
+                continue;
+            }
+            if item == "CURRENT_SPACE_VERSION" {
+                supported.push(current.to_string());
+            } else if item.starts_with('"') && item.ends_with('"') && item.len() >= 2 {
+                supported.push(item[1..item.len() - 1].to_string());
+            } else {
+                bail!("unsupported entry in SUPPORTED_SPACE_VERSIONS: {item}")
+            }
+        }
+        return Ok(supported);
+    }
+    bail!("SUPPORTED_SPACE_VERSIONS is missing from crates/ugoite-domain/src/space.rs")
+}
+
+fn classify_space_version_body(source: &str) -> Result<&str> {
+    let Some(start) = source.find("pub fn classify_space_version") else {
+        bail!("classify_space_version is missing from crates/ugoite-domain/src/space.rs")
+    };
+    let rest = &source[start..];
+    let end = rest
+        .find("\npub fn ")
+        .map(|index| start + index)
+        .unwrap_or(source.len());
+    Ok(&source[start..end])
+}
+
+fn check_classify_space_version_body(source: &str) -> Result<()> {
+    let body = classify_space_version_body(source)?;
+    if !body.contains("get(\"space_version\")") {
+        bail!("classify_space_version must read the space_version metadata field");
+    }
+    if body.contains("schema_version") {
+        bail!("classify_space_version must not consult subsystem-local schema_version; subsystem-local format fields stay allowed elsewhere but cannot define Space compatibility");
+    }
+    if !body.contains("SUPPORTED_SPACE_VERSIONS") {
+        bail!("classify_space_version must enforce the single SUPPORTED_SPACE_VERSIONS authority");
+    }
+    Ok(())
+}
+
+fn check_fixture_meta_json(text: &str, origin: &str) -> Result<()> {
+    let value: Value = serde_json::from_str(text).with_context(|| format!("parse {origin}"))?;
+    match value.get("space_version").and_then(Value::as_str) {
+        Some("0.1") => Ok(()),
+        Some(other) => bail!("{origin} must carry space_version \"0.1\", found \"{other}\""),
+        None => bail!("{origin} must carry a space_version string identity"),
+    }
+}
+
+fn check_space_regression_coverage(regression: &str) -> Result<()> {
+    let mut violations = Vec::new();
+    for required in [
+        "classify_space_version",
+        "parse_space_version",
+        "CURRENT_SPACE_VERSION",
+        "SUPPORTED_SPACE_VERSIONS",
+        "schema_version",
+    ] {
+        if !regression.contains(required) {
+            violations.push(format!(
+                "crates/ugoite-domain/tests/test_space_version.rs must cover {required} (including the schema_version-only negative case)"
+            ));
+        }
+    }
+    if !violations.is_empty() {
+        bail!("{}", violations.join("\n"));
+    }
+    Ok(())
+}
+
+fn check_space_contract_doc(contract: &str) -> Result<()> {
+    let mut violations = Vec::new();
+    for required in [
+        "\"space_version\": \"0.1\"",
+        "UNSUPPORTED_SPACE_VERSION",
+        "exactly `0.1`",
+        "schema_version",
+    ] {
+        if !contract.contains(required) {
+            violations.push(format!(
+                "docs/architecture/contracts/space-compatibility.md must document {required}"
+            ));
+        }
+    }
+    if !violations.is_empty() {
+        bail!("{}", violations.join("\n"));
+    }
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct TrackerDoc {
+    status: String,
+    #[serde(default)]
+    summary: Option<String>,
+    #[serde(default)]
+    milestones: Vec<TrackerMilestone>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct TrackerMilestone {
+    id: String,
+    status: String,
+    #[serde(default)]
+    source: Vec<String>,
+    #[serde(default)]
+    phases: Vec<TrackerPhase>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct TrackerPhase {
+    id: String,
+    status: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct MilestoneDoc {
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    goal: Option<String>,
+    #[serde(default)]
+    phases: Vec<TrackerPhase>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RoadmapDoc {
+    #[serde(default)]
+    phases: Vec<RoadmapPhase>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct RoadmapPhase {
+    id: String,
+    #[serde(default)]
+    tasks: Vec<RoadmapTask>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RoadmapTask {
+    #[serde(default)]
+    description: String,
+}
+
+fn release_authority_check() -> Result<()> {
+    let mut violations = Vec::new();
+    let v02_text = fs::read_to_string("docs/version/v0.2.yaml").context("read v0.2 tracker")?;
+    let v02: TrackerDoc = serde_yaml::from_str(&v02_text).context("parse v0.2 tracker")?;
+    check_v02_tracker_doc(&v02, &mut violations);
+    for milestone in &v02.milestones {
+        for source in &milestone.source {
+            if !Path::new(source).is_file() {
+                violations.push(format!(
+                    "v0.2 milestone {} references missing source {source}",
+                    milestone.id
+                ));
+            }
+        }
+    }
+    if let Some(product_ux) = v02
+        .milestones
+        .iter()
+        .find(|milestone| milestone.id == "product-ux")
+    {
+        match fs::read_to_string("docs/version/v0.2/product-ux.yaml") {
+            Ok(text) => match serde_yaml::from_str::<MilestoneDoc>(&text) {
+                Ok(canonical) => {
+                    if let Some(canonical_status) = canonical.status.as_deref() {
+                        if product_ux.status != canonical_status {
+                            violations.push(format!(
+                                "v0.2 milestone product-ux status {} disagrees with docs/version/v0.2/product-ux.yaml",
+                                product_ux.status
+                            ));
+                        }
+                    }
+                    check_product_ux_doc_text(&text, &mut violations);
+                }
+                Err(error) => violations.push(format!("parse product-ux milestone: {error:#}")),
+            },
+            Err(error) => violations.push(format!("read product-ux milestone: {error:#}")),
+        }
+    }
+    check_obsolete_absent(
+        Path::new("docs/version/v0.2/user-controlled-view.yaml").exists(),
+        "docs/version/v0.2/user-controlled-view.yaml",
+        &mut violations,
+    );
+    check_obsolete_absent(
+        Path::new("docs/version/v0.2/ai-enabled-and-ai-used.yaml").exists(),
+        "docs/version/v0.2/ai-enabled-and-ai-used.yaml",
+        &mut violations,
+    );
+    match fs::read_to_string("docs/version/v0.1.yaml") {
+        Ok(text) => match serde_yaml::from_str::<TrackerDoc>(&text) {
+            Ok(v01) => check_v01_tracker_doc(&v01, &mut violations),
+            Err(error) => violations.push(format!("parse v0.1 tracker: {error:#}")),
+        },
+        Err(error) => violations.push(format!("read v0.1 tracker: {error:#}")),
+    }
+    match fs::read_to_string("docs/version/unknown/roadmap.yaml") {
+        Ok(text) => match serde_yaml::from_str::<RoadmapDoc>(&text) {
+            Ok(roadmap) => check_roadmap_doc(&roadmap, &mut violations),
+            Err(error) => violations.push(format!("parse roadmap: {error:#}")),
+        },
+        Err(error) => violations.push(format!("read roadmap: {error:#}")),
+    }
+    match fs::read_to_string("docs/architecture/release/v0.2.md") {
+        Ok(page) => {
+            if !page.contains("sole active v0.2 release authority") {
+                violations.push(
+                    "docs/architecture/release/v0.2.md must name Product UX as the sole active v0.2 release authority"
+                        .to_string(),
+                );
+            }
+            if !page.contains("North Star, not a shipped") {
+                violations.push(
+                    "docs/architecture/release/v0.2.md must keep Knowledge-to-tools as a North Star, not shipped acceptance"
+                        .to_string(),
+                );
+            }
+        }
+        Err(error) => violations.push(format!("read v0.2 release page: {error:#}")),
+    }
+    match fs::read_to_string("docs/architecture/release/versioning.md") {
+        Ok(page) => {
+            if !page.contains("Product UX sole authority") {
+                violations.push(
+                    "docs/architecture/release/versioning.md must describe the v0.2 Product UX sole authority"
+                        .to_string(),
+                );
+            }
+        }
+        Err(error) => violations.push(format!("read versioning page: {error:#}")),
+    }
+    if !violations.is_empty() {
+        bail!("{}", violations.join("\n"));
+    }
+    println!("release authority: Product UX is the sole active v0.2 authority; v0.1 foundation trackers and roadmap claims agree");
+    Ok(())
+}
+
+fn check_v02_tracker_doc(v02: &TrackerDoc, violations: &mut Vec<String>) {
+    let ids: Vec<&str> = v02
+        .milestones
+        .iter()
+        .map(|milestone| milestone.id.as_str())
+        .collect();
+    if ids != ["product-ux"] {
+        violations.push(format!(
+            "docs/version/v0.2.yaml must list product-ux as the sole active milestone, found {ids:?}"
+        ));
+    }
+    let summary = v02.summary.as_deref().unwrap_or("");
+    if !summary.contains("Sole active v0.2 authority: Product UX") {
+        violations.push(
+            "docs/version/v0.2.yaml summary must declare Product UX as the sole active v0.2 authority"
+                .to_string(),
+        );
+    }
+    if !summary.contains("Knowledge-to-tools remains a North Star") {
+        violations.push(
+            "docs/version/v0.2.yaml summary must keep Knowledge-to-tools as a North Star, not shipped acceptance"
+                .to_string(),
+        );
+    }
+    let combined = format!(
+        "{summary} {} {}",
+        ids.join(" "),
+        v02.milestones
+            .iter()
+            .flat_map(|milestone| milestone.source.iter().map(String::as_str))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    for stale in ["user-controlled-view", "ai-enabled-and-ai-used"] {
+        if combined.contains(stale) {
+            violations.push(format!(
+                "docs/version/v0.2.yaml must not carry the obsolete {stale} authority"
+            ));
+        }
+    }
+    if !v02.milestones.iter().any(|milestone| {
+        milestone
+            .source
+            .iter()
+            .any(|source| source == "docs/version/v0.2/product-ux.yaml")
+    }) {
+        violations.push(
+            "docs/version/v0.2.yaml must source the active milestone from docs/version/v0.2/product-ux.yaml"
+                .to_string(),
+        );
+    }
+}
+
+fn check_product_ux_doc_text(text: &str, violations: &mut Vec<String>) {
+    let Ok(doc) = serde_yaml::from_str::<MilestoneDoc>(text) else {
+        violations.push(
+            "docs/version/v0.2/product-ux.yaml must parse as a milestone document".to_string(),
+        );
+        return;
+    };
+    let goal = doc.goal.as_deref().unwrap_or("");
+    for dimension in [
+        "completion",
+        "discoverability",
+        "cross-surface consistency",
+        "validation clarity",
+        "recovery",
+        "documentation correctness",
+    ] {
+        if !goal.contains(dimension) {
+            violations.push(format!(
+                "docs/version/v0.2/product-ux.yaml goal must describe {dimension}"
+            ));
+        }
+    }
+    if !goal.contains("North Star") {
+        violations.push(
+            "docs/version/v0.2/product-ux.yaml goal must keep Knowledge-to-tools as a North Star"
+                .to_string(),
+        );
+    }
+    if doc.phases.is_empty() {
+        violations.push("docs/version/v0.2/product-ux.yaml must declare phases".to_string());
+    }
+}
+
+fn check_obsolete_absent(exists: bool, path: &str, violations: &mut Vec<String>) {
+    if exists {
+        violations.push(format!(
+            "{path} is an obsolete milestone authority and must stay removed from the active tracker"
+        ));
+    }
+}
+
+fn check_v01_tracker_doc(v01: &TrackerDoc, violations: &mut Vec<String>) {
+    for frozen in [
+        "mvp",
+        "full-configuration",
+        "markdown-as-table",
+        "user-management",
+    ] {
+        match v01
+            .milestones
+            .iter()
+            .find(|milestone| milestone.id == frozen)
+        {
+            Some(milestone) if milestone.status == "completed" => {}
+            Some(milestone) => violations.push(format!(
+                "docs/version/v0.1.yaml milestone {frozen} must stay completed, found {}",
+                milestone.status
+            )),
+            None => violations.push(format!(
+                "docs/version/v0.1.yaml must keep the frozen {frozen} milestone"
+            )),
+        }
+    }
+    if !v01
+        .milestones
+        .iter()
+        .any(|milestone| milestone.id == "release-preparation")
+    {
+        violations
+            .push("docs/version/v0.1.yaml must keep the release-preparation milestone".to_string());
+    }
+}
+
+fn check_roadmap_doc(roadmap: &RoadmapDoc, violations: &mut Vec<String>) {
+    let descriptions: Vec<&str> = roadmap
+        .phases
+        .iter()
+        .flat_map(|phase| phase.tasks.iter().map(|task| task.description.as_str()))
+        .collect();
+    let combined = descriptions.join("\n");
+    if !(combined.contains("Product UX") && combined.contains("sole active authority")) {
+        violations.push(
+            "docs/version/unknown/roadmap.yaml must name Product UX as the v0.2 sole active authority"
+                .to_string(),
+        );
+    }
+    for stale in ["User Controlled View", "AI-Enabled & AI-Used"] {
+        if combined.contains(stale) {
+            violations.push(format!(
+                "docs/version/unknown/roadmap.yaml must not carry the obsolete {stale} v0.2 authority"
+            ));
+        }
+    }
+    if !combined.contains("not v0.2 acceptance") {
+        violations.push(
+            "docs/version/unknown/roadmap.yaml must mark the Knowledge-to-tools North Star as future, not v0.2 acceptance"
+                .to_string(),
+        );
+    }
+}
+
 fn collect_files(root: &Path) -> Result<Vec<std::path::PathBuf>> {
     let mut files = Vec::new();
     if !root.exists() {
@@ -636,4 +1174,286 @@ fn collect_files(root: &Path) -> Result<Vec<std::path::PathBuf>> {
 
 fn normalize_newlines(value: &str) -> String {
     value.replace("\r\n", "\n")
+}
+
+#[cfg(test)]
+mod gate_contract_tests {
+    use super::*;
+
+    const GOOD_SPACE_SOURCE: &str = r#"
+pub const CURRENT_SPACE_VERSION: &str = "0.1";
+pub const SUPPORTED_SPACE_VERSIONS: &[&str] = &[CURRENT_SPACE_VERSION];
+
+/// Classify the durable Space compatibility identity.
+///
+/// It deliberately ignores `schema_version`: subsystem-local format fields
+/// cannot be promoted to the portable Space compatibility contract.
+pub fn classify_space_version(metadata: &serde_json::Value) -> Result<SpaceVersion, SpaceVersionError> {
+    let detected = match metadata.get("space_version") {
+        Some(serde_json::Value::String(value)) => value.clone(),
+        _ => return Err(SpaceVersionError::Missing),
+    };
+    if !SUPPORTED_SPACE_VERSIONS.contains(&detected.as_str()) {
+        return Err(SpaceVersionError::Unsupported { detected });
+    }
+    Ok(parsed)
+}
+
+pub const SUBSYSTEM_FORMAT_VERSION: u32 = 3;
+
+pub fn read_subsystem_schema_version(metadata: &serde_json::Value) -> Option<u64> {
+    metadata.get("schema_version").and_then(serde_json::Value::as_u64)
+}
+"#;
+
+    const GOOD_V02_TRACKER: &str = r#"
+version: "0.2"
+status: planned
+summary: >
+  Sole active v0.2 authority: Product UX. Knowledge-to-tools remains a North Star,
+  not a shipped v0.2 acceptance claim.
+milestones:
+  - id: product-ux
+    status: planned
+    source:
+      - docs/version/v0.2/product-ux.yaml
+    phases:
+      - id: design
+        status: planned
+"#;
+
+    const GOOD_PRODUCT_UX: &str = r#"
+id: product-ux
+version: "0.2"
+status: planned
+title: "Product UX"
+goal: >
+  completion, discoverability, cross-surface consistency, validation clarity,
+  recovery, and documentation correctness. Knowledge-to-tools remains a North Star.
+phases:
+  - id: design
+    status: planned
+"#;
+
+    const GOOD_V01_TRACKER: &str = r#"
+version: "0.1"
+status: in_progress
+summary: "Foundation"
+milestones:
+  - id: mvp
+    status: completed
+    source: [docs/version/v0.1/mvp.yaml]
+    phases: []
+  - id: full-configuration
+    status: completed
+    source: [docs/version/v0.1/full-configuration.yaml]
+    phases: []
+  - id: markdown-as-table
+    status: completed
+    source: [docs/version/v0.1/markdown-as-table.yaml]
+    phases: []
+  - id: user-management
+    status: completed
+    source: [docs/version/v0.1/user-management.yaml]
+    phases: []
+  - id: release-preparation
+    status: in_progress
+    source: [docs/version/v0.1/release-preparation.yaml]
+    phases: []
+"#;
+
+    const GOOD_ROADMAP: &str = r#"
+id: roadmap
+version: "unknown"
+status: in_progress
+phases:
+  - id: implementation
+    status: in_progress
+    tasks:
+      - description: "Milestone 5 Product UX - the v0.2 sole active authority"
+        done: false
+      - description: "Milestone 6 Knowledge-to-tools North Star (future, not v0.2 acceptance)"
+        done: false
+"#;
+
+    fn violations_of(check: impl FnOnce(&mut Vec<String>)) -> Vec<String> {
+        let mut violations = Vec::new();
+        check(&mut violations);
+        violations
+    }
+
+    #[test]
+    fn space_source_with_frozen_identity_passes() {
+        let current = parse_current_space_version(GOOD_SPACE_SOURCE).expect("current parses");
+        assert_eq!(current, "0.1");
+        let supported =
+            parse_supported_space_versions(GOOD_SPACE_SOURCE, &current).expect("supported parses");
+        assert_eq!(supported, vec!["0.1".to_string()]);
+        check_classify_space_version_body(GOOD_SPACE_SOURCE).expect("classify body is scoped");
+    }
+
+    #[test]
+    fn subsystem_local_schema_version_stays_allowed_outside_classifier() {
+        // The gate scopes its schema_version assertion to classify_space_version;
+        // subsystem-local format fields elsewhere must not trip the gate.
+        assert!(GOOD_SPACE_SOURCE.contains("schema_version"));
+        check_classify_space_version_body(GOOD_SPACE_SOURCE).expect("no ban on local fields");
+    }
+
+    #[test]
+    fn changed_current_version_fails() {
+        let source = GOOD_SPACE_SOURCE.replace(
+            "pub const CURRENT_SPACE_VERSION: &str = \"0.1\";",
+            "pub const CURRENT_SPACE_VERSION: &str = \"0.2\";",
+        );
+        let current = parse_current_space_version(&source).expect("current parses");
+        assert_eq!(current, "0.2");
+        let supported =
+            parse_supported_space_versions(&source, &current).expect("supported parses");
+        assert_ne!(supported, vec!["0.1".to_string()]);
+    }
+
+    #[test]
+    fn widened_supported_set_fails() {
+        let source = GOOD_SPACE_SOURCE.replace(
+            "pub const SUPPORTED_SPACE_VERSIONS: &[&str] = &[CURRENT_SPACE_VERSION];",
+            "pub const SUPPORTED_SPACE_VERSIONS: &[&str] = &[CURRENT_SPACE_VERSION, \"0.2\"];",
+        );
+        let supported = parse_supported_space_versions(&source, "0.1").expect("supported parses");
+        assert_eq!(supported, vec!["0.1".to_string(), "0.2".to_string()]);
+    }
+
+    #[test]
+    fn classifier_consulting_schema_version_fails() {
+        let source = GOOD_SPACE_SOURCE.replace(
+            "let detected = match metadata.get(\"space_version\") {",
+            "let detected = match metadata.get(\"space_version\").or(metadata.get(\"schema_version\")) {",
+        );
+        check_classify_space_version_body(&source).expect_err("schema_version fallback must fail");
+    }
+
+    #[test]
+    fn fixture_meta_requires_space_version_identity() {
+        check_fixture_meta_json(r#"{"space_version": "0.1"}"#, "meta.json").expect("0.1 passes");
+        check_fixture_meta_json(r#"{"schema_version": 3}"#, "meta.json")
+            .expect_err("schema_version-only metadata must fail");
+        check_fixture_meta_json(r#"{"space_version": "0.2"}"#, "meta.json")
+            .expect_err("future version must fail");
+        check_fixture_meta_json(r#"{}"#, "meta.json").expect_err("missing identity must fail");
+    }
+
+    #[test]
+    fn regression_coverage_requires_negative_case() {
+        check_space_regression_coverage("classify_space_version parse_space_version CURRENT_SPACE_VERSION SUPPORTED_SPACE_VERSIONS schema_version")
+            .expect("full coverage passes");
+        check_space_regression_coverage("classify_space_version parse_space_version CURRENT_SPACE_VERSION SUPPORTED_SPACE_VERSIONS")
+            .expect_err("missing schema_version negative case must fail");
+    }
+
+    #[test]
+    fn v02_tracker_with_sole_product_ux_passes() {
+        let doc: TrackerDoc = serde_yaml::from_str(GOOD_V02_TRACKER).expect("tracker parses");
+        let violations = violations_of(|violations| check_v02_tracker_doc(&doc, violations));
+        assert!(
+            violations.is_empty(),
+            "unexpected violations: {violations:?}"
+        );
+    }
+
+    #[test]
+    fn v02_tracker_with_returned_view_authority_fails() {
+        let text = GOOD_V02_TRACKER.replace("  - id: product-ux", "  - id: user-controlled-view");
+        let doc: TrackerDoc = serde_yaml::from_str(&text).expect("tracker parses");
+        let violations = violations_of(|violations| check_v02_tracker_doc(&doc, violations));
+        assert!(!violations.is_empty());
+        assert!(violations
+            .iter()
+            .any(|violation| violation.contains("sole active milestone")));
+    }
+
+    #[test]
+    fn v02_tracker_without_authority_declaration_fails() {
+        let text = GOOD_V02_TRACKER.replace(
+            "Sole active v0.2 authority: Product UX.",
+            "An earlier draft authority statement sat here.",
+        );
+        let doc: TrackerDoc = serde_yaml::from_str(&text).expect("tracker parses");
+        let violations = violations_of(|violations| check_v02_tracker_doc(&doc, violations));
+        assert!(violations
+            .iter()
+            .any(|violation| violation.contains("sole active v0.2 authority")));
+    }
+
+    #[test]
+    fn product_ux_goal_requires_all_dimensions() {
+        let violations =
+            violations_of(|violations| check_product_ux_doc_text(GOOD_PRODUCT_UX, violations));
+        assert!(
+            violations.is_empty(),
+            "unexpected violations: {violations:?}"
+        );
+        let text = GOOD_PRODUCT_UX.replace("validation clarity,", "");
+        let violations = violations_of(|violations| check_product_ux_doc_text(&text, violations));
+        assert!(violations
+            .iter()
+            .any(|violation| violation.contains("validation clarity")));
+    }
+
+    #[test]
+    fn obsolete_milestone_presence_fails() {
+        let violations = violations_of(|violations| {
+            check_obsolete_absent(
+                true,
+                "docs/version/v0.2/user-controlled-view.yaml",
+                violations,
+            );
+        });
+        assert_eq!(violations.len(), 1);
+        let violations = violations_of(|violations| {
+            check_obsolete_absent(
+                false,
+                "docs/version/v0.2/user-controlled-view.yaml",
+                violations,
+            );
+        });
+        assert!(violations.is_empty());
+    }
+
+    #[test]
+    fn v01_tracker_requires_frozen_foundation() {
+        let doc: TrackerDoc = serde_yaml::from_str(GOOD_V01_TRACKER).expect("tracker parses");
+        let violations = violations_of(|violations| check_v01_tracker_doc(&doc, violations));
+        assert!(
+            violations.is_empty(),
+            "unexpected violations: {violations:?}"
+        );
+        let text = GOOD_V01_TRACKER.replace(
+            "  - id: user-management\n    status: completed",
+            "  - id: user-management\n    status: in_progress",
+        );
+        let doc: TrackerDoc = serde_yaml::from_str(&text).expect("tracker parses");
+        let violations = violations_of(|violations| check_v01_tracker_doc(&doc, violations));
+        assert!(violations
+            .iter()
+            .any(|violation| violation.contains("user-management")));
+    }
+
+    #[test]
+    fn roadmap_with_returned_view_claim_fails() {
+        let doc: RoadmapDoc = serde_yaml::from_str(GOOD_ROADMAP).expect("roadmap parses");
+        let violations = violations_of(|violations| check_roadmap_doc(&doc, violations));
+        assert!(
+            violations.is_empty(),
+            "unexpected violations: {violations:?}"
+        );
+        let text = GOOD_ROADMAP.replace(
+            "Milestone 5 Product UX - the v0.2 sole active authority",
+            "Milestone 5 User Controlled View - portable query-driven Experiences (v0.2)",
+        );
+        let doc: RoadmapDoc = serde_yaml::from_str(&text).expect("roadmap parses");
+        let violations = violations_of(|violations| check_roadmap_doc(&doc, violations));
+        assert!(violations
+            .iter()
+            .any(|violation| violation.contains("User Controlled View")));
+    }
 }
