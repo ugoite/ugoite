@@ -1,5 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createSignal, Show } from "solid-js";
 import { EntriesRouteContext } from "~/lib/entries-route-context";
@@ -122,10 +128,16 @@ describe("v5 Forms workspace", () => {
     renderPage([noteForm]);
     expect(screen.getByPlaceholderText("Find a Form")).toBeInTheDocument();
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Notes")).toHaveLength(1);
+    expect(document.querySelectorAll(".desktopFormPicker .formItem b"))
+      .toHaveLength(1);
+    expect(screen.getByRole("option", { name: "Notes" })).toBeInTheDocument();
     expect(screen.getByText("Entries table for Notes")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Form" }).querySelector("svg"))
-      .toBeInTheDocument();
+    expect(
+      within(document.querySelector(".desktopFormPicker")!).getByRole(
+        "button",
+        { name: "Form" },
+      ).querySelector("svg"),
+    ).toBeInTheDocument();
   });
   it("opens the canonical editor with the selected Form from Add Row", () => {
     search.form = "Notes";
@@ -160,9 +172,17 @@ describe("v5 Forms workspace", () => {
 
     expect(screen.queryByText("SQL")).not.toBeInTheDocument();
     fireEvent.click(
-      screen.getByRole("checkbox", { name: "Show system forms" }),
+      within(document.querySelector(".desktopFormPicker")!).getByRole(
+        "checkbox",
+        { name: "Show system forms" },
+      ),
     );
-    expect(screen.getByText("SQL")).toBeInTheDocument();
+    expect(
+      Array.from(document.querySelectorAll(".desktopFormPicker .formItem b"))
+        .some((node) => node.textContent === "SQL"),
+    )
+      .toBe(true);
+    expect(screen.getByRole("option", { name: "SQL" })).toBeInTheDocument();
     expect(screen.getByLabelText("System form")).toBeInTheDocument();
     expect(screen.queryByText("System")).not.toBeInTheDocument();
   });
@@ -171,7 +191,10 @@ describe("v5 Forms workspace", () => {
     renderPage([metadataForm]);
 
     fireEvent.click(
-      screen.getByRole("checkbox", { name: "Show system forms" }),
+      within(document.querySelector(".desktopFormPicker")!).getByRole(
+        "checkbox",
+        { name: "Show system forms" },
+      ),
     );
 
     expect(screen.getByText("Entries table for SQL")).toBeInTheDocument();
@@ -187,5 +210,30 @@ describe("v5 Forms workspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(refetchForms).toHaveBeenCalled();
+  });
+  it("provides a compact mobile Form picker without changing the route contract", () => {
+    search.form = "Notes";
+    renderPage([noteForm, { ...noteForm, name: "Projects" }]);
+
+    const picker = screen.getByRole("combobox", { name: "Select a Form" });
+    expect(picker).toHaveValue("Notes");
+
+    fireEvent.change(picker, { target: { value: "Projects" } });
+
+    expect(setSearch).toHaveBeenCalledWith({
+      form: "Projects",
+      tab: undefined,
+    });
+  });
+  it("keeps system Form visibility and creation available in the mobile picker", () => {
+    search.form = "Notes";
+    renderPage([noteForm, metadataForm]);
+
+    const picker = within(document.querySelector(".mobileFormPicker")!);
+    expect(picker.getByRole("button", { name: "Form" })).toBeInTheDocument();
+    fireEvent.click(picker.getByRole("checkbox", {
+      name: "Show system forms",
+    }));
+    expect(picker.getByRole("option", { name: "SQL" })).toBeInTheDocument();
   });
 });

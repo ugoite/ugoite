@@ -1,10 +1,22 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, waitFor, within } from "@solidjs/testing-library";
 import { FormTable } from "./FormTable";
 import { entryApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
 import { setLocale } from "~/lib/i18n";
+
+function desktopTable() {
+  const table = document.querySelector(".ui-table-desktop");
+  if (!table) throw new Error("desktop table not found");
+  return within(table as HTMLElement);
+}
+
+function mobileList() {
+  const list = document.querySelector(".ui-table-mobile-list");
+  if (!list) throw new Error("mobile list not found");
+  return within(list as HTMLElement);
+}
 
 describe("FormTable", () => {
   beforeEach(() => {
@@ -104,7 +116,9 @@ describe("FormTable", () => {
       />
     ));
 
-    await waitFor(() => expect(getByText("A Entry")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(desktopTable().getByText("A Entry")).toBeInTheDocument()
+    );
 
     // Initially might be in order returned by API. Click Title to sort.
     const titleHeader = getByText("Title");
@@ -150,7 +164,7 @@ describe("FormTable", () => {
     ];
 
     vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
-    const { getByPlaceholderText, queryByText } = render(() => (
+    const { getByPlaceholderText } = render(() => (
       <FormTable
         spaceId="ws"
         entryForm={entryForm}
@@ -159,14 +173,16 @@ describe("FormTable", () => {
       />
     ));
 
-    await waitFor(() => expect(queryByText("Apple")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(desktopTable().getByText("Apple")).toBeInTheDocument()
+    );
 
     const searchInput = getByPlaceholderText("Global Search...");
     fireEvent.input(searchInput, { target: { value: "carrot" } });
 
     await waitFor(() => {
-      expect(queryByText("Carrot")).toBeInTheDocument();
-      expect(queryByText("Apple")).not.toBeInTheDocument();
+      expect(desktopTable().getByText("Carrot")).toBeInTheDocument();
+      expect(desktopTable().queryByText("Apple")).not.toBeInTheDocument();
     });
   });
 
@@ -351,7 +367,7 @@ describe("FormTable", () => {
     } as any);
     const updateSpy = vi.spyOn(entryApi, "update").mockResolvedValue({} as any);
 
-    const { getByText, getByTitle, getByDisplayValue } = render(() => (
+    const { getByText, getByTitle } = render(() => (
       <FormTable
         spaceId="ws"
         entryForm={entryForm}
@@ -361,17 +377,17 @@ describe("FormTable", () => {
     ));
 
     // Wait for render
-    await waitFor(() => getByText("Entry1"));
+    await waitFor(() => desktopTable().getByText("Entry1"));
 
     // Click Edit Toggle (Lock icon)
     const toggleButton = getByTitle("Enable Editing");
     fireEvent.click(toggleButton);
 
     // Now find the cell value and it should be an input or become input on click
-    const cell = getByText("val");
+    const cell = desktopTable().getByText("val");
     fireEvent.click(cell);
 
-    const input = getByDisplayValue("val");
+    const input = desktopTable().getByDisplayValue("val");
     fireEvent.input(input, { target: { value: "new-val" } });
     fireEvent.blur(input);
 
@@ -405,7 +421,7 @@ describe("FormTable", () => {
     vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
     const onEntryClick = vi.fn();
 
-    const { getByText, getByRole } = render(() => (
+    const { getByText } = render(() => (
       <FormTable
         spaceId="ws"
         entryForm={entryForm}
@@ -414,10 +430,12 @@ describe("FormTable", () => {
       />
     ));
 
-    await waitFor(() => expect(getByText("Entry1")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(desktopTable().getByText("Entry1")).toBeInTheDocument()
+    );
 
     // Find the row
-    const row = getByText("Entry1").closest("tr");
+    const row = desktopTable().getByText("Entry1").closest("tr");
     if (!row) throw new Error("Row not found");
 
     // Click the row itself (but not the link icon)
@@ -425,7 +443,9 @@ describe("FormTable", () => {
     expect(onEntryClick).not.toHaveBeenCalled();
 
     // Find the link icon (title="View Entry") and click it
-    const linkButton = getByRole("button", { name: /view entry/i });
+    const linkButton = desktopTable().getByRole("button", {
+      name: /view entry/i,
+    });
     fireEvent.click(linkButton);
     expect(onEntryClick).toHaveBeenCalledWith("1");
   });
@@ -486,12 +506,12 @@ describe("FormTable", () => {
       />
     ));
 
-    await waitFor(() => getByText("Entry1"));
+    await waitFor(() => desktopTable().getByText("Entry1"));
 
     // Simulate drag selection from (0,0) to (1,1)
     // Col 0: Title, Col 1: col
-    const cell1 = getByText("Entry1");
-    const cell2 = getByText("val2");
+    const cell1 = desktopTable().getByText("Entry1");
+    const cell2 = desktopTable().getByText("val2");
 
     fireEvent.mouseDown(cell1);
     fireEvent.mouseEnter(cell2, { buttons: 1 });
@@ -557,7 +577,7 @@ describe("FormTable", () => {
       />
     ));
 
-    await waitFor(() => getByText("A"));
+    await waitFor(() => desktopTable().getByText("A"));
 
     // Open sort menu
     fireEvent.click(getByLabelText("Sort menu"));
@@ -646,10 +666,10 @@ describe("FormTable", () => {
       />
     ));
 
-    await waitFor(() => getByText("Entry1"));
+    await waitFor(() => desktopTable().getByText("Entry1"));
 
     // Select title cell (col 0)
-    const cell1 = getByText("Entry1");
+    const cell1 = desktopTable().getByText("Entry1");
     // Get a cell with a date (updated_at column, col 2)
     const updatedCell = document.querySelectorAll("tbody td")[3]; // Actions(0), Title(1), col(2), updated(3)
 
@@ -695,13 +715,13 @@ describe("FormTable", () => {
       />
     ));
 
-    await waitFor(() => getByText("OldTitle"));
+    await waitFor(() => desktopTable().getByText("OldTitle"));
 
     // Enable edit mode
     fireEvent.click(getByTitle("Enable Editing"));
 
     // Click on the title cell td
-    const titleText = getByText("OldTitle");
+    const titleText = desktopTable().getByText("OldTitle");
     const titleTd = titleText.closest("td") ?? titleText;
     fireEvent.click(titleTd);
 
@@ -729,5 +749,48 @@ describe("FormTable", () => {
 
     updateSpy.mockRestore();
     getSpy.mockRestore();
+  });
+
+  it("renders a mobile card with primary fields and progressively discloses the rest", async () => {
+    const entryForm = {
+      name: "Test",
+      fields: {
+        status: { type: "string" },
+        owner: { type: "string" },
+        priority: { type: "string" },
+        notes: { type: "markdown" },
+      },
+    } as any;
+    vi.spyOn(searchApi, "query").mockResolvedValue([{
+      id: "1",
+      title: "Entry1",
+      properties: {
+        status: "Open",
+        owner: "Aki",
+        priority: "High",
+        notes: "Longer context",
+      },
+      updated_at: "2026-01-01",
+    }] as any);
+
+    render(() => (
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(mobileList().getByText("Entry1"))
+        .toBeInTheDocument()
+    );
+    expect(mobileList().getByText("status")).toBeInTheDocument();
+    expect(mobileList().getByText("priority")).toBeInTheDocument();
+    const extraField = mobileList().getByText("notes");
+    expect(extraField.closest(".ui-table-mobile-extra-fields"))
+      .toBeTruthy();
+    expect(mobileList().getByText("Show 1 more field")).toBeInTheDocument();
   });
 });

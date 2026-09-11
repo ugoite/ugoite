@@ -1,5 +1,5 @@
 version: "0.2"
-updated: "2026-07-17"
+updated: "2026-09-11"
 page:
   id: space-form-grid
   title: Forms Workspace
@@ -19,7 +19,7 @@ components:
         - create-form
     - id: selected-form-entries
       type: data-grid
-      description: The selected Form's Entries are shown directly without a second Entries view or nested view tabs.
+      description: The selected Form's Entries are shown directly without a second Entries view or nested view tabs. On small viewports the same records use a primary card/stack representation so the first fields remain visible without horizontal table scrolling.
       actions:
         - edit-form
         - create-entry
@@ -27,4 +27,4 @@ components:
         - export-csv
 responsive:
   desktop: split-master-detail
-  mobile: stacked
+  mobile: selected-form-first-with-card-list

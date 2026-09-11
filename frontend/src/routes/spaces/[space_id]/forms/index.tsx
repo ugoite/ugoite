@@ -71,7 +71,54 @@ export default function SpaceFormsIndexPane() {
         }
       >
         <div class="split">
-          <aside class="listPane surface">
+          <div class="mobileFormPicker surface">
+            <div class="mobileFormPickerSummary">
+              <div class="min-w-0">
+                <p class="eyebrow">{t("formsPage.formPicker")}</p>
+                <strong class="mobileFormPickerValue">
+                  {selectedForm()?.name ?? t("formsPage.selectPlaceholder")}
+                </strong>
+              </div>
+              <label class="mobileFormPickerControl">
+                <span class="ui-sr-only">{t("formsPage.selectForm")}</span>
+                <select
+                  class="ui-select"
+                  aria-label={t("formsPage.selectForm")}
+                  value={selectedName()}
+                  onChange={(event) =>
+                    setParams({
+                      form: event.currentTarget.value,
+                      tab: undefined,
+                    })}
+                >
+                  <For each={forms()}>
+                    {(form) => <option value={form.name}>{form.name}</option>}
+                  </For>
+                </select>
+              </label>
+            </div>
+            <div class="mobileFormPickerActions">
+              <label class="formVisibilityToggle">
+                <span>{t("formsPage.showMetadata")}</span>
+                <input
+                  type="checkbox"
+                  checked={showMetadata()}
+                  onChange={(event) =>
+                    setShowMetadata(event.currentTarget.checked)}
+                />
+                <span class="formVisibilityTrack" aria-hidden="true" />
+              </label>
+              <button
+                class="btn iconBtn"
+                type="button"
+                aria-label={t("formsPage.newFormAria")}
+                onClick={() => setShowFormDialog(true)}
+              >
+                <UiIcon name="plus" />
+              </button>
+            </div>
+          </div>
+          <aside class="listPane surface desktopFormPicker">
             <div class="paneHead">
               <b>{t("spaceShell.bottom.grid")}</b>
               <button

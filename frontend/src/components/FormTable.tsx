@@ -712,7 +712,7 @@ export function FormTable(props: FormTableProps) {
           </div>
         </div>
 
-        <div class="ui-table-wrapper overflow-x-auto">
+        <div class="ui-table-wrapper ui-table-desktop overflow-x-auto">
           <table class="ui-table">
             <thead class="ui-table-head">
               <tr>
@@ -957,6 +957,134 @@ export function FormTable(props: FormTableProps) {
               </For>
             </tbody>
           </table>
+        </div>
+        <div
+          class="ui-table-mobile-list"
+          role="list"
+          aria-label={t("formTable.mobileList")}
+        >
+          <For each={processedEntries()}>
+            {(entry) => (
+              <article class="ui-table-mobile-card" role="listitem">
+                <div class="ui-table-mobile-card-header">
+                  <Show
+                    when={isCellEditing(entry.id, "title")}
+                    fallback={
+                      <button
+                        type="button"
+                        class="ui-table-mobile-title"
+                        onClick={() => {
+                          if (isEditMode()) {
+                            setEditingCell({ id: entry.id, field: "title" });
+                          } else {
+                            props.onEntryClick(entry.id);
+                          }
+                        }}
+                      >
+                        {entry.title || t("common.untitled")}
+                      </button>
+                    }
+                  >
+                    <input
+                      value={entry.title || ""}
+                      class="ui-table-cell-input ui-table-mobile-title-input"
+                      autofocus
+                      aria-label={t("formTable.title")}
+                      onBlur={(event) => {
+                        void handleCellUpdate(
+                          entry.id,
+                          "title",
+                          event.currentTarget.value,
+                        );
+                        setEditingCell(null);
+                      }}
+                      onKeyDown={(event) =>
+                        event.key === "Enter" && event.currentTarget.blur()}
+                    />
+                  </Show>
+                  <button
+                    type="button"
+                    class="ui-button ui-button-secondary ui-button-sm"
+                    onClick={() => props.onEntryClick(entry.id)}
+                    aria-label={t("formTable.viewEntry")}
+                  >
+                    {t("formTable.view")}
+                  </button>
+                </div>
+                <dl class="ui-table-mobile-fields">
+                  <For each={fields().slice(0, 3)}>
+                    {(field) => (
+                      <div class="ui-table-mobile-field">
+                        <dt>{field}</dt>
+                        <dd>
+                          <Show
+                            when={isCellEditing(entry.id, field)}
+                            fallback={
+                              <button
+                                type="button"
+                                class="ui-table-mobile-value"
+                                disabled={!isEditMode()}
+                                onClick={() =>
+                                  setEditingCell({ id: entry.id, field })}
+                              >
+                                {String(entry.properties?.[field] ?? "-")}
+                              </button>
+                            }
+                          >
+                            <input
+                              value={String(entry.properties?.[field] ?? "")}
+                              class="ui-table-cell-input"
+                              autofocus
+                              aria-label={field}
+                              onBlur={(event) => {
+                                void handleCellUpdate(
+                                  entry.id,
+                                  field,
+                                  event.currentTarget.value,
+                                );
+                                setEditingCell(null);
+                              }}
+                              onKeyDown={(event) =>
+                                event.key === "Enter" &&
+                                event.currentTarget.blur()}
+                            />
+                          </Show>
+                        </dd>
+                      </div>
+                    )}
+                  </For>
+                  <div class="ui-table-mobile-field">
+                    <dt>{t("formTable.updated")}</dt>
+                    <dd>{formatDateLabel(entry.updated_at)}</dd>
+                  </div>
+                </dl>
+                <Show when={fields().length > 3}>
+                  <details class="ui-table-mobile-more">
+                    <summary>
+                      {t(
+                        fields().length - 3 === 1
+                          ? "formTable.showMoreField"
+                          : "formTable.showMoreFields",
+                        {
+                          count: fields().length - 3,
+                        },
+                      )}
+                    </summary>
+                    <dl class="ui-table-mobile-fields ui-table-mobile-extra-fields">
+                      <For each={fields().slice(3)}>
+                        {(field) => (
+                          <div class="ui-table-mobile-field">
+                            <dt>{field}</dt>
+                            <dd>{String(entry.properties?.[field] ?? "-")}</dd>
+                          </div>
+                        )}
+                      </For>
+                    </dl>
+                  </details>
+                </Show>
+              </article>
+            )}
+          </For>
         </div>
       </div>
     </div>
