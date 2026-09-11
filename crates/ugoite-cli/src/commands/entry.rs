@@ -187,12 +187,12 @@ pub enum EntrySubCmd {
     },
 }
 
-fn entry_receipt(id: String, revision_id: Option<String>) -> MutationReceipt {
-    // Change/run IDs are None here: the CLI never fabricates them. Durable
-    // Knowledge Change ID exposure from the commit boundary is follow-up.
-    // In 0.1.x the receipt is TTY display only; the machine default stays on
-    // the existing output shape and switches to the receipt in v0.2.
-    MutationReceipt::entry(id, revision_id, None)
+fn entry_receipt(
+    id: String,
+    revision_id: Option<String>,
+    change_id: Option<String>,
+) -> MutationReceipt {
+    MutationReceipt::entry(id, revision_id, change_id)
 }
 
 pub async fn run(cmd: EntryCmd) -> Result<()> {
@@ -300,6 +300,10 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                         .get("revision_id")
                         .and_then(|value| value.as_str())
                         .map(str::to_string),
+                    result
+                        .get("change_id")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_string),
                 );
                 emit_success(&result, &fmt, Some(receipt.human()));
                 return Ok(());
@@ -315,6 +319,9 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             let receipt = entry_receipt(
                 entry_id,
                 meta.get("revision_id")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+                meta.get("change_id")
                     .and_then(|value| value.as_str())
                     .map(str::to_string),
             );
@@ -356,6 +363,10 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                         .get("revision_id")
                         .and_then(|value| value.as_str())
                         .map(str::to_string),
+                    result
+                        .get("change_id")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_string),
                 );
                 emit_success(&result, &fmt, Some(receipt.human()));
                 return Ok(());
@@ -375,6 +386,10 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 entry_id,
                 result
                     .get("revision_id")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+                result
+                    .get("change_id")
                     .and_then(|value| value.as_str())
                     .map(str::to_string),
             );
@@ -410,7 +425,18 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     None,
                 )
                 .await?;
-                print_json(&result);
+                let receipt = entry_receipt(
+                    entry_id,
+                    result
+                        .get("revision_id")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_string),
+                    result
+                        .get("change_id")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_string),
+                );
+                emit_success(&result, &fmt, Some(receipt.human()));
                 return Ok(());
             }
             if human_approval.is_some() {
@@ -421,10 +447,21 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             }
             // Do not wait for Derived refreshes in a one-shot mutation.
             let service = UgoiteService::new_without_background_refresh(&root)?;
-            service
-                .delete_entry(&space_id, &entry_id, hard_delete, &author)
+            let result = service
+                .delete_entry_with_receipt(&space_id, &entry_id, hard_delete, &author)
                 .await?;
-            print_json(&serde_json::json!({"deleted": true}));
+            let receipt = entry_receipt(
+                entry_id,
+                result
+                    .get("revision_id")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+                result
+                    .get("change_id")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+            );
+            emit_success(&result, &fmt, Some(receipt.human()));
         }
         EntrySubCmd::History {
             space_path,
@@ -495,7 +532,18 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     Some(serde_json::json!({"revision_id": revision_id})),
                 )
                 .await?;
-                print_json(&result);
+                let receipt = entry_receipt(
+                    entry_id,
+                    result
+                        .get("revision_id")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_string),
+                    result
+                        .get("change_id")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_string),
+                );
+                emit_success(&result, &fmt, Some(receipt.human()));
                 return Ok(());
             }
             // Do not wait for Derived refreshes in a one-shot mutation.
@@ -503,7 +551,18 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             let result = service
                 .restore_entry(&space_id, &entry_id, &revision_id, &author)
                 .await?;
-            print_json(&result);
+            let receipt = entry_receipt(
+                entry_id,
+                result
+                    .get("revision_id")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+                result
+                    .get("change_id")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+            );
+            emit_success(&result, &fmt, Some(receipt.human()));
         }
     }
     Ok(())

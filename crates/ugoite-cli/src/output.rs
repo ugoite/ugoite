@@ -409,9 +409,9 @@ fn format_validation_warning(warning: &Value) -> Option<String> {
 
 /// Common mutation receipt (E1).
 ///
-/// `change_id`/`run_id` are `None` when the mutation has no Change/Run. The
-/// CLI never fabricates them; durable Knowledge Change IDs come from the
-/// commit boundary.
+/// `change_id`/`run_id` are `None` when the mutation has no durable Change or
+/// Run. The CLI never fabricates them; durable Knowledge Change IDs come from
+/// the commit boundary.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MutationReceipt {
     pub kind: String,

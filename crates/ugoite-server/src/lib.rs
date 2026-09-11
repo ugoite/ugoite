@@ -8899,7 +8899,11 @@ async fn create_entry(
         .await?;
         return Ok((
             StatusCode::CREATED,
-            Json(json!({"id": entry_id, "revision_id": created["revision_id"]})),
+            Json(json!({
+                "id": entry_id,
+                "revision_id": created["revision_id"],
+                "change_id": created["change_id"],
+            })),
         ));
     };
     let _ = has_markdown;
@@ -8928,7 +8932,11 @@ async fn create_entry(
     .await?;
     Ok((
         StatusCode::CREATED,
-        Json(json!({"id": entry_id, "revision_id": created["revision_id"]})),
+        Json(json!({
+            "id": entry_id,
+            "revision_id": created["revision_id"],
+            "change_id": created["change_id"],
+        })),
     ))
 }
 
@@ -9483,9 +9491,11 @@ async fn update_entry(
             },
         )
         .await?;
-        return Ok(Json(
-            json!({"id": entry_id, "revision_id": value["revision_id"]}),
-        ));
+        return Ok(Json(json!({
+            "id": entry_id,
+            "revision_id": value["revision_id"],
+            "change_id": value["change_id"],
+        })));
     }
     // Structured path.
     if payload.fields.is_none() && payload.extra_attributes.is_none() {
@@ -9532,9 +9542,11 @@ async fn update_entry(
         },
     )
     .await?;
-    Ok(Json(
-        json!({"id": entry_id, "revision_id": value["revision_id"]}),
-    ))
+    Ok(Json(json!({
+        "id": entry_id,
+        "revision_id": value["revision_id"],
+        "change_id": value["change_id"],
+    })))
 }
 
 async fn delete_entry(
@@ -9570,7 +9582,7 @@ async fn delete_entry(
         let result = execute_approved_mutation(&state, &space_id, &identity, pending, move |_| {
             Box::pin(async move {
                 mutation_service
-                    .delete_entry(
+                    .delete_entry_with_receipt(
                         &mutation_space_id,
                         &mutation_entry_id,
                         mutation_hard_delete,
@@ -9605,7 +9617,7 @@ async fn delete_entry(
         };
         mutation
     } else {
-        with_authorized_mutation(
+        let mutation = with_authorized_mutation(
             &state,
             &space_id,
             &identity,
@@ -9619,7 +9631,7 @@ async fn delete_entry(
                 with_active_request_credential(&state, &identity, || async {
                     state
                         .service
-                        .delete_entry(
+                        .delete_entry_with_receipt(
                             &space_id,
                             &entry_id,
                             query.hard_delete.unwrap_or(false),
@@ -9632,10 +9644,15 @@ async fn delete_entry(
             },
         )
         .await?;
-        return Ok(Json(json!({"id": entry_id, "status": "deleted"})));
+        return Ok(Json(json!({
+            "id": entry_id,
+            "status": "deleted",
+            "revision_id": mutation["revision_id"],
+            "change_id": mutation["change_id"],
+        })));
     };
-    match mutation {
-        Ok(()) => {
+    let result = match mutation {
+        Ok(value) => {
             if let Some(approval) = approval_for_audit.as_ref() {
                 append_human_approval_audit_with_subject(
                     &state,
@@ -9650,6 +9667,7 @@ async fn delete_entry(
                 .await
                 .map_err(ApiError::from_core)?;
             }
+            value
         }
         Err(error) => {
             if let Some(approval) = approval_for_audit.as_ref() {
@@ -9668,8 +9686,15 @@ async fn delete_entry(
             }
             return Err(ApiError::from_core(error));
         }
+    };
+    let mut response = json!({"id": entry_id, "status": "deleted"});
+    if let Some(value) = result.get("revision_id") {
+        response["revision_id"] = value.clone();
     }
-    Ok(Json(json!({"id": entry_id, "status": "deleted"})))
+    if let Some(value) = result.get("change_id") {
+        response["change_id"] = value.clone();
+    }
+    Ok(Json(response))
 }
 
 #[derive(Deserialize)]

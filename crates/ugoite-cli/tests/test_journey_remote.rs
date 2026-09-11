@@ -288,12 +288,21 @@ async fn journey_cli_remote() {
         "entry create",
     );
     assert!(contains_string(&created, entry_id));
+    let create_change_id = created
+        .get("change_id")
+        .and_then(|id| id.as_str())
+        .expect("create returns durable change_id")
+        .to_string();
     let history = stdout_json(
         &run_cli(config_path, &["entry", "history", space_id, entry_id]).await,
         "entry history after create",
     );
     let ids = revision_ids(&history);
     assert_eq!(ids.len(), 1);
+    assert_eq!(
+        history["revisions"][0]["change_id"],
+        serde_json::Value::String(create_change_id)
+    );
     let rev1 = ids[0].clone();
 
     // Entry edit appends a revision; a stale parent conflicts.
@@ -321,6 +330,12 @@ async fn journey_cli_remote() {
         "entry update failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    let updated = stdout_json(&output, "entry update");
+    let update_change_id = updated
+        .get("change_id")
+        .and_then(|id| id.as_str())
+        .expect("update returns durable change_id")
+        .to_string();
     let history = stdout_json(
         &run_cli(config_path, &["entry", "history", space_id, entry_id]).await,
         "entry history after edit",
@@ -380,6 +395,34 @@ async fn journey_cli_remote() {
         .into_iter()
         .find(|id| id != &rev1 && id != &rev2)
         .expect("rev3");
+    assert_eq!(
+        history["revisions"]
+            .as_array()
+            .expect("history revisions")
+            .iter()
+            .find(|revision| revision["revision_id"] == rev2)
+            .expect("updated revision")
+            .get("change_id")
+            .and_then(|id| id.as_str()),
+        Some(update_change_id.as_str())
+    );
+    let restore = stdout_json(&output, "entry restore");
+    let restore_change_id = restore
+        .get("change_id")
+        .and_then(|id| id.as_str())
+        .expect("restore returns durable change_id")
+        .to_string();
+    assert_eq!(
+        history["revisions"]
+            .as_array()
+            .expect("history revisions")
+            .iter()
+            .find(|revision| revision["revision_id"] == rev3)
+            .expect("restored revision")
+            .get("change_id")
+            .and_then(|id| id.as_str()),
+        Some(restore_change_id.as_str())
+    );
     let revision = stdout_json(
         &run_cli(
             config_path,

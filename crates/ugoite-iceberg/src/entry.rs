@@ -2,7 +2,7 @@ use crate::form;
 use crate::iceberg_store;
 use crate::index;
 use crate::integrity::IntegrityProvider;
-use crate::{IcebergWorkspace, PublicationRef, RevisionView, SpaceCheckpoint};
+use crate::{CommitReceipt, IcebergWorkspace, PublicationRef, RevisionView, SpaceCheckpoint};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use opendal::Operator;
@@ -439,6 +439,7 @@ async fn append_revision_rows_to_workspace_authorized(
         None,
     )
     .await
+    .map(|_| ())
 }
 
 async fn append_revision_rows_to_workspace_authorized_with_change(
@@ -448,7 +449,7 @@ async fn append_revision_rows_to_workspace_authorized_with_change(
     form_def: &Value,
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
     change: Option<&ChangeCommand>,
-) -> Result<()> {
+) -> Result<CommitReceipt> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     crate::iceberg_store::ensure_mutation_admitted(op, ws_path).await?;
     if rows.is_empty() {
@@ -521,11 +522,11 @@ async fn append_revision_rows_to_workspace_authorized_with_change(
     let command = crate::publication_context_for_change(&command, "entry.append", &revisions)
         .map_err(|error| invalid_entry_input(format!("invalid Change metadata: {error}")))?;
     crate::authorization::ensure_authorization_write_fence().await?;
-    workspace
+    let receipt = workspace
         .commit(command)?
         .append_revisions_authorized(domain_form.id, revisions, relation_scopes)
         .await?;
-    Ok(())
+    Ok(receipt)
 }
 
 fn revision_row_to_domain(
@@ -1059,6 +1060,7 @@ pub(crate) async fn append_revision_row_for_form_authorized(
         None,
     )
     .await
+    .map(|_| ())
 }
 
 pub(crate) async fn append_revision_row_for_form_authorized_with_change(
@@ -1069,7 +1071,7 @@ pub(crate) async fn append_revision_row_for_form_authorized_with_change(
     form_def: &Value,
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
     change: Option<&ChangeCommand>,
-) -> Result<()> {
+) -> Result<CommitReceipt> {
     let _ = form_name;
     append_revision_rows_to_workspace_authorized_with_change(
         op,
@@ -1138,19 +1140,51 @@ pub async fn create_entry_with_scopes_and_change<I: IntegrityProvider>(
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
     change: Option<ChangeCommand>,
 ) -> Result<EntryMeta> {
-    let mut entries = create_entries_with_scopes_and_change(
+    let (entry, _) = create_entry_with_scopes_and_change_with_receipt(
         op,
         ws_path,
-        vec![EntryCreateRequest::new(entry_id, content)],
+        entry_id,
+        content,
         author,
         integrity,
         relation_scopes,
         change,
     )
     .await?;
-    Ok(entries
+    Ok(entry)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn create_entry_with_scopes_and_change_with_receipt<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    content: &str,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+    change: Option<ChangeCommand>,
+) -> Result<(EntryMeta, CommitReceipt)> {
+    let (mut entries, mut receipts) = create_draft_entries_with_scopes_and_change_with_receipts(
+        op,
+        ws_path,
+        vec![EntryDraftRequest {
+            entry_id: entry_id.to_string(),
+            draft: core_entry::legacy_markdown_to_draft(content, entry_id),
+        }],
+        author,
+        integrity,
+        relation_scopes,
+        change,
+    )
+    .await?;
+    let entry = entries
         .pop()
-        .expect("a one-entry create batch must return one entry"))
+        .expect("a one-entry create batch must return one entry");
+    let receipt = receipts
+        .pop()
+        .context("a one-entry create batch must return one commit receipt")?;
+    Ok((entry, receipt))
 }
 
 /// Draft-based create request converging on the single D1 prepare path.
@@ -1179,6 +1213,39 @@ pub async fn create_structured_entry_with_scopes_and_change<I: IntegrityProvider
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
     change: Option<ChangeCommand>,
 ) -> Result<EntryMeta> {
+    let (entry, _) = create_structured_entry_with_scopes_and_change_with_receipt(
+        op,
+        ws_path,
+        entry_id,
+        title,
+        form_name,
+        tags,
+        fields,
+        extra_attributes,
+        author,
+        integrity,
+        relation_scopes,
+        change,
+    )
+    .await?;
+    Ok(entry)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn create_structured_entry_with_scopes_and_change_with_receipt<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    title: Option<String>,
+    form_name: String,
+    tags: Vec<String>,
+    fields: BTreeMap<String, Value>,
+    extra_attributes: BTreeMap<String, Value>,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+    change: Option<ChangeCommand>,
+) -> Result<(EntryMeta, CommitReceipt)> {
     let draft = core_entry::structured_fields_to_draft(
         title.unwrap_or_else(|| entry_id.to_string()),
         Some(form_name),
@@ -1186,7 +1253,7 @@ pub async fn create_structured_entry_with_scopes_and_change<I: IntegrityProvider
         fields,
         extra_attributes,
     );
-    let mut entries = create_draft_entries_with_scopes_and_change(
+    let (mut entries, mut receipts) = create_draft_entries_with_scopes_and_change_with_receipts(
         op,
         ws_path,
         vec![EntryDraftRequest {
@@ -1199,9 +1266,13 @@ pub async fn create_structured_entry_with_scopes_and_change<I: IntegrityProvider
         change,
     )
     .await?;
-    Ok(entries
+    let entry = entries
         .pop()
-        .expect("a one-entry structured batch must return one entry"))
+        .expect("a one-entry structured batch must return one entry");
+    let receipt = receipts
+        .pop()
+        .context("a one-entry structured batch must return one commit receipt")?;
+    Ok((entry, receipt))
 }
 
 /// Creates one explicit batch. Each Form represented in the batch publishes
@@ -1275,10 +1346,33 @@ pub async fn create_draft_entries_with_scopes_and_change<I: IntegrityProvider>(
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
     change: Option<ChangeCommand>,
 ) -> Result<Vec<EntryMeta>> {
+    let (entries, _) = create_draft_entries_with_scopes_and_change_with_receipts(
+        op,
+        ws_path,
+        requests,
+        author,
+        integrity,
+        relation_scopes,
+        change,
+    )
+    .await?;
+    Ok(entries)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn create_draft_entries_with_scopes_and_change_with_receipts<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    requests: Vec<EntryDraftRequest>,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+    change: Option<ChangeCommand>,
+) -> Result<(Vec<EntryMeta>, Vec<CommitReceipt>)> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     crate::iceberg_store::ensure_mutation_admitted(op, ws_path).await?;
     if requests.is_empty() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
     if requests.len() > MAX_ENTRY_CREATE_BATCH_SIZE {
         return Err(invalid_entry_input(format!(
@@ -1350,8 +1444,9 @@ pub async fn create_draft_entries_with_scopes_and_change<I: IntegrityProvider>(
     workspace
         .validate_revision_batches_authorized(&domain_batches, relation_scopes)
         .await?;
+    let mut receipts = Vec::new();
     for (_, (form_def, revisions)) in batches {
-        append_revision_rows_to_workspace_authorized_with_change(
+        let receipt = append_revision_rows_to_workspace_authorized_with_change(
             op,
             ws_path,
             &revisions,
@@ -1360,8 +1455,9 @@ pub async fn create_draft_entries_with_scopes_and_change<I: IntegrityProvider>(
             change.as_ref(),
         )
         .await?;
+        receipts.push(receipt);
     }
-    Ok(entries)
+    Ok((entries, receipts))
 }
 
 async fn validate_asset_references_exist(
@@ -2348,17 +2444,19 @@ async fn restore_entry_from_resolved_authorized<I: IntegrityProvider>(
         source_id: Some(revision_id.to_string()),
         extension_metadata: Value::Object(extension_metadata),
     };
-    append_revision_row_for_form_authorized(
+    let receipt = append_revision_row_for_form_authorized_with_change(
         op,
         ws_path,
         &form_name,
         &restore_revision,
         &form_def,
         relation_scopes.as_ref(),
+        None,
     )
     .await?;
     let mut response = json!({
         "revision_id": new_revision_id,
+        "change_id": receipt.command_id,
         "restored_from": revision_id,
         "source_revision_id": revision_id,
         "author": source.author_id,
@@ -2682,7 +2780,7 @@ async fn apply_update_from_draft<I: IntegrityProvider>(
     if let Some(change) = change.as_ref() {
         revision.change_id = change.change_id.clone();
     }
-    append_revision_row_for_form_authorized_with_change(
+    let receipt = append_revision_row_for_form_authorized_with_change(
         op,
         ws_path,
         &form_name,
@@ -2693,7 +2791,12 @@ async fn apply_update_from_draft<I: IntegrityProvider>(
     )
     .await?;
 
-    get_entry(op, ws_path, entry_id).await
+    let mut result = get_entry(op, ws_path, entry_id).await?;
+    result
+        .as_object_mut()
+        .expect("entry response is an object")
+        .insert("change_id".to_string(), json!(receipt.command_id));
+    Ok(result)
 }
 
 pub async fn delete_entry(
@@ -2714,6 +2817,19 @@ pub async fn delete_entry_with_change(
     actor: &str,
     change: Option<ChangeCommand>,
 ) -> Result<()> {
+    delete_entry_with_change_receipt(op, ws_path, entry_id, hard_delete, actor, change)
+        .await
+        .map(|_| ())
+}
+
+pub async fn delete_entry_with_change_receipt(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    hard_delete: bool,
+    actor: &str,
+    change: Option<ChangeCommand>,
+) -> Result<Option<CommitReceipt>> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     crate::iceberg_store::ensure_mutation_admitted(op, ws_path).await?;
     let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
@@ -2722,7 +2838,7 @@ pub async fn delete_entry_with_change(
     let mut row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
 
     if row.deleted {
-        return Ok(());
+        return Ok(None);
     }
 
     let mut delete_ts = now_ts();
@@ -2765,7 +2881,7 @@ pub async fn delete_entry_with_change(
     if let Some(change) = change.as_ref() {
         tombstone.change_id = change.change_id.clone();
     }
-    append_revision_row_for_form_authorized_with_change(
+    let receipt = append_revision_row_for_form_authorized_with_change(
         op,
         ws_path,
         &form_name,
@@ -2775,7 +2891,7 @@ pub async fn delete_entry_with_change(
         change.as_ref(),
     )
     .await?;
-    Ok(())
+    Ok(Some(receipt))
 }
 
 pub async fn get_entry_history(op: &Operator, ws_path: &str, entry_id: &str) -> Result<Value> {
@@ -2973,18 +3089,20 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
         source_id: Some(revision_id.to_string()),
         extension_metadata: Value::Object(Map::new()),
     };
-    append_revision_row_for_form_authorized(
+    let receipt = append_revision_row_for_form_authorized_with_change(
         op,
         ws_path,
         &form_name,
         &restore_revision,
         &form_def,
         relation_scopes,
+        None,
     )
     .await?;
 
     Ok(serde_json::json!({
         "revision_id": new_rev_id,
+        "change_id": receipt.command_id,
         "restored_from": revision_id,
         "timestamp": timestamp,
     }))
