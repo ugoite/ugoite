@@ -29,7 +29,7 @@ use crate::error::{AppError, ErrorCode};
 /// `extra_attributes` holds explicitly structured extras. Unknown field names
 /// found in `fields` are treated as extra-attribute candidates during
 /// normalization.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct StructuredEntryDraft {
     pub title: String,
     pub form_name: Option<String>,
@@ -39,7 +39,7 @@ pub struct StructuredEntryDraft {
 }
 
 /// Validated structured Entry state ready for existing 0.1 persistence.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NormalizedStructuredEntry {
     pub title: String,
     pub tags: Vec<String>,
@@ -302,6 +302,54 @@ pub fn normalize_and_validate_draft(
             BTreeMap::new()
         },
     })
+}
+
+/// Preview one structured draft without touching Storage.
+///
+/// This is the pre-save diagnostics boundary for Frontend and CLI: it calls
+/// exactly [`normalize_and_validate_draft`], so the returned normalized draft
+/// or field-addressed diagnostics (`code` / `field` / `message` /
+/// `expected_type` / `expected_format` / `reason` via [`ValidationWarning`])
+/// match the mutation path. It never writes Storage and never creates a
+/// revision or Change.
+pub fn preview_structured_draft(
+    form: &FormDefinition,
+    draft: &StructuredEntryDraft,
+) -> Result<NormalizedStructuredEntry, AppError> {
+    normalize_and_validate_draft(form, draft)
+}
+
+/// Preview legacy Markdown without touching Storage.
+///
+/// Parses Markdown via [`legacy_markdown_to_draft`] then validates with the
+/// same [`normalize_and_validate_draft`] implementation used by mutations, so
+/// raw and structured inputs produce identical durable values and identical
+/// `UNKNOWN_FORM_FIELDS` / `FORM_VALIDATION_FAILED` diagnostics.
+pub fn preview_legacy_markdown(
+    form: &FormDefinition,
+    markdown: &str,
+    fallback_title: &str,
+) -> Result<NormalizedStructuredEntry, AppError> {
+    let draft = legacy_markdown_to_draft(markdown, fallback_title);
+    normalize_and_validate_draft(form, &draft)
+}
+
+/// Extract field-addressed diagnostics from a preview/mutation error.
+///
+/// Returns the `warnings` payload for `FORM_VALIDATION_FAILED`, or `None`
+/// when the error carries no field diagnostics (e.g. unknown-field or
+/// form-mismatch errors).
+pub fn validation_warnings(error: &AppError) -> Option<Vec<ValidationWarning>> {
+    let detail = error.detail()?;
+    let warnings = detail.get("warnings")?;
+    serde_json::from_value(warnings.clone()).ok()
+}
+
+/// Extract unknown field names from an `UNKNOWN_FORM_FIELDS` error.
+pub fn unknown_field_names(error: &AppError) -> Option<Vec<String>> {
+    let detail = error.detail()?;
+    let fields = detail.get("fields")?;
+    serde_json::from_value(fields.clone()).ok()
 }
 
 /// Render one draft back to the existing 0.1 Markdown representation.
@@ -1284,5 +1332,194 @@ mod tests {
             from_structured.values.get(&FieldId::new(102).expect("id")),
             Some(FieldValue::List(_))
         ));
+    }
+
+    fn preview_test_form() -> FormDefinition {
+        FormDefinition {
+            id: form_id(0xC0),
+            version: FormVersion::new(1).expect("version"),
+            name: "Preview".to_string(),
+            description: None,
+            fields: vec![
+                required_field(100, "Title", FieldType::String),
+                field(101, "Done", FieldType::Boolean),
+                field(102, "Count", FieldType::Integer),
+                field(103, "Score", FieldType::Double),
+                field(104, "Due", FieldType::Date),
+                field(105, "At", FieldType::Timestamp),
+                field(106, "AtTz", FieldType::TimestampTz),
+                FormField {
+                    list_item: None,
+                    ..field(107, "Tags", FieldType::List)
+                },
+                field(108, "Rows", FieldType::ObjectList),
+                field(109, "Ref", FieldType::RowReference),
+                field(110, "File", FieldType::AssetReference),
+            ],
+            allow_extra_attributes: false,
+            extension_metadata: BTreeMap::new(),
+        }
+    }
+
+    fn invalid_preview_drafts() -> Vec<(String, BTreeMap<String, Value>)> {
+        let mut cases = Vec::new();
+        let bad_asset = serde_json::json!({"asset_id": "not-a-uuid"});
+        let push = |name: &str, value: Value, out: &mut Vec<(String, BTreeMap<String, Value>)>| {
+            let mut fields = BTreeMap::new();
+            fields.insert("Title".to_string(), Value::String("ok".to_string()));
+            fields.insert(name.to_string(), value);
+            out.push((name.to_string(), fields));
+        };
+        push("Done", Value::String("maybe".to_string()), &mut cases);
+        push("Count", Value::String("not-an-int".to_string()), &mut cases);
+        push(
+            "Score",
+            Value::String("not-a-number".to_string()),
+            &mut cases,
+        );
+        push("Due", Value::String("2026-13-40".to_string()), &mut cases);
+        push(
+            "At",
+            Value::String("not-a-timestamp".to_string()),
+            &mut cases,
+        );
+        push(
+            "AtTz",
+            Value::String("2026-09-11T10:00:00".to_string()),
+            &mut cases,
+        );
+        push("Tags", Value::Number(42.into()), &mut cases);
+        push(
+            "Rows",
+            Value::String("not-an-array".to_string()),
+            &mut cases,
+        );
+        push("Ref", Value::Number(7.into()), &mut cases);
+        push("File", bad_asset, &mut cases);
+        cases
+    }
+
+    #[test]
+    fn preview_matches_mutation_diagnostics_for_every_field_family() {
+        let form = preview_test_form();
+        for (field_name, fields) in invalid_preview_drafts() {
+            let draft = structured_fields_to_draft(
+                "T",
+                Some("Preview"),
+                Vec::new(),
+                fields,
+                BTreeMap::new(),
+            );
+            let via_mutation =
+                normalize_and_validate_draft(&form, &draft).expect_err("mutation path must fail");
+            let via_preview =
+                preview_structured_draft(&form, &draft).expect_err("preview must fail");
+            assert_eq!(
+                via_mutation.code(),
+                via_preview.code(),
+                "code parity for {field_name}"
+            );
+            assert_eq!(
+                via_mutation.code(),
+                ErrorCode::FormValidationFailed,
+                "invalid {field_name} is a field failure"
+            );
+            let mutation_warnings = validation_warnings(&via_mutation).expect("mutation warnings");
+            let preview_warnings = validation_warnings(&via_preview).expect("preview warnings");
+            assert_eq!(
+                mutation_warnings, preview_warnings,
+                "diagnostic parity for {field_name}"
+            );
+            assert_eq!(
+                preview_warnings.len(),
+                1,
+                "one field fails for {field_name}"
+            );
+            let warning = &preview_warnings[0];
+            assert_eq!(warning.field, field_name);
+            assert_eq!(warning.code, "invalid_type");
+            assert!(
+                !warning.expected_type.is_empty(),
+                "expected_type for {field_name}"
+            );
+            assert!(
+                !warning.expected_format.is_empty(),
+                "expected_format for {field_name}"
+            );
+            assert!(!warning.reason.is_empty(), "reason for {field_name}");
+            assert!(!warning.message.is_empty(), "message for {field_name}");
+        }
+    }
+
+    #[test]
+    fn preview_markdown_and_structured_share_diagnostics() {
+        let form = test_form();
+        let markdown = "---\nform: Note\n---\n# T\n\n## Body\nhello\n\n## Done\nmaybe\n";
+        let via_markdown =
+            preview_legacy_markdown(&form, markdown, "T").expect_err("markdown invalid");
+        let mut fields = BTreeMap::new();
+        fields.insert("Body".to_string(), Value::String("hello".to_string()));
+        fields.insert("Done".to_string(), Value::String("maybe".to_string()));
+        fields.insert("Count".to_string(), Value::Number(1.into()));
+        let draft =
+            structured_fields_to_draft("T", Some("Note"), Vec::new(), fields, BTreeMap::new());
+        let via_structured =
+            preview_structured_draft(&form, &draft).expect_err("structured invalid");
+        assert_eq!(via_markdown.code(), via_structured.code());
+        assert_eq!(
+            validation_warnings(&via_markdown),
+            validation_warnings(&via_structured)
+        );
+    }
+
+    #[test]
+    fn preview_unknown_fields_match_mutation_taxonomy() {
+        let form = test_form();
+        let mut fields = BTreeMap::new();
+        fields.insert("Body".to_string(), Value::String("hello".to_string()));
+        fields.insert("Nope".to_string(), Value::String("x".to_string()));
+        let draft =
+            structured_fields_to_draft("T", Some("Note"), Vec::new(), fields, BTreeMap::new());
+        let via_mutation = normalize_and_validate_draft(&form, &draft).expect_err("unknown field");
+        let via_preview = preview_structured_draft(&form, &draft).expect_err("unknown field");
+        assert_eq!(via_mutation.code(), ErrorCode::UnknownFormFields);
+        assert_eq!(via_preview.code(), ErrorCode::UnknownFormFields);
+        assert_eq!(
+            unknown_field_names(&via_mutation),
+            Some(vec!["Nope".to_string()])
+        );
+        assert_eq!(
+            unknown_field_names(&via_preview),
+            unknown_field_names(&via_mutation)
+        );
+        assert_eq!(validation_warnings(&via_preview), None);
+    }
+
+    #[test]
+    fn preview_is_pure_and_returns_normalized_draft() {
+        let form = test_form();
+        let mut fields = BTreeMap::new();
+        fields.insert("Body".to_string(), Value::String("hello".to_string()));
+        fields.insert("Done".to_string(), Value::Bool(true));
+        fields.insert("Count".to_string(), Value::Number(3.into()));
+        let draft = structured_fields_to_draft(
+            "T",
+            Some("Note"),
+            vec!["a".to_string()],
+            fields,
+            BTreeMap::new(),
+        );
+        // Preview never touches Storage: calling it repeatedly yields the
+        // same normalized value with no revision/Change side effects (it is a
+        // pure function over form + draft).
+        let first = preview_structured_draft(&form, &draft).expect("valid");
+        let second = preview_structured_draft(&form, &draft).expect("valid");
+        assert_eq!(first, second);
+        assert_eq!(
+            normalize_and_validate_draft(&form, &draft).expect("mutation impl"),
+            first
+        );
+        assert_eq!(first.title, "T");
+        assert_eq!(first.tags, vec!["a".to_string()]);
     }
 }
