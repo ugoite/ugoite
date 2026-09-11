@@ -1514,6 +1514,11 @@ impl UgoiteService {
             .map(RunId::new)
             .transpose()
             .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+        // Keep the minimal public approval response stable. Batch callers
+        // that provide run metadata receive the durable mutation receipt
+        // fields; the approval-only form remains the historical `{kind,id}`
+        // response used to bind and confirm the exact public intent.
+        let include_receipt = run_id.is_some() || _message.is_some();
         let mut results = Vec::with_capacity(operations.len());
         for operation in operations {
             match operation {
@@ -1593,12 +1598,16 @@ impl UgoiteService {
                             Some(change),
                         )
                         .await?;
-                    results.push(json!({
-                        "kind": "remove",
-                        "id": id,
-                        "revision_id": value["revision_id"],
-                        "change_id": value["change_id"],
-                    }));
+                    let mut result = json!({"kind": "remove", "id": id});
+                    if include_receipt {
+                        if let Some(revision_id) = value.get("revision_id") {
+                            result["revision_id"] = revision_id.clone();
+                        }
+                        if let Some(change_id) = value.get("change_id") {
+                            result["change_id"] = change_id.clone();
+                        }
+                    }
+                    results.push(result);
                 }
             }
         }
@@ -1794,6 +1803,23 @@ impl UgoiteService {
         markdown: &str,
         author: &str,
     ) -> Result<Value> {
+        let (result, _receipt) = self
+            .create_entry_with_receipt(space_id, entry_id, markdown, author)
+            .await?;
+        Ok(result)
+    }
+
+    /// Create an Entry and return the durable commit receipt alongside the
+    /// existing Entry representation. Callers that expose mutation receipts
+    /// should use this boundary rather than deriving the Change ID from
+    /// history after the commit.
+    pub async fn create_entry_with_receipt(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        markdown: &str,
+        author: &str,
+    ) -> Result<(Value, crate::CommitReceipt)> {
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
@@ -1811,8 +1837,7 @@ impl UgoiteService {
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
-        let mut result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
-        result["change_id"] = json!(receipt.command_id);
+        let result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
         self.record_committed_entry_revision(
             space_id,
             entry_id,
@@ -1821,7 +1846,7 @@ impl UgoiteService {
             author,
         )
         .await;
-        Ok(result)
+        Ok((result, receipt))
     }
 
     pub async fn create_entry_authorized(

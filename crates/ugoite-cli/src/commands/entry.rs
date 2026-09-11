@@ -313,9 +313,10 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             // never drains it; the authoritative commit is the CLI latency
             // boundary and `ugoite index run` is the explicit repair command.
             let service = UgoiteService::new_without_background_refresh(&root)?;
-            let meta = service
-                .create_entry(&space_id, &entry_id, &content, &author)
+            let (mut meta, commit_receipt) = service
+                .create_entry_with_receipt(&space_id, &entry_id, &content, &author)
                 .await?;
+            meta["change_id"] = serde_json::json!(commit_receipt.command_id);
             let receipt = entry_receipt(
                 entry_id,
                 meta.get("revision_id")

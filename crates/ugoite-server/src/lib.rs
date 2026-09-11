@@ -16924,6 +16924,25 @@ mod authentication_regression_tests {
             .expect("remove change id")
             .to_owned();
 
+        let (status, repeated_remove) = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{"kind": "remove", "id": "apply-crud-entry"}],
+                    "run_id": "run-2037-apply-crud-repeat",
+                    "message": "apply repeated remove"
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{repeated_remove}");
+        assert_eq!(
+            repeated_remove["operations"][0],
+            json!({"kind": "remove", "id": "apply-crud-entry"})
+        );
+
         let (status, deleted_entry) = route_json(
             route.clone(),
             Request::get(format!("/spaces/{space_id}/entries/apply-crud-entry"))
