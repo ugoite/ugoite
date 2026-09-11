@@ -8,7 +8,10 @@ import type {
   Form,
 } from "./types";
 import { normalizeEntryRecord, normalizeTimestamp } from "./date-format";
-import { buildEntryMarkdownByMode } from "./entry-input";
+import {
+  buildEntryMarkdownByMode,
+  buildStructuredEntryFields,
+} from "./entry-input";
 import { protocolFetch, UgoiteApiError } from "./ugoite-client/protocol";
 
 type EntryResponse = Omit<Entry, "content"> & {
@@ -80,6 +83,21 @@ export const entryApi = {
     return await this.create(spaceId, { id, markdown });
   },
 
+  async createStructured(
+    spaceId: string,
+    payload: EntryCreatePayload & { form: string },
+  ): Promise<{ id: string; revision_id: string }> {
+    return await this.create(spaceId, payload);
+  },
+
+  async updateStructured(
+    spaceId: string,
+    entryId: string,
+    payload: EntryUpdatePayload,
+  ): Promise<{ id: string; revision_id: string }> {
+    return await this.update(spaceId, entryId, payload);
+  },
+
   async createFromWebform(
     spaceId: string,
     formDef: Form,
@@ -87,13 +105,15 @@ export const entryApi = {
     fieldValues: Record<string, string>,
     id?: string,
   ): Promise<{ id: string; revision_id: string }> {
-    const markdown = buildEntryMarkdownByMode(
-      formDef,
+    // Structured dogfood path: no Markdown generation. The shared Rust
+    // boundary coerces and validates; `__markdown` extras are dropped.
+    const fields = buildStructuredEntryFields(formDef, fieldValues);
+    return await this.create(spaceId, {
+      id,
+      form: formDef.name,
       title,
-      fieldValues,
-      "webform",
-    );
-    return await this.create(spaceId, { id, markdown });
+      fields,
+    });
   },
 
   async createFromChat(

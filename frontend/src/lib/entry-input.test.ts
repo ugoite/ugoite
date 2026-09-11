@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { buildEntryMarkdownByMode } from "~/lib/entry-input";
+import {
+  buildEntryMarkdownByMode,
+  buildStructuredEntryFields,
+  parseMarkdownToStructuredDraft,
+} from "~/lib/entry-input";
 import type { Form } from "~/lib/types";
 
 describe("buildEntryMarkdownByMode", () => {
@@ -80,5 +84,35 @@ describe("buildEntryMarkdownByMode", () => {
       "markdown",
     );
     expect(result).toContain("My Task");
+  });
+});
+
+describe("structured entry draft", () => {
+  it("builds structured fields without Markdown rendering", () => {
+    const formDef: Form = {
+      name: "Note",
+      version: 1,
+      template: "# Note\n",
+      fields: {
+        Body: { type: "string", required: true },
+        Done: { type: "boolean", required: false },
+      },
+    };
+    const fields = buildStructuredEntryFields(formDef, {
+      Body: "hello",
+      Done: "yes",
+      __markdown: "ignored",
+      Empty: "   ",
+    });
+    expect(fields).toEqual({ Body: "hello", Done: "yes" });
+  });
+
+  it("parses source Markdown back into a structured draft", () => {
+    const draft = parseMarkdownToStructuredDraft(
+      "---\nform: Note\n---\n# Title\n\n## Body\nhello\n\n## Done\ntrue\n",
+    );
+    expect(draft.title).toBe("Title");
+    expect(draft.fields.Body).toBe("hello");
+    expect(draft.fields.Done).toBe("true");
   });
 });

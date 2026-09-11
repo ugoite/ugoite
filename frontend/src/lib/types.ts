@@ -236,18 +236,31 @@ export interface EntryRevision {
   deleted_by?: string | null;
 }
 
-/** Create entry payload */
+/** Structured entry fields keyed by field name (typed JSON values). */
+export type StructuredEntryFields = Record<string, unknown>;
+
+/** Create entry payload: legacy `{ markdown }` or additive structured. */
 export interface EntryCreatePayload {
   id?: string;
-  markdown: string;
+  markdown?: string;
+  form?: string;
+  title?: string;
+  tags?: string[];
+  fields?: StructuredEntryFields;
+  extra_attributes?: StructuredEntryFields;
 }
 
-/** Update entry payload */
+/** Update entry payload: legacy `{ markdown }` or additive structured. */
 export interface EntryUpdatePayload {
-  markdown: string;
+  markdown?: string;
   parent_revision_id: string;
   frontmatter?: Record<string, unknown>;
   canvas_position?: CanvasPosition;
+  form?: string;
+  title?: string;
+  tags?: string[];
+  fields?: StructuredEntryFields;
+  extra_attributes?: StructuredEntryFields;
 }
 
 export interface FormField {
