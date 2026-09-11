@@ -1270,11 +1270,13 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                   role="status"
                   aria-live="polite"
                   classList={{
-                    "ui-warning": isDirty(),
-                    "ui-muted": !isDirty(),
+                    "ui-warning": isDirty() && !isSaving(),
+                    "ui-muted": !isDirty() || isSaving(),
                   }}
                 >
-                  {isDirty()
+                  {isSaving()
+                    ? t("entryDetail.saving")
+                    : isDirty()
                     ? t("entryDetail.unsaved")
                     : t("entryDetail.saved")}
                 </span>
@@ -1665,6 +1667,22 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                         </strong>
                         <span class="ui-entry-history-description">
                           {t("entryDetail.historyDescription")}
+                        </span>
+                      </span>
+                      <span aria-hidden="true">›</span>
+                    </A>
+                    <A
+                      href={`/spaces/${props.spaceId()}/entries/${
+                        encodeURIComponent(props.entryId?.() ?? "")
+                      }/restore`}
+                      class="ui-entry-history-action"
+                    >
+                      <span>
+                        <strong class="ui-entry-history-label">
+                          {t("entryDetail.restore")}
+                        </strong>
+                        <span class="ui-entry-history-description">
+                          {t("entryDetail.restoreDescription")}
                         </span>
                       </span>
                       <span aria-hidden="true">›</span>

@@ -79,6 +79,7 @@ components:
           type: secondary-action
           actions:
             - history
+            - restore
         - id: entry-management
           type: action-card
           actions:

@@ -2133,6 +2133,9 @@ code {
   background: var(--ui-surface-3);
   border-radius: 15px;
 }
+.ui-entry-history-action + .ui-entry-history-action {
+  border-top: 1px solid var(--ui-border);
+}
 .ui-entry-side-heading {
   font-size: 13px;
   font-weight: 750;

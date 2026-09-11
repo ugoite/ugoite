@@ -235,6 +235,11 @@ describe("EntryDetailPane", () => {
       "href",
       "/spaces/default/entries/entry-layout/history",
     );
+    expect(screen.getByRole("link", { name: /Restore a version/ }))
+      .toHaveAttribute(
+        "href",
+        "/spaces/default/entries/entry-layout/restore",
+      );
     expect(screen.getByRole("status")).toHaveTextContent("All changes saved");
   });
 
@@ -1537,6 +1542,7 @@ describe("EntryDetailPane", () => {
         parent_revision_id: "rev-1",
       });
     });
+    expect(screen.getByRole("status")).toHaveTextContent("Saving...");
 
     fireEvent.input(textarea, { target: { value: "Second edit" } });
     finishSave?.({ revision_id: "rev-2" });
