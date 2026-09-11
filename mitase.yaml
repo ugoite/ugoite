@@ -301,7 +301,8 @@ inventory:
             - scripts/verify-release-cli-quickstart.sh
             - scripts/verify-release-distribution.sh
             - docs/architecture/release/release-contract.md
-            - scripts/ci/mitase-check.sh
+            - tools/mitase.lock.toml
+            - scripts/mitase
             - tools/knowledge_compatibility.ts
             - tools/knowledge_compatibility_test.ts
             - tools/pr_body_gate.ts

@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+lock_path="$repo_root/tools/mitase.lock.toml"
+
+if [[ -n "${MITASE_BIN:-}" ]]; then
+  exec "$MITASE_BIN" "$@"
+fi
+
+case "$(uname -s):$(uname -m)" in
+  Darwin:arm64|Darwin:aarch64) target="aarch64-apple-darwin" ;;
+  Darwin:x86_64) target="x86_64-apple-darwin" ;;
+  Linux:aarch64|Linux:arm64) target="aarch64-unknown-linux-gnu" ;;
+  Linux:x86_64|Linux:amd64) target="x86_64-unknown-linux-gnu" ;;
+  *)
+    printf 'Unsupported Mitase release target; set MITASE_BIN for local development\n' >&2
+    exit 1
+    ;;
+esac
+
+if [[ ! -f "$lock_path" ]]; then
+  printf 'Mitase lock file is missing: %s\n' "$lock_path" >&2
+  exit 1
+fi
+
+version="$(awk -F'"' '/^version[[:space:]]*=/ { print $2; exit }' "$lock_path")"
+sha256="$(awk -v target="$target" -F'"' '
+  $0 == "[target." target "]" { found = 1; next }
+  found && /^\[target\./ { exit }
+  found && /^sha256[[:space:]]*=/ { print $2; exit }
+' "$lock_path")"
+
+if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+  [[ ! "$sha256" =~ ^[0-9a-f]{64}$ ]]; then
+  printf 'Mitase lock entry is invalid for target %s\n' "$target" >&2
+  exit 1
+fi
+
+archive_name="mitase-v${version}-${target}.tar.gz"
+cache_root="${XDG_CACHE_HOME:-${HOME:-$repo_root/.cache}}/mitase"
+cache_dir="$cache_root/$version/$target"
+pinned_bin="$cache_dir/mitase"
+
+sha256_file() {
+  local path="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$path" | awk '{ print $1 }'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$path" | awk '{ print $1 }'
+  else
+    printf 'Mitase bootstrap requires sha256sum or shasum\n' >&2
+    return 1
+  fi
+}
+
+verify_sha256() {
+  local path="$1"
+  local actual
+  actual="$(sha256_file "$path")"
+  if [[ "$actual" != "$sha256" ]]; then
+    printf 'Mitase release checksum mismatch\nexpected: %s\nactual:   %s\n' \
+      "$sha256" "$actual" >&2
+    return 1
+  fi
+}
+
+verify_version() {
+  local binary="$1"
+  local expected="mitase $version"
+  local actual
+  actual="$("$binary" --version)"
+  if [[ "$actual" != "$expected" ]]; then
+    printf 'Mitase version mismatch\nexpected: %s\nactual:   %s\n' "$expected" "$actual" >&2
+    return 1
+  fi
+}
+
+cache_valid=false
+if [[ -x "$pinned_bin" ]] && verify_version "$pinned_bin" >/dev/null 2>&1; then
+  cache_valid=true
+fi
+
+if [[ "$cache_valid" != true ]]; then
+  for command in curl tar install; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+      printf 'Mitase bootstrap requires %s\n' "$command" >&2
+      exit 1
+    fi
+  done
+
+  temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/ugoite-mitase.XXXXXX")"
+  trap 'rm -rf "$temp_dir"' EXIT
+  archive_path="$temp_dir/$archive_name"
+  base_url="${MITASE_RELEASE_BASE_URL:-https://github.com/ugoite/mitase/releases/download/v${version}}"
+
+  curl --fail --location --silent --show-error --retry 3 \
+    "$base_url/$archive_name" --output "$archive_path"
+  verify_sha256 "$archive_path"
+
+  entries="$temp_dir/entries"
+  tar -tzf "$archive_path" >"$entries"
+  if [[ "$(wc -l <"$entries" | tr -d ' ')" != "1" ]] ||
+    [[ "$(sed -n '1p' "$entries")" != "mitase" ]]; then
+    printf 'Mitase release archive must contain exactly mitase\n' >&2
+    exit 1
+  fi
+
+  extract_dir="$temp_dir/extracted"
+  mkdir -p "$extract_dir"
+  tar -xzf "$archive_path" -C "$extract_dir"
+  if [[ ! -x "$extract_dir/mitase" ]]; then
+    printf 'Mitase release archive does not contain an executable mitase binary\n' >&2
+    exit 1
+  fi
+  verify_version "$extract_dir/mitase"
+  mkdir -p "$cache_dir"
+  install -m 0755 "$extract_dir/mitase" "$pinned_bin"
+fi
+
+verify_version "$pinned_bin"
+exec "$pinned_bin" "$@"
