@@ -64,7 +64,7 @@ Deno.test("REQ-OPS-044: candidate creation qualifies the acceptance corpus first
       "tools/capability_report.ts",
       "test_journey_core",
       "test_journey_remote",
-      "scripts/ci/mitase-check.sh",
+      "./scripts/mitase",
     ]
   ) assertEquals(releaseTool.includes(marker), true, marker);
   const qualifyStart = releaseTool.indexOf(

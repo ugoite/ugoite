@@ -316,7 +316,7 @@ policies:
         targets:
           - id: requirement-traceability-boundary
             adapter: declared
-            path: scripts/ci/mitase-check.sh
+            path: scripts/mitase
             selector: { kind: file }
             claims:
               - kind: evidences

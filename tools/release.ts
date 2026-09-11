@@ -296,7 +296,7 @@ async function qualifyAcceptanceCorpus(): Promise<void> {
     "test_journey_remote",
     "--locked",
   ]);
-  await run("bash", ["scripts/ci/mitase-check.sh"]);
+  await run("./scripts/mitase", ["check", "."]);
 }
 
 async function createCandidate(): Promise<void> {

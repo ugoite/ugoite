@@ -22,7 +22,7 @@ const validBody = [
   "",
   "## Testing",
   "",
-  "- [x] `bash scripts/ci/mitase-check.sh`",
+  "- [x] `mise run mitase:check`",
   "",
 ].join("\n");
 
@@ -87,7 +87,7 @@ Deno.test("pr_body_gate delegates classification to the canonical validator", ()
 
 Deno.test("pr_body_gate requires a Testing checklist item", () => {
   const withoutChecklist = validBody.replace(
-    "- [x] `bash scripts/ci/mitase-check.sh`",
+    "- [x] `mise run mitase:check`",
     "Ran the checks.",
   );
   assertEquals(
