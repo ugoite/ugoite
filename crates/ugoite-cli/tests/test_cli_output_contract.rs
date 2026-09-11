@@ -4,7 +4,8 @@
 //! - Piped output is machine JSON; errors are `{"error": {code,kind,message,detail}}`.
 //! - Exit codes: 0 success, 2 usage, 3 forbidden, 4 not-found, 5 conflict,
 //!   6 dependency-unavailable, 7 unsupported, 1 internal.
-//! - Mutation receipts carry kind/id/revision_id (change/run null, never fabricated).
+//! - Mutation receipts (kind/id/revision_id, change/run null, never fabricated)
+//!   are TTY display only in 0.1.x; machine output keeps the existing shape.
 //! - `--file` / `--file -` shell-safe ingress; inline+file rejected; no auto-stdin.
 //! - Help examples are parse smoke fixtures.
 
@@ -55,9 +56,11 @@ fn error_envelope(stderr: &str) -> serde_json::Value {
     serde_json::from_str(stderr.trim()).expect("stderr must be a machine JSON envelope")
 }
 
-/// E0/E1: success prints receipt JSON on stdout with empty stderr.
+/// E0/E1: machine output keeps the existing shape on stdout with empty
+/// stderr; the receipt is TTY display only in 0.1.x (machine default switches
+/// to the receipt in v0.2).
 #[test]
-fn mutation_receipt_reaches_stdout_json_with_empty_stderr() {
+fn mutation_machine_output_keeps_existing_shape_with_empty_stderr() {
     let dir = tempfile::tempdir().unwrap();
     let (root, config_path) = setup_space_with_form(&dir, "receipt-space");
     let space_path = format!("{root}/spaces/receipt-space");
@@ -81,9 +84,28 @@ fn mutation_receipt_reaches_stdout_json_with_empty_stderr() {
     );
     let stdout: serde_json::Value =
         serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).expect("stdout JSON");
-    assert_eq!(stdout["kind"], "entry");
     assert_eq!(stdout["id"], "receipt-1");
     assert!(stdout["revision_id"].is_string());
+
+    // Explicit table format renders the human receipt summary instead.
+    let output = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "-o",
+            "table",
+            "create",
+            "--content",
+            "---\nform: Entry\n---\n# Receipt\n\n## Body\n\nhi\n",
+            &space_path,
+            "receipt-2",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("create table");
+    assert!(output.status.success());
+    let text = String::from_utf8_lossy(&output.stdout).to_string();
+    assert!(text.contains("entry receipt-2"), "stdout: {text}");
+    assert!(text.contains("revision:"), "stdout: {text}");
 }
 
 /// E1: validation failure is exit 2 with a stable machine envelope.

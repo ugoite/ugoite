@@ -190,6 +190,8 @@ pub enum EntrySubCmd {
 fn entry_receipt(id: String, revision_id: Option<String>) -> MutationReceipt {
     // Change/run IDs are None here: the CLI never fabricates them. Durable
     // Knowledge Change ID exposure from the commit boundary is follow-up.
+    // In 0.1.x the receipt is TTY display only; the machine default stays on
+    // the existing output shape and switches to the receipt in v0.2.
     MutationReceipt::entry(id, revision_id, None)
 }
 
@@ -289,12 +291,17 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     Some(serde_json::json!({"id": entry_id, "markdown": content})),
                 )
                 .await?;
-                let revision = result
-                    .get("revision_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string);
-                let receipt = entry_receipt(entry_id, revision);
-                emit_success(&receipt.value(), &fmt, Some(receipt.human()));
+                // 0.1.x machine contract: keep the existing output shape.
+                // The receipt is TTY display only; switching the machine
+                // default to the receipt is a v0.2 interface decision.
+                let receipt = entry_receipt(
+                    entry_id,
+                    result
+                        .get("revision_id")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_string),
+                );
+                emit_success(&result, &fmt, Some(receipt.human()));
                 return Ok(());
             }
             let author = author.unwrap_or_else(|| "cli".to_string());
@@ -305,12 +312,13 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             let meta = service
                 .create_entry(&space_id, &entry_id, &content, &author)
                 .await?;
-            let revision = meta
-                .get("revision_id")
-                .and_then(|value| value.as_str())
-                .map(str::to_string);
-            let receipt = entry_receipt(entry_id, revision);
-            emit_success(&receipt.value(), &fmt, Some(receipt.human()));
+            let receipt = entry_receipt(
+                entry_id,
+                meta.get("revision_id")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+            );
+            emit_success(&meta, &fmt, Some(receipt.human()));
         }
         EntrySubCmd::Update {
             space_path,
@@ -341,12 +349,15 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     Some(body),
                 )
                 .await?;
-                let revision = result
-                    .get("revision_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string);
-                let receipt = entry_receipt(entry_id, revision);
-                emit_success(&receipt.value(), &fmt, Some(receipt.human()));
+                // 0.1.x machine contract: keep the existing output shape (see create).
+                let receipt = entry_receipt(
+                    entry_id,
+                    result
+                        .get("revision_id")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_string),
+                );
+                emit_success(&result, &fmt, Some(receipt.human()));
                 return Ok(());
             }
             // Do not wait for Derived refreshes in a one-shot mutation.
@@ -360,12 +371,14 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     &author,
                 )
                 .await?;
-            let revision = result
-                .get("revision_id")
-                .and_then(|value| value.as_str())
-                .map(str::to_string);
-            let receipt = entry_receipt(entry_id, revision);
-            emit_success(&receipt.value(), &fmt, Some(receipt.human()));
+            let receipt = entry_receipt(
+                entry_id,
+                result
+                    .get("revision_id")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+            );
+            emit_success(&result, &fmt, Some(receipt.human()));
         }
         EntrySubCmd::Delete {
             space_path,

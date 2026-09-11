@@ -533,6 +533,24 @@ mod tests {
     }
 
     #[test]
+    fn receipt_serializes_explicit_nulls_for_v02_default() {
+        // The v0.2 machine default is the receipt with explicit nulls (never
+        // omitted, never fabricated). In 0.1.x it is TTY display only.
+        let receipt = MutationReceipt::entry("note-1".to_string(), Some("rev-1".to_string()), None);
+        assert_eq!(
+            receipt.value(),
+            serde_json::json!({
+                "kind": "entry",
+                "id": "note-1",
+                "revision_id": "rev-1",
+                "change_id": null,
+                "run_id": null,
+            })
+        );
+        assert!(receipt.human().contains("entry note-1"));
+    }
+
+    #[test]
     fn inline_and_file_inputs_are_mutually_exclusive() {
         assert!(
             read_compat_input(Some("a".to_string()), "--content", Some("b.md".to_string()))
