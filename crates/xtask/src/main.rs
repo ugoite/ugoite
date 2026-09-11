@@ -184,7 +184,14 @@ fn architecture_check() -> Result<()> {
             "Transaction",
             "SessionContext",
         ] {
-            if content.contains(forbidden) {
+            // `SearchOperator` is the logical typed-search product type and
+            // must not trip the physical `opendal::Operator` guard.
+            let haystack = if forbidden == "Operator" {
+                content.replace("SearchOperator", "")
+            } else {
+                content.clone()
+            };
+            if haystack.contains(forbidden) {
                 violations.push(format!(
                     "{path_text} leaks physical adapter type or dependency {forbidden}"
                 ));
