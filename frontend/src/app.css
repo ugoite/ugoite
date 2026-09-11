@@ -1891,7 +1891,7 @@ code {
   font-weight: 650;
   text-align: left;
 }
-.ui-entry-source-trigger[aria-selected="true"] {
+.ui-entry-source-trigger[aria-pressed="true"] {
   color: var(--ui-focus);
 }
 .ui-entry-form-body, .ui-entry-field-list, .ui-entry-source-body {
