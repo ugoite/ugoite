@@ -31,7 +31,7 @@ Only root tasks in `mise.toml` are valid. Use Deno tasks for frontend/docsite/e2
 
 ## Documentation contract
 
-Treat `crates/ugoite-server` as the REST implementation and `/openapi.json` as the API source of truth. Mark future architecture explicitly. Do not advertise service-account/audit CRUD, passkey/TOTP login, browser-local persistence, or remote CLI asset upload as implemented.
+Treat `crates/ugoite-server` as the REST implementation and `/openapi.json` as the API source of truth. Mark future architecture explicitly. Do not advertise service-account/audit CRUD, passkey/TOTP login, or browser-local persistence as implemented.
 
 ## Specification contract
 

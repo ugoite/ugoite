@@ -130,8 +130,9 @@ P-256 key and DPoP-bound credentials. Owner-approved Space access recovery is
 available at the browser recovery route. Account Self-Recovery is available at
 `/recover/account` after explicitly enrolling a recovery-only TOTP. Invitation-
 gated OIDC login, account creation, and external identity linking are supported;
-administrator recovery, agent principals, and remote CLI asset upload remain
-future scope.
+administrator recovery and agent principals remain
+future scope. Remote CLI asset upload uses the authenticated REST `file`
+multipart part.
 
 ## API and documentation
 

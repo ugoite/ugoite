@@ -522,7 +522,7 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-015
   title: Remote CLI Device Authentication
-  description: The packaged Linux CLI may authenticate to one Remote Node through browser-approved device authorization, a fresh P-256 device key, opaque short-lived access credentials, rotating refresh credentials, and DPoP. REST credentials omit resource and use the Node issuer audience; MCP credentials use the exact {issuer}/mcp resource and audience. Credentials are Node-bound, action-scoped, and reject cross-resource use. CLI logout is local credential/key deletion; remote asset upload and generic OAuth compatibility remain future scope.
+  description: The packaged Linux CLI may authenticate to one Remote Node through browser-approved device authorization, a fresh P-256 device key, opaque short-lived access credentials, rotating refresh credentials, and DPoP. REST credentials omit resource and use the Node issuer audience; MCP credentials use the exact {issuer}/mcp resource and audience. Credentials are Node-bound, action-scoped, and reject cross-resource use. CLI logout is local credential/key deletion; remote CLI asset upload uses the authenticated REST file multipart part, and generic OAuth compatibility remains future scope.
   related_spec:
   - ../architecture/security/authentication-overview.yaml
   - ../architecture/api/rest.md#authentication

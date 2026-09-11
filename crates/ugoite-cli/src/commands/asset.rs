@@ -15,7 +15,7 @@ pub struct AssetCmd {
 pub enum AssetSubCmd {
     /// Upload an asset
     #[command(
-        long_about = "Upload an asset.\n\nExamples:\n  # Core mode\n  ugoite asset upload /root/spaces/my-space ./logo.png\n\nRemote CLI upload is not available in this release; use the API client or REST surface for remote uploads."
+        long_about = "Upload an asset.\n\nExamples:\n  # Core mode\n  ugoite asset upload /root/spaces/my-space ./logo.png\n\n  # Backend mode\n  ugoite asset upload my-space ./logo.png"
     )]
     Upload {
         #[arg(
@@ -52,11 +52,6 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
             filename,
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "asset upload")?;
-            if validated_base_url(&config)?.is_some() {
-                anyhow::bail!(
-                    "asset upload is not available in backend/api mode in this release; upload through the API client or REST surface"
-                );
-            }
             let file_size = std::fs::metadata(&file_path)?.len();
             if file_size > ugoite_iceberg::asset::MAX_ASSET_BYTES as u64 {
                 anyhow::bail!(
@@ -82,6 +77,18 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
                     .unwrap_or("asset")
                     .to_string()
             });
+            if let Some(base) = validated_base_url(&config)? {
+                let result = http::execute_multipart(
+                    &base,
+                    "asset.upload",
+                    serde_json::json!({"space_id": space_id}),
+                    name,
+                    data,
+                )
+                .await?;
+                print_json(&result);
+                return Ok(());
+            }
             let service = UgoiteService::new_without_background_refresh(&root)?;
             let asset = service.save_asset(&space_id, &name, &data).await?;
             print_json(&asset);

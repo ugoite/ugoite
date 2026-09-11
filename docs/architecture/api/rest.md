@@ -19,8 +19,7 @@ or unverified operators fail closed with the stable error code
 > authentication, Space membership/ACL enforcement, authenticated MCP access,
 > authorized audit reads, and invitation-gated OIDC authentication/account
 > linking. Administrator recovery, account discovery, managed service-account
-> operations, audit CRUD, and remote CLI asset upload remain future/reference
-> material.
+> operations, and audit CRUD remain future/reference material.
 
 ## Authentication surfaces
 
@@ -68,9 +67,9 @@ uses the normal recent-Passkey rule.
 
 Browser session cookies are opaque, server-side, and part of the supported v0.1
 contract. TOTP remains a recovery-only factor and is not used for normal login.
-Generic OAuth clients and remote asset upload remain future scope. Remote CLI
-device credentials are supported through the browser-approved device flow. This
-release does not provide a local authentication bypass.
+Generic OAuth clients remain future scope. Remote CLI device credentials are
+supported through the browser-approved device flow. This release does not
+provide a local authentication bypass.
 
 ## Authorization surfaces
 

@@ -3,7 +3,7 @@
   "info": {
     "title": "Ugoite Rust Server API",
     "version": "0.1.0",
-    "description": "The generated endpoint inventory is authoritative for the server implementation. v0.1 supports mandatory browser authentication with Passkey/WebAuthn, invitation-gated OIDC authentication and account linking, owner-approved Space access recovery, recovery-code + recovery-TOTP Account Self-Recovery, remote CLI device authentication, opaque sessions, Space membership/ACL enforcement, authenticated MCP access, and authorized audit reads. Administrator recovery, managed service-account operations, audit CRUD, and remote CLI asset upload remain reference/future scope. OIDC uses issuer + subject identity keys and never accepts upstream tokens as Ugoite credentials. TOTP is recovery-only."
+    "description": "The generated endpoint inventory is authoritative for the server implementation. v0.1 supports mandatory browser authentication with Passkey/WebAuthn, invitation-gated OIDC authentication and account linking, owner-approved Space access recovery, recovery-code + recovery-TOTP Account Self-Recovery, remote CLI device authentication, opaque sessions, Space membership/ACL enforcement, authenticated MCP access, and authorized audit reads. Administrator recovery, managed service-account operations, and audit CRUD remain reference/future scope. Remote CLI asset upload uses the authenticated REST file multipart part. OIDC uses issuer + subject identity keys and never accepts upstream tokens as Ugoite credentials. TOTP is recovery-only."
   },
   "x-ugoite-response-signing": {
     "description": "Eligible materialized /api responses carry the reusable HMAC headers below. The signature is lowercase hexadecimal HMAC-SHA256 over the exact delivered body bytes.",
