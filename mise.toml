@@ -248,6 +248,8 @@ description = "Validate repository architecture and maintained contracts"
 run = [
   "cargo run -p xtask -- openapi-check",
   "cargo run -p xtask -- architecture-check",
+  "cargo run -p xtask -- space-compat-check",
+  "cargo run -p xtask -- release-authority-check",
   "cargo run -p xtask -- docs-current-stack-check",
   { task = "check:supported" },
   "cargo run -p xtask -- legacy-auth-check",
