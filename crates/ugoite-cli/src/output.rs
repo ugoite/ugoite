@@ -530,9 +530,8 @@ pub fn read_compat_input(
                 .map_err(|error| anyhow::anyhow!("read stdin: {error}"))?;
             Ok(text)
         }
-        (None, Some(path)) => std::fs::read_to_string(&path).map_err(|error| {
-            UsageError(format!("read --file {path}: {error}")).into()
-        }),
+        (None, Some(path)) => std::fs::read_to_string(&path)
+            .map_err(|error| UsageError(format!("read --file {path}: {error}")).into()),
         (None, None) => Err(UsageError(format!("{inline_flag} or --file is required")).into()),
     }
 }
