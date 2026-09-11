@@ -1062,3 +1062,84 @@ requirements:
                 criterion: REQ-OPS-044#criterion.repository-native-release-promotion
                 covers: [FEAT-OPS-001#binding.repository-native-release/target.release-implementation, FEAT-OPS-001#binding.repository-native-release/target.release-verifier-core]
                 runner: { runner: deno-test-file, arguments: { file: tools/release_verify_test.ts, test: release verifier core derives candidate identity from exact manifest bytes } }
+
+  - id: REQ-OPS-025
+    title: Release authority outcomes
+    description: >-
+      Product UX is the sole active v0.2 release authority over the frozen v0.1
+      Foundation, Knowledge-to-tools remains a North Star rather than shipped
+      acceptance, and the repository drift gate keeps the v0.1/v0.2 trackers and
+      active roadmap claims from returning to the obsolete View and AI
+      authorities. Implementation plans remain delivery context only; the
+      canonical graph remains the semantic source of truth.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: product-ux-authority
+        kind: quality
+        statement: The active v0.2 tracker lists Product UX as the sole milestone authority with completion, discoverability, cross-surface consistency, validation clarity, recovery, and documentation correctness as success, while Knowledge-to-tools stays a North Star rather than shipped acceptance.
+        governed_by: [POL-008#rule.governance]
+      - id: release-authority-drift-gate
+        kind: quality
+        statement: The repository gate pins the v0.1/v0.2 trackers, the roadmap claims, and the release pages to the Product UX authority and fails the canonical check path when stale authorities return.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: authority-verification
+        role: verification
+        facet: release-authority
+        responsibility: Verify the sole-authority tracker shape, the obsolete-authority rejection, and the roadmap claim contract through the exact gate tests.
+        targets:
+          - id: sole-authority-case
+            adapter: rust
+            path: crates/xtask/src/main.rs
+            selector: { kind: test, name: gate_contract_tests::v02_tracker_with_sole_product_ux_passes }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-025#criterion.product-ux-authority
+                covers: [FEAT-OPS-001#binding.release-authority/target.authority-gate]
+                runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::v02_tracker_with_sole_product_ux_passes } }
+          - id: authority-goal-case
+            adapter: rust
+            path: crates/xtask/src/main.rs
+            selector: { kind: test, name: gate_contract_tests::product_ux_goal_requires_all_dimensions }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-025#criterion.product-ux-authority
+                covers: [FEAT-OPS-001#binding.release-authority/target.authority-gate, FEAT-OPS-001#binding.release-authority/target.product-ux-milestone]
+                runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::product_ux_goal_requires_all_dimensions } }
+          - id: foundation-case
+            adapter: rust
+            path: crates/xtask/src/main.rs
+            selector: { kind: test, name: gate_contract_tests::v01_tracker_requires_frozen_foundation }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-025#criterion.product-ux-authority
+                covers: [FEAT-OPS-001#binding.release-authority/target.authority-gate]
+                runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::v01_tracker_requires_frozen_foundation } }
+          - id: stale-authority-case
+            adapter: rust
+            path: crates/xtask/src/main.rs
+            selector: { kind: test, name: gate_contract_tests::v02_tracker_with_returned_view_authority_fails }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-025#criterion.release-authority-drift-gate
+                covers: [FEAT-OPS-001#binding.release-authority/target.authority-gate]
+                runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::v02_tracker_with_returned_view_authority_fails } }
+          - id: obsolete-case
+            adapter: rust
+            path: crates/xtask/src/main.rs
+            selector: { kind: test, name: gate_contract_tests::obsolete_milestone_presence_fails }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-025#criterion.release-authority-drift-gate
+                covers: [FEAT-OPS-001#binding.release-authority/target.authority-gate]
+                runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::obsolete_milestone_presence_fails } }
+          - id: roadmap-case
+            adapter: rust
+            path: crates/xtask/src/main.rs
+            selector: { kind: test, name: gate_contract_tests::roadmap_with_returned_view_claim_fails }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-025#criterion.release-authority-drift-gate
+                covers: [FEAT-OPS-001#binding.release-authority/target.authority-gate, FEAT-OPS-001#binding.release-authority/target.roadmap-claims]
+                runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::roadmap_with_returned_view_claim_fails } }

@@ -554,3 +554,31 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-OPS-015#criterion.production-authentication
+      - id: release-authority
+        role: implementation
+        facet: release-authority
+        responsibility: Keep the Product UX sole v0.2 authority milestone, the roadmap claims, and the drift gate connected as exact implementation targets. The v0.2 tracker file itself stays owned by the milestone-status integrity requirement; this binding does not create a second authority over it. Planned outcomes remain planned and are not promoted by this binding.
+        targets:
+          - id: product-ux-milestone
+            adapter: declared
+            path: docs/version/v0.2/product-ux.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-025#criterion.product-ux-authority
+          - id: roadmap-claims
+            adapter: declared
+            path: docs/version/unknown/roadmap.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-025#criterion.release-authority-drift-gate
+          - id: authority-gate
+            adapter: rust
+            path: crates/xtask/src/main.rs
+            selector: { kind: symbol, name: release_authority_check }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-025#criterion.product-ux-authority
+              - kind: satisfies
+                criterion: REQ-OPS-025#criterion.release-authority-drift-gate
