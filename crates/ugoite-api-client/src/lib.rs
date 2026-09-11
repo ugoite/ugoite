@@ -2041,6 +2041,49 @@ mod tests {
     }
 
     #[test]
+    fn structured_entry_payloads_use_the_same_portable_operations() {
+        // Transport-neutral authority: structured bodies ride the existing
+        // `entry.create` / `entry.update` operations without new endpoints.
+        let create = prepare_request(
+            "entry.create",
+            &json!({"space_id": "demo"}),
+            Some(&json!({
+                "id": "entry-1",
+                "form": "Note",
+                "title": "Hello",
+                "tags": ["inbox"],
+                "fields": {"Body": "Hello"},
+            })),
+        )
+        .expect("structured create");
+        assert_eq!(create.method, HttpMethod::Post);
+        assert_eq!(create.path, "/spaces/demo/entries");
+        assert_eq!(
+            serde_json::from_str::<Value>(create.body.as_deref().expect("body")).unwrap(),
+            json!({
+                "id": "entry-1",
+                "form": "Note",
+                "title": "Hello",
+                "tags": ["inbox"],
+                "fields": {"Body": "Hello"},
+            })
+        );
+
+        let update = prepare_request(
+            "entry.update",
+            &json!({"space_id": "demo", "entry_id": "entry-1"}),
+            Some(&json!({
+                "form": "Note",
+                "title": "Hello",
+                "fields": {"Body": "Edited"},
+            })),
+        )
+        .expect("structured update");
+        assert_eq!(update.method, HttpMethod::Put);
+        assert_eq!(update.path, "/spaces/demo/entries/entry-1");
+    }
+
+    #[test]
     fn test_req_sec_012_owner_recovery_operation_has_no_account_credential_api() {
         let force_reset = prepare_request(
             "space.recovery.force_reset",

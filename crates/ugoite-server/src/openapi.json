@@ -12504,9 +12504,8 @@
       },
       "EntryMutationRequest": {
         "type": "object",
-        "required": [
-          "markdown"
-        ],
+        "required": [],
+        "description": "Legacy `{ markdown }` (alias `content`) or additive structured `{ form, title, tags, fields, extra_attributes }`. Both together are rejected; server normalizes either to the same structured draft.",
         "properties": {
           "id": {
             "type": "string"
@@ -12519,6 +12518,24 @@
           },
           "parent_revision_id": {
             "type": "string"
+          },
+          "form": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fields": {
+            "type": "object"
+          },
+          "extra_attributes": {
+            "type": "object"
           }
         }
       },

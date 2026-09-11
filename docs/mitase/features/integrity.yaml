@@ -35,7 +35,7 @@ features:
           - id: entry-integrity
             adapter: rust
             path: crates/ugoite-iceberg/src/entry.rs
-            selector: { kind: symbol, name: prepare_entry }
+            selector: { kind: symbol, name: prepare_entry_from_draft }
             claims:
               - kind: satisfies
                 criterion: REQ-INT-002#criterion.reconstructed-entry-checksum

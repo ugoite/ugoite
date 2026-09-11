@@ -1907,6 +1907,71 @@ impl UgoiteService {
         Ok(result)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_structured_entry_authorized_for_principals(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        title: Option<String>,
+        form_name: String,
+        tags: Vec<String>,
+        fields: std::collections::BTreeMap<String, Value>,
+        extra_attributes: std::collections::BTreeMap<String, Value>,
+        author: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.ensure_mutation_admitted(space_id).await?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        let (_authorization_state, _authorization_lease, scopes) = if principal_ids.is_empty() {
+            (None, None, BTreeMap::new())
+        } else {
+            let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
+                .acquire_state_lease(space_id)
+                .await?;
+            self.require_action_for_principals_in_state(
+                &state,
+                entry_id,
+                ResourceKind::Entry,
+                Action::Create,
+                principal_ids,
+            )?;
+            let scopes = self
+                .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                .await?;
+            (Some(state), Some(_authorization_lease), scopes)
+        };
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        let workspace = self.workspace_path(space_id);
+        entry::create_structured_entry_with_scopes_and_change(
+            &self.operator,
+            &workspace,
+            entry_id,
+            title,
+            form_name,
+            tags,
+            fields,
+            extra_attributes,
+            author,
+            &integrity,
+            Some(&scopes),
+            None,
+        )
+        .await?;
+        self.schedule_asset_text_refresh(space_id);
+        let result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
+        self.record_committed_entry_revision(
+            space_id,
+            entry_id,
+            crate::mutation_audit::ENTRY_CREATED_ACTION,
+            principal_ids,
+            author,
+        )
+        .await;
+        Ok(result)
+    }
+
     pub async fn list_entries(&self, space_id: &str) -> Result<Vec<Value>> {
         self.validate_complete_space(space_id).await?;
         entry::list_entries(&self.operator, &self.workspace_path(space_id)).await
@@ -2056,6 +2121,81 @@ impl UgoiteService {
             &integrity,
             scopes.as_ref(),
             change,
+        )
+        .await?;
+        self.schedule_asset_text_refresh(space_id);
+        self.record_committed_entry_revision(
+            space_id,
+            entry_id,
+            crate::mutation_audit::ENTRY_UPDATED_ACTION,
+            principal_ids,
+            author,
+        )
+        .await;
+        Ok(result)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_structured_entry_authorized_for_principals(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        title: Option<String>,
+        form_name: Option<String>,
+        tags: Option<Vec<String>>,
+        fields: std::collections::BTreeMap<String, Value>,
+        extra_attributes: std::collections::BTreeMap<String, Value>,
+        parent_revision_id: Option<&str>,
+        author: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.ensure_mutation_admitted(space_id).await?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        if let Some(parent_revision_id) = parent_revision_id {
+            validate_storage_id(validate_revision_id(parent_revision_id))?;
+        }
+        let (state, _authorization_lease) = {
+            let (state, lease) = Authorizer::new(self.operator.clone())
+                .acquire_state_lease(space_id)
+                .await?;
+            self.require_action_for_principals_in_state(
+                &state,
+                entry_id,
+                ResourceKind::Entry,
+                Action::Update,
+                principal_ids,
+            )?;
+            (Some(state), Some(lease))
+        };
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        let scopes = if principal_ids.is_empty() {
+            None
+        } else {
+            Some(
+                self.authorized_form_entry_scopes_for_state(
+                    space_id,
+                    state.as_ref().expect("authorized state is present"),
+                    principal_ids,
+                )
+                .await?,
+            )
+        };
+        let result = entry::update_structured_entry_authorized_with_change(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            title,
+            form_name,
+            tags,
+            fields,
+            extra_attributes,
+            parent_revision_id,
+            author,
+            &integrity,
+            scopes.as_ref(),
+            None,
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
