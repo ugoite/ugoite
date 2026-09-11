@@ -59,60 +59,9 @@ pub fn print_json<T: Serialize>(value: &T) {
     println!("{rendered}");
 }
 
-/// Print a list of string IDs as a single-column table.
-pub fn print_list_table(header: &str, items: &[impl std::fmt::Display]) {
-    let col_width = items
-        .iter()
-        .map(|item| item.to_string().len())
-        .max()
-        .unwrap_or(0)
-        .max(header.len());
-    println!("{header:<col_width$}");
-    println!("{}", "-".repeat(col_width));
-    for item in items {
-        println!("{item}");
-    }
-}
-
-/// Print a list of JSON objects as a table, selecting the given columns.
-/// Columns is a slice of `(header, json_key)` pairs.
-pub fn print_json_table(rows: &[Value], columns: &[(&str, &str)]) {
-    let mut widths: Vec<usize> = columns.iter().map(|(header, _)| header.len()).collect();
-    let cell_matrix: Vec<Vec<String>> = rows
-        .iter()
-        .map(|row| {
-            columns
-                .iter()
-                .enumerate()
-                .map(|(index, (_, key))| {
-                    let cell = match &row[key] {
-                        Value::String(text) => text.clone(),
-                        Value::Null => String::new(),
-                        other => other.to_string(),
-                    };
-                    widths[index] = widths[index].max(cell.len());
-                    cell
-                })
-                .collect()
-        })
-        .collect();
-    let header: Vec<String> = columns
-        .iter()
-        .enumerate()
-        .map(|(index, (text, _))| format!("{text:<width$}", width = widths[index]))
-        .collect();
-    println!("{}", header.join("  "));
-    let separator: Vec<String> = widths.iter().map(|width| "-".repeat(*width)).collect();
-    println!("{}", separator.join("  "));
-    for row_cells in &cell_matrix {
-        let row: Vec<String> = row_cells
-            .iter()
-            .enumerate()
-            .map(|(index, cell)| format!("{cell:<width$}", width = widths[index]))
-            .collect();
-        println!("{}", row.join("  "));
-    }
-}
+// The TTY table printers stay defined in `crate::config` (long-standing
+// lines) and are re-exported here so commands import one output module.
+pub use crate::config::{print_json_table, print_list_table};
 
 /// Machine `stderr` when piped (JSON envelope); human text on TTY.
 pub fn is_machine_stderr() -> bool {

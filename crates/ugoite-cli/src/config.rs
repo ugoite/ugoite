@@ -570,8 +570,64 @@ pub fn validated_base_url(config: &EndpointConfig) -> Result<Option<String>> {
 }
 
 /// Centralized output contract lives in `crate::output` (E0). These
-/// re-exports keep existing command imports working.
+/// re-exports keep existing command imports working. The TTY table printers
+/// stay defined below so their long-standing lines are untouched.
 pub use crate::output::{
-    effective_format, effective_format_for_stdout, emit_success, print_json, print_json_table,
-    print_list_table, project_error, CliError, ExitCode, Format, MutationReceipt,
+    effective_format, effective_format_for_stdout, emit_success, print_json, project_error,
+    CliError, ExitCode, Format, MutationReceipt,
 };
+
+/// Print a list of string IDs as a single-column table.
+pub fn print_list_table(header: &str, items: &[impl std::fmt::Display]) {
+    let col_width = items
+        .iter()
+        .map(|s| s.to_string().len())
+        .max()
+        .unwrap_or(0)
+        .max(header.len());
+    println!("{:<col_width$}", header, col_width = col_width);
+    println!("{}", "-".repeat(col_width));
+    for item in items {
+        println!("{item}");
+    }
+}
+
+/// Print a list of JSON objects as a table, selecting the given columns.
+/// Columns is a slice of `(header, json_key)` pairs.
+pub fn print_json_table(rows: &[serde_json::Value], columns: &[(&str, &str)]) {
+    let mut widths: Vec<usize> = columns.iter().map(|(h, _)| h.len()).collect();
+    let cell_matrix: Vec<Vec<String>> = rows
+        .iter()
+        .map(|row| {
+            columns
+                .iter()
+                .enumerate()
+                .map(|(i, (_, key))| {
+                    let cell = match &row[key] {
+                        serde_json::Value::String(s) => s.clone(),
+                        serde_json::Value::Null => String::new(),
+                        other => other.to_string(),
+                    };
+                    widths[i] = widths[i].max(cell.len());
+                    cell
+                })
+                .collect()
+        })
+        .collect();
+    let header: Vec<String> = columns
+        .iter()
+        .enumerate()
+        .map(|(i, (h, _))| format!("{:<width$}", h, width = widths[i]))
+        .collect();
+    println!("{}", header.join("  "));
+    let sep: Vec<String> = widths.iter().map(|w| "-".repeat(*w)).collect();
+    println!("{}", sep.join("  "));
+    for row_cells in &cell_matrix {
+        let row: Vec<String> = row_cells
+            .iter()
+            .enumerate()
+            .map(|(i, c)| format!("{:<width$}", c, width = widths[i]))
+            .collect();
+        println!("{}", row.join("  "));
+    }
+}
