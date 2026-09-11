@@ -15624,6 +15624,85 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
+    async fn space_get_with_slug_address_fails_closed_as_not_found() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-slug-space-get")?;
+        state.initialize_node().await?;
+        let owner_account_id = Uuid::now_v7();
+        let owner_principal_id = Uuid::now_v7();
+        state.identity.bootstrap_if_needed().await?;
+        state
+            .identity
+            .seed_test_recovery_accounts(&[(owner_account_id, Uuid::now_v7(), Uuid::now_v7())])
+            .await?;
+        let space_uid = state
+            .service
+            .create_space_for_principal("human-slug", owner_principal_id, "Owner")
+            .await?;
+        let space_id = state
+            .service
+            .list_space_ids()
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("expected one test Space"))?;
+        state
+            .identity
+            .add_binding(ugoite_domain::identity::PrincipalBinding {
+                space_uid,
+                principal_id: owner_principal_id,
+                node_account_id: owner_account_id,
+                binding_method: BindingMethod::Setup,
+            })
+            .await?;
+        Authorizer::new(state.service.operator().clone())
+            .add_human_member(
+                &space_id,
+                owner_principal_id,
+                SpacePrincipal {
+                    principal_id: owner_principal_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "Owner".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Owner,
+            )
+            .await?;
+        // The immutable UID keeps working.
+        let Json(value) = get_space(
+            State(state.clone()),
+            Extension(passkey_identity(owner_account_id)),
+            Path(space_id),
+        )
+        .await
+        .map_err(|error| {
+            anyhow::anyhow!(
+                "UID-addressed space get failed: {}",
+                error.into_response().status()
+            )
+        })?;
+        assert_eq!(value["slug"], "human-slug");
+        // A human slug is not a remote identifier: it must fail closed as
+        // not found, never as an internal server error. The same holds for
+        // any well-formed but unknown identifier.
+        for unknown in ["human-slug".to_string(), Uuid::now_v7().to_string()] {
+            let error = get_space(
+                State(state.clone()),
+                Extension(passkey_identity(owner_account_id)),
+                Path(unknown.clone()),
+            )
+            .await
+            .expect_err("unknown space identifiers must fail closed");
+            assert_eq!(
+                error.into_response().status(),
+                StatusCode::NOT_FOUND,
+                "unknown identifier {unknown:?} must be 404, never 500"
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn invitation_finalization_converges_after_space_membership_commit() -> anyhow::Result<()>
     {
         let state = AppState::new_for_tests("memory://server-invitation-saga")?;
