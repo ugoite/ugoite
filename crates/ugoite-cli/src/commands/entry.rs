@@ -1,8 +1,8 @@
 use crate::config::{load_config, resolve_space_reference, validated_base_url};
 use crate::http;
 use crate::output::{
-    effective_format, emit_success, print_json, print_json_table, read_compat_input, Format,
-    MutationReceipt, UsageError,
+    effective_format, emit_success, print_json_table, read_compat_input, Format, MutationReceipt,
+    UsageError,
 };
 use anyhow::Result;
 use clap::{Args, Subcommand};
@@ -215,7 +215,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                         return Ok(());
                     }
                 }
-                print_json(&result);
+                emit_success(&result, &fmt, None);
                 return Ok(());
             }
             let service = UgoiteService::new_without_background_refresh(&root)?;
@@ -232,7 +232,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     .collect();
                 print_json_table(&rows, &[("ID", "id"), ("TITLE", "title")]);
             } else {
-                print_json(&entries);
+                emit_success(&entries, &fmt, None);
             }
         }
         EntrySubCmd::Get {
@@ -248,12 +248,12 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     None,
                 )
                 .await?;
-                print_json(&result);
+                emit_success(&result, &fmt, None);
                 return Ok(());
             }
             let service = UgoiteService::new_without_background_refresh(&root)?;
             let entry = service.get_entry(&space_id, &entry_id).await?;
-            print_json(&entry);
+            emit_success(&entry, &fmt, None);
         }
         EntrySubCmd::Create {
             space_path,
@@ -477,12 +477,12 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     None,
                 )
                 .await?;
-                print_json(&result);
+                emit_success(&result, &fmt, None);
                 return Ok(());
             }
             let service = UgoiteService::new_without_background_refresh(&root)?;
             let history = service.entry_history(&space_id, &entry_id).await?;
-            print_json(&history);
+            emit_success(&history, &fmt, None);
         }
         EntrySubCmd::Revision {
             space_path,
@@ -502,14 +502,14 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     None,
                 )
                 .await?;
-                print_json(&result);
+                emit_success(&result, &fmt, None);
                 return Ok(());
             }
             let service = UgoiteService::new_without_background_refresh(&root)?;
             let rev = service
                 .entry_revision(&space_id, &entry_id, &revision_id)
                 .await?;
-            print_json(&rev);
+            emit_success(&rev, &fmt, None);
         }
         EntrySubCmd::Restore {
             space_path,

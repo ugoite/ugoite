@@ -72,7 +72,7 @@ pub fn is_machine_stderr() -> bool {
 ///
 /// Machine mode prints pretty JSON. Human mode prints the human rendering
 /// when one is supplied, otherwise falls back to JSON so no data is lost.
-pub fn emit_success(data: &Value, format: &Format, human: Option<String>) {
+pub fn emit_success<T: Serialize>(data: &T, format: &Format, human: Option<String>) {
     match format {
         Format::Json => print_json(data),
         Format::Table | Format::Plain => {
@@ -83,6 +83,16 @@ pub fn emit_success(data: &Value, format: &Format, human: Option<String>) {
             }
         }
     }
+}
+
+/// Emit human-oriented text through the shared stdout path.
+pub fn emit_text(text: impl AsRef<str>) {
+    println!("{}", text.as_ref());
+}
+
+/// Emit a human-oriented diagnostic through the shared stderr path.
+pub fn emit_diagnostic(text: impl AsRef<str>) {
+    eprintln!("{}", text.as_ref());
 }
 
 /// Stable CLI exit codes.
