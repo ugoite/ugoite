@@ -233,6 +233,8 @@ inventory:
             - docs/architecture/release/v0.1-knowledge-compatibility.md
             - docs/version/v0.1.yaml
             - docs/version/v0.2.yaml
+            - docs/version/v0.2/product-ux.yaml
+            - docs/version/unknown/roadmap.yaml
             - docs/architecture/contracts/overview.md
             - docs/architecture/contracts/decisions.md
             - docs/architecture/contracts/stack.md
@@ -318,6 +320,7 @@ inventory:
             - frontend/src/lib/search-api.ts
             - frontend/app.config.ts
             - crates/ugoite-iceberg/tests/fixtures/v0.1-knowledge.json
+            - fixtures/spaces/0.1/spaces/019c1234-5678-7abc-8def-0123456789ab/meta.json
 validation:
   preset: strict
   readiness:

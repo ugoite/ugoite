@@ -900,3 +900,89 @@ requirements:
                   - FEAT-SPACE-001#binding.backend/target.pin-diff
                   - FEAT-SPACE-001#binding.service/target.diff-pins
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::issue_2307_authenticated_rest_pin_diff_returns_logical_entry_changes } }
+
+  - id: REQ-STO-016
+    title: Space compatibility identity and drift gate
+    description: >-
+      The durable Space compatibility identity stays pinned to Space 0.1 behind
+      the single domain classifier, which never promotes subsystem-local
+      schema_version fields, and the repository drift gate keeps the identity,
+      the frozen fixture, the metadata contract, and the regression coverage
+      from silently changing. Gate promotion to release-blocking remains
+      separate v0.2 work; the gates diagnose drift without becoming a second
+      Knowledge authority.
+    priority: high
+    status: implemented
+    criteria:
+      - id: space-version-identity
+        kind: behavior
+        statement: Space bootstrap metadata classifies through space_version 0.1 as the only supported identity, fails closed on missing, malformed, or unsupported values, and never infers compatibility from subsystem-local schema_version fields.
+        governed_by: [POL-014#rule.governance, POL-016#rule.governance]
+      - id: compatibility-drift-gate
+        kind: quality
+        statement: The repository gate pins the canonical identity, the frozen fixture metadata, the compatibility contract, and the regression coverage, and fails the canonical check path when they drift.
+        governed_by: [POL-008#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: identity-verification
+        role: verification
+        facet: compatibility
+        responsibility: Verify the frozen identity, the fail-closed classifier including the schema_version-only negative case, and the drift-gate contract behavior through the exact domain and gate tests.
+        targets:
+          - id: identity-case
+            adapter: rust
+            path: crates/ugoite-domain/tests/test_space_version.rs
+            selector: { kind: test, name: current_space_version_is_the_only_supported_identity }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-016#criterion.space-version-identity
+                covers: [FEAT-STO-001#binding.space-identity/target.version-authority, FEAT-STO-001#binding.space-identity/target.version-source]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-domain, harness: test_space_version, test: current_space_version_is_the_only_supported_identity } }
+          - id: parser-case
+            adapter: rust
+            path: crates/ugoite-domain/tests/test_space_version.rs
+            selector: { kind: test, name: parser_rejects_product_versions_and_non_canonical_values }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-016#criterion.space-version-identity
+                covers: [FEAT-STO-001#binding.space-identity/target.version-authority]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-domain, harness: test_space_version, test: parser_rejects_product_versions_and_non_canonical_values } }
+          - id: classifier-case
+            adapter: rust
+            path: crates/ugoite-domain/tests/test_space_version.rs
+            selector: { kind: test, name: classifier_fails_closed_without_schema_aliases }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-016#criterion.space-version-identity
+                covers: [FEAT-STO-001#binding.space-identity/target.version-authority]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-domain, harness: test_space_version, test: classifier_fails_closed_without_schema_aliases } }
+          - id: gate-identity-case
+            adapter: rust
+            path: crates/xtask/src/main.rs
+            selector: { kind: test, name: gate_contract_tests::space_source_with_frozen_identity_passes }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-016#criterion.compatibility-drift-gate
+                covers: [FEAT-STO-001#binding.drift-gate/target.space-compat-gate]
+                runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::space_source_with_frozen_identity_passes } }
+          - id: gate-negative-case
+            adapter: rust
+            path: crates/xtask/src/main.rs
+            selector: { kind: test, name: gate_contract_tests::classifier_consulting_schema_version_fails }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-016#criterion.compatibility-drift-gate
+                covers: [FEAT-STO-001#binding.drift-gate/target.space-compat-gate]
+                runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::classifier_consulting_schema_version_fails } }
+          - id: gate-fixture-case
+            adapter: rust
+            path: crates/xtask/src/main.rs
+            selector: { kind: test, name: gate_contract_tests::fixture_meta_requires_space_version_identity }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-016#criterion.compatibility-drift-gate
+                covers: [FEAT-STO-001#binding.drift-gate/target.space-compat-gate]
+                runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::fixture_meta_requires_space_version_identity } }
+              - kind: verifies
+                criterion: REQ-STO-016#criterion.space-version-identity
+                covers: [FEAT-STO-001#binding.space-identity/target.space-fixture]
+                runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::fixture_meta_requires_space_version_identity } }

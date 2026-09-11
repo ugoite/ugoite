@@ -307,6 +307,44 @@ features:
             adapter: declared
             path: docs/architecture/release/v0.1-knowledge-compatibility.md
             selector: { kind: file }
+      - id: space-identity
+        role: implementation
+        facet: compatibility
+        responsibility: Keep the durable Space 0.1 identity behind the single domain classifier, which never promotes subsystem-local schema_version fields to the portable compatibility contract.
+        targets:
+          - id: version-authority
+            adapter: rust
+            path: crates/ugoite-domain/src/space.rs
+            selector: { kind: symbol, name: classify_space_version }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-016#criterion.space-version-identity
+          - id: version-source
+            adapter: rust
+            path: crates/ugoite-domain/src/space.rs
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-016#criterion.space-version-identity
+          - id: space-fixture
+            adapter: declared
+            path: fixtures/spaces/0.1/spaces/019c1234-5678-7abc-8def-0123456789ab/meta.json
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-016#criterion.space-version-identity
+      - id: drift-gate
+        role: implementation
+        facet: quality-gates
+        responsibility: Keep the Space compatibility drift gate connected to the canonical repository check path. Gate execution remains owned by repository tasks; this binding describes the existing gate without moving delivery responsibilities into Mitase.
+        targets:
+          - id: space-compat-gate
+            adapter: rust
+            path: crates/xtask/src/main.rs
+            selector: { kind: symbol, name: space_compat_check }
+            claims:
+              - kind: satisfies
+                criterion: REQ-STO-016#criterion.compatibility-drift-gate
     contracts:
       - id: create-space
         kind: http
