@@ -1,5 +1,5 @@
 version: "0.2"
-updated: "2026-07-17"
+updated: "2026-09-12"
 page:
   id: space-entry-detail
   title: Entry Detail
@@ -32,7 +32,7 @@ components:
       type: two-column-workspace
       primary:
         - id: entry-edit-modes
-          type: tab-bar
+          type: workspace-view-switcher
           default: fields-when-form-exists
           tabs:
             - id: fields
@@ -42,9 +42,16 @@ components:
             - id: preview
               label: Preview
               description: Rendered read-only entry preview.
+        - id: entry-source-disclosure
+          type: advanced-disclosure
+          label: Advanced
+          content:
             - id: source
               label: Source
               description: Full Markdown editing for advanced changes.
+            - id: entry-source-editor
+              type: markdown-editor
+              mode: edit
         - id: entry-fields-editor
           type: form-editor
           items:
@@ -59,21 +66,23 @@ components:
             scalar: free-form-text-input
           validation: inline
         - id: entry-preview
-          type: markdown-preview
-        - id: entry-source-editor
-          type: markdown-editor
-          mode: edit
+          type: field-level-preview
       secondary:
         - id: entry-details
           type: metadata-card
           items:
             - form
             - updated_at
-            - entry_id
+            - technical-details:
+                - entry_id
+        - id: entry-history-recovery
+          type: secondary-action
+          actions:
+            - history
+            - restore
         - id: entry-management
           type: action-card
           actions:
-            - history
             - refresh
             - discard-draft
             - sharing

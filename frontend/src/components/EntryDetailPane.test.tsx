@@ -166,7 +166,8 @@ describe("EntryDetailPane", () => {
     const notes = screen.getByLabelText("Notes");
     fireEvent.input(notes, { target: { value: "hello \n" } });
     expect(notes).toHaveValue("hello \n");
-    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
+    fireEvent.click(screen.getByText("Advanced"));
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
 
     const source = await screen.findByPlaceholderText(
       "Start writing in Markdown...",
@@ -174,6 +175,72 @@ describe("EntryDetailPane", () => {
     expect((source as HTMLTextAreaElement).value).toContain(
       "## Date\n2026-07-16",
     );
+  });
+
+  it("keeps advanced source and technical details behind progressive disclosure", async () => {
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-layout",
+      title: "Layout Entry",
+      form: "Meeting",
+      content:
+        "---\nform: Meeting\n---\n\n# Layout Entry\n\n## Summary\nhello\n\n## Notes\n**review**",
+      revision_id: "rev-layout",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-layout"}
+        forms={() => [
+          {
+            name: "Meeting",
+            version: 1,
+            template: "# Meeting\n\n## Summary\n\n## Notes\n",
+            fields: {
+              Summary: { type: "string", required: false },
+              Notes: { type: "markdown", required: false },
+            },
+          },
+        ]}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    await screen.findByLabelText("Summary");
+
+    const advanced = screen.getByText("Advanced");
+    const source = screen.getByRole("button", { name: "Source" });
+    const sourceDisclosure = source.closest("details");
+    expect(sourceDisclosure).not.toHaveAttribute("open");
+    fireEvent.click(advanced);
+    expect(sourceDisclosure).toHaveAttribute("open");
+
+    fireEvent.click(source);
+    expect(screen.getByRole("tabpanel", { name: "Source" }))
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Preview" }));
+    expect(screen.getByRole("region", { name: "Entry fields preview" }))
+      .toBeInTheDocument();
+    expect(screen.getByText("Summary")).toBeInTheDocument();
+    expect(screen.getByText("review")).toBeInTheDocument();
+
+    const technical = screen.getByText("Technical details").closest("details");
+    expect(technical).not.toHaveAttribute("open");
+    expect(
+      screen.getByRole("link", { name: /History & recovery/ }),
+    ).toHaveAttribute(
+      "href",
+      "/spaces/default/entries/entry-layout/history",
+    );
+    expect(screen.getByRole("link", { name: /Restore a version/ }))
+      .toHaveAttribute(
+        "href",
+        "/spaces/default/entries/entry-layout/restore",
+      );
+    expect(screen.getByRole("status")).toHaveTextContent("All changes saved");
   });
 
   it("uses the shared form-first editor to create a new entry", async () => {
@@ -1019,7 +1086,8 @@ describe("EntryDetailPane", () => {
     expect(notes).toHaveValue("hello");
 
     fireEvent.input(notes, { target: { value: "updated" } });
-    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
+    fireEvent.click(screen.getByText("Advanced"));
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
 
     const source = await screen.findByPlaceholderText(
       "Start writing in Markdown...",
@@ -1474,6 +1542,7 @@ describe("EntryDetailPane", () => {
         parent_revision_id: "rev-1",
       });
     });
+    expect(screen.getByRole("status")).toHaveTextContent("Saving...");
 
     fireEvent.input(textarea, { target: { value: "Second edit" } });
     finishSave?.({ revision_id: "rev-2" });
