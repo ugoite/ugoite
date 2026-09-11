@@ -5,7 +5,7 @@ import {
 } from "./support/docsite-server.ts";
 
 const docPath = "/docs/spec/";
-const editLinkDocPath = "/docs/guide/automate/cli/";
+const editLinkDocPath = "/docs/get-started/";
 const homepagePath = "/";
 
 let docsiteServer: DocsiteServer | undefined;
@@ -77,26 +77,29 @@ test.describe("Docsite navigation layout", () => {
       page.getByRole("link", { name: "Edit page" }),
     ).toHaveAttribute(
       "href",
-      "https://github.com/ugoite/ugoite/edit/main/docs/guide/automate/cli.md",
+      "https://github.com/ugoite/ugoite/edit/main/docs/get-started/index.md",
     );
   });
 
   test("REQ-E2E-005: the beginner path follows its documented learning order", async ({ page }) => {
     // Mitase evidence: REQ-E2E-005#criterion.beginner-path.
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(buildDocsiteUrl("/docs/guide/"), {
+    await page.goto(buildDocsiteUrl("/docs/get-started/"), {
       waitUntil: "networkidle",
     });
 
-    const startHereLinks = page.locator(
-      '#starlight__sidebar a[href*="/docs/guide/start/"]',
+    const sidebar = page.locator("#starlight__sidebar");
+    await expect(sidebar.getByText("Get started", { exact: true }).first())
+      .toBeVisible();
+    await expect(sidebar.getByText("Use Ugoite", { exact: true }).first())
+      .toBeVisible();
+    await expect(sidebar.getByText("Operate Ugoite", { exact: true }).first())
+      .toBeVisible();
+
+    const getStartedLinks = page.locator(
+      '#starlight__sidebar a[href*="/docs/get-started/"]',
     );
-    await expect(startHereLinks).toHaveText([
-      "Overview",
-      "Core concepts",
-      "Container quick start",
-      "Create the first browser entry",
-    ]);
+    await expect(getStartedLinks).toHaveText(["Overview"]);
   });
 
   test("REQ-E2E-005: the homepage keeps the hero and Starlight navigation", async ({ page }) => {
@@ -133,26 +136,33 @@ async function expectSidebarToContainLinks(
 ): Promise<void> {
   const sidebar = page.locator("#starlight__sidebar");
 
-  await openSidebarGroup(page, "Automate", "CLI guide");
-  await expect(sidebar.getByRole("link", { name: "CLI guide" }))
-    .toHaveAttribute(
-      "href",
-      /\/docs\/guide\/automate\/cli\/$/,
-    );
+  for (
+    const label of [
+      "Get started",
+      "Use Ugoite",
+      "Operate Ugoite",
+      "Vision & Concepts",
+      "Develop Ugoite",
+      "Reference",
+      "Specification",
+    ]
+  ) {
+    await expect(sidebar.getByText(label, { exact: true }).first())
+      .toBeVisible();
+  }
+
+  await openSidebarGroup(page, "Get started", "/docs/get-started/");
   await expect(
-    sidebar.getByRole("link", { name: "Container quick start" }),
+    sidebar.locator('a[href$="/docs/get-started/"]'),
   ).toBeVisible();
-  await openSidebarGroup(page, "Architecture", "Architecture North Star");
-  await openSidebarGroup(page, "Principles", "Architecture North Star");
+  await openSidebarGroup(page, "Use Ugoite", "/docs/use/");
   await expect(
-    sidebar.getByRole("link", { name: "Architecture North Star" }),
+    sidebar.locator('a[href$="/docs/use/"]'),
   ).toBeVisible();
-  await expect(sidebar.getByText("Specification", { exact: true }).first())
-    .toBeVisible();
   if (options.expectSpecificationLink) {
-    await openSidebarGroup(page, "Specification", "Ugoite specification index");
+    await openSidebarGroup(page, "Specification", "/docs/spec/");
     await expect(
-      sidebar.getByRole("link", { name: "Ugoite specification index" }),
+      sidebar.locator('a[href$="/docs/spec/"]'),
     ).toBeVisible();
   }
 }
@@ -160,13 +170,14 @@ async function expectSidebarToContainLinks(
 async function openSidebarGroup(
   page: Page,
   label: string,
-  expectedLink: string,
+  hrefSuffix: string,
 ): Promise<void> {
   const sidebar = page.locator("#starlight__sidebar");
-  const link = sidebar.getByRole("link", { name: expectedLink });
+  const link = sidebar.locator(`a[href$="${hrefSuffix}"]`);
   if (await link.isVisible()) {
     return;
   }
   const summary = sidebar.locator("summary").filter({ hasText: label }).first();
   await summary.click();
+  await expect(link).toBeVisible();
 }

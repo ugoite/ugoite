@@ -37,16 +37,33 @@ describe("documentation single source of truth", () => {
       'import { docsSidebarDirectory, docsSourceDirectory } from "./src/docs-ssot.mjs"',
     );
     expect(config).toContain("processedDirs: [docsSourceDirectory]");
-    expect(config).toContain('docsSidebarDirectory("guide/start")');
-    expect(config).toContain('docsSidebarDirectory("guide/operate/auth")');
-    expect(config).toContain('docsSidebarDirectory("architecture/principles")');
-    expect(config).toContain(
+    expect(config).toContain('docsSidebarDirectory("get-started")');
+    expect(config).toContain('docsSidebarDirectory("use")');
+    expect(config).toContain('docsSidebarDirectory("operate")');
+    expect(config).toContain('docsSidebarDirectory("vision")');
+    expect(config).toContain('docsSidebarDirectory("develop")');
+    expect(config).toContain('docsSidebarDirectory("reference")');
+    expect(config).toContain('docsSidebarDirectory("spec")');
+    expect(config).not.toContain('docsSidebarDirectory("guide/start")');
+    expect(config).not.toContain('docsSidebarDirectory("guide/operate/auth")');
+    expect(config).not.toContain(
+      'docsSidebarDirectory("architecture/principles")',
+    );
+    expect(config).not.toContain(
       'docsSidebarDirectory("architecture/data-model")',
     );
-    expect(config).toContain('docsSidebarDirectory("architecture/testing")');
-    expect(config).toContain('docsSidebarDirectory("architecture/quality")');
-    expect(config).toContain('docsSidebarDirectory("architecture/product")');
-    expect(config).toContain('docsSidebarDirectory("architecture/release")');
+    expect(config).not.toContain(
+      'docsSidebarDirectory("architecture/testing")',
+    );
+    expect(config).not.toContain(
+      'docsSidebarDirectory("architecture/quality")',
+    );
+    expect(config).not.toContain(
+      'docsSidebarDirectory("architecture/product")',
+    );
+    expect(config).not.toContain(
+      'docsSidebarDirectory("architecture/release")',
+    );
     expect(config).not.toContain('docsSidebarDirectory("spec/product")');
     expect(config).not.toContain('docsSidebarDirectory("spec/versions")');
     expect(config).not.toContain("@astrojs/markdown-remark");
@@ -56,13 +73,9 @@ describe("documentation single source of truth", () => {
 
   test("shared docs path helpers keep loader and sidebar namespaces aligned", () => {
     expect(docsSourceDirectory).toBe("../docs");
-    expect(docsSidebarDirectory("guide/start")).toBe("../docs/guide/start");
-    expect(docsSidebarDirectory("architecture/principles")).toBe(
-      "../docs/architecture/principles",
-    );
-    expect(docsSidebarDirectory("architecture/data-model")).toBe(
-      "../docs/architecture/data-model",
-    );
+    expect(docsSidebarDirectory("get-started")).toBe("../docs/get-started");
+    expect(docsSidebarDirectory("use")).toBe("../docs/use");
+    expect(docsSidebarDirectory("vision")).toBe("../docs/vision");
   });
 
   test("docsite contains no hand-authored route tree", async () => {
