@@ -1,16 +1,16 @@
 ---
-title: "Vision & Concepts"
-description: Why Ugoite exists, what it promises, and where it is going.
+title: "The Ugoite Vision"
+description: Why Ugoite exists and what it promises to operators, humans, and AI.
 sidebar:
   label: "Overview"
   order: 1
 ---
 
-Vision and Concepts explains why Ugoite looks the way it does before describing
+The Ugoite Vision explains why Ugoite looks the way it does before describing
 how it is implemented. Start here to understand the product promise and the
 boundary between what is current, what is next, and what is North Star.
 
-## Start with the promise
+## The product promise
 
 Ugoite is a private, portable Knowledge Space for humans and AI:
 
@@ -20,16 +20,23 @@ Durable Knowledge belongs to the operator. Human and agent Work can use that
 Knowledge without owning it. The same Knowledge can eventually become
 purpose-built tools without being copied into a second system of record.
 
-## Current entry points
+Owning Knowledge means an operator can move, inspect, and recover a Space from
+operator-controlled storage without depending on a server, browser session,
+model provider, or generated experience to remain available.
 
-Detailed Vision pages land in the next step. Until then, read the existing
-authority docs:
+## Where to go next
 
-- [Architecture North Star](../architecture/principles/north-star.md) for the
-  product promise, authority model, and invariants.
-- [Knowledge, Work, and Experience](../architecture/principles/knowledge-work-experience.md)
-  for the conceptual boundary.
-- [Architecture overview](../architecture/index.md) for the implementation map.
+- Read [Product Principles](principles.md) for the six decisions that shape
+  every surface.
+- Read [Knowledge, Work, and Experience](knowledge-work-experience.md) for the
+  separation between durable content, temporary work, and purpose-built views.
+- Read [Current Product and Target State](current-and-target.md) to keep
+  current, next, North Star, and not-promised apart.
+- Read [Design History](design-history.md) for why the Vision page stays free of
+  implementation detail.
+- For the implementation authority, see
+  [Architecture North Star](../architecture/principles/north-star.md) and the
+  [Architecture overview](../architecture/index.md).
 
 Knowledge-to-tools is a direction, not a v0.1 feature. Browser-local
 persistence, optional synchronization, View and Application definitions, and
