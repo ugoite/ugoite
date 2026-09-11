@@ -1541,6 +1541,7 @@ impl UgoiteService {
                         "kind": "create",
                         "id": entry_id,
                         "revision_id": value["revision_id"],
+                        "change_id": value["change_id"],
                     }));
                 }
                 ApplyOperation::Update {
@@ -1571,6 +1572,7 @@ impl UgoiteService {
                         "kind": "update",
                         "id": id,
                         "revision_id": value["revision_id"],
+                        "change_id": value["change_id"],
                     }));
                 }
                 ApplyOperation::Remove { id } => {
@@ -1582,15 +1584,21 @@ impl UgoiteService {
                         reverts_change_id: None,
                         created_at_micros: Utc::now().timestamp_micros(),
                     };
-                    self.delete_entry_with_change(
-                        space_id,
-                        &id,
-                        false,
-                        actor_principal_id,
-                        Some(change),
-                    )
-                    .await?;
-                    results.push(json!({"kind": "remove", "id": id}));
+                    let value = self
+                        .delete_entry_with_change_receipt(
+                            space_id,
+                            &id,
+                            false,
+                            actor_principal_id,
+                            Some(change),
+                        )
+                        .await?;
+                    results.push(json!({
+                        "kind": "remove",
+                        "id": id,
+                        "revision_id": value["revision_id"],
+                        "change_id": value["change_id"],
+                    }));
                 }
             }
         }

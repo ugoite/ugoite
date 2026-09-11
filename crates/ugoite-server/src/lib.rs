@@ -9644,12 +9644,14 @@ async fn delete_entry(
             },
         )
         .await?;
-        return Ok(Json(json!({
-            "id": entry_id,
-            "status": "deleted",
-            "revision_id": mutation["revision_id"],
-            "change_id": mutation["change_id"],
-        })));
+        let mut response = json!({"id": entry_id, "status": "deleted"});
+        if let Some(value) = mutation.get("revision_id") {
+            response["revision_id"] = value.clone();
+        }
+        if let Some(value) = mutation.get("change_id") {
+            response["change_id"] = value.clone();
+        }
+        return Ok(Json(response));
     };
     let result = match mutation {
         Ok(value) => {
@@ -16786,6 +16788,10 @@ mod authentication_regression_tests {
             .as_str()
             .expect("create revision token")
             .to_owned();
+        let create_change_id = create.1["operations"][0]["change_id"]
+            .as_str()
+            .expect("create change id")
+            .to_owned();
         assert_opaque_version_token(&create_revision);
 
         let (status, created_entry) = route_json(
@@ -16817,6 +16823,10 @@ mod authentication_regression_tests {
             created_history["revisions"][0]["revision_id"],
             create_revision
         );
+        assert_eq!(
+            created_history["revisions"][0]["change_id"],
+            create_change_id
+        );
         assert_eq!(created_history["revisions"][0]["operation"], "upsert");
         assert!(created_history["revisions"][0]["change_id"]
             .as_str()
@@ -16844,6 +16854,10 @@ mod authentication_regression_tests {
         let update_revision = update.1["operations"][0]["revision_id"]
             .as_str()
             .expect("update revision token")
+            .to_owned();
+        let update_change_id = update.1["operations"][0]["change_id"]
+            .as_str()
+            .expect("update change id")
             .to_owned();
         assert_opaque_version_token(&update_revision);
 
@@ -16879,6 +16893,10 @@ mod authentication_regression_tests {
             updated_history["revisions"][1]["revision_id"],
             update_revision
         );
+        assert_eq!(
+            updated_history["revisions"][1]["change_id"],
+            update_change_id
+        );
         assert_eq!(updated_history["revisions"][1]["operation"], "upsert");
 
         let (status, remove) = route_json(
@@ -16895,13 +16913,16 @@ mod authentication_regression_tests {
         )
         .await?;
         assert_eq!(status, StatusCode::OK, "{remove}");
-        assert_eq!(
-            remove["operations"][0],
-            json!({
-                "kind": "remove",
-                "id": "apply-crud-entry"
-            })
-        );
+        assert_eq!(remove["operations"][0]["kind"], "remove");
+        assert_eq!(remove["operations"][0]["id"], "apply-crud-entry");
+        let remove_revision = remove["operations"][0]["revision_id"]
+            .as_str()
+            .expect("remove revision token")
+            .to_owned();
+        let remove_change_id = remove["operations"][0]["change_id"]
+            .as_str()
+            .expect("remove change id")
+            .to_owned();
 
         let (status, deleted_entry) = route_json(
             route.clone(),
@@ -16932,6 +16953,14 @@ mod authentication_regression_tests {
             update_revision
         );
         assert_eq!(deleted_history["revisions"][2]["operation"], "delete");
+        assert_eq!(
+            deleted_history["revisions"][2]["revision_id"],
+            remove_revision
+        );
+        assert_eq!(
+            deleted_history["revisions"][2]["change_id"],
+            remove_change_id
+        );
         assert!(deleted_history["revisions"][2]["deleted_by"]
             .as_str()
             .is_some_and(|actor| actor == principal_id.to_string()));
