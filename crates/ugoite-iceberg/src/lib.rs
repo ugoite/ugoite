@@ -30,6 +30,7 @@ pub mod search;
 pub mod service;
 pub mod space;
 pub mod sql_session;
+pub mod structured_search;
 
 pub use health::SpaceHealthReport;
 use space_catalog::SpaceCatalog;
