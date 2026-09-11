@@ -3,6 +3,45 @@ import { createSignal, For, Show } from "solid-js";
 import { authApi, oidcIssuerLabel, type OidcProvider } from "~/lib/auth-api";
 import { GlobalShell } from "~/components/GlobalShell";
 import { createResource } from "~/lib/recoverable-resource";
+import { t } from "~/lib/i18n";
+import { formatUserFacingError } from "~/lib/user-facing-error";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
+
+type JoinFailure = {
+  message: string;
+  resume: string;
+  showSpaces: boolean;
+};
+
+const failureFor = (cause: unknown): JoinFailure => {
+  const code = cause instanceof UgoiteApiError ? cause.code : undefined;
+  switch (code) {
+    case "INVITATION_EXPIRED":
+      return {
+        message: formatUserFacingError(cause, "joinPage.failedAccept"),
+        resume: t("joinPage.expiredResume"),
+        showSpaces: false,
+      };
+    case "INVITATION_NOT_PENDING":
+      return {
+        message: formatUserFacingError(cause, "joinPage.failedAccept"),
+        resume: t("joinPage.usedResume"),
+        showSpaces: true,
+      };
+    case "INVITATION_NOT_FOUND":
+      return {
+        message: formatUserFacingError(cause, "joinPage.failedAccept"),
+        resume: t("joinPage.invalidResume"),
+        showSpaces: false,
+      };
+    default:
+      return {
+        message: formatUserFacingError(cause, "joinPage.failedAccept"),
+        resume: t("joinPage.invalidResume"),
+        showSpaces: false,
+      };
+  }
+};
 
 export default function SpaceInvitationJoinRoute() {
   const navigate = useNavigate();
@@ -11,7 +50,7 @@ export default function SpaceInvitationJoinRoute() {
     : new URLSearchParams(location.hash.slice(1)).get("token") ?? "";
   const [token, setToken] = createSignal(hashToken);
   const [busy, setBusy] = createSignal(false);
-  const [error, setError] = createSignal("");
+  const [failure, setFailure] = createSignal<JoinFailure | null>(null);
   const [providers] = createResource<OidcProvider[]>(async () =>
     await authApi.listOidcProviders().catch(() => [])
   );
@@ -20,8 +59,9 @@ export default function SpaceInvitationJoinRoute() {
   );
   const submit = async (event: Event) => {
     event.preventDefault();
+    if (busy()) return;
     setBusy(true);
-    setError("");
+    setFailure(null);
     try {
       const session = await authApi.getSession();
       if (session.authenticated) {
@@ -32,11 +72,7 @@ export default function SpaceInvitationJoinRoute() {
       history.replaceState(null, "", location.pathname);
       navigate("/spaces", { replace: true });
     } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Invitation registration failed.",
-      );
+      setFailure(failureFor(cause));
     } finally {
       setBusy(false);
     }
@@ -92,8 +128,16 @@ export default function SpaceInvitationJoinRoute() {
             )}
           </For>
         </Show>
-        <Show when={error()}>
-          <p class="ui-alert ui-alert-error">{error()}</p>
+        <Show when={failure()}>
+          {(failed) => (
+            <div class="ui-alert ui-alert-error" role="alert">
+              <p>{failed().message}</p>
+              <p class="ui-muted">{failed().resume}</p>
+              <Show when={failed().showSpaces}>
+                <A href="/spaces" class="btn">{t("joinPage.goToSpaces")}</A>
+              </Show>
+            </div>
+          )}
         </Show>
         <A href="/login" class="btn">
           Already registered? Sign in
