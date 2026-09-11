@@ -10,6 +10,7 @@ support, and product claims stay aligned with the implementation.
 ## Included
 
 - local CLI core mode over operator-owned Spaces;
+- remote CLI asset upload through the authenticated REST `file` multipart part;
 - Rust REST server with entries, forms, assets, preferences, search, saved SQL,
   and SQL query sessions;
 - server-backed browser application;
@@ -21,8 +22,6 @@ support, and product claims stay aligned with the implementation.
 
 ## Limited or unavailable
 
-- remote CLI asset upload is intentionally unavailable in this release; the API
-  client, REST, and frontend asset upload surfaces remain available;
 - S3-compatible and other non-local OpenDAL operators are available for
   authoritative Space mutations only after a runtime probe verifies exact reads,
   create-if-absent, stale-read rejection, stale-write rejection, and a single

@@ -76,7 +76,7 @@ may have committed a write even if its response has not reached the client.
 
 `ugoite auth login` and `ugoite auth login --for mcp` create different
 credential targets. Run the matching login command if a saved credential is for
-the other target. Remote CLI asset upload remains future scope.
+the other target.
 
 ## Spaces and entries
 
@@ -190,13 +190,14 @@ in backend/API mode:
 ugoite asset upload /path/to/workspace/spaces/team-notes ./diagram.png
 ugoite asset delete /path/to/workspace/spaces/team-notes asset-id
 
-# Backend/API mode: upload through the API client or REST surface; the remote
-# CLI upload command is intentionally unavailable in this release.
+# Backend/API mode: upload through the authenticated REST `file` multipart
+# part, same as the API client and browser uploader.
+ugoite asset upload team-notes ./diagram.png
 ugoite asset delete team-notes asset-id
 ```
 
-The API client and frontend still send the REST `file` multipart part with
-`application/octet-stream` media type. Use `--filename` in core mode to choose
+The API client, remote CLI, and frontend still send the REST `file` multipart
+part with `application/octet-stream` media type. Use `--filename` to choose
 the logical filename; the server applies the same safe-basename rules.
 
 Every command has exhaustive, version-specific help. Use

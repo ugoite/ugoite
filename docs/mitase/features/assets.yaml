@@ -158,7 +158,7 @@ features:
       - id: cli
         role: operation
         facet: cli
-        responsibility: Keep local Asset upload and deletion workflows available through the Ugoite CLI operator surface while preserving the explicitly unavailable remote upload boundary.
+        responsibility: Keep local and remote Asset upload and deletion workflows available through the Ugoite CLI operator surface.
         targets:
           - id: asset-command
             adapter: rust
@@ -167,7 +167,7 @@ features:
       - id: cli-implementation
         role: implementation
         facet: cli
-        responsibility: Implement the shipped local Asset upload and deletion commands while preserving the explicitly unavailable remote upload boundary.
+        responsibility: Implement the shipped local and remote Asset upload and deletion commands.
         targets:
           - id: asset-command
             adapter: rust
@@ -176,10 +176,17 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-ASSET-001#criterion.metadata-safe-name
+          - id: remote-upload
+            adapter: rust
+            path: crates/ugoite-cli/src/http.rs
+            selector: { kind: symbol, name: execute_multipart }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ASSET-001#criterion.typed-reference
       - id: cli-contract
         role: contract-source
         facet: cli
-        responsibility: Define the local CLI Asset upload relation to the canonical Asset object boundary.
+        responsibility: Define the CLI Asset upload relation to the canonical Asset object boundary.
         targets:
           - id: asset-command
             adapter: rust
@@ -219,6 +226,8 @@ features:
           - target: FEAT-ASSET-001#binding.server/target.upload-asset
             role: backend
           - target: FEAT-ASSET-001#binding.frontend-implementation/target.asset-api
+            role: client
+          - target: FEAT-ASSET-001#binding.cli-implementation/target.remote-upload
             role: client
         guarantees: [REQ-ASSET-001#criterion.typed-reference]
       - id: read

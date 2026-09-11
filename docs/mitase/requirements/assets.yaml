@@ -60,7 +60,7 @@ requirements:
       - id: adapter-verification
         role: verification
         facet: verification
-        responsibility: Verify the shipped frontend Asset client and local CLI filename-safety adapter through exact tests without treating remote upload as shipped.
+        responsibility: Verify the shipped frontend Asset client and the local and remote CLI filename-safety adapters through exact tests.
         targets:
           - id: frontend-upload-delete
             adapter: typescript
@@ -89,6 +89,33 @@ requirements:
                 criterion: REQ-ASSET-001#criterion.metadata-safe-name
                 covers: [FEAT-ASSET-001#binding.cli-implementation/target.asset-command]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_assets, test: test_asset_req_asset_001_upload_strips_filename_traversal } }
+          - id: cli-remote-upload
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector: { kind: test, name: test_remote_asset_upload_returns_reference }
+            claims:
+              - kind: verifies
+                criterion: REQ-ASSET-001#criterion.typed-reference
+                covers: [FEAT-ASSET-001#binding.cli-implementation/target.remote-upload]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: test_remote_asset_upload_returns_reference } }
+          - id: cli-remote-second-upload
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector: { kind: test, name: test_remote_asset_second_upload_returns_reference }
+            claims:
+              - kind: verifies
+                criterion: REQ-ASSET-001#criterion.typed-reference
+                covers: [FEAT-ASSET-001#binding.cli-implementation/target.remote-upload]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: test_remote_asset_second_upload_returns_reference } }
+          - id: cli-remote-traversal
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector: { kind: test, name: test_remote_asset_upload_strips_filename_traversal }
+            claims:
+              - kind: verifies
+                criterion: REQ-ASSET-001#criterion.metadata-safe-name
+                covers: [FEAT-ASSET-001#binding.cli-implementation/target.asset-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: test_remote_asset_upload_strips_filename_traversal } }
 
   - id: REQ-ASSET-002
     title: Authorized asset byte reads

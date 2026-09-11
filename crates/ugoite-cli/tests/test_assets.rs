@@ -158,17 +158,26 @@ fn test_asset_req_asset_001_upload_normalizes_markdown_heading_filename() {
         .exists());
 }
 
-/// Remote CLI upload is deliberately unavailable in this release. The
-/// command must reject before opening a transport connection.
+/// Oversize remote CLI upload is rejected by the client-side size guard
+/// before opening a transport connection.
 #[test]
-fn test_asset_remote_upload_is_rejected_without_request() {
+fn test_asset_remote_upload_rejects_oversize_without_request() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let endpoint = format!("http://{}", listener.local_addr().unwrap());
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("cli-config.json");
-    let asset_file = dir.path().join("test-asset.txt");
-    std::fs::write(&asset_file, b"remote asset content").unwrap();
+    let asset_file = dir.path().join("huge-asset.bin");
+    let oversize = ugoite_iceberg::asset::MAX_ASSET_BYTES + 1;
+    let chunk = vec![7u8; 1024 * 1024];
+    let mut handle = std::fs::File::create(&asset_file).unwrap();
+    let mut remaining = oversize;
+    while remaining > 0 {
+        let take = remaining.min(chunk.len());
+        std::io::Write::write_all(&mut handle, &chunk[..take]).unwrap();
+        remaining -= take;
+    }
+    drop(handle);
     std::fs::write(
         &config_path,
         serde_json::json!({
@@ -191,8 +200,7 @@ fn test_asset_remote_upload_is_rejected_without_request() {
         .output()
         .expect("run remote asset upload");
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr)
-        .contains("asset upload is not available in backend/api mode"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("size limit"));
     assert!(matches!(
         listener.accept(),
         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock

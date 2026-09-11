@@ -80,7 +80,7 @@ remain planned work. :::
   membership/ACL enforcement, authenticated MCP access, authorized audit reads,
   and invitation-gated OIDC authentication/account linking.
 - Administrator recovery, agent/service-account flows, generic OAuth client
-  compatibility, audit CRUD, and remote CLI asset upload remain outside the
+  compatibility, and audit CRUD remain outside the
   supported v0.1 release contract. TOTP is recovery-only.
 
 ## Source-of-truth rules

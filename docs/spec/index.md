@@ -31,8 +31,9 @@ derived or disposable.
   the v0.1 security boundary.
 - Browser-local persistence and optional sync are planned.
 - administrator recovery, account discovery, agent/service-account principals,
-  generic OAuth client compatibility, audit CRUD, and remote CLI
-  asset upload remain future or limited capability. TOTP is a recovery-only
+  generic OAuth client compatibility, and audit CRUD remain future or limited
+  capability. Remote CLI asset upload uses the authenticated REST `file`
+  multipart part. TOTP is a recovery-only
   factor and is not a normal login method.
 - View/Application Definitions, renderers, low-code composition, and
   Knowledge-to-tools runtime behavior are future scope. v0.1 freezes their
