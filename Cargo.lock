@@ -6578,6 +6578,7 @@ version = "0.1.0"
 dependencies = [
  "serde_json",
  "ugoite-api-client",
+ "ugoite-core",
  "ugoite-domain",
  "ugoite-konase",
 ]

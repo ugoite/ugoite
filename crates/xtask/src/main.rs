@@ -158,6 +158,14 @@ fn architecture_check() -> Result<()> {
         "parquet",
         "datafusion",
         "sqlparser",
+        // ugoite-core backs the portable entry validation/compat boundary used
+        // by ugoite-wasm (Lane 1). Keep it free of async/network/wasm runtimes
+        // so the WASM dependency stays read-only and portable.
+        "tokio",
+        "reqwest",
+        "axum",
+        "wasm-bindgen",
+        "web-sys",
     ] {
         if core_manifest
             .lines()
@@ -305,8 +313,12 @@ fn architecture_check() -> Result<()> {
 
     let wasm_manifest = fs::read_to_string("crates/ugoite-wasm/Cargo.toml")
         .context("read ugoite-wasm Cargo.toml")?;
+    // Lane 1 portable entry boundary: ugoite-wasm may depend on ugoite-core
+    // for read-only entry validation/compat (preview_structured_draft,
+    // legacy_markdown_to_draft, draft_to_legacy_representation). Core itself
+    // is storage/network/runtime free (checked above), so this keeps the
+    // browser boundary portable without a WASM-only parser.
     for forbidden in [
-        "ugoite-core",
         "ugoite-storage",
         "ugoite-iceberg",
         "iceberg",
