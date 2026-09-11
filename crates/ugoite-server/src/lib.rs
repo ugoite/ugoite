@@ -8899,7 +8899,11 @@ async fn create_entry(
         .await?;
         return Ok((
             StatusCode::CREATED,
-            Json(json!({"id": entry_id, "revision_id": created["revision_id"]})),
+            Json(json!({
+                "id": entry_id,
+                "revision_id": created["revision_id"],
+                "change_id": created["change_id"],
+            })),
         ));
     };
     let _ = has_markdown;
@@ -8928,7 +8932,11 @@ async fn create_entry(
     .await?;
     Ok((
         StatusCode::CREATED,
-        Json(json!({"id": entry_id, "revision_id": created["revision_id"]})),
+        Json(json!({
+            "id": entry_id,
+            "revision_id": created["revision_id"],
+            "change_id": created["change_id"],
+        })),
     ))
 }
 
@@ -9483,9 +9491,11 @@ async fn update_entry(
             },
         )
         .await?;
-        return Ok(Json(
-            json!({"id": entry_id, "revision_id": value["revision_id"]}),
-        ));
+        return Ok(Json(json!({
+            "id": entry_id,
+            "revision_id": value["revision_id"],
+            "change_id": value["change_id"],
+        })));
     }
     // Structured path.
     if payload.fields.is_none() && payload.extra_attributes.is_none() {
@@ -9532,9 +9542,11 @@ async fn update_entry(
         },
     )
     .await?;
-    Ok(Json(
-        json!({"id": entry_id, "revision_id": value["revision_id"]}),
-    ))
+    Ok(Json(json!({
+        "id": entry_id,
+        "revision_id": value["revision_id"],
+        "change_id": value["change_id"],
+    })))
 }
 
 async fn delete_entry(
@@ -9570,7 +9582,7 @@ async fn delete_entry(
         let result = execute_approved_mutation(&state, &space_id, &identity, pending, move |_| {
             Box::pin(async move {
                 mutation_service
-                    .delete_entry(
+                    .delete_entry_with_receipt(
                         &mutation_space_id,
                         &mutation_entry_id,
                         mutation_hard_delete,
@@ -9605,7 +9617,7 @@ async fn delete_entry(
         };
         mutation
     } else {
-        with_authorized_mutation(
+        let mutation = with_authorized_mutation(
             &state,
             &space_id,
             &identity,
@@ -9619,7 +9631,7 @@ async fn delete_entry(
                 with_active_request_credential(&state, &identity, || async {
                     state
                         .service
-                        .delete_entry(
+                        .delete_entry_with_receipt(
                             &space_id,
                             &entry_id,
                             query.hard_delete.unwrap_or(false),
@@ -9632,10 +9644,17 @@ async fn delete_entry(
             },
         )
         .await?;
-        return Ok(Json(json!({"id": entry_id, "status": "deleted"})));
+        let mut response = json!({"id": entry_id, "status": "deleted"});
+        if let Some(value) = mutation.get("revision_id") {
+            response["revision_id"] = value.clone();
+        }
+        if let Some(value) = mutation.get("change_id") {
+            response["change_id"] = value.clone();
+        }
+        return Ok(Json(response));
     };
-    match mutation {
-        Ok(()) => {
+    let result = match mutation {
+        Ok(value) => {
             if let Some(approval) = approval_for_audit.as_ref() {
                 append_human_approval_audit_with_subject(
                     &state,
@@ -9650,6 +9669,7 @@ async fn delete_entry(
                 .await
                 .map_err(ApiError::from_core)?;
             }
+            value
         }
         Err(error) => {
             if let Some(approval) = approval_for_audit.as_ref() {
@@ -9668,8 +9688,15 @@ async fn delete_entry(
             }
             return Err(ApiError::from_core(error));
         }
+    };
+    let mut response = json!({"id": entry_id, "status": "deleted"});
+    if let Some(value) = result.get("revision_id") {
+        response["revision_id"] = value.clone();
     }
-    Ok(Json(json!({"id": entry_id, "status": "deleted"})))
+    if let Some(value) = result.get("change_id") {
+        response["change_id"] = value.clone();
+    }
+    Ok(Json(response))
 }
 
 #[derive(Deserialize)]
@@ -16761,6 +16788,10 @@ mod authentication_regression_tests {
             .as_str()
             .expect("create revision token")
             .to_owned();
+        let create_change_id = create.1["operations"][0]["change_id"]
+            .as_str()
+            .expect("create change id")
+            .to_owned();
         assert_opaque_version_token(&create_revision);
 
         let (status, created_entry) = route_json(
@@ -16792,6 +16823,10 @@ mod authentication_regression_tests {
             created_history["revisions"][0]["revision_id"],
             create_revision
         );
+        assert_eq!(
+            created_history["revisions"][0]["change_id"],
+            create_change_id
+        );
         assert_eq!(created_history["revisions"][0]["operation"], "upsert");
         assert!(created_history["revisions"][0]["change_id"]
             .as_str()
@@ -16819,6 +16854,10 @@ mod authentication_regression_tests {
         let update_revision = update.1["operations"][0]["revision_id"]
             .as_str()
             .expect("update revision token")
+            .to_owned();
+        let update_change_id = update.1["operations"][0]["change_id"]
+            .as_str()
+            .expect("update change id")
             .to_owned();
         assert_opaque_version_token(&update_revision);
 
@@ -16854,6 +16893,10 @@ mod authentication_regression_tests {
             updated_history["revisions"][1]["revision_id"],
             update_revision
         );
+        assert_eq!(
+            updated_history["revisions"][1]["change_id"],
+            update_change_id
+        );
         assert_eq!(updated_history["revisions"][1]["operation"], "upsert");
 
         let (status, remove) = route_json(
@@ -16870,12 +16913,34 @@ mod authentication_regression_tests {
         )
         .await?;
         assert_eq!(status, StatusCode::OK, "{remove}");
+        assert_eq!(remove["operations"][0]["kind"], "remove");
+        assert_eq!(remove["operations"][0]["id"], "apply-crud-entry");
+        let remove_revision = remove["operations"][0]["revision_id"]
+            .as_str()
+            .expect("remove revision token")
+            .to_owned();
+        let remove_change_id = remove["operations"][0]["change_id"]
+            .as_str()
+            .expect("remove change id")
+            .to_owned();
+
+        let (status, repeated_remove) = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [{"kind": "remove", "id": "apply-crud-entry"}],
+                    "run_id": "run-2037-apply-crud-repeat",
+                    "message": "apply repeated remove"
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{repeated_remove}");
         assert_eq!(
-            remove["operations"][0],
-            json!({
-                "kind": "remove",
-                "id": "apply-crud-entry"
-            })
+            repeated_remove["operations"][0],
+            json!({"kind": "remove", "id": "apply-crud-entry"})
         );
 
         let (status, deleted_entry) = route_json(
@@ -16907,6 +16972,14 @@ mod authentication_regression_tests {
             update_revision
         );
         assert_eq!(deleted_history["revisions"][2]["operation"], "delete");
+        assert_eq!(
+            deleted_history["revisions"][2]["revision_id"],
+            remove_revision
+        );
+        assert_eq!(
+            deleted_history["revisions"][2]["change_id"],
+            remove_change_id
+        );
         assert!(deleted_history["revisions"][2]["deleted_by"]
             .as_str()
             .is_some_and(|actor| actor == principal_id.to_string()));

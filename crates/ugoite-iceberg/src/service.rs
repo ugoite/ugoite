@@ -1514,6 +1514,11 @@ impl UgoiteService {
             .map(RunId::new)
             .transpose()
             .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+        // Keep the minimal public approval response stable. Batch callers
+        // that provide run metadata receive the durable mutation receipt
+        // fields; the approval-only form remains the historical `{kind,id}`
+        // response used to bind and confirm the exact public intent.
+        let include_receipt = run_id.is_some() || _message.is_some();
         let mut results = Vec::with_capacity(operations.len());
         for operation in operations {
             match operation {
@@ -1541,6 +1546,7 @@ impl UgoiteService {
                         "kind": "create",
                         "id": entry_id,
                         "revision_id": value["revision_id"],
+                        "change_id": value["change_id"],
                     }));
                 }
                 ApplyOperation::Update {
@@ -1571,6 +1577,7 @@ impl UgoiteService {
                         "kind": "update",
                         "id": id,
                         "revision_id": value["revision_id"],
+                        "change_id": value["change_id"],
                     }));
                 }
                 ApplyOperation::Remove { id } => {
@@ -1582,15 +1589,25 @@ impl UgoiteService {
                         reverts_change_id: None,
                         created_at_micros: Utc::now().timestamp_micros(),
                     };
-                    self.delete_entry_with_change(
-                        space_id,
-                        &id,
-                        false,
-                        actor_principal_id,
-                        Some(change),
-                    )
-                    .await?;
-                    results.push(json!({"kind": "remove", "id": id}));
+                    let value = self
+                        .delete_entry_with_change_receipt(
+                            space_id,
+                            &id,
+                            false,
+                            actor_principal_id,
+                            Some(change),
+                        )
+                        .await?;
+                    let mut result = json!({"kind": "remove", "id": id});
+                    if include_receipt {
+                        if let Some(revision_id) = value.get("revision_id") {
+                            result["revision_id"] = revision_id.clone();
+                        }
+                        if let Some(change_id) = value.get("change_id") {
+                            result["change_id"] = change_id.clone();
+                        }
+                    }
+                    results.push(result);
                 }
             }
         }
@@ -1786,18 +1803,37 @@ impl UgoiteService {
         markdown: &str,
         author: &str,
     ) -> Result<Value> {
+        let (result, _receipt) = self
+            .create_entry_with_receipt(space_id, entry_id, markdown, author)
+            .await?;
+        Ok(result)
+    }
+
+    /// Create an Entry and return the durable commit receipt alongside the
+    /// existing Entry representation. Callers that expose mutation receipts
+    /// should use this boundary rather than deriving the Change ID from
+    /// history after the commit.
+    pub async fn create_entry_with_receipt(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        markdown: &str,
+        author: &str,
+    ) -> Result<(Value, crate::CommitReceipt)> {
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
         let workspace = self.workspace_path(space_id);
-        entry::create_entry(
+        let (_, receipt) = entry::create_entry_with_scopes_and_change_with_receipt(
             &self.operator,
             &workspace,
             entry_id,
             markdown,
             author,
             &integrity,
+            None,
+            None,
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
@@ -1810,7 +1846,7 @@ impl UgoiteService {
             author,
         )
         .await;
-        Ok(result)
+        Ok((result, receipt))
     }
 
     pub async fn create_entry_authorized(
@@ -1883,7 +1919,7 @@ impl UgoiteService {
         };
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
         let workspace = self.workspace_path(space_id);
-        entry::create_entry_with_scopes_and_change(
+        let (_, receipt) = entry::create_entry_with_scopes_and_change_with_receipt(
             &self.operator,
             &workspace,
             entry_id,
@@ -1895,7 +1931,8 @@ impl UgoiteService {
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
-        let result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
+        let mut result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
+        result["change_id"] = json!(receipt.command_id);
         self.record_committed_entry_revision(
             space_id,
             entry_id,
@@ -1944,7 +1981,7 @@ impl UgoiteService {
         };
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
         let workspace = self.workspace_path(space_id);
-        entry::create_structured_entry_with_scopes_and_change(
+        let (_, receipt) = entry::create_structured_entry_with_scopes_and_change_with_receipt(
             &self.operator,
             &workspace,
             entry_id,
@@ -1960,7 +1997,8 @@ impl UgoiteService {
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
-        let result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
+        let mut result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
+        result["change_id"] = json!(receipt.command_id);
         self.record_committed_entry_revision(
             space_id,
             entry_id,
@@ -2217,21 +2255,41 @@ impl UgoiteService {
         hard_delete: bool,
         actor: &str,
     ) -> Result<()> {
+        self.delete_entry_with_receipt(space_id, entry_id, hard_delete, actor)
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn delete_entry_with_receipt(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        hard_delete: bool,
+        actor: &str,
+    ) -> Result<Value> {
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
-        entry::delete_entry(
+        let receipt = entry::delete_entry_with_change_receipt(
             &self.operator,
             &self.workspace_path(space_id),
             entry_id,
             hard_delete,
             actor,
+            None,
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
         self.record_committed_entry_delete(space_id, entry_id, &[], actor)
             .await;
-        Ok(())
+        let mut result = json!({"deleted": true});
+        if let Some(receipt) = receipt {
+            result["change_id"] = json!(receipt.command_id);
+            if let Some(revision_id) = receipt.committed_revision_ids.first() {
+                result["revision_id"] = json!(revision_id.to_string());
+            }
+        }
+        Ok(result)
     }
 
     pub async fn delete_entry_with_change(
@@ -2242,10 +2300,23 @@ impl UgoiteService {
         actor: &str,
         change: Option<ChangeCommand>,
     ) -> Result<()> {
+        self.delete_entry_with_change_receipt(space_id, entry_id, hard_delete, actor, change)
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn delete_entry_with_change_receipt(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        hard_delete: bool,
+        actor: &str,
+        change: Option<ChangeCommand>,
+    ) -> Result<Value> {
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
-        entry::delete_entry_with_change(
+        let receipt = entry::delete_entry_with_change_receipt(
             &self.operator,
             &self.workspace_path(space_id),
             entry_id,
@@ -2257,7 +2328,14 @@ impl UgoiteService {
         self.schedule_asset_text_refresh(space_id);
         self.record_committed_entry_delete(space_id, entry_id, &[], actor)
             .await;
-        Ok(())
+        let mut result = json!({"deleted": true});
+        if let Some(receipt) = receipt {
+            result["change_id"] = json!(receipt.command_id);
+            if let Some(revision_id) = receipt.committed_revision_ids.first() {
+                result["revision_id"] = json!(revision_id.to_string());
+            }
+        }
+        Ok(result)
     }
 
     pub async fn entry_history(&self, space_id: &str, entry_id: &str) -> Result<Value> {
