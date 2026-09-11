@@ -12,22 +12,22 @@ const scriptPath = new URL(
 ).pathname;
 
 const pinnedManifestSha256 =
-  "e3c628c8a501702021d284d0d61949bb99a7230574c1c2ff45c0d5b16506ec9d";
-const pinnedSourceSha = "4406e99dc6df7a10268104bf2bbc5e7ba45aacf7";
+  "64fcca923ae28c76b078eec65cbcecaf3386c3ddc024a7f4264a18bfe5380fa7";
+const pinnedSourceSha = "732c3a5e6a49394865a1ffa55178717661617880";
 const pinnedCandidateId =
-  "sha256:80ded900034169238c623de57c1e43676ab0bb66f22fe84195bf5bb80652b1c2";
+  "sha256:0161a266f81ef128a0d59047b86eb4168ef73b14bbd6af5773c982b13361aa7c";
 
 function pinnedArchiveSha256(): string {
   const platform = `${Deno.build.os}:${Deno.build.arch}`;
   return {
     "darwin:aarch64":
-      "3cc4ca01a6a6c984182919da2d8f7880fa947366c47a786e4ddaa63f86dad803",
+      "6bae523ecffdfcc6976cd7b111f15d81dd5dbd86236b07a82c49ad26398654f0",
     "darwin:x86_64":
-      "86f671f532b92efc45ae42dcc7ac68c2a1d3cbfbd6ea65ac738e69fd5ee0ad09",
+      "c80a4cb1ecff84f4b0d9db66b6e56d2dff62cce3ab28417073d95b3e3ecdd8e6",
     "linux:aarch64":
-      "44a5afce35c48bea69fc446028a2203d8a51244df5b4a385b67a4964f742edaf",
+      "524ae3e2a68da6215bae6d246c686568880230092fe9147e714a8f9645faf34c",
     "linux:x86_64":
-      "11103de15e91c656a2bbe24622ead88fa69b6b51d8b691683fedd035e99e7eaf",
+      "52090a2b5a1bd730a12629422a7c8936e3bb44e2a4179bede3ef842c4eba6ff0",
   }[platform] ?? "unsupported-platform";
 }
 
@@ -156,23 +156,23 @@ async function withMitaseHarness(
   }
 }
 
-Deno.test("Mitase check imports the pinned v0.1.1 release artifact", async () => {
+Deno.test("Mitase check imports the pinned v0.1.2 release artifact", async () => {
   const script = await readText("scripts/ci/mitase-check.sh");
 
   for (
     const value of [
-      'MITASE_RELEASE_TAG="v0.1.1"',
+      'MITASE_RELEASE_TAG="v0.1.2"',
       'MITASE_RELEASE_TARGET="aarch64-apple-darwin"',
       'MITASE_RELEASE_TARGET="x86_64-apple-darwin"',
       'MITASE_RELEASE_TARGET="aarch64-unknown-linux-gnu"',
       'MITASE_RELEASE_TARGET="x86_64-unknown-linux-gnu"',
-      'MITASE_SOURCE_SHA="4406e99dc6df7a10268104bf2bbc5e7ba45aacf7"',
-      'MITASE_CANDIDATE_ID="sha256:80ded900034169238c623de57c1e43676ab0bb66f22fe84195bf5bb80652b1c2"',
-      'MITASE_MANIFEST_SHA256="e3c628c8a501702021d284d0d61949bb99a7230574c1c2ff45c0d5b16506ec9d"',
-      'MITASE_ARCHIVE_SHA256="11103de15e91c656a2bbe24622ead88fa69b6b51d8b691683fedd035e99e7eaf"',
-      'MITASE_ARCHIVE_SHA256="3cc4ca01a6a6c984182919da2d8f7880fa947366c47a786e4ddaa63f86dad803"',
-      'MITASE_ARCHIVE_SHA256="86f671f532b92efc45ae42dcc7ac68c2a1d3cbfbd6ea65ac738e69fd5ee0ad09"',
-      'MITASE_ARCHIVE_SHA256="44a5afce35c48bea69fc446028a2203d8a51244df5b4a385b67a4964f742edaf"',
+      'MITASE_SOURCE_SHA="732c3a5e6a49394865a1ffa55178717661617880"',
+      'MITASE_CANDIDATE_ID="sha256:0161a266f81ef128a0d59047b86eb4168ef73b14bbd6af5773c982b13361aa7c"',
+      'MITASE_MANIFEST_SHA256="64fcca923ae28c76b078eec65cbcecaf3386c3ddc024a7f4264a18bfe5380fa7"',
+      'MITASE_ARCHIVE_SHA256="52090a2b5a1bd730a12629422a7c8936e3bb44e2a4179bede3ef842c4eba6ff0"',
+      'MITASE_ARCHIVE_SHA256="6bae523ecffdfcc6976cd7b111f15d81dd5dbd86236b07a82c49ad26398654f0"',
+      'MITASE_ARCHIVE_SHA256="c80a4cb1ecff84f4b0d9db66b6e56d2dff62cce3ab28417073d95b3e3ecdd8e6"',
+      'MITASE_ARCHIVE_SHA256="524ae3e2a68da6215bae6d246c686568880230092fe9147e714a8f9645faf34c"',
       "candidate-manifest.json",
       "sha256_file",
       "verify_sha256",
