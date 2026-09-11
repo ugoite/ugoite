@@ -537,11 +537,18 @@ async fn test_parity_remote_invalid_field_rejected_without_mutation() {
     .await;
     assert!(!output.status.success(), "mistyped field must be rejected");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // Remote renders the shared warning payload inline instead of the core
-    // formatted lines; the field-identifying classification must still
-    // match. Presentation drift is tracked separately.
-    assert!(stderr.contains("invalid"), "stderr: {stderr}");
+    // Remote renders the shared warning payload through the same formatted
+    // lines as core.
+    assert!(
+        stderr.contains("Entry form validation failed"),
+        "stderr: {stderr}"
+    );
     assert!(stderr.contains("Count"), "stderr: {stderr}");
+    assert!(!stderr.contains("{\"warnings\""), "stderr: {stderr}");
+    assert!(
+        !stderr.contains("Failed to create entry:"),
+        "stderr: {stderr}"
+    );
     entry_absent(fixture, "parity-invalid").await;
 }
 
@@ -574,9 +581,17 @@ async fn test_parity_remote_missing_required_rejected_without_mutation() {
         "missing required field must be rejected"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // Same transport-rendering note as the invalid-field case above.
-    assert!(stderr.contains("required"), "stderr: {stderr}");
+    // Same formatted rendering as the core transport.
+    assert!(
+        stderr.contains("Entry form validation failed"),
+        "stderr: {stderr}"
+    );
     assert!(stderr.contains("Status"), "stderr: {stderr}");
+    assert!(!stderr.contains("{\"warnings\""), "stderr: {stderr}");
+    assert!(
+        !stderr.contains("Failed to create entry:"),
+        "stderr: {stderr}"
+    );
     entry_absent(fixture, "parity-missing").await;
 }
 
