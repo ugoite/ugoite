@@ -421,7 +421,7 @@ describe("FormTable", () => {
     vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
     const onEntryClick = vi.fn();
 
-    const { getByText } = render(() => (
+    render(() => (
       <FormTable
         spaceId="ws"
         entryForm={entryForm}
