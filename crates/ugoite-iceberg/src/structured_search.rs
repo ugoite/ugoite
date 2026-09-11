@@ -49,11 +49,11 @@ fn resolve_form<'a>(forms: &'a [FormDefinition], form_name: &str) -> Result<&'a 
 /// Compiled SQL plan with bound parameters. Relation/columns are trusted
 /// adapter resolution; callers never supply them.
 #[derive(Debug, Clone)]
-pub struct CompiledStructuredSearch {
-    pub sql: String,
-    pub values: Map<String, Value>,
-    pub types: BTreeMap<String, String>,
-    pub limit: usize,
+pub(crate) struct CompiledStructuredSearch {
+    pub(crate) sql: String,
+    pub(crate) values: Map<String, Value>,
+    pub(crate) types: BTreeMap<String, String>,
+    pub(crate) limit: usize,
 }
 
 /// Compile validated criteria into SQL with bound parameters.
@@ -161,8 +161,10 @@ pub(crate) fn compile_validated_search(
         format!(" WHERE {}", conditions.join(" AND "))
     };
     let sql = format!(
-        "SELECT * FROM {}{where_clause} ORDER BY _ugoite_updated_at DESC, _ugoite_id ASC LIMIT {limit}",
-        quote_identifier(&relation)
+        "SELECT * FROM {}{where_clause} ORDER BY {} DESC, {} ASC LIMIT {limit}",
+        quote_identifier(&relation),
+        quote_identifier("_ugoite_updated_at"),
+        quote_identifier("_ugoite_id"),
     );
     Ok(CompiledStructuredSearch {
         sql,

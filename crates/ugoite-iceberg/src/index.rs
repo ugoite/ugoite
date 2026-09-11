@@ -2277,7 +2277,7 @@ pub async fn query_index_authorized_by_form_scopes(
 /// Trusted structured-Search page execution. SQL and parameters are produced
 /// exclusively by the `structured_search` adapter; callers never supply
 /// relation names, column names, or SQL fragments.
-pub async fn query_structured_search_page_with_parameters(
+pub(crate) async fn query_structured_search_page_with_parameters(
     op: &Operator,
     ws_path: &str,
     sql: &str,
