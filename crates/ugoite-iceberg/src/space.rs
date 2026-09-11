@@ -1289,6 +1289,10 @@ async fn validate_complete_bootstrap_locked(op: &Operator, space_id: &str) -> Re
     Ok(())
 }
 
+fn space_not_found(name: &str) -> anyhow::Error {
+    AppError::not_found(ErrorCode::SpaceNotFound, format!("Space not found: {name}")).into()
+}
+
 pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Value> {
     validate_space_path_segment(name)?;
     if matches!(op.info().scheme(), "fs" | "file") {
@@ -1296,11 +1300,18 @@ pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Valu
             .join("spaces")
             .join(name);
         if !space_dir.is_dir() {
-            return Err(AppError::not_found(
-                ErrorCode::SpaceNotFound,
-                format!("Space not found: {name}"),
-            )
-            .into());
+            return Err(space_not_found(name));
+        }
+    } else {
+        // Non-filesystem backends cannot probe directories; a missing Space
+        // must still fail closed as not found instead of leaking a raw
+        // storage error as an internal failure.
+        let meta_path = format!("spaces/{name}/meta.json");
+        let exists = op.exists(&meta_path).await.map_err(|error| {
+            anyhow::anyhow!("failed to probe Space metadata at {meta_path}: {error:#}")
+        })?;
+        if !exists {
+            return Err(space_not_found(name));
         }
     }
     let patch_serializer = space_patch_serializer(op, name);

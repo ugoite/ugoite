@@ -90,6 +90,12 @@ ugoite space get /path/to/workspace/spaces/team-notes
 ugoite entry list /path/to/workspace/spaces/team-notes
 ```
 
+Remote Space addressing uses immutable UIDs; a human slug is not a remote
+identifier and reads as not found. Remote creation additionally requires a
+node-admin human presence (a recent Passkey or a browser-approved step-up);
+plain token identities are rejected. Core mode keeps resolving local slugs to
+their immutable Space the way the filesystem layout does.
+
 An entry ID is a user-chosen storage-safe slug. It may contain ASCII letters,
 digits, `-`, and `_`, must be 1–128 bytes, and must not contain path separators,
 control characters, or `.`/`..` path segments. `first-note` is therefore an
