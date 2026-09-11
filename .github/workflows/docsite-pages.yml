@@ -31,6 +31,7 @@ jobs:
     outputs:
       head_sha: ${{ steps.resolve-run.outputs.head_sha }}
       run_id: ${{ steps.resolve-run.outputs.run_id }}
+      pages_configured: ${{ steps.pages.outcome == 'success' }}
     steps:
       - name: Resolve trusted CI run
         id: resolve-run
@@ -129,9 +130,15 @@ jobs:
 
       - name: Resolve Pages metadata
         id: pages
+        continue-on-error: true
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
+      - name: Report unavailable Pages promotion
+        if: steps.pages.outcome != 'success'
+        run: echo "::notice::GitHub Pages is not configured; skipping docsite promotion."
+
       - name: Validate promoted docsite artifact
+        if: steps.pages.outcome == 'success'
         env:
           DOCSITE_DIR: ${{ runner.temp }}/docsite-pages
           MANIFEST_PATH: ${{ runner.temp }}/artifact-manifest/manifest.json
@@ -268,11 +275,13 @@ jobs:
           PY
 
       - name: Upload Pages artifact
+        if: steps.pages.outcome == 'success'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ${{ runner.temp }}/docsite-pages
 
   deploy:
+    if: needs.prepare.outputs.pages_configured == 'true'
     runs-on: ubuntu-24.04
     needs:
       - prepare

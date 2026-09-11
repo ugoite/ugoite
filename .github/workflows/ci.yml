@@ -308,6 +308,7 @@ jobs:
       - name: Resolve production Pages metadata
         id: pages
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
       - name: Resolve CI build configuration
@@ -315,8 +316,9 @@ jobs:
         env:
           PAGE_ORIGIN: ${{ steps.pages.outputs.origin }}
           PAGE_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          PAGE_CONFIGURED: ${{ steps.pages.outcome == 'success' }}
         run: |
-          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" && "${PAGE_CONFIGURED}" == "true" ]]; then
             docsite_origin="${PAGE_ORIGIN}"
             if [[ -n "${PAGE_BASE_PATH}" ]]; then
               docsite_base="${PAGE_BASE_PATH%/}/"
@@ -326,6 +328,9 @@ jobs:
             cache_save_allowed="true"
             docker_cache_to="type=gha,scope=ugoite-runtime,mode=min"
           else
+            if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" ]]; then
+              echo "::notice::GitHub Pages is not configured; using the non-production docsite build configuration."
+            fi
             docsite_origin="https://example.invalid"
             docsite_base="/"
             cache_save_allowed="false"

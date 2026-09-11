@@ -575,9 +575,23 @@ Deno.test("CI image and E2E tasks preserve the build-once contract", async () =>
 });
 
 Deno.test("Pages promotion consumes trusted artifacts without rebuilding", async () => {
+  const ciWorkflow = await Deno.readTextFile(
+    ".github/workflows/ci.yml",
+  );
   const workflow = await Deno.readTextFile(
     ".github/workflows/docsite-pages.yml",
   );
+
+  for (
+    const required of [
+      "continue-on-error: true",
+      "PAGE_CONFIGURED: ${{ steps.pages.outcome == 'success' }}",
+      "GitHub Pages is not configured; using the non-production docsite build configuration.",
+      'docsite_origin="https://example.invalid"',
+    ]
+  ) {
+    assertEquals(ciWorkflow.includes(required), true, required);
+  }
 
   for (
     const forbidden of [
@@ -602,6 +616,10 @@ Deno.test("Pages promotion consumes trusted artifacts without rebuilding", async
       "name: github-pages",
       "GITHUB_TOKEN: ${{ github.token }}",
       'fail("workflow_dispatch requires GITHUB_TOKEN")',
+      "pages_configured: ${{ steps.pages.outcome == 'success' }}",
+      "GitHub Pages is not configured; skipping docsite promotion.",
+      "if: steps.pages.outcome == 'success'",
+      "if: needs.prepare.outputs.pages_configured == 'true'",
     ]
   ) {
     assertEquals(workflow.includes(required), true, required);
