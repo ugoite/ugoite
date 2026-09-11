@@ -261,7 +261,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             author,
         } => {
             // Shell-safe compatibility ingress: inline and file are mutually
-            // exclusive; neither falls back to the historical default note.
+            // exclusive; neither provided falls back to the default note.
             let content = match (content, file) {
                 (Some(_), Some(_)) => {
                     return Err(UsageError(

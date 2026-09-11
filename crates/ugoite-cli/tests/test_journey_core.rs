@@ -165,7 +165,7 @@ fn test_journey_cli_core_local_durable_outcome() {
         "---\nform: {form_name}\n---\n# Journey core v2\n\n## Status\n{needle}\n\n## Body\njourney core v2\n"
     );
     // NOTE: `--markdown=<value>` keeps frontmatter (leading `---`) from
-    // parsing as a flag; the update flag lacks allow_hyphen_values.
+    // parsing as a flag.
     let markdown_arg = format!("--markdown={v2}");
     let output = run_cli(
         &config_path,

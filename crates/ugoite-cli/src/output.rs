@@ -467,11 +467,11 @@ fn format_validation_warning(warning: &Value) -> Option<String> {
 pub struct MutationReceipt {
     pub kind: String,
     pub id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub revision_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub change_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub run_id: Option<String>,
 }
 
@@ -530,8 +530,9 @@ pub fn read_compat_input(
                 .map_err(|error| anyhow::anyhow!("read stdin: {error}"))?;
             Ok(text)
         }
-        (None, Some(path)) => std::fs::read_to_string(&path)
-            .map_err(|error| anyhow::anyhow!("read --file {}: {error}", path)),
+        (None, Some(path)) => std::fs::read_to_string(&path).map_err(|error| {
+            UsageError(format!("read --file {path}: {error}")).into()
+        }),
         (None, None) => Err(UsageError(format!("{inline_flag} or --file is required")).into()),
     }
 }
