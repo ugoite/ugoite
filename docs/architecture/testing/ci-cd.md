@@ -131,7 +131,7 @@ browser-install step as a cache-miss fallback, previews the static artifact, and
 verifies Starlight navigation semantics before the heavier runtime-backed smoke
 suite runs.
 
-The canonical `check:mitase` task consumes the published Mitase `v0.1.0` release
+The canonical `check:mitase` task consumes the published Mitase `v0.1.2` release
 artifact for the host target. It verifies the pinned candidate manifest digest
 and the selected target archive digest before extracting the binary, and records
 the Mitase source SHA and candidate identity in the check output. The default
