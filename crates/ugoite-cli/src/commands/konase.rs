@@ -1,4 +1,5 @@
 use crate::config::{load_config, non_empty_env_value, validated_base_url, EndpointMode};
+use crate::output::{emit_diagnostic, emit_success, emit_text, Format};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use clap::Args;
@@ -756,7 +757,7 @@ pub async fn run(cmd: KonaseCmd) -> Result<()> {
         None => {
             let interactive = io::stdin().is_terminal();
             if interactive {
-                println!("Konase");
+                emit_text("Konase");
             }
             let mut input = String::new();
             let mut last_work_id: Option<String> = None;
@@ -775,10 +776,18 @@ pub async fn run(cmd: KonaseCmd) -> Result<()> {
                 }
                 if prompt == "u" {
                     match undo_last_work(&mut mcp, &mut last_work_id).await {
-                        Ok(true) => println!("✓ 取り消しました"),
-                        Ok(false) => println!("取り消せる Work はありません。"),
+                        Ok(true) => emit_success(
+                            &serde_json::json!({"undone": true}),
+                            &Format::Plain,
+                            Some("✓ 取り消しました".to_string()),
+                        ),
+                        Ok(false) => emit_success(
+                            &serde_json::json!({"undone": false}),
+                            &Format::Plain,
+                            Some("取り消せる Work はありません。".to_string()),
+                        ),
                         Err(error) => {
-                            eprintln!("Error: {error:#}");
+                            emit_diagnostic(format!("Error: {error:#}"));
                         }
                     }
                     continue;
@@ -848,25 +857,38 @@ struct TurnFailure {
 fn report_turn(result: TurnResult, show_undo_hint: bool) -> Option<String> {
     match result {
         TurnResult::Completed(turn) => {
-            println!("{}", turn.outcome.summary);
-            println!("Knowledge: {}", knowledge_label(turn.knowledge));
+            let knowledge = knowledge_label(turn.knowledge);
+            let summary = turn.outcome.summary;
+            emit_success(
+                &serde_json::json!({
+                    "summary": summary.clone(),
+                    "knowledge": knowledge,
+                }),
+                &Format::Plain,
+                Some(format!("{summary}\nKnowledge: {knowledge}")),
+            );
             if show_undo_hint && turn.undo_available {
-                println!("[u] 取り消す");
+                emit_text("[u] 取り消す");
             }
             (show_undo_hint && turn.undo_available).then_some(turn.work_id)
         }
         TurnResult::Failed(failure) => {
             if failure.error.kind == MODEL_INTERRUPTED_KIND {
-                eprintln!("Model request interrupted.");
+                emit_diagnostic("Model request interrupted.");
             } else {
-                eprintln!(
+                emit_diagnostic(format!(
                     "Model host failed ({}): {}",
                     failure.error.kind, failure.error.message
-                );
+                ));
             }
-            println!("Knowledge: {}", knowledge_label(failure.knowledge));
+            let knowledge = knowledge_label(failure.knowledge);
+            emit_success(
+                &serde_json::json!({"knowledge": knowledge}),
+                &Format::Plain,
+                Some(format!("Knowledge: {knowledge}")),
+            );
             if show_undo_hint && failure.undo_available {
-                println!("[u] 取り消す");
+                emit_text("[u] 取り消す");
             }
             (show_undo_hint && failure.undo_available).then_some(failure.work_id)
         }
@@ -974,7 +996,7 @@ async fn run_turn_with_interrupts<M: ModelHost, C: McpHost, I: ModelInterruptSou
                 runtime.resume(AgentRuntimeInput::ModelCompleted(result))?
             }
             AgentAction::CallMcp(request) => {
-                println!("{}", request.operation);
+                emit_text(&request.operation);
                 let is_undoable_write = request.effect == Some(CapabilityEffect::Write)
                     && request.operation == "ugoite.save";
                 let result = mcp.call_mcp(request, &work_id).await?;
