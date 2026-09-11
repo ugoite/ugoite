@@ -2577,12 +2577,10 @@ async fn apply_update_from_draft<I: IntegrityProvider>(
 
     if let Some(expected_parent) = parent_revision_id {
         if row.revision_id != expected_parent {
-            return Err(AppError::conflict(
-                ErrorCode::RevisionConflict,
-                format!(
-                    "Revision conflict: expected {}, got {}",
-                    expected_parent, row.revision_id
-                ),
+            return Err(AppError::revision_conflict(
+                &row.revision_id.clone(),
+                expected_parent,
+                &row.revision_id,
             )
             .into());
         }

@@ -3,7 +3,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use ugoite_cli::commands;
-use ugoite_cli::error::format_cli_error;
+use ugoite_cli::output::project_error;
 
 #[derive(Parser)]
 #[command(
@@ -102,9 +102,14 @@ fn main() {
         // is the explicit repair path for derived freshness.
         run(cli).await
     });
-    if let Err(e) = result {
-        eprintln!("Error: {}", format_cli_error(&e));
-        std::process::exit(1);
+    if let Err(error) = result {
+        let projected = project_error(&error);
+        if ugoite_cli::output::is_machine_stderr() {
+            eprintln!("{}", projected.envelope());
+        } else {
+            eprintln!("{}", projected.human());
+        }
+        std::process::exit(projected.exit_code());
     }
 }
 

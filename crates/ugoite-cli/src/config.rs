@@ -1,8 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
-use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
-use std::io::IsTerminal;
 use std::io::Write;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
@@ -571,40 +569,13 @@ pub fn validated_base_url(config: &EndpointConfig) -> Result<Option<String>> {
     Ok(Some(base))
 }
 
-pub fn print_json<T: serde::Serialize>(value: &T) {
-    let pretty_json = serde_json::to_string_pretty(value);
-    let rendered = pretty_json.unwrap_or_default();
-    println!("{rendered}");
-}
-
-/// Output format for CLI commands.
-#[derive(ValueEnum, Clone, Debug, Default, PartialEq)]
-pub enum Format {
-    /// Pretty-printed JSON (default when piped)
-    #[default]
-    Json,
-    /// Human-readable table (default when stdout is a TTY)
-    Table,
-    /// Key: value lines for single objects
-    Plain,
-}
-
-/// Return the effective format: use explicit override, or auto-detect TTY.
-pub fn effective_format(explicit: Option<Format>) -> Format {
-    effective_format_for_stdout(explicit, std::io::stdout().is_terminal())
-}
-
-#[doc(hidden)]
-pub fn effective_format_for_stdout(explicit: Option<Format>, stdout_is_terminal: bool) -> Format {
-    if let Some(f) = explicit {
-        return f;
-    }
-    if stdout_is_terminal {
-        Format::Table
-    } else {
-        Format::Json
-    }
-}
+/// Centralized output contract lives in `crate::output` (E0). These
+/// re-exports keep existing command imports working. The TTY table printers
+/// stay defined below so their long-standing lines are untouched.
+pub use crate::output::{
+    effective_format, effective_format_for_stdout, emit_success, print_json, project_error,
+    CliError, ExitCode, Format, MutationReceipt,
+};
 
 /// Print a list of string IDs as a single-column table.
 pub fn print_list_table(header: &str, items: &[impl std::fmt::Display]) {
