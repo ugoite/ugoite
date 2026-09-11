@@ -91,12 +91,25 @@ export default function SpaceFormsIndexPane() {
                       tab: undefined,
                     })}
                 >
-                  <For each={forms()}>
+                  <For each={filteredForms()}>
                     {(form) => <option value={form.name}>{form.name}</option>}
                   </For>
                 </select>
               </label>
             </div>
+            <label class="miniSearch mobileFormPickerSearch">
+              <UiIcon name="search" />
+              <input
+                value={query()}
+                onInput={(event) => setQuery(event.currentTarget.value)}
+                placeholder={t("formsPage.find")}
+              />
+            </label>
+            <Show when={filteredForms().length === 0}>
+              <div class="ui-muted mobileFormPickerEmpty">
+                {t("formsPage.noForms")}
+              </div>
+            </Show>
             <div class="mobileFormPickerActions">
               <label class="formVisibilityToggle">
                 <span>{t("formsPage.showMetadata")}</span>

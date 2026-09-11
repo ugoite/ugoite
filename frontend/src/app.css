@@ -730,6 +730,10 @@ code {
   flex: 1;
   margin: 0;
 }
+.mobileFormPickerSearch,
+.mobileFormPickerEmpty {
+  display: none;
+}
 .mobileFormPickerValue {
   display: block;
   overflow: hidden;
@@ -890,6 +894,9 @@ code {
   border-collapse: collapse;
 }
 .ui-table-mobile-list {
+  display: none;
+}
+.ui-table-mobile-filters {
   display: none;
 }
 .dataTable th, .dataTable td, .ui-table-header-cell, .ui-table-cell {
@@ -1492,6 +1499,14 @@ code {
     padding: 12px 13px;
     margin-bottom: 0;
   }
+  .mobileFormPickerSearch {
+    display: flex;
+    margin-top: 10px;
+  }
+  .mobileFormPickerEmpty {
+    display: block;
+    padding: 8px 2px 0;
+  }
   .listPane, .formPicker, .facet, .settingsNav {
     position: static;
   }
@@ -1531,6 +1546,20 @@ code {
   }
   .ui-table-desktop {
     display: none;
+  }
+  .ui-table-mobile-filters {
+    display: grid;
+    gap: 9px;
+    margin: -4px 0 14px;
+  }
+  .ui-table-mobile-filter {
+    display: grid;
+    grid-template-columns: minmax(5rem, 0.35fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 650;
   }
   .ui-table-mobile-list {
     display: grid;

@@ -712,6 +712,33 @@ export function FormTable(props: FormTableProps) {
           </div>
         </div>
 
+        <Show when={showColumnFilters()}>
+          <div class="ui-table-mobile-filters">
+            <For each={["title", ...fields(), "updated_at"]}>
+              {(field) => (
+                <label class="ui-table-mobile-filter">
+                  <span>
+                    {field === "title"
+                      ? t("formTable.title")
+                      : field === "updated_at"
+                      ? t("formTable.updated")
+                      : field}
+                  </span>
+                  <input
+                    type="text"
+                    class="ui-input ui-input-sm"
+                    placeholder={t("formTable.columnFilter")}
+                    aria-label={`${field} ${t("formTable.columnFilter")}`}
+                    value={columnFilters()[field] || ""}
+                    onInput={(event) =>
+                      updateColumnFilter(field, event.currentTarget.value)}
+                  />
+                </label>
+              )}
+            </For>
+          </div>
+        </Show>
+
         <div class="ui-table-wrapper ui-table-desktop overflow-x-auto">
           <table class="ui-table">
             <thead class="ui-table-head">
@@ -1020,15 +1047,23 @@ export function FormTable(props: FormTableProps) {
                           <Show
                             when={isCellEditing(entry.id, field)}
                             fallback={
-                              <button
-                                type="button"
-                                class="ui-table-mobile-value"
-                                disabled={!isEditMode()}
-                                onClick={() =>
-                                  setEditingCell({ id: entry.id, field })}
+                              <Show
+                                when={isEditMode()}
+                                fallback={
+                                  <span class="ui-table-mobile-value">
+                                    {String(entry.properties?.[field] ?? "-")}
+                                  </span>
+                                }
                               >
-                                {String(entry.properties?.[field] ?? "-")}
-                              </button>
+                                <button
+                                  type="button"
+                                  class="ui-table-mobile-value"
+                                  onClick={() =>
+                                    setEditingCell({ id: entry.id, field })}
+                                >
+                                  {String(entry.properties?.[field] ?? "-")}
+                                </button>
+                              </Show>
                             }
                           >
                             <input
@@ -1075,7 +1110,53 @@ export function FormTable(props: FormTableProps) {
                         {(field) => (
                           <div class="ui-table-mobile-field">
                             <dt>{field}</dt>
-                            <dd>{String(entry.properties?.[field] ?? "-")}</dd>
+                            <dd>
+                              <Show
+                                when={isCellEditing(entry.id, field)}
+                                fallback={
+                                  <Show
+                                    when={isEditMode()}
+                                    fallback={
+                                      <span class="ui-table-mobile-value">
+                                        {String(
+                                          entry.properties?.[field] ?? "-",
+                                        )}
+                                      </span>
+                                    }
+                                  >
+                                    <button
+                                      type="button"
+                                      class="ui-table-mobile-value"
+                                      onClick={() =>
+                                        setEditingCell({ id: entry.id, field })}
+                                    >
+                                      {String(
+                                        entry.properties?.[field] ?? "-",
+                                      )}
+                                    </button>
+                                  </Show>
+                                }
+                              >
+                                <input
+                                  value={String(
+                                    entry.properties?.[field] ?? "",
+                                  )}
+                                  class="ui-table-cell-input"
+                                  autofocus
+                                  aria-label={field}
+                                  onBlur={(event) => {
+                                    void handleCellUpdate(
+                                      entry.id,
+                                      field,
+                                      event.currentTarget.value,
+                                    );
+                                    setEditingCell(null);
+                                  }}
+                                  onKeyDown={(event) => event.key === "Enter" &&
+                                    event.currentTarget.blur()}
+                                />
+                              </Show>
+                            </dd>
                           </div>
                         )}
                       </For>

@@ -121,7 +121,7 @@ describe("FormTable", () => {
     );
 
     // Initially might be in order returned by API. Click Title to sort.
-    const titleHeader = getByText("Title");
+    const titleHeader = desktopTable().getByText("Title");
     fireEvent.click(titleHeader); // Asc null -> asc
 
     await waitFor(() => {
@@ -615,7 +615,7 @@ describe("FormTable", () => {
     ];
     vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
 
-    render(() => (
+    const { getByTitle } = render(() => (
       <FormTable
         spaceId="ws"
         entryForm={entryForm}
@@ -792,5 +792,64 @@ describe("FormTable", () => {
     expect(extraField.closest(".ui-table-mobile-extra-fields"))
       .toBeTruthy();
     expect(mobileList().getByText("Show 1 more field")).toBeInTheDocument();
+  });
+
+  it("keeps additional mobile card fields inline-editable", async () => {
+    const entryForm = {
+      name: "Test",
+      fields: {
+        status: { type: "string" },
+        owner: { type: "string" },
+        priority: { type: "string" },
+        notes: { type: "string" },
+      },
+    } as any;
+    vi.spyOn(searchApi, "query").mockResolvedValue([{
+      id: "1",
+      title: "Entry1",
+      properties: {
+        status: "Open",
+        owner: "Aki",
+        priority: "High",
+        notes: "Old",
+      },
+      updated_at: "2026-01-01",
+    }] as any);
+    vi.spyOn(entryApi, "get").mockResolvedValue({
+      id: "1",
+      content: "# Entry1\n\n## notes\nOld",
+      revision_id: "rev1",
+    } as any);
+    const updateSpy = vi.spyOn(entryApi, "update").mockResolvedValue({} as any);
+
+    const { getByTitle } = render(() => (
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(mobileList().getByText("Entry1"))
+        .toBeInTheDocument()
+    );
+    fireEvent.click(getByTitle("Enable Editing"));
+    fireEvent.click(mobileList().getByRole("button", { name: "Old" }));
+    const notesInput = mobileList().getByDisplayValue("Old");
+    fireEvent.input(notesInput, { target: { value: "New" } });
+    fireEvent.blur(notesInput);
+
+    await waitFor(() => {
+      expect(updateSpy).toHaveBeenCalledWith(
+        "ws",
+        "1",
+        expect.objectContaining({
+          markdown: expect.stringContaining("New"),
+          parent_revision_id: "rev1",
+        }),
+      );
+    });
   });
 });

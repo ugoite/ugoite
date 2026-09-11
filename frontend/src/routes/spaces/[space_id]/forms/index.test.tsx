@@ -126,7 +126,12 @@ describe("v5 Forms workspace", () => {
   it("renders one Form workspace without duplicate view tabs", () => {
     search.form = "Notes";
     renderPage([noteForm]);
-    expect(screen.getByPlaceholderText("Find a Form")).toBeInTheDocument();
+    expect(
+      within(document.querySelector(".desktopFormPicker")!)
+        .getByPlaceholderText(
+          "Find a Form",
+        ),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
     expect(document.querySelectorAll(".desktopFormPicker .formItem b"))
       .toHaveLength(1);
@@ -164,7 +169,11 @@ describe("v5 Forms workspace", () => {
     setLocale("ja");
     renderPage([]);
     expect(screen.getByText("フォーム")).toBeInTheDocument();
-    expect(screen.getByText("フォームがありません")).toBeInTheDocument();
+    expect(
+      within(document.querySelector(".desktopFormPicker")!).getByText(
+        "フォームがありません",
+      ),
+    ).toBeInTheDocument();
   });
   it("keeps system Forms hidden until the visibility toggle is enabled", () => {
     search.form = "Notes";
@@ -224,6 +233,24 @@ describe("v5 Forms workspace", () => {
       form: "Projects",
       tab: undefined,
     });
+  });
+  it("keeps Form search and the empty state available in the mobile picker", () => {
+    search.form = "Notes";
+    renderPage([noteForm, { ...noteForm, name: "Projects" }]);
+
+    const picker = within(document.querySelector(".mobileFormPicker")!);
+    fireEvent.input(picker.getByPlaceholderText("Find a Form"), {
+      target: { value: "Proj" },
+    });
+    expect(picker.getByRole("option", { name: "Projects" }))
+      .toBeInTheDocument();
+    expect(picker.queryByRole("option", { name: "Notes" })).not
+      .toBeInTheDocument();
+
+    fireEvent.input(picker.getByPlaceholderText("Find a Form"), {
+      target: { value: "missing" },
+    });
+    expect(picker.getByText("No Forms yet")).toBeInTheDocument();
   });
   it("keeps system Form visibility and creation available in the mobile picker", () => {
     search.form = "Notes";
