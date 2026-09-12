@@ -18,141 +18,45 @@ derived or disposable.
 ## Current boundary
 
 - Local CLI core mode directly opens Spaces.
-- The Rust server exposes REST, the small MCP v1 semantic facade, and static browser
-  hosting.
+- The Rust server exposes REST, the small MCP v1 semantic facade, and static
+  browser hosting.
 - The browser is server-backed.
-- v0.1 supports mandatory user authentication, owner bootstrap, Passkey/WebAuthn
-  login, opaque browser sessions, owner-approved Space access recovery,
-  recovery-code + recovery-TOTP Account Self-Recovery,
-  Remote CLI device authentication, Space membership/ACL enforcement,
-  authenticated MCP access, and authorized audit reads.
-- OIDC authentication, invitation-gated account creation, external identity
-  linking/unlinking, and Federated browser sessions are also supported within
-  the v0.1 security boundary.
-- Browser-local persistence and optional sync are planned.
-- administrator recovery, account discovery, agent/service-account principals,
-  generic OAuth client compatibility, audit CRUD, and remote CLI asset upload
-  remain future or limited capability. TOTP is a recovery-only factor and is
-  not a normal login method.
-- View/Application Definitions, renderers, low-code composition, and
-  Knowledge-to-tools runtime behavior are future scope. v0.1 freezes their
-  authority boundary but does not ship an application builder.
+- v0.1 supports mandatory authentication, Passkey/WebAuthn login, opaque
+  sessions, owner-approved recovery, recovery-only TOTP Self-Recovery, Remote
+  CLI device auth, membership and ACL enforcement, authenticated MCP access,
+  authorized audit reads, and invitation-gated OIDC.
+- Browser-local persistence and optional sync are planned. Administrator
+  recovery, agent principals, generic OAuth compatibility, audit CRUD, and
+  remote CLI asset upload remain future or limited. TOTP is recovery-only.
+- View and Application Definitions, renderers, and Knowledge-to-tools runtime
+  behavior are future scope.
 
-## Read the specification map
+## Specification map
 
-The specification is organized by the question it answers. The migrated slice
-uses the schema-native Mitase graph under `docs/mitase`; unmigrated domains keep
-their existing source files and machine-readable registries. This page makes
-the reading order and the single semantic authority boundary explicit.
-
-Behavior changes are specified alongside their implementation and verification
-evidence. When evidence is incomplete, the gap remains explicit rather than
-rewriting the requirement to fit the available proof.
-
-## Migrated domain authority
-
-Foundation, Policy, Search, Entry, Form, Indexer, API, Asset, Frontend, E2E, Integrity, and the
-Storage Space foundation, authenticated creation contract, plus
-connector/access/routing/preference slice are
-represented in the canonical Mitase records at `docs/mitase` for the current
-dogfood slice. These records are the semantic source of truth for the migrated
-domains; their corresponding legacy Foundation, Policy, Requirement, and
-Feature YAML are migration evidence only and cannot override the canonical
-representation. The API-specific legacy requirement registry is retired and is
-no longer part of Mitase's declared inventory. The canonical API graph is the
-only semantic authority for that domain. Frontend legacy requirement YAML is
-likewise retired and no longer part of Mitase's declared inventory. The Asset
-and E2E requirement YAML have been retired entirely. The legacy Indexer
-requirement registry is likewise retired; its canonical Search and Form graphs
-are the only semantic authority for derived indexing, structured query,
-word-count, and validation behavior.
-The legacy Search requirement registry is also retired; the canonical Search
-graph at `docs/mitase/requirements/search.yaml` is the only semantic authority
-for keyword search, structured query, frontend search behavior, and derived
-relation maintenance.
-The legacy Entry requirement registry is also retired; the canonical Entry
-graph at `docs/mitase/requirements/entries.yaml` is the only semantic authority
-for Entry creation, revision, mutation, history, Markdown extraction, and
-interface behavior.
-The legacy Form requirement registry is also retired; the canonical Form graph
-at `docs/mitase/requirements/forms.yaml` is the only semantic authority for
-Form schema governance, CRUD operations, reserved metadata, row references,
-attribution, and typed property conversion.
-The legacy Frontend requirement registry is also retired; the canonical
-Frontend graph at `docs/mitase/requirements/frontend.yaml` is the only semantic
-authority for routes, components, interaction surfaces, API clients, and exact
-Frontend verification evidence.
-The legacy Integrity requirement registry is likewise retired and no longer
-part of Mitase's declared inventory. The migrated Storage Space foundation
-records are likewise no longer semantic authority in their legacy registry. The
-duplicate-create conflict
-contract is now canonical; remaining Storage records continue to be migrated in
-focused slices. Changed-ownership enforcement remains staged
-until it can be scoped safely to the migrated slice.
-The canonical Operations graph now represents `REQ-OPS-001` through
-`REQ-OPS-024`, together with `REQ-OPS-043` and `REQ-OPS-044`; later Operations
-records remain migration evidence until their focused Mitase slices are
-reviewed.
-Other requirement and feature domains remain authoritative in their existing
-`docs/spec` records until migrated. The retired Asset requirement registry is
-not retained as a second semantic source; its canonical replacement is the
-Mitase Asset graph described above.
-
-`docs/mitase` is an intentional Ugoite specification surface for the Mitase
-schema, not a second product authority. As legacy registry machinery and
-unmigrated domains are retired, their corresponding `docs/spec` records may be
-removed after the equivalent canonical records, evidence, and scoped ownership
-rules have been reviewed.
-
-- **Core model:** [data model](../architecture/data-model/overview.md),
-  [features](features/index.md), and the canonical machine-readable Foundation
-  record at `docs/mitase/philosophies/foundation.yaml`.
-- **Interfaces:** [REST API](../architecture/api/rest.md),
-  [OpenAPI](https://github.com/ugoite/ugoite/blob/main/crates/ugoite-server/src/openapi.json),
-  [MCP](../architecture/api/mcp.md), [operator surfaces](../architecture/api/operator-surfaces.md), and
-  [UI specifications](ui/index.md).
-- **Requirements and stories:** [requirements](requirements/index.md) and
+- [Product requirements](requirements/index.md) and
   [user stories](stories/index.md).
-- **Architecture contracts:** [architecture overview](../architecture/contracts/overview.md),
-  decisions, stack, future-proofing, and the Space catalog.
-- **Operations and quality:** [policy traceability](policies/index.md),
-  [security](../architecture/security/overview.md), [testing and CI](../architecture/testing/strategy.md),
-  [quality](../architecture/quality/error-handling.md),
-  [product metrics](../architecture/product/success-metrics.md), and
-  [versions](../architecture/release/versioning.md).
+- [Features and implementation bindings](features/index.md).
+- [Policies](policies/index.md) for governance traceability.
+- [Architecture contracts](../architecture/contracts/overview.md) for decisions,
+  stack, future-proofing, and the Space catalog.
+- [Verification evidence](../architecture/testing/strategy.md): testing and CI,
+  [quality](../architecture/quality/error-handling.md), and
+  [product metrics](../architecture/product/success-metrics.md).
+- [Migration status](migration.md) for which domains are canonical in Mitase.
 
-Use the [operator guides](../guide/index.md) for procedures. This section
-describes the repository specification boundary; the migrated dogfood
-representation is authored in `docs/mitase`, while unmigrated domains remain
-authored in `docs/spec` until they are migrated.
-
-## Module matrix
-
-| Module              | Responsibility                                                       |
-| ------------------- | -------------------------------------------------------------------- |
-| `ugoite-domain`     | portable domain types and validation                                 |
-| `ugoite-api-client` | transport-neutral HTTP operation protocol                            |
-| `ugoite-storage`    | OpenDAL-backed storage mechanics                                     |
-| `ugoite-iceberg`    | Catalog-backed Form tables, batch append, query, and publication Pins |
-| `ugoite-core`       | application service and persistence behavior                         |
-| `ugoite-konase`     | client-side Work/Job control semantics and serializable host effects  |
-| `ugoite-server`     | REST/MCP/auth/static-hosting adapter                                 |
-| `ugoite-cli`        | local and remote command adapter                                     |
-| `ugoite-wasm`       | JSON/C ABI over portable Rust crates                                 |
-| `frontend`          | SolidStart UI and JavaScript fetch adapter                           |
-| `docsite`           | Starlight build shell that renders the repository-level `docs/` tree |
+The specification is organized by the question it answers. Behavior changes ship
+with implementation and verification evidence; incomplete evidence stays an
+explicit gap rather than a rewritten requirement.
 
 ## Sources of truth
 
-- REST implementation and generated contract: `crates/ugoite-server` and
-  `/openapi.json`.
-- Portable remote-operation contract: `crates/ugoite-api-client`.
+- REST implementation and contract: `crates/ugoite-server` and `/openapi.json`.
+- Portable operation contract: `crates/ugoite-api-client`.
 - Application behavior: `crates/ugoite-core`.
-- Filesystem/object-storage behavior: `crates/ugoite-storage` plus core modules.
+- Storage behavior: `crates/ugoite-storage` plus core modules.
 - Browser behavior: `frontend` (currently server-backed).
 - Task and CI surface: root `mise.toml`, `deno.json`, and
   `.github/workflows/ci.yml`.
 
-Machine-readable registries under `features/`, `requirements/`, `ui/`, and
-`docs/version/` must reference existing source and test paths. Planned
-capability must be labeled planned rather than represented as implemented.
+Machine-readable registries must reference existing source and test paths.
+Planned capability stays labeled planned.
