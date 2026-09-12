@@ -12,6 +12,7 @@ export type SpaceShellTitle =
   | "savedSqlDetail"
   | "settings"
   | "settingsStorage"
+  | "spaceHistory"
   | "sqlNew"
   | "sqlVariables"
   | "formTypes";

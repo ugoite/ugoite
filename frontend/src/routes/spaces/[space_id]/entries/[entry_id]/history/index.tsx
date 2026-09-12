@@ -30,6 +30,9 @@ export default function SpaceEntryHistoryRoute() {
         >
           Back to Entry
         </A>
+        <A href={`/spaces/${spaceId()}/history`} class="btn">
+          View space history
+        </A>
       </div>
       <Show when={history.loading}>
         <p class="ui-muted">Loading history...</p>
