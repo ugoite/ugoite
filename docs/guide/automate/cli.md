@@ -57,9 +57,9 @@ ugoite konase --prompt "Find the latest project note"
 
 Each model request has a finite timeout. The default is 120 seconds; set
 `UGOITE_MODEL_TIMEOUT_SECS` to a positive number of seconds to adjust it. A
-timeout, transport failure, or provider failure marks the current Work as failed
-and reports the observed Knowledge outcome separately. Knowledge saved before
-the failure remains saved, and its Work-scoped undo remains available.
+timeout, transport failure, or provider failure marks the current Work as
+failed and reports the observed Knowledge outcome separately. Knowledge saved
+before the failure remains saved, and its Work-scoped undo remains available.
 
 In an interactive `ugoite konase` session, press Ctrl-C while the model is
 waiting to interrupt the local model wait. The current Work is reported as
@@ -69,8 +69,8 @@ Work-scoped undo remains available. Ctrl-C while idle, during MCP/undo work, or
 while connecting retains the CLI's process-exit behavior. With `--prompt`, an
 interrupted model wait reports the interruption and exits non-zero.
 
-This is host-local interruption: dropping the model request future stops the CLI
-from waiting, but does not guarantee that a remote provider has stopped
+This is host-local interruption: dropping the model request future stops the
+CLI from waiting, but does not guarantee that a remote provider has stopped
 generation or billing. The CLI does not cancel MCP writes, because the server
 may have committed a write even if its response has not reached the client.
 
@@ -110,8 +110,9 @@ ugoite entry get /path/to/workspace/spaces/team-notes first-note
 ugoite entry list /path/to/workspace/spaces/team-notes
 ```
 
-The CLI's structured Entry ingress uses Markdown with optional Form frontmatter
-and typed `##` fields. The same input can be read from a file or explicit stdin:
+The CLI's structured Entry ingress uses Markdown with optional Form
+frontmatter and typed `##` fields. The same input can be read from a file or
+explicit stdin:
 
 ```bash
 ugoite entry create /path/to/workspace/spaces/team-notes file-note \
@@ -137,8 +138,9 @@ revisions. Updates can include `--parent-revision-id` to enforce optimistic
 conflict checks. `entry delete` appends a deletion tombstone to the revision
 history. The currently accepted `--hard-delete` flag also writes a tombstone;
 permanent removal is not available in this release. Mutation commands return a
-receipt: TTY output stays concise, while `--format json` (or `-o json`) includes
-the resource ID, revision ID, and durable Change ID when the operation commits.
+receipt: TTY output stays concise, while `--format json` (or `-o json`)
+includes the resource ID, revision ID, and durable Change ID when the operation
+commits.
 
 ## Forms
 
@@ -182,11 +184,11 @@ ugoite query /path/to/workspace/spaces/team-notes \
   --sql 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> LIMIT 10'
 ```
 
-Each Form is exposed as the backend-provided `form_<FormId>` relation: the Form
-UUID without dashes, as returned in the `id` field of `ugoite form get`. Columns
-are the stable `field_<FieldId>` values plus `_ugoite_id`, `_ugoite_title`,
-`_ugoite_created_at`, and `_ugoite_updated_at`; `entries`, `links`, and `assets`
-are not SQL relations; references and assets are values in typed Form columns.
+Each Form is exposed as the backend-provided `form_<FormId>` relation: the
+Form UUID without dashes, as returned in the `id` field of `ugoite form get`.
+Columns are the stable `field_<FieldId>` values plus `_ugoite_id`, `_ugoite_title`, `_ugoite_created_at`, and
+`_ugoite_updated_at`; `entries`, `links`, and `assets` are not SQL relations;
+references and assets are values in typed Form columns.
 
 ## Indexes and assets
 
