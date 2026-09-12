@@ -2135,6 +2135,57 @@ impl UgoiteService {
         Ok(result)
     }
 
+    /// Update a Form-backed Entry in core (local filesystem) mode without
+    /// regenerating Markdown. `fields` is the complete post-update field map;
+    /// no partial-patch semantics are invented here. Form identity is
+    /// immutable; mismatches surface the canonical InvalidInput error from
+    /// the shared boundary.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_structured_entry(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        title: Option<String>,
+        form_name: Option<String>,
+        fields: std::collections::BTreeMap<String, Value>,
+        parent_revision_id: Option<&str>,
+        author: &str,
+    ) -> Result<Value> {
+        self.ensure_mutation_admitted(space_id).await?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        if let Some(parent_revision_id) = parent_revision_id {
+            validate_storage_id(validate_revision_id(parent_revision_id))?;
+        }
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        let result = entry::update_structured_entry_authorized_with_change(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            title,
+            form_name,
+            None,
+            fields,
+            std::collections::BTreeMap::new(),
+            parent_revision_id,
+            author,
+            &integrity,
+            None,
+            None,
+        )
+        .await?;
+        self.schedule_asset_text_refresh(space_id);
+        self.record_committed_entry_revision(
+            space_id,
+            entry_id,
+            crate::mutation_audit::ENTRY_UPDATED_ACTION,
+            &[],
+            author,
+        )
+        .await;
+        Ok(result)
+    }
+
     pub async fn update_entry_authorized_for_principals(
         &self,
         space_id: &str,
