@@ -9,21 +9,21 @@ sidebar:
 Reference collects machine facts without duplicating them. Each page links to
 its authority instead of copying every flag, endpoint, or schema into prose.
 
+## Pages
+
+- [CLI](cli.md): modes, authentication, output conventions, and command
+  families. Full flags live in `ugoite <command> --help`.
+- [REST API and OpenAPI](rest.md): auth model, error model, and the
+  server-generated contract.
+- [MCP](mcp.md): the small authenticated semantic facade.
+- [Configuration](configuration.md): environment variables and entry points.
+- [Storage and Compatibility](compatibility.md): portable guarantees and
+  platform facts.
+
 ## Authorities
 
-- CLI behavior is defined by `ugoite <command> --help`. The narrative
-  walkthrough lives in the [CLI guide](../guide/automate/cli.md).
-- REST behavior is defined by the server implementation in
-  `crates/ugoite-server` and the generated contract at `/openapi.json`. Start
-  with the [REST overview](../architecture/api/rest.md).
-- MCP behavior is the small authenticated semantic facade described in the
-  [MCP surface](../architecture/api/mcp.md).
-- Compatibility is defined by the
-  [Space compatibility contract](../architecture/contracts/space-compatibility.md)
-  and the [release contract](../architecture/release/release-contract.md).
-- Platform facts live in
-  [platform support](../architecture/release/platform-support.md).
-
-Later steps split this overview into CLI, REST and OpenAPI, MCP, configuration,
-and compatibility pages. Until then, the links above remain the stable entry
-points.
+- CLI behavior: `ugoite <command> --help` with the narrative in the
+  [CLI guide](../guide/automate/cli.md).
+- REST behavior: `crates/ugoite-server` and `/openapi.json`, introduced in the
+  [REST overview](../architecture/api/rest.md).
+- MCP behavior: the [MCP surface](../architecture/api/mcp.md).
