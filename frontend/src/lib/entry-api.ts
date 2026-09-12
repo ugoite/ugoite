@@ -8,10 +8,7 @@ import type {
   Form,
 } from "./types";
 import { normalizeEntryRecord, normalizeTimestamp } from "./date-format";
-import {
-  buildEntryMarkdownByMode,
-  buildStructuredEntryFields,
-} from "./entry-input";
+import { buildStructuredEntryFields } from "./entry-input";
 import { protocolFetch, UgoiteApiError } from "./ugoite-client/protocol";
 
 type EntryResponse = Omit<Entry, "content"> & {
@@ -34,7 +31,8 @@ const currentRevisionIdFromError = (
   // Canonical contract carries `current_revision_id` under `detail`;
   // top-level is kept for older payloads (0.1.x compat, never broken).
   const detail = payload.detail as Record<string, unknown> | undefined;
-  const value = payload["current_revision_id"] ?? detail?.["current_revision_id"];
+  const value = payload["current_revision_id"] ??
+    detail?.["current_revision_id"];
   return typeof value === "string" ? value : undefined;
 };
 
@@ -125,8 +123,10 @@ export const entryApi = {
     answers: Record<string, string>,
     id?: string,
   ): Promise<{ id: string; revision_id: string }> {
-    const markdown = buildEntryMarkdownByMode(formDef, title, answers, "chat");
-    return await this.create(spaceId, { id, markdown });
+    // Chat answers ride the same structured path as webforms (no Markdown
+    // detour). Input UX and answer content are unchanged; delegate so the
+    // two paths cannot drift.
+    return await this.createFromWebform(spaceId, formDef, title, answers, id);
   },
 
   async update(

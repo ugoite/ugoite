@@ -719,6 +719,55 @@ describe("error paths", () => {
     expect(result.id).toBeDefined();
   });
 
+  it("entryApi.createFromChat uses the same structured payload as webform", async () => {
+    resetMockData();
+    seedSpace({
+      id: "ws-parity",
+      name: "Parity",
+      created_at: "2025-01-01T00:00:00Z",
+    });
+    const formDef = {
+      name: "Task",
+      template: "# Task\n\n## Status\n",
+      fields: { Status: { type: "text" } },
+    };
+    const answers = { Status: "Pending" };
+    const calls: unknown[][] = [];
+    const original = entryApi.create;
+    entryApi.create = (async (...args: unknown[]) => {
+      calls.push(args);
+      return await (original as (
+        ...a: never[]
+      ) => Promise<{ id: string; revision_id: string }>)(...(args as never[]));
+    }) as typeof entryApi.create;
+    try {
+      await entryApi.createFromWebform(
+        "ws-parity",
+        formDef as never,
+        "Same Task",
+        answers,
+      );
+      await entryApi.createFromChat(
+        "ws-parity",
+        formDef as never,
+        "Same Task",
+        answers,
+      );
+    } finally {
+      entryApi.create = original;
+    }
+    expect(calls).toHaveLength(2);
+    const [, webformPayload] = calls[0] as [string, Record<string, unknown>];
+    const [, chatPayload] = calls[1] as [string, Record<string, unknown>];
+    // Both ride structured create; no Markdown detour for chat.
+    expect(webformPayload.markdown).toBeUndefined();
+    expect(chatPayload.markdown).toBeUndefined();
+    expect(chatPayload.form).toBe("Task");
+    expect(chatPayload.title).toBe("Same Task");
+    expect(chatPayload.fields).toEqual(webformPayload.fields);
+    expect(chatPayload.fields).toEqual({ Status: "Pending" });
+  });
+
   it("entryApi.get includes detail in error", async () => {
     server.use(
       http.get(
