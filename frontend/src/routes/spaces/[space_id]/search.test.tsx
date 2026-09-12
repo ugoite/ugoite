@@ -115,7 +115,7 @@ describe("/spaces/:space_id/search", () => {
     expect(sqlSessionCalls).toBe(0);
   });
 
-  it("REQ-SRCH-005: advanced search compiles filters into saved SQL and runs a shared session", async () => {
+  it("REQ-SRCH-005: advanced search sends logical criteria without SQL construction", async () => {
     const meetingForm: Form = {
       name: "Meeting",
       version: 1,
@@ -127,37 +127,48 @@ describe("/spaces/:space_id/search", () => {
     };
     seedForm("default", meetingForm);
 
-    let savedSqlBody: { name?: string | null; sql?: string } | null = null;
-    let sessionSqlBody: {
-      sql?: string;
-      parameters?: Record<string, unknown>;
-      parameter_types?: Record<string, string>;
+    let queryBody: {
+      criteria?: {
+        form?: string;
+        updated_from?: string;
+        updated_to?: string;
+        conditions?: Array<
+          { field?: string; operator?: string; value?: unknown }
+        >;
+        limit?: number;
+      };
     } | null = null;
-    const postOrder: string[] = [];
+    let sqlSessionCalls = 0;
+    let savedSqlCalls = 0;
 
     server.use(
-      http.post(testApiUrl("/spaces/default/sql"), async ({ request }) => {
-        postOrder.push("saved");
-        savedSqlBody = (await request.json()) as {
-          name?: string | null;
-          sql?: string;
-        };
+      http.post(testApiUrl("/spaces/default/query"), async ({ request }) => {
+        queryBody = (await request.json()) as typeof queryBody;
+        return HttpResponse.json([
+          {
+            id: "entry-1",
+            title: "Active Meeting",
+            form: "Meeting",
+            updated_at: "2025-03-02T00:00:00Z",
+            properties: { Status: "Active" },
+            tags: [],
+          },
+        ]);
+      }),
+      http.post(testApiUrl("/spaces/default/sql-sessions"), () => {
+        sqlSessionCalls += 1;
         return HttpResponse.json(
-          { id: "saved-search-1", revision_id: "rev-2" },
-          { status: 201 },
+          { detail: "Advanced search must not create a SQL session" },
+          { status: 500 },
         );
       }),
-      http.post(
-        testApiUrl("/spaces/default/sql-sessions"),
-        async ({ request }) => {
-          postOrder.push("session");
-          sessionSqlBody = (await request.json()) as typeof sessionSqlBody;
-          return HttpResponse.json(
-            { id: "advanced-session", status: "ready", error: null },
-            { status: 201 },
-          );
-        },
-      ),
+      http.post(testApiUrl("/spaces/default/sql"), () => {
+        savedSqlCalls += 1;
+        return HttpResponse.json(
+          { detail: "Advanced search must not save SQL" },
+          { status: 500 },
+        );
+      }),
     );
 
     render(() => <SpaceSearchRoute />);
@@ -185,26 +196,76 @@ describe("/spaces/:space_id/search", () => {
     );
 
     await waitFor(() => {
-      expect(savedSqlBody?.name).toBeNull();
-      expect(savedSqlBody?.sql).toBe(
-        "SELECT * FROM \"form_meeting\" WHERE _ugoite_updated_at >= TIMESTAMP '2025-03-01 00:00:00Z' AND _ugoite_updated_at < TIMESTAMP '2025-03-04 00:00:00Z' AND \"field_100\" = 'Active' ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50",
-      );
-      expect(sessionSqlBody?.sql).toContain('"field_100" = $search_2');
-      expect(sessionSqlBody?.parameters).toEqual({
-        search_0: "2025-03-01T00:00:00.000Z",
-        search_1: "2025-03-04T00:00:00.000Z",
-        search_2: "Active",
+      expect(queryBody?.criteria).toEqual({
+        form: "Meeting",
+        updated_from: "2025-03-01",
+        updated_to: "2025-03-03",
+        conditions: [{ field: "Status", operator: "equals", value: "Active" }],
+        limit: 50,
       });
-      expect(sessionSqlBody?.parameter_types).toEqual({
-        search_0: "timestamp",
-        search_1: "timestamp",
-        search_2: "string",
-      });
-      expect(postOrder).toEqual(["session", "saved"]);
-      expect(navigateMock).toHaveBeenCalledWith(
-        "/spaces/default/entries?session=advanced-session",
-      );
     });
+    // No raw SQL construction on the advanced path.
+    expect(JSON.stringify(queryBody)).not.toContain("SELECT");
+    expect(JSON.stringify(queryBody)).not.toContain("field_100");
+    expect(JSON.stringify(queryBody)).not.toContain("form_meeting");
+    expect(sqlSessionCalls).toBe(0);
+    expect(savedSqlCalls).toBe(0);
+
+    expect(await screen.findByRole("button", { name: /Active Meeting/ }))
+      .toBeInTheDocument();
+    expect(screen.getByText("1 result")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Active Meeting/ }));
+    expect(navigateMock).toHaveBeenCalledWith(
+      "/spaces/default/entries/entry-1",
+    );
+  });
+
+  it("advanced search disables unsupported fields with a reason and blocks execution", async () => {
+    seedForm("default", {
+      name: "Assets",
+      version: 1,
+      template: "",
+      fields: {
+        file: { type: "binary", required: false },
+      },
+    });
+    let queryCalls = 0;
+    server.use(
+      http.post(testApiUrl("/spaces/default/query"), () => {
+        queryCalls += 1;
+        return HttpResponse.json([]);
+      }),
+    );
+
+    render(() => <SpaceSearchRoute />);
+    fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
+    await screen.findByRole("option", { name: "Assets" });
+    fireEvent.change(screen.getByLabelText("Form"), {
+      target: { value: "Assets" },
+    });
+    const option = await screen.findByRole("option", { name: /file/ });
+    expect(option).toBeDisabled();
+    expect(option.textContent).toMatch(/unsupported|検索対象外/);
+    fireEvent.change(screen.getByLabelText("Field"), {
+      target: { value: "file" },
+    });
+    expect(
+      await screen.findByText(
+        /is not supported by Advanced search|は詳細検索に対応していません/,
+      ),
+    ).toBeInTheDocument();
+    fireEvent.input(screen.getByLabelText("Value"), {
+      target: { value: "x" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Run advanced search" }),
+    );
+    expect(
+      await screen.findByText(
+        /is not supported by Advanced search|は詳細検索に対応していません/,
+      ),
+    ).toBeInTheDocument();
+    expect(queryCalls).toBe(0);
   });
 
   it("keeps focus in a field-condition value while typing", async () => {
