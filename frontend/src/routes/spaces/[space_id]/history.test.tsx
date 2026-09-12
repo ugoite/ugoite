@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { formatDateTimeLabel } from "~/lib/date-format";
@@ -14,7 +14,7 @@ vi.mock("@solidjs/router", () => ({
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
-  changeApi: { list: vi.fn() },
+  changeApi: { list: vi.fn(), revert: vi.fn(), undoRun: vi.fn() },
 }));
 
 describe("space history route", () => {
@@ -72,6 +72,118 @@ describe("space history route", () => {
     render(() => <SpaceHistoryRoute />);
 
     expect(await screen.findByText(/No changes yet/)).toBeInTheDocument();
+  });
+
+  it("reverts a change as a newly appended Change after confirmation", async () => {
+    vi.mocked(changeApi.list)
+      .mockResolvedValueOnce([
+        {
+          change_id: "change-1",
+          generation: 1,
+          actor_principal_id: "human:owner",
+          message: null,
+          reverts_change_id: null,
+          run_id: null,
+          created_at_micros: 1767225600000000,
+        },
+      ])
+      .mockResolvedValue([]);
+    vi.mocked(changeApi.revert).mockResolvedValue({
+      change_id: "change-2",
+      reverts_change_id: "change-1",
+      run_id: null,
+    });
+
+    render(() => <SpaceHistoryRoute />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Revert this change" }),
+    );
+
+    // The append-only notice is explicit before the operation.
+    expect(await screen.findByText(/appends a new Change/))
+      .toBeInTheDocument();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Append new Change" }),
+    );
+
+    expect(await screen.findByText("Reverted as Change change-2."))
+      .toBeInTheDocument();
+    expect(changeApi.revert).toHaveBeenCalledWith(
+      "default",
+      "change-1",
+      {},
+    );
+    // The timeline refreshes from the server-confirmed result.
+    expect(changeApi.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers Run undo only when the response carries a Run ID", async () => {
+    vi.mocked(changeApi.list).mockResolvedValue([
+      {
+        change_id: "change-1",
+        generation: 1,
+        actor_principal_id: "human:owner",
+        message: null,
+        reverts_change_id: null,
+        run_id: "run-7",
+        created_at_micros: 1767225600000000,
+      },
+      {
+        change_id: "change-0",
+        generation: 0,
+        actor_principal_id: "human:owner",
+        message: null,
+        reverts_change_id: null,
+        run_id: null,
+        created_at_micros: 1767225500000000,
+      },
+    ]);
+    vi.mocked(changeApi.undoRun).mockResolvedValue({
+      run_id: "run-7",
+      reverted_change_count: 1,
+    });
+
+    render(() => <SpaceHistoryRoute />);
+    const undoButtons = await screen.findAllByRole("button", {
+      name: "Undo run",
+    });
+    expect(undoButtons).toHaveLength(1);
+    fireEvent.click(undoButtons[0]);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Append new Change" }),
+    );
+
+    expect(await screen.findByText("Undid 1 change(s) for this run."))
+      .toBeInTheDocument();
+    expect(changeApi.undoRun).toHaveBeenCalledWith("default", "run-7");
+  });
+
+  it("leaves Knowledge unchanged when recovery fails", async () => {
+    vi.mocked(changeApi.list).mockResolvedValue([
+      {
+        change_id: "change-1",
+        generation: 1,
+        actor_principal_id: "human:owner",
+        message: null,
+        reverts_change_id: null,
+        run_id: null,
+        created_at_micros: 1767225600000000,
+      },
+    ]);
+    vi.mocked(changeApi.revert).mockRejectedValue(new Error("conflict"));
+
+    render(() => <SpaceHistoryRoute />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Revert this change" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Append new Change" }),
+    );
+
+    expect(await screen.findByText(/Knowledge is unchanged/))
+      .toBeInTheDocument();
+    // No refresh: the failed operation appended nothing.
+    expect(changeApi.list).toHaveBeenCalledTimes(1);
   });
 
   it("renders a recoverable error state", async () => {
