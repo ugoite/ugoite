@@ -20,7 +20,9 @@ the entry point.
 ## Rules
 
 Architecture and Specification are not duplicated here. User-facing behavior
-stays in task pages; machine facts stay in their authorities.
+stays in task pages; machine facts stay in their authorities. Executable
+requirement relationships and verification evidence live in the canonical
+Mitase graph under `docs/mitase/`.
 
 ## Related
 
