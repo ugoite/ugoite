@@ -99,7 +99,7 @@ test.describe("Docsite navigation layout", () => {
     const getStartedLinks = page.locator(
       '#starlight__sidebar a[href*="/docs/get-started/"]',
     );
-    await expect(getStartedLinks).toHaveText(["Overview"]);
+    await expect(getStartedLinks).toHaveText(["Overview", "Quickstart"]);
   });
 
   test("REQ-E2E-005: the homepage keeps the hero and Starlight navigation", async ({ page }) => {
