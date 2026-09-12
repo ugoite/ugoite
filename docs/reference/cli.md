@@ -31,8 +31,9 @@ behavior in `--help` before copying flags into automation.
 ## Command families
 
 Auth, Config, Space, Entry, Form, Asset, Search, SQL and Query, Index, and
-Konase. Index maintenance and asset upload are local-core functionality in this
-release.
+Konase. Index maintenance and asset upload are local-core functionality in
+this release; asset delete also works in backend mode. Run
+`ugoite <command> --help` for the exact per-mode surface.
 
 ## Related
 
