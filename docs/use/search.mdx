@@ -34,16 +34,18 @@ Create an Entry in [Create and Edit Entries](entries.mdx).
 
 ```bash
 ugoite search keyword /path/to/workspace/spaces/demo planning
-ugoite sql lint 'SELECT _ugoite_id, _ugoite_title FROM note LIMIT 10'
+ugoite sql lint 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> LIMIT 10'
 ugoite sql saved-list /path/to/workspace/spaces/demo
 ugoite query /path/to/workspace/spaces/demo \
-  --sql 'SELECT _ugoite_id, _ugoite_title FROM note LIMIT 10'
+  --sql 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> LIMIT 10'
 ```
 
 `sql lint` checks syntax only; it does not resolve Forms or authorize
 execution. `query` is read-only and rejects DDL and DML without changing the
-Space. Each Form is queryable through its lowercase name with `_ugoite_id`,
-`_ugoite_title`, `_ugoite_created_at`, and `_ugoite_updated_at` columns.
+Space. Each Form is exposed as the backend-provided `form_<FormId>` relation
+(the Form UUID without dashes, as returned in the `id` field of
+`ugoite form get`) with `field_<FieldId>` columns plus `_ugoite_id`,
+`_ugoite_title`, `_ugoite_created_at`, and `_ugoite_updated_at`.
 
 </TabItem>
 </Tabs>
@@ -61,8 +63,8 @@ Nothing new. Search indexes and SQL sessions are derived and replaceable.
 
 - Search missing the change: confirm the Entry saved, then rerun the keyword
   search.
-- SQL rejected: check the Form name, column names, and statement kind; only
-  read-only selects over authorized relations run.
+- SQL rejected: check the `form_<FormId>` relation, `field_<FieldId>` columns,
+  and statement kind; only read-only selects over authorized relations run.
 
 ## Related concepts
 
