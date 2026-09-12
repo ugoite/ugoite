@@ -8,6 +8,20 @@ export type EntrySummary = {
   form: string;
 };
 
+export type StructuredSearchCondition = {
+  field: string;
+  operator: string;
+  value: string;
+};
+
+export type StructuredSearchCriteria = {
+  form: string;
+  updated_from?: string;
+  updated_to?: string;
+  conditions: StructuredSearchCondition[];
+  limit?: number;
+};
+
 /** Search & query API client backed by the shared Rust/WASM protocol. */
 export const searchApi = {
   async query(
@@ -18,6 +32,22 @@ export const searchApi = {
       "search.query",
       { space_id: spaceId },
       { filter },
+    );
+    return entries.map(normalizeEntryRecord);
+  },
+
+  /**
+   * Typed structured Search. Logical form/field identity only; SQL
+   * relation/column resolution and escaping stay in the trusted Rust layer.
+   */
+  async queryStructured(
+    spaceId: string,
+    criteria: StructuredSearchCriteria,
+  ): Promise<EntryRecord[]> {
+    const entries = await protocolFetch<EntryRecord[]>(
+      "search.query",
+      { space_id: spaceId },
+      { criteria },
     );
     return entries.map(normalizeEntryRecord);
   },

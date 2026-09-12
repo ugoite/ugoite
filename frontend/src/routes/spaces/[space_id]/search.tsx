@@ -6,15 +6,11 @@ import { formApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
 import { sqlSessionApi } from "~/lib/ugoite-client";
 import { sqlApi } from "~/lib/ugoite-client";
-import {
-  normalizeSqlVariables,
-  SQL_SESSION_DEFAULT_LIMIT,
-  SQL_SESSION_ORDER,
-} from "~/lib/sql";
-import type { KeywordSearchResult, SqlEntry } from "~/lib/types";
+import { normalizeSqlVariables } from "~/lib/sql";
+import type { EntryRecord, KeywordSearchResult, SqlEntry } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t, type TranslationKey } from "~/lib/i18n";
-import { displaySqlName, type SearchHistoryCriteria } from "~/lib/sql-metadata";
+import { displaySqlName } from "~/lib/sql-metadata";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 
@@ -41,44 +37,26 @@ type SearchFieldType =
 
 type AvailableField = {
   name: string;
-  sqlColumn: string;
   type: SearchFieldType;
+  supported: boolean;
+};
+
+type AdvancedFieldCondition = {
+  field: string;
+  type: SearchFieldType;
+  operator: FieldMatchOperator;
+  value: string;
   supported: boolean;
 };
 
 type AdvancedSearchCriteria = {
   formName: string;
-  sqlRelation: string;
   updatedFrom: string;
   updatedTo: string;
-  fieldConditions: Array<{
-    field: string;
-    sqlColumn: string;
-    type: SearchFieldType;
-    operator: FieldMatchOperator;
-    value: string;
-    supported: boolean;
-  }>;
+  fieldConditions: AdvancedFieldCondition[];
 };
 
-type SearchParameterValue = string | number | boolean | null;
-
-type AdvancedSearchQuery = {
-  sql: string;
-  historySql: string;
-  parameters: Record<string, SearchParameterValue>;
-  parameterTypes: Record<string, string>;
-};
-
-const ADVANCED_SEARCH_LIMIT = SQL_SESSION_DEFAULT_LIMIT;
-
-function escapeSqlLiteral(value: string): string {
-  return `'${value.replaceAll("'", "''")}'`;
-}
-
-function quoteSqlIdentifier(value: string): string {
-  return `"${value.replaceAll('"', '""')}"`;
-}
+const ADVANCED_SEARCH_LIMIT = 50;
 
 function parseTimestamp(value: string | number | null | undefined): number {
   if (typeof value === "number") return value;
@@ -172,192 +150,50 @@ function fieldInputStep(type: SearchFieldType): string | undefined {
   return undefined;
 }
 
-function escapeLikePattern(value: string): string {
-  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll(
-    "_",
-    "\\_",
-  );
-}
+type StructuredTransportCriteria = {
+  form: string;
+  updated_from?: string;
+  updated_to?: string;
+  conditions: Array<{
+    field: string;
+    operator: FieldMatchOperator;
+    value: string;
+  }>;
+  limit: number;
+};
 
-function dateInput(
-  value: string,
-  boundary: "start" | "end",
-): { parameter: string; literal: string } | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const [yearText, monthText, dayText] = value.split("-");
-  const year = Number(yearText);
-  const month = Number(monthText);
-  const day = Number(dayText);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  if (
-    ![year, month, day].every(Number.isInteger) ||
-    date.getUTCFullYear() !== year ||
-    date.getUTCMonth() !== month - 1 ||
-    date.getUTCDate() !== day
-  ) return null;
-  if (boundary === "end") date.setUTCDate(date.getUTCDate() + 1);
-  const dateText = date.toISOString().slice(0, 10);
-  return {
-    parameter: `${dateText}T00:00:00.000Z`,
-    literal: `TIMESTAMP '${dateText} 00:00:00Z'`,
-  };
-}
-
-function sqlLiteral(value: SearchParameterValue, type: string): string {
-  if (value === null) return "NULL";
-  if (type === "string") return escapeSqlLiteral(String(value));
-  if (type === "boolean") return value ? "TRUE" : "FALSE";
-  if (type === "integer" || type === "float") return String(value);
-  if (type === "date") return `DATE '${String(value)}'`;
-  if (type === "timestamp") {
-    return `TIMESTAMP '${String(value).replace("T", " ")}'`;
-  }
-  return escapeSqlLiteral(String(value));
-}
-
-function buildAdvancedSearchQuery(
+/**
+ * Build logical transport criteria from UI state. No SQL is produced here:
+ * relation/column resolution, literal escaping, and type mapping stay in
+ * the trusted Rust layer behind search.query.
+ */
+function buildStructuredSearchCriteria(
   criteria: AdvancedSearchCriteria,
-): AdvancedSearchQuery | null {
-  if (!criteria.formName || !criteria.sqlRelation) return null;
-
-  const sessionConditions: string[] = [];
-  const historyConditions: string[] = [];
-  const parameters: Record<string, SearchParameterValue> = {};
-  const parameterTypes: Record<string, string> = {};
-  let parameterIndex = 0;
-  const bind = (
-    value: SearchParameterValue,
-    type: string,
-    literal: string,
-  ) => {
-    const name = `search_${parameterIndex++}`;
-    parameters[name] = value;
-    parameterTypes[name] = type;
-    return { parameter: `$${name}`, literal };
-  };
-
-  const addDateCondition = (value: string, operator: ">=" | "<") => {
-    const converted = dateInput(value, operator === ">=" ? "start" : "end");
-    if (!converted) {
-      throw new Error(t("searchPage.error.invalidDate", { value }));
-    }
-    const bound = bind(converted.parameter, "timestamp", converted.literal);
-    sessionConditions.push(`_ugoite_updated_at ${operator} ${bound.parameter}`);
-    historyConditions.push(`_ugoite_updated_at ${operator} ${bound.literal}`);
-  };
-
-  if (criteria.updatedFrom) addDateCondition(criteria.updatedFrom, ">=");
-  if (criteria.updatedTo) addDateCondition(criteria.updatedTo, "<");
-
+): StructuredTransportCriteria | null {
+  if (!criteria.formName) return null;
   for (const condition of criteria.fieldConditions) {
     if (!condition.field || !condition.value) {
       throw new Error(t("searchPage.error.fieldValueRequired"));
     }
-    if (!condition.supported || !condition.sqlColumn) {
+    if (!condition.supported) {
       throw new Error(
         t("searchPage.error.unsupportedField", { value: condition.field }),
       );
     }
-    const fieldPath = quoteSqlIdentifier(condition.sqlColumn);
-    const operator = condition.operator === "equals"
-      ? "="
-      : condition.operator === "contains"
-      ? "ILIKE"
-      : condition.operator === "lt"
-      ? "<"
-      : condition.operator === "lte"
-      ? "<="
-      : condition.operator === "gt"
-      ? ">"
-      : ">=";
-    let value: SearchParameterValue;
-    let type: string;
-    let literalValue: string;
-    if (condition.type === "string") {
-      type = "string";
-      value = condition.operator === "contains"
-        ? `%${escapeLikePattern(condition.value)}%`
-        : condition.value;
-      literalValue = escapeSqlLiteral(String(value));
-    } else if (condition.type === "boolean") {
-      if (condition.value !== "true" && condition.value !== "false") {
-        throw new Error(
-          t("searchPage.error.booleanRequired", { value: condition.field }),
-        );
-      }
-      type = "boolean";
-      value = condition.value === "true";
-      literalValue = value ? "TRUE" : "FALSE";
-    } else if (condition.type === "integer") {
-      if (
-        !/^-?\d+$/.test(condition.value) ||
-        !Number.isSafeInteger(Number(condition.value))
-      ) {
-        throw new Error(
-          t("searchPage.error.integerRequired", { value: condition.field }),
-        );
-      }
-      type = "integer";
-      value = Number(condition.value);
-      literalValue = String(value);
-    } else if (condition.type === "float") {
-      const number = Number(condition.value);
-      if (!Number.isFinite(number)) {
-        throw new Error(
-          t("searchPage.error.numberRequired", { value: condition.field }),
-        );
-      }
-      type = "float";
-      value = number;
-      literalValue = String(number);
-    } else if (condition.type === "date") {
-      const converted = dateInput(condition.value, "start");
-      if (!converted) {
-        throw new Error(
-          t("searchPage.error.dateRequired", { value: condition.field }),
-        );
-      }
-      type = "date";
-      value = converted.parameter.slice(0, 10);
-      literalValue = sqlLiteral(value, type);
-    } else if (condition.type === "timestamp") {
-      const timestamp = new Date(condition.value);
-      if (Number.isNaN(timestamp.getTime())) {
-        throw new Error(
-          t("searchPage.error.timestampRequired", { value: condition.field }),
-        );
-      }
-      type = "timestamp";
-      value = timestamp.toISOString();
-      literalValue = sqlLiteral(value, type);
-    } else {
-      continue;
-    }
-    const bound = bind(value, type, literalValue);
-    const escape = condition.operator === "contains" ? " ESCAPE '\\'" : "";
-    sessionConditions.push(
-      `${fieldPath} ${operator} ${bound.parameter}${escape}`,
-    );
-    historyConditions.push(
-      `${fieldPath} ${operator} ${bound.literal}${escape}`,
-    );
   }
-
-  const sessionWhere = sessionConditions.length > 0
-    ? ` WHERE ${sessionConditions.join(" AND ")}`
-    : "";
-  const historyWhere = historyConditions.length > 0
-    ? ` WHERE ${historyConditions.join(" AND ")}`
-    : "";
-  const render = (where: string) =>
-    `SELECT * FROM ${
-      quoteSqlIdentifier(criteria.sqlRelation)
-    }${where} ${SQL_SESSION_ORDER} LIMIT ${ADVANCED_SEARCH_LIMIT}`;
+  if (criteria.fieldConditions.length === 0) {
+    throw new Error(t("searchPage.error.advancedFilterRequired"));
+  }
   return {
-    sql: render(sessionWhere),
-    historySql: render(historyWhere),
-    parameters,
-    parameterTypes,
+    form: criteria.formName,
+    ...(criteria.updatedFrom ? { updated_from: criteria.updatedFrom } : {}),
+    ...(criteria.updatedTo ? { updated_to: criteria.updatedTo } : {}),
+    conditions: criteria.fieldConditions.map((condition) => ({
+      field: condition.field,
+      operator: condition.operator,
+      value: condition.value,
+    })),
+    limit: ADVANCED_SEARCH_LIMIT,
   };
 }
 
@@ -393,6 +229,13 @@ export default function SpaceSearchRoute() {
   const [fieldConditions, setFieldConditions] = createSignal<FieldCondition[]>([
     createFieldCondition(),
   ]);
+  const [advancedResults, setAdvancedResults] = createSignal<EntryRecord[]>(
+    [],
+  );
+  const [advancedSearchPerformed, setAdvancedSearchPerformed] = createSignal(
+    false,
+  );
+  const [advancedLoading, setAdvancedLoading] = createSignal(false);
 
   const [savedSearches, { refetch: refetchSavedSearches }] = createResource(
     () => spaceId(),
@@ -422,10 +265,8 @@ export default function SpaceSearchRoute() {
         const type = normalizeFieldType(field.type);
         return {
           name,
-          sqlColumn: field.sql_column?.trim() ?? "",
           type,
-          supported: Boolean(field.sql_column?.trim()) &&
-            operatorsForFieldType(type).length > 0,
+          supported: operatorsForFieldType(type).length > 0,
         };
       })
       .sort((left, right) => left.name.localeCompare(right.name));
@@ -440,7 +281,6 @@ export default function SpaceSearchRoute() {
 
   const advancedCriteria = createMemo<AdvancedSearchCriteria>(() => ({
     formName: advancedFormName().trim(),
-    sqlRelation: selectedForm()?.sql_relation?.trim() ?? "",
     updatedFrom: advancedUpdatedFrom().trim(),
     updatedTo: advancedUpdatedTo().trim(),
     fieldConditions: fieldConditions()
@@ -450,7 +290,6 @@ export default function SpaceSearchRoute() {
         );
         return {
           field: condition.field.trim(),
-          sqlColumn: field?.sqlColumn ?? "",
           type: field?.type ?? "unsupported",
           operator: condition.operator,
           value: condition.value.trim(),
@@ -462,6 +301,16 @@ export default function SpaceSearchRoute() {
 
   const keywordResultCountLabel = createMemo(() => {
     const count = keywordResults().length;
+    return t(
+      count === 1 ? "searchBar.results.one" : "searchBar.results.other",
+      {
+        count,
+      },
+    );
+  });
+
+  const advancedResultCountLabel = createMemo(() => {
+    const count = advancedResults().length;
     return t(
       count === 1 ? "searchBar.results.one" : "searchBar.results.other",
       {
@@ -570,10 +419,12 @@ export default function SpaceSearchRoute() {
 
   const handleAdvancedSearch = async () => {
     const criteria = advancedCriteria();
-    let query: AdvancedSearchQuery | null;
+    let transport: StructuredTransportCriteria | null;
     try {
-      query = buildAdvancedSearchQuery(criteria);
+      transport = buildStructuredSearchCriteria(criteria);
     } catch (error) {
+      setAdvancedSearchPerformed(false);
+      setAdvancedResults([]);
       setActionError(
         error instanceof Error
           ? error.message
@@ -581,74 +432,27 @@ export default function SpaceSearchRoute() {
       );
       return;
     }
-    if (!query) {
+    if (!transport) {
+      setAdvancedSearchPerformed(false);
+      setAdvancedResults([]);
       setActionError(t("searchPage.error.chooseForm"));
       return;
     }
 
     setMode("advanced");
+    setAdvancedSearchPerformed(true);
     setActionError(null);
-    setRunningSearchId("advanced-search");
+    setAdvancedLoading(true);
     try {
-      const existing = searchHistory().find(
-        (entry) =>
-          entry.sql.trim() === query.historySql.trim() &&
-          (!entry.variables || entry.variables.length === 0),
-      );
-      const session = await sqlSessionApi.create(
-        spaceId(),
-        query.sql,
-        query.parameters,
-        query.parameterTypes,
-      );
-      if (session.status === "failed") {
-        setActionError(
-          formatUserFacingError(
-            session.error,
-            "searchPage.error.advancedSearchFailed",
-            "sql_session.create",
-          ),
-        );
-        return;
-      }
-      if (!existing) {
-        const searchCriteria: SearchHistoryCriteria = {
-          formName: criteria.formName,
-          tags: [],
-          updatedFrom: criteria.updatedFrom,
-          updatedTo: criteria.updatedTo,
-          fieldConditions: criteria.fieldConditions.map((
-            { field, operator, value },
-          ) => ({
-            field,
-            operator,
-            value,
-          })),
-        };
-        try {
-          await sqlApi.create(spaceId(), {
-            name: null,
-            kind: "search-history",
-            metadata: { searchCriteria },
-            sql: query.historySql,
-            variables: [],
-          });
-          await refetchSavedSearches();
-        } catch {
-          // A ready session remains usable when history persistence fails.
-        }
-      }
-      navigate(
-        `/spaces/${spaceId()}/entries?session=${
-          encodeURIComponent(session.id)
-        }`,
-      );
+      const results = await searchApi.queryStructured(spaceId(), transport);
+      setAdvancedResults(results);
     } catch (err) {
+      setAdvancedResults([]);
       setActionError(
         formatUserFacingError(err, "searchPage.error.advancedSearchFailed"),
       );
     } finally {
-      setRunningSearchId(null);
+      setAdvancedLoading(false);
     }
   };
 
@@ -946,6 +750,22 @@ export default function SpaceSearchRoute() {
                                   event.currentTarget.value,
                                 )}
                             />
+                            <Show
+                              when={(() => {
+                                const field = availableFields().find((
+                                  item,
+                                ) => item.name === condition().field);
+                                return condition().field &&
+                                  field &&
+                                  !field.supported;
+                              })()}
+                            >
+                              <p class="mt-2 text-xs ui-text-danger">
+                                {t("searchPage.error.unsupportedField", {
+                                  value: condition().field,
+                                })}
+                              </p>
+                            </Show>
                           </div>
                           <div class="md:self-end">
                             <button
@@ -976,10 +796,10 @@ export default function SpaceSearchRoute() {
                     <button
                       type="button"
                       class="ui-button ui-button-primary text-sm"
-                      disabled={runningSearchId() === "advanced-search"}
+                      disabled={advancedLoading()}
                       onClick={() => void handleAdvancedSearch()}
                     >
-                      {runningSearchId() === "advanced-search"
+                      {advancedLoading()
                         ? t("searchPage.running")
                         : t("searchPage.runAdvancedSearch")}
                     </button>
@@ -993,11 +813,24 @@ export default function SpaceSearchRoute() {
                 <div class="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h2 class="text-lg font-semibold">
-                      {t("searchPage.keywordResults")}
+                      {mode() === "advanced"
+                        ? t("searchPage.advancedResults")
+                        : t("searchPage.keywordResults")}
                     </h2>
-                    <Show when={keywordSearchPerformed() && !keywordLoading()}>
+                    <Show
+                      when={mode() === "keyword" && keywordSearchPerformed() &&
+                        !keywordLoading()}
+                    >
                       <p class="mt-1 text-sm ui-muted">
                         {keywordResultCountLabel()}
+                      </p>
+                    </Show>
+                    <Show
+                      when={mode() === "advanced" &&
+                        advancedSearchPerformed() && !advancedLoading()}
+                    >
+                      <p class="mt-1 text-sm ui-muted">
+                        {advancedResultCountLabel()}
                       </p>
                     </Show>
                   </div>
@@ -1007,13 +840,16 @@ export default function SpaceSearchRoute() {
                   <Show when={actionError()}>
                     <p class="text-sm ui-text-danger">{actionError()}</p>
                   </Show>
-                  <Show when={keywordLoading()}>
+                  <Show
+                    when={keywordLoading() ||
+                      (mode() === "advanced" && advancedLoading())}
+                  >
                     <p class="text-sm ui-muted">
                       {t("searchPage.searchingEntries")}
                     </p>
                   </Show>
                   <Show
-                    when={!keywordLoading() &&
+                    when={mode() === "keyword" && !keywordLoading() &&
                       keywordSearchPerformed() &&
                       keywordResults().length === 0 &&
                       !actionError()}
@@ -1023,7 +859,27 @@ export default function SpaceSearchRoute() {
                     </p>
                   </Show>
                   <Show
-                    when={!keywordSearchPerformed() && !keywordLoading() &&
+                    when={mode() === "advanced" && !advancedLoading() &&
+                      advancedSearchPerformed() &&
+                      advancedResults().length === 0 &&
+                      !actionError()}
+                  >
+                    <p class="text-sm ui-muted">
+                      {t("searchPage.noMatchingEntries")}
+                    </p>
+                  </Show>
+                  <Show
+                    when={mode() === "keyword" && !keywordSearchPerformed() &&
+                      !keywordLoading() &&
+                      !actionError()}
+                  >
+                    <p class="text-sm ui-muted">
+                      {t("searchPage.initialHelp")}
+                    </p>
+                  </Show>
+                  <Show
+                    when={mode() === "advanced" && !advancedSearchPerformed() &&
+                      !advancedLoading() &&
                       !actionError()}
                   >
                     <p class="text-sm ui-muted">
@@ -1031,34 +887,66 @@ export default function SpaceSearchRoute() {
                     </p>
                   </Show>
                   <div class="grid gap-4 sm:grid-cols-2">
-                    <For each={keywordResults()}>
-                      {(entry) => (
-                        <button
-                          type="button"
-                          class="ui-card ui-card-interactive text-left"
-                          onClick={() =>
-                            navigate(
-                              `/spaces/${spaceId()}/entries/${
-                                encodeURIComponent(entry.id)
-                              }`,
-                            )}
-                        >
-                          <div class="flex items-start justify-between gap-2">
-                            <h3 class="text-base font-semibold">
-                              {entry.title || t("common.untitled")}
-                            </h3>
-                            <Show when={entry.form}>
-                              <span class="ui-pill">{entry.form}</span>
-                            </Show>
-                          </div>
-                          <p class="mt-2 text-xs ui-muted">
-                            {t("common.updatedAt", {
-                              date: formatDateLabel(entry.updated_at),
-                            })}
-                          </p>
-                        </button>
-                      )}
-                    </For>
+                    <Show when={mode() === "keyword"}>
+                      <For each={keywordResults()}>
+                        {(entry) => (
+                          <button
+                            type="button"
+                            class="ui-card ui-card-interactive text-left"
+                            onClick={() =>
+                              navigate(
+                                `/spaces/${spaceId()}/entries/${
+                                  encodeURIComponent(entry.id)
+                                }`,
+                              )}
+                          >
+                            <div class="flex items-start justify-between gap-2">
+                              <h3 class="text-base font-semibold">
+                                {entry.title || t("common.untitled")}
+                              </h3>
+                              <Show when={entry.form}>
+                                <span class="ui-pill">{entry.form}</span>
+                              </Show>
+                            </div>
+                            <p class="mt-2 text-xs ui-muted">
+                              {t("common.updatedAt", {
+                                date: formatDateLabel(entry.updated_at),
+                              })}
+                            </p>
+                          </button>
+                        )}
+                      </For>
+                    </Show>
+                    <Show when={mode() === "advanced"}>
+                      <For each={advancedResults()}>
+                        {(entry) => (
+                          <button
+                            type="button"
+                            class="ui-card ui-card-interactive text-left"
+                            onClick={() =>
+                              navigate(
+                                `/spaces/${spaceId()}/entries/${
+                                  encodeURIComponent(entry.id)
+                                }`,
+                              )}
+                          >
+                            <div class="flex items-start justify-between gap-2">
+                              <h3 class="text-base font-semibold">
+                                {entry.title || t("common.untitled")}
+                              </h3>
+                              <Show when={entry.form}>
+                                <span class="ui-pill">{entry.form}</span>
+                              </Show>
+                            </div>
+                            <p class="mt-2 text-xs ui-muted">
+                              {t("common.updatedAt", {
+                                date: formatDateLabel(entry.updated_at),
+                              })}
+                            </p>
+                          </button>
+                        )}
+                      </For>
+                    </Show>
                   </div>
                 </div>
               </section>

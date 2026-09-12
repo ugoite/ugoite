@@ -138,13 +138,13 @@ requirements:
                 runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-004: runs a direct keyword search and renders matching entries" } }
   - id: REQ-SRCH-005
     title: Structured search reuse through shared query infrastructure
-    description: The search route MUST offer advanced structured conditions that compile into the shared SQL or query execution path, and advanced searches MUST remain reusable from a human-readable search-history UI instead of exposing raw query management as the primary workflow.
+    description: The search route MUST offer advanced structured conditions that send typed criteria through the shared search.query execution path, and searches MUST remain reusable in place or from a human-readable search-history UI instead of exposing raw query management as the primary workflow.
     priority: high
     status: implemented
     criteria:
       - id: structured-search-reuse
         kind: behavior
-        statement: Advanced search compiles structured conditions into the shared query path and keeps the resulting search reusable through human-readable history.
+        statement: Advanced search sends structured conditions through the shared query path and keeps the resulting search reusable in place; saved expert queries remain reusable through human-readable history.
         governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
       - id: history-not-raw-query-workflow
         kind: behavior
@@ -159,14 +159,14 @@ requirements:
           - id: compile-case
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/search.test.tsx
-            selector: { kind: test, name: 'REQ-SRCH-005: advanced search compiles filters into saved SQL and runs a shared session' }
+            selector: { kind: test, name: 'REQ-SRCH-005: advanced search sends logical criteria without SQL construction' }
             claims:
               - kind: verifies
                 criterion: REQ-SRCH-005#criterion.structured-search-reuse
                 covers:
                   - FEAT-SRCH-001#binding.frontend/target.search-route
                   - FEAT-SRCH-001#binding.frontend/target.advanced-query-builder
-                runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-005: advanced search compiles filters into saved SQL and runs a shared session" } }
+                runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-005: advanced search sends logical criteria without SQL construction" } }
           - id: history-case
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/search.test.tsx
