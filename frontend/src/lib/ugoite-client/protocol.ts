@@ -210,6 +210,35 @@ export const validateEntryDraft = async (
     value: { form, draft },
   });
 
+export type EntryCompatParseValue = {
+  title: string;
+  form_name?: string | null;
+  form?: string | null;
+  tags: string[];
+  fields: Record<string, unknown>;
+  extra_attributes?: Record<string, unknown>;
+};
+
+/** Parse legacy Markdown into a structured draft via the Rust bridge. */
+export const parseEntryMarkdownCompat = async (
+  markdown: string,
+  fallbackTitle = "",
+): Promise<EntryCompatParseValue> =>
+  await invokeProtocol<EntryCompatParseValue>({
+    action: "entry.compat.parse_markdown",
+    value: { markdown, fallback_title: fallbackTitle },
+  });
+
+/** Render a structured draft to 0.1 Markdown via the Rust bridge. */
+export const renderEntryMarkdownCompat = async (
+  form: unknown,
+  draft: unknown,
+): Promise<{ markdown: string }> =>
+  await invokeProtocol<{ markdown: string }>({
+    action: "entry.compat.render_markdown",
+    value: { form, draft },
+  });
+
 export class UgoiteApiError extends Error {
   readonly kind: string;
   readonly code?: string;

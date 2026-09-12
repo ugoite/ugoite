@@ -37,6 +37,10 @@ import {
 } from "~/lib/ugoite-client";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { validateEntryDraftViaWasm } from "~/lib/entry-validation";
+import {
+  parseSourceToDraftViaWasm,
+  renderDraftToSourceViaWasm,
+} from "~/lib/entry-compat";
 import type { Entry, Form, FormField } from "~/lib/types";
 import {
   hasDuplicateAssetReferences,
@@ -515,6 +519,21 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   // would lose provisional Files and read state on a tab switch.
   const assetFieldStates = new Map<string, AssetFieldState>();
 
+  // Pending Rust compat reconciliations (source<->draft). Saves settle them
+  // first so a rapid source-type + Ctrl+S can never persist TS-only semantics.
+  const pendingCompat = new Set<Promise<void>>();
+  const trackCompat = (promise: Promise<void>) => {
+    pendingCompat.add(promise);
+    void promise.finally(() => {
+      pendingCompat.delete(promise);
+    });
+  };
+  const settleCompat = async () => {
+    const pending = [...pendingCompat];
+    if (pending.length === 0) return;
+    await Promise.allSettled(pending);
+  };
+
   const [remoteEntry, { refetch: refetchEntry }] = createResource(
     () => {
       const wsId = props.spaceId();
@@ -704,13 +723,16 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       return;
     }
     const content = loadedEntry.content ?? "";
+    const entryId = loadedEntry.id;
+    const revisionId = loadedEntry.revision_id;
+    const loadedTitle = loadedEntry.title || "";
     const draft = parseMarkdownToStructuredDraft(content);
     const tags = parseMarkdownFrontmatterTags(content) ?? [];
-    setLastLoadedEntryId(loadedEntry.id);
-    setLastLoadedResourceRevisionId(loadedEntry.revision_id);
-    setCurrentRevisionId(isCreateMode() ? null : loadedEntry.revision_id);
+    setLastLoadedEntryId(entryId);
+    setLastLoadedResourceRevisionId(revisionId);
+    setCurrentRevisionId(isCreateMode() ? null : revisionId);
     setAssetEditorGeneration((generation) => generation + 1);
-    setDraftTitle(draft.title || loadedEntry.title || "");
+    setDraftTitle(draft.title || loadedTitle);
     setDraftFields(draft.fields);
     setDraftTags(tags);
     setEditorContent(content);
@@ -720,6 +742,27 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setValidationError(null);
     setInvalidFields([]);
     setDefaultedViewEntryId(null);
+    // Reconcile the immediate parse through the Rust bridge (authority).
+    // Guard on the loaded buffer so late reconciliation never wipes user
+    // edits made after load.
+    trackCompat(
+      parseSourceToDraftViaWasm(content, loadedTitle).then(
+        (canonical) => {
+          if (
+            lastLoadedEntryId() !== entryId ||
+            lastLoadedResourceRevisionId() !== revisionId
+          ) {
+            return;
+          }
+          if (editorContent() !== content) return;
+          if (draftTitle() !== (draft.title || loadedTitle)) return;
+          setDraftTitle(canonical.title || loadedTitle);
+          setDraftFields(canonical.fields);
+          setDraftTags(canonical.tags);
+        },
+        () => {},
+      ),
+    );
   });
 
   createEffect(() => {
@@ -734,38 +777,80 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     title: string,
     fields: Record<string, string>,
   ) => {
-    // Keep the source buffer derived from the structured draft so preview
-    // and source stay consistent. Unknown sections/frontmatter survive
-    // because surgery applies to the previous buffer.
+    // Immediate TypeScript compatibility render keeps field editing and the
+    // source textarea responsive. The Rust compatibility bridge then
+    // reconciles to the canonical 0.1 representation (authority): when both
+    // agree nothing changes; when they disagree the Rust output wins.
     let content = replaceFirstH1(editorContent(), title);
-    const previousSections = new Set(
-      parseMarkdownH2Sections(editorContent()).map((section) => section.title),
-    );
     for (const [name, value] of Object.entries(fields)) {
       content = updateH2Section(content, name, value);
-      previousSections.delete(name);
     }
-    void previousSections;
     setEditorContent(content);
     setIsDirty(content !== lastSavedContent());
     setConflictMessage(null);
     setValidationError(null);
     setInvalidFields([]);
+
+    const formDef = currentForm() ?? props.createForm?.();
+    if (!formDef) return;
+    const requestTitle = title;
+    const requestFields = { ...fields };
+    const requestTags = [...draftTags()];
+    const requestBaseline = content;
+    trackCompat(
+      renderDraftToSourceViaWasm(
+        formDef,
+        requestTitle,
+        requestTags,
+        requestFields,
+      ).then(
+        (canonical) => {
+          if (editorContent() !== requestBaseline) return;
+          if (draftTitle() !== requestTitle) return;
+          const current = draftFields();
+          for (const [key, value] of Object.entries(requestFields)) {
+            if (current[key] !== value) return;
+          }
+          if (canonical === requestBaseline) return;
+          setEditorContent(canonical);
+          setIsDirty(canonical !== lastSavedContent());
+        },
+        () => {},
+      ),
+    );
   };
 
   const handleContentChange = (content: string) => {
-    // Source view is compatibility ingress: parse back into the structured
-    // draft, which remains the single authority.
-    const draft = parseMarkdownToStructuredDraft(content);
-    const tags = parseMarkdownFrontmatterTags(content);
-    setDraftTitle(draft.title || entry()?.title || "");
-    setDraftFields(draft.fields);
-    if (tags !== null) setDraftTags(tags);
+    // Immediate TypeScript compatibility parse keeps the textarea responsive.
+    // The Rust bridge then reconciles to the canonical draft (authority).
+    // TS failures never block the bridge: they fall back to preserving the
+    // previous draft until the canonical parse lands.
+    const fallbackTitle = entry()?.title || "";
+    try {
+      const draft = parseMarkdownToStructuredDraft(content);
+      const tags = parseMarkdownFrontmatterTags(content);
+      setDraftTitle(draft.title || fallbackTitle);
+      setDraftFields(draft.fields);
+      if (tags !== null) setDraftTags(tags);
+    } catch {
+      // Ignore; the Rust reconciliation below remains authoritative.
+    }
     setEditorContent(content);
     setIsDirty(content !== lastSavedContent());
     setConflictMessage(null);
     setValidationError(null);
     setInvalidFields([]);
+    trackCompat(
+      parseSourceToDraftViaWasm(content, fallbackTitle).then(
+        (canonical) => {
+          if (editorContent() !== content) return;
+          setDraftTitle(canonical.title || fallbackTitle);
+          setDraftFields(canonical.fields);
+          setDraftTags(canonical.tags);
+        },
+        () => {},
+      ),
+    );
   };
 
   const handleTitleChange = (title: string) => {
@@ -885,6 +970,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     // (required guidance, boolean/list formatting) never block a save.
     // Lock before async validation so rapid saves still yield one revision.
     setIsSaving(true);
+    // Settle pending source<->draft reconciliations first so a rapid
+    // source-type + save can never persist TS-only semantics.
+    await settleCompat();
     const assetIssues = await validateAssetFields();
     if (assetIssues.length > 0) {
       setIsSaving(false);
@@ -998,11 +1086,24 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     if (isDirty() && !confirm(t("entryDetail.confirmDiscard"))) return;
     /* v8 ignore stop */
     const content = lastSavedContent();
+    const discardTitle = entry()?.title || "";
     const draft = parseMarkdownToStructuredDraft(content);
     const tags = parseMarkdownFrontmatterTags(content) ?? [];
-    setDraftTitle(draft.title || entry()?.title || "");
+    setDraftTitle(draft.title || discardTitle);
     setDraftFields(draft.fields);
     setDraftTags(tags);
+    // Reconcile the restored buffer through the Rust bridge (authority).
+    trackCompat(
+      parseSourceToDraftViaWasm(content, discardTitle).then(
+        (canonical) => {
+          if (editorContent() !== content) return;
+          setDraftTitle(canonical.title || discardTitle);
+          setDraftFields(canonical.fields);
+          setDraftTags(canonical.tags);
+        },
+        () => {},
+      ),
+    );
     setEditorContent(content);
     setAssetEditorGeneration((generation) => generation + 1);
     setIsDirty(false);
