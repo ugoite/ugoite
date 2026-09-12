@@ -57,6 +57,10 @@ test.describe("Docsite navigation smoke", () => {
 
     await expect(page.getByRole("button", { name: "Menu" })).toBeHidden();
     await expect(page.locator("#starlight__sidebar")).toBeVisible();
+    // Minimum layout smoke for REQ-E2E-009#criterion.desktop-layout: the
+    // framework-owned table of contents slot renders on a headed page.
+    // Starlight owns its internals; no TOC item assertions live here.
+    await expect(page.locator(".right-sidebar-container")).toBeVisible();
     await expect(
       page.getByRole("heading", { level: 1 }),
     ).toBeVisible();
