@@ -164,7 +164,7 @@ Keyword search and saved SQL work in both endpoint modes:
 
 ```bash
 ugoite search keyword /path/to/workspace/spaces/team-notes planning
-ugoite sql lint 'SELECT _ugoite_id, _ugoite_title FROM note LIMIT 10'
+ugoite sql lint 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> LIMIT 10'
 ugoite sql saved-list /path/to/workspace/spaces/team-notes
 ugoite sql saved-get /path/to/workspace/spaces/team-notes recent-notes
 ```
@@ -181,11 +181,12 @@ Use `query` for an ad-hoc read-only DataFusion SQL session over Iceberg Forms:
 
 ```bash
 ugoite query /path/to/workspace/spaces/team-notes \
-  --sql 'SELECT _ugoite_id, _ugoite_title FROM note LIMIT 10'
+  --sql 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> LIMIT 10'
 ```
 
-Each Form is queryable through its lowercase name. Relations expose the Form
-fields plus `_ugoite_id`, `_ugoite_title`, `_ugoite_created_at`, and
+Each Form is exposed as the backend-provided `form_<FormId>` relation: the
+Form UUID without dashes, as returned in the `id` field of `ugoite form get`.
+Columns are the stable `field_<FieldId>` values plus `_ugoite_id`, `_ugoite_title`, `_ugoite_created_at`, and
 `_ugoite_updated_at`; `entries`, `links`, and `assets` are not SQL relations;
 references and assets are values in typed Form columns.
 

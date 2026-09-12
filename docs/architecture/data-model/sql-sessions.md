@@ -21,7 +21,7 @@ The file contains:
   "id": "session-uuid",
   "space_id": "space-main",
   "sql_id": "saved-or-generated-sql-id",
-  "sql": "SELECT * FROM note ORDER BY _ugoite_updated_at, _ugoite_id",
+  "sql": "SELECT * FROM form_<form-id-without-dashes> ORDER BY _ugoite_updated_at, _ugoite_id",
   "parameters": {},
   "parameter_types": {},
   "authorized_principal_ids": ["principal-uuid"],
@@ -41,9 +41,9 @@ The file contains:
   "query_policy": {
     "forms": [{
       "form_id": "form-uuid",
-      "relation": "note",
+      "relation": "form_<form-id-without-dashes>",
       "entry_scope": { "all_except": ["entry-hidden-from-session"] },
-      "columns": ["Body"],
+      "columns": ["field_<field-id>"],
       "system_columns": ["external_id", "title", "created_at", "updated_at"]
     }]
   },
