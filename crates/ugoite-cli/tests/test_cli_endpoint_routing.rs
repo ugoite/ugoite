@@ -880,3 +880,64 @@ fn test_entry_create_structured_routes_form_fields_without_markdown() {
     assert!(request.contains(r#""status":"open""#), "{request}");
     assert!(!request.contains(r#""markdown""#), "{request}");
 }
+
+/// Lane1 PR8: structured entry update routes fields/title without Markdown.
+#[test]
+fn test_entry_update_structured_routes_fields_without_markdown() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let (base_url, request_rx, server_handle) = spawn_recording_server(
+        "HTTP/1.1 200 OK",
+        r#"{"id":"task-01","revision_id":"rev-2"}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            &base_url,
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "update",
+            "remote-space",
+            "task-01",
+            "--title",
+            "New title",
+            "--field",
+            "status=done",
+            "--parent-revision-id",
+            "rev-1",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    server_handle.join().unwrap();
+    let request = request_rx.recv().unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        request.starts_with("PUT /spaces/remote-space/entries/task-01 HTTP/1.1\r\n"),
+        "{request}"
+    );
+    assert!(request.contains(r#""status":"done""#), "{request}");
+    assert!(request.contains(r#""title":"New title""#), "{request}");
+    assert!(
+        request.contains(r#""parent_revision_id":"rev-1""#),
+        "{request}"
+    );
+    assert!(!request.contains(r#""markdown""#), "{request}");
+}
