@@ -1757,6 +1757,27 @@ mod tests {
     }
 
     #[test]
+    fn search_query_preserves_structured_criteria_body() {
+        let body = json!({
+            "criteria": {
+                "form": "Task",
+                "conditions": [
+                    {"field": "status", "operator": "equals", "value": "open"}
+                ],
+                "limit": 100
+            }
+        });
+        let request = prepare_request("search.query", &json!({"space_id": "demo"}), Some(&body))
+            .expect("request");
+        assert_eq!(request.method, HttpMethod::Post);
+        assert_eq!(request.path, "/spaces/demo/query");
+        assert_eq!(
+            request.body.expect("body"),
+            serde_json::to_string(&body).expect("encode")
+        );
+    }
+
+    #[test]
     fn entry_list_encodes_an_optional_limit() {
         let request = prepare_request(
             "entry.list",
