@@ -1,7 +1,7 @@
 version: '0.1'
-status: in_progress
-summary: 'Foundation release: operator-owned Knowledge, portable append-only history, and thin adapters, with release
-  completion still in progress. Future Work and Experience capabilities must not become a second Knowledge authority.
+status: completed
+summary: 'Foundation release: operator-owned Knowledge, portable append-only history, and thin adapters. v0.1.1 is
+  published as a compatible patch; future Work and Experience capabilities must not become a second Knowledge authority.
 
   '
 milestones:
@@ -50,13 +50,13 @@ milestones:
   - id: testing
     status: completed
 - id: release-preparation
-  status: in_progress
+  status: completed
   source:
   - docs/version/v0.1/release-preparation.yaml
   phases:
   - id: container-and-cli-artifacts
-    status: in_progress
+    status: completed
   - id: operator-documentation
-    status: in_progress
+    status: completed
   - id: release-communication
-    status: in_progress
+    status: completed

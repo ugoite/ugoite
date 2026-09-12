@@ -1,11 +1,11 @@
 id: release-preparation
 version: '0.1'
-status: in_progress
+status: completed
 title: Release Preparation
-goal: Turn the current single-image and CLI build into a prepared, candidate-verified, operator-ready release.
+goal: Turn the current single-image and CLI build into a published, candidate-verified, operator-ready release.
 phases:
 - id: container-and-cli-artifacts
-  status: in_progress
+  status: completed
   tasks:
   - description: Build and locally verify the single non-root runtime image.
     done: true
@@ -14,20 +14,20 @@ phases:
   - description: Provide repository-native candidate generation and exact-byte promotion for image, CLI, npm, and Helm artifacts.
     done: true
   - description: Complete a release with published signed/checksummed image and CLI artifacts.
-    done: false
+    done: true
 - id: operator-documentation
-  status: in_progress
+  status: completed
   tasks:
   - description: Keep quick-start, authentication, storage, Helm, and troubleshooting docs aligned with implementation.
     done: true
   - description: Provide a post-publication distribution gate for released assets and registry identities.
     done: true
   - description: Validate a published release through exact artifact and distribution checks.
-    done: false
+    done: true
 - id: release-communication
-  status: in_progress
+  status: completed
   tasks:
   - description: Provide channel-specific stable, beta, and alpha release-note publication only after artifact and distribution verification.
     done: true
   - description: Complete a release with published channel-specific notes.
-    done: false
+    done: true
