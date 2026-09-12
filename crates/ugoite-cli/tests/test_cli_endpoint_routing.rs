@@ -823,3 +823,60 @@ fn test_space_sample_data_req_api_009_help_describes_inputs() {
         assert!(stdout.contains(needle), "{stdout}");
     }
 }
+
+/// Lane1 PR7: structured entry create routes the same normalized payload shape.
+#[test]
+fn test_entry_create_structured_routes_form_fields_without_markdown() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let (base_url, request_rx, server_handle) = spawn_recording_server(
+        "HTTP/1.1 201 Created",
+        r#"{"id":"task-01","revision_id":"rev-1"}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            &base_url,
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "create",
+            "remote-space",
+            "task-01",
+            "--form",
+            "Task",
+            "--title",
+            "Ship 0.1.x",
+            "--field",
+            "status=open",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    server_handle.join().unwrap();
+    let request = request_rx.recv().unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        request.starts_with("POST /spaces/remote-space/entries HTTP/1.1\r\n"),
+        "{request}"
+    );
+    assert!(request.contains(r#""form":"Task""#), "{request}");
+    assert!(request.contains(r#""status":"open""#), "{request}");
+    assert!(!request.contains(r#""markdown""#), "{request}");
+}

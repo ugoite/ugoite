@@ -318,3 +318,260 @@ fn test_list_entries_returns_properties() {
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("should be JSON");
     assert!(v.as_array().map(|a| !a.is_empty()).unwrap_or(false));
 }
+
+/// Lane1 PR7: structured create matches the Markdown compatibility result.
+#[test]
+fn test_structured_create_matches_markdown_result() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, config_path) = setup_space_with_form(&dir, "structured-space");
+    let space_path = format!("{root}/spaces/structured-space");
+
+    let markdown = "---\nform: Entry\n---\n# Hello\n\n## Body\n\nContent here.";
+    let created_md = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "create",
+            "--content",
+            markdown,
+            &space_path,
+            "md-entry",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("markdown create");
+    assert!(
+        created_md.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&created_md.stderr)
+    );
+
+    let created_st = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "create",
+            &space_path,
+            "st-entry",
+            "--form",
+            "Entry",
+            "--title",
+            "Hello",
+            "--field",
+            "Body=Content here.",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("structured create");
+    assert!(
+        created_st.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&created_st.stderr)
+    );
+
+    for entry_id in ["md-entry", "st-entry"] {
+        let got = Command::new(ugoite_bin())
+            .args(["entry", "get", &space_path, entry_id])
+            .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+            .output()
+            .expect("get");
+        assert!(got.status.success());
+    }
+    let md = Command::new(ugoite_bin())
+        .args(["entry", "get", &space_path, "md-entry"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    let st = Command::new(ugoite_bin())
+        .args(["entry", "get", &space_path, "st-entry"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    let md_json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&md.stdout)).unwrap();
+    let st_json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&st.stdout)).unwrap();
+    assert_eq!(md_json.get("content"), st_json.get("content"));
+}
+
+/// Lane1 PR7: structured invalid fields reuse the shared error taxonomy.
+#[test]
+fn test_structured_create_invalid_field_error_matches_shared_taxonomy() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.json");
+    let space_path = format!("{root}/spaces/structured-err-space");
+
+    Command::new(ugoite_bin())
+        .args(["create-space", "--root", &root, "structured-err-space"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("create space");
+    let form_file = dir.path().join("num-form.json");
+    std::fs::write(
+        &form_file,
+        r#"{"name":"Numbers","fields":{"Count":{"type":"integer"}}}"#,
+    )
+    .unwrap();
+    Command::new(ugoite_bin())
+        .args(["form", "update", &space_path, form_file.to_str().unwrap()])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("create form");
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "create",
+            &space_path,
+            "bad-entry",
+            "--form",
+            "Numbers",
+            "--field",
+            "Count=not-an-int",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("structured invalid");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("FORM_VALIDATION_FAILED"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("Count"), "stderr: {stderr}");
+}
+
+/// Lane1 PR7: structured usage errors are deterministic.
+#[test]
+fn test_structured_create_usage_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, config_path) = setup_space_with_form(&dir, "usage-space");
+    let space_path = format!("{root}/spaces/usage-space");
+
+    // Structured + Markdown together.
+    let both = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "create",
+            &space_path,
+            "e1",
+            "--content",
+            "# Hi",
+            "--form",
+            "Entry",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    assert!(!both.status.success());
+    assert!(String::from_utf8_lossy(&both.stderr).contains("cannot be combined"));
+
+    // Missing --form.
+    let no_form = Command::new(ugoite_bin())
+        .args(["entry", "create", &space_path, "e2", "--field", "Body=x"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    assert!(!no_form.status.success());
+    assert!(String::from_utf8_lossy(&no_form.stderr).contains("--form is required"));
+
+    // Malformed --field.
+    let bad_field = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "create",
+            &space_path,
+            "e3",
+            "--form",
+            "Entry",
+            "--field",
+            "NoEquals",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    assert!(!bad_field.status.success());
+    assert!(String::from_utf8_lossy(&bad_field.stderr).contains("KEY=VALUE"));
+
+    // Duplicate keys across --field and --fields-file.
+    let fields_file = dir.path().join("fields.json");
+    std::fs::write(&fields_file, r#"{"Body":"from-file"}"#).unwrap();
+    let dup = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "create",
+            &space_path,
+            "e4",
+            "--form",
+            "Entry",
+            "--field",
+            "Body=from-flag",
+            "--fields-file",
+            fields_file.to_str().unwrap(),
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    assert!(!dup.status.success());
+    assert!(String::from_utf8_lossy(&dup.stderr).contains("duplicate field"));
+}
+
+/// Lane1 PR7: --fields-file JSON merges with --field and reads explicit stdin.
+#[test]
+fn test_structured_create_fields_file_and_stdin() {
+    use std::io::Write;
+    let dir = tempfile::tempdir().unwrap();
+    let (root, config_path) = setup_space_with_form(&dir, "file-space");
+    let space_path = format!("{root}/spaces/file-space");
+
+    let fields_file = dir.path().join("typed.json");
+    std::fs::write(&fields_file, r#"{"Body":"file body"}"#).unwrap();
+    let output = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "create",
+            &space_path,
+            "file-entry",
+            "--form",
+            "Entry",
+            "--fields-file",
+            fields_file.to_str().unwrap(),
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let mut child = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "create",
+            &space_path,
+            "stdin-entry",
+            "--form",
+            "Entry",
+            "--fields-file",
+            "-",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(br#"{"Body":"stdin body"}"#)
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
