@@ -86,6 +86,9 @@ pub async fn search_entries(
     query: &str,
     limit: usize,
 ) -> Result<Vec<KeywordSearchResult>> {
+    // Shared admission before any Storage access: an invalid query must fail
+    // with its canonical code without starting a broad scan.
+    ugoite_core::query::validate_keyword_query(query)?;
     let relation_scopes = entry::list_form_names(op, ws_path)
         .await?
         .into_iter()
@@ -238,6 +241,8 @@ async fn asset_text_search_authorized(
     asset_authorization: Option<AssetAuthorization>,
     budget: crate::index::AssetTextSearchBudget,
 ) -> Result<Option<Vec<KeywordSearchResult>>> {
+    // Derived helpers share the same admission: never fan out on invalid input.
+    ugoite_core::query::validate_keyword_query(query)?;
     if limit == 0 {
         return Ok(Some(Vec::new()));
     }
