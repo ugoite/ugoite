@@ -1176,6 +1176,7 @@ mod tests {
             "04-compat-rules.json",
             "05-required.json",
             "09-existing-space-reopen.json",
+            "10-structured-authoring-parity.json",
         ] {
             assert!(dir.join(name).is_file(), "missing fixture {name}");
         }
@@ -1332,6 +1333,128 @@ mod tests {
             from_structured.values.get(&FieldId::new(102).expect("id")),
             Some(FieldValue::List(_))
         ));
+    }
+
+    #[test]
+    fn lane1_parity_fixture_converges_every_field_family() {
+        use ugoite_domain::entry::FieldValue as DomainFieldValue;
+
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let dir = root.join("../../fixtures/entry/structured-compat");
+        let raw =
+            std::fs::read_to_string(dir.join("10-structured-authoring-parity.json")).expect("read");
+        let fixture: Value = serde_json::from_str(&raw).expect("json");
+        let form: FormDefinition = serde_json::from_value(fixture["form"].clone()).expect("form");
+
+        let draft_from_fields = |title: &str, tags: Vec<String>, fields: Value| {
+            let mut map = BTreeMap::new();
+            for (key, value) in fields.as_object().cloned().unwrap_or_default() {
+                map.insert(key, value);
+            }
+            structured_fields_to_draft(title, Some("Parity"), tags, map, BTreeMap::new())
+        };
+        let tags_of = |value: &Value| {
+            value
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|item| item.as_str().map(str::to_string))
+                .collect()
+        };
+
+        // Legacy Markdown and structured inputs reach the same durable outcome.
+        let markdown = fixture["markdown"].as_str().expect("markdown");
+        let legacy = legacy_markdown_to_draft(markdown, "fallback");
+        let from_legacy = preview_structured_draft(&form, &legacy).expect("legacy valid");
+        let structured = &fixture["structured"];
+        let structured_draft = draft_from_fields(
+            structured["title"].as_str().unwrap_or_default(),
+            tags_of(&structured["tags"]),
+            structured["fields"].clone(),
+        );
+        let from_structured =
+            normalize_and_validate_draft(&form, &structured_draft).expect("structured valid");
+        assert_eq!(from_legacy.values, from_structured.values);
+        assert_eq!(from_legacy.title, "Website");
+        assert_eq!(from_legacy.tags, vec!["inbox".to_string()]);
+        assert_eq!(from_structured.tags, vec!["inbox".to_string()]);
+
+        // Stored values match the fixture contract field by field.
+        for (id, value) in fixture["expected"]["values"]
+            .as_object()
+            .cloned()
+            .unwrap_or_default()
+        {
+            let id = FieldId::new(id.parse().expect("field id")).expect("id");
+            let expected: DomainFieldValue = serde_json::from_value(value).expect("value");
+            assert_eq!(
+                from_structured.values.get(&id),
+                Some(&expected),
+                "parity {id:?}"
+            );
+        }
+
+        // Updates normalize the same way on every surface.
+        let update = &fixture["update"];
+        let update_draft = draft_from_fields(
+            update["title"].as_str().unwrap_or_default(),
+            Vec::new(),
+            update["fields"].clone(),
+        );
+        let updated = preview_structured_draft(&form, &update_draft).expect("update valid");
+        for (id, value) in update["expected_values"]
+            .as_object()
+            .cloned()
+            .unwrap_or_default()
+        {
+            let id = FieldId::new(id.parse().expect("field id")).expect("id");
+            let expected: DomainFieldValue = serde_json::from_value(value).expect("value");
+            assert_eq!(
+                updated.values.get(&id),
+                Some(&expected),
+                "update parity {id:?}"
+            );
+        }
+
+        // Every invalid logical input fails with the same code on the
+        // mutation implementation and the preview boundary.
+        for case in fixture["invalid_cases"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+        {
+            let draft = draft_from_fields("T", Vec::new(), case["fields"].clone());
+            let via_mutation = normalize_and_validate_draft(&form, &draft).expect_err("must fail");
+            let via_preview = preview_structured_draft(&form, &draft).expect_err("must fail");
+            let expected_code = case["code"].as_str().unwrap_or_default();
+            assert_eq!(via_mutation.code_str(), expected_code);
+            assert_eq!(via_preview.code_str(), expected_code);
+            if expected_code == "FORM_VALIDATION_FAILED" {
+                let warnings = validation_warnings(&via_preview).expect("warnings");
+                assert_eq!(warnings.len(), 1);
+                assert_eq!(
+                    warnings[0].field,
+                    case["field"].as_str().unwrap_or_default()
+                );
+                assert_eq!(
+                    warnings[0].code,
+                    case["warning"].as_str().unwrap_or_default()
+                );
+            } else {
+                let names = unknown_field_names(&via_preview).expect("unknown names");
+                assert_eq!(
+                    names,
+                    vec![case["field"].as_str().unwrap_or_default().to_string()]
+                );
+            }
+        }
+
+        // The 0.1 representation round-trips: close/reopen keeps values.
+        let rendered = normalized_to_legacy_representation(&form, &form.name, &from_structured);
+        let reparsed = legacy_markdown_to_draft(&rendered, "fallback");
+        let reopened = preview_structured_draft(&form, &reparsed).expect("reopen valid");
+        assert_eq!(from_structured.values, reopened.values);
     }
 
     fn preview_test_form() -> FormDefinition {

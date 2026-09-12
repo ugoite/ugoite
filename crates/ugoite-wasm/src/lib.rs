@@ -925,4 +925,71 @@ mod tests {
             ugoite_core::entry::preview_structured_draft(&form_def, &draft_again).unwrap();
         assert_eq!(original.values, renormalized.values);
     }
+
+    #[test]
+    fn lane1_parity_fixture_agrees_between_native_and_wasm() {
+        // Same consolidated Lane 1 fixture the browser, CLI core, and CLI
+        // remote converge on: WASM invoke results equal native preview.
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let dir = root.join("../../fixtures/entry/structured-compat");
+        let raw =
+            std::fs::read_to_string(dir.join("10-structured-authoring-parity.json")).expect("read");
+        let fixture: Value = serde_json::from_str(&raw).expect("json");
+        let form = fixture["form"].clone();
+        let markdown = fixture["markdown"].as_str().expect("markdown");
+
+        let parse_request = serde_json::json!({
+            "action": "entry.compat.parse_markdown",
+            "value": {"markdown": markdown, "fallback_title": "fallback"}
+        })
+        .to_string();
+        let parsed: Value = serde_json::from_str(&super::invoke_json(&parse_request)).unwrap();
+        assert_eq!(parsed["ok"], true, "{parsed}");
+
+        let validate_request = serde_json::json!({
+            "action": "entry.validate_draft",
+            "value": {"form": form.clone(), "draft": parsed["value"]}
+        })
+        .to_string();
+        let validated: Value =
+            serde_json::from_str(&super::invoke_json(&validate_request)).unwrap();
+        assert_eq!(validated["ok"], true, "{validated}");
+
+        let form_def: ugoite_domain::form::FormDefinition = serde_json::from_value(form).unwrap();
+        let draft = super::parse_entry_draft(&parsed["value"]).unwrap();
+        let native = ugoite_core::entry::preview_structured_draft(&form_def, &draft).unwrap();
+        assert_eq!(validated["value"], serde_json::to_value(native).unwrap());
+
+        // Invalid logical inputs carry the same code on both sides.
+        for case in fixture["invalid_cases"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+        {
+            let mut fields = std::collections::BTreeMap::new();
+            for (key, value) in case["fields"].as_object().cloned().unwrap_or_default() {
+                fields.insert(key, value);
+            }
+            let draft = ugoite_core::entry::structured_fields_to_draft(
+                "T",
+                Some("Parity"),
+                Vec::new(),
+                fields.clone(),
+                Default::default(),
+            );
+            let native_err = ugoite_core::entry::preview_structured_draft(&form_def, &draft)
+                .expect_err("must fail");
+            let request = serde_json::json!({
+                "action": "entry.validate_draft",
+                "value": {
+                    "form": serde_json::to_value(&form_def).unwrap(),
+                    "draft": serde_json::to_value(&draft).unwrap(),
+                }
+            })
+            .to_string();
+            let via_wasm: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+            assert_eq!(via_wasm["ok"], false, "{via_wasm}");
+            assert_eq!(via_wasm["error"]["code"], native_err.code_str());
+        }
+    }
 }
