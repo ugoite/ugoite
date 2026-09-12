@@ -12,17 +12,26 @@ needs them.
 
 ## Development path
 
-1. Run Ugoite from source with [Develop Ugoite](../guide/develop/index.md) and
+1. Read [Engineering Principles](engineering-principles.md) for why the
+   architecture stays stable while product discovery continues.
+2. Read [Repository Map](repository-map.md) to find where behavior lives.
+3. Run Ugoite from source with [Develop Ugoite](../guide/develop/index.md) and
    complete the local authentication flow in
    [Local development login](../guide/develop/local-dev-auth-login.md).
-2. Read the [Architecture overview](../architecture/index.md) for boundaries,
-   contracts, and the data model.
-3. Read the [executable specification](../spec/index.md) for requirements and
-   verification evidence.
+4. Read [Documentation Development](documentation.md) before adding or moving
+   prose.
 
-Engineering Principles, the repository map, and documentation development
-guidance land here in the next step. Until then, the guides and Architecture
-docs above remain the procedure source.
+## Architecture re-entry points
+
+- Start with the [Architecture overview](../architecture/index.md), then
+  [System boundaries](../architecture/boundaries/index.md) and
+  [Security architecture](../architecture/security/index.md).
+- Check normative behavior in
+  [Architecture contracts](../architecture/contracts/overview.md), the
+  [Space compatibility contract](../architecture/contracts/space-compatibility.md),
+  and the [Data model overview](../architecture/data-model/overview.md).
+- Verify behavior through the [executable specification](../spec/index.md),
+  whose registries point back to implementation and tests.
 
 Validation stays at the repository root with `mise run fmt`, `mise run lint`,
 `mise run check`, and `mise run test`. Docsite-focused work uses
