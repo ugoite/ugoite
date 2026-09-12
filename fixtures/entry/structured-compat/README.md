@@ -19,3 +19,9 @@ Each fixture pins one semantic area and checks three things:
 
 `09-existing-space-reopen.json` additionally pins open -> mutate -> reopen:
 the stored 0.1 representation round-trips through the same draft boundary.
+
+`10-structured-authoring-parity.json` is the Lane 1 release evidence:
+one representative Form across every field family (plus required and
+unknown cases) that the frontend (WASM), CLI core, and CLI remote surfaces
+converge on for stored values, Form identity, revision parentage,
+validation codes, and reopen stability.
