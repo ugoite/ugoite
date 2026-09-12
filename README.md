@@ -131,8 +131,8 @@ available at the browser recovery route. Account Self-Recovery is available at
 `/recover/account` after explicitly enrolling a recovery-only TOTP. Invitation-
 gated OIDC login, account creation, and external identity linking are supported;
 administrator recovery and agent principals remain
-future scope. Remote CLI asset upload uses the authenticated REST `file`
-multipart part.
+future scope. Remote CLI asset upload is outside the documented v0.1.1 support
+surface; use core mode for local asset operations.
 
 ## API and documentation
 

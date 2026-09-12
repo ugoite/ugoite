@@ -253,7 +253,9 @@ async function prepareVersion(change: string | undefined): Promise<void> {
   const next = change === "compatible"
     ? { ...latest, patch: latest.patch + 1 }
     : { major: latest.major, minor: latest.minor + 1, patch: 0 };
-  await synchronizeVersion(formatVersion(next));
+  const nextVersion = formatVersion(next);
+  await Deno.writeTextFile(pathJoin("version.txt"), `${nextVersion}\n`);
+  await synchronizeVersion(nextVersion);
   console.log(`prepared ${state.versionFile} -> ${formatVersion(next)}`);
 }
 

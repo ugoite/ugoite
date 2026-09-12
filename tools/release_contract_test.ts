@@ -294,6 +294,7 @@ Deno.test("REQ-OPS-044: candidate ID is the exact manifest digest and tampering 
     prefix: "ugoite-candidate-fixture-",
   });
   const candidateRoot = `${fixtureRoot}/candidate-fixture`;
+  const preparedVersion = (await readText("version.txt")).trim();
   await Deno.mkdir(`${candidateRoot}/cli/linux`, { recursive: true });
   await Deno.mkdir(`${candidateRoot}/npm`, { recursive: true });
   await Deno.mkdir(`${candidateRoot}/helm`, { recursive: true });
@@ -304,11 +305,17 @@ Deno.test("REQ-OPS-044: candidate ID is the exact manifest digest and tampering 
   const source = new TextDecoder().decode(sourceSha.stdout).trim();
   const files = [
     await writeArtifact(
-      `${candidateRoot}/cli/linux/ugoite-v0.1.0-x86_64-unknown-linux-gnu.tar.gz`,
+      `${candidateRoot}/cli/linux/ugoite-v${preparedVersion}-x86_64-unknown-linux-gnu.tar.gz`,
       "cli",
     ),
-    await writeArtifact(`${candidateRoot}/npm/ugoite-ugoite-0.1.0.tgz`, "npm"),
-    await writeArtifact(`${candidateRoot}/helm/ugoite-0.1.0.tgz`, "helm"),
+    await writeArtifact(
+      `${candidateRoot}/npm/ugoite-ugoite-${preparedVersion}.tgz`,
+      "npm",
+    ),
+    await writeArtifact(
+      `${candidateRoot}/helm/ugoite-${preparedVersion}.tgz`,
+      "helm",
+    ),
     await writeArtifact(
       `${candidateRoot}/docker-compose.release.yaml`,
       "compose",
@@ -323,7 +330,7 @@ Deno.test("REQ-OPS-044: candidate ID is the exact manifest digest and tampering 
   const manifest = {
     schema_version: 4,
     contract_version: 4,
-    version: "0.1.0",
+    version: preparedVersion,
     source_sha: source,
     ci_run_id: "test-run",
     source_ci_required_check_run_id: "test-ci-check",
@@ -347,7 +354,7 @@ Deno.test("REQ-OPS-044: candidate ID is the exact manifest digest and tampering 
       {
         kind: "release",
         files: [files[3], files[4]],
-        config: { version: "0.1.0" },
+        config: { version: preparedVersion },
       },
     ],
   };
@@ -385,7 +392,7 @@ Deno.test("REQ-OPS-044: candidate ID is the exact manifest digest and tampering 
     true,
   );
   await Deno.writeTextFile(
-    `${candidateRoot}/npm/ugoite-ugoite-0.1.0.tgz`,
+    `${candidateRoot}/npm/ugoite-ugoite-${preparedVersion}.tgz`,
     "tampered",
   );
   const failure = await verify();

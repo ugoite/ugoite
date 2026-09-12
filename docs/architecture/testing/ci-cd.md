@@ -80,11 +80,14 @@ Cargo, npm, Helm, and `Cargo.lock` projections; `version:check` verifies them.
 Stable `v<version>` tags are the published-version ledger. Historical alpha and
 beta tags are excluded from stable-version calculation.
 
-The first stable release uses the already prepared `0.1.0` as-is. Later pre-1.0
-releases use `release:prepare compatible|breaking`, which compares the prepared
-version with the latest stable tag before updating projections. A compatible
-change advances the patch; a breaking change advances the minor. Preparation
-never creates a tag, release, or registry artifact.
+The first stable release used the already prepared `0.1.0` as-is and is recorded
+by the published `v0.1.0` GitHub Release. Later pre-1.0 releases use
+`release:prepare compatible|breaking`, which compares the prepared version with
+the latest stable tag before updating projections. A compatible change advances
+the patch; a breaking change advances the minor. Preparation never creates a
+tag, release, or registry artifact. The current prepared compatible patch is
+`0.1.1`; publication remains a separate operator-controlled candidate and
+promotion workflow.
 
 `Release Candidate` checks out one exact source SHA, verifies that it is
 reachable from `main` and has a successful `ci-required` check, then builds and
@@ -134,8 +137,8 @@ suite runs.
 The canonical `mitase:check` task invokes `scripts/mitase check .`. The wrapper
 reads `tools/mitase.lock.toml`, selects the host target, downloads the exact
 Mitase `v0.1.3` release archive when it is not cached, verifies its SHA-256,
-checks the packaged binary version, and then execs it. The default path does
-not build Mitase from Git; `MITASE_BIN` remains available as an explicit local
+checks the packaged binary version, and then execs it. The default path does not
+build Mitase from Git; `MITASE_BIN` remains available as an explicit local
 development override.
 
 The required `ci-required` aggregator runs after all four lanes on pull

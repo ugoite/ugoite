@@ -22,6 +22,10 @@ Ugoite is a private, portable Knowledge Space for humans and AI. Knowledge lives
 in an operator-owned Space, where it remains recoverable and independent of any
 server, browser session, model provider, or generated experience.
 
+The v0.1.1 release line is a compatible product patch: existing Space
+compatibility remains `0.1`. Product, Space, and interface versions are
+independent by design.
+
 The product promise has three parts: durable Knowledge belongs to the operator;
 human and agent Work can use that Knowledge without owning it; and the same
 Knowledge can eventually become purpose-built tools without being copied into a

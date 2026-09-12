@@ -101,7 +101,7 @@ digits, `-`, and `_`, must be 1–128 bytes, and must not contain path separator
 control characters, or `.`/`..` path segments. `first-note` is therefore an
 example ID, not a reserved name.
 
-The smallest complete first-entry workflow is:
+The smallest complete structured-first Entry workflow is:
 
 ```bash
 ugoite entry create /path/to/workspace/spaces/team-notes first-note \
@@ -109,6 +109,21 @@ ugoite entry create /path/to/workspace/spaces/team-notes first-note \
 ugoite entry get /path/to/workspace/spaces/team-notes first-note
 ugoite entry list /path/to/workspace/spaces/team-notes
 ```
+
+The CLI's structured Entry ingress uses Markdown with optional Form
+frontmatter and typed `##` fields. The same input can be read from a file or
+explicit stdin:
+
+```bash
+ugoite entry create /path/to/workspace/spaces/team-notes file-note \
+  --file ./entry.md
+cat ./entry.md | ugoite entry create /path/to/workspace/spaces/team-notes stdin-note \
+  --file -
+```
+
+Legacy Markdown without Form frontmatter remains accepted. Both forms use the
+same validation and persistence path; the CLI does not define a separate
+field-conversion dialect.
 
 After creating a `Meeting` Form as described below, add Form-backed metadata by
 including its name in the frontmatter:
@@ -122,7 +137,10 @@ Use `entry update`, `entry history`, `entry revision`, and `entry restore` for
 revisions. Updates can include `--parent-revision-id` to enforce optimistic
 conflict checks. `entry delete` appends a deletion tombstone to the revision
 history. The currently accepted `--hard-delete` flag also writes a tombstone;
-permanent removal is not available in this release.
+permanent removal is not available in this release. Mutation commands return a
+receipt: TTY output stays concise, while `--format json` (or `-o json`)
+includes the resource ID, revision ID, and durable Change ID when the operation
+commits.
 
 ## Forms
 
@@ -182,23 +200,20 @@ ugoite index run /path/to/workspace/spaces/team-notes --component asset-text
 ```
 
 The CLI reports that these commands are unavailable in backend/API mode. Asset
-upload and delete use the local Space path in core mode and the bare Space ID
-in backend/API mode:
+upload and delete are supported with the local Space path in core mode. The
+backend/API CLI does not support asset upload in the v0.1.1 documented surface.
 
 ```bash
 # Core mode
 ugoite asset upload /path/to/workspace/spaces/team-notes ./diagram.png
 ugoite asset delete /path/to/workspace/spaces/team-notes asset-id
 
-# Backend/API mode: upload through the authenticated REST `file` multipart
-# part, same as the API client and browser uploader.
-ugoite asset upload team-notes ./diagram.png
+# Backend/API mode: asset upload is unavailable in this release.
 ugoite asset delete team-notes asset-id
 ```
 
-The API client, remote CLI, and frontend still send the REST `file` multipart
-part with `application/octet-stream` media type. Use `--filename` to choose
-the logical filename; the server applies the same safe-basename rules.
+Use `--filename` in core mode to choose the logical filename; the server applies
+the same safe-basename rules.
 
 Every command has exhaustive, version-specific help. Use
 `ugoite <command> --help` or `ugoite <command> <subcommand> --help` before
