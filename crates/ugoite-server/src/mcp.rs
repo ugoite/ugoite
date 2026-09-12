@@ -1175,6 +1175,15 @@ async fn search(
             "Search arguments are invalid",
         ));
     }
+    // Shared Search admission before any Storage/state access: invalid
+    // queries fail with their canonical code, never as a service outage.
+    if let Err(app_error) = ugoite_core::query::validate_keyword_query(&q) {
+        return Err(tool_error_with_detail(
+            app_error.code_str(),
+            app_error.message(),
+            app_error.detail().cloned(),
+        ));
+    }
     let state_auth = Authorizer::new(state.service.operator().clone())
         .state(&auth.space_id)
         .await
@@ -1204,7 +1213,7 @@ async fn search(
             after,
         )
         .await
-        .map_err(|_| tool_error("SERVICE_UNAVAILABLE", "The search service is unavailable"))?;
+        .map_err(map_search_service_error)?;
     results.sort_by(|a, b| {
         (a.title.as_str(), a.id.as_str(), a.form.as_str()).cmp(&(
             b.title.as_str(),
@@ -1244,6 +1253,22 @@ async fn search(
     Ok(
         json!({"resultType":"complete","isError":false,"structuredContent":structured,"content":content,"_untrusted_content":true,"ttlMs":5000,"cacheScope":"private"}),
     )
+}
+
+/// Search service failures keep their canonical validation codes so MCP
+/// callers see the same classification as core/REST/CLI. Only unexpected
+/// failures become a generic service outage. No new MCP capability.
+fn map_search_service_error(error: anyhow::Error) -> Response {
+    if let Some(app_error) = error.downcast_ref::<ugoite_core::error::AppError>() {
+        if app_error.kind() == ugoite_core::error::ErrorKind::InvalidInput {
+            return tool_error_with_detail(
+                app_error.code_str(),
+                app_error.message(),
+                app_error.detail().cloned(),
+            );
+        }
+    }
+    tool_error("SERVICE_UNAVAILABLE", "The search service is unavailable")
 }
 
 async fn save(
@@ -2116,6 +2141,35 @@ mod tests {
         let payload = &body["result"]["structuredContent"];
         assert_eq!(payload["code"], "FORM_VALIDATION_FAILED");
         assert_eq!(payload["detail"]["warnings"][0]["field"], "Required");
+    }
+
+    #[tokio::test]
+    async fn search_keeps_canonical_validation_codes_before_any_scan() {
+        // No Space is created: admission must fail before Storage access,
+        // and validation must not collapse into a generic outage.
+        let state =
+            AppState::new_for_tests(format!("memory://mcp-search-admission-{}", Uuid::now_v7()))
+                .expect("test state");
+        let owner = Uuid::now_v7();
+        let auth = test_auth(Uuid::now_v7(), owner, &["read"], "human", None);
+
+        for (query, code) in [
+            ("", "SEARCH_QUERY_EMPTY"),
+            ("   ", "SEARCH_QUERY_EMPTY"),
+            (
+                &"x".repeat(ugoite_core::query::MAX_SEARCH_QUERY_BYTES + 1),
+                "INVALID_INPUT",
+            ),
+        ] {
+            let arguments = serde_json::Map::from_iter([(String::from("q"), json!(query))]);
+            let response = search(&state, &auth, &arguments)
+                .await
+                .expect_err("invalid search query must fail");
+            let body = response_json(response).await;
+            let payload = &body["result"]["structuredContent"];
+            assert_eq!(payload["code"], code, "query {query:?}");
+            assert_ne!(payload["code"], "SERVICE_UNAVAILABLE");
+        }
     }
 
     #[tokio::test]

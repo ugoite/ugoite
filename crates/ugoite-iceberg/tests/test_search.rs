@@ -328,6 +328,32 @@ async fn search_preserves_supported_fields_in_mixed_form() -> anyhow::Result<()>
 }
 
 #[tokio::test]
+/// Lane 2 PR6: invalid queries fail with canonical codes before any Storage
+/// access. The workspace path does not exist, so any Storage-first behavior
+/// would surface a different error.
+async fn search_rejects_invalid_queries_before_storage_access() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let missing_ws = "spaces/search-admission-missing";
+    for (query, code) in [
+        ("", "SEARCH_QUERY_EMPTY"),
+        ("   ", "SEARCH_QUERY_EMPTY"),
+        (
+            &"x".repeat(ugoite_core::query::MAX_SEARCH_QUERY_BYTES + 1),
+            "INVALID_INPUT",
+        ),
+    ] {
+        let error = search::search_entries(&op, missing_ws, query, 10)
+            .await
+            .expect_err("invalid query must fail");
+        let app_error = error
+            .downcast_ref::<ugoite_core::error::AppError>()
+            .expect("typed AppError");
+        assert_eq!(app_error.code_str(), code, "query {query:?}");
+    }
+    Ok(())
+}
+
+#[tokio::test]
 /// Issue 2247: keyword search applies the same Unicode normalization to
 /// stored Entry content and the query.
 async fn search_matches_unicode_compatibility_and_composed_forms() -> anyhow::Result<()> {
