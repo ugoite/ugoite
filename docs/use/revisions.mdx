@@ -1,0 +1,70 @@
+---
+title: "Revisions and Recovery"
+description: Understand history, resolve conflicts, and restore safely.
+sidebar:
+  order: 7
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Revisions are append-only. Current state is derived, and recovery never
+depends on a hidden database.
+
+## Outcome
+
+Create, edit, and restore remain observable as history that never shortens.
+
+## Before you begin
+
+Create and edit an Entry in [Create and Edit Entries](entries.mdx).
+
+## Steps
+
+<Tabs>
+<TabItem label="Browser">
+
+1. Open the Entry and choose **History**.
+2. Compare revisions to see create and edit without rewritten content.
+3. Choose **Restore** for the first revision.
+4. Confirm history now has three revisions with the restored content newest.
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+ugoite entry history /path/to/workspace/spaces/demo meeting-2026-09-12
+```
+
+Choose a prior revision and restore it. Restore appends a new revision
+replaying that content instead of destructively rolling back. Editing with a
+stale `--parent-revision-id` conflicts instead of overwriting. Run
+`ugoite entry history --help` and `ugoite entry restore --help` for exact
+flags.
+
+</TabItem>
+</Tabs>
+
+## Verify the result
+
+History contains create, edit, and restore revisions in order with no
+rewritten or missing entries.
+
+## What became durable?
+
+The new restore revision. History views and diffs are runtime state.
+
+## If it fails
+
+- Revision conflict: re-read history and retry against the newest revision.
+- Restore of a deleted Entry: history still appends; permanent removal is
+  unavailable.
+
+## Related concepts
+
+- [Knowledge, Work, and Experience](../vision/knowledge-work-experience.md)
+- [Quickstart](../get-started/quickstart.mdx)
+
+## Reference
+
+- `ugoite entry history --help` and `ugoite entry restore --help` are the
+  command authorities.

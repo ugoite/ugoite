@@ -1,0 +1,75 @@
+---
+title: "Spaces"
+description: Create, open, and switch the operator-owned Space.
+sidebar:
+  order: 2
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+A Space is the ownership and storage boundary. Create it once, then open or
+switch to it from any surface.
+
+## Outcome
+
+A durable Space exists and reopens with identical compatibility semantics on
+Browser and CLI.
+
+## Before you begin
+
+Decide the address. Core mode takes a local path such as
+`/path/to/workspace/spaces/demo`. Backend mode takes a Space ID such as
+`demo`.
+
+## Steps
+
+<Tabs>
+<TabItem label="Browser">
+
+1. Sign in with a registered Passkey.
+2. Open the Space switcher and create a Space named `demo`.
+3. Select `demo` and confirm the dashboard loads.
+4. To switch, reopen the switcher and choose another Space.
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+ugoite config set --mode core
+ugoite space create /path/to/workspace/spaces/demo
+ugoite space get /path/to/workspace/spaces/demo
+ugoite space list /path/to/workspace
+```
+
+In backend mode, pass the Space ID and omit the workspace path. Remote Space
+addressing uses immutable UIDs; a human slug reads as not found. See the [CLI
+guide](../guide/automate/cli.md).
+
+</TabItem>
+</Tabs>
+
+## Verify the result
+
+Reopen the Space across process and session boundaries and confirm the same
+Space reads back identically.
+
+## What became durable?
+
+The Space directory with its Forms, Entries, Assets, saved SQL, Changes, and
+portable history. The switcher selection is runtime state.
+
+## If it fails
+
+- Space not found: check path versus ID for the active endpoint mode.
+- Remote create rejected: a node-admin human presence is required; plain token
+  identities are rejected.
+
+## Related concepts
+
+- [Core concepts](../guide/start/concepts.md)
+- [Quickstart](../get-started/quickstart.mdx)
+
+## Reference
+
+- `ugoite space --help` is the command authority.
+- [Space compatibility contract](../architecture/contracts/space-compatibility.md)

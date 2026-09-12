@@ -1,0 +1,75 @@
+---
+title: "Search and Query"
+description: Find Knowledge with keyword search, structured fields, and SQL.
+sidebar:
+  order: 6
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Search finds durable Entries under identical keyword conditions on every
+surface. Structured fields and SQL read the same Form tables without becoming
+a second authority.
+
+## Outcome
+
+A keyword search returns the updated Entry, and a read-only SQL session reads
+the same Form data.
+
+## Before you begin
+
+Create an Entry in [Create and Edit Entries](entries.mdx).
+
+## Steps
+
+<Tabs>
+<TabItem label="Browser">
+
+1. Open **Search** and run a keyword search for `planning`.
+2. Open the result to return to the Entry detail page.
+3. Open **SQL** for a saved definition over the same Form.
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+ugoite search keyword /path/to/workspace/spaces/demo planning
+ugoite sql lint 'SELECT _ugoite_id, _ugoite_title FROM note LIMIT 10'
+ugoite sql saved-list /path/to/workspace/spaces/demo
+ugoite query /path/to/workspace/spaces/demo \
+  --sql 'SELECT _ugoite_id, _ugoite_title FROM note LIMIT 10'
+```
+
+`sql lint` checks syntax only; it does not resolve Forms or authorize
+execution. `query` is read-only and rejects DDL and DML without changing the
+Space. Each Form is queryable through its lowercase name with `_ugoite_id`,
+`_ugoite_title`, `_ugoite_created_at`, and `_ugoite_updated_at` columns.
+
+</TabItem>
+</Tabs>
+
+## Verify the result
+
+The updated durable Entry appears in keyword results and the same Form rows
+appear in the SQL session.
+
+## What became durable?
+
+Nothing new. Search indexes and SQL sessions are derived and replaceable.
+
+## If it fails
+
+- Search missing the change: confirm the Entry saved, then rerun the keyword
+  search.
+- SQL rejected: check the Form name, column names, and statement kind; only
+  read-only selects over authorized relations run.
+
+## Related concepts
+
+- [Core concepts](../guide/start/concepts.md)
+- [Data model overview](../architecture/data-model/overview.md)
+
+## Reference
+
+- `ugoite search --help`, `ugoite sql --help`, and `ugoite query --help`
+  are the command authorities.

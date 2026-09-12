@@ -1,0 +1,67 @@
+---
+title: "Add an Asset"
+description: Attach files to Space-owned Knowledge in core mode.
+sidebar:
+  order: 5
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Assets are Space-owned files referenced by Entries. Upload and delete use the
+local Space path in core mode.
+
+## Outcome
+
+An uploaded file is stored as a Space Asset and can be deleted by ID.
+
+## Before you begin
+
+Open the Space from [Spaces](spaces.mdx). Asset upload is local-core
+functionality in this release.
+
+## Steps
+
+<Tabs>
+<TabItem label="Browser">
+
+1. Open the Entry that should reference the file.
+2. Open the Entry's asset field to upload `./diagram.png`.
+3. Confirm the Asset appears on the Entry.
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+ugoite asset upload /path/to/workspace/spaces/demo ./diagram.png
+ugoite asset delete /path/to/workspace/spaces/demo asset-id
+```
+
+Use `--filename` in core mode to choose the logical filename. The backend CLI
+does not support asset upload in the v0.1.1 documented surface. Run
+`ugoite asset --help` for exact flags.
+
+</TabItem>
+</Tabs>
+
+## Verify the result
+
+The Asset ID resolves from the Space and the Entry reference opens the file.
+
+## What became durable?
+
+The Asset bytes and reference. Upload progress and previews are runtime
+state.
+
+## If it fails
+
+- Upload rejected in backend mode: use CLI core mode with a local Space path.
+- Unsafe filename: the server applies safe-basename rules; retry with
+  `--filename`.
+
+## Related concepts
+
+- [Create and Edit Entries](entries.mdx)
+
+## Reference
+
+- `ugoite asset --help` is the command authority.

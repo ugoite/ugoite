@@ -10,23 +10,19 @@ Use Ugoite describes what to do with Knowledge once a Space exists. The same
 operation is explained once, with Browser and CLI variations on the same page.
 No separate Browser, CLI, or REST hierarchy is maintained here.
 
-## What lives here
+## Task pages
 
-Task pages cover the durable Knowledge workflow: create a Space, structure
-Knowledge with Forms and Entries, find it with search and SQL, and change or
-recover it through revisions.
+- [Spaces](spaces.mdx): create, open, and switch the Space.
+- [Create a Form](forms.mdx): define typed fields for Entries.
+- [Create and Edit Entries](entries.mdx): write content with append-only
+  revisions.
+- [Add an Asset](assets.mdx): attach files in core mode.
+- [Search and Query](search.mdx): keyword search, structured fields, and
+  read-only SQL.
+- [Revisions and Recovery](revisions.mdx): history, conflicts, and restore.
 
-## Current entry points
-
-The focused task pages are being migrated in small steps. Until then, use the
-existing guides as the procedure source:
-
-- Create and edit content with the [CLI guide](../guide/automate/cli.md).
-- Create the [first browser Entry](../guide/start/browser-first-entry.md).
-- Understand Spaces, Forms, Entries, and revisions in
-  [Core concepts](../guide/start/concepts.md).
-- Query structured data through the
-  [data model overview](../architecture/data-model/overview.md).
+Start with the [Quickstart](../get-started/quickstart.mdx) for one end-to-end
+pass, then use these pages as focused references.
 
 ## What became durable?
 

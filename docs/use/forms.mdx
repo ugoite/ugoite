@@ -1,0 +1,69 @@
+---
+title: "Create a Form"
+description: Define typed fields that Entries use.
+sidebar:
+  order: 3
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+A Form defines the fields and defaults available when creating Entries. Use
+short text, number, or date fields for values that should sort, filter, or
+validate predictably. Use a Markdown field for longer notes, lists, links, and
+formatted prose.
+
+## Outcome
+
+A `Meeting` Form exists with equivalent schema semantics on Browser and CLI.
+
+## Before you begin
+
+Open the Space from [Spaces](spaces.mdx).
+
+## Steps
+
+<Tabs>
+<TabItem label="Browser">
+
+1. Open **Forms** and create a Form named `Meeting`.
+2. Add a short text field and a Markdown field.
+3. Save and confirm the Form appears in the Forms list.
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+ugoite form list /path/to/workspace/spaces/demo
+ugoite form list-types
+ugoite form update /path/to/workspace/spaces/demo meeting.json
+ugoite form get /path/to/workspace/spaces/demo Meeting
+```
+
+Run `ugoite form <command> --help` for the exact JSON shape of the installed
+version.
+
+</TabItem>
+</Tabs>
+
+## Verify the result
+
+List Forms and confirm `Meeting` reads back with the fields just defined.
+
+## What became durable?
+
+The Form definition in the Space. Form previews and open editors are runtime
+state.
+
+## If it fails
+
+- Unknown field type: run `ugoite form list-types` and use a supported type.
+- Validation error: check required fields and defaults, then retry.
+
+## Related concepts
+
+- [Core concepts](../guide/start/concepts.md)
+- [Quickstart](../get-started/quickstart.mdx)
+
+## Reference
+
+- `ugoite form --help` is the command authority.

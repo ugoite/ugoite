@@ -1,0 +1,73 @@
+---
+title: "Create and Edit Entries"
+description: Write Entries and append revisions without rewriting history.
+sidebar:
+  order: 4
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+An Entry is a versioned document. Updates append revisions rather than
+rewriting old history.
+
+## Outcome
+
+An Entry exists with create plus edit revisions under identical validation
+semantics on Browser and CLI.
+
+## Before you begin
+
+Create the Space in [Spaces](spaces.mdx) and the Form in [Create a
+Form](forms.mdx).
+
+## Steps
+
+<Tabs>
+<TabItem label="Browser">
+
+1. Open **Entries** and choose **New Entry**.
+2. Choose the `Meeting` Form and fill the typed fields.
+3. Choose **Save entry** and confirm the saved status.
+4. Edit the Entry, save again, and open **History** to confirm two revisions.
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+ugoite entry create /path/to/workspace/spaces/demo meeting-2026-09-12 \
+  --content $'---\nform: Meeting\n---\n# Planning\n\n## Notes\n\nAgenda'
+ugoite entry get /path/to/workspace/spaces/demo meeting-2026-09-12
+ugoite entry history /path/to/workspace/spaces/demo meeting-2026-09-12
+```
+
+Updates accept `--parent-revision-id` for optimistic conflict checks. A stale
+parent conflicts instead of overwriting. `entry delete` appends a deletion
+tombstone; permanent removal is unavailable. Run `ugoite entry <command>
+--help` for exact flags.
+
+</TabItem>
+</Tabs>
+
+## Verify the result
+
+History shows create and edit as append-only revisions without rewriting
+prior content.
+
+## What became durable?
+
+The Entry and its revision chain. Render caches and open editors are runtime
+state.
+
+## If it fails
+
+- Entry rejected: check the Form name in frontmatter and typed field values.
+- Revision conflict: re-read history and retry against the newest revision.
+
+## Related concepts
+
+- [Understand revisions](revisions.mdx)
+- [Quickstart](../get-started/quickstart.mdx)
+
+## Reference
+
+- `ugoite entry --help` is the command authority.
