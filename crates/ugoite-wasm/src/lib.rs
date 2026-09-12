@@ -562,6 +562,41 @@ mod tests {
     }
 
     #[test]
+    fn search_query_criteria_prepare_round_trips_through_wasm() {
+        let request = serde_json::json!({
+            "action": "prepare",
+            "operation": "search.query",
+            "arguments": {"space_id": "demo"},
+            "body": {
+                "criteria": {
+                    "form": "Task",
+                    "conditions": [
+                        {"field": "status", "operator": "equals", "value": "open"}
+                    ],
+                    "limit": 100
+                }
+            }
+        })
+        .to_string();
+        let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"]["path"], "/spaces/demo/query");
+        assert_eq!(
+            response["value"]["body"],
+            serde_json::json!({
+                "criteria": {
+                    "form": "Task",
+                    "conditions": [
+                        {"field": "status", "operator": "equals", "value": "open"}
+                    ],
+                    "limit": 100
+                }
+            })
+            .to_string()
+        );
+    }
+
+    #[test]
     fn portable_form_validation_is_available_without_storage() {
         let response = super::invoke_json(
             r#"{"action":"domain.validate_form","value":{"id":"00000000-0000-0000-0000-000000000001","version":1,"name":"Task","fields":[],"allow_extra_attributes":false}}"#,

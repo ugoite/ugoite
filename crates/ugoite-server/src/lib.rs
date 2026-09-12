@@ -9988,6 +9988,27 @@ async fn query_entries(
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
+    // Additive typed criteria input. Legacy `filter` passthrough remains
+    // unchanged for v0.1.x compatibility.
+    if let Some(criteria_value) = payload.get("criteria") {
+        let criteria: ugoite_core::structured_search::StructuredSearch =
+            serde_json::from_value(criteria_value.clone()).map_err(|error| {
+                ApiError::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    serde_json::json!({
+                        "code": "INVALID_INPUT",
+                        "message": format!("invalid structured search criteria: {error}"),
+                    }),
+                )
+            })?;
+        return Ok(Json(Value::Array(
+            state
+                .service
+                .search_structured_authorized_for_principals(&space_id, &principals, &criteria)
+                .await
+                .map_err(ApiError::from_core)?,
+        )));
+    }
     let filter = payload.get("filter").cloned().unwrap_or(payload);
     Ok(Json(Value::Array(
         state
@@ -13758,6 +13779,117 @@ mod authentication_regression_tests {
             )
             .await?;
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn structured_criteria_query_matches_core_and_preserves_errors() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-structured-criteria-route")?;
+        let owner = Uuid::from_u128(2117001);
+        let space_id = state
+            .service
+            .create_space_for_principal("structured-criteria-route", owner, "Search test")
+            .await?
+            .to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        state
+            .service
+            .create_entry(
+                &space_id,
+                "criteria-entry",
+                "---\nform: Entry\n---\n# Criteria\n\n## Body\nsecret keyword",
+                &owner.to_string(),
+            )
+            .await?;
+        // Native core result for identical criteria.
+        let criteria: ugoite_core::structured_search::StructuredSearch =
+            serde_json::from_value(json!({
+                "form": "Entry",
+                "conditions": [
+                    {"field": "Body", "operator": "contains", "value": "secret"}
+                ],
+                "limit": 100
+            }))?;
+        let core_rows = state
+            .service
+            .search_structured(&space_id, &criteria)
+            .await?;
+        assert_eq!(core_rows.len(), 1);
+
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = Router::new()
+            .route("/spaces/{space_id}/query", post(query_entries))
+            .layer(Extension(content_identity(owner, space_uid)))
+            .with_state(state.clone());
+        let response = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/query"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "criteria": {
+                                "form": "Entry",
+                                "conditions": [
+                                    {"field": "Body", "operator": "contains", "value": "secret"}
+                                ],
+                                "limit": 100
+                            }
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        let rest_rows: Value = serde_json::from_slice(&body)?;
+        assert_eq!(rest_rows.as_array().map(Vec::len), Some(core_rows.len()));
+
+        // Unknown field: transport-independent error code.
+        let response = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/query"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "criteria": {
+                                "form": "Entry",
+                                "conditions": [
+                                    {"field": "Missing", "operator": "equals", "value": "x"}
+                                ]
+                            }
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await?;
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        let error: Value = serde_json::from_slice(&body)?;
+        assert_eq!(error["code"], "UNKNOWN_FORM_FIELDS");
+
+        // Legacy keyword path is unchanged.
+        let keyword_route = Router::new()
+            .route("/spaces/{space_id}/search", get(search_entries))
+            .layer(Extension(content_identity(owner, space_uid)))
+            .with_state(state);
+        let response = keyword_route
+            .oneshot(
+                Request::get(format!("/spaces/{space_id}/search?q=secret")).body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(response.status(), StatusCode::OK);
         Ok(())
     }
 

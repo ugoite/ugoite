@@ -6166,6 +6166,7 @@
     "/spaces/{space_id}/query": {
       "post": {
         "summary": "Structured entry query",
+        "description": "Legacy filter passthrough remains supported. Additive typed input: {\"criteria\": {\"form\": \"Task\", \"updated_from\": \"2026-09-01\", \"conditions\": [{\"field\": \"status\", \"operator\": \"equals\", \"value\": \"open\"}], \"limit\": 100}}. Logical form/field identity only; SQL relation/column names are never accepted.",
         "parameters": [
           {
             "$ref": "#/components/parameters/SpaceId"

@@ -43,7 +43,13 @@ fn resolve_form<'a>(forms: &'a [FormDefinition], form_name: &str) -> Result<&'a 
     forms
         .iter()
         .find(|form| form.name == form_name)
-        .ok_or_else(|| anyhow!("structured search form '{form_name}' was not found"))
+        .ok_or_else(|| {
+            ugoite_core::error::AppError::not_found(
+                ugoite_core::error::ErrorCode::FormNotFound,
+                format!("structured search form '{form_name}' was not found"),
+            )
+            .into()
+        })
 }
 
 /// Compiled SQL plan with bound parameters. Relation/columns are trusted
@@ -212,15 +218,14 @@ pub async fn search_structured_with_scopes(
 ) -> Result<Vec<Value>> {
     // Admission first: syntax validation before any Storage-heavy work beyond
     // Form registry load. Full validation happens after Form resolve.
-    ugoite_core::structured_search::validate_structured_search_syntax(criteria)
-        .map_err(|error| anyhow!("{}", error.message()))?;
+    // Preserve typed AppError through anyhow so transports keep code/detail parity.
+    ugoite_core::structured_search::validate_structured_search_syntax(criteria)?;
     let forms = load_form_definitions(op, ws_path).await?;
     let form = resolve_form(&forms, &criteria.form)?;
     if !form_authorized(form, relation_scopes) {
         return Ok(Vec::new());
     }
-    let validated = ugoite_core::structured_search::resolve_structured_search(criteria, form)
-        .map_err(|error| anyhow!("{}: {}", error.code_str(), error.message()))?;
+    let validated = ugoite_core::structured_search::resolve_structured_search(criteria, form)?;
     let compiled = compile_validated_search(&validated, form)?;
     let parameters = crate::index::datafusion_parameters(&compiled.values, &compiled.types)?;
     let (rows, _count) = crate::index::query_structured_search_page_with_parameters(
