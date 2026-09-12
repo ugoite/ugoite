@@ -262,11 +262,13 @@ describe("/spaces/:space_id/search", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Run advanced search" }),
     );
+    // The reason stays inline under the field and is also surfaced as the
+    // action error; execution must still be blocked.
     expect(
-      await screen.findByText(
+      await screen.findAllByText(
         /is not supported by Advanced search|は詳細検索に対応していません/,
       ),
-    ).toBeInTheDocument();
+    ).toHaveLength(2);
     expect(queryCalls).toBe(0);
   });
 
