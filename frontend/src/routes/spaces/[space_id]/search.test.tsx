@@ -228,6 +228,8 @@ describe("/spaces/:space_id/search", () => {
       fields: {
         file: { type: "binary", required: false },
       },
+      // Backend-provided relation; the advanced path must not consume it.
+      sql_relation: "form_assets",
     });
     let queryCalls = 0;
     server.use(

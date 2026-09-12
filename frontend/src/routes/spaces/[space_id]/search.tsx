@@ -150,6 +150,53 @@ function fieldInputStep(type: SearchFieldType): string | undefined {
   return undefined;
 }
 
+type StructuredTransportCriteria = {
+  form: string;
+  updated_from?: string;
+  updated_to?: string;
+  conditions: Array<{
+    field: string;
+    operator: FieldMatchOperator;
+    value: string;
+  }>;
+  limit: number;
+};
+
+/**
+ * Build logical transport criteria from UI state. No SQL is produced here:
+ * relation/column resolution, literal escaping, and type mapping stay in
+ * the trusted Rust layer behind search.query.
+ */
+function buildStructuredSearchCriteria(
+  criteria: AdvancedSearchCriteria,
+): StructuredTransportCriteria | null {
+  if (!criteria.formName) return null;
+  for (const condition of criteria.fieldConditions) {
+    if (!condition.field || !condition.value) {
+      throw new Error(t("searchPage.error.fieldValueRequired"));
+    }
+    if (!condition.supported) {
+      throw new Error(
+        t("searchPage.error.unsupportedField", { value: condition.field }),
+      );
+    }
+  }
+  if (criteria.fieldConditions.length === 0) {
+    throw new Error(t("searchPage.error.advancedFilterRequired"));
+  }
+  return {
+    form: criteria.formName,
+    ...(criteria.updatedFrom ? { updated_from: criteria.updatedFrom } : {}),
+    ...(criteria.updatedTo ? { updated_to: criteria.updatedTo } : {}),
+    conditions: criteria.fieldConditions.map((condition) => ({
+      field: condition.field,
+      operator: condition.operator,
+      value: condition.value,
+    })),
+    limit: ADVANCED_SEARCH_LIMIT,
+  };
+}
+
 export default function SpaceSearchRoute() {
   const params = useParams<{ space_id: string }>();
   const navigate = useNavigate();
@@ -372,32 +419,23 @@ export default function SpaceSearchRoute() {
 
   const handleAdvancedSearch = async () => {
     const criteria = advancedCriteria();
-    if (!criteria.formName) {
+    let transport: StructuredTransportCriteria | null;
+    try {
+      transport = buildStructuredSearchCriteria(criteria);
+    } catch (error) {
+      setAdvancedSearchPerformed(false);
+      setAdvancedResults([]);
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : t("searchPage.error.advancedSearchFailed"),
+      );
+      return;
+    }
+    if (!transport) {
       setAdvancedSearchPerformed(false);
       setAdvancedResults([]);
       setActionError(t("searchPage.error.chooseForm"));
-      return;
-    }
-    for (const condition of criteria.fieldConditions) {
-      if (!condition.field || !condition.value) {
-        setAdvancedSearchPerformed(false);
-        setAdvancedResults([]);
-        setActionError(t("searchPage.error.fieldValueRequired"));
-        return;
-      }
-      if (!condition.supported) {
-        setAdvancedSearchPerformed(false);
-        setAdvancedResults([]);
-        setActionError(
-          t("searchPage.error.unsupportedField", { value: condition.field }),
-        );
-        return;
-      }
-    }
-    if (criteria.fieldConditions.length === 0) {
-      setAdvancedSearchPerformed(false);
-      setAdvancedResults([]);
-      setActionError(t("searchPage.error.advancedFilterRequired"));
       return;
     }
 
@@ -406,19 +444,7 @@ export default function SpaceSearchRoute() {
     setActionError(null);
     setAdvancedLoading(true);
     try {
-      // Logical criteria only. Relation/column resolution, literal/LIKE
-      // escaping, and type mapping stay in the trusted Rust layer.
-      const results = await searchApi.queryStructured(spaceId(), {
-        form: criteria.formName,
-        ...(criteria.updatedFrom ? { updated_from: criteria.updatedFrom } : {}),
-        ...(criteria.updatedTo ? { updated_to: criteria.updatedTo } : {}),
-        conditions: criteria.fieldConditions.map((condition) => ({
-          field: condition.field,
-          operator: condition.operator,
-          value: condition.value,
-        })),
-        limit: ADVANCED_SEARCH_LIMIT,
-      });
+      const results = await searchApi.queryStructured(spaceId(), transport);
       setAdvancedResults(results);
     } catch (err) {
       setAdvancedResults([]);

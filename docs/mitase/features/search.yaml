@@ -113,7 +113,7 @@ features:
           - id: advanced-query-builder
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/search.tsx
-            selector: { kind: symbol, name: buildAdvancedSearchQuery }
+            selector: { kind: symbol, name: buildStructuredSearchCriteria }
             claims:
               - kind: satisfies
                 criterion: REQ-SRCH-005#criterion.structured-search-reuse
