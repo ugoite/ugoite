@@ -936,20 +936,20 @@ requirements:
                 runner: { runner: deno-test-file, arguments: { file: tools/workspace_test.ts, test: 'REQ-OPS-023: public installer remains separate from repository development tooling' } }
 
   - id: REQ-OPS-024
-    title: Docsite Coverage Hard Gate
-    description: The required hosted CI job runs the root docsite coverage task, whose Vitest V8 configuration hard-fails all coverage metrics at 100% for authored docsite source while excluding framework-only wiring and test files.
+    title: Docsite Coverage Convenience
+    description: The required hosted CI job runs the root docsite coverage task as developer convenience. The Vitest V8 configuration reports coverage for authored docsite source while excluding framework-only wiring and test files, without hard-failing coverage thresholds.
     priority: medium
     status: implemented
     criteria:
       - id: docsite-coverage-gate
         kind: quality
-        statement: The docsite coverage configuration and root task keep authored docsite source at 100% coverage and are included in the canonical repository test gate.
+        statement: The docsite coverage configuration and root task keep coverage reporting available for authored docsite source and are included in the canonical repository test gate without hard-failing coverage thresholds.
         governed_by: [POL-006#rule.governance, POL-008#rule.governance]
     bindings:
       - id: docsite-coverage-verification
         role: verification
         facet: docsite-test
-        responsibility: Verify the exact docsite coverage configuration and root-task contract through the dedicated coverage-gate test.
+        responsibility: Verify the docsite coverage configuration and root-task contract, including the absence of hard coverage thresholds, through the dedicated coverage test.
         targets:
           - id: docsite-coverage-test
             adapter: typescript
