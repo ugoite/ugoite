@@ -48,7 +48,7 @@ pub enum EntrySubCmd {
     },
     /// Create an entry
     #[command(
-        long_about = "Create an entry in a space.\n\nThe entry ID is a slug (alphanumeric + hyphens). Content is a Markdown string. Frontmatter is optional and only needed when you want form-backed metadata.\n\nExamples:\n  # Core mode - minimal note\n  ugoite entry create /root/spaces/my-space my-note --content '# My Note'\n\n  # Core mode - read content from a file\n  ugoite entry create /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode - read content from explicit stdin\n  cat ./note.md | ugoite entry create /root/spaces/my-space my-note --file -\n\n  # Core mode - note with form frontmatter\n  ugoite entry create /root/spaces/my-space my-note --content $'---\\nform: Note\\n---\\n# My Note\\n\\n## Body\\n\\nHello world.'\n\n  # Backend mode - minimal entry\n  ugoite entry create my-space task-01 --content '# Task 01'\n\n  # Core mode with custom author\n  ugoite entry create /root/spaces/my-space my-note --content '# Note' --author alice"
+        long_about = "Create an entry in a space.\n\nThe entry ID is a slug (alphanumeric + hyphens). Content is a Markdown string. Frontmatter is optional and only needed when you want form-backed metadata.\n\nExamples:\n  # Core mode - minimal note\n  ugoite entry create /root/spaces/my-space my-note --content '# My Note'\n\n  # Core mode - read content from a file\n  ugoite entry create /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode - read content from explicit stdin\n  cat ./note.md | ugoite entry create /root/spaces/my-space my-note --file -\n\n  # Core mode - note with form frontmatter\n  ugoite entry create /root/spaces/my-space my-note --content $'---\\nform: Note\\n---\\n# My Note\\n\\n## Body\\n\\nHello world.'\n\n  # Backend mode - minimal entry\n  ugoite entry create my-space task-01 --content '# Task 01'\n\n  # Core mode with custom author\n  ugoite entry create /root/spaces/my-space my-note --content '# Note' --author alice\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface.\n\nExamples:\n  # Core mode - structured fields without Markdown\n  ugoite entry create /root/spaces/my-space task-01 --form Task --title 'Ship 0.1.x' --field status=open --field priority=3\n\n  # Core mode - complex values from a JSON object file (or --fields-file - for stdin)\n  ugoite entry create /root/spaces/my-space task-01 --form Task --fields-file fields.json"
     )]
     Create {
         #[arg(
@@ -73,6 +73,30 @@ pub enum EntrySubCmd {
             help = "Read Markdown content from PATH, or from explicit stdin with --file - (cannot combine with --content)"
         )]
         file: Option<String>,
+        #[arg(
+            long,
+            value_name = "FORM",
+            help = "Form name for structured authoring (requires no --content/--file)"
+        )]
+        form: Option<String>,
+        #[arg(
+            long,
+            allow_hyphen_values = true,
+            help = "Entry title for structured authoring"
+        )]
+        title: Option<String>,
+        #[arg(
+            long = "field",
+            value_name = "KEY=VALUE",
+            help = "Structured field as KEY=VALUE (repeatable; VALUE stays a string and the shared Rust boundary coerces it)"
+        )]
+        fields: Vec<String>,
+        #[arg(
+            long = "fields-file",
+            value_name = "PATH",
+            help = "Read structured fields as a JSON object from PATH, or from explicit stdin with --fields-file - (repeatable; duplicate keys with --field are an error)"
+        )]
+        fields_files: Vec<String>,
         #[arg(
             long,
             help = "Author name to record in the revision history (core mode only)"
@@ -195,6 +219,168 @@ fn entry_receipt(
     MutationReceipt::entry(id, revision_id, change_id)
 }
 
+/// Parse one `--field KEY=VALUE` argument. Values stay strings; the shared
+/// Rust boundary owns all coercion, so the CLI never interprets types here.
+fn parse_field_arg(arg: &str) -> Result<(String, serde_json::Value), UsageError> {
+    let (key, value) = arg.split_once('=').ok_or_else(|| {
+        UsageError(format!(
+            "--field must be KEY=VALUE, got {arg:?}; complex values belong in --fields-file JSON"
+        ))
+    })?;
+    if key.is_empty() {
+        return Err(UsageError(format!(
+            "--field must be KEY=VALUE with a non-empty key, got {arg:?}"
+        )));
+    }
+    Ok((
+        key.to_string(),
+        serde_json::Value::String(value.to_string()),
+    ))
+}
+
+/// Read one `--fields-file` JSON object (or `-` for explicit stdin). Values
+/// stay typed JSON; the shared Rust boundary owns coercion and validation.
+fn read_fields_file(
+    path: &str,
+) -> Result<std::collections::BTreeMap<String, serde_json::Value>, anyhow::Error> {
+    let text = if path == "-" {
+        use std::io::Read;
+        let mut text = String::new();
+        std::io::stdin()
+            .read_to_string(&mut text)
+            .map_err(|error| anyhow::anyhow!("read stdin: {error}"))?;
+        text
+    } else {
+        std::fs::read_to_string(path)
+            .map_err(|error| UsageError(format!("read --fields-file {path}: {error}")))?
+    };
+    let parsed: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|error| UsageError(format!("parse --fields-file {path}: {error}")))?;
+    match parsed {
+        serde_json::Value::Object(map) => Ok(map.into_iter().collect()),
+        _ => Err(UsageError(format!(
+            "--fields-file {path} must contain a JSON object mapping field names to values"
+        ))
+        .into()),
+    }
+}
+
+/// Merge `--field` and `--fields-file` inputs. Duplicate keys are a
+/// deterministic usage error so concurrent authors never silently win.
+fn merge_structured_fields(
+    fields: Vec<String>,
+    fields_files: Vec<String>,
+) -> Result<std::collections::BTreeMap<String, serde_json::Value>, anyhow::Error> {
+    let mut merged = std::collections::BTreeMap::new();
+    let mut duplicates = std::collections::BTreeSet::new();
+    for path in &fields_files {
+        for (key, value) in read_fields_file(path)? {
+            if merged.insert(key.clone(), value).is_some() {
+                duplicates.insert(key);
+            }
+        }
+    }
+    for arg in &fields {
+        let (key, value) = parse_field_arg(arg).map_err(anyhow::Error::from)?;
+        if merged.insert(key.clone(), value).is_some() {
+            duplicates.insert(key);
+        }
+    }
+    if !duplicates.is_empty() {
+        let names: Vec<String> = duplicates.into_iter().collect();
+        return Err(UsageError(format!(
+            "duplicate field {} from --field/--fields-file; specify each field once",
+            names.join(", ")
+        ))
+        .into());
+    }
+    Ok(merged)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn create_structured_entry(
+    config: &crate::config::EndpointConfig,
+    fmt: &Format,
+    space_path: String,
+    entry_id: String,
+    form: Option<String>,
+    title: Option<String>,
+    fields: Vec<String>,
+    fields_files: Vec<String>,
+    author: Option<String>,
+) -> Result<()> {
+    let Some(form_name) = form else {
+        return Err(
+            UsageError("--form is required for structured entry create".to_string()).into(),
+        );
+    };
+    let merged = merge_structured_fields(fields, fields_files)?;
+    let (root, space_id) = resolve_space_reference(config, &space_path, "entry create")?;
+    if let Some(base) = validated_base_url(config)? {
+        if author.is_some() {
+            return Err(UsageError(
+                "entry create --author is only supported in core mode; backend/api derive author from the authenticated identity"
+                    .to_string(),
+            )
+            .into());
+        }
+        let mut body = serde_json::json!({
+            "id": entry_id,
+            "form": form_name,
+            "fields": merged,
+        });
+        if let Some(title) = title.as_deref() {
+            body["title"] = serde_json::json!(title);
+        }
+        let result = http::execute(
+            &base,
+            "entry.create",
+            serde_json::json!({"space_id": space_id}),
+            Some(body),
+        )
+        .await?;
+        let receipt = entry_receipt(
+            entry_id,
+            result
+                .get("revision_id")
+                .and_then(|value| value.as_str())
+                .map(str::to_string),
+            result
+                .get("change_id")
+                .and_then(|value| value.as_str())
+                .map(str::to_string),
+        );
+        emit_success(&result, fmt, Some(receipt.human()));
+        return Ok(());
+    }
+    let author = author.unwrap_or_else(|| "cli".to_string());
+    let service = UgoiteService::new_without_background_refresh(&root)?;
+    let (mut meta, commit_receipt) = service
+        .create_structured_entry_with_receipt(
+            &space_id,
+            &entry_id,
+            title,
+            form_name,
+            Vec::new(),
+            merged,
+            std::collections::BTreeMap::new(),
+            &author,
+        )
+        .await?;
+    meta["change_id"] = serde_json::json!(commit_receipt.command_id);
+    let receipt = entry_receipt(
+        entry_id,
+        meta.get("revision_id")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+        meta.get("change_id")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+    );
+    emit_success(&meta, fmt, Some(receipt.human()));
+    Ok(())
+}
+
 pub async fn run(cmd: EntryCmd) -> Result<()> {
     let config = load_config();
     let fmt = effective_format(cmd.format);
@@ -260,8 +446,36 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             entry_id,
             content,
             file,
+            form,
+            title,
+            fields,
+            fields_files,
             author,
         } => {
+            let has_structured =
+                form.is_some() || title.is_some() || !fields.is_empty() || !fields_files.is_empty();
+            let has_markdown = content.is_some() || file.is_some();
+            if has_structured && has_markdown {
+                return Err(UsageError(
+                    "structured options (--form/--title/--field/--fields-file) and --content/--file cannot be combined; specify exactly one input style"
+                        .to_string(),
+                )
+                .into());
+            }
+            if has_structured {
+                return create_structured_entry(
+                    &config,
+                    &fmt,
+                    space_path,
+                    entry_id,
+                    form,
+                    title,
+                    fields,
+                    fields_files,
+                    author,
+                )
+                .await;
+            }
             // Shell-safe compatibility ingress: inline and file are mutually
             // exclusive; neither provided falls back to the default note.
             let content = match (content, file) {

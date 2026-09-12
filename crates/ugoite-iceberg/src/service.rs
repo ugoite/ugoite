@@ -2010,6 +2010,57 @@ impl UgoiteService {
         Ok(result)
     }
 
+    /// Create a Form-backed Entry in core (local filesystem) mode and return
+    /// the durable commit receipt alongside the existing Entry
+    /// representation. No CLI-side coercion happens here; the shared
+    /// core normalization owns field semantics for both core and remote
+    /// paths.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_structured_entry_with_receipt(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        title: Option<String>,
+        form_name: String,
+        tags: Vec<String>,
+        fields: std::collections::BTreeMap<String, Value>,
+        extra_attributes: std::collections::BTreeMap<String, Value>,
+        author: &str,
+    ) -> Result<(Value, crate::CommitReceipt)> {
+        self.ensure_mutation_admitted(space_id).await?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        let workspace = self.workspace_path(space_id);
+        let (_, receipt) = entry::create_structured_entry_with_scopes_and_change_with_receipt(
+            &self.operator,
+            &workspace,
+            entry_id,
+            title,
+            form_name,
+            tags,
+            fields,
+            extra_attributes,
+            author,
+            &integrity,
+            None,
+            None,
+        )
+        .await?;
+        self.schedule_asset_text_refresh(space_id);
+        let mut result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
+        result["change_id"] = json!(receipt.command_id);
+        self.record_committed_entry_revision(
+            space_id,
+            entry_id,
+            crate::mutation_audit::ENTRY_CREATED_ACTION,
+            &[],
+            author,
+        )
+        .await;
+        Ok((result, receipt))
+    }
+
     pub async fn list_entries(&self, space_id: &str) -> Result<Vec<Value>> {
         self.validate_complete_space(space_id).await?;
         entry::list_entries(&self.operator, &self.workspace_path(space_id)).await
