@@ -1,0 +1,137 @@
+{
+  "name": "structured-authoring-parity",
+  "description": "Lane 1 release evidence: one representative Form across string/markdown, boolean, integer/number, date/timestamp, list/object_list, row_reference, asset_reference(_list), required, and unknown fields. Frontend (WASM), CLI core, and CLI remote converge on the same normalized values, Form identity, revision parentage, and validation codes.",
+  "form": {
+    "id": "01900000-0000-7000-8000-0000000000b0",
+    "version": 1,
+    "name": "Parity",
+    "fields": [
+      { "id": 100, "name": "Title", "field_type": "string", "required": true },
+      { "id": 101, "name": "Notes", "field_type": "markdown", "required": false },
+      { "id": 102, "name": "Done", "field_type": "boolean", "required": false },
+      { "id": 103, "name": "Count", "field_type": "integer", "required": false },
+      { "id": 104, "name": "Score", "field_type": "double", "required": false },
+      { "id": 105, "name": "Due", "field_type": "date", "required": false },
+      { "id": 106, "name": "At", "field_type": "timestamp", "required": false },
+      { "id": 107, "name": "Tags", "field_type": "list", "required": false },
+      { "id": 108, "name": "Rows", "field_type": "object_list", "required": false },
+      { "id": 109, "name": "Ref", "field_type": "row_reference", "required": false, "reference_form": "01900000-0000-7000-8000-0000000000a1" },
+      { "id": 110, "name": "File", "field_type": "asset_reference", "required": false },
+      { "id": 111, "name": "Files", "field_type": "list", "required": false, "items": { "type": "asset_reference" } }
+    ],
+    "allow_extra_attributes": false
+  },
+  "markdown": "---\nform: Parity\ntags:\n  - inbox\n---\n# Website\n\n## Title\n\nhello\n\n## Notes\n\nSome *markdown* body.\n\n## Done\nyes\n\n## Count\n42\n\n## Score\n3.14\n\n## Due\n2026-09-11\n\n## At\n2026-09-11T10:00:00\n\n## Tags\n- alpha\n- beta\n\n## Rows\n[{\"step\": \"one\"}]\n\n## Ref\ntask-01\n\n## File\n{\"asset_id\": \"01900000-0000-7000-8000-000000000001\", \"name\": \"spec.pdf\", \"media_type\": \"application/pdf\", \"size_bytes\": 12, \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n\n## Files\n[{\"asset_id\": \"01900000-0000-7000-8000-000000000002\", \"name\": \"a.png\", \"media_type\": \"image/png\", \"size_bytes\": 4, \"sha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}]\n",
+  "structured": {
+    "title": "Website",
+    "form": "Parity",
+    "tags": ["inbox"],
+    "fields": {
+      "Title": "hello",
+      "Notes": "Some *markdown* body.",
+      "Done": true,
+      "Count": 42,
+      "Score": 3.14,
+      "Due": "2026-09-11",
+      "At": "2026-09-11T10:00:00",
+      "Tags": ["alpha", "beta"],
+      "Rows": [{ "step": "one" }],
+      "Ref": "task-01",
+      "File": {
+        "asset_id": "01900000-0000-7000-8000-000000000001",
+        "name": "spec.pdf",
+        "media_type": "application/pdf",
+        "size_bytes": 12,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "Files": [
+        {
+          "asset_id": "01900000-0000-7000-8000-000000000002",
+          "name": "a.png",
+          "media_type": "image/png",
+          "size_bytes": 4,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "title": "Website",
+    "tags": ["inbox"],
+    "values": {
+      "100": "hello",
+      "101": "Some *markdown* body.",
+      "102": true,
+      "103": 42,
+      "104": 3.14,
+      "105": "2026-09-11",
+      "106": "2026-09-11T10:00:00",
+      "107": ["alpha", "beta"],
+      "108": [{ "step": "one" }],
+      "109": "task-01",
+      "110": {
+        "asset_id": "01900000-0000-7000-8000-000000000001",
+        "name": "spec.pdf",
+        "media_type": "application/pdf",
+        "size_bytes": 12,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "111": [
+        {
+          "asset_id": "01900000-0000-7000-8000-000000000002",
+          "name": "a.png",
+          "media_type": "image/png",
+          "size_bytes": 4,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ]
+    },
+    "extra_attributes": {}
+  },
+  "update": {
+    "title": "Website v2",
+    "fields": {
+      "Title": "hello again",
+      "Notes": "Some *markdown* body.",
+      "Done": false,
+      "Count": 43,
+      "Score": 2.71,
+      "Due": "2026-09-12",
+      "At": "2026-09-12T10:00:00",
+      "Tags": ["alpha"],
+      "Rows": [{ "step": "two" }],
+      "Ref": "task-02",
+      "File": {
+        "asset_id": "01900000-0000-7000-8000-000000000001",
+        "name": "spec.pdf",
+        "media_type": "application/pdf",
+        "size_bytes": 12,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "Files": []
+    },
+    "expected_values": {
+      "100": "hello again",
+      "102": false,
+      "103": 43,
+      "104": 2.71,
+      "105": "2026-09-12",
+      "106": "2026-09-12T10:00:00",
+      "107": ["alpha"],
+      "109": "task-02"
+    }
+  },
+  "invalid_cases": [
+    { "field": "Done", "fields": { "Title": "hello", "Done": "maybe" }, "code": "FORM_VALIDATION_FAILED", "warning": "invalid_type" },
+    { "field": "Count", "fields": { "Title": "hello", "Count": "not-an-int" }, "code": "FORM_VALIDATION_FAILED", "warning": "invalid_type" },
+    { "field": "Score", "fields": { "Title": "hello", "Score": "not-a-number" }, "code": "FORM_VALIDATION_FAILED", "warning": "invalid_type" },
+    { "field": "Due", "fields": { "Title": "hello", "Due": "tomorrow" }, "code": "FORM_VALIDATION_FAILED", "warning": "invalid_type" },
+    { "field": "At", "fields": { "Title": "hello", "At": "not-a-timestamp" }, "code": "FORM_VALIDATION_FAILED", "warning": "invalid_type" },
+    { "field": "Tags", "fields": { "Title": "hello", "Tags": 42 }, "code": "FORM_VALIDATION_FAILED", "warning": "invalid_type" },
+    { "field": "Rows", "fields": { "Title": "hello", "Rows": "not-an-array" }, "code": "FORM_VALIDATION_FAILED", "warning": "invalid_type" },
+    { "field": "Ref", "fields": { "Title": "hello", "Ref": 7 }, "code": "FORM_VALIDATION_FAILED", "warning": "invalid_type" },
+    { "field": "File", "fields": { "Title": "hello", "File": { "asset_id": "not-a-uuid" } }, "code": "FORM_VALIDATION_FAILED", "warning": "invalid_type" },
+    { "field": "Title", "fields": { "Done": true }, "code": "FORM_VALIDATION_FAILED", "warning": "missing_field" },
+    { "field": "Nope", "fields": { "Title": "hello", "Nope": "x" }, "code": "UNKNOWN_FORM_FIELDS" }
+  ]
+}
