@@ -57,9 +57,8 @@ export default function SpaceHistoryRoute() {
                       </Show>
                       <small>
                         {formatDateTimeLabel(change.created_at_micros / 1000)}
-                        {" · "}
-                        {change.actor_principal_id}
                       </small>
+                      <small>{change.actor_principal_id}</small>
                       <small>
                         {t("spaceHistory.changeId", {
                           value: change.change_id,

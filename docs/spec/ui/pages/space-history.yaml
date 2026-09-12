@@ -1,0 +1,16 @@
+version: "0.1"
+updated: "2026-09-12"
+page:
+  id: space-history
+  title: Space History
+  route: /spaces/{space_id}/history
+  implementation: implemented
+components:
+  shared:
+    - id: top-tabs
+      type: tab-bar
+      position: top-center-floating
+  body:
+    - id: change-timeline
+      type: list
+      title: Space changes
