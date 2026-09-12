@@ -218,6 +218,7 @@ describe("EntryDetailPane", () => {
     expect(sourceDisclosure).toHaveAttribute("open");
 
     fireEvent.click(source);
+    expect(source).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("tabpanel", { name: "Source" }))
       .toBeInTheDocument();
 
