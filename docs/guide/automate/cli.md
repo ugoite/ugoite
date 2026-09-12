@@ -138,8 +138,9 @@ revisions. Updates can include `--parent-revision-id` to enforce optimistic
 conflict checks. `entry delete` appends a deletion tombstone to the revision
 history. The currently accepted `--hard-delete` flag also writes a tombstone;
 permanent removal is not available in this release. Mutation commands return a
-receipt: TTY output stays concise, while `--json` includes the resource ID,
-revision ID, and durable Change ID when the operation commits.
+receipt: TTY output stays concise, while `--format json` (or `-o json`)
+includes the resource ID, revision ID, and durable Change ID when the operation
+commits.
 
 ## Forms
 

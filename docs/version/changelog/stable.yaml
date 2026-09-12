@@ -26,6 +26,5 @@ release_notes:
   - The v0.1.1 product patch keeps Space compatibility at 0.1 and documents legacy Markdown alongside structured Entry authoring.
   - Remote CLI asset upload remains outside the supported v0.1.1 documentation surface; core mode remains the local asset path.
   planned:
-  - A completed operator-supported release with its published artifacts and verified quick starts.
   - Managed Agent Principals/service-account automation, audit CRUD, and browser-local optional sync.
 updated: '2026-09-12'
