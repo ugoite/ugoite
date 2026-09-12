@@ -1,11 +1,5 @@
 import { type Accessor, createSignal, type Setter } from "solid-js";
-import {
-  isAssetReference,
-  parseAssetReference,
-  parseAssetReferenceList,
-  serializeAssetReference,
-  serializeAssetReferenceList,
-} from "./asset-reference";
+import { isAssetReference } from "./asset-reference";
 import type { AssetReference } from "./types";
 
 export type PendingAssetUpload = {
@@ -20,8 +14,8 @@ export type PendingAssetUpload = {
 
 export type AssetDraftBinding = {
   multiple: boolean;
-  getValue: () => string;
-  setValue: (value: string) => void;
+  getValue: () => unknown;
+  setValue: (value: unknown) => void;
 };
 
 export type AssetUploadMessages = {
@@ -135,26 +129,38 @@ export function createAssetFieldState(): AssetFieldState {
   const isActiveUpload = (item: PendingAssetUpload) =>
     !item.controller.signal.aborted && isActive(item.generation);
 
+  const readReferences = (value: unknown): AssetReference[] => {
+    if (value === null || value === undefined) return [];
+    if (typeof value === "string") {
+      if (!value.trim()) return [];
+      try {
+        const parsed: unknown = JSON.parse(value);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(isAssetReference);
+        }
+        return isAssetReference(parsed) ? [parsed] : [];
+      } catch {
+        return [];
+      }
+    }
+    if (Array.isArray(value)) return value.filter(isAssetReference);
+    return isAssetReference(value) ? [value] : [];
+  };
+
   const currentReferences = () => {
     const binding = draftBinding;
     if (!binding) return [];
-    if (binding.multiple) {
-      return parseAssetReferenceList(binding.getValue()) ?? [];
-    }
-    const reference = parseAssetReference(binding.getValue());
-    return reference ? [reference] : [];
+    const references = readReferences(binding.getValue());
+    return binding.multiple ? references : references.slice(0, 1);
   };
 
   const setReferences = (references: AssetReference[]) => {
     const binding = draftBinding;
     if (!binding) return;
-    binding.setValue(
-      binding.multiple
-        ? serializeAssetReferenceList(references)
-        : references[0]
-        ? serializeAssetReference(references[0])
-        : "",
-    );
+    // Typed draft values: canonical objects stay objects inside the draft.
+    // Serialization to JSON/Markdown happens only at the compatibility
+    // bridge (transport/render), never in field components.
+    binding.setValue(binding.multiple ? [...references] : references[0] ?? "");
   };
 
   const removePendingForAsset = (assetId: string) => {

@@ -2,6 +2,7 @@ import {
   parseEntryMarkdownCompat,
   renderEntryMarkdownCompat,
 } from "~/lib/ugoite-client/protocol";
+import { type DraftValue, draftValueToDisplayString } from "~/lib/draft-values";
 import { toRustFormDefinition } from "~/lib/entry-validation";
 import type { Form } from "~/lib/types";
 
@@ -16,7 +17,7 @@ const toStringFields = (
 ): Record<string, string> => {
   const out: Record<string, string> = {};
   for (const [name, value] of Object.entries(fields)) {
-    out[name] = typeof value === "string" ? value : String(value ?? "");
+    out[name] = draftValueToDisplayString(value as DraftValue);
   }
   return out;
 };
@@ -50,7 +51,7 @@ export const renderDraftToSourceViaWasm = async (
   form: Form,
   title: string,
   tags: string[],
-  fields: Record<string, string>,
+  fields: Record<string, unknown>,
 ): Promise<string> => {
   const rendered = await renderEntryMarkdownCompat(
     toRustFormDefinition(form),

@@ -26,10 +26,14 @@ import {
 } from "~/lib/markdown";
 import {
   buildEntryMarkdownFromFields,
-  buildStructuredEntryFields,
   parseMarkdownFrontmatterTags,
   parseMarkdownToStructuredDraft,
 } from "~/lib/entry-input";
+import {
+  type DraftFields,
+  draftValueToDisplayString,
+  toTransportFields,
+} from "~/lib/draft-values";
 import {
   entryApi,
   RevisionConflictError,
@@ -479,9 +483,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   // it; preview and save derive from it. `editorContent` remains as the
   // source textarea buffer kept in sync.
   const [draftTitle, setDraftTitle] = createSignal("");
-  const [draftFields, setDraftFields] = createSignal<Record<string, string>>(
-    {},
-  );
+  const [draftFields, setDraftFields] = createSignal<DraftFields>({});
   const [draftTags, setDraftTags] = createSignal<string[]>([]);
   const [lastSavedContent, setLastSavedContent] = createSignal("");
   const [isDirty, setIsDirty] = createSignal(false);
@@ -663,7 +665,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     }
   };
 
-  const fieldValue = (fieldName: string) => draftFields()[fieldName] ?? "";
+  const fieldValue = (fieldName: string): string =>
+    draftValueToDisplayString(draftFields()[fieldName]);
 
   const previewAssetFields = createMemo(() =>
     Object.entries(currentForm()?.fields || {}).filter(([, fieldDef]) =>
@@ -773,17 +776,18 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setDefaultedViewEntryId(loadedEntry.id);
   });
 
-  const syncEditorFromDraft = (
-    title: string,
-    fields: Record<string, string>,
-  ) => {
+  const syncEditorFromDraft = (title: string, fields: DraftFields) => {
     // Immediate TypeScript compatibility render keeps field editing and the
     // source textarea responsive. The Rust compatibility bridge then
     // reconciles to the canonical 0.1 representation (authority): when both
     // agree nothing changes; when they disagree the Rust output wins.
     let content = replaceFirstH1(editorContent(), title);
     for (const [name, value] of Object.entries(fields)) {
-      content = updateH2Section(content, name, value);
+      content = updateH2Section(
+        content,
+        name,
+        draftValueToDisplayString(value),
+      );
     }
     setEditorContent(content);
     setIsDirty(content !== lastSavedContent());
@@ -858,7 +862,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     syncEditorFromDraft(title, draftFields());
   };
 
-  const handleFieldChange = (fieldName: string, value: string) => {
+  const handleFieldChange = (fieldName: string, value: unknown) => {
     const next = { ...draftFields(), [fieldName]: value };
     setDraftFields(next);
     syncEditorFromDraft(draftTitle(), next);
@@ -877,7 +881,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     // against the latest Markdown draft.
     state.bindDraft({
       multiple,
-      getValue: () => fieldValue(fieldName),
+      getValue: () => draftFields()[fieldName],
       setValue: (value) => handleFieldChange(fieldName, value),
     });
     return state;
@@ -991,14 +995,16 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     const formName = formDef?.name;
     const title = draftTitle();
     const fields: Record<string, unknown> = formDef
-      ? (buildStructuredEntryFields(formDef, draftFields()) as Record<
-        string,
-        unknown
-      >)
+      ? toTransportFields(formDef, draftFields())
       : Object.fromEntries(
-        Object.entries(draftFields()).filter(
-          ([name, value]) => !name.startsWith("__") && value.trim(),
-        ),
+        Object.entries(draftFields()).filter(([name, value]) => {
+          if (name.startsWith("__")) return false;
+          const text = draftValueToDisplayString(value);
+          return text.trim().length > 0;
+        }).map(([name, value]) => [
+          name,
+          draftValueToDisplayString(value).trim(),
+        ]),
       );
 
     // Pre-save Rust validation: same classification as the server mutation.
@@ -1187,7 +1193,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         <AssetField
           fieldId={fieldId}
           fieldName={fieldName}
-          value={value()}
+          value={draftFields()[fieldName]}
           persistedValue={persistedFieldValue(fieldName)}
           multiple={isAssetReferenceListField(fieldDef)}
           spaceId={props.spaceId()}

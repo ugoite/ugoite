@@ -773,7 +773,7 @@ describe("EntryDetailPane", () => {
       form: "Contract",
       title: "Contract",
       tags: [],
-      fields: { contract: expect.stringContaining(JSON.stringify(uploaded)) },
+      fields: { contract: uploaded },
     });
     expect(onCreated).toHaveBeenCalledWith({
       id: "contract-entry",
@@ -982,7 +982,7 @@ describe("EntryDetailPane", () => {
       expect.objectContaining({
         form: "PreviewAsset",
         fields: expect.objectContaining({
-          thumbnail: expect.stringContaining(JSON.stringify(uploaded)),
+          thumbnail: uploaded,
         }),
       }),
     );

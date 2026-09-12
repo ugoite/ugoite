@@ -11,6 +11,7 @@ import {
 } from "~/lib/asset-field-state";
 import {
   formatAssetSize,
+  isAssetReference,
   parseAssetReference,
   parseAssetReferenceList,
 } from "~/lib/asset-reference";
@@ -22,8 +23,8 @@ type PendingUpload = PendingAssetUpload;
 export interface AssetFieldProps {
   fieldId: string;
   fieldName: string;
-  value: string;
-  persistedValue: string;
+  value: unknown;
+  persistedValue: unknown;
   multiple: boolean;
   spaceId: string;
   formName?: string;
@@ -33,7 +34,7 @@ export interface AssetFieldProps {
   state?: AssetFieldState;
   invalid?: boolean;
   describedBy?: string;
-  onChange: (value: string) => void;
+  onChange: (value: unknown) => void;
 }
 
 const createUploadId = () =>
@@ -69,27 +70,39 @@ export function AssetField(props: AssetFieldProps) {
     state.bindDraft(binding);
   }
 
-  const parsedValue = createMemo(() => {
-    if (props.multiple) {
-      const references = parseAssetReferenceList(props.value);
-      return {
-        references: references ?? [],
-        invalid: props.value.trim().length > 0 && references === null,
-      };
+  const readReferences = (value: unknown): AssetReference[] | null => {
+    if (value === null || value === undefined) return [];
+    if (typeof value === "string") {
+      if (!value.trim()) return [];
+      return props.multiple ? parseAssetReferenceList(value) : (() => {
+        const reference = parseAssetReference(value);
+        return reference ? [reference] : null;
+      })();
     }
-    const reference = parseAssetReference(props.value);
+    if (Array.isArray(value)) {
+      return value.every((item) => isAssetReference(item))
+        ? (value as AssetReference[])
+        : null;
+    }
+    return isAssetReference(value) ? [value as AssetReference] : null;
+  };
+
+  const isBlankValue = (value: unknown): boolean =>
+    value === null ||
+    value === undefined ||
+    (typeof value === "string" && !value.trim()) ||
+    (Array.isArray(value) && value.length === 0);
+
+  const parsedValue = createMemo(() => {
+    const references = readReferences(props.value);
     return {
-      references: reference ? [reference] : [],
-      invalid: props.value.trim().length > 0 && reference === null,
+      references: references ?? [],
+      invalid: !isBlankValue(props.value) && references === null,
     };
   });
 
   const persistedIds = createMemo(() => {
-    const persisted = props.multiple
-      ? parseAssetReferenceList(props.persistedValue) ?? []
-      : [parseAssetReference(props.persistedValue)].filter(
-        (value): value is AssetReference => value !== null,
-      );
+    const persisted = readReferences(props.persistedValue) ?? [];
     return new Set(persisted.map((reference) => reference.asset_id));
   });
   const previewSignature = (reference: AssetReference) =>

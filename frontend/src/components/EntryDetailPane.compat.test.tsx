@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { EntryDetailPane } from "./EntryDetailPane";
-import { entryApi } from "~/lib/ugoite-client";
+import { entryApi, searchApi } from "~/lib/ugoite-client";
 import { setLocale } from "~/lib/i18n";
 import type { Form } from "~/lib/types";
 
@@ -120,5 +120,70 @@ describe("EntryDetailPane source compat bridge", () => {
       expect(screen.getByLabelText("Body")).toHaveValue("bridge wins")
     );
     parseSpy.mockRestore();
+  });
+
+  it("keeps the saved row_reference ID when the display label changes", async () => {
+    setLocale("en");
+    vi.resetAllMocks();
+    const rowReferenceOptions = searchApi
+      .rowReferenceOptions as ReturnType<typeof vi.fn>;
+    rowReferenceOptions.mockResolvedValue([
+      { id: "project-alpha", title: "Alpha Project", form: "Project" },
+    ]);
+    const createMock = entryApi.create as ReturnType<typeof vi.fn>;
+    createMock.mockResolvedValue({
+      id: "task-entry",
+      revision_id: "rev-1",
+    });
+    const projectForm: Form = {
+      id: "project-form-id",
+      name: "Project",
+      version: 1,
+      template: "# Project\n\n## Summary\n",
+      fields: { Summary: { type: "string", required: true } },
+    };
+    const taskForm: Form = {
+      id: "task-form-id",
+      name: "Task",
+      version: 1,
+      template: "# Task\n\n## Project\n",
+      fields: {
+        Project: {
+          type: "row_reference",
+          required: true,
+          target_form: projectForm.id,
+        },
+      },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [projectForm, taskForm]}
+        createForm={() => taskForm}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const projectInput = await screen.findByLabelText("Project");
+    fireEvent.input(projectInput, { target: { value: "alpha" } });
+    await waitFor(() => expect(rowReferenceOptions).toHaveBeenCalled());
+    fireEvent.click(await screen.findByText("Alpha Project"));
+
+    // Label changes upstream; the saved draft value stays the stable ID.
+    rowReferenceOptions.mockResolvedValue([
+      {
+        id: "project-alpha",
+        title: "Alpha Project (renamed)",
+        form: "Project",
+      },
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
+    const payload = createMock.mock.calls[0][1] as {
+      fields: Record<string, unknown>;
+    };
+    expect(payload.fields.Project).toBe("project-alpha");
   });
 });
