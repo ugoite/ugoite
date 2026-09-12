@@ -200,6 +200,16 @@ export const validateAssetReference = async (
     value,
   });
 
+/** Validate a structured Entry draft with the shared Rust boundary (PR1/PR2). */
+export const validateEntryDraft = async (
+  form: unknown,
+  draft: unknown,
+): Promise<unknown> =>
+  await invokeProtocol<unknown>({
+    action: "entry.validate_draft",
+    value: { form, draft },
+  });
+
 export class UgoiteApiError extends Error {
   readonly kind: string;
   readonly code?: string;

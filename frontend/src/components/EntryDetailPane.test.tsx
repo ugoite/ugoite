@@ -11,7 +11,6 @@ import {
 } from "~/lib/ugoite-client";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { setLocale } from "~/lib/i18n";
-import * as assetReference from "~/lib/asset-reference";
 import type { Form } from "~/lib/types";
 
 vi.mock("@solidjs/router", () => ({
@@ -380,8 +379,9 @@ describe("EntryDetailPane", () => {
 
     expect(createMock).not.toHaveBeenCalled();
     const status = screen.getByLabelText("Status");
-    expect(status).toHaveAttribute("aria-invalid", "true");
-    expect(document.activeElement).toBe(status);
+    // Rust boundary decides saveability asynchronously; hints stay sync.
+    await waitFor(() => expect(status).toHaveAttribute("aria-invalid", "true"));
+    await waitFor(() => expect(document.activeElement).toBe(status));
 
     fireEvent.input(status, { target: { value: "Ready" } });
     fireEvent.click(save);
@@ -426,17 +426,18 @@ describe("EntryDetailPane", () => {
     fireEvent.click(save);
 
     expect(createMock).not.toHaveBeenCalled();
-    const requiredSummary = screen.getAllByRole("alert").find((alert) =>
-      alert.textContent?.includes("Required fields need attention")
+    // Rust is the save authority; the summary uses its classification.
+    const requiredSummary = await screen.findByText("Form validation failed.");
+    expect(requiredSummary).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByLabelText("Status")).toHaveAttribute(
+        "aria-invalid",
+        "true",
+      )
     );
-    expect(requiredSummary).toBeDefined();
-    expect(requiredSummary).toHaveTextContent("Status");
-    expect(requiredSummary).toHaveTextContent("Notes");
-    expect(screen.getByLabelText("Status")).toHaveAttribute(
-      "aria-invalid",
-      "true",
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByLabelText("Status"))
     );
-    expect(document.activeElement).toBe(screen.getByLabelText("Status"));
 
     fireEvent.input(screen.getByLabelText("Status"), {
       target: { value: "Open" },
@@ -483,7 +484,10 @@ describe("EntryDetailPane", () => {
     fireEvent.click(save);
 
     expect(updateMock).not.toHaveBeenCalled();
-    expect(status).toHaveAttribute("aria-invalid", "true");
+    await waitFor(() => expect(status).toHaveAttribute("aria-invalid", "true"));
+    // Wait for the async Rust validation to settle before retrying; the
+    // save lock yields one revision per settled validation.
+    await screen.findByText("Form validation failed.");
 
     fireEvent.input(status, { target: { value: "Done" } });
     fireEvent.click(save);
@@ -518,11 +522,13 @@ describe("EntryDetailPane", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(createMock).not.toHaveBeenCalled();
-    expect(checklist).toHaveAttribute("aria-invalid", "true");
-    expect(document.activeElement).toBe(checklist);
+    await waitFor(() =>
+      expect(checklist).toHaveAttribute("aria-invalid", "true")
+    );
+    await waitFor(() => expect(document.activeElement).toBe(checklist));
   });
 
-  it("blocks marker-only required lists before creating an entry", async () => {
+  it("defers marker-only required lists to the Rust canonical semantics", async () => {
     const createMock = entryApi.create as ReturnType<typeof vi.fn>;
     createMock.mockResolvedValue({
       id: "created-entry",
@@ -545,13 +551,15 @@ describe("EntryDetailPane", () => {
       />
     ));
 
+    // TypeScript shows a list-format hint for marker-only input, but the
+    // shared Rust boundary owns required/list semantics. Rust parses "-\n*"
+    // as a non-empty list, so the save proceeds with the same classification
+    // as the server mutation instead of a TS-only block.
     const items = await screen.findByLabelText("Items");
     fireEvent.input(items, { target: { value: "-\n*" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(createMock).not.toHaveBeenCalled();
-    expect(items).toHaveAttribute("aria-invalid", "true");
-    expect(document.activeElement).toBe(items);
+    await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
   });
 
   it("focuses an empty required asset field before creating an entry", async () => {
@@ -581,12 +589,14 @@ describe("EntryDetailPane", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(createMock).not.toHaveBeenCalled();
-    expect(fileInput).toHaveAttribute("aria-invalid", "true");
+    await waitFor(() =>
+      expect(fileInput).toHaveAttribute("aria-invalid", "true")
+    );
     expect(fileInput).toHaveAttribute(
       "aria-describedby",
       "entry-field-0-document-required",
     );
-    expect(document.activeElement).toBe(fileInput);
+    await waitFor(() => expect(document.activeElement).toBe(fileInput));
   });
 
   it("does not require deprecated fields when creating an entry", async () => {
@@ -771,7 +781,7 @@ describe("EntryDetailPane", () => {
     });
   });
 
-  it("rechecks required fields after async asset validation", async () => {
+  it("rechecks required fields after async Rust validation", async () => {
     const uploaded = {
       asset_id: "01900000-0000-7000-8000-000000000002",
       name: "contract.pdf",
@@ -779,11 +789,22 @@ describe("EntryDetailPane", () => {
       size_bytes: 123456,
       sha256: "a".repeat(64),
     };
-    let resolveValidation: ((reference: typeof uploaded) => void) | undefined;
-    const validateMock = vi.spyOn(assetReference, "validateAssetReference");
-    validateMock.mockImplementation(
+    const validationModule = await import("~/lib/entry-validation");
+    const validateSpy = vi.spyOn(validationModule, "validateEntryDraftViaWasm");
+    let resolveValidation!: (
+      value:
+        | { ok: true; normalized: unknown }
+        | {
+          ok: false;
+          code: string;
+          message: string;
+          invalidFields: string[];
+          error: InstanceType<typeof UgoiteApiError>;
+        },
+    ) => void;
+    validateSpy.mockImplementationOnce(
       () =>
-        new Promise<typeof uploaded>((resolve) => {
+        new Promise((resolve) => {
           resolveValidation = resolve;
         }),
     );
@@ -828,11 +849,31 @@ describe("EntryDetailPane", () => {
     fireEvent.click(save);
     fireEvent.input(status, { target: { value: "" } });
 
-    await waitFor(() => expect(validateMock).toHaveBeenCalledTimes(1));
-    resolveValidation?.(uploaded);
+    await waitFor(() => expect(validateSpy).toHaveBeenCalledTimes(1));
+    resolveValidation({
+      ok: false,
+      code: "FORM_VALIDATION_FAILED",
+      message: "Missing required field: Status (expected text)",
+      invalidFields: ["Status"],
+      error: new UgoiteApiError({
+        kind: "entry_validation",
+        message: "Missing required field: Status (expected text)",
+        code: "FORM_VALIDATION_FAILED",
+        detail: {
+          warnings: [{
+            code: "missing_field",
+            field: "Status",
+            expected_type: "string",
+            expected_format: "text",
+            reason: "required value is missing",
+            message: "Missing required field: Status (expected text)",
+          }],
+        },
+      }),
+    });
     await waitFor(() => expect(createMock).not.toHaveBeenCalled());
-    expect(status).toHaveAttribute("aria-invalid", "true");
-    validateMock.mockRestore();
+    await waitFor(() => expect(status).toHaveAttribute("aria-invalid", "true"));
+    validateSpy.mockRestore();
   });
 
   it("resolves normalized row_reference form ids before loading options", async () => {

@@ -36,13 +36,13 @@ import {
   searchApi,
 } from "~/lib/ugoite-client";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
+import { validateEntryDraftViaWasm } from "~/lib/entry-validation";
 import type { Entry, Form, FormField } from "~/lib/types";
 import {
   hasDuplicateAssetReferences,
   isAssetReferenceListField,
   parseAssetReference,
   parseAssetReferenceList,
-  validateAssetReference,
 } from "~/lib/asset-reference";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 
@@ -67,6 +67,8 @@ type RowReferenceOption = {
 };
 
 const BOOLEAN_VALUE_REGEX = /^(true|false|yes|no|on|off|1|0)$/i;
+// Presentation hint only. The shared Rust boundary owns boolean coercion;
+// this regex never decides saveability.
 const NUMERIC_FIELD_TYPES = new Set([
   "integer",
   "long",
@@ -94,14 +96,19 @@ function parseEntryValidationError(error: unknown) {
     return {
       title: t("entryDetail.unknownFormFields"),
       items: fields.length > 0 ? fields : [t("entryDetail.reviewRequirements")],
+      fields,
     };
   }
   if (error.code === "FORM_VALIDATION_FAILED") {
     const warnings = Array.isArray(detail?.warnings) ? detail.warnings : [];
+    const fields: string[] = [];
     const items = warnings
       .map((warning) => {
         if (!warning || typeof warning !== "object") return null;
         const item = warning as Record<string, unknown>;
+        if (typeof item.field === "string" && item.field) {
+          fields.push(item.field);
+        }
         return typeof item.message === "string"
           ? item.message
           : typeof item.field === "string"
@@ -112,6 +119,7 @@ function parseEntryValidationError(error: unknown) {
     return {
       title: t("entryDetail.validationFailed"),
       items: items.length > 0 ? items : [t("entryDetail.reviewRequirements")],
+      fields,
     };
   }
   return null;
@@ -170,6 +178,9 @@ function markdownWithoutAssetSections(
 }
 
 function buildEditorGuidance(form: Form | null, markdown: string) {
+  // Presentation hints only. Saveability and canonical errors come from the
+  // shared Rust boundary (`entry.validate_draft` + server mutation). When a
+  // hint conflicts with Rust, the Rust result wins.
   if (!form) {
     return {
       missingRequired: [] as string[],
@@ -481,6 +492,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       items: string[];
     } | null
   >(null);
+  // Canonical invalid fields from the shared Rust boundary (WASM pre-check
+  // or server mutation). Presentation hints never write here; Rust wins.
+  const [invalidFields, setInvalidFields] = createSignal<string[]>([]);
   const [currentRevisionId, setCurrentRevisionId] = createSignal<string | null>(
     null,
   );
@@ -604,37 +618,30 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     const wasFieldsView = viewMode() === "fields";
     setViewMode("fields");
     const focus = () => {
+      // Rust diagnostics drive aria-invalid; focus the first invalid field.
       document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
     };
     if (wasFieldsView) focus();
     else queueMicrotask(focus);
   };
 
-  const showMissingRequiredValidation = (missingRequired: string[]) => {
-    if (missingRequired.length === 0) return false;
+  const showRustValidationFailure = (
+    title: string,
+    items: string[],
+    fields: string[],
+  ) => {
     setConflictMessage(null);
-    setValidationError({
-      title: t("entryDetail.validation.requiredTitle"),
-      items: missingRequired.map((fieldName) =>
-        `${fieldName}: ${t("entryDetail.requiredMessage")}`
-      ),
-    });
-    focusFirstMissingRequiredField();
-    return true;
-  };
-
-  // Required hints are computed from the structured draft (single authority),
-  // not from Markdown text. The shared Rust boundary re-validates on save.
-  const showMissingRequiredValidationForDraft = () => {
-    const form = currentForm();
-    if (!form) return false;
-    const missing = Object.entries(form.fields || {})
-      .filter(([fieldName, fieldDef]) => {
-        if (!isActiveRequiredField(fieldDef)) return false;
-        return isMissingRequiredValue(fieldDef, draftFields()[fieldName] ?? "");
-      })
-      .map(([fieldName]) => fieldName);
-    return showMissingRequiredValidation(missing);
+    setInvalidFields(fields);
+    setValidationError({ title, items });
+    if (fields.length > 0) {
+      focusFirstMissingRequiredField();
+    } else if (typeof document !== "undefined") {
+      // No field to focus (e.g. pending uploads): focus the summary alert.
+      queueMicrotask(() => {
+        document.querySelector<HTMLElement>("#entry-detail-validation")
+          ?.focus();
+      });
+    }
   };
 
   const fieldValue = (fieldName: string) => draftFields()[fieldName] ?? "";
@@ -711,6 +718,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setIsDirty(isCreateMode());
     setConflictMessage(null);
     setValidationError(null);
+    setInvalidFields([]);
     setDefaultedViewEntryId(null);
   });
 
@@ -742,6 +750,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setIsDirty(content !== lastSavedContent());
     setConflictMessage(null);
     setValidationError(null);
+    setInvalidFields([]);
   };
 
   const handleContentChange = (content: string) => {
@@ -756,6 +765,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setIsDirty(content !== lastSavedContent());
     setConflictMessage(null);
     setValidationError(null);
+    setInvalidFields([]);
   };
 
   const handleTitleChange = (title: string) => {
@@ -789,71 +799,16 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   };
 
   const validateAssetFields = async (): Promise<string[]> => {
-    const form = currentForm();
-    if (!form) return [];
-    const issues: string[] = [];
-    for (const [fieldName, fieldDef] of Object.entries(form.fields || {})) {
-      const rawValue = fieldValue(fieldName);
-      if (fieldDef.type === "asset_reference") {
-        const reference = parseAssetReference(rawValue);
-        if (rawValue.trim() && !reference) {
-          issues.push(
-            t("entryDetail.validation.assetInvalid", { field: fieldName }),
-          );
-        } else if (isActiveRequiredField(fieldDef) && !reference) {
-          issues.push(
-            t("entryDetail.validation.assetRequired", { field: fieldName }),
-          );
-        } else if (reference) {
-          try {
-            await validateAssetReference(reference);
-          } catch {
-            issues.push(
-              t("entryDetail.validation.assetInvalid", { field: fieldName }),
-            );
-          }
-        }
-      } else if (isAssetReferenceListField(fieldDef)) {
-        const references = parseAssetReferenceList(rawValue);
-        if (!references) {
-          if (rawValue.trim()) {
-            issues.push(
-              t("entryDetail.validation.assetInvalid", { field: fieldName }),
-            );
-          }
-        } else if (hasDuplicateAssetReferences(references)) {
-          issues.push(
-            t("entryDetail.validation.assetDuplicate", { field: fieldName }),
-          );
-        } else if (
-          isActiveRequiredField(fieldDef) &&
-          references.length === 0
-        ) {
-          issues.push(
-            t("entryDetail.validation.assetListRequired", {
-              field: fieldName,
-            }),
-          );
-        } else {
-          try {
-            for (const reference of references) {
-              await validateAssetReference(reference);
-            }
-          } catch {
-            issues.push(
-              t("entryDetail.validation.assetInvalid", { field: fieldName }),
-            );
-          }
-        }
-      }
-    }
+    // Asset type/coercion/duplicate/required decisions belong to the shared
+    // Rust boundary (`entry.validate_draft` + server mutation). TypeScript
+    // only blocks on upload state, which Rust cannot observe.
     const hasPendingUpload = Array.from(assetFieldStates.values()).some(
       (state) => state.pendingUploads().length > 0,
     );
     if (hasPendingUpload) {
-      issues.push(t("entryDetail.validation.assetUploadPending"));
+      return [t("entryDetail.validation.assetUploadPending")];
     }
-    return issues;
+    return [];
   };
 
   const handleEditorKeyDown = (event: KeyboardEvent) => {
@@ -896,8 +851,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
   const handleSaveError = (error: unknown) => {
     const parsed = parseEntryValidationError(error);
-    if (parsed) setValidationError(parsed);
-    else if (error instanceof RevisionConflictError) {
+    if (parsed) {
+      showRustValidationFailure(parsed.title, parsed.items, parsed.fields);
+      return;
+    } else if (error instanceof RevisionConflictError) {
       setConflictMessage(
         error.apiError
           ? formatUserFacingError(
@@ -924,47 +881,24 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     }
     /* v8 ignore stop */
 
-    // TS required hints fail fast for UX; the shared Rust boundary remains
-    // the final authority and surfaces 422 warnings via
-    // `parseEntryValidationError`. Boolean/list/timestamp guidance stays as
-    // presentation hints only.
-    if (
-      currentForm() &&
-      draftFields() &&
-      showMissingRequiredValidationForDraft()
-    ) {
-      return;
-    }
-
-    // Lock before the async Rust/WASM validation. Two rapid Save actions
-    // must still produce one Entry revision request.
+    // Saveability is decided by the shared Rust boundary. TypeScript hints
+    // (required guidance, boolean/list formatting) never block a save.
+    // Lock before async validation so rapid saves still yield one revision.
     setIsSaving(true);
     const assetIssues = await validateAssetFields();
     if (assetIssues.length > 0) {
       setIsSaving(false);
-      setValidationError({
-        title: t("entryDetail.validation.title"),
-        items: assetIssues,
-      });
+      showRustValidationFailure(
+        t("entryDetail.validation.title"),
+        assetIssues,
+        [],
+      );
       return;
     }
 
-    // The draft may have changed during async asset validation.
-    if (
-      currentForm() &&
-      draftFields() &&
-      showMissingRequiredValidationForDraft()
-    ) {
-      setIsSaving(false);
-      return;
-    }
-
-    setConflictMessage(null);
-    setValidationError(null);
     // Structured wire authority when the Form is known; formless notes keep
-    // the Markdown compatibility path. Empty titles stay empty (Untitled is
-    // presentation only, matching the legacy `# ` save). Field values share
-    // the webform builder so trimming and zoned-timestamp normalization agree.
+    // the Markdown compatibility path. Field values share the webform builder
+    // so trimming and zoned-timestamp normalization agree.
     const formDef = currentForm() ?? props.createForm?.();
     const formName = formDef?.name;
     const title = draftTitle();
@@ -978,6 +912,50 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           ([name, value]) => !name.startsWith("__") && value.trim(),
         ),
       );
+
+    // Pre-save Rust validation: same classification as the server mutation.
+    // On conflict the Rust result wins over any TypeScript hint. Bridge
+    // failures must never leave the save lock stuck.
+    if (formDef && formName) {
+      let precheck;
+      try {
+        precheck = await validateEntryDraftViaWasm(formDef, {
+          title,
+          tags: draftTags(),
+          fields,
+        });
+      } catch (error) {
+        setIsSaving(false);
+        showRustValidationFailure(
+          t("entryDetail.saveFailed"),
+          [formatUserFacingError(
+            error,
+            "entryDetail.saveFailed",
+            "entry.create",
+          )],
+          [],
+        );
+        return;
+      }
+      if (!precheck.ok) {
+        setIsSaving(false);
+        const parsed = parseEntryValidationError(precheck.error);
+        if (parsed) {
+          showRustValidationFailure(parsed.title, parsed.items, parsed.fields);
+        } else {
+          showRustValidationFailure(
+            t("entryDetail.validationFailed"),
+            [precheck.message],
+            precheck.invalidFields,
+          );
+        }
+        return;
+      }
+    }
+
+    setConflictMessage(null);
+    setValidationError(null);
+    setInvalidFields([]);
     const contentToSave = editorContent();
     try {
       // Structured wire authority when the Form is known; the same
@@ -1030,6 +1008,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setIsDirty(false);
     setConflictMessage(null);
     setValidationError(null);
+    setInvalidFields([]);
   };
 
   const handleRefresh = async () => {
@@ -1298,6 +1277,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                   id="entry-detail-validation"
                   class="ui-alert ui-alert-warning text-sm"
                   role="alert"
+                  tabindex="-1"
                 >
                   <p class="font-semibold">{error().title}</p>
                   <ul class="mt-2 list-disc pl-5 space-y-1">
@@ -1439,7 +1419,14 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                                 fieldName,
                                 index(),
                               );
-                              const isMissing = () =>
+                              // Rust diagnostics are the save authority and
+                              // the sole driver of aria-invalid/error styling.
+                              // TypeScript required guidance stays as an
+                              // immediate muted hint only.
+                              const isInvalid = () =>
+                                invalidFields().includes(fieldName);
+                              const isMissingHint = () =>
+                                !invalidFields().includes(fieldName) &&
                                 editorGuidance().missingRequired.includes(
                                   fieldName,
                                 );
@@ -1447,7 +1434,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                                 <div
                                   class="ui-entry-field"
                                   classList={{
-                                    "ui-entry-field-error": isMissing(),
+                                    "ui-entry-field-error": isInvalid(),
                                   }}
                                 >
                                   <div class="ui-entry-field-heading">
@@ -1476,21 +1463,30 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                                     fieldName,
                                     fieldDef,
                                     fieldId,
-                                    isMissing,
+                                    isInvalid,
                                     requiredFieldErrorId(fieldId),
                                   )}
-                                  <Show when={isMissing()}>
+                                  <Show when={isMissingHint()}>
+                                    <p class="text-xs ui-muted">
+                                      {t("entryDetail.requiredMessage")}
+                                    </p>
+                                  </Show>
+                                  <Show
+                                    when={invalidFields().includes(fieldName)}
+                                  >
                                     <p
-                                      id={requiredFieldErrorId(fieldId)}
                                       class="text-xs ui-text-danger"
                                       role="alert"
                                     >
-                                      {t("entryDetail.requiredMessage")}
+                                      {validationError()?.items.find((item) =>
+                                        item.startsWith(`${fieldName}:`) ||
+                                        item.includes(fieldName)
+                                      ) ?? t("entryDetail.requiredMessage")}
                                     </p>
                                   </Show>
                                   <Show when={fieldIssue(fieldName)}>
                                     {(issue) => (
-                                      <p class="text-xs ui-text-danger">
+                                      <p class="text-xs ui-muted">
                                         {issue()}
                                       </p>
                                     )}
