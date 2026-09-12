@@ -796,7 +796,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     const requestTitle = title;
     const requestFields = { ...fields };
     const requestTags = [...draftTags()];
-    const requestFormName = formDef.name;
     const requestBaseline = content;
     trackCompat(
       renderDraftToSourceViaWasm(
