@@ -75,7 +75,7 @@ describe("AssetField", () => {
       },
     });
 
-    await waitFor(() => expect(value()).toBe(serializeAssetReference(first)));
+    await waitFor(() => expect(value()).toEqual(first));
     expect(screen.getByText("Uploaded; entry not saved yet"))
       .toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Remove" })).toBeInTheDocument();
@@ -106,13 +106,9 @@ describe("AssetField", () => {
     ));
 
     fireEvent.click(screen.getAllByRole("button", { name: / up$/ })[1]);
-    expect(onChange).toHaveBeenLastCalledWith(
-      serializeAssetReferenceList([second, first]),
-    );
+    expect(onChange).toHaveBeenLastCalledWith([second, first]);
     fireEvent.click(screen.getAllByRole("button", { name: /^Remove/ })[0]);
-    expect(onChange).toHaveBeenLastCalledWith(
-      serializeAssetReferenceList([first]),
-    );
+    expect(onChange).toHaveBeenLastCalledWith([first]);
   });
 
   it("replaces an individual typed-list item by Asset ID", async () => {
@@ -149,7 +145,7 @@ describe("AssetField", () => {
     });
 
     await waitFor(() => {
-      expect(value()).toBe(serializeAssetReferenceList([first, replacement]));
+      expect(value()).toEqual([first, replacement]);
     });
   });
 
@@ -217,7 +213,7 @@ describe("AssetField", () => {
         .toBeInTheDocument()
     );
     fireEvent.click(screen.getByRole("button", { name: "Retry upload" }));
-    await waitFor(() => expect(value()).toBe(serializeAssetReference(first)));
+    await waitFor(() => expect(value()).toEqual(first));
     expect(assetApi.upload).toHaveBeenCalledTimes(2);
   });
 
@@ -262,7 +258,7 @@ describe("AssetField", () => {
     fireEvent.change(screen.getByLabelText("Choose file"), {
       target: { files: [new File(["data"], "first.txt")] },
     });
-    await waitFor(() => expect(value()).toBe(serializeAssetReference(first)));
+    await waitFor(() => expect(value()).toEqual(first));
     setMode("preview");
     await waitFor(() =>
       expect(screen.getByText("first.txt"))
@@ -335,9 +331,7 @@ describe("AssetField", () => {
     await waitFor(() => expect(assetApi.upload).toHaveBeenCalledTimes(1));
     expect(state.pendingUploads()[0]?.replaceAssetId).toBeUndefined();
     resolvers.shift()?.(queuedFirst);
-    await waitFor(() =>
-      expect(value()).toBe(serializeAssetReferenceList([existing, queuedFirst]))
-    );
+    await waitFor(() => expect(value()).toEqual([existing, queuedFirst]));
     await waitFor(() => expect(assetApi.upload).toHaveBeenCalledTimes(2));
 
     // The second upload remains in flight while both conditional views are
@@ -348,14 +342,10 @@ describe("AssetField", () => {
     await screen.findByText("queued-first.txt");
     fireEvent.click(screen.getAllByRole("button", { name: / up$/ })[1]);
     fireEvent.click(screen.getAllByRole("button", { name: /^Remove$/ })[1]);
-    expect(value()).toBe(serializeAssetReferenceList([queuedFirst]));
+    expect(value()).toEqual([queuedFirst]);
 
     resolvers.shift()?.(queuedSecond);
-    await waitFor(() =>
-      expect(value()).toBe(
-        serializeAssetReferenceList([queuedFirst, queuedSecond]),
-      )
-    );
+    await waitFor(() => expect(value()).toEqual([queuedFirst, queuedSecond]));
   });
 
   it("does not render SVG as an active image preview", async () => {
