@@ -27,19 +27,27 @@ Create and edit an Entry in [Create and Edit Entries](entries.mdx).
 2. Compare revisions to see create and edit without rewritten content.
 3. Choose **Restore** for the first revision.
 4. Confirm history now has three revisions with the restored content newest.
+5. Open **Space history** from the Entry history page to see every Change
+   in the Space timeline. Reverting a Change appends a new Change; the
+   notice before confirming says so explicitly.
 
 </TabItem>
 <TabItem label="CLI">
 
 ```bash
 ugoite entry history /path/to/workspace/spaces/demo meeting-2026-09-12
+ugoite change list /path/to/workspace/spaces/demo
+ugoite change revert /path/to/workspace/spaces/demo <change-id>
+ugoite run undo /path/to/workspace/spaces/demo <run-id>
 ```
 
 Choose a prior revision and restore it. Restore appends a new revision
 replaying that content instead of destructively rolling back. Editing with a
-stale `--parent-revision-id` conflicts instead of overwriting. Run
-`ugoite entry history --help` and `ugoite entry restore --help` for exact
-flags.
+stale `--parent-revision-id` conflicts instead of overwriting. `change list`
+shows the Space timeline; `change revert` and `run undo` append inverse
+Changes without rewriting the past. Take Change and Run IDs from
+`change list` output. Run `ugoite entry history --help` and
+`ugoite entry restore --help` for exact flags.
 
 </TabItem>
 </Tabs>
@@ -68,3 +76,5 @@ The new restore revision. History views and diffs are runtime state.
 
 - `ugoite entry history --help` and `ugoite entry restore --help` are the
   command authorities.
+- `ugoite change --help` and `ugoite run --help` are the command
+  authorities for Space history, revert, and undo.

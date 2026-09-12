@@ -129,6 +129,9 @@ inventory:
             - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/restore.tsx
             - frontend/src/routes/spaces/[space_id]/search.tsx
             - frontend/src/routes/spaces/[space_id]/search.test.tsx
+            - frontend/src/lib/change-api.ts
+            - frontend/src/routes/spaces/[space_id]/history.tsx
+            - frontend/src/routes/spaces/[space_id]/history.test.tsx
             - e2e/search-ui.test.ts
             - e2e/smoke.test.ts
             - e2e/navigation.test.ts

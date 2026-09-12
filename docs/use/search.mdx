@@ -27,18 +27,28 @@ Create an Entry in [Create and Edit Entries](entries.mdx).
 
 1. Open **Search** and run a keyword search for `planning`.
 2. Open the result to return to the Entry detail page.
-3. Open **SQL** for a saved definition over the same Form.
+3. Switch to **Advanced search**, pick a Form, and add a typed field
+   condition such as `Status equals planning`. Results appear inline;
+   no SQL is involved.
+4. Open **SQL** for a saved definition over the same Form.
 
 </TabItem>
 <TabItem label="CLI">
 
 ```bash
 ugoite search keyword /path/to/workspace/spaces/demo planning
+ugoite search query /path/to/workspace/spaces/demo \
+  --form Meeting --eq status=planning --limit 20
 ugoite sql lint 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> LIMIT 10'
 ugoite sql saved-list /path/to/workspace/spaces/demo
 ugoite query /path/to/workspace/spaces/demo \
   --sql 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> LIMIT 10'
 ```
+
+`search query` sends typed field conditions (`--eq`, `--contains`,
+`--lt`, `--lte`, `--gt`, `--gte`) through the shared structured Search
+path, so the browser and the CLI narrow to the same Entry set. Complex
+machine input belongs in `--criteria-file` JSON instead of flags.
 
 `sql lint` checks syntax only; it does not resolve Forms or authorize
 execution. `query` is read-only and rejects DDL and DML without changing the
@@ -73,5 +83,6 @@ Nothing new. Search indexes and SQL sessions are derived and replaceable.
 
 ## Reference
 
-- `ugoite search --help`, `ugoite sql --help`, and `ugoite query --help`
-  are the command authorities.
+- `ugoite search --help`, `ugoite search query --help`,
+  `ugoite sql --help`, and `ugoite query --help` are the command
+  authorities.

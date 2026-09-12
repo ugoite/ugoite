@@ -7,6 +7,11 @@
  * postcondition through the canonical read surface, not the interaction
  * that produced it. Restore must append a new revision; history never
  * shortens.
+ *
+ * JOURNEY-LOCATE-RECOVER-001 extends the same Space: typed structured
+ * Search narrows keyword discovery, Space Change history observes the
+ * timeline, Change revert appends without shortening history, and
+ * recovered search reflects recovered state on reopen.
  */
 
 import { type APIRequestContext, expect, test } from "@playwright/test";
@@ -257,5 +262,171 @@ test.describe("JOURNEY-KNOWLEDGE-001", () => {
     expect(searchRes.ok()).toBe(true);
     const rows = (await searchRes.json()) as Array<{ id?: string }>;
     expect(rows.some((row) => row.id === entryId)).toBe(true);
+  });
+
+  test("JOURNEY-LOCATE-RECOVER-001: Structured search narrows keyword discovery", async ({ request }) => {
+    const matchRes = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/query`),
+      {
+        data: {
+          criteria: {
+            form: formName,
+            conditions: [{
+              field: "Status",
+              operator: "equals",
+              value: needle,
+            }],
+            limit: 100,
+          },
+        },
+      },
+    );
+    expect(matchRes.ok()).toBe(true);
+    const matches = (await matchRes.json()) as Array<Record<string, unknown>>;
+    expect(matches.length).toBeGreaterThan(0);
+    expect(
+      matches.some((row) => row._ugoite_id === entryId || row.id === entryId),
+    ).toBe(true);
+
+    const missRes = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/query`),
+      {
+        data: {
+          criteria: {
+            form: formName,
+            conditions: [{
+              field: "Status",
+              operator: "equals",
+              value: "no-such-status",
+            }],
+            limit: 100,
+          },
+        },
+      },
+    );
+    expect(missRes.ok()).toBe(true);
+    const misses = (await missRes.json()) as Array<unknown>;
+    expect(misses).toHaveLength(0);
+  });
+
+  test("JOURNEY-LOCATE-RECOVER-001: Space history observes the timeline", async ({ request }) => {
+    const changesRes = await request.get(
+      getBackendUrl(`/spaces/${spaceId}/changes`),
+    );
+    expect(changesRes.ok()).toBe(true);
+    const changes = (await changesRes.json()) as Array<{
+      change_id?: string;
+      generation?: number;
+    }>;
+    // Entry create, edit, and restore each appended at least one Change.
+    expect(changes.length).toBeGreaterThanOrEqual(3);
+    for (const change of changes) {
+      expect(change.change_id).toBeTruthy();
+    }
+  });
+
+  test("JOURNEY-LOCATE-RECOVER-001: Change revert appends without shortening history", async ({ request }) => {
+    const beforeRes = await request.get(
+      getBackendUrl(`/spaces/${spaceId}/changes`),
+    );
+    expect(beforeRes.ok()).toBe(true);
+    const before = (await beforeRes.json()) as Array<{
+      change_id?: string;
+      generation?: number;
+    }>;
+    const target = before.reduce((latest, change) =>
+      (change.generation ?? 0) > (latest.generation ?? 0) ? change : latest
+    );
+    expect(target.change_id).toBeTruthy();
+
+    const entryBeforeRes = await request.get(
+      getBackendUrl(`/spaces/${spaceId}/entries/${entryId}/history`),
+    );
+    expect(entryBeforeRes.ok()).toBe(true);
+    const entryBefore = (await entryBeforeRes.json()) as {
+      revisions?: Array<{ revision_id?: string }>;
+    };
+    const entryCount = entryBefore.revisions?.length ?? 0;
+
+    const revertRes = await request.post(
+      getBackendUrl(
+        `/spaces/${spaceId}/changes/${
+          encodeURIComponent(target.change_id!)
+        }/revert`,
+      ),
+      { data: {} },
+    );
+    expect(revertRes.ok()).toBe(true);
+    const reverted = (await revertRes.json()) as { change_id?: string };
+    expect(reverted.change_id).toBeTruthy();
+    expect(reverted.change_id).not.toBe(target.change_id);
+
+    // The reverted Change is kept; the revert is appended.
+    const afterRes = await request.get(
+      getBackendUrl(`/spaces/${spaceId}/changes`),
+    );
+    expect(afterRes.ok()).toBe(true);
+    const after = (await afterRes.json()) as Array<{ change_id?: string }>;
+    expect(after.length).toBe(before.length + 1);
+    expect(after.map((change) => change.change_id)).toContain(target.change_id);
+    expect(after.map((change) => change.change_id)).toContain(
+      reverted.change_id,
+    );
+
+    const entryAfterRes = await request.get(
+      getBackendUrl(`/spaces/${spaceId}/entries/${entryId}/history`),
+    );
+    expect(entryAfterRes.ok()).toBe(true);
+    const entryAfter = (await entryAfterRes.json()) as {
+      revisions?: Array<{ revision_id?: string }>;
+    };
+    expect(entryAfter.revisions).toHaveLength(entryCount + 1);
+    for (const revision of entryBefore.revisions ?? []) {
+      expect(
+        (entryAfter.revisions ?? []).map((item) => item.revision_id),
+      ).toContain(revision.revision_id);
+    }
+  });
+
+  test("JOURNEY-LOCATE-RECOVER-001: Recovered search reflects recovered state on reopen", async ({ request }) => {
+    const searchRes = await request.get(
+      getBackendUrl(
+        `/spaces/${spaceId}/search?q=${encodeURIComponent(needle)}`,
+      ),
+    );
+    expect(searchRes.ok()).toBe(true);
+    const rows = (await searchRes.json()) as Array<{ id?: string }>;
+    expect(rows.some((row) => row.id === entryId)).toBe(true);
+
+    const structuredRes = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/query`),
+      {
+        data: {
+          criteria: {
+            form: formName,
+            conditions: [{
+              field: "Status",
+              operator: "equals",
+              value: needle,
+            }],
+            limit: 100,
+          },
+        },
+      },
+    );
+    expect(structuredRes.ok()).toBe(true);
+    const structured = (await structuredRes.json()) as Array<
+      Record<string, unknown>
+    >;
+    expect(
+      structured.some((row) =>
+        row._ugoite_id === entryId || row.id === entryId
+      ),
+    ).toBe(true);
+
+    const spaceRes = await request.get(getBackendUrl(`/spaces/${spaceId}`));
+    expect(spaceRes.ok()).toBe(true);
+    const space = (await spaceRes.json()) as { id?: string };
+    expect(space.id).toBe(spaceId);
   });
 });
