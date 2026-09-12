@@ -38,7 +38,7 @@ describe("space history route", () => {
       {
         change_id: "change-1",
         generation: 1,
-        actor_principal_id: "human:owner",
+        actor_principal_id: "human:editor",
         message: null,
         reverts_change_id: null,
         run_id: "run-7",
@@ -54,6 +54,7 @@ describe("space history route", () => {
     expect(await screen.findByText("Change")).toBeInTheDocument();
     expect(await screen.findByText("Restore entry")).toBeInTheDocument();
     expect(await screen.findByText("human:owner")).toBeInTheDocument();
+    expect(await screen.findByText("human:editor")).toBeInTheDocument();
     expect(
       await screen.findByText(
         formatDateTimeLabel(createdAtMicros / 1000),
