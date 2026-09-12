@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { docsSidebarDirectory, docsSourceDirectory } from "./docs-ssot.mjs";
 import satteriDocLinks, { rewriteDocLink } from "./satteri-doc-links.mjs";
 
 const repoRoot = path.resolve(process.cwd(), "..");
@@ -37,45 +36,9 @@ describe("documentation single source of truth", () => {
       'import { docsSidebarDirectory, docsSourceDirectory } from "./src/docs-ssot.mjs"',
     );
     expect(config).toContain("processedDirs: [docsSourceDirectory]");
-    expect(config).toContain('docsSidebarDirectory("get-started")');
-    expect(config).toContain('docsSidebarDirectory("use")');
-    expect(config).toContain('docsSidebarDirectory("operate")');
-    expect(config).toContain('docsSidebarDirectory("vision")');
-    expect(config).toContain('docsSidebarDirectory("develop")');
-    expect(config).toContain('docsSidebarDirectory("reference")');
-    expect(config).toContain('docsSidebarDirectory("spec")');
-    expect(config).not.toContain('docsSidebarDirectory("guide/start")');
-    expect(config).not.toContain('docsSidebarDirectory("guide/operate/auth")');
-    expect(config).not.toContain(
-      'docsSidebarDirectory("architecture/principles")',
-    );
-    expect(config).not.toContain(
-      'docsSidebarDirectory("architecture/data-model")',
-    );
-    expect(config).not.toContain(
-      'docsSidebarDirectory("architecture/testing")',
-    );
-    expect(config).not.toContain(
-      'docsSidebarDirectory("architecture/quality")',
-    );
-    expect(config).not.toContain(
-      'docsSidebarDirectory("architecture/product")',
-    );
-    expect(config).not.toContain(
-      'docsSidebarDirectory("architecture/release")',
-    );
-    expect(config).not.toContain('docsSidebarDirectory("spec/product")');
-    expect(config).not.toContain('docsSidebarDirectory("spec/versions")');
     expect(config).not.toContain("@astrojs/markdown-remark");
     expect(config).not.toContain("GITHUB_ACTIONS");
     expect(config).not.toContain("http://localhost");
-  });
-
-  test("shared docs path helpers keep loader and sidebar namespaces aligned", () => {
-    expect(docsSourceDirectory).toBe("../docs");
-    expect(docsSidebarDirectory("get-started")).toBe("../docs/get-started");
-    expect(docsSidebarDirectory("use")).toBe("../docs/use");
-    expect(docsSidebarDirectory("vision")).toBe("../docs/vision");
   });
 
   test("docsite contains no hand-authored route tree", async () => {
@@ -113,6 +76,29 @@ describe("documentation single source of truth", () => {
     ).toBe("../../architecture/contracts/overview/");
     expect(rewriteDocLink(null, "/repo/docs/index.md")).toBe(null);
     expect(rewriteDocLink("index.md", "/repo/docs/index.md")).toBe("./");
+  });
+
+  test("internal Markdown links resolve on the filesystem", async () => {
+    // Fast static check: authored relative links must point at repository
+    // files. External URLs are skipped without HTTP requests, and no
+    // Playwright or product API is started.
+    const failures: string[] = [];
+    for (const file of await collectMarkdown(docsRoot)) {
+      const source = await fs.readFile(file, "utf8");
+      const fromDir = path.dirname(file);
+      for (const target of authoredLinkTargets(markdownBody(source))) {
+        const resolved = resolveAuthoredLink(fromDir, target);
+        if (resolved === null) {
+          continue;
+        }
+        try {
+          await fs.stat(resolved);
+        } catch {
+          failures.push(`${file} -> ${target}`);
+        }
+      }
+    }
+    expect(failures).toEqual([]);
   });
 
   test("REQ-E2E-006: Sätteri link plugin rewrites authored links", () => {
@@ -206,6 +192,35 @@ function markdownBody(source: string): string {
   }
   const closing = source.indexOf("\n---\n", 4);
   return closing === -1 ? source : source.slice(closing + 5);
+}
+
+function authoredLinkTargets(body: string): string[] {
+  const targets: string[] = [];
+  for (const line of linesOutsideCodeFences(body)) {
+    const prose = line.replace(/`[^`]*`/g, "");
+    for (
+      const match of prose.matchAll(/(?<!!)\[[^\]]*\]\(([^)]+)\)/g)
+    ) {
+      targets.push(
+        match[1].trim().split(/\s+/)[0].replace(/^<|>$/g, ""),
+      );
+    }
+  }
+  return targets;
+}
+
+function resolveAuthoredLink(
+  fromDir: string,
+  target: string,
+): string | null {
+  if (/^(https?:|mailto:|#)/.test(target) || target.startsWith("/")) {
+    return null;
+  }
+  const withoutAnchor = target.split("#")[0];
+  if (!withoutAnchor) {
+    return null;
+  }
+  return path.normalize(path.join(fromDir, withoutAnchor));
 }
 
 async function collectMarkdown(root: string): Promise<string[]> {

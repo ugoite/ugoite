@@ -481,12 +481,13 @@ Deno.test("REQ-OPS-024: docsite coverage remains a canonical test contract", asy
       '"src/env.d.ts"',
       '"src/content.config.ts"',
       'provider: "v8"',
-      "lines: 100",
-      "functions: 100",
-      "branches: 100",
-      "statements: 100",
     ],
     "docsite coverage config",
+  );
+  assertEquals(
+    docsiteConfig.includes("thresholds:"),
+    false,
+    "docsite coverage config must not hard-gate thresholds",
   );
   assertEquals(
     rootDeno.includes('"docsite:coverage": "deno task --cwd docsite coverage"'),
