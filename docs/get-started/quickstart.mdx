@@ -1,0 +1,206 @@
+---
+title: "Quickstart"
+description: Complete the first durable Knowledge workflow in Browser or CLI.
+sidebar:
+  order: 2
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Complete one durable workflow from Space to restore. Browser and CLI reach
+the same Knowledge outcome with equivalent meaning. This page follows
+JOURNEY-KNOWLEDGE-001: Space create, Form establish, Entry create, Entry edit,
+Search, History, Restore, and Reopen. The browser is server-backed; the Space
+remains the Knowledge authority.
+
+## Outcome
+
+A Space holds a Form, an Entry with two revisions, a successful search, and a
+restore that appends rather than rewrites history.
+
+## Before you begin
+
+- A running server for the Browser path, or a local workspace for CLI core
+  mode. See [Overview](index.md) for the container and local paths.
+- A Space you may write to. Core mode takes a local path such as
+  `/path/to/workspace/spaces/demo`. Backend mode takes a Space ID such as
+  `demo`.
+
+## Create a Space
+
+<Tabs>
+<TabItem label="Browser">
+
+1. Sign in with a registered Passkey.
+2. Open the Space switcher and create a Space named `demo`.
+3. Open the new Space dashboard to confirm it is selected.
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+ugoite config set --mode core
+ugoite space create /path/to/workspace/spaces/demo
+ugoite space get /path/to/workspace/spaces/demo
+```
+
+In backend mode, pass the Space ID instead of a path. See the [CLI
+guide](../guide/automate/cli.md) for endpoint modes.
+
+</TabItem>
+</Tabs>
+
+## Create a Form
+
+<Tabs>
+<TabItem label="Browser">
+
+1. Open **Forms** and create a Form named `Meeting`.
+2. Add a short text field for values that should sort or filter predictably,
+   and a Markdown field for longer notes.
+3. Save the Form and confirm it appears in the Forms list.
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+ugoite form list /path/to/workspace/spaces/demo
+ugoite form list-types
+```
+
+Write the Form definition to JSON and apply it:
+
+```bash
+ugoite form update /path/to/workspace/spaces/demo meeting.json
+ugoite form get /path/to/workspace/spaces/demo Meeting
+```
+
+Run `ugoite form <command> --help` for the exact JSON shape of the installed
+version.
+
+</TabItem>
+</Tabs>
+
+## Create an Entry
+
+<Tabs>
+<TabItem label="Browser">
+
+1. Open **Entries** and choose **New Entry**.
+2. Choose the `Meeting` Form, fill the typed fields, and write notes in the
+   Markdown field.
+3. Choose **Save entry** and confirm the saved status with no validation
+   error.
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+ugoite entry create /path/to/workspace/spaces/demo meeting-2026-09-12 \
+  --content $'---\nform: Meeting\n---\n# Planning\n\n## Notes\n\nAgenda'
+ugoite entry get /path/to/workspace/spaces/demo meeting-2026-09-12
+ugoite entry list /path/to/workspace/spaces/demo
+```
+
+Entry IDs are user-chosen slugs with ASCII letters, digits, `-`, and `_`.
+
+</TabItem>
+</Tabs>
+
+## Edit an Entry
+
+<Tabs>
+<TabItem label="Browser">
+
+1. Open the Entry, edit the fields or Markdown, and save again.
+2. Open **History** to confirm two revisions exist.
+
+</TabItem>
+<TabItem label="CLI">
+
+Edit through the normal mutation path, then inspect history:
+
+```bash
+ugoite entry history /path/to/workspace/spaces/demo meeting-2026-09-12
+```
+
+Updates accept `--parent-revision-id` for optimistic conflict checks. A stale
+parent conflicts instead of overwriting. Run `ugoite entry update --help` and
+`ugoite entry history --help` for exact flags.
+
+</TabItem>
+</Tabs>
+
+## Search Knowledge
+
+<Tabs>
+<TabItem label="Browser">
+
+1. Open **Search** and run a keyword search for `planning`.
+2. Open the result to return to the Entry detail page.
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+ugoite search keyword /path/to/workspace/spaces/demo planning
+```
+
+</TabItem>
+</Tabs>
+
+The updated durable Entry is discoverable under identical keyword conditions
+on both surfaces.
+
+## Restore a revision
+
+<Tabs>
+<TabItem label="Browser">
+
+1. From the Entry detail page, open **History**.
+2. Choose **Restore** for the first revision.
+3. Confirm history now has three revisions with the restored content newest.
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+ugoite entry history /path/to/workspace/spaces/demo meeting-2026-09-12
+```
+
+Choose a prior revision and restore it. Restore appends a new revision
+replaying that content instead of destructively rolling back. Run
+`ugoite entry restore --help` for exact flags.
+
+</TabItem>
+</Tabs>
+
+## Verify the result
+
+Reopen the Space across process and session boundaries and confirm the same
+Space, history, and search outcome read back identically. History stays
+append-only across create, edit, and restore.
+
+## What became durable?
+
+The Space, the `Meeting` Form, the Entry, its revisions, and the restore form
+the portable history. Search results and open tabs are derived runtime state
+and can be rebuilt.
+
+## If it fails
+
+- Entry rejected: check the Form name in frontmatter and typed field values,
+  then retry with valid data.
+- Revision conflict: re-read history, use the newest revision as parent, and
+  reapply the edit.
+- Search missing the change: confirm the Entry saved, then rerun the keyword
+  search.
+
+## Related concepts
+
+- [Core concepts](../guide/start/concepts.md) and [Create the first browser
+  entry](../guide/start/browser-first-entry.md).
+- [CLI guide](../guide/automate/cli.md) for endpoint modes and `--help`
+  authority.
+- [Knowledge, Work, and Experience](../vision/knowledge-work-experience.md)
+  for why restores append rather than rewrite.

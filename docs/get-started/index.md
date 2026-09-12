@@ -17,8 +17,14 @@ rather than the browser session, remains the Knowledge authority.
    Entries, Assets, revisions, and derived data.
 2. Run the [container quick start](../guide/start/container-quickstart.md) for
    the smallest release-style deployment.
-3. Create the [first browser Entry](../guide/start/browser-first-entry.md) and
+3. Complete the [Quickstart](quickstart.mdx) once in Browser or CLI: Space,
+   Form, Entry, Edit, Search, History, and Restore.
+4. Create the [first browser Entry](../guide/start/browser-first-entry.md) to
    identify the main browser surfaces.
+
+Browser and CLI reach the same Knowledge outcome with equivalent meaning. CLI
+core and remote differences are noted inline only where they change what to
+type.
 
 ## After the first run
 
@@ -26,7 +32,3 @@ rather than the browser session, remains the Knowledge authority.
 - Continue with [Operate Ugoite](../operate/index.md) for deployment and
   recovery procedures.
 - Continue with [Develop Ugoite](../develop/index.md) to run Ugoite from source.
-
-A unified Browser and CLI Golden Journey will replace the separate Browser-first
-and CLI-first paths in a later step. Until then, the pages above remain the
-canonical beginner path.
