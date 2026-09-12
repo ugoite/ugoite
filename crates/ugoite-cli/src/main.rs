@@ -42,6 +42,14 @@ enum Commands {
     ///
     /// Run `ugoite config current` to check whether you should pass `/root/spaces/<id>` in core mode or a bare `SPACE_ID` in backend/api mode.
     Search(commands::search::SearchCmd),
+    /// Space Change history and revert commands.
+    ///
+    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<id>` in core mode or a bare `SPACE_ID` in backend/api mode.
+    Change(commands::change::ChangeCmd),
+    /// Run undo commands.
+    ///
+    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<id>` in core mode or a bare `SPACE_ID` in backend/api mode.
+    Run(commands::run::RunCmd),
     /// SQL syntax linting and completion commands
     Sql(commands::sql::SqlCmd),
     /// Indexer operations
@@ -122,6 +130,8 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Form(cmd) => commands::form::run(cmd).await,
         Commands::Asset(cmd) => commands::asset::run(cmd).await,
         Commands::Search(cmd) => commands::search::run(cmd).await,
+        Commands::Change(cmd) => commands::change::run(cmd).await,
+        Commands::Run(cmd) => commands::run::run(cmd).await,
         Commands::Sql(cmd) => commands::sql::run(cmd).await,
         Commands::Index(cmd) => commands::index::run(cmd).await,
         Commands::Konase(cmd) => commands::konase::run(cmd).await,
