@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { entryApi } from "~/lib/ugoite-client";
@@ -68,7 +68,7 @@ describe("entry revision review route", () => {
       .toBeInTheDocument();
     expect(await screen.findByText("Current title")).toBeInTheDocument();
     expect(await screen.findByText("Historical title")).toBeInTheDocument();
-    expect(await screen.findByText("Original")).toBeInTheDocument();
+    expect(await screen.findByText(/Original$/)).toBeInTheDocument();
     expect(await screen.findByText(/Restore appends a new current revision/))
       .toBeInTheDocument();
 
@@ -81,6 +81,8 @@ describe("entry revision review route", () => {
       "entry-1",
       "rev-old",
     );
-    expect(navigate).toHaveBeenCalledWith("/spaces/default/entries/entry-1");
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith("/spaces/default/entries/entry-1")
+    );
   });
 });

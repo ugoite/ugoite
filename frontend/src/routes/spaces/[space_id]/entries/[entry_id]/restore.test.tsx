@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { formatDateTimeLabel } from "~/lib/date-format";
 import { setLocale } from "~/lib/i18n";
@@ -90,7 +90,7 @@ describe("entry restore route", () => {
       await screen.findByRole("radio", { name: /Created: Original title/ }),
     );
     expect(await screen.findByText("Current title")).toBeInTheDocument();
-    expect(await screen.findByText("Original title")).toBeInTheDocument();
+    expect(await screen.findAllByText("Original title")).toHaveLength(2);
     fireEvent.click(
       await screen.findByRole("button", { name: "Restore this revision" }),
     );
@@ -100,6 +100,8 @@ describe("entry restore route", () => {
       "entry-1",
       "rev-1",
     );
-    expect(navigate).toHaveBeenCalledWith("/spaces/default/entries/entry-1");
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith("/spaces/default/entries/entry-1")
+    );
   });
 });
