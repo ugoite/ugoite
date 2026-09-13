@@ -146,6 +146,95 @@ fn spawn_recording_server(
     (format!("http://{}", addr), rx, handle)
 }
 
+fn spawn_entry_update_server() -> (String, mpsc::Receiver<Vec<String>>, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (tx, rx) = mpsc::channel();
+    let handle = thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut requests = Vec::with_capacity(2);
+        for body in [
+            r#"{"id":"task-01","revision_id":"rev-1"}"#,
+            r#"{"id":"task-01","revision_id":"rev-2"}"#,
+        ] {
+            let (mut stream, _) = loop {
+                match listener.accept() {
+                    Ok(connection) => break connection,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(
+                            Instant::now() < deadline,
+                            "timed out waiting for CLI backend request"
+                        );
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) => panic!("failed to accept test request: {error}"),
+                }
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = Vec::new();
+            let mut content_length = 0_usize;
+            let mut header_end = None;
+            loop {
+                let mut buffer = [0_u8; 1024];
+                let read = match stream.read(&mut buffer) {
+                    Ok(read) => read,
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::TimedOut
+                                | std::io::ErrorKind::Interrupted
+                                | std::io::ErrorKind::WouldBlock
+                        ) =>
+                    {
+                        assert!(
+                            Instant::now() < deadline,
+                            "timed out waiting for CLI backend request body"
+                        );
+                        continue;
+                    }
+                    Err(error) => panic!("failed to read test request body: {error}"),
+                };
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..read]);
+                if header_end.is_none() {
+                    if let Some(pos) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+                        let end = pos + 4;
+                        header_end = Some(end);
+                        let headers = String::from_utf8_lossy(&request[..end]);
+                        for line in headers.lines() {
+                            let mut parts = line.splitn(2, ':');
+                            if let (Some(name), Some(value)) = (parts.next(), parts.next()) {
+                                if name.eq_ignore_ascii_case("Content-Length") {
+                                    content_length = value.trim().parse().unwrap_or(0);
+                                }
+                            }
+                        }
+                    }
+                }
+                if let Some(end) = header_end {
+                    if request.len() >= end + content_length {
+                        break;
+                    }
+                }
+            }
+            requests.push(String::from_utf8_lossy(&request).into_owned());
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        }
+        tx.send(requests).unwrap();
+    });
+    (format!("http://{}", addr), rx, handle)
+}
+
 fn request_json_body(request: &str) -> serde_json::Value {
     let body = request
         .split_once("\r\n\r\n")
@@ -940,4 +1029,63 @@ fn test_entry_update_structured_routes_fields_without_markdown() {
         "{request}"
     );
     assert!(!request.contains(r#""markdown""#), "{request}");
+}
+
+/// PR5: remote entry updates default to the revision read immediately before
+/// the write when no parent revision is supplied.
+#[test]
+fn test_entry_update_default_parent_reads_current_entry_before_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let (base_url, request_rx, server_handle) = spawn_entry_update_server();
+
+    let set_output = Command::new(ugoite_bin())
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            &base_url,
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "update",
+            "remote-space",
+            "task-01",
+            "--markdown",
+            "# Updated",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    let requests = request_rx.recv().unwrap();
+    server_handle.join().unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests[0].starts_with("GET /spaces/remote-space/entries/task-01 HTTP/1.1\r\n"),
+        "{}",
+        requests[0]
+    );
+    assert!(
+        requests[1].starts_with("PUT /spaces/remote-space/entries/task-01 HTTP/1.1\r\n"),
+        "{}",
+        requests[1]
+    );
+    assert_eq!(
+        request_json_body(&requests[1])["parent_revision_id"],
+        "rev-1"
+    );
 }

@@ -172,6 +172,84 @@ fn test_update_entry_revision_mismatch() {
     );
 }
 
+/// REQ-ENTRY-002: An omitted parent revision is read immediately before the
+/// update and becomes the new revision's parent.
+#[test]
+fn test_update_entry_without_parent_uses_current_revision() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, config_path) = setup_space_with_form(&dir, "test-space");
+    let space_path = format!("{root}/spaces/test-space");
+    let initial = "---\nform: Entry\n---\n# Initial\n\n## Body\n\nContent.";
+
+    let created = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "create",
+            "--content",
+            initial,
+            &space_path,
+            "entry-default-parent",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("create entry");
+    assert!(
+        created.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let created_json: serde_json::Value = serde_json::from_slice(&created.stdout).unwrap();
+    let created_revision = created_json["revision_id"]
+        .as_str()
+        .expect("create revision")
+        .to_owned();
+
+    let updated = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "update",
+            &space_path,
+            "entry-default-parent",
+            "--markdown",
+            "---\nform: Entry\n---\n# Updated\n\n## Body\n\nChanged.",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("update entry");
+    assert!(
+        updated.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&updated.stderr)
+    );
+    let updated_json: serde_json::Value = serde_json::from_slice(&updated.stdout).unwrap();
+    let updated_revision = updated_json["revision_id"]
+        .as_str()
+        .expect("update revision")
+        .to_owned();
+
+    let revision = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "revision",
+            &space_path,
+            "entry-default-parent",
+            &updated_revision,
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("read updated revision");
+    assert!(
+        revision.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&revision.stderr)
+    );
+    let revision_json: serde_json::Value = serde_json::from_slice(&revision.stdout).unwrap();
+    assert_eq!(
+        revision_json["parent_revision_id"].as_str(),
+        Some(created_revision.as_str())
+    );
+}
+
 /// REQ-ENTRY-003: Entry history is appended on each update.
 #[test]
 fn test_entry_history_append() {
