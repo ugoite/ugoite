@@ -218,6 +218,12 @@ export interface Entry {
 export interface EntryRevisionContent {
   revision_id: string;
   parent_revision_id?: string | null;
+  timestamp?: string | number;
+  title?: string;
+  form?: string;
+  tags?: string[];
+  operation?: string;
+  restored_from?: string | null;
   author?: string;
   updated_by?: string;
   deleted_by?: string | null;
@@ -229,8 +235,15 @@ export interface EntryRevisionContent {
 /** Entry history entry */
 export interface EntryRevision {
   revision_id: string;
+  change_id?: string;
   timestamp: string | number;
   checksum: string;
+  title?: string;
+  form?: string;
+  actor?: string;
+  operation?: string;
+  entry_version?: number;
+  restored_from?: string | null;
   author?: string;
   updated_by?: string;
   deleted_by?: string | null;

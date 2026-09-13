@@ -1,13 +1,21 @@
 import { A, useParams } from "@solidjs/router";
-import { createEffect, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateTimeLabel } from "~/lib/date-format";
+import {
+  revisionActor,
+  revisionForm,
+  revisionOperationLabel,
+  revisionSummary,
+  revisionTitle,
+} from "~/lib/entry-history";
+import { formatUserFacingError } from "~/lib/user-facing-error";
+import { t } from "~/lib/i18n";
 import { entryApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { spaceRoute } from "~/lib/space-shell-route";
 import { pageFromArray } from "~/lib/pagination";
 import type { EntryRevision } from "~/lib/types";
-import { t } from "~/lib/i18n";
 
 export const route = spaceRoute({ navigation: "forms", title: "entryHistory" });
 
@@ -55,68 +63,100 @@ export default function SpaceEntryHistoryRoute() {
       setLoadingMore(false);
     }
   };
+  const errorMessage = createMemo(() =>
+    history.error
+      ? formatUserFacingError(history.error, "entryHistory.loadError", "entry.history")
+      : null
+  );
 
   return (
     <>
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">{entryId()}</div>
-          <h1>History</h1>
+          <h1>{t("entryHistory.title")}</h1>
         </div>
         <A
           href={`/spaces/${spaceId()}/entries/${encodedEntryId()}`}
           class="btn"
         >
-          Back to Entry
+          {t("entryHistory.backToEntry")}
         </A>
         <A href={`/spaces/${spaceId()}/history`} class="btn">
-          View space history
+          {t("entryHistory.viewSpaceHistory")}
         </A>
       </div>
       <Show when={history.loading}>
         <p class="ui-muted">{t("entryHistory.loading")}</p>
       </Show>
-      <Show when={history.error}>
-        <p class="ui-alert ui-alert-error">Failed to load history.</p>
+      <Show when={errorMessage()}>
+        <p class="ui-alert ui-alert-error">{errorMessage()}</p>
       </Show>
       <Show when={loadMoreError()}>
         <p class="ui-alert ui-alert-error">{loadMoreError()}</p>
       </Show>
       <Show when={history()}>
-        {() => (
-          <div class="rowStack">
-            <For each={revisions()}>
-              {(revision) => (
-                <A
-                  class="rowBtn"
-                  href={`/spaces/${spaceId()}/entries/${encodedEntryId()}/history/${
-                    encodeURIComponent(revision.revision_id)
-                  }`}
+        {(data) => (
+          <Show
+            when={data().revisions.length > 0}
+            fallback={<p class="ui-muted">{t("entryHistory.empty")}</p>}
+          >
+            <div class="rowStack">
+              <For each={revisions()}>
+                {(revision) => (
+                  <A
+                    class="rowBtn"
+                    href={`/spaces/${spaceId()}/entries/${encodedEntryId()}/history/${
+                      encodeURIComponent(revision.revision_id)
+                    }`}
+                  >
+                    <span class="glyph active">
+                      <UiIcon name="history" />
+                    </span>
+                    <span class="ui-stack-sm">
+                      <span>
+                        <strong>{revisionOperationLabel(revision)}</strong>
+                        <span class="ui-muted"> · {revisionSummary(revision)}</span>
+                      </span>
+                      <span class="ui-entry-history-meta">
+                        <span>
+                          <b>{t("entryHistory.actor")}:</b> {revisionActor(revision)}
+                        </span>
+                        <span>
+                          <b>{t("entryHistory.timestamp")}:</b>{" "}
+                          {formatDateTimeLabel(revision.timestamp)}
+                        </span>
+                      </span>
+                      <span class="ui-entry-history-meta">
+                        <span>
+                          <b>{t("common.title")}:</b> {revisionTitle(revision)}
+                        </span>
+                        <span>
+                          <b>{t("common.form")}:</b> {revisionForm(revision)}
+                        </span>
+                      </span>
+                      <small class="ui-muted">
+                        {t("entryHistory.revisionId")}: {revision.revision_id}
+                      </small>
+                    </span>
+                    <span aria-hidden="true">›</span>
+                  </A>
+                )}
+              </For>
+              <Show when={hasMore()}>
+                <button
+                  type="button"
+                  class="ui-button ui-button-secondary"
+                  disabled={loadingMore()}
+                  onClick={() => void loadMoreHistory()}
                 >
-                  <span class="glyph active">
-                    <UiIcon name="history" />
-                  </span>
-                  <span>
-                    <b>{revision.revision_id}</b>
-                    <small>{formatDateTimeLabel(revision.timestamp)}</small>
-                  </span>
-                  <span>›</span>
-                </A>
-              )}
-            </For>
-            <Show when={hasMore()}>
-              <button
-                type="button"
-                class="ui-button ui-button-secondary"
-                disabled={loadingMore()}
-                onClick={() => void loadMoreHistory()}
-              >
-                {loadingMore()
-                  ? t("entryHistory.loadingMore")
-                  : t("entryHistory.loadMore")}
-              </button>
-            </Show>
-          </div>
+                  {loadingMore()
+                    ? t("entryHistory.loadingMore")
+                    : t("entryHistory.loadMore")}
+                </button>
+              </Show>
+            </div>
+          </Show>
         )}
       </Show>
     </>
