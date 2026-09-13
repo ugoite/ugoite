@@ -1,9 +1,10 @@
 import { validateEntryDraft } from "~/lib/ugoite-client/protocol";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
-import type { Form } from "~/lib/types";
+import type { Form, FormExtraAttributesPolicy } from "~/lib/types";
 
 const FALLBACK_FORM_ID = "00000000-0000-0000-0000-000000000001";
 const FALLBACK_REFERENCE_FORM_ID = "00000000-0000-0000-0000-000000000002";
+const EXTRA_ATTRIBUTES_POLICY_METADATA = "ugoite.extra_attributes_policy";
 
 const isUuid = (value: string) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -13,11 +14,14 @@ const isUuid = (value: string) =>
 /**
  * Convert a frontend Form to the Rust FormDefinition shape expected by
  * `entry.validate_draft`. This is a mechanical shape adapter only; coercion
- * and validation stay in Rust. Unknown server-only flags default to deny so
- * both sides reject unknown fields the same way.
+ * and validation stay in Rust. The durable extra-attributes policy is carried
+ * through the Rust extension metadata and projected to the current validator
+ * boolean without changing the transport value.
  */
 export const toRustFormDefinition = (form: Form): Record<string, unknown> => {
   const entries = Object.entries(form.fields || {});
+  const policy: FormExtraAttributesPolicy = form.allow_extra_attributes ??
+    "deny";
   // Legacy frontend "number" maps to the Rust "double" contract; Rust has no
   // bare "number" variant and would otherwise reject the form shape instead
   // of producing field-level diagnostics.
@@ -56,7 +60,13 @@ export const toRustFormDefinition = (form: Form): Record<string, unknown> => {
         }
         : {}),
     })),
-    allow_extra_attributes: false,
+    // Rust's domain validator currently projects both allowing policies onto
+    // its boolean validation flag. Keep the canonical policy alongside that
+    // projection so the WASM boundary does not discard the durable meaning.
+    allow_extra_attributes: policy !== "deny",
+    extension_metadata: {
+      [EXTRA_ATTRIBUTES_POLICY_METADATA]: policy,
+    },
   };
 };
 

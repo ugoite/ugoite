@@ -1407,6 +1407,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
         name: formName,
         template,
         fields: fieldRecord,
+        allow_extra_attributes: "deny",
       });
       setName("");
       setFields([]);
@@ -1939,6 +1940,8 @@ export function EditFormDialog(props: EditFormDialogProps) {
         name: props.entryForm.name,
         template,
         fields: fieldRecord,
+        allow_extra_attributes: props.entryForm.allow_extra_attributes ??
+          "deny",
       });
     } catch (error) {
       setSubmitError(

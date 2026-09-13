@@ -1075,6 +1075,15 @@ fn issue_2125_openapi_documents_entry_list_and_keyword_search_bounds() {
 }
 
 #[test]
+fn openapi_documents_the_form_extra_attributes_policy() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    assert_eq!(
+        snapshot["components"]["schemas"]["Form"]["properties"]["allow_extra_attributes"]["enum"],
+        serde_json::json!(["deny", "allow_json", "allow_columns"])
+    );
+}
+
+#[test]
 fn issue_2038_openapi_uses_head_owned_pins_for_immutable_knowledge_reads() {
     let snapshot = ugoite_server::openapi_snapshot();
     assert!(snapshot["paths"]["/spaces/{space_id}/pins/diff"].is_object());

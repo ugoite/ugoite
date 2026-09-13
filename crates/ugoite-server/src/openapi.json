@@ -12590,6 +12590,15 @@
           },
           "template": {
             "type": "string"
+          },
+          "allow_extra_attributes": {
+            "type": "string",
+            "enum": [
+              "deny",
+              "allow_json",
+              "allow_columns"
+            ],
+            "description": "Durable policy for values outside the declared Form fields."
           }
         },
         "additionalProperties": true
