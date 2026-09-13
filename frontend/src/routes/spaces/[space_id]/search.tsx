@@ -7,6 +7,7 @@ import { searchApi } from "~/lib/ugoite-client";
 import { sqlSessionApi } from "~/lib/ugoite-client";
 import { sqlApi } from "~/lib/ugoite-client";
 import { normalizeSqlVariables } from "~/lib/sql";
+import { localInputToRfc3339Instant } from "~/lib/search-date";
 import type { EntryRecord, KeywordSearchResult, SqlEntry } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t, type TranslationKey } from "~/lib/i18n";
@@ -34,6 +35,7 @@ type SearchFieldType =
   | "float"
   | "date"
   | "timestamp"
+  | "timestamp_tz"
   | "unsupported";
 
 type AvailableField = {
@@ -83,6 +85,9 @@ function normalizeFieldType(type: string): SearchFieldType {
       return "date";
     case "timestamp":
       return "timestamp";
+    case "timestamp_tz":
+    case "timestamp_tz_ns":
+      return "timestamp_tz";
     default:
       return "unsupported";
   }
@@ -93,7 +98,7 @@ function operatorsForFieldType(type: SearchFieldType): FieldMatchOperator[] {
   if (type === "boolean") return ["equals"];
   if (
     type === "integer" || type === "float" || type === "date" ||
-    type === "timestamp"
+    type === "timestamp" || type === "timestamp_tz"
   ) {
     return ["equals", "lt", "lte", "gt", "gte"];
   }
@@ -124,7 +129,9 @@ function fieldInputType(type: SearchFieldType):
   | "datetime-local" {
   if (type === "integer" || type === "float") return "number";
   if (type === "date") return "date";
-  if (type === "timestamp") return "datetime-local";
+  if (type === "timestamp" || type === "timestamp_tz") {
+    return "datetime-local";
+  }
   return "text";
 }
 
@@ -139,6 +146,7 @@ function fieldInputPlaceholder(type: SearchFieldType): TranslationKey {
     case "date":
       return "searchPage.datePlaceholder";
     case "timestamp":
+    case "timestamp_tz":
       return "searchPage.timestampPlaceholder";
     default:
       return "searchPage.valuePlaceholder";
@@ -188,12 +196,25 @@ function buildStructuredSearchCriteria(
   }
   return {
     form: criteria.formName,
-    ...(criteria.updatedFrom ? { updated_from: criteria.updatedFrom } : {}),
-    ...(criteria.updatedTo ? { updated_to: criteria.updatedTo } : {}),
+    ...(criteria.updatedFrom
+      ? {
+        updated_from: localInputToRfc3339Instant(
+          criteria.updatedFrom,
+          "start",
+        ),
+      }
+      : {}),
+    ...(criteria.updatedTo
+      ? {
+        updated_to: localInputToRfc3339Instant(criteria.updatedTo, "end"),
+      }
+      : {}),
     conditions: criteria.fieldConditions.map((condition) => ({
       field: condition.field,
       operator: condition.operator,
-      value: condition.value,
+      value: condition.type === "timestamp_tz"
+        ? localInputToRfc3339Instant(condition.value)
+        : condition.value,
     })),
     limit: SEARCH_PAGE_SIZE,
   };

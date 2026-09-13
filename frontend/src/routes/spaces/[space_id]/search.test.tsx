@@ -13,6 +13,7 @@ import { server } from "~/test/mocks/server";
 import type { Form, KeywordSearchResult, Space } from "~/lib/types";
 import { testApiUrl } from "~/test/http-origin";
 import { setLocale } from "~/lib/i18n";
+import { localInputToRfc3339Instant } from "~/lib/search-date";
 
 const navigateMock = vi.fn();
 
@@ -198,8 +199,8 @@ describe("/spaces/:space_id/search", () => {
     await waitFor(() => {
       expect(queryBody?.criteria).toEqual({
         form: "Meeting",
-        updated_from: "2025-03-01",
-        updated_to: "2025-03-03",
+        updated_from: localInputToRfc3339Instant("2025-03-01", "start"),
+        updated_to: localInputToRfc3339Instant("2025-03-03", "end"),
         conditions: [{ field: "Status", operator: "equals", value: "Active" }],
         limit: 51,
       });
@@ -217,6 +218,67 @@ describe("/spaces/:space_id/search", () => {
     fireEvent.click(screen.getByRole("button", { name: /Active Meeting/ }));
     expect(navigateMock).toHaveBeenCalledWith(
       "/spaces/default/entries/entry-1",
+    );
+  });
+
+  it("preserves wall-clock timestamp fields while converting instant fields", async () => {
+    seedForm("default", {
+      name: "Times",
+      version: 1,
+      template: "",
+      fields: {
+        LocalTime: { type: "timestamp", required: false },
+        Instant: { type: "timestamp_tz", required: false },
+      },
+      sql_relation: "form_times",
+    });
+    const queryBodies: Array<{
+      criteria?: {
+        conditions?: Array<{ value?: unknown }>;
+      };
+    }> = [];
+    server.use(
+      http.post(testApiUrl("/spaces/default/query"), async ({ request }) => {
+        queryBodies.push(await request.json() as typeof queryBodies[number]);
+        return HttpResponse.json([]);
+      }),
+    );
+
+    render(() => <SpaceSearchRoute />);
+    fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
+    await screen.findByRole("option", { name: "Times" });
+    fireEvent.change(screen.getByLabelText("Form"), {
+      target: { value: "Times" },
+    });
+    await screen.findByRole("option", { name: "LocalTime" });
+    fireEvent.change(screen.getByLabelText("Field"), {
+      target: { value: "LocalTime" },
+    });
+    fireEvent.input(screen.getByLabelText("Value"), {
+      target: { value: "2026-03-08T01:30" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Run advanced search" }),
+    );
+
+    await waitFor(() => expect(queryBodies).toHaveLength(1));
+    expect(queryBodies[0]?.criteria?.conditions?.[0]?.value).toBe(
+      "2026-03-08T01:30",
+    );
+
+    fireEvent.change(screen.getByLabelText("Field"), {
+      target: { value: "Instant" },
+    });
+    fireEvent.input(screen.getByLabelText("Value"), {
+      target: { value: "2026-03-08T01:30" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Run advanced search" }),
+    );
+
+    await waitFor(() => expect(queryBodies).toHaveLength(2));
+    expect(queryBodies[1]?.criteria?.conditions?.[0]?.value).toBe(
+      localInputToRfc3339Instant("2026-03-08T01:30"),
     );
   });
 
