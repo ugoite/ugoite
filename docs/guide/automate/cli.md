@@ -5,8 +5,8 @@ sidebar:
 ---
 
 `ugoite` has two endpoint modes. Core mode opens operator-owned Space
-directories directly and does not perform human login. Backend/API mode uses a
-Space ID and the configured remote endpoint.
+directories directly and does not perform human login. Backend/API mode uses an
+immutable Space UID and the configured remote endpoint.
 
 ## Choose an endpoint
 
@@ -23,10 +23,11 @@ ugoite config set --mode backend --backend-url https://ugoite.example.com
 ugoite config current
 ```
 
-In core mode, commands that address a Space take its full local path, such as
-`/path/to/workspace/spaces/demo`. In backend/API mode, pass the bare Space ID,
-such as `demo`. `ugoite space list` takes the workspace root only in core mode;
-omit the positional argument in backend/API mode.
+In core mode, commands that address a Space take its full local Space path, such
+as `/path/to/workspace/spaces/demo`. In backend/API mode, pass the bare
+immutable Space UID, such as
+`019f1234-5678-7abc-8def-0123456789ab`. `ugoite space list` takes the workspace
+root only in core mode; omit the positional argument in backend/API mode.
 
 ## Output contract
 
@@ -43,8 +44,9 @@ uses JSON. `--format table` selects the human table projection explicitly;
 has no separator line, box, or trailing padding. Headers are muted, the first
 column is the primary identifier, and columns remain separated by two spaces.
 Widths are calculated from raw values before any terminal styling, so enabling
-or disabling ANSI does not change alignment. `search keyword`, `space list`,
-and `entry list` use the same `ID`/`TITLE` or single-column table convention.
+or disabling ANSI does not change alignment. `search keyword` and `entry list`
+use the same `ID`/`TITLE` table convention; `space list` labels its identity
+column `SPACE_UID`.
 
 On a normal TTY, primary identifiers are cyan and metadata labels are dim;
 warnings are yellow, errors are red and bold, and help headings are bold.
@@ -110,12 +112,12 @@ the other target.
 
 ## Spaces and entries
 
-Create and inspect a Space, using the path or ID appropriate for the selected
-mode:
+Create and inspect a Space, using the local path, creation slug, or immutable
+UID appropriate for the selected mode:
 
 ```bash
 ugoite space create /path/to/workspace/spaces/team-notes   # core
-ugoite space create team-notes                              # backend/API
+ugoite space create team-notes                              # backend/API slug
 ugoite space get /path/to/workspace/spaces/team-notes
 ugoite entry list /path/to/workspace/spaces/team-notes
 ```
@@ -124,7 +126,14 @@ Remote Space addressing uses immutable UIDs; a human slug is not a remote
 identifier and reads as not found. Remote creation additionally requires a
 node-admin human presence (a recent Passkey or a browser-approved step-up);
 plain token identities are rejected. Core mode keeps resolving local slugs to
-their immutable Space the way the filesystem layout does.
+their immutable Space UID the way the filesystem layout does.
+
+After remote creation, use the returned Space UID for subsequent commands:
+
+```bash
+ugoite space get 019f1234-5678-7abc-8def-0123456789ab
+ugoite entry list 019f1234-5678-7abc-8def-0123456789ab
+```
 
 An entry ID is a user-chosen storage-safe slug. It may contain ASCII letters,
 digits, `-`, and `_`, must be 1–128 bytes, and must not contain path separators,

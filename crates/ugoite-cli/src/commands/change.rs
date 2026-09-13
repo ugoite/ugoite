@@ -18,23 +18,23 @@ pub struct ChangeCmd {
 pub enum ChangeSubCmd {
     /// List Space Change history
     #[command(
-        long_about = "List the append-only Change history of a Space.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode\n  ugoite change list /root/spaces/my-space\n\n  # Backend mode\n  ugoite change list my-space"
+        long_about = "List the append-only Change history of a Space.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or a bare immutable `SPACE_UID`.\n\nExamples:\n  # Core mode\n  ugoite change list /root/spaces/my-space\n\n  # Backend mode (immutable Space UID)\n  ugoite change list 019f1234-5678-7abc-8def-0123456789ab"
     )]
     List {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
     },
     /// Revert a Change by appending its inverse
     #[command(
-        long_about = "Revert a Change by appending its inverse as a new Change. The reverted Change is kept; history never shortens.\n\nThe command invocation itself is the explicit intent; no interactive prompt is shown. When the server requires human approval or reauthentication, the canonical step-up error is returned.\n\nExamples:\n  # Core mode\n  ugoite change revert /root/spaces/my-space change-1\n\n  # Backend mode\n  ugoite change revert my-space change-1"
+        long_about = "Revert a Change by appending its inverse as a new Change. The reverted Change is kept; history never shortens.\n\nThe command invocation itself is the explicit intent; no interactive prompt is shown. When the server requires human approval or reauthentication, the canonical step-up error is returned.\n\nExamples:\n  # Core mode\n  ugoite change revert /root/spaces/my-space change-1\n\n  # Backend mode (immutable Space UID)\n  ugoite change revert 019f1234-5678-7abc-8def-0123456789ab change-1"
     )]
     Revert {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
         #[arg(

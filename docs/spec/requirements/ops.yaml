@@ -272,7 +272,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-016
   title: Local Dev Sample-Data Seeding Workflow
-  description: The root developer task `mise run seed` exposes the existing sample-data helper with configurable local root, Space ID, scenario, entry count, and seed inputs.
+  description: The root developer task `mise run seed` exposes the existing sample-data helper with configurable local root, Space slug, scenario, entry count, and seed inputs.
   related_spec:
   - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md

@@ -28,11 +28,11 @@ failures.
 
 **Symptom:** The expected Space is missing from the switcher or list output.
 
-**Likely cause:** wrong endpoint mode, Space ID versus path confusion, or
+**Likely cause:** wrong endpoint mode, Space UID versus local path confusion, or
 missing membership.
 
-**Check:** run `ugoite config current`, confirm path versus ID, and list Spaces
-in the active mode.
+**Check:** run `ugoite config current`, confirm local path versus immutable Space
+UID, and list Spaces in the active mode.
 
 **Fix:** switch modes explicitly and request access through owner-approved
 recovery. See [Spaces](../use/spaces.mdx) and

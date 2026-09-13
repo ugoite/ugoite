@@ -115,15 +115,15 @@ mod tests {
     #[test]
     fn list_tables_are_borderless_and_role_aware() {
         let items = ["team-notes", "research", "scratch"];
-        let plain = render_list_table("SPACE_ID", &items, &StylePolicy::new(false));
-        assert_eq!(plain, "SPACE_ID\nteam-notes\nresearch\nscratch");
+        let plain = render_list_table("SPACE_UID", &items, &StylePolicy::new(false));
+        assert_eq!(plain, "SPACE_UID\nteam-notes\nresearch\nscratch");
         assert!(!plain
             .lines()
             .any(|line| line.chars().all(|character| character == '-')));
 
-        let styled = render_list_table("SPACE_ID", &items, &StylePolicy::new(true));
+        let styled = render_list_table("SPACE_UID", &items, &StylePolicy::new(true));
         assert_eq!(strip_ansi(&styled), plain);
-        assert!(styled.contains("\u{1b}[2mSPACE_ID\u{1b}[0m"));
+        assert!(styled.contains("\u{1b}[2mSPACE_UID\u{1b}[0m"));
         assert!(styled.contains("\u{1b}[36mteam-notes\u{1b}[0m"));
     }
 

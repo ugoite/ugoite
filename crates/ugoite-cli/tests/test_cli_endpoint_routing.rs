@@ -344,7 +344,6 @@ fn test_create_space_req_api_001_routes_to_backend_post_spaces() {
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
-
     server_handle.join().unwrap();
     let request = request_rx.recv().unwrap();
 
@@ -653,12 +652,12 @@ fn test_create_space_req_sto_010_requires_root_only_in_core_mode() {
 
     assert!(
         !core_output.status.success(),
-        "space create should fail in core mode without SPACE_ID_OR_PATH"
+        "space create should fail in core mode without SPACE_UID_OR_PATH"
     );
     let stderr = String::from_utf8_lossy(&core_output.stderr);
     assert!(
         stderr.contains(
-            "space create requires SPACE_ID_OR_PATH as /path/to/root/spaces/<id> in core mode"
+            "space create requires SPACE_UID_OR_PATH as /path/to/root/spaces/<slug> in core mode"
         ),
         "{stderr}"
     );
@@ -719,15 +718,14 @@ fn test_space_list_req_sto_010_accepts_backend_mode_without_local_root() {
     assert_eq!(value[0]["id"].as_str(), Some("remote-space"));
 }
 
-/// REQ-STO-010: CLI help must explain when to use local space paths versus bare IDs.
+/// REQ-STO-010: CLI help must explain local Space paths versus immutable UIDs.
 #[test]
-fn test_cli_help_req_sto_010_describes_space_id_or_path_routing() {
+fn test_cli_help_req_sto_010_describes_space_uid_or_path_routing() {
     for args in [
         ["entry", "list", "--help"],
         ["form", "list", "--help"],
         ["index", "run", "--help"],
         ["search", "keyword", "--help"],
-        ["space", "create", "--help"],
         ["space", "get", "--help"],
         ["space", "patch", "--help"],
     ] {
@@ -737,10 +735,23 @@ fn test_cli_help_req_sto_010_describes_space_id_or_path_routing() {
             .expect("failed to execute");
         assert!(help.status.success());
         let stdout = String::from_utf8_lossy(&help.stdout);
-        assert!(stdout.contains("SPACE_ID_OR_PATH"), "{stdout}");
+        assert!(stdout.contains("SPACE_UID_OR_PATH"), "{stdout}");
         assert!(!stdout.contains("SPACE_PATH"), "{stdout}");
         assert!(stdout.contains("/root/spaces/"), "{stdout}");
     }
+
+    let create_help = Command::new(ugoite_bin())
+        .args(["space", "create", "--help"])
+        .output()
+        .expect("failed to execute");
+    assert!(create_help.status.success());
+    let create_stdout = String::from_utf8_lossy(&create_help.stdout);
+    assert!(
+        create_stdout.contains("SPACE_SLUG_OR_PATH"),
+        "{create_stdout}"
+    );
+    assert!(!create_stdout.contains("SPACE_PATH"), "{create_stdout}");
+    assert!(create_stdout.contains("/root/spaces/"), "{create_stdout}");
 
     for args in [
         &["space", "--help"][..],
@@ -775,7 +786,7 @@ fn test_cli_help_req_sto_010_describes_space_id_or_path_routing() {
             .expect("failed to execute");
         assert!(help.status.success());
         let stdout = String::from_utf8_lossy(&help.stdout);
-        for needle in ["/root/spaces/<id>", "SPACE_ID"] {
+        for needle in ["/root/spaces/<slug>", "SPACE_UID"] {
             assert!(stdout.contains(needle), "{stdout}");
         }
     }
@@ -830,7 +841,7 @@ fn test_entry_create_req_ops_006_help_leads_with_plain_markdown_example() {
         "Frontmatter is optional",
         simple_example,
         structured_example,
-        "Backend mode - minimal entry",
+        "Backend mode - immutable Space UID",
     ] {
         assert!(stdout.contains(needle), "{stdout}");
     }
@@ -900,8 +911,8 @@ fn test_space_sample_data_req_api_009_help_describes_inputs() {
     for needle in [
         "LOCAL_ROOT",
         "Local workspace root",
-        "SPACE_ID",
-        "Space ID for the generated sample-data space",
+        "SPACE_SLUG",
+        "Space slug for the generated sample-data space",
         "--scenario <SCENARIO>",
         "Sample-data scenario ID",
         "--entry-count <ENTRY_COUNT>",

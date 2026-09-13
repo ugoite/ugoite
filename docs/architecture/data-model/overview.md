@@ -58,6 +58,10 @@ membership, principal, policy, and authorization-audit state is stored in
 `security/principals.json`. Legacy membership-shaped settings are unsupported,
 and public Space patching cannot modify membership-managed keys.
 
+The Space UID is the immutable remote identity. The slug is human-readable,
+mutable metadata, and a local Space path is the Core-mode filesystem or
+object-store locator; neither is an alternate remote identity.
+
 Creating a Space also creates an `Entry` Form with a Markdown `Body` field. On
 local Unix filesystems, the Space directories are set to owner-only mode and
 metadata files to owner read/write mode.

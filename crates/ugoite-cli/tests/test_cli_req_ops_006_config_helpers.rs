@@ -362,13 +362,13 @@ fn test_cli_req_ops_006_parse_space_path_variants() {
     let err =
         resolve_space_reference(&core, "backend-space", "entry list").expect_err("bare core ID");
     assert!(err.to_string().contains(
-        "entry list requires SPACE_ID_OR_PATH as /path/to/root/spaces/<id> in core mode"
+        "entry list requires SPACE_UID_OR_PATH as /path/to/root/spaces/<slug> in core mode"
     ));
 
     let malformed = resolve_space_reference(&core, "/tmp/demo/spaces//nested", "entry list")
         .expect_err("malformed core path");
     assert!(malformed.to_string().contains(
-        "entry list requires SPACE_ID_OR_PATH as /path/to/root/spaces/<id> in core mode"
+        "entry list requires SPACE_UID_OR_PATH as /path/to/root/spaces/<slug> in core mode"
     ));
 
     assert_eq!(normalize_space_root("/"), "/");

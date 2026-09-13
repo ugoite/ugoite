@@ -18,12 +18,12 @@ pub struct SearchCmd {
 pub enum SearchSubCmd {
     /// Keyword search
     #[command(
-        long_about = "Run keyword search.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode\n  ugoite search keyword /root/spaces/my-space invoice\n\n  # Backend mode\n  ugoite search keyword my-space invoice"
+        long_about = "Run keyword search.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or a bare immutable `SPACE_UID`.\n\nExamples:\n  # Core mode\n  ugoite search keyword /root/spaces/my-space invoice\n\n  # Backend mode (immutable Space UID)\n  ugoite search keyword 019f1234-5678-7abc-8def-0123456789ab invoice"
     )]
     Keyword {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
         #[arg(
@@ -34,7 +34,7 @@ pub enum SearchSubCmd {
     },
     /// Typed structured search over Form fields
     #[command(
-        long_about = "Run typed structured search over Form fields.\n\nField conditions use logical Form field names; type checking, SQL generation, and column resolution stay in the trusted Rust layer. Core mode and backend mode accept the same DTO.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode\n  ugoite search query /root/spaces/my-space --form Task --eq status=open --gte priority=3\n\n  # Backend mode\n  ugoite search query my-space --form Task --contains title=release --limit 20\n\n  # Machine input from a file or stdin (exclusive with condition flags)\n  ugoite search query my-space --criteria-file criteria.json\n  cat criteria.json | ugoite search query my-space --criteria-file -"
+        long_about = "Run typed structured search over Form fields.\n\nField conditions use logical Form field names; type checking, SQL generation, and column resolution stay in the trusted Rust layer. Core mode and backend mode accept the same DTO.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or a bare immutable `SPACE_UID`.\n\nExamples:\n  # Core mode\n  ugoite search query /root/spaces/my-space --form Task --eq status=open --gte priority=3\n\n  # Backend mode (immutable Space UID)\n  ugoite search query 019f1234-5678-7abc-8def-0123456789ab --form Task --contains title=release --limit 20\n\n  # Machine input from a file or stdin (exclusive with condition flags)\n  ugoite search query 019f1234-5678-7abc-8def-0123456789ab --criteria-file criteria.json\n  cat criteria.json | ugoite search query 019f1234-5678-7abc-8def-0123456789ab --criteria-file -"
     )]
     Query(Box<SearchQueryArgs>),
 }
@@ -44,8 +44,8 @@ pub enum SearchSubCmd {
 #[derive(Args)]
 pub struct SearchQueryArgs {
     #[arg(
-        value_name = "SPACE_ID_OR_PATH",
-        help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        value_name = "SPACE_UID_OR_PATH",
+        help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
     )]
     pub space_path: String,
     #[arg(long, help = "Logical Form name to search.")]

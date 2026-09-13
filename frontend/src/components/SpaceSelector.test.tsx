@@ -8,8 +8,18 @@ import type { Space } from "~/lib/types";
 
 describe("SpaceSelector", () => {
   const mockSpaces: Space[] = [
-    { id: "ws-1", name: "Space One", created_at: "2025-01-01T00:00:00Z" },
-    { id: "ws-2", name: "Space Two", created_at: "2025-01-01T00:00:00Z" },
+    {
+      id: "legacy-ws-1",
+      space_uid: "ws-1",
+      name: "Space One",
+      created_at: "2025-01-01T00:00:00Z",
+    },
+    {
+      id: "legacy-ws-2",
+      space_uid: "ws-2",
+      name: "Space Two",
+      created_at: "2025-01-01T00:00:00Z",
+    },
   ];
 
   it("should render space options", () => {
@@ -85,8 +95,12 @@ describe("SpaceSelector", () => {
     expect(onSelect).toHaveBeenCalledWith("ws-2");
   });
 
-  it("should show space id when name is not available", () => {
-    const spaces = [{ id: "space-1", created_at: "2025-01-01T00:00:00Z" }];
+  it("should show the Space UID when name is not available", () => {
+    const spaces = [{
+      id: "legacy-space-1",
+      space_uid: "space-uid-1",
+      created_at: "2025-01-01T00:00:00Z",
+    }];
     render(() => (
       <SpaceSelector
         spaces={spaces as Space[]}
@@ -96,6 +110,6 @@ describe("SpaceSelector", () => {
         onSelect={vi.fn()}
       />
     ));
-    expect(screen.getByText("space-1")).toBeInTheDocument();
+    expect(screen.getByText("space-uid-1")).toBeInTheDocument();
   });
 });

@@ -30,12 +30,12 @@ pub struct SpaceCmd {
 pub enum SpaceSubCmd {
     /// Create a new space
     #[command(
-        long_about = "Create a new space.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode (full local space path)\n  ugoite space create /root/spaces/my-space\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space create my-space"
+        long_about = "Create a new space.\n\nRun `ugoite config current` to check whether you are in core, backend, or api mode. The positional value is a local Space path in core mode or the new human-readable Space slug in backend/api mode. A server-generated Space UID is returned after creation.\n\nExamples:\n  # Core mode (full local Space path)\n  ugoite space create /root/spaces/my-space\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space create team-notes"
     )]
     Create {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_SLUG_OR_PATH",
+            help = "New Space slug in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
     },
@@ -52,23 +52,23 @@ pub enum SpaceSubCmd {
     },
     /// Get space metadata
     #[command(
-        long_about = "Get space metadata.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode\n  ugoite space get /root/spaces/my-space\n\n  # Backend mode\n  ugoite space get my-space"
+        long_about = "Get space metadata.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or an immutable `SPACE_UID`.\n\nExamples:\n  # Core mode\n  ugoite space get /root/spaces/my-space\n\n  # Backend mode (immutable Space UID)\n  ugoite space get 019f1234-5678-7abc-8def-0123456789ab"
     )]
     Get {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
     },
     /// Patch space metadata
     #[command(
-        long_about = "Patch space metadata.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode\n  ugoite space patch /root/spaces/my-space --name \"Renamed Space\"\n\n  # Backend mode\n  ugoite space patch my-space --settings '{\"theme\":\"dark\"}'"
+        long_about = "Patch space metadata.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or an immutable `SPACE_UID`.\n\nExamples:\n  # Core mode\n  ugoite space patch /root/spaces/my-space --name \"Renamed Space\"\n\n  # Backend mode (immutable Space UID)\n  ugoite space patch 019f1234-5678-7abc-8def-0123456789ab --settings '{\"theme\":\"dark\"}'"
     )]
     Patch {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
         #[arg(long)]
@@ -82,12 +82,12 @@ pub enum SpaceSubCmd {
     SampleData {
         #[arg(
             value_name = "LOCAL_ROOT",
-            help = "Local workspace root (for example . or /root) where spaces/<SPACE_ID> will be created"
+            help = "Local workspace root (for example . or /root) where spaces/<SPACE_SLUG> will be created"
         )]
         root_path: String,
         #[arg(
-            value_name = "SPACE_ID",
-            help = "Space ID for the generated sample-data space"
+            value_name = "SPACE_SLUG",
+            help = "Space slug for the generated sample-data space"
         )]
         space_id: String,
         #[arg(
@@ -114,12 +114,12 @@ pub enum SpaceSubCmd {
     SampleJob {
         #[arg(
             value_name = "LOCAL_ROOT",
-            help = "Local workspace root (for example . or /root) where spaces/<SPACE_ID> will be created"
+            help = "Local workspace root (for example . or /root) where spaces/<SPACE_SLUG> will be created"
         )]
         root_path: String,
         #[arg(
-            value_name = "SPACE_ID",
-            help = "Space ID for the generated sample-data space"
+            value_name = "SPACE_SLUG",
+            help = "Space slug for the generated sample-data space"
         )]
         space_id: String,
         #[arg(
@@ -155,16 +155,16 @@ pub enum SpaceSubCmd {
     /// List space members (backend/api mode only)
     Members {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
     },
     /// Audit events (backend/api mode only)
     AuditEvents {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
         #[arg(long, default_value_t = 0)]
@@ -266,7 +266,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                     http::execute(&base, "space.list", serde_json::json!({}), None).await?;
                 if fmt != Format::Json {
                     if let Some(arr) = result.as_array() {
-                        print_json_table(arr, &[("ID", "id"), ("NAME", "name")]);
+                        print_json_table(arr, &[("SPACE_UID", "space_uid"), ("NAME", "name")]);
                         return Ok(());
                     }
                 }
@@ -277,7 +277,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             let service = UgoiteService::new_without_background_refresh(&root_path)?;
             let spaces = service.list_space_ids().await?;
             if fmt != Format::Json {
-                print_list_table("SPACE_ID", &spaces);
+                print_list_table("SPACE_UID", &spaces);
             } else {
                 print_json(&spaces);
             }

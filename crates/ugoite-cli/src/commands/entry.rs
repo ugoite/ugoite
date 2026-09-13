@@ -21,23 +21,23 @@ pub struct EntryCmd {
 pub enum EntrySubCmd {
     /// List entries in a space
     #[command(
-        long_about = "List entries in a space.\n\nExamples:\n  # Core mode (local filesystem)\n  ugoite entry list /root/spaces/my-space\n\n  # Backend mode (requires config set --mode backend first)\n  ugoite entry list my-space"
+        long_about = "List entries in a space.\n\nExamples:\n  # Core mode (local filesystem)\n  ugoite entry list /root/spaces/my-space\n\n  # Backend mode (immutable Space UID; requires config set --mode backend first)\n  ugoite entry list 019f1234-5678-7abc-8def-0123456789ab"
     )]
     List {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
     },
     /// Get an entry by ID
     #[command(
-        long_about = "Get an entry by ID.\n\nExamples:\n  # Core mode\n  ugoite entry get /root/spaces/my-space my-entry-id\n\n  # Backend mode\n  ugoite entry get my-space my-entry-id"
+        long_about = "Get an entry by ID.\n\nExamples:\n  # Core mode\n  ugoite entry get /root/spaces/my-space my-entry-id\n\n  # Backend mode (immutable Space UID)\n  ugoite entry get 019f1234-5678-7abc-8def-0123456789ab my-entry-id"
     )]
     Get {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
         #[arg(
@@ -48,12 +48,12 @@ pub enum EntrySubCmd {
     },
     /// Create an entry
     #[command(
-        long_about = "Create an entry in a space.\n\nThe entry ID is a slug (alphanumeric + hyphens). Content is a Markdown string. Frontmatter is optional and only needed when you want form-backed metadata.\n\nExamples:\n  # Core mode - minimal note\n  ugoite entry create /root/spaces/my-space my-note --content '# My Note'\n\n  # Core mode - read content from a file\n  ugoite entry create /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode - read content from explicit stdin\n  cat ./note.md | ugoite entry create /root/spaces/my-space my-note --file -\n\n  # Core mode - note with form frontmatter\n  ugoite entry create /root/spaces/my-space my-note --content $'---\\nform: Note\\n---\\n# My Note\\n\\n## Body\\n\\nHello world.'\n\n  # Backend mode - minimal entry\n  ugoite entry create my-space task-01 --content '# Task 01'\n\n  # Core mode with custom author\n  ugoite entry create /root/spaces/my-space my-note --content '# Note' --author alice\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface.\n\nExamples:\n  # Core mode - structured fields without Markdown\n  ugoite entry create /root/spaces/my-space task-01 --form Task --title 'Ship 0.1.x' --field status=open --field priority=3\n\n  # Core mode - complex values from a JSON object file (or --fields-file - for stdin)\n  ugoite entry create /root/spaces/my-space task-01 --form Task --fields-file fields.json"
+        long_about = "Create an entry in a space.\n\nThe entry ID is a slug (alphanumeric + hyphens). Content is a Markdown string. Frontmatter is optional and only needed when you want form-backed metadata.\n\nExamples:\n  # Core mode - minimal note\n  ugoite entry create /root/spaces/my-space my-note --content '# My Note'\n\n  # Core mode - read content from a file\n  ugoite entry create /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode - read content from explicit stdin\n  cat ./note.md | ugoite entry create /root/spaces/my-space my-note --file -\n\n  # Core mode - note with form frontmatter\n  ugoite entry create /root/spaces/my-space my-note --content $'---\\nform: Note\\n---\\n# My Note\\n\\n## Body\\n\\nHello world.'\n\n  # Backend mode - immutable Space UID\n  ugoite entry create 019f1234-5678-7abc-8def-0123456789ab task-01 --content '# Task 01'\n\n  # Core mode with custom author\n  ugoite entry create /root/spaces/my-space my-note --content '# Note' --author alice\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface.\n\nExamples:\n  # Core mode - structured fields without Markdown\n  ugoite entry create /root/spaces/my-space task-01 --form Task --title 'Ship 0.1.x' --field status=open --field priority=3\n\n  # Core mode - complex values from a JSON object file (or --fields-file - for stdin)\n  ugoite entry create /root/spaces/my-space task-01 --form Task --fields-file fields.json"
     )]
     Create {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
         #[arg(
@@ -105,12 +105,12 @@ pub enum EntrySubCmd {
     },
     /// Update an entry
     #[command(
-        long_about = "Update an entry in a space.\n\nExamples:\n  # Core mode\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated'\n\n  # Core mode - read content from a file\n  ugoite entry update /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode with optimistic concurrency\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated' --parent-revision-id rev-1\n\n  # Backend mode\n  ugoite entry update my-space my-note --markdown '# Updated'\n\nWhen --parent-revision-id is omitted, the CLI reads the current Entry immediately before the update and uses its revision ID for optimistic concurrency.\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface. Merged --field/--fields-file values are the complete post-update field map: omitted fields are cleared, never patched.\n\nExamples:\n  # Core mode - structured update without Markdown\n  ugoite entry update /root/spaces/my-space task-01 --title 'New title' --fields-file entry-fields.json --parent-revision-id rev-1"
+        long_about = "Update an entry in a space.\n\nExamples:\n  # Core mode\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated'\n\n  # Core mode - read content from a file\n  ugoite entry update /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode with optimistic concurrency\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated' --parent-revision-id rev-1\n\n  # Backend mode (immutable Space UID)\n  ugoite entry update 019f1234-5678-7abc-8def-0123456789ab my-note --markdown '# Updated'\n\nWhen --parent-revision-id is omitted, the CLI reads the current Entry immediately before the update and uses its revision ID for optimistic concurrency.\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface. Merged --field/--fields-file values are the complete post-update field map: omitted fields are cleared, never patched.\n\nExamples:\n  # Core mode - structured update without Markdown\n  ugoite entry update /root/spaces/my-space task-01 --title 'New title' --fields-file entry-fields.json --parent-revision-id rev-1"
     )]
     Update {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
         #[arg(
@@ -168,12 +168,12 @@ pub enum EntrySubCmd {
     },
     /// Delete an entry
     #[command(
-        long_about = "Delete an entry from a space.\n\nExamples:\n  # Core mode\n  ugoite entry delete /root/spaces/my-space my-note\n\n  # Backend mode (dangerous: requires a human approval token)\n  ugoite entry delete my-space my-note --human-approval <token>"
+        long_about = "Delete an entry from a space.\n\nExamples:\n  # Core mode\n  ugoite entry delete /root/spaces/my-space my-note\n\n  # Backend mode (immutable Space UID; dangerous: requires a human approval token)\n  ugoite entry delete 019f1234-5678-7abc-8def-0123456789ab my-note --human-approval <token>"
     )]
     Delete {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
         entry_id: String,
@@ -191,24 +191,24 @@ pub enum EntrySubCmd {
     },
     /// Get entry history
     #[command(
-        long_about = "Get the revision history of an entry.\n\nExamples:\n  # Core mode\n  ugoite entry history /root/spaces/my-space my-note\n\n  # Backend mode\n  ugoite entry history my-space my-note"
+        long_about = "Get the revision history of an entry.\n\nExamples:\n  # Core mode\n  ugoite entry history /root/spaces/my-space my-note\n\n  # Backend mode (immutable Space UID)\n  ugoite entry history 019f1234-5678-7abc-8def-0123456789ab my-note"
     )]
     History {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
         entry_id: String,
     },
     /// Get a specific revision
     #[command(
-        long_about = "Get a specific revision of an entry.\n\nExamples:\n  # Core mode\n  ugoite entry revision /root/spaces/my-space my-note rev-1\n\n  # Backend mode\n  ugoite entry revision my-space my-note rev-1"
+        long_about = "Get a specific revision of an entry.\n\nExamples:\n  # Core mode\n  ugoite entry revision /root/spaces/my-space my-note rev-1\n\n  # Backend mode (immutable Space UID)\n  ugoite entry revision 019f1234-5678-7abc-8def-0123456789ab my-note rev-1"
     )]
     Revision {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
         entry_id: String,
@@ -216,12 +216,12 @@ pub enum EntrySubCmd {
     },
     /// Restore an entry to a revision
     #[command(
-        long_about = "Restore an entry to a previous revision.\n\nExamples:\n  # Core mode\n  ugoite entry restore /root/spaces/my-space my-note rev-1\n\n  # Backend mode\n  ugoite entry restore my-space my-note rev-1"
+        long_about = "Restore an entry to a previous revision.\n\nExamples:\n  # Core mode\n  ugoite entry restore /root/spaces/my-space my-note rev-1\n\n  # Backend mode (immutable Space UID)\n  ugoite entry restore 019f1234-5678-7abc-8def-0123456789ab my-note rev-1"
     )]
     Restore {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
         entry_id: String,

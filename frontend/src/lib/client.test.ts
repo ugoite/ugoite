@@ -52,6 +52,7 @@ describe("spaceApi", () => {
         slug: "my-space",
       });
       expect(result.id).toBe("my-space");
+      expect(result.space_uid).toBe("my-space");
       expect(result.name).toBe("my-space");
 
       // Verify it exists

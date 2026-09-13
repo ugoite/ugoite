@@ -322,10 +322,10 @@ requirements:
   - SPEC-DM-OVERVIEW
   - SPEC-ARCH-DECISIONS
   id: REQ-STO-010
-  title: Mode-appropriate CLI space identifiers
+  title: Mode-appropriate CLI Space UID and path routing
   description: 'When endpoint routing is `backend` or `api`, CLI commands MUST
 
-    accept remote space identifiers without requiring misleading local-root
+    accept immutable Space UIDs without requiring misleading local-root
 
     positional arguments.
 

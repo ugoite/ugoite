@@ -38,29 +38,29 @@ enum Commands {
     /// Space management commands.
     ///
     /// Run `ugoite config current` to check whether you are in core, backend, or api mode before choosing positional arguments.
-    /// Use `/root/spaces/<id>` for `SPACE_ID_OR_PATH` arguments in core mode.
-    /// Use a bare `SPACE_ID` in backend/api mode.
+    /// Use `/root/spaces/<slug>` for `SPACE_UID_OR_PATH` arguments in core mode.
+    /// Use a bare immutable `SPACE_UID` in backend/api mode.
     /// For `ugoite space list`, pass `ROOT_PATH` in core mode and omit it in backend/api mode.
     Space(commands::space::SpaceCmd),
     /// Entry management commands
     Entry(commands::entry::EntryCmd),
     /// Form management commands.
     ///
-    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<id>` in core mode or a bare `SPACE_ID` in backend/api mode.
+    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<slug>` in core mode or a bare `SPACE_UID` in backend/api mode.
     Form(commands::form::FormCmd),
     /// Asset management commands
     Asset(commands::asset::AssetCmd),
     /// Search commands.
     ///
-    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<id>` in core mode or a bare `SPACE_ID` in backend/api mode.
+    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<slug>` in core mode or a bare `SPACE_UID` in backend/api mode.
     Search(commands::search::SearchCmd),
     /// Space Change history and revert commands.
     ///
-    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<id>` in core mode or a bare `SPACE_ID` in backend/api mode.
+    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<slug>` in core mode or a bare `SPACE_UID` in backend/api mode.
     Change(commands::change::ChangeCmd),
     /// Run undo commands.
     ///
-    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<id>` in core mode or a bare `SPACE_ID` in backend/api mode.
+    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<slug>` in core mode or a bare `SPACE_UID` in backend/api mode.
     Run(commands::run::RunCmd),
     /// SQL syntax linting and completion commands
     Sql(commands::sql::SqlCmd),
@@ -72,7 +72,7 @@ enum Commands {
     /// Create a new space
     #[command(
         hide = true,
-        long_about = "Create a new space.\n\nExamples:\n  # Core mode (workspace root)\n  ugoite create-space my-space --root /root\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite create-space my-space"
+        long_about = "Create a new space.\n\nThe positional value is a local Space slug in core mode or the new human-readable Space slug in backend/api mode. A server-generated Space UID is returned after creation.\n\nExamples:\n  # Core mode (workspace root)\n  ugoite create-space my-space --root /root\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite create-space team-notes"
     )]
     CreateSpace {
         #[arg(
@@ -82,8 +82,8 @@ enum Commands {
         )]
         root_path: Option<String>,
         #[arg(
-            value_name = "SPACE_ID",
-            help = "New space ID (alphanumeric + hyphens, e.g. 'my-project')"
+            value_name = "SPACE_SLUG",
+            help = "New Space slug (alphanumeric + hyphens, e.g. 'my-project')"
         )]
         space_id: String,
     },
@@ -97,12 +97,12 @@ enum Commands {
     ///   ugoite query /root/spaces/my-space --sql "SELECT _ugoite_id FROM \"form_<FormId>\" WHERE field_100 = 'Daily note'"
     ///
     #[command(
-        long_about = "Query a Space with DataFusion SQL.\n\nThe backend returns a stable Form relation (form_<FormId>) and stable field columns (field_<FieldId>) alongside _ugoite_* metadata columns. Only authorized Form relations are resolvable.\n\nExamples:\n  # Core mode (full path)\n  ugoite query /root/spaces/my-space --sql \"SELECT _ugoite_id, field_100 FROM \\\"form_<FormId>\\\" LIMIT 10\"\n\n  # Backend/API mode (space ID only)\n  ugoite query my-space --sql \"SELECT _ugoite_id FROM \\\"form_<FormId>\\\" WHERE field_100 = 'Daily note'\""
+        long_about = "Query a Space with DataFusion SQL.\n\nThe backend returns a stable Form relation (form_<FormId>) and stable field columns (field_<FieldId>) alongside _ugoite_* metadata columns. Only authorized Form relations are resolvable.\n\nExamples:\n  # Core mode (full local Space path)\n  ugoite query /root/spaces/my-space --sql \"SELECT _ugoite_id, field_100 FROM \\\"form_<FormId>\\\" LIMIT 10\"\n\n  # Backend/API mode (immutable Space UID)\n  ugoite query 019f1234-5678-7abc-8def-0123456789ab --sql \"SELECT _ugoite_id FROM \\\"form_<FormId>\\\" WHERE field_100 = 'Daily note'\""
     )]
     Query {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
         #[arg(

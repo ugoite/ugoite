@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js";
 import type { Space } from "~/lib/types";
 import { t } from "~/lib/i18n";
+import { spaceUid } from "~/lib/space-list";
 
 export interface SpaceSelectorProps {
   spaces: Space[];
@@ -29,7 +30,9 @@ export function SpaceSelector(props: SpaceSelectorProps) {
           >
             <For each={props.spaces}>
               {(space) => (
-                <option value={space.id}>{space.name || space.id}</option>
+                <option value={spaceUid(space)}>
+                  {space.name || space.slug || spaceUid(space)}
+                </option>
               )}
             </For>
           </select>

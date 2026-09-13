@@ -12,16 +12,26 @@ vi.mock("@solidjs/router", () => ({
     return <a {...(rest as never)}>{children as never}</a>;
   },
   useNavigate: () => vi.fn(),
-  useParams: () => ({ space_id: "my-space" }),
+  useParams: () => ({ space_id: "my-space-uid" }),
 }));
 
 vi.mock("~/lib/space-store", () => ({
   createSpaceStore: () => ({
     spaces: () => [
-      { id: "my-space", name: "My Space", created_at: "" },
-      { id: "other-space", name: "Other Space", created_at: "" },
+      {
+        id: "legacy-my-space",
+        space_uid: "my-space-uid",
+        name: "My Space",
+        created_at: "",
+      },
+      {
+        id: "legacy-other-space",
+        space_uid: "other-space-uid",
+        name: "Other Space",
+        created_at: "",
+      },
     ],
-    loadSpaces: vi.fn().mockResolvedValue("my-space"),
+    loadSpaces: vi.fn().mockResolvedValue("my-space-uid"),
     selectSpace: vi.fn(),
   }),
 }));
@@ -32,29 +42,29 @@ describe("v5 SpaceShell", () => {
   });
   it("renders the four persistent navigation destinations and children", () => {
     render(() => (
-      <SpaceShell spaceId="my-space" activeNavigation="home">
+      <SpaceShell spaceId="my-space-uid" activeNavigation="home">
         <p>Content</p>
       </SpaceShell>
     ));
     expect(screen.getByText("Content")).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Home" })[0]).toHaveAttribute(
       "href",
-      "/spaces/my-space/dashboard",
+      "/spaces/my-space-uid/dashboard",
     );
     expect(screen.getAllByRole("link", { name: "Forms" })[0]).toHaveAttribute(
       "href",
-      "/spaces/my-space/forms",
+      "/spaces/my-space-uid/forms",
     );
     expect(screen.getAllByRole("link", { name: "Search" })[0]).toHaveAttribute(
       "href",
-      "/spaces/my-space/search",
+      "/spaces/my-space-uid/search",
     );
     expect(screen.getAllByRole("link", { name: "Settings" })[0])
-      .toHaveAttribute("href", "/spaces/my-space/settings");
+      .toHaveAttribute("href", "/spaces/my-space-uid/settings");
   });
   it("marks the selected destination in desktop and mobile navigation", () => {
     render(() => (
-      <SpaceShell spaceId="my-space" activeNavigation="forms">
+      <SpaceShell spaceId="my-space-uid" activeNavigation="forms">
         <p>Content</p>
       </SpaceShell>
     ));
@@ -64,7 +74,7 @@ describe("v5 SpaceShell", () => {
   });
   it("opens account settings inside the current Space settings navigation", () => {
     render(() => (
-      <SpaceShell spaceId="my-space" activeNavigation="home">
+      <SpaceShell spaceId="my-space-uid" activeNavigation="home">
         <p>Content</p>
       </SpaceShell>
     ));
@@ -74,29 +84,29 @@ describe("v5 SpaceShell", () => {
     expect(screen.getByRole("menuitem", { name: "Account settings" }))
       .toHaveAttribute(
         "href",
-        "/spaces/my-space/settings?section=credentials",
+        "/spaces/my-space-uid/settings?section=credentials",
       );
   });
   it("offers the other available spaces in the workspace selector", () => {
     render(() => (
-      <SpaceShell spaceId="my-space" activeNavigation="home">
+      <SpaceShell spaceId="my-space-uid" activeNavigation="home">
         <p>Content</p>
       </SpaceShell>
     ));
     expect(screen.getByRole("option", { name: "My Space" })).toHaveValue(
-      "my-space",
+      "my-space-uid",
     );
     expect(screen.getByRole("option", { name: "Other Space" })).toHaveValue(
-      "other-space",
+      "other-space-uid",
     );
     expect(screen.getByRole("combobox", { name: "Space" })).toHaveValue(
-      "my-space",
+      "my-space-uid",
     );
   });
   it("localizes navigation", () => {
     setLocale("ja");
     render(() => (
-      <SpaceShell spaceId="my-space" activeNavigation="home">
+      <SpaceShell spaceId="my-space-uid" activeNavigation="home">
         <p>Content</p>
       </SpaceShell>
     ));
@@ -106,7 +116,7 @@ describe("v5 SpaceShell", () => {
   it("shows the v5 loading indicator", () => {
     loadingState.start();
     const { container } = render(() => (
-      <SpaceShell spaceId="my-space" activeNavigation="home">
+      <SpaceShell spaceId="my-space-uid" activeNavigation="home">
         <p>Content</p>
       </SpaceShell>
     ));
@@ -114,15 +124,15 @@ describe("v5 SpaceShell", () => {
     loadingState.stop();
   });
   it("keeps the route space selected when the route changes", () => {
-    const [spaceId, setSpaceId] = createSignal("my-space");
+    const [spaceId, setSpaceId] = createSignal("my-space-uid");
     render(() => (
       <SpaceShell spaceId={spaceId()} activeNavigation="home">
         <p>Space content</p>
       </SpaceShell>
     ));
-    setSpaceId("other-space");
+    setSpaceId("other-space-uid");
     expect(screen.getByRole("combobox", { name: "Space" })).toHaveValue(
-      "other-space",
+      "other-space-uid",
     );
   });
 });

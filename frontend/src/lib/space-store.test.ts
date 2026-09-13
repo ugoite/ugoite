@@ -93,6 +93,34 @@ describe("createSpaceStore", () => {
     });
   });
 
+  it("uses the immutable Space UID for selection and persistence", async () => {
+    const space: Space = {
+      id: "legacy-space-id",
+      space_uid: "019f1234-5678-7abc-8def-0123456789ab",
+      slug: "team-notes",
+      name: "Team notes",
+      created_at: "2025-01-01T00:00:00Z",
+    };
+    seedSpace(space);
+
+    await createRoot(async (dispose) => {
+      const store = createSpaceStore();
+
+      await store.loadSpaces();
+      expect(store.selectedSpaceId()).toBe(space.space_uid);
+
+      store.selectSpace(space.space_uid!);
+
+      expect(store.selectedSpaceId()).toBe(space.space_uid);
+      expect(localStorageMock.setItem).toHaveBeenLastCalledWith(
+        "ugoite-selected-space",
+        space.space_uid,
+      );
+
+      dispose();
+    });
+  });
+
   it("REQ-FE-001: selects the first ordinary Space when default is absent", async () => {
     const operationsSpace: Space = {
       id: "operations",

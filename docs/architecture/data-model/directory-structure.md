@@ -73,10 +73,11 @@ old `schema_version` field is never used as an alias.
 
 The typed `SpaceMeta` view exposes portable identity, creation metadata, and
 `space_version`;
-`space_uid`/`id` are the immutable machine identity, `slug` is the constrained
-URL/storage identifier, and `name` is the user-facing display name and may use
-Unicode;
-it never contains a physical backend binding. The raw runtime response may merge
+`space_uid` is the immutable remote identity, `slug` is constrained,
+human-readable mutable metadata, and `name` is the user-facing display name and
+may use Unicode. A local Space path is an operator locator in Core mode; it is
+not an alternate remote identity. `SpaceMeta` never contains a physical
+backend binding. The raw runtime response may merge
 `settings.json` and a Node-local `storage_config` binding. The binding is stored
 outside the `spaces/{id}` prefix and is not part of a Space copy.
 

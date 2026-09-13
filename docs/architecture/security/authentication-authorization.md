@@ -23,11 +23,12 @@ Authorization stores UUIDv7 human principals, owner/editor/viewer membership,
 additive resource grants, and Space audit history below the portable Space
 directory. Agent Principals are future scope. Authenticated MCP clients use
 short-lived, node-, audience-, Space-, action-, and sender-constrained access
-credentials; CLI/device credentials and agent credentials are future designs.
+credentials. Remote CLI device credentials use the supported browser-approved
+device flow and remain a separate capability boundary from MCP credentials.
 
 OIDC identities are Node-local AuthenticationMethods linked to HumanAccounts by
 the exact `(issuer, subject)` pair. They use the same BrowserSession, Principal,
-and ACL path as Passkey authentication. CLI/device credentials and agent
+and ACL path as Passkey authentication. Remote CLI device credentials and agent
 principals remain separate capability boundaries.
 
 Host root, direct storage access, and operator-local CLI core mode remain
@@ -133,8 +134,9 @@ accepted.
 
 ## Space authorization
 
-Each Space directory is its immutable UUIDv7 ID. `slug` and `name` are mutable
-metadata. Portable authorization is stored in
+Each Space directory is addressed by its immutable UUIDv7 Space UID. `slug` and
+`name` are mutable metadata; a local Space path is only the Core-mode locator.
+Portable authorization is stored in
 `spaces/<space-id>/security/principals.json`; Node account bindings remain in
 the Node control store. At least one active human owner is mandatory.
 

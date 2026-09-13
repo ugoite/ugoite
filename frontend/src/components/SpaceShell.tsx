@@ -6,6 +6,7 @@ import { loadingState } from "~/lib/loading";
 import { UiIcon, type UiIconName } from "~/components/UiIcon";
 import { AccountMenu } from "~/components/AccountMenu";
 import { createSpaceStore } from "~/lib/space-store";
+import { spaceUid } from "~/lib/space-list";
 
 export type SpaceTopTab = "dashboard" | "search";
 export type SpaceBottomTab = "object" | "grid";
@@ -146,15 +147,18 @@ export function SpaceShell(props: SpaceShellProps) {
           >
             <Show
               when={!spaceStore.spaces().some((space) =>
-                space.id === props.spaceId
+                spaceUid(space) === props.spaceId
               )}
             >
               <option value={props.spaceId}>{props.spaceId}</option>
             </Show>
             <For each={spaceStore.spaces()}>
               {(space) => (
-                <option value={space.id} selected={space.id === props.spaceId}>
-                  {space.name || space.id}
+                <option
+                  value={spaceUid(space)}
+                  selected={spaceUid(space) === props.spaceId}
+                >
+                  {space.name || space.slug || spaceUid(space)}
                 </option>
               )}
             </For>

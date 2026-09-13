@@ -17,12 +17,12 @@ pub struct IndexCmd {
 pub enum IndexSubCmd {
     /// Reindex a space
     #[command(
-        long_about = "Reindex a space.\n\nExamples:\n  # Core mode\n  ugoite index run /root/spaces/my-space\n\n  # Backend mode\n  ugoite index run my-space"
+        long_about = "Reindex a space.\n\nExamples:\n  # Core mode\n  ugoite index run /root/spaces/my-space\n\n  # Backend mode (immutable Space UID)\n  ugoite index run 019f1234-5678-7abc-8def-0123456789ab"
     )]
     Run {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
         #[arg(
@@ -34,12 +34,12 @@ pub enum IndexSubCmd {
     },
     /// Show aggregated stats for a space
     #[command(
-        long_about = "Show aggregated stats for a space.\n\nExamples:\n  # Core mode\n  ugoite index stats /root/spaces/my-space\n\n  # Backend mode\n  ugoite index stats my-space"
+        long_about = "Show aggregated stats for a space.\n\nExamples:\n  # Core mode\n  ugoite index stats /root/spaces/my-space\n\n  # Backend mode (immutable Space UID)\n  ugoite index stats 019f1234-5678-7abc-8def-0123456789ab"
     )]
     Stats {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
     },
