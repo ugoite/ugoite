@@ -36,6 +36,10 @@ pub fn stderr_style() -> StylePolicy {
 }
 
 impl StylePolicy {
+    pub(crate) const fn new(enabled: bool) -> Self {
+        Self { enabled }
+    }
+
     /// Apply a semantic role, or return the display value unchanged when ANSI
     /// styling is disabled for this stream.
     pub fn paint(&self, role: Role, text: impl Display) -> String {
@@ -59,9 +63,7 @@ impl StylePolicy {
 fn policy_for(is_terminal: bool) -> StylePolicy {
     let no_color = std::env::var_os("NO_COLOR").is_some();
     let term = std::env::var("TERM").ok();
-    StylePolicy {
-        enabled: should_style(is_terminal, no_color, term.as_deref()),
-    }
+    StylePolicy::new(should_style(is_terminal, no_color, term.as_deref()))
 }
 
 #[cfg(test)]

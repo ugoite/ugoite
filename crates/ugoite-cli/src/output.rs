@@ -26,6 +26,10 @@ use ugoite_api_client::ApiProtocolError;
 use ugoite_core::error::{AppError, ErrorKind};
 
 pub mod style;
+pub mod table;
+
+pub use style::{stderr_style, stdout_style, Role, StylePolicy};
+pub use table::{print_json_table, print_list_table};
 
 /// Output format for CLI commands.
 #[derive(ValueEnum, Clone, Debug, Default, PartialEq)]
@@ -61,10 +65,6 @@ pub fn print_json<T: Serialize>(value: &T) {
     println!("{rendered}");
 }
 
-// The TTY table printers stay defined in `crate::config` (long-standing
-// lines) and are re-exported here so commands import one output module.
-pub use crate::config::{print_json_table, print_list_table};
-
 /// Machine `stderr` when piped (JSON envelope); human text on TTY.
 pub fn is_machine_stderr() -> bool {
     !std::io::stderr().is_terminal()
@@ -95,6 +95,26 @@ pub fn emit_text(text: impl AsRef<str>) {
 /// Emit a human-oriented diagnostic through the shared stderr path.
 pub fn emit_diagnostic(text: impl AsRef<str>) {
     eprintln!("{}", text.as_ref());
+}
+
+/// Render a mutation receipt for human-facing output without changing its
+/// machine representation or canonical plain rendering.
+pub fn render_receipt(receipt: &MutationReceipt, style: &StylePolicy) -> String {
+    let mut lines = vec![format!(
+        "{} {}",
+        style.paint(Role::Muted, &receipt.kind),
+        style.paint(Role::Primary, &receipt.id)
+    )];
+    for (label, value) in [
+        ("revision:", receipt.revision_id.as_deref()),
+        ("change:", receipt.change_id.as_deref()),
+        ("run:", receipt.run_id.as_deref()),
+    ] {
+        if let Some(value) = value {
+            lines.push(format!("{} {value}", style.paint(Role::Muted, label)));
+        }
+    }
+    lines.join("\n")
 }
 
 /// Stable CLI exit codes.
@@ -560,6 +580,23 @@ mod tests {
             })
         );
         assert!(receipt.human().contains("entry note-1"));
+    }
+
+    #[test]
+    fn styled_receipt_preserves_plain_rendering_and_roles() {
+        let receipt = MutationReceipt::entry(
+            "note-1".to_string(),
+            Some("rev-1".to_string()),
+            Some("change-1".to_string()),
+        );
+        let plain = render_receipt(&receipt, &StylePolicy::new(false));
+        let styled = render_receipt(&receipt, &StylePolicy::new(true));
+
+        assert_eq!(plain, receipt.human());
+        assert!(styled.contains("\u{1b}[2mentry\u{1b}[0m"));
+        assert!(styled.contains("\u{1b}[36mnote-1\u{1b}[0m"));
+        assert!(styled.contains("\u{1b}[2mrevision:\u{1b}[0m rev-1"));
+        assert!(styled.contains("\u{1b}[2mchange:\u{1b}[0m change-1"));
     }
 
     #[test]
