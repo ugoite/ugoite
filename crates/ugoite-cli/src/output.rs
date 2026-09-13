@@ -117,6 +117,33 @@ pub fn render_receipt(receipt: &MutationReceipt, style: &StylePolicy) -> String 
     lines.join("\n")
 }
 
+/// Render an error for human-facing `stderr` without changing its canonical
+/// text or machine envelope.
+pub fn render_error(error: &CliError, style: &StylePolicy) -> String {
+    let human = error.human();
+    let mut lines = human.lines();
+    let first = lines.next().unwrap_or_default();
+    let mut rendered = Vec::with_capacity(1 + lines.size_hint().0);
+
+    if let Some(message) = first.strip_prefix("Error: ") {
+        rendered.push(format!("{} {message}", style.paint(Role::Error, "Error:")));
+    } else {
+        rendered.push(first.to_string());
+    }
+
+    for line in lines {
+        if line.starts_with("- reload the entry") {
+            rendered.push(style.paint(Role::Muted, line));
+        } else if line.starts_with("- ") {
+            rendered.push(style.paint(Role::Warning, line));
+        } else {
+            rendered.push(line.to_string());
+        }
+    }
+
+    rendered.join("\n")
+}
+
 /// Stable CLI exit codes.
 ///
 /// Exact failures are identified by `error.code`, never by the exit code
@@ -597,6 +624,65 @@ mod tests {
         assert!(styled.contains("\u{1b}[36mnote-1\u{1b}[0m"));
         assert!(styled.contains("\u{1b}[2mrevision:\u{1b}[0m rev-1"));
         assert!(styled.contains("\u{1b}[2mchange:\u{1b}[0m change-1"));
+    }
+
+    #[test]
+    fn styled_error_preserves_plain_rendering_and_roles() {
+        let error = project_error(&anyhow::anyhow!(AppError::revision_conflict(
+            "rev-9", "rev-8", "rev-9"
+        )));
+        let plain = render_error(&error, &StylePolicy::new(false));
+        let styled = render_error(&error, &StylePolicy::new(true));
+
+        assert_eq!(plain, error.human());
+        assert_eq!(strip_ansi(&styled), error.human());
+        assert!(styled.contains("\u{1b}[1m\u{1b}[31mError:\u{1b}[0m"));
+        assert!(styled.contains("Revision conflict: expected rev-8, got rev-9"));
+        assert!(styled.contains(
+            "\u{1b}[2m- reload the entry to get current_revision_id, then retry with --parent-revision-id\u{1b}[0m"
+        ));
+    }
+
+    #[test]
+    fn validation_warnings_use_warning_role() {
+        let protocol = ApiProtocolError {
+            kind: "invalid_arguments".to_string(),
+            message: "Failed to create entry".to_string(),
+            operation: Some("entry.create".to_string()),
+            status: Some(422),
+            detail: Some(Box::new(serde_json::json!({
+                "code": "FORM_VALIDATION_FAILED",
+                "message": "Entry form validation failed",
+                "detail": {"warnings": [
+                    {"field": "Count", "expected_format": "a numeric value",
+                     "reason": "value does not match", "message": "bad"}
+                ]},
+            }))),
+            payload: None,
+        };
+        let error = project_error(&anyhow::Error::from(protocol));
+        let styled = render_error(&error, &StylePolicy::new(true));
+
+        assert!(styled.contains(
+            "\u{1b}[33m- Count: expected a numeric value; value does not match\u{1b}[0m"
+        ));
+    }
+
+    fn strip_ansi(text: &str) -> String {
+        let mut output = String::new();
+        let mut chars = text.chars();
+        while let Some(character) = chars.next() {
+            if character == '\u{1b}' {
+                for character in chars.by_ref() {
+                    if character.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            } else {
+                output.push(character);
+            }
+        }
+        output
     }
 
     #[test]
