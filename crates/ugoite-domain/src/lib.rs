@@ -15,4 +15,5 @@ pub mod publication_ref;
 pub mod search;
 pub mod space;
 pub mod space_key;
+pub mod spreadsheet;
 pub mod text;

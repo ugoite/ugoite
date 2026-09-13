@@ -9,8 +9,7 @@ import {
 } from "solid-js";
 import type { EntryRecord, Form } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
-import { entryApi } from "~/lib/ugoite-client";
-import { searchApi } from "~/lib/ugoite-client";
+import { encodeSpreadsheetCsv, entryApi, searchApi } from "~/lib/ugoite-client";
 import { replaceFirstH1, updateH2Section } from "~/lib/markdown";
 import { t } from "~/lib/i18n";
 import { formatDateLabel } from "~/lib/date-format";
@@ -163,9 +162,9 @@ function SortIcon(props: { active: boolean; direction: SortDirection }) {
 }
 /* v8 ignore stop */
 
-/** Helper to format a single entry as a CSV row */
+/** Build the display values for one entry; shared Rust owns CSV encoding. */
 /* v8 ignore start */
-function formatCsvRow(entry: EntryRecord, headers: string[]) {
+function formatCsvValues(entry: EntryRecord, headers: string[]) {
   return headers
     .map((field) => {
       let val = "";
@@ -179,9 +178,8 @@ function formatCsvRow(entry: EntryRecord, headers: string[]) {
       } else {
         val = String(entry.properties?.[field] ?? "");
       }
-      return `"${val.replace(/"/g, '""')}"`;
+      return val;
     })
-    .join(",");
 }
 /* v8 ignore stop */
 
@@ -292,7 +290,7 @@ export function FormTable(props: FormTableProps) {
     setColumnFilters((prev) => ({ ...prev, [field]: value }));
   };
 
-  const downloadCSV = () => {
+  const downloadCSV = async () => {
     // Use untrack and try-catch for robustness in handler
     try {
       const { data, fieldNames, formName } = untrack(() => ({
@@ -305,12 +303,10 @@ export function FormTable(props: FormTableProps) {
 
       const headers = ["title", ...fieldNames, "updated_at"];
       /* v8 ignore start */
-      const csvContent = [
-        headers.join(","),
-        ...data.map((n) => formatCsvRow(n, headers)),
-      ].join(
-        "\n",
-      );
+      const csvContent = await encodeSpreadsheetCsv([
+        headers,
+        ...data.map((entry) => formatCsvValues(entry, headers)),
+      ]);
       /* v8 ignore stop */
 
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });

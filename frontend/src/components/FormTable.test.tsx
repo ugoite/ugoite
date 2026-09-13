@@ -305,9 +305,11 @@ describe("FormTable", () => {
 
     fireEvent.click(getByText("Export CSV"));
 
-    expect(createSpy).toHaveBeenCalled();
-    expect(linkClickSpy).toHaveBeenCalled();
-    expect(exportedBlob).toBeInstanceOf(Blob);
+    await waitFor(() => {
+      expect(createSpy).toHaveBeenCalled();
+      expect(linkClickSpy).toHaveBeenCalled();
+      expect(exportedBlob).toBeInstanceOf(Blob);
+    });
     const csvContent = await exportedBlob!.text();
     expect(csvContent).toContain(
       '"Keep Me","100","2026-01-01T00:00:00.000Z"',

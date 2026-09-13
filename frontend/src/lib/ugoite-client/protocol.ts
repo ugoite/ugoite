@@ -200,6 +200,15 @@ export const validateAssetReference = async (
     value,
   });
 
+/** Encode derived CSV output with the shared spreadsheet-safety rule. */
+export const encodeSpreadsheetCsv = async (
+  rows: readonly (readonly string[])[],
+): Promise<string> =>
+  await invokeProtocol<string>({
+    action: "domain.encode_spreadsheet_csv",
+    value: rows,
+  });
+
 /** Validate a structured Entry draft with the shared Rust boundary (PR1/PR2). */
 export const validateEntryDraft = async (
   form: unknown,
