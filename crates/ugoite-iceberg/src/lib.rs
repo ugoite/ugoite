@@ -165,6 +165,21 @@ const TARGET_FILE_SIZE_PROPERTY: &str = "write.target-file-size-bytes";
 const FIRST_FORM_FIELD_ID: i32 = 100;
 const NESTED_FIELD_ID_BASE: i32 = 1_000_000;
 
+fn authoritative_form_definition_read_failure(
+    table_identifier: &str,
+    diagnostic: &str,
+) -> anyhow::Error {
+    AppError::internal_with_detail(
+        ErrorCode::FormDefinitionReadFailed,
+        format!("authoritative Form definition could not be read: {table_identifier}"),
+        serde_json::json!({
+            "table": table_identifier,
+            "diagnostic": diagnostic,
+        }),
+    )
+    .into()
+}
+
 fn unsupported_form_field_type_change(
     current: &FormDefinition,
     changes: &FormChangeSet,
@@ -1396,30 +1411,74 @@ impl IcebergWorkspace {
         let identifiers = if let Some(catalog) = &self.space_catalog {
             catalog
                 .list_tables_bounded(&self.namespace, max_forms)
-                .await?
+                .await
+                .map_err(|error| {
+                    authoritative_form_definition_read_failure(
+                        &self.namespace.to_string(),
+                        &format!("authoritative catalog listing failed: {error}"),
+                    )
+                })?
         } else {
-            let identifiers = self.catalog.list_tables(&self.namespace).await?;
+            let identifiers = self
+                .catalog
+                .list_tables(&self.namespace)
+                .await
+                .map_err(|error| {
+                    authoritative_form_definition_read_failure(
+                        &self.namespace.to_string(),
+                        &format!("authoritative catalog listing failed: {error}"),
+                    )
+                })?;
             if identifiers.len() > max_forms {
-                return Err(anyhow!("Form catalog exceeds its configured count limit"));
+                return Err(authoritative_form_definition_read_failure(
+                    &self.namespace.to_string(),
+                    "form catalog exceeds its configured count limit",
+                ));
             }
             identifiers
         };
         let mut forms = Vec::new();
         let mut serialized_bytes = 0usize;
         for ident in identifiers {
-            let table = self.catalog.load_table(&ident).await?;
-            if let Some(raw) = table.metadata().properties().get(FORM_DEFINITION_PROPERTY) {
-                serialized_bytes = serialized_bytes
-                    .checked_add(raw.len())
-                    .context("Form definition size overflow")?;
-                if serialized_bytes > max_serialized_bytes {
-                    return Err(anyhow!(
-                        "Form definitions exceed their configured serialized-size limit"
-                    ));
-                }
-                let form: FormDefinition = serde_json::from_str(raw)?;
-                forms.push(form_from_table(&table, form.id)?);
+            let table_identifier = ident.to_string();
+            let table = self.catalog.load_table(&ident).await.map_err(|error| {
+                authoritative_form_definition_read_failure(&table_identifier, &error.to_string())
+            })?;
+            let raw = table
+                .metadata()
+                .properties()
+                .get(FORM_DEFINITION_PROPERTY)
+                .ok_or_else(|| {
+                    authoritative_form_definition_read_failure(
+                        &table_identifier,
+                        "form definition property is missing",
+                    )
+                })?;
+            serialized_bytes = serialized_bytes.checked_add(raw.len()).ok_or_else(|| {
+                authoritative_form_definition_read_failure(
+                    &table_identifier,
+                    "form definition size overflow",
+                )
+            })?;
+            if serialized_bytes > max_serialized_bytes {
+                return Err(authoritative_form_definition_read_failure(
+                    &table_identifier,
+                    "form definitions exceed their configured serialized-size limit",
+                ));
             }
+            let form: FormDefinition = serde_json::from_str(raw).map_err(|error| {
+                authoritative_form_definition_read_failure(
+                    &table_identifier,
+                    &format!("form definition is invalid: {error}"),
+                )
+            })?;
+            let form = form_from_table(&table, form.id).map_err(|error| {
+                authoritative_form_definition_read_failure(
+                    &table_identifier,
+                    &format!("table schema is inconsistent with the Form definition: {error}"),
+                )
+            })?;
+            forms.push(form);
         }
         forms.sort_by(|left: &FormDefinition, right: &FormDefinition| left.name.cmp(&right.name));
         Ok(forms)

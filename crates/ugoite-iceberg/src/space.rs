@@ -34,6 +34,36 @@ fn unsupported_space_version_error(metadata: &serde_json::Value) -> anyhow::Erro
     AppError::unsupported_space_version(detected.as_deref(), SUPPORTED_SPACE_VERSIONS).into()
 }
 
+pub(crate) fn space_discovery_failure(
+    space_id: &str,
+    diagnostic: &str,
+    error: anyhow::Error,
+) -> anyhow::Error {
+    let typed_code = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<AppError>().map(AppError::code));
+    if matches!(
+        typed_code,
+        Some(
+            ErrorCode::UnsupportedSpaceVersion
+                | ErrorCode::SpaceDiscoveryFailed
+                | ErrorCode::FormDefinitionReadFailed
+        )
+    ) {
+        return error;
+    }
+    AppError::internal_with_detail(
+        ErrorCode::SpaceDiscoveryFailed,
+        format!("Space discovery failed for {space_id}"),
+        serde_json::json!({
+            "space_id": space_id,
+            "diagnostic": diagnostic,
+            "cause_code": typed_code.map(ErrorCode::as_str).unwrap_or("UNCLASSIFIED"),
+        }),
+    )
+    .into()
+}
+
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct StorageConnectionTestConfig {
     pub uri: String,
@@ -525,29 +555,40 @@ async fn list_spaces_discovery_with_storage<S: StorageBackend + ?Sized>(
         if space_id.is_empty() {
             continue;
         }
-        let meta_path = format!("spaces/{space_id}/meta.json");
-        if storage.exists(&meta_path).await? {
-            validate_space_path_segment(space_id)?;
-            let meta = ensure_space_identity(storage, space_id).await?;
-            let space_uid = meta
-                .get("space_uid")
-                .and_then(serde_json::Value::as_str)
-                .ok_or_else(|| anyhow!("Space is missing immutable space_uid"))
-                .and_then(|value| uuid::Uuid::parse_str(value).map_err(anyhow::Error::from))?;
-            if let Some(previous_id) = seen_uids.insert(space_uid, space_id.to_string()) {
-                bail!(
-                    "duplicate immutable space_uid {space_uid} is used by Spaces {previous_id} and {space_id}"
-                );
-            }
-            let slug = meta
-                .get("slug")
-                .and_then(serde_json::Value::as_str)
-                .ok_or_else(|| anyhow!("Space metadata has no slug"))?;
-            if let Some(previous_id) = seen_slugs.insert(slug.to_string(), space_id.to_string()) {
-                bail!("Space slug is not unique: {slug} ({previous_id}, {space_id})");
-            }
-            spaces.push(space_id.to_string());
+        // This is Node-local control state, not a portable Space directory.
+        // It is intentionally excluded from Space discovery by its exact
+        // reserved name rather than by the absence of metadata.
+        if space_id == ".ugoite-space-slug-claims" {
+            continue;
         }
+        let meta_path = format!("spaces/{space_id}/meta.json");
+        if !storage.exists(&meta_path).await? {
+            return Err(space_discovery_failure(
+                space_id,
+                "space_metadata_missing",
+                anyhow!("Space metadata is missing"),
+            ));
+        }
+        validate_space_path_segment(space_id)?;
+        let meta = ensure_space_identity(storage, space_id).await?;
+        let space_uid = meta
+            .get("space_uid")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| anyhow!("Space is missing immutable space_uid"))
+            .and_then(|value| uuid::Uuid::parse_str(value).map_err(anyhow::Error::from))?;
+        if let Some(previous_id) = seen_uids.insert(space_uid, space_id.to_string()) {
+            bail!(
+                "duplicate immutable space_uid {space_uid} is used by Spaces {previous_id} and {space_id}"
+            );
+        }
+        let slug = meta
+            .get("slug")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| anyhow!("Space metadata has no slug"))?;
+        if let Some(previous_id) = seen_slugs.insert(slug.to_string(), space_id.to_string()) {
+            bail!("Space slug is not unique: {slug} ({previous_id}, {space_id})");
+        }
+        spaces.push(space_id.to_string());
     }
 
     spaces.sort();
@@ -556,12 +597,11 @@ async fn list_spaces_discovery_with_storage<S: StorageBackend + ?Sized>(
 }
 
 pub async fn list_spaces(op: &Operator) -> Result<Vec<String>> {
-    let storage = OpendalStorage::from_operator(op);
-    let spaces = list_spaces_discovery_with_storage(&storage).await?;
+    let spaces = list_spaces_discovery(op).await?;
     // Directory listing is discovery only. Do not expose a metadata-only or
     // crash-left Space through a public enumeration result.
     for space_id in &spaces {
-        validate_complete_bootstrap(op, space_id).await?;
+        validate_discoverable_space(op, space_id).await?;
     }
     Ok(spaces)
 }
@@ -572,7 +612,22 @@ pub async fn list_spaces(op: &Operator) -> Result<Vec<String>> {
 /// while still strictly validating every unclaimed or committed Space.
 pub async fn list_spaces_discovery(op: &Operator) -> Result<Vec<String>> {
     let storage = OpendalStorage::from_operator(op);
-    list_spaces_discovery_with_storage(&storage).await
+    list_spaces_discovery_with_storage(&storage)
+        .await
+        .map_err(|error| space_discovery_failure("<spaces>", "space_discovery", error))
+}
+
+/// Validates the current bootstrap and every authoritative Form definition
+/// before a Space is exposed by a public discovery operation. Derived state is
+/// deliberately not part of this check.
+pub(crate) async fn validate_discoverable_space(op: &Operator, space_id: &str) -> Result<()> {
+    validate_complete_bootstrap(op, space_id)
+        .await
+        .map_err(|error| space_discovery_failure(space_id, "space_bootstrap", error))?;
+    form::list_forms(op, &format!("spaces/{space_id}"))
+        .await
+        .map_err(|error| space_discovery_failure(space_id, "authoritative_knowledge", error))?;
+    Ok(())
 }
 
 async fn get_space_with_storage<S: StorageBackend + ?Sized>(
