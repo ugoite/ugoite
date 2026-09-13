@@ -515,7 +515,7 @@ async fn update_structured_entry(
 }
 
 pub async fn run(cmd: EntryCmd) -> Result<()> {
-    let config = load_config();
+    let config = load_config()?;
     let fmt = effective_format(cmd.format);
     match cmd.sub {
         EntrySubCmd::List { space_path } => {

@@ -41,7 +41,7 @@ pub enum RunSubCmd {
 }
 
 pub async fn run(cmd: RunCmd) -> Result<()> {
-    let config = load_config();
+    let config = load_config()?;
     let fmt = effective_format(cmd.format);
     match cmd.sub {
         RunSubCmd::Undo {

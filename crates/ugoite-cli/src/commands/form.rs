@@ -60,7 +60,7 @@ pub enum FormSubCmd {
 }
 
 pub async fn run(cmd: FormCmd) -> Result<()> {
-    let config = load_config();
+    let config = load_config()?;
     match cmd.sub {
         FormSubCmd::List { space_path } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "form list")?;

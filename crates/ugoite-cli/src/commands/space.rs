@@ -210,7 +210,7 @@ pub async fn create_space_cmd(
     space_id: &str,
     command_name: &str,
 ) -> Result<()> {
-    let config = load_config();
+    let config = load_config()?;
     if let Some(base) = validated_base_url(&config)? {
         // Remote Space creation may require fresh human presence; the
         // step-up handoff (browser approval, one automatic retry) keeps the
@@ -236,7 +236,7 @@ pub async fn create_space_cmd(
 }
 
 pub async fn run(cmd: SpaceCmd) -> Result<()> {
-    let config = load_config();
+    let config = load_config()?;
     let fmt = effective_format(cmd.format);
     match cmd.sub {
         SpaceSubCmd::Create { space_path } => {

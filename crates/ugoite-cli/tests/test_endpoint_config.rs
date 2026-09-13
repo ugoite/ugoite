@@ -107,6 +107,35 @@ fn test_parse_space_id_from_path_and_id() {
     assert!(stdout.contains(space_id));
 }
 
+/// REQ-OPS-006: malformed configuration must not fall back to core mode and
+/// mutate a local Space selected by the command arguments.
+#[test]
+fn test_malformed_config_fails_closed_before_core_mutation() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("cli-config.json");
+    let space_path = dir.path().join("other-workspace/spaces/should-not-exist");
+    fs::write(&config_path, "{not-json").expect("write malformed config");
+
+    let output = Command::new(ugoite_bin())
+        .args(["space", "create", space_path.to_str().expect("space path")])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty(), "stdout: {:?}", output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid JSON"), "stderr: {stderr}");
+    assert!(
+        stderr.contains(&config_path.display().to_string()),
+        "stderr: {stderr}"
+    );
+    assert!(
+        !space_path.exists(),
+        "malformed config must not fall back to core mode and create a Space"
+    );
+}
+
 /// REQ-SEC-011: config set must reject non-loopback cleartext backend and API URLs.
 #[test]
 fn test_config_set_req_sec_011_rejects_non_loopback_cleartext_urls() {
@@ -210,9 +239,9 @@ fn test_config_set_req_sec_011_allows_loopback_cleartext_urls() {
     }
 }
 
-/// REQ-SEC-011: config current must warn about previously saved insecure remote endpoints.
+/// REQ-SEC-011: config current must reject previously saved insecure remote endpoints.
 #[test]
-fn test_config_current_req_sec_011_warns_about_saved_non_loopback_cleartext_url() {
+fn test_config_current_req_sec_011_rejects_saved_non_loopback_cleartext_url() {
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("config.json");
     fs::write(
@@ -231,32 +260,21 @@ fn test_config_current_req_sec_011_warns_about_saved_non_loopback_cleartext_url(
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid endpoint"), "stderr: {stderr}");
     assert!(
-        output.status.success(),
-        "stdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
+        stderr.contains(&config_path.display().to_string()),
+        "stderr: {stderr}"
     );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("Current endpoint mode: api"),
-        "stdout: {stdout}"
-    );
-    assert!(
-        stdout.contains(
-            "Warning: API endpoint URL http://example.com/api uses cleartext http:// for a non-loopback host"
-        ),
-        "stdout: {stdout}"
-    );
-    assert!(
-        stdout.contains("Server-backed commands will refuse this endpoint"),
-        "stdout: {stdout}"
-    );
+    assert!(!stderr.contains("http://example.com/api"));
 }
 
-/// REQ-SEC-011: remote commands must refuse insecure saved endpoints before any request is sent.
+/// REQ-SEC-011: remote commands must reject insecure saved endpoints before
+/// any request is sent.
 #[test]
-fn test_space_list_req_sec_011_rejects_saved_non_loopback_cleartext_endpoint() {
+fn test_space_list_req_sec_011_rejects_saved_insecure_endpoint_before_request() {
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("config.json");
     fs::write(
@@ -282,14 +300,10 @@ fn test_space_list_req_sec_011_rejects_saved_non_loopback_cleartext_endpoint() {
         String::from_utf8_lossy(&output.stderr),
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid endpoint"), "stderr: {stderr}");
     assert!(
-        stderr.contains("Backend endpoint URL http://example.com uses cleartext http:// for a non-loopback host"),
+        stderr.contains(&config_path.display().to_string()),
         "stderr: {stderr}"
     );
-    assert!(
-        stderr.contains(
-            "Use https:// for remote endpoints, or use a loopback http:// URL for local development."
-        ),
-        "stderr: {stderr}"
-    );
+    assert!(!stderr.contains("http://example.com"));
 }

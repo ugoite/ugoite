@@ -56,7 +56,7 @@ pub enum SqlSubCmd {
 }
 
 pub async fn run(cmd: SqlCmd) -> Result<()> {
-    let config = load_config();
+    let config = load_config()?;
     match cmd.sub {
         SqlSubCmd::Lint { sql_text } => match validate_sql_syntax(&sql_text) {
             Ok(()) => print_json(&serde_json::json!({

@@ -728,7 +728,7 @@ impl McpHost for RmcpMcpHost {
 
 pub async fn run(cmd: KonaseCmd) -> Result<()> {
     let interrupts = SignalCoordinator::install()?;
-    let config = load_config();
+    let config = load_config()?;
     if config.mode == EndpointMode::Core {
         bail!("`ugoite konase` currently requires backend or api mode with an MCP credential");
     }
