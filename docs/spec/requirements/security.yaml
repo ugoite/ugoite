@@ -419,11 +419,11 @@ requirements:
 
     cleartext `http://` URLs, keep loopback cleartext URLs available for local
 
-    development, warn when legacy insecure remote endpoints are still saved,
+    development, fail closed when a saved endpoint is invalid, and refuse to
 
-    and refuse to treat such endpoints as active topology before any credentialed
+    treat such endpoints as active topology before any credentialed request can
 
-    request can be sent to them.
+    be sent to them.
 
     '
   related_spec:
