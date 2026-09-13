@@ -4199,7 +4199,7 @@ impl SpaceCatalogStore {
                     },
                 )
                 .await?;
-            let duplicate_create = self
+            let duplicate_create = match self
                 .operator
                 .write_options(
                     &path,
@@ -4210,7 +4210,14 @@ impl SpaceCatalogStore {
                     },
                 )
                 .await
-                .expect_err("conditional create probe must reject an existing object");
+            {
+                Ok(_) => {
+                    return Err(anyhow!(
+                        "conditional create probe accepted an existing object"
+                    ))
+                }
+                Err(error) => error,
+            };
             if !matches!(
                 duplicate_create.kind(),
                 ErrorKind::AlreadyExists | ErrorKind::ConditionNotMatch
@@ -4261,7 +4268,7 @@ impl SpaceCatalogStore {
                     "shared Catalog probe replacement did not change the ETag"
                 ));
             }
-            let stale_read = self
+            let stale_read = match self
                 .operator
                 .read_options(
                     &path,
@@ -4271,11 +4278,14 @@ impl SpaceCatalogStore {
                     },
                 )
                 .await
-                .expect_err("conditional read probe must reject a stale ETag");
+            {
+                Ok(_) => return Err(anyhow!("conditional read probe accepted a stale ETag")),
+                Err(error) => error,
+            };
             if stale_read.kind() != ErrorKind::ConditionNotMatch {
                 return Err(stale_read.into());
             }
-            let stale_replace = self
+            let stale_replace = match self
                 .operator
                 .write_options(
                     &path,
@@ -4286,7 +4296,14 @@ impl SpaceCatalogStore {
                     },
                 )
                 .await
-                .expect_err("conditional replacement probe must reject a stale ETag");
+            {
+                Ok(_) => {
+                    return Err(anyhow!(
+                        "conditional replacement probe accepted a stale ETag"
+                    ))
+                }
+                Err(error) => error,
+            };
             if stale_replace.kind() != ErrorKind::ConditionNotMatch {
                 return Err(stale_replace.into());
             }

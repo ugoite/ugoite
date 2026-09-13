@@ -231,7 +231,7 @@ fn validate_required_storage_capabilities(operator: &Operator, mode: &str) -> Re
 }
 
 async fn probe_storage_backend(operator: &Operator, mode: &str, timeout: Duration) -> Result<()> {
-    let probe = async {
+    match tokio::time::timeout(timeout, async {
         let mut lister = operator
             .lister("")
             .await
@@ -240,27 +240,35 @@ async fn probe_storage_backend(operator: &Operator, mode: &str, timeout: Duratio
             .try_next()
             .await
             .map_err(|error| map_storage_backend_error(&error))?;
-
-        if mode == "s3" && !is_local_operator(operator) {
-            SpaceCatalogStore::new(operator.clone(), "_ugoite/connection-probes")
-                .map_err(map_storage_contract_error)?
-                .verify_shared_writes()
-                .await
-                .map_err(map_storage_contract_error)?;
-        }
         Ok::<(), anyhow::Error>(())
-    };
-    match tokio::time::timeout(timeout, probe).await {
-        Ok(result) => result,
-        Err(_) => Err(AppError::dependency_unavailable(
-            ErrorCode::StorageConnectionFailed,
-            format!(
-                "storage connection failed: probe timed out after {}ms",
-                timeout.as_millis()
-            ),
-        )
-        .into()),
+    })
+    .await
+    {
+        Ok(result) => result?,
+        Err(_) => {
+            return Err(AppError::dependency_unavailable(
+                ErrorCode::StorageConnectionFailed,
+                format!(
+                    "storage connection failed: probe timed out after {}ms",
+                    timeout.as_millis()
+                ),
+            )
+            .into())
+        }
     }
+
+    // `verify_shared_writes` owns its shorter operation timeout and cleanup
+    // phase. Do not wrap it in this same outer timeout: cancelling the inner
+    // future at the deadline would skip deletion of its temporary probe
+    // object.
+    if mode == "s3" && !is_local_operator(operator) {
+        SpaceCatalogStore::new(operator.clone(), "_ugoite/connection-probes")
+            .map_err(map_storage_contract_error)?
+            .verify_shared_writes()
+            .await
+            .map_err(map_storage_contract_error)?;
+    }
+    Ok(())
 }
 
 fn storage_connection_mode(uri: &str) -> Result<&'static str> {
