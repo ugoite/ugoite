@@ -18,8 +18,9 @@ Browser and CLI.
 ## Before you begin
 
 Decide the address. Core mode takes a local path such as
-`/path/to/workspace/spaces/demo`. Backend mode takes a Space ID such as
-`demo`.
+`/path/to/workspace/spaces/demo`. Backend mode takes the immutable Space UID
+returned by the server, such as
+`019f1234-5678-7abc-8def-0123456789ab`.
 
 ## Steps
 
@@ -41,8 +42,8 @@ ugoite space get /path/to/workspace/spaces/demo
 ugoite space list /path/to/workspace
 ```
 
-In backend mode, pass the Space ID and omit the workspace path. Remote Space
-addressing uses immutable UIDs; a human slug reads as not found. See the [CLI
+In backend mode, pass the immutable Space UID and omit the workspace path. A
+human Space slug is creation metadata, not a remote identity. See the [CLI
 guide](../guide/automate/cli.md).
 
 </TabItem>
@@ -60,7 +61,8 @@ portable history. The switcher selection is runtime state.
 
 ## If it fails
 
-- Space not found: check path versus ID for the active endpoint mode.
+- Space not found: check local path versus immutable Space UID for the active
+  endpoint mode.
 - Remote create rejected: a node-admin human presence is required; plain token
   identities are rejected.
 

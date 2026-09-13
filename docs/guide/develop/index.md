@@ -22,14 +22,16 @@ The default root is `./data`; the generated Space directory uses its immutable
 UUIDv7 and the `dev-seed` slug. It uses the `renewable-ops` scenario and
 approximately 50 entries. Pass arguments after `--` or set the `UGOITE_SEED_*`
 environment variables documented by `scripts/dev-seed.sh` when a different root,
-Space ID, scenario, entry count, or deterministic seed is needed:
+Space slug, scenario, entry count, or deterministic seed is needed. The
+existing `--space-id` option names that local sample-data slug for CLI
+compatibility:
 
 ```bash
 mise run seed -- --space-id demo --scenario lab-qa --entry-count 10 --seed 7
 ```
 
 The helper refuses to overwrite an existing target Space. Choose another Space
-ID or remove the local development data intentionally before seeding again.
+slug or remove the local development data intentionally before seeding again.
 
 ## Development path
 
