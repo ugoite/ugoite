@@ -51,6 +51,30 @@ describe("portable Ugoite API protocol WASM", () => {
     });
   });
 
+  it("REQ-API-001: encodes durable collection pagination arguments", async () => {
+    await expect(
+      prepareApiRequest("search.keyword", {
+        space_id: "demo",
+        q: "alpha",
+        limit: 51,
+        offset: 50,
+      }),
+    ).resolves.toMatchObject({
+      path: "/spaces/demo/search?q=alpha&limit=51&offset=50",
+    });
+
+    await expect(
+      prepareApiRequest("entry.history", {
+        space_id: "demo",
+        entry_id: "entry-1",
+        limit: 51,
+        offset: 50,
+      }),
+    ).resolves.toMatchObject({
+      path: "/spaces/demo/entries/entry-1/history?limit=51&offset=50",
+    });
+  });
+
   it("REQ-FE-065: sends row-reference lookups with the immutable Space ID", async () => {
     const request = await prepareApiRequest("entry.options", {
       space_id: "01900000-0000-7000-8000-000000000001",

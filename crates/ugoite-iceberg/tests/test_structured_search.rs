@@ -51,6 +51,7 @@ fn criteria(conditions: Vec<(&str, SearchOperator, serde_json::Value)>) -> Struc
             })
             .collect(),
         limit: Some(100),
+        offset: None,
     }
 }
 
@@ -147,6 +148,17 @@ async fn structured_search_filters_by_typed_conditions() -> anyhow::Result<()> {
     )
     .await?;
     assert_eq!(open.len(), authorized.len());
+
+    // The authorized page executor owns pagination. The second row must be
+    // the same row selected by the full ordered result, not a second slice of
+    // an already paginated SQL result.
+    let all = structured_search::search_structured(&op, &ws_path, &criteria(Vec::new())).await?;
+    assert_eq!(all.len(), 2);
+    let mut second_page = criteria(Vec::new());
+    second_page.limit = Some(1);
+    second_page.offset = Some(1);
+    let page = structured_search::search_structured(&op, &ws_path, &second_page).await?;
+    assert_eq!(page, vec![all[1].clone()]);
     Ok(())
 }
 

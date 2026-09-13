@@ -181,6 +181,22 @@ describe("entryApi", () => {
         new Date(1772960822.056 * 1000).toISOString(),
       );
     });
+
+    it("forwards limit and offset for durable entry list pages", async () => {
+      server.use(
+        http.get(
+          testApiUrl("/spaces/test-ws/entries"),
+          ({ request }) => {
+            const url = new URL(request.url);
+            expect(url.searchParams.get("limit")).toBe("25");
+            expect(url.searchParams.get("offset")).toBe("50");
+            return HttpResponse.json([]);
+          },
+        ),
+      );
+
+      await expect(entryApi.list("test-ws", 25, 50)).resolves.toEqual([]);
+    });
   });
 
   describe("create", () => {
@@ -329,6 +345,41 @@ describe("entryApi", () => {
 
       const matches = await searchApi.keyword("test-ws", "rocket");
       expect(matches.find((m) => m.id === created.id)).toBeDefined();
+    });
+
+    it("forwards limit and offset for keyword search pages", async () => {
+      server.use(
+        http.get(
+          testApiUrl("/spaces/test-ws/search"),
+          ({ request }) => {
+            const url = new URL(request.url);
+            expect(url.searchParams.get("q")).toBe("rocket");
+            expect(url.searchParams.get("limit")).toBe("25");
+            expect(url.searchParams.get("offset")).toBe("50");
+            return HttpResponse.json([]);
+          },
+        ),
+      );
+
+      await expect(searchApi.keyword("test-ws", "rocket", 25, 50))
+        .resolves.toEqual([]);
+    });
+
+    it("forwards limit and offset for entry history pages", async () => {
+      server.use(
+        http.get(
+          testApiUrl("/spaces/test-ws/entries/entry-1/history"),
+          ({ request }) => {
+            const url = new URL(request.url);
+            expect(url.searchParams.get("limit")).toBe("25");
+            expect(url.searchParams.get("offset")).toBe("50");
+            return HttpResponse.json({ revisions: [] });
+          },
+        ),
+      );
+
+      await expect(entryApi.history("test-ws", "entry-1", undefined, 25, 50))
+        .resolves.toEqual({ revisions: [] });
     });
 
     it("REQ-FE-065: row_reference picker options request bounded form-scoped summaries", async () => {

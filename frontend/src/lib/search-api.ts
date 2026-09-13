@@ -20,6 +20,7 @@ export type StructuredSearchCriteria = {
   updated_to?: string;
   conditions: StructuredSearchCondition[];
   limit?: number;
+  offset?: number;
 };
 
 /** Search & query API client backed by the shared Rust/WASM protocol. */
@@ -55,12 +56,16 @@ export const searchApi = {
   async keyword(
     spaceId: string,
     query: string,
+    limit?: number,
+    offset?: number,
   ): Promise<KeywordSearchResult[]> {
     const results = await protocolFetch<KeywordSearchResult[]>(
       "search.keyword",
       {
         space_id: spaceId,
         q: query,
+        ...(limit === undefined ? {} : { limit }),
+        ...(offset === undefined ? {} : { offset }),
       },
     );
     return results.map((result) => ({

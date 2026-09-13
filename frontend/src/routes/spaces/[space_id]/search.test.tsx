@@ -201,7 +201,7 @@ describe("/spaces/:space_id/search", () => {
         updated_from: "2025-03-01",
         updated_to: "2025-03-03",
         conditions: [{ field: "Status", operator: "equals", value: "Active" }],
-        limit: 50,
+        limit: 51,
       });
     });
     // No raw SQL construction on the advanced path.

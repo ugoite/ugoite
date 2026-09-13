@@ -2286,7 +2286,7 @@ pub(crate) async fn query_structured_search_page_with_parameters(
     offset: usize,
     limit: usize,
 ) -> Result<(Vec<Value>, u64)> {
-    execute_datafusion_sql_page(
+    execute_datafusion_sql_page_with_max_rows(
         op,
         ws_path,
         sql,
@@ -2297,6 +2297,7 @@ pub(crate) async fn query_structured_search_page_with_parameters(
         offset,
         limit,
         parameters,
+        ugoite_core::structured_search::MAX_STRUCTURED_SEARCH_LIMIT,
     )
     .await
 }
@@ -2466,8 +2467,38 @@ async fn execute_datafusion_sql_page(
     limit: usize,
     parameters: HashMap<String, datafusion::scalar::ScalarValue>,
 ) -> Result<(Vec<Value>, u64)> {
+    execute_datafusion_sql_page_with_max_rows(
+        op,
+        ws_path,
+        sql,
+        entry_scope,
+        allowed_relations,
+        relation_scopes,
+        checkpoint,
+        offset,
+        limit,
+        parameters,
+        SQL_SESSION_MAX_ROWS,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_datafusion_sql_page_with_max_rows(
+    op: &Operator,
+    ws_path: &str,
+    sql: &str,
+    entry_scope: EntryScope,
+    allowed_relations: Option<&HashSet<String>>,
+    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    checkpoint: Option<SpaceCheckpoint>,
+    offset: usize,
+    limit: usize,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    max_rows: usize,
+) -> Result<(Vec<Value>, u64)> {
     validate_read_only_sql(sql)?;
-    let context = datafusion_sql_context(
+    let context = datafusion_sql_context_with_limits(
         op,
         ws_path,
         entry_scope,
@@ -2475,6 +2506,8 @@ async fn execute_datafusion_sql_page(
         relation_scopes,
         checkpoint,
         BTreeSet::new(),
+        max_rows,
+        false,
     )
     .await
     .map_err(map_sql_error)?;

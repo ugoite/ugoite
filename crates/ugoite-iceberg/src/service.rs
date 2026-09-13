@@ -2142,6 +2142,18 @@ impl UgoiteService {
         entry::list_entries(&self.operator, &self.workspace_path(space_id)).await
     }
 
+    pub async fn list_entries_page(
+        &self,
+        space_id: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<Value>> {
+        self.validate_complete_space(space_id).await?;
+        entry::list_entries(&self.operator, &self.workspace_path(space_id))
+            .await
+            .map(|entries| entries.into_iter().skip(offset).take(limit).collect())
+    }
+
     pub async fn get_entry(&self, space_id: &str, entry_id: &str) -> Result<Value> {
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
@@ -2522,11 +2534,48 @@ impl UgoiteService {
         entry::get_entry_history(&self.operator, &self.workspace_path(space_id), entry_id).await
     }
 
+    pub async fn entry_history_page(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Value> {
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        entry::get_entry_history_paged(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            limit,
+            offset,
+        )
+        .await
+    }
+
     pub async fn entry_history_authorized_for_principals(
         &self,
         space_id: &str,
         entry_id: &str,
         principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        self.entry_history_authorized_for_principals_page(
+            space_id,
+            entry_id,
+            principal_ids,
+            usize::MAX,
+            0,
+        )
+        .await
+    }
+
+    pub async fn entry_history_authorized_for_principals_page(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        principal_ids: &[Uuid],
+        limit: usize,
+        offset: usize,
     ) -> Result<Value> {
         require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
@@ -2537,11 +2586,13 @@ impl UgoiteService {
                 let scopes = self
                     .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
                     .await?;
-                let mut history = entry::get_entry_history_authorized(
+                let mut history = entry::get_entry_history_authorized_paged(
                     &self.operator,
                     &self.workspace_path(space_id),
                     entry_id,
                     &scopes,
+                    limit,
+                    offset,
                 )
                 .await?;
                 history["access_policy_history"] = serde_json::to_value(
@@ -2570,6 +2621,19 @@ impl UgoiteService {
         pin_name: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
+        self.entry_history_at_pin_page(space_id, entry_id, pin_name, principal_ids, usize::MAX, 0)
+            .await
+    }
+
+    pub async fn entry_history_at_pin_page(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        pin_name: &str,
+        principal_ids: &[Uuid],
+        limit: usize,
+        offset: usize,
+    ) -> Result<Value> {
         require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
@@ -2580,12 +2644,14 @@ impl UgoiteService {
                 let scopes = self
                     .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
                     .await?;
-                let mut history = entry::get_entry_history_at_publication(
+                let mut history = entry::get_entry_history_at_publication_paged(
                     &self.operator,
                     &self.workspace_path(space_id),
                     entry_id,
                     &publication,
                     scopes.as_ref(),
+                    limit,
+                    offset,
                 )
                 .await
                 .map_err(map_checkpoint_error)?;
@@ -3112,6 +3178,25 @@ impl UgoiteService {
         .await
     }
 
+    pub async fn search_entries_page(
+        &self,
+        space_id: &str,
+        query: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<search::KeywordSearchResult>> {
+        ugoite_core::query::validate_keyword_query(query)?;
+        self.validate_complete_space(space_id).await?;
+        search::search_entries_paged(
+            &self.operator,
+            &self.workspace_path(space_id),
+            query,
+            limit,
+            offset,
+        )
+        .await
+    }
+
     pub async fn query_entries(&self, space_id: &str, filter: &Value) -> Result<Vec<Value>> {
         self.validate_complete_space(space_id).await?;
         index::query_index(
@@ -3485,14 +3570,55 @@ impl UgoiteService {
         query: &str,
         limit: usize,
     ) -> Result<Vec<search::KeywordSearchResult>> {
-        self.search_entries_authorized_for_principals_after(
-            space_id,
-            principal_ids,
-            query,
-            limit,
-            None,
-        )
-        .await
+        self.search_entries_authorized_for_principals_page(space_id, principal_ids, query, limit, 0)
+            .await
+    }
+
+    pub async fn search_entries_authorized_for_principals_page(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        query: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<search::KeywordSearchResult>> {
+        ugoite_core::query::validate_keyword_query(query)?;
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        let authorizer = Authorizer::new(self.operator.clone());
+        for _ in 0..3 {
+            let (revision, stable, result) = authorizer
+                .with_state_lock(space_id, |state| async {
+                    let revision = state.revision;
+                    let scopes = self
+                        .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                        .await?;
+                    let asset_authorization = search::AssetAuthorization::new(state, principal_ids);
+                    let result = search::search_entries_with_scopes_paged_authorized(
+                        &self.operator,
+                        &self.workspace_path(space_id),
+                        query,
+                        &scopes,
+                        limit,
+                        offset,
+                        Some(asset_authorization),
+                    )
+                    .await;
+                    let current_revision = Authorizer::new(self.operator.clone())
+                        .state(space_id)
+                        .await?
+                        .revision;
+                    Ok((revision, current_revision == revision, result))
+                })
+                .await?;
+            if stable {
+                return result;
+            }
+            let _ = revision;
+        }
+        Err(anyhow!(
+            "authorization changed while executing the protected search"
+        ))
     }
 
     pub async fn search_entries_authorized_for_principals_after(

@@ -21,6 +21,8 @@ use crate::error::{AppError, ErrorCode};
 pub const MAX_STRUCTURED_SEARCH_CONDITIONS: usize = 32;
 /// Maximum rows a structured Search may request.
 pub const MAX_STRUCTURED_SEARCH_LIMIT: usize = 10_000;
+/// Default page size for a structured Search when the caller omits `limit`.
+pub const DEFAULT_STRUCTURED_SEARCH_LIMIT: usize = 1_000;
 /// Maximum bytes for logical `form` identity.
 pub const MAX_STRUCTURED_SEARCH_FORM_BYTES: usize = 256;
 /// Maximum bytes for logical `field` identity.
@@ -76,6 +78,8 @@ pub struct StructuredSearch {
     pub conditions: Vec<SearchCondition>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<u64>,
 }
 
 /// Logical field kind used for operator/type validation. This is a product
@@ -163,6 +167,7 @@ pub struct ValidatedStructuredSearch {
     pub updated_to: Option<DateTime<Utc>>,
     pub conditions: Vec<ValidatedSearchCondition>,
     pub limit: Option<u64>,
+    pub offset: Option<u64>,
 }
 
 fn invalid_input(message: impl Into<String>) -> AppError {
@@ -392,10 +397,17 @@ pub fn validate_structured_search_syntax(search: &StructuredSearch) -> Result<()
             "structured search exceeds the maximum condition count",
         ));
     }
-    if let Some(limit) = search.limit {
-        if limit == 0 || limit as usize > MAX_STRUCTURED_SEARCH_LIMIT {
-            return Err(invalid_input("structured search limit is out of range"));
-        }
+    let limit = search
+        .limit
+        .unwrap_or(DEFAULT_STRUCTURED_SEARCH_LIMIT as u64);
+    if limit == 0 || limit > MAX_STRUCTURED_SEARCH_LIMIT as u64 {
+        return Err(invalid_input("structured search limit is out of range"));
+    }
+    if search
+        .offset
+        .is_some_and(|offset| offset >= MAX_STRUCTURED_SEARCH_LIMIT as u64)
+    {
+        return Err(invalid_input("structured search offset is out of range"));
     }
     if let Some(raw) = search.updated_from.as_deref() {
         parse_updated_bound(raw, "updated_from")?;
@@ -508,6 +520,7 @@ pub fn resolve_structured_search(
         updated_to,
         conditions,
         limit: search.limit,
+        offset: search.offset,
     })
 }
 
@@ -563,6 +576,7 @@ mod tests {
             updated_to: None,
             conditions,
             limit: None,
+            offset: None,
         }
     }
 
@@ -772,6 +786,7 @@ mod tests {
             updated_to: Some("2026-09-01".to_owned()),
             conditions: Vec::new(),
             limit: None,
+            offset: None,
         };
         let error = resolve_structured_search(&criteria, &form).expect_err("inverted");
         assert_eq!(error.code(), ErrorCode::InvalidInput);
@@ -805,6 +820,25 @@ mod tests {
         assert_eq!(error.code(), ErrorCode::InvalidInput);
         let mut criteria = search("Task", Vec::new());
         criteria.limit = Some(0);
+        assert!(resolve_structured_search(&criteria, &form).is_err());
+    }
+
+    #[test]
+    fn page_range_rejects_overflow_and_out_of_range_offsets() {
+        let form = fixture_form();
+        let mut criteria = search("Task", Vec::new());
+
+        criteria.limit = Some(u64::MAX);
+        assert!(resolve_structured_search(&criteria, &form).is_err());
+
+        criteria.limit = Some(1);
+        criteria.offset = Some(u64::MAX);
+        assert!(resolve_structured_search(&criteria, &form).is_err());
+
+        criteria.offset = Some((MAX_STRUCTURED_SEARCH_LIMIT as u64) - 1);
+        assert!(resolve_structured_search(&criteria, &form).is_ok());
+
+        criteria.offset = Some(MAX_STRUCTURED_SEARCH_LIMIT as u64);
         assert!(resolve_structured_search(&criteria, &form).is_err());
     }
 

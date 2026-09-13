@@ -667,6 +667,12 @@ pub fn prepare_request(
                 if let Some(pin) = optional_string(operation, args, "pin")? {
                     query.push(("pin".into(), pin));
                 }
+                if let Some(limit) = optional_u64(operation, args, "limit")? {
+                    query.push(("limit".into(), limit.to_string()));
+                }
+                if let Some(offset) = optional_u64(operation, args, "offset")? {
+                    query.push(("offset".into(), offset.to_string()));
+                }
                 (
                     OperationSpec::get("Failed to get entry history"),
                     vec![
@@ -733,15 +739,24 @@ pub fn prepare_request(
                 )
             }
 
-            "search.keyword" => (
-                OperationSpec::get("Failed to search entries"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "search".into(),
-                ],
-                vec![("q".into(), required_string(operation, args, "q")?)],
-            ),
+            "search.keyword" => {
+                let mut query = vec![("q".into(), required_string(operation, args, "q")?)];
+                if let Some(limit) = optional_u64(operation, args, "limit")? {
+                    query.push(("limit".into(), limit.to_string()));
+                }
+                if let Some(offset) = optional_u64(operation, args, "offset")? {
+                    query.push(("offset".into(), offset.to_string()));
+                }
+                (
+                    OperationSpec::get("Failed to search entries"),
+                    vec![
+                        "spaces".into(),
+                        required_string(operation, args, "space_id")?,
+                        "search".into(),
+                    ],
+                    query,
+                )
+            }
             "search.query" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to query space"),
                 vec![
@@ -1799,6 +1814,36 @@ mod tests {
         .expect("request");
 
         assert_eq!(request.path, "/spaces/demo/entries?limit=1000&offset=2000");
+    }
+
+    #[test]
+    fn entry_history_encodes_optional_paging_arguments() {
+        let request = prepare_request(
+            "entry.history",
+            &json!({"space_id": "demo", "entry_id": "entry-1", "limit": 51, "offset": 50}),
+            None,
+        )
+        .expect("request");
+
+        assert_eq!(
+            request.path,
+            "/spaces/demo/entries/entry-1/history?limit=51&offset=50"
+        );
+    }
+
+    #[test]
+    fn keyword_search_encodes_optional_paging_arguments() {
+        let request = prepare_request(
+            "search.keyword",
+            &json!({"space_id": "demo", "q": "alpha", "limit": 51, "offset": 50}),
+            None,
+        )
+        .expect("request");
+
+        assert_eq!(
+            request.path,
+            "/spaces/demo/search?q=alpha&limit=51&offset=50"
+        );
     }
 
     #[test]
