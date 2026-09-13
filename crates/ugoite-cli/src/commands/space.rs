@@ -7,6 +7,7 @@ use crate::http;
 use crate::step_up;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
+use std::path::Path;
 use ugoite_iceberg::sample_data::SampleDataOptions;
 use ugoite_iceberg::service::{validate_public_space_patch, UgoiteService};
 
@@ -277,7 +278,16 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             let service = UgoiteService::new_without_background_refresh(&root_path)?;
             let spaces = service.list_space_ids().await?;
             if fmt != Format::Json {
-                print_list_table("SPACE_UID", &spaces);
+                let paths = spaces
+                    .iter()
+                    .map(|space_id| {
+                        Path::new(&root_path)
+                            .join(service.workspace_path(space_id))
+                            .display()
+                            .to_string()
+                    })
+                    .collect::<Vec<_>>();
+                print_list_table("LOCAL_SPACE_PATH", &paths);
             } else {
                 print_json(&spaces);
             }

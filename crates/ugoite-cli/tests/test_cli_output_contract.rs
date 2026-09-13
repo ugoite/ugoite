@@ -125,7 +125,7 @@ fn representative_commands_lock_human_and_machine_output_contracts() {
     let space_id = spaces[0].as_str().expect("space list returns IDs");
     assert_eq!(
         strip_ansi(&String::from_utf8_lossy(&space_table.stdout)),
-        format!("SPACE_UID\n{space_id}\n")
+        format!("LOCAL_SPACE_PATH\n{root}/spaces/{space_id}\n")
     );
     assert!(
         !space_table.stdout.contains(&0x1b),
