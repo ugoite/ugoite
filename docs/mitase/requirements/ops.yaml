@@ -191,12 +191,12 @@ requirements:
           - id: config-load-case
             adapter: rust
             path: crates/ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
-            selector: { kind: test, name: test_cli_req_ops_006_load_config_defaults_on_invalid_or_unreadable_data }
+            selector: { kind: test, name: test_cli_req_ops_006_load_config_fails_closed_on_invalid_or_unreadable_data }
             claims:
               - kind: verifies
                 criterion: REQ-OPS-006#criterion.cli-surface
                 covers: [FEAT-OPS-001#binding.cli/target.config]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_req_ops_006_config_helpers, test: test_cli_req_ops_006_load_config_defaults_on_invalid_or_unreadable_data } }
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_req_ops_006_config_helpers, test: test_cli_req_ops_006_load_config_fails_closed_on_invalid_or_unreadable_data } }
           - id: config-save-case
             adapter: rust
             path: crates/ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
