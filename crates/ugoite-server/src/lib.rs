@@ -843,7 +843,10 @@ impl ApiError {
     }
 
     fn from_core(error: anyhow::Error) -> Self {
-        if let Some(app_error) = error.downcast_ref::<AppError>() {
+        if let Some(app_error) = error
+            .chain()
+            .find_map(|cause| cause.downcast_ref::<AppError>())
+        {
             let status = match app_error.kind() {
                 ErrorKind::InvalidInput => StatusCode::UNPROCESSABLE_ENTITY,
                 ErrorKind::Forbidden => StatusCode::FORBIDDEN,
@@ -880,6 +883,25 @@ impl ApiError {
                 "message": format!("Invalid {}: {}", kind.as_str(), error.reason()),
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod api_error_tests {
+    use super::*;
+
+    #[test]
+    fn context_wrapped_core_errors_keep_their_typed_api_envelope() {
+        let error = anyhow::Error::from(AppError::internal(
+            ErrorCode::FormDefinitionReadFailed,
+            "authoritative Form definition could not be read",
+        ))
+        .context("read Form definition");
+
+        let api_error = ApiError::from_core(error);
+
+        assert_eq!(api_error.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(api_error.detail["code"], "FORM_DEFINITION_READ_FAILED");
     }
 }
 

@@ -54,7 +54,7 @@ pub(crate) fn space_discovery_failure(
     }
     AppError::internal_with_detail(
         ErrorCode::SpaceDiscoveryFailed,
-        format!("Space discovery failed for {space_id}: {error:#}"),
+        safe_space_discovery_message(space_id, diagnostic, &error),
         serde_json::json!({
             "space_id": space_id,
             "diagnostic": diagnostic,
@@ -62,6 +62,43 @@ pub(crate) fn space_discovery_failure(
         }),
     )
     .into()
+}
+
+/// Keep discovery diagnostics useful without copying backend-specific error
+/// details (paths, credentials, request IDs, or provider responses) into a
+/// public API error. The markers below are stable, user-actionable classes
+/// that are already part of the Space contract; all other causes use the
+/// diagnostic boundary label only.
+fn safe_space_discovery_message(space_id: &str, diagnostic: &str, error: &anyhow::Error) -> String {
+    let reason = [
+        ("incomplete Space bootstrap", "incomplete Space bootstrap"),
+        (
+            "duplicate immutable space_uid",
+            "duplicate immutable space_uid",
+        ),
+        ("Space metadata is missing", "Space metadata is missing"),
+        (
+            "Space metadata has no immutable space_uid",
+            "Space metadata has no immutable space_uid",
+        ),
+        (
+            "Space is missing immutable space_uid",
+            "Space is missing immutable space_uid",
+        ),
+        ("Space metadata has no slug", "Space metadata has no slug"),
+        ("Space slug is not unique", "Space slug is not unique"),
+    ]
+    .into_iter()
+    .find_map(|(marker, safe_reason)| error.to_string().contains(marker).then_some(safe_reason))
+    .unwrap_or(match diagnostic {
+        "space_metadata_missing" => "Space metadata is missing",
+        "space_bootstrap" => "Space bootstrap is incomplete or invalid",
+        "authoritative_knowledge" => "authoritative Space knowledge could not be read",
+        "authorized_space_read" => "Space could not be read after authorization",
+        _ => "authoritative Space data could not be read",
+    });
+
+    format!("Space discovery failed for {space_id}: {reason}")
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
