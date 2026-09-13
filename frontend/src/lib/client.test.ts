@@ -452,6 +452,7 @@ describe("formApi", () => {
       version: 1,
       template: "# Meeting\n\n## Date\n",
       fields: { Date: { type: "date", required: true } },
+      allow_extra_attributes: "allow_columns",
     });
 
     const forms = await formApi.list("form-ws");
@@ -460,6 +461,7 @@ describe("formApi", () => {
     const fetched = await formApi.get("form-ws", "Meeting");
     expect(fetched.name).toBe("Meeting");
     expect(fetched.fields.Date.type).toBe("date");
+    expect(fetched.allow_extra_attributes).toBe("allow_columns");
   });
 });
 

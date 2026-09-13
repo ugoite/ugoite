@@ -377,6 +377,7 @@ export const handlers = [
       template: body.template,
       fields: body.fields,
       defaults: body.defaults,
+      allow_extra_attributes: body.allow_extra_attributes ?? "deny",
     };
     mockForms.get(spaceId)?.set(entryForm.name, entryForm);
     return HttpResponse.json(entryForm, { status: 201 });

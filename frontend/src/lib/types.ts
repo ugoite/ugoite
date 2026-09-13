@@ -278,6 +278,12 @@ export interface FormField {
   sql_column?: string;
 }
 
+/** Durable Form policy for values outside the declared fields. */
+export type FormExtraAttributesPolicy =
+  | "deny"
+  | "allow_json"
+  | "allow_columns";
+
 export interface Form {
   id?: string;
   name: string;
@@ -287,6 +293,8 @@ export interface Form {
   template: string;
   fields: Record<string, FormField>;
   defaults?: Record<string, unknown>;
+  /** Transport-preserved server policy; omitted only by legacy test fixtures. */
+  allow_extra_attributes?: FormExtraAttributesPolicy;
 }
 
 export interface FormCreatePayload {
@@ -295,6 +303,7 @@ export interface FormCreatePayload {
   template: string;
   fields: Record<string, FormField>;
   defaults?: Record<string, unknown>;
+  allow_extra_attributes?: FormExtraAttributesPolicy;
 }
 
 /** Query request */

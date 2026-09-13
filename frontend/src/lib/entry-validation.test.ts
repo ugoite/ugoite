@@ -34,6 +34,23 @@ describe("entry-validation", () => {
       .toBe("integer");
   });
 
+  it.each(
+    [
+      ["deny", false],
+      ["allow_json", true],
+      ["allow_columns", true],
+    ] as const,
+  )("preserves the durable Form policy: %s", (policy, allowed) => {
+    const rust = toRustFormDefinition({
+      ...testForm(),
+      allow_extra_attributes: policy,
+    });
+    expect(rust.allow_extra_attributes).toBe(allowed);
+    expect(rust.extension_metadata).toEqual({
+      "ugoite.extra_attributes_policy": policy,
+    });
+  });
+
   it("extracts invalid fields from Rust diagnostics", () => {
     const error = new UgoiteApiError({
       kind: "entry_validation",

@@ -2837,6 +2837,31 @@ describe("EditFormDialog", () => {
     );
   });
 
+  it("round-trips the existing extra-attributes policy on edit", () => {
+    const onSubmit = vi.fn();
+    const policyForm: Form = {
+      ...mockForm,
+      allow_extra_attributes: "allow_json",
+    };
+
+    render(() => (
+      <EditFormDialog
+        open={true}
+        entryForm={policyForm}
+        columnTypes={columnTypes}
+        formNames={["ExistingForm"]}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      allow_extra_attributes: "allow_json",
+    }));
+  });
+
   it("REQ-FE-043: blocks unsupported existing field type changes before submit", async () => {
     const onSubmit = vi.fn();
     const timestampForm: Form = {
