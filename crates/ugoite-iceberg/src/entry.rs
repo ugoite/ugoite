@@ -623,6 +623,26 @@ fn revision_row_to_domain(
     })
 }
 
+fn restore_revision_payload(
+    row: &RevisionRow,
+    historical_form: &ugoite_domain::form::FormDefinition,
+    current_form: &ugoite_domain::form::FormDefinition,
+) -> Result<(EntryRevision, Value, Value)> {
+    let historical_revision = revision_row_to_domain(row, historical_form)?;
+    let fields = current_form
+        .fields
+        .iter()
+        .filter_map(|field| {
+            historical_revision
+                .values
+                .get(&field.id)
+                .map(|value| Ok((field.name.clone(), serde_json::to_value(value)?)))
+        })
+        .collect::<Result<Map<String, Value>>>()?;
+    let extra_attributes = serde_json::to_value(&historical_revision.extra_attributes)?;
+    Ok((historical_revision, Value::Object(fields), extra_attributes))
+}
+
 fn entry_metadata_from_row(row: &EntryRow) -> EntryMetadata {
     EntryMetadata {
         external_id: row.entry_id.clone(),
@@ -3195,11 +3215,21 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
             return Err(AppError::forbidden("Form is not readable").into());
         }
     }
-    let (form_def, _, revisions) = revision_rows_for_form(op, ws_path, &form_name).await?;
+    let (form_def, form_history, revisions) =
+        revision_rows_for_form(op, ws_path, &form_name).await?;
+    let current_form = form::to_domain_form(&form_def)?;
     let revision = revisions
         .into_iter()
         .find(|rev| rev.entry_id == entry_id && rev.revision_id == revision_id)
         .ok_or_else(|| revision_not_found(entry_id, revision_id))?;
+    let historical_form = form_history.get(&revision.form_version).with_context(|| {
+        format!(
+            "Form version {} is missing from immutable Form history",
+            revision.form_version
+        )
+    })?;
+    let (historical_revision, fields, extra_attributes) =
+        restore_revision_payload(&revision, historical_form, &current_form)?;
 
     let mut row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
     let new_rev_id = Uuid::new_v4().to_string();
@@ -3208,16 +3238,15 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
         timestamp = row.updated_at + 0.001;
     }
 
-    // A revision's state contains the complete durable Entry metadata. Restore
-    // must replay its title and tags as well as its structured fields; keeping
-    // the current metadata would create a hybrid that never existed in
-    // history.
-    if let Some(state) = revision.state.as_ref() {
-        row.title = state.title.clone();
-        row.tags = state.tags.clone();
+    // Rehydrate historical values by stable FieldId before serializing them
+    // with the current Form names. This keeps a renamed field's value attached
+    // to the same durable field instead of treating the old name as unknown.
+    if revision.state.is_some() {
+        row.title = historical_revision.entry.title.clone();
+        row.tags = historical_revision.entry.tags.clone();
     }
     let field_order = form_field_names(&form_def);
-    let merged_fields = merge_entry_fields(&revision.fields, &revision.extra_attributes);
+    let merged_fields = merge_entry_fields(&fields, &extra_attributes);
     let markdown = render_markdown(
         &row.title,
         &form_name,
@@ -3232,8 +3261,8 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
     row.revision_id = new_rev_id.clone();
     row.entry_version = row.entry_version.saturating_add(1);
     row.updated_at = timestamp;
-    row.fields = revision.fields.clone();
-    row.extra_attributes = revision.extra_attributes.clone();
+    row.fields = fields;
+    row.extra_attributes = extra_attributes;
     row.deleted = false;
     row.deleted_at = None;
     row.integrity = IntegrityPayload {
@@ -3419,5 +3448,53 @@ mod input_conversion_tests {
         assert_eq!(revision.author_id, "human:creator");
         assert_eq!(revision.entry.updated_by, "human:editor");
         assert_eq!(revision.entry.deleted_by, None);
+    }
+
+    #[test]
+    fn restore_revision_payload_maps_values_by_stable_field_id() {
+        fn form(field_name: &str, version: u32) -> ugoite_domain::form::FormDefinition {
+            let mut value = field(FieldType::String, None);
+            value.name = field_name.to_string();
+            ugoite_domain::form::FormDefinition {
+                id: FormId::from(Uuid::from_u128(201)),
+                version: ugoite_domain::form::FormVersion::new(version).unwrap(),
+                name: "RenameTest".into(),
+                description: None,
+                fields: vec![value],
+                allow_extra_attributes: false,
+                extension_metadata: BTreeMap::new(),
+            }
+        }
+
+        let historical_form = form("old_name", 1);
+        let current_form = form("new_name", 2);
+        let row = RevisionRow {
+            revision_id: Uuid::from_u128(202).to_string(),
+            change_id: Uuid::from_u128(203).to_string(),
+            entry_id: Uuid::from_u128(204).to_string(),
+            parent_revision_id: None,
+            timestamp: 1.0,
+            author: "author".into(),
+            updated_by: "author".into(),
+            deleted_by: None,
+            fields: serde_json::json!({"old_name": "historical value"}),
+            extra_attributes: Value::Object(Map::new()),
+            markdown_checksum: String::new(),
+            integrity: IntegrityPayload::default(),
+            restored_from: None,
+            form_version: 1,
+            state: None,
+            entry_version: 1,
+            operation: "upsert".into(),
+            source_kind: "test".into(),
+            source_id: None,
+            extension_metadata: Value::Object(Map::new()),
+        };
+
+        let (_, fields, extra_attributes) =
+            restore_revision_payload(&row, &historical_form, &current_form).unwrap();
+
+        assert_eq!(fields["new_name"], "historical value");
+        assert!(extra_attributes.as_object().unwrap().is_empty());
     }
 }

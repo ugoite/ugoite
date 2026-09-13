@@ -1752,9 +1752,6 @@ code {
   .settingsMain {
     padding: 14px;
   }
-  .ui-entry-history-review {
-    grid-template-columns: 1fr;
-  }
   .publicShell {
     padding: 15px;
   }
@@ -2165,6 +2162,11 @@ code {
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+@media (max-width: 560px) {
+  .ui-entry-history-review {
+    grid-template-columns: 1fr;
+  }
 }
 .ui-entry-side-heading {
   font-size: 13px;

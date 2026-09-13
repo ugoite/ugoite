@@ -795,9 +795,11 @@ export const handlers = [
       const _body = (await request.json()) as { revision_id: string };
       const newRevisionId = generateRevisionId();
       entry.revision_id = newRevisionId;
-      return HttpResponse.json(
-        normalizeMockEntry({ ...entry, revision_id: newRevisionId }),
-      );
+      return HttpResponse.json({
+        revision_id: newRevisionId,
+        change_id: `change-${newRevisionId}`,
+        restored_from: _body.revision_id,
+      });
     },
   ),
 

@@ -16,6 +16,14 @@ type EntryResponse = Omit<Entry, "content"> & {
   markdown?: string;
 };
 
+export type EntryRestoreReceipt = {
+  revision_id: string;
+  change_id?: string;
+  restored_from?: string;
+  source_revision_id?: string;
+  timestamp?: string | number;
+};
+
 const normalizeEntry = (entry: EntryResponse): Entry => ({
   ...entry,
   content: entry.content ?? entry.markdown ?? "",
@@ -197,13 +205,12 @@ export const entryApi = {
     entryId: string,
     revisionId: string,
     pin?: string,
-  ): Promise<Entry> {
-    const entry = await protocolFetch<EntryResponse>(
+  ): Promise<EntryRestoreReceipt> {
+    return await protocolFetch<EntryRestoreReceipt>(
       "entry.restore",
       { space_id: spaceId, entry_id: entryId },
       { revision_id: revisionId, ...(pin ? { pin } : {}) },
     );
-    return normalizeEntry(entry);
   },
 };
 
