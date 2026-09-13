@@ -24,6 +24,75 @@ fn ugoite_bin() -> std::path::PathBuf {
     path
 }
 
+/// The connection command must exercise the shared Rust storage probe for a
+/// local backend instead of inferring a mode from the URI.
+#[test]
+fn test_storage_connection_cli_probes_local_backend() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("cli-config.json");
+    let payload = serde_json::json!({
+        "uri": format!("file://{}", dir.path().display()),
+    })
+    .to_string();
+
+    let output = Command::new(ugoite_bin())
+        .args(["space", "test-connection", &payload])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result, serde_json::json!({"status": "ok", "mode": "local"}));
+}
+
+#[test]
+fn test_storage_connection_cli_probes_memory_backend() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("cli-config.json");
+    let payload = serde_json::json!({"uri": "memory://cli-probe"}).to_string();
+
+    let output = Command::new(ugoite_bin())
+        .args(["space", "test-connection", &payload])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        result,
+        serde_json::json!({"status": "ok", "mode": "memory"})
+    );
+}
+
+#[test]
+fn test_storage_connection_cli_rejects_unsupported_backend() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("cli-config.json");
+    let payload = serde_json::json!({"uri": "ftp://example.test/data"}).to_string();
+
+    let output = Command::new(ugoite_bin())
+        .args(["space", "test-connection", &payload])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["error"]["code"], "STORAGE_MUTATION_UNAVAILABLE");
+    assert_eq!(error["error"]["kind"], "unimplemented");
+}
+
 #[cfg(unix)]
 fn mode(path: &std::path::Path) -> u32 {
     use std::os::unix::fs::PermissionsExt;

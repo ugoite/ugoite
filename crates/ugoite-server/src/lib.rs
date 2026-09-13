@@ -8804,21 +8804,10 @@ async fn test_connection(
 ) -> ApiResult<Json<Value>> {
     validate_id(&space_id, "space_id")?;
     require_space_permission(&state, &space_id, &identity, SpacePermission::ManageSpace).await?;
-    let config_value = payload
-        .get("storage_config")
-        .cloned()
-        .unwrap_or_else(|| payload.clone());
-    let config: space::StorageConnectionTestConfig =
-        serde_json::from_value(config_value).map_err(|_| {
-            ApiError::new(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "storage_config.uri is required",
-            )
-        })?;
     Ok(Json(
         state
             .service
-            .test_storage_connection(&config)
+            .test_storage_connection_payload(&payload)
             .await
             .map_err(storage_connection_error)?,
     ))

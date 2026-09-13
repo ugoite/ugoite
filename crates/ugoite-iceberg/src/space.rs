@@ -2,19 +2,15 @@ use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
 use fs2::FileExt;
-use futures::TryStreamExt;
 use opendal::options::{ReadOptions, WriteOptions};
 use opendal::{ErrorKind, Operator};
 use rand::TryRng;
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
-use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
-use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex as AsyncMutex;
-use url::Url;
 
 use crate::form;
 use ugoite_core::error::{AppError, ErrorCode};
@@ -23,9 +19,7 @@ use ugoite_domain::space::{
     classify_space_version, CURRENT_SPACE_VERSION, SUPPORTED_SPACE_VERSIONS,
 };
 pub use ugoite_domain::space::{storage_type_and_root, SpaceMeta, StorageConfig};
-use ugoite_storage::{operator_from_uri_with_endpoint, OpendalStorage, StorageBackend};
-
-const STORAGE_CONNECTION_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+use ugoite_storage::{OpendalStorage, StorageBackend};
 
 fn unsupported_space_version_error(metadata: &serde_json::Value) -> anyhow::Error {
     let detected = classify_space_version(metadata)
@@ -1648,188 +1642,13 @@ pub async fn patch_space_if_slug(
 pub async fn test_storage_connection(
     config: &StorageConnectionTestConfig,
 ) -> Result<serde_json::Value> {
-    let trimmed = config.uri.trim();
-    if trimmed.is_empty() {
-        anyhow::bail!("storage URI is required");
-    }
-    let mode = storage_connection_mode(trimmed)?;
-    let endpoint = validate_storage_endpoint(config.endpoint.as_deref())?;
-    let operator = operator_from_uri_with_endpoint(trimmed, endpoint)?;
-    probe_storage_connection(&operator, STORAGE_CONNECTION_PROBE_TIMEOUT).await?;
-    Ok(serde_json::json!({"status": "ok", "mode": mode}))
-}
-
-async fn probe_storage_connection(operator: &Operator, timeout: Duration) -> Result<()> {
-    match tokio::time::timeout(timeout, async {
-        let mut lister = operator.lister("").await?;
-        let _ = lister.try_next().await?;
-        Ok::<(), opendal::Error>(())
-    })
-    .await
-    {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(error)) => Err(AppError::dependency_unavailable(
-            ErrorCode::StorageConnectionFailed,
-            format!("storage connection failed: {error}"),
-        )
-        .into()),
-        Err(_) => Err(AppError::dependency_unavailable(
-            ErrorCode::StorageConnectionFailed,
-            format!(
-                "storage connection failed: probe timed out after {}ms",
-                timeout.as_millis()
-            ),
-        )
-        .into()),
-    }
+    crate::service::probe_storage_connection(config).await
 }
 
 fn validate_space_path_segment(name: &str) -> Result<()> {
     validate_space_id(name).map_err(|error| AppError::invalid_identifier(error.to_string()).into())
 }
 
-fn storage_connection_mode(uri: &str) -> Result<&'static str> {
-    if uri.starts_with("memory://") {
-        return Ok("memory");
-    }
-    if uri.starts_with("file://") || uri.starts_with("fs://") || uri.starts_with('/') {
-        return Ok("local");
-    }
-    if uri.starts_with("s3://") {
-        validate_remote_storage_uri(uri)?;
-        return Ok("s3");
-    }
-    anyhow::bail!("unsupported storage URI: {uri}")
-}
-
 pub fn validate_storage_endpoint(endpoint: Option<&str>) -> Result<Option<&str>> {
-    let Some(endpoint) = endpoint.map(str::trim).filter(|value| !value.is_empty()) else {
-        return Ok(None);
-    };
-    let parsed = Url::parse(endpoint).map_err(|_| anyhow!("invalid storage endpoint"))?;
-    if !matches!(parsed.scheme(), "http" | "https") {
-        anyhow::bail!("unsupported storage endpoint scheme: {}", parsed.scheme());
-    }
-    let host = parsed
-        .host_str()
-        .ok_or_else(|| anyhow!("storage endpoint host is required"))?;
-    if is_blocked_storage_host(host) {
-        anyhow::bail!("blocked storage endpoint host: {host}");
-    }
-    Ok(Some(endpoint))
-}
-
-fn validate_remote_storage_uri(uri: &str) -> Result<()> {
-    let parsed = Url::parse(uri).map_err(|_| anyhow!("invalid storage URI"))?;
-    if let Some(host) = parsed.host_str() {
-        if is_blocked_storage_host(host) {
-            anyhow::bail!("blocked storage endpoint host: {host}");
-        }
-    }
-    Ok(())
-}
-
-fn is_blocked_storage_host(host: &str) -> bool {
-    let normalized = host
-        .trim_start_matches('[')
-        .trim_end_matches(']')
-        .trim_end_matches('.')
-        .to_ascii_lowercase();
-    if normalized == "localhost" {
-        return true;
-    }
-    normalized
-        .parse::<IpAddr>()
-        .is_ok_and(is_blocked_storage_address)
-}
-
-fn is_blocked_storage_address(address: IpAddr) -> bool {
-    match address {
-        IpAddr::V4(address) => is_blocked_ipv4_address(address),
-        IpAddr::V6(address) => {
-            address.is_loopback()
-                || address.is_unspecified()
-                || address.is_unique_local()
-                || address.is_unicast_link_local()
-                || address.to_ipv4().is_some_and(is_blocked_ipv4_address)
-        }
-    }
-}
-
-fn is_blocked_ipv4_address(address: Ipv4Addr) -> bool {
-    address.is_loopback()
-        || address.is_private()
-        || address.is_link_local()
-        || address.is_unspecified()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::net::TcpListener;
-
-    #[test]
-    fn storage_endpoints_reject_private_link_local_and_mapped_addresses() {
-        for endpoint in [
-            "http://127.0.0.1:9000",
-            "http://10.0.0.1:9000",
-            "http://172.16.0.1:9000",
-            "http://192.168.1.1:9000",
-            "http://169.254.1.1:9000",
-            "http://[::]:9000",
-            "http://[::1]:9000",
-            "http://[fc00::1]:9000",
-            "http://[fd12:3456:789a::1]:9000",
-            "http://[fe80::1]:9000",
-            "http://[::ffff:127.0.0.1]:9000",
-            "http://[::ffff:10.0.0.1]:9000",
-            "http://[::ffff:169.254.1.1]:9000",
-        ] {
-            assert!(
-                validate_storage_endpoint(Some(endpoint)).is_err(),
-                "storage endpoint must be blocked: {endpoint}"
-            );
-        }
-    }
-
-    #[test]
-    fn storage_endpoints_allow_public_ip_forms() -> Result<()> {
-        for endpoint in [
-            "http://192.0.2.1:9000",
-            "http://[2001:db8::1]:9000",
-            "https://s3.example.test",
-        ] {
-            assert_eq!(validate_storage_endpoint(Some(endpoint))?, Some(endpoint));
-        }
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn storage_connection_probe_times_out_without_external_service() -> Result<()> {
-        let listener = TcpListener::bind(("127.0.0.1", 0))?;
-        let endpoint = format!("http://{}", listener.local_addr()?);
-
-        let operator = Operator::new(
-            opendal::services::S3::default()
-                .bucket("bucket")
-                .root("/")
-                .region("us-east-1")
-                .endpoint(&endpoint)
-                .skip_signature(),
-        )?;
-        let result = probe_storage_connection(&operator, Duration::from_millis(50)).await;
-        drop(listener);
-
-        let error = result.expect_err("the non-responsive endpoint should time out");
-        let app_error = error
-            .downcast_ref::<AppError>()
-            .expect("probe timeout should preserve the storage connection app error");
-        assert_eq!(app_error.code(), ErrorCode::StorageConnectionFailed);
-        assert!(
-            app_error.message().contains("probe timed out"),
-            "unexpected storage probe error: {}",
-            app_error.message()
-        );
-        Ok(())
-    }
+    crate::service::validate_storage_endpoint(endpoint)
 }

@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{File, OpenOptions};
+use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
@@ -35,7 +36,8 @@ use ugoite_domain::id::{
 };
 use ugoite_domain::identity::Action;
 use ugoite_storage::{
-    operator_from_uri, operator_from_uri_with_endpoint, OpendalStorage, StorageBackend,
+    is_local_operator, operator_from_uri, operator_from_uri_with_endpoint, OpendalStorage,
+    SpaceCatalogStore, StorageBackend,
 };
 
 pub const MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS: &[&str] = &[
@@ -54,6 +56,321 @@ pub enum SpacePermission {
     WriteContent,
     ManageSpace,
     ManageMembers,
+}
+
+const STORAGE_CONNECTION_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+
+impl space::StorageConnectionTestConfig {
+    /// Parse either the direct request shape or the `{ "storage_config": ... }`
+    /// envelope used by the REST and portable protocol adapters.
+    pub fn from_payload(payload: &Value) -> Result<Self> {
+        let value = payload
+            .get("storage_config")
+            .cloned()
+            .unwrap_or_else(|| payload.clone());
+        let object = value.as_object().ok_or_else(|| {
+            AppError::invalid_input(ErrorCode::InvalidInput, "storage_config.uri is required")
+        })?;
+        let uri = object.get("uri").and_then(Value::as_str).ok_or_else(|| {
+            AppError::invalid_input(ErrorCode::InvalidInput, "storage_config.uri is required")
+        })?;
+        let endpoint = match object.get("endpoint") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(endpoint)) => Some(endpoint.clone()),
+            Some(_) => {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    "storage_config.endpoint must be a string",
+                )
+                .into())
+            }
+        };
+        Ok(Self {
+            uri: uri.to_string(),
+            endpoint,
+        })
+    }
+}
+
+/// Probe a proposed storage binding through the same Rust service boundary
+/// used by the server. Adapters provide only the request payload; they do not
+/// parse provider-specific configuration or construct OpenDAL operators.
+pub async fn probe_storage_connection(
+    config: &space::StorageConnectionTestConfig,
+) -> Result<Value> {
+    let trimmed = config.uri.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "storage_config.uri is required",
+        )
+        .into());
+    }
+    let mode = storage_connection_mode(trimmed)?;
+    let endpoint = validate_storage_endpoint(config.endpoint.as_deref())?;
+    if endpoint.is_some() && mode != "s3" {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "storage_config.endpoint is only supported for S3 storage",
+        )
+        .into());
+    }
+    let operator = operator_from_uri_with_endpoint(trimmed, endpoint)
+        .map_err(map_operator_configuration_error)?;
+    validate_required_storage_capabilities(&operator, mode)?;
+    probe_storage_backend(&operator, mode, STORAGE_CONNECTION_PROBE_TIMEOUT).await?;
+    Ok(json!({"status": "ok", "mode": mode}))
+}
+
+fn map_operator_configuration_error(error: anyhow::Error) -> anyhow::Error {
+    if let Some(opendal_error) = error.downcast_ref::<opendal::Error>() {
+        return map_storage_backend_error(opendal_error);
+    }
+    if error
+        .chain()
+        .any(|cause| cause.downcast_ref::<std::io::Error>().is_some())
+    {
+        return AppError::dependency_unavailable(
+            ErrorCode::StorageConnectionFailed,
+            format!("storage connection failed: {error}"),
+        )
+        .into();
+    }
+    AppError::invalid_input(
+        ErrorCode::InvalidInput,
+        format!("invalid storage configuration: {error}"),
+    )
+    .into()
+}
+
+fn map_storage_backend_error(error: &opendal::Error) -> anyhow::Error {
+    match error.kind() {
+        ErrorKind::PermissionDenied => AppError::forbidden("storage authentication failed").into(),
+        ErrorKind::ConfigInvalid => AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            format!("invalid storage configuration: {error}"),
+        )
+        .into(),
+        ErrorKind::Unsupported => AppError::new(
+            ugoite_core::error::ErrorKind::Unimplemented,
+            ErrorCode::StorageMutationUnavailable,
+            format!("storage backend does not support the required operation: {error}"),
+        )
+        .into(),
+        _ => AppError::dependency_unavailable(
+            ErrorCode::StorageConnectionFailed,
+            format!("storage connection failed: {error}"),
+        )
+        .into(),
+    }
+}
+
+fn map_storage_contract_error(error: anyhow::Error) -> anyhow::Error {
+    if let Some(opendal_error) = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<opendal::Error>())
+    {
+        return map_storage_backend_error(opendal_error);
+    }
+    let message = format!("{error:#}");
+    if message.contains("timed out") || message.contains("timeout") {
+        return AppError::dependency_unavailable(
+            ErrorCode::StorageConnectionFailed,
+            format!("storage connection failed: {message}"),
+        )
+        .into();
+    }
+    AppError::new(
+        ugoite_core::error::ErrorKind::Unimplemented,
+        ErrorCode::StorageMutationUnavailable,
+        format!("storage backend does not satisfy Ugoite's contract: {message}"),
+    )
+    .into()
+}
+
+fn validate_required_storage_capabilities(operator: &Operator, mode: &str) -> Result<()> {
+    let capabilities = operator.info().capability();
+    let mut missing = Vec::new();
+    for (supported, name) in [
+        (capabilities.stat, "stat"),
+        (capabilities.read, "read"),
+        (capabilities.write, "write"),
+        (capabilities.delete, "delete"),
+        (capabilities.list, "list"),
+    ] {
+        if !supported {
+            missing.push(name);
+        }
+    }
+    if mode == "s3" {
+        for (supported, name) in [
+            (capabilities.read_with_if_match, "read_with_if_match"),
+            (capabilities.write_with_if_match, "write_with_if_match"),
+            (
+                capabilities.write_with_if_not_exists,
+                "write_with_if_not_exists",
+            ),
+        ] {
+            if !supported {
+                missing.push(name);
+            }
+        }
+    }
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(AppError::new(
+        ugoite_core::error::ErrorKind::Unimplemented,
+        ErrorCode::StorageMutationUnavailable,
+        format!(
+            "storage backend does not satisfy Ugoite's required capabilities: {}",
+            missing.join(", ")
+        ),
+    )
+    .into())
+}
+
+async fn probe_storage_backend(operator: &Operator, mode: &str, timeout: Duration) -> Result<()> {
+    let probe = async {
+        let mut lister = operator
+            .lister("")
+            .await
+            .map_err(|error| map_storage_backend_error(&error))?;
+        lister
+            .try_next()
+            .await
+            .map_err(|error| map_storage_backend_error(&error))?;
+
+        if mode == "s3" && !is_local_operator(operator) {
+            SpaceCatalogStore::new(operator.clone(), "_ugoite/connection-probes")
+                .map_err(map_storage_contract_error)?
+                .verify_shared_writes()
+                .await
+                .map_err(map_storage_contract_error)?;
+        }
+        Ok::<(), anyhow::Error>(())
+    };
+    match tokio::time::timeout(timeout, probe).await {
+        Ok(result) => result,
+        Err(_) => Err(AppError::dependency_unavailable(
+            ErrorCode::StorageConnectionFailed,
+            format!(
+                "storage connection failed: probe timed out after {}ms",
+                timeout.as_millis()
+            ),
+        )
+        .into()),
+    }
+}
+
+fn storage_connection_mode(uri: &str) -> Result<&'static str> {
+    if uri.starts_with("memory://") {
+        return Ok("memory");
+    }
+    if uri.starts_with("file://")
+        || uri.starts_with("fs://")
+        || uri.starts_with('/')
+        || uri.starts_with('.')
+    {
+        return Ok("local");
+    }
+    if uri.starts_with("s3://") {
+        validate_remote_storage_uri(uri)?;
+        return Ok("s3");
+    }
+    Err(AppError::new(
+        ugoite_core::error::ErrorKind::Unimplemented,
+        ErrorCode::StorageMutationUnavailable,
+        format!("unsupported storage backend: {uri}"),
+    )
+    .into())
+}
+
+pub fn validate_storage_endpoint(endpoint: Option<&str>) -> Result<Option<&str>> {
+    let Some(endpoint) = endpoint.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let parsed = url::Url::parse(endpoint).map_err(|_| {
+        AppError::invalid_input(ErrorCode::InvalidInput, "invalid storage endpoint")
+    })?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            format!("unsupported storage endpoint scheme: {}", parsed.scheme()),
+        )
+        .into());
+    }
+    let host = parsed.host_str().ok_or_else(|| {
+        AppError::invalid_input(ErrorCode::InvalidInput, "storage endpoint host is required")
+    })?;
+    if is_blocked_storage_host(host) {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            format!("blocked storage endpoint host: {host}"),
+        )
+        .into());
+    }
+    Ok(Some(endpoint))
+}
+
+fn validate_remote_storage_uri(uri: &str) -> Result<()> {
+    let parsed = url::Url::parse(uri)
+        .map_err(|_| AppError::invalid_input(ErrorCode::InvalidInput, "invalid storage URI"))?;
+    let host = parsed.host_str().ok_or_else(|| {
+        AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "S3 storage URI must include a bucket",
+        )
+    })?;
+    if host.is_empty() {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "S3 storage URI must include a bucket",
+        )
+        .into());
+    }
+    if is_blocked_storage_host(host) {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            format!("blocked storage endpoint host: {host}"),
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn is_blocked_storage_host(host: &str) -> bool {
+    let normalized = host
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    if normalized == "localhost" {
+        return true;
+    }
+    normalized
+        .parse::<IpAddr>()
+        .is_ok_and(is_blocked_storage_address)
+}
+
+fn is_blocked_storage_address(address: IpAddr) -> bool {
+    match address {
+        IpAddr::V4(address) => is_blocked_ipv4_address(address),
+        IpAddr::V6(address) => {
+            address.is_loopback()
+                || address.is_unspecified()
+                || address.is_unique_local()
+                || address.is_unicast_link_local()
+                || address.to_ipv4().is_some_and(is_blocked_ipv4_address)
+        }
+    }
+}
+
+fn is_blocked_ipv4_address(address: Ipv4Addr) -> bool {
+    address.is_loopback()
+        || address.is_private()
+        || address.is_link_local()
+        || address.is_unspecified()
 }
 
 /// Durable outcome of an operator-local Space create intent.
@@ -4529,7 +4846,12 @@ impl UgoiteService {
         &self,
         config: &space::StorageConnectionTestConfig,
     ) -> Result<Value> {
-        space::test_storage_connection(config).await
+        probe_storage_connection(config).await
+    }
+
+    pub async fn test_storage_connection_payload(&self, payload: &Value) -> Result<Value> {
+        let config = space::StorageConnectionTestConfig::from_payload(payload)?;
+        self.test_storage_connection(&config).await
     }
 }
 
@@ -4880,6 +5202,131 @@ mod public_space_patch_validation_tests {
     #[test]
     fn valid_patch_is_accepted() {
         assert!(validate_public_space_patch(&serde_json::json!({"name": "New name"})).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod storage_connection_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn probe_accepts_memory_and_local_backends() -> Result<()> {
+        let memory = probe_storage_connection(&space::StorageConnectionTestConfig {
+            uri: "memory://service-probe".to_string(),
+            endpoint: None,
+        })
+        .await?;
+        assert_eq!(memory, json!({"status": "ok", "mode": "memory"}));
+
+        let directory = tempfile::tempdir()?;
+        let local = probe_storage_connection(&space::StorageConnectionTestConfig {
+            uri: format!("file://{}", directory.path().display()),
+            endpoint: None,
+        })
+        .await?;
+        assert_eq!(local, json!({"status": "ok", "mode": "local"}));
+        Ok(())
+    }
+
+    #[test]
+    fn payload_parser_accepts_direct_and_nested_shapes() -> Result<()> {
+        let direct = space::StorageConnectionTestConfig::from_payload(&json!({
+            "uri": "memory://direct"
+        }))?;
+        assert_eq!(direct.uri, "memory://direct");
+
+        let nested = space::StorageConnectionTestConfig::from_payload(&json!({
+            "storage_config": {
+                "uri": "memory://nested",
+                "endpoint": null
+            }
+        }))?;
+        assert_eq!(nested.uri, "memory://nested");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn invalid_and_unsupported_configuration_is_typed() {
+        let missing = space::StorageConnectionTestConfig::from_payload(&json!({}))
+            .expect_err("missing URI must be rejected");
+        let missing = missing
+            .downcast_ref::<AppError>()
+            .expect("missing URI must be an AppError");
+        assert_eq!(missing.kind(), ugoite_core::error::ErrorKind::InvalidInput);
+        assert_eq!(missing.code(), ErrorCode::InvalidInput);
+
+        let unsupported = probe_storage_connection(&space::StorageConnectionTestConfig {
+            uri: "ftp://example.test/data".to_string(),
+            endpoint: None,
+        })
+        .await
+        .expect_err("unsupported backend must be rejected");
+        let unsupported = unsupported
+            .downcast_ref::<AppError>()
+            .expect("unsupported backend must be an AppError");
+        assert_eq!(
+            unsupported.kind(),
+            ugoite_core::error::ErrorKind::Unimplemented
+        );
+        assert_eq!(unsupported.code(), ErrorCode::StorageMutationUnavailable);
+    }
+
+    #[tokio::test]
+    async fn probe_unreachable_endpoint_maps_to_storage_connection_failure() -> Result<()> {
+        let operator = Operator::new(
+            opendal::services::S3::default()
+                .bucket("bucket")
+                .root("/")
+                .region("us-east-1")
+                .endpoint("http://192.0.2.1:9")
+                .skip_signature(),
+        )?;
+        let error = probe_storage_backend(&operator, "s3", Duration::from_millis(50))
+            .await
+            .expect_err("the unreachable endpoint should fail");
+
+        let app_error = error
+            .downcast_ref::<AppError>()
+            .expect("probe failure should preserve the storage connection app error");
+        assert_eq!(app_error.code(), ErrorCode::StorageConnectionFailed);
+        assert!(app_error.message().contains("storage connection failed"));
+        Ok(())
+    }
+
+    #[test]
+    fn endpoint_validation_rejects_blocked_hosts() {
+        for endpoint in [
+            "http://127.0.0.1:9000",
+            "http://172.16.0.1:9000",
+            "http://10.0.0.1:9000",
+            "http://192.168.1.1:9000",
+            "http://169.254.1.1:9000",
+            "http://[::]:9000",
+            "http://[::1]:9000",
+            "http://[fc00::1]:9000",
+            "http://[fd12:3456:789a::1]:9000",
+            "http://[fe80::1]:9000",
+            "http://[::ffff:127.0.0.1]:9000",
+            "http://[::ffff:10.0.0.1]:9000",
+            "http://[::ffff:169.254.1.1]:9000",
+        ] {
+            assert!(
+                validate_storage_endpoint(Some(endpoint)).is_err(),
+                "storage endpoint must be blocked: {endpoint}"
+            );
+        }
+    }
+
+    #[test]
+    fn endpoint_validation_allows_public_ip_forms() -> Result<()> {
+        for endpoint in [
+            "http://192.0.2.1:9000",
+            "http://[2001:db8::1]:9000",
+            "https://s3.example.test",
+        ] {
+            assert_eq!(validate_storage_endpoint(Some(endpoint))?, Some(endpoint));
+        }
+        Ok(())
     }
 }
 
