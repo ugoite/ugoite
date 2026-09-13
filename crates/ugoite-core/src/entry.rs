@@ -59,6 +59,25 @@ pub struct ValidationWarning {
     pub message: String,
 }
 
+/// A loss or ambiguity found while converting compatibility Markdown into the
+/// canonical structured draft.
+///
+/// These diagnostics are deliberately separate from Form validation. A
+/// Markdown document can be valid Markdown and still contain structure that
+/// has no lossless representation in a structured Entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MarkdownConversionDiagnostic {
+    pub code: String,
+    pub message: String,
+}
+
+/// Result of the shared Markdown compatibility conversion boundary.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MarkdownConversion {
+    pub draft: StructuredEntryDraft,
+    pub diagnostics: Vec<MarkdownConversionDiagnostic>,
+}
+
 /// Build a draft from a structured payload.
 pub fn structured_fields_to_draft(
     title: impl Into<String>,
@@ -76,15 +95,19 @@ pub fn structured_fields_to_draft(
     }
 }
 
-/// Parse legacy Markdown into the shared draft shape.
+/// Parse legacy Markdown into the shared draft shape with conversion
+/// diagnostics. Callers that persist the draft must reject non-empty
+/// diagnostics before mutation.
 ///
 /// Frontmatter supplies `form` and `tags`; the first `# ` line supplies the
 /// title; every `## ` section supplies one raw string field. Frontmatter keys
 /// other than `form`/`tags` are kept as field candidates (sections win),
 /// matching the long-standing `extract_properties` behavior where frontmatter
 /// flows into properties.
-pub fn legacy_markdown_to_draft(markdown: &str, fallback_title: &str) -> StructuredEntryDraft {
-    let (frontmatter, sections) = parse_markdown(markdown);
+pub fn legacy_markdown_to_draft(markdown: &str, fallback_title: &str) -> MarkdownConversion {
+    let (frontmatter, body, mut diagnostics) = extract_frontmatter(markdown);
+    let (sections, section_diagnostics) = extract_sections(&body);
+    diagnostics.extend(section_diagnostics);
     let title = extract_title(markdown, fallback_title);
     let form_name = extract_form(&frontmatter);
     let tags = extract_tags(&frontmatter);
@@ -105,13 +128,26 @@ pub fn legacy_markdown_to_draft(markdown: &str, fallback_title: &str) -> Structu
             fields.insert(key.clone(), Value::String(raw));
         }
     }
-    StructuredEntryDraft {
-        title,
-        form_name,
-        tags,
-        fields,
-        extra_attributes: BTreeMap::new(),
+    MarkdownConversion {
+        draft: StructuredEntryDraft {
+            title,
+            form_name,
+            tags,
+            fields,
+            extra_attributes: BTreeMap::new(),
+        },
+        diagnostics,
     }
+}
+
+/// Turn Markdown conversion diagnostics into the shared application error
+/// used by core, server, and CLI mutation paths.
+pub fn markdown_conversion_error(diagnostics: &[MarkdownConversionDiagnostic]) -> AppError {
+    AppError::invalid_input_with_detail(
+        ErrorCode::MarkdownConversionLoss,
+        "Markdown contains content that cannot be represented losslessly as a structured Entry",
+        serde_json::json!({"diagnostics": diagnostics}),
+    )
 }
 
 /// Whether legacy Markdown frontmatter explicitly carries `tags`.
@@ -120,7 +156,7 @@ pub fn legacy_markdown_to_draft(markdown: &str, fallback_title: &str) -> Structu
 /// clears them. This preserves the long-standing compatibility rule without
 /// letting storage parse Markdown itself.
 pub fn markdown_frontmatter_has_tags(markdown: &str) -> bool {
-    let (frontmatter, _) = parse_markdown(markdown);
+    let (frontmatter, _, _) = extract_frontmatter(markdown);
     frontmatter.get("tags").is_some()
 }
 
@@ -321,17 +357,21 @@ pub fn preview_structured_draft(
 
 /// Preview legacy Markdown without touching Storage.
 ///
-/// Parses Markdown via [`legacy_markdown_to_draft`] then validates with the
-/// same [`normalize_and_validate_draft`] implementation used by mutations, so
-/// raw and structured inputs produce identical durable values and identical
-/// `UNKNOWN_FORM_FIELDS` / `FORM_VALIDATION_FAILED` diagnostics.
+/// Parses Markdown via [`legacy_markdown_to_draft`] then
+/// validates with the same [`normalize_and_validate_draft`] implementation
+/// used by mutations, so raw and structured inputs produce identical durable
+/// values and identical diagnostics. Loss-producing Markdown is rejected
+/// before Form validation.
 pub fn preview_legacy_markdown(
     form: &FormDefinition,
     markdown: &str,
     fallback_title: &str,
 ) -> Result<NormalizedStructuredEntry, AppError> {
-    let draft = legacy_markdown_to_draft(markdown, fallback_title);
-    normalize_and_validate_draft(form, &draft)
+    let conversion = legacy_markdown_to_draft(markdown, fallback_title);
+    if !conversion.diagnostics.is_empty() {
+        return Err(markdown_conversion_error(&conversion.diagnostics));
+    }
+    normalize_and_validate_draft(form, &conversion.draft)
 }
 
 /// Extract field-addressed diagnostics from a preview/mutation error.
@@ -419,60 +459,148 @@ fn extract_title(content: &str, fallback: &str) -> String {
     fallback.to_string()
 }
 
-fn extract_frontmatter(content: &str) -> (Value, String) {
+fn extract_frontmatter(content: &str) -> (Value, String, Vec<MarkdownConversionDiagnostic>) {
     let pattern =
         regex::Regex::new(r"(?s)^---\s*\n(.*?)\n---\s*\n").expect("valid frontmatter regex");
     if let Some(caps) = pattern.captures(content) {
         let yaml_str = caps.get(1).map(|m| m.as_str()).unwrap_or_default();
-        let fm_yaml: Option<serde_yaml::Value> = serde_yaml::from_str(yaml_str).ok();
-        let fm_json = fm_yaml
-            .and_then(|value| serde_json::to_value(value).ok())
-            .unwrap_or_else(|| Value::Object(Map::new()));
         let end = caps.get(0).map(|m| m.end()).unwrap_or(0);
-        return (fm_json, content[end..].to_string());
+        let body = content[end..].to_string();
+        let mut diagnostics = Vec::new();
+        let frontmatter = match serde_yaml::from_str::<serde_yaml::Value>(yaml_str)
+            .ok()
+            .and_then(|value| serde_json::to_value(value).ok())
+        {
+            Some(Value::Object(map)) => Value::Object(map),
+            Some(_) => {
+                diagnostics.push(MarkdownConversionDiagnostic {
+                    code: "markdown_frontmatter_not_object".to_string(),
+                    message:
+                        "Frontmatter must be a key/value object before the Entry can be saved."
+                            .to_string(),
+                });
+                Value::Object(Map::new())
+            }
+            None => {
+                diagnostics.push(MarkdownConversionDiagnostic {
+                    code: "markdown_frontmatter_invalid".to_string(),
+                    message: "Frontmatter could not be parsed without losing content; fix it before saving."
+                        .to_string(),
+                });
+                Value::Object(Map::new())
+            }
+        };
+        return (frontmatter, body, diagnostics);
     }
-    (Value::Object(Map::new()), content.to_string())
+    let diagnostics = if content
+        .lines()
+        .next()
+        .is_some_and(|line| line.trim() == "---")
+    {
+        vec![MarkdownConversionDiagnostic {
+            code: "markdown_frontmatter_unclosed".to_string(),
+            message: "Frontmatter is not closed; close it before the Entry can be saved."
+                .to_string(),
+        }]
+    } else {
+        Vec::new()
+    };
+    (Value::Object(Map::new()), content.to_string(), diagnostics)
 }
 
-fn extract_sections(body: &str) -> Value {
+fn extract_sections(body: &str) -> (Value, Vec<MarkdownConversionDiagnostic>) {
     let mut sections = Map::new();
     let header = regex::Regex::new(r"^##\s+(.+)$").expect("valid section header regex");
     let mut current_key: Option<String> = None;
     let mut buffer: Vec<String> = Vec::new();
-    for line in body.lines() {
-        if let Some(caps) = header.captures(line) {
+    let mut diagnostics = Vec::new();
+    let mut saw_section = false;
+    let mut saw_title = false;
+    let mut fenced: Option<String> = None;
+
+    let finish_section =
+        |sections: &mut Map<String, Value>,
+         current_key: &mut Option<String>,
+         buffer: &mut Vec<String>,
+         diagnostics: &mut Vec<MarkdownConversionDiagnostic>| {
             if let Some(key) = current_key.take() {
+                if sections.contains_key(&key) {
+                    diagnostics.push(MarkdownConversionDiagnostic {
+                    code: "markdown_duplicate_field_section".to_string(),
+                    message: format!("Markdown contains more than one '## {key}' section; merge them before saving."),
+                });
+                }
                 sections.insert(key, Value::String(buffer.join("\n").trim().to_string()));
             }
+            buffer.clear();
+        };
+
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if let Some(fence) = fenced.as_ref() {
+            if trimmed.starts_with(fence) {
+                fenced = None;
+            }
+            if current_key.is_some() {
+                buffer.push(line.to_string());
+            }
+            continue;
+        }
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            fenced = Some(trimmed[..3].to_string());
+            if current_key.is_some() {
+                buffer.push(line.to_string());
+            } else if !saw_section && !trimmed.is_empty() {
+                diagnostics.push(MarkdownConversionDiagnostic {
+                    code: "markdown_unassigned_preamble".to_string(),
+                    message: "Content before the first Entry field cannot be assigned losslessly; move it into a field before saving."
+                        .to_string(),
+                });
+            }
+            continue;
+        }
+        if let Some(caps) = header.captures(line) {
+            finish_section(
+                &mut sections,
+                &mut current_key,
+                &mut buffer,
+                &mut diagnostics,
+            );
             current_key = Some(
                 caps.get(1)
                     .map(|m| m.as_str().trim().to_string())
                     .unwrap_or_default(),
             );
-            buffer.clear();
-            continue;
-        }
-        if line.starts_with('#') {
-            if let Some(key) = current_key.take() {
-                sections.insert(key, Value::String(buffer.join("\n").trim().to_string()));
-            }
-            buffer.clear();
+            saw_section = true;
             continue;
         }
         if current_key.is_some() {
+            // A field value is itself Markdown text. In particular, nested
+            // headings must remain part of the field rather than being
+            // discarded as a parser boundary.
             buffer.push(line.to_string());
+            continue;
+        }
+
+        if !saw_section && !trimmed.is_empty() {
+            if !saw_title && line.starts_with("# ") {
+                saw_title = true;
+            } else {
+                diagnostics.push(MarkdownConversionDiagnostic {
+                    code: "markdown_unassigned_preamble".to_string(),
+                    message: "Content before the first Entry field cannot be assigned losslessly; move it into a field before saving."
+                        .to_string(),
+                });
+            }
         }
     }
-    if let Some(key) = current_key {
-        sections.insert(key, Value::String(buffer.join("\n").trim().to_string()));
-    }
-    Value::Object(sections)
-}
-
-fn parse_markdown(content: &str) -> (Value, Value) {
-    let (frontmatter, body) = extract_frontmatter(content);
-    let sections = extract_sections(&body);
-    (frontmatter, sections)
+    finish_section(
+        &mut sections,
+        &mut current_key,
+        &mut buffer,
+        &mut diagnostics,
+    );
+    (Value::Object(sections), diagnostics)
 }
 
 fn extract_tags(frontmatter: &Value) -> Vec<String> {
@@ -1037,13 +1165,69 @@ mod tests {
     }
 
     #[test]
+    fn markdown_conversion_preserves_nested_headings_inside_fields() {
+        let markdown = "---\nform: Note\n---\n# T\n\n## Body\nintro\n### Details\nkept\n";
+        let conversion = legacy_markdown_to_draft(markdown, "fallback");
+
+        assert!(conversion.diagnostics.is_empty());
+        assert_eq!(
+            conversion.draft.fields.get("Body"),
+            Some(&Value::String("intro\n### Details\nkept".to_string()))
+        );
+    }
+
+    #[test]
+    fn markdown_conversion_reports_unassigned_preamble() {
+        let markdown = "---\nform: Note\n---\n# T\n\nThis text has no field.\n\n## Body\nkept\n";
+        let conversion = legacy_markdown_to_draft(markdown, "fallback");
+
+        assert_eq!(conversion.diagnostics.len(), 1);
+        assert_eq!(
+            conversion.diagnostics[0].code,
+            "markdown_unassigned_preamble"
+        );
+        let error = preview_legacy_markdown(&test_form(), markdown, "fallback")
+            .expect_err("lossy Markdown must not be previewed as saveable");
+        assert_eq!(error.code(), ErrorCode::MarkdownConversionLoss);
+        assert!(error.detail().is_some_and(|detail| {
+            detail["diagnostics"][0]["code"] == "markdown_unassigned_preamble"
+        }));
+    }
+
+    #[test]
+    fn markdown_conversion_reports_invalid_frontmatter() {
+        let markdown = "---\nform: [broken\n---\n# T\n\n## Body\nkept\n";
+        let conversion = legacy_markdown_to_draft(markdown, "fallback");
+
+        assert_eq!(
+            conversion.diagnostics[0].code,
+            "markdown_frontmatter_invalid"
+        );
+        assert_eq!(
+            markdown_conversion_error(&conversion.diagnostics).code_str(),
+            "MARKDOWN_CONVERSION_LOSS"
+        );
+    }
+
+    #[test]
+    fn markdown_conversion_reports_unclosed_frontmatter() {
+        let markdown = "---\nform: Note\n# T\n\n## Body\nkept\n";
+        let conversion = legacy_markdown_to_draft(markdown, "fallback");
+
+        assert_eq!(
+            conversion.diagnostics[0].code,
+            "markdown_frontmatter_unclosed"
+        );
+    }
+
+    #[test]
     fn legacy_and_structured_drafts_normalize_to_the_same_values() {
         let form = test_form();
         let markdown =
             "---\nform: Note\n---\n# Title\n\n## Body\n\nhello\n\n## Done\nyes\n\n## Count\n42\n";
         let legacy = legacy_markdown_to_draft(markdown, "fallback");
-        assert_eq!(legacy.title, "Title");
-        assert_eq!(legacy.form_name.as_deref(), Some("Note"));
+        assert_eq!(legacy.draft.title, "Title");
+        assert_eq!(legacy.draft.form_name.as_deref(), Some("Note"));
 
         let mut fields = BTreeMap::new();
         fields.insert("Body".to_string(), Value::String("hello".to_string()));
@@ -1052,7 +1236,7 @@ mod tests {
         let structured =
             structured_fields_to_draft("Title", Some("Note"), Vec::new(), fields, BTreeMap::new());
 
-        let from_legacy = normalize_and_validate_draft(&form, &legacy).expect("legacy valid");
+        let from_legacy = normalize_and_validate_draft(&form, &legacy.draft).expect("legacy valid");
         let from_structured =
             normalize_and_validate_draft(&form, &structured).expect("structured valid");
         assert_eq!(from_legacy.values, from_structured.values);
@@ -1067,10 +1251,11 @@ mod tests {
         let form = test_form();
         let markdown = "---\nform: Note\n---\n# Title\n\n## Body\n\nhello\n\n## Done\ntrue\n";
         let draft = legacy_markdown_to_draft(markdown, "fallback");
-        let normalized = normalize_and_validate_draft(&form, &draft).expect("valid");
+        let normalized = normalize_and_validate_draft(&form, &draft.draft).expect("valid");
         let rendered = normalized_to_legacy_representation(&form, "Note", &normalized);
         let reparsed = legacy_markdown_to_draft(&rendered, "fallback");
-        let renormalized = normalize_and_validate_draft(&form, &reparsed).expect("reparsed valid");
+        let renormalized =
+            normalize_and_validate_draft(&form, &reparsed.draft).expect("reparsed valid");
         assert_eq!(normalized, renormalized);
     }
 
@@ -1099,7 +1284,7 @@ mod tests {
         let form = test_form();
         let markdown = "---\nform: Note\n---\n# T\n\n## Done\ntrue\n";
         let legacy = legacy_markdown_to_draft(markdown, "T");
-        let error = normalize_and_validate_draft(&form, &legacy).expect_err("missing Body");
+        let error = normalize_and_validate_draft(&form, &legacy.draft).expect_err("missing Body");
         assert_eq!(error.code(), ErrorCode::FormValidationFailed);
 
         let draft = structured_fields_to_draft(
@@ -1132,7 +1317,7 @@ mod tests {
         };
         let markdown = "---\nform: List\n---\n# T\n\n## Done\nON\n\n## Items\n- a\n* b\n";
         let draft = legacy_markdown_to_draft(markdown, "T");
-        let normalized = normalize_and_validate_draft(&form, &draft).expect("aliases valid");
+        let normalized = normalize_and_validate_draft(&form, &draft.draft).expect("aliases valid");
         assert_eq!(
             normalized.values.get(&FieldId::new(100).expect("id")),
             Some(&FieldValue::Boolean(true))
@@ -1187,7 +1372,7 @@ mod tests {
         let form: FormDefinition = serde_json::from_value(fixture["form"].clone()).expect("form");
         let markdown = fixture["markdown"].as_str().expect("markdown");
         let legacy = legacy_markdown_to_draft(markdown, "fallback");
-        let normalized = normalize_and_validate_draft(&form, &legacy).expect("legacy valid");
+        let normalized = normalize_and_validate_draft(&form, &legacy.draft).expect("legacy valid");
         let structured = fixture["structured"].clone();
         let mut fields = BTreeMap::new();
         for (key, value) in structured["fields"]
@@ -1217,7 +1402,7 @@ mod tests {
         let rendered = normalized_to_legacy_representation(&form, &form.name, &normalized);
         let reparsed = legacy_markdown_to_draft(&rendered, "fallback");
         let renormalized =
-            normalize_and_validate_draft(&form, &reparsed).expect("round-trip valid");
+            normalize_and_validate_draft(&form, &reparsed.draft).expect("round-trip valid");
         assert_eq!(normalized.values, renormalized.values, "scalar round-trip");
 
         // Temporal corpus pins normalization (uuid case, binary prefix,
@@ -1227,7 +1412,7 @@ mod tests {
         let form: FormDefinition = serde_json::from_value(fixture["form"].clone()).expect("form");
         let markdown = fixture["markdown"].as_str().expect("markdown");
         let draft = legacy_markdown_to_draft(markdown, "fallback");
-        let normalized = normalize_and_validate_draft(&form, &draft).expect("temporal valid");
+        let normalized = normalize_and_validate_draft(&form, &draft.draft).expect("temporal valid");
         let expected = &fixture["expected"]["values"];
         for (id, value) in expected.as_object().cloned().unwrap_or_default() {
             let id = FieldId::new(id.parse().expect("field id")).expect("id");
@@ -1249,12 +1434,12 @@ mod tests {
         let unknown_markdown =
             "---\nform: CompatAllow\n---\n# T\n\n## Title\nhello\n\n## Scratch\nkeep me\n";
         let draft = legacy_markdown_to_draft(unknown_markdown, "T");
-        let normalized = normalize_and_validate_draft(&allow, &draft).expect("allowed extra");
+        let normalized = normalize_and_validate_draft(&allow, &draft.draft).expect("allowed extra");
         assert_eq!(
             normalized.extra_attributes.get("Scratch"),
             Some(&Value::String("keep me".to_string()))
         );
-        let error = normalize_and_validate_draft(&deny, &draft).expect_err("denied extra");
+        let error = normalize_and_validate_draft(&deny, &draft.draft).expect_err("denied extra");
         assert_eq!(error.code(), ErrorCode::UnknownFormFields);
 
         // Required corpus fails identically on both paths.
@@ -1268,7 +1453,7 @@ mod tests {
         {
             let draft = legacy_markdown_to_draft(markdown.as_str().unwrap_or_default(), "T");
             assert!(
-                normalize_and_validate_draft(&form, &draft).is_err(),
+                normalize_and_validate_draft(&form, &draft.draft).is_err(),
                 "invalid markdown must fail"
             );
         }
@@ -1288,7 +1473,7 @@ mod tests {
         let form: FormDefinition = serde_json::from_value(form_value).expect("form");
         let markdown = fixture["markdown"].as_str().expect("markdown");
         let draft = legacy_markdown_to_draft(markdown, "fallback");
-        let normalized = normalize_and_validate_draft(&form, &draft).expect("legacy valid");
+        let normalized = normalize_and_validate_draft(&form, &draft.draft).expect("legacy valid");
         assert_eq!(
             normalized.values.get(&FieldId::new(100).expect("id")),
             Some(&FieldValue::List(vec![

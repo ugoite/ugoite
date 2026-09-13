@@ -377,6 +377,7 @@ fn protocol_kind(code: &str, fallback: &str) -> &'static str {
         | "INVALID_INPUT"
         | "FORM_VALIDATION_FAILED"
         | "UNKNOWN_FORM_FIELDS"
+        | "MARKDOWN_CONVERSION_LOSS"
         | "SEARCH_QUERY_EMPTY"
         | "READ_ONLY_SQL_REQUIRED"
         | "UNSUPPORTED_SPACE_VERSION"

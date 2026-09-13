@@ -1165,12 +1165,16 @@ pub async fn create_entry_with_scopes_and_change_with_receipt<I: IntegrityProvid
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
     change: Option<ChangeCommand>,
 ) -> Result<(EntryMeta, CommitReceipt)> {
+    let conversion = core_entry::legacy_markdown_to_draft(content, entry_id);
+    if !conversion.diagnostics.is_empty() {
+        return Err(core_entry::markdown_conversion_error(&conversion.diagnostics).into());
+    }
     let (mut entries, mut receipts) = create_draft_entries_with_scopes_and_change_with_receipts(
         op,
         ws_path,
         vec![EntryDraftRequest {
             entry_id: entry_id.to_string(),
-            draft: core_entry::legacy_markdown_to_draft(content, entry_id),
+            draft: conversion.draft,
         }],
         author,
         integrity,
@@ -1318,13 +1322,21 @@ pub async fn create_entries_with_scopes_and_change<I: IntegrityProvider>(
 ) -> Result<Vec<EntryMeta>> {
     // Legacy batch is compatibility ingress: every Markdown request becomes a
     // draft first so it shares the single D1 path with structured creates.
-    let drafts = requests
+    let drafts: Result<Vec<_>> = requests
         .into_iter()
-        .map(|request| EntryDraftRequest {
-            draft: core_entry::legacy_markdown_to_draft(&request.content, &request.entry_id),
-            entry_id: request.entry_id,
+        .map(|request| {
+            let conversion =
+                core_entry::legacy_markdown_to_draft(&request.content, &request.entry_id);
+            if !conversion.diagnostics.is_empty() {
+                return Err(core_entry::markdown_conversion_error(&conversion.diagnostics).into());
+            }
+            Ok(EntryDraftRequest {
+                draft: conversion.draft,
+                entry_id: request.entry_id,
+            })
         })
         .collect();
+    let drafts = drafts?;
     create_draft_entries_with_scopes_and_change(
         op,
         ws_path,
@@ -2624,7 +2636,11 @@ pub async fn update_entry_authorized_with_change<I: IntegrityProvider>(
         },
         None => entry_id.to_string(),
     };
-    let mut draft = core_entry::legacy_markdown_to_draft(content, &fallback_title);
+    let conversion = core_entry::legacy_markdown_to_draft(content, &fallback_title);
+    if !conversion.diagnostics.is_empty() {
+        return Err(core_entry::markdown_conversion_error(&conversion.diagnostics).into());
+    }
+    let mut draft = conversion.draft;
     if !core_entry::markdown_frontmatter_has_tags(content) {
         if let Some(form_name) = stored_form.as_deref() {
             if let Ok(row) = read_entry_row(op, ws_path, form_name, entry_id).await {

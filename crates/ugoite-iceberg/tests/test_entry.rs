@@ -346,7 +346,7 @@ async fn test_entry_req_entry_001_create_entry_basic() -> anyhow::Result<()> {
     ensure_entry_form(&op, ws_path).await?;
 
     let integrity = FakeIntegrityProvider;
-    let content = "---\nform: Entry\n---\n# My Entry\n\nHello World";
+    let content = "---\nform: Entry\n---\n# My Entry\n\n## Body\nHello World";
     let entry_id = "entry-1";
 
     entry::create_entry(&op, ws_path, entry_id, content, "test-author", &integrity).await?;

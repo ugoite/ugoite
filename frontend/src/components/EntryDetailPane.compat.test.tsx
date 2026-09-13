@@ -131,6 +131,61 @@ describe("EntryDetailPane source compat bridge", () => {
     parseSpy.mockRestore();
   });
 
+  it("blocks lossy source saves until the canonical version is accepted", async () => {
+    setLocale("en");
+    vi.resetAllMocks();
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-1",
+      title: "Note",
+      form: "Note",
+      content: "---\nform: Note\n---\n# Note\n\n## Body\nhello\n",
+      revision_id: "rev-1",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    const updateMock = entryApi.update as ReturnType<typeof vi.fn>;
+    updateMock.mockResolvedValue({ revision_id: "rev-2" });
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-1"}
+        forms={() => [form]}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Source" }));
+    const source = await screen.findByPlaceholderText(
+      "Start writing in Markdown...",
+    );
+    const lossy = "---\nform: Note\n---\n# Note\n\nPreamble\n\n## Body\nkept\n";
+    fireEvent.input(source, { target: { value: lossy } });
+
+    await waitFor(() => {
+      expect(screen.getByText("Review Markdown conversion before saving"))
+        .toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(updateMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Use canonical version" }));
+    await waitFor(() => {
+      expect(screen.queryByText("Review Markdown conversion before saving"))
+        .not.toBeInTheDocument();
+      expect(source).not.toHaveValue(lossy);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
+    expect(updateMock).toHaveBeenCalledWith("default", "entry-1", {
+      form: "Note",
+      title: "Note",
+      tags: [],
+      fields: { Body: "kept" },
+      parent_revision_id: "rev-1",
+    });
+  });
+
   it("keeps the saved row_reference ID when the display label changes", async () => {
     setLocale("en");
     vi.resetAllMocks();

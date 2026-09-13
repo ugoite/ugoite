@@ -44,8 +44,10 @@ import { validateEntryDraftViaWasm } from "~/lib/entry-validation";
 import {
   parseSourceToDraftViaWasm,
   renderDraftToSourceViaWasm,
+  type CompatDraft,
 } from "~/lib/entry-compat";
 import type { Entry, Form, FormField } from "~/lib/types";
+import type { MarkdownConversionDiagnostic } from "~/lib/ugoite-client/protocol";
 import {
   hasDuplicateAssetReferences,
   isAssetReferenceListField,
@@ -519,6 +521,12 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     string | null
   >(null);
   const [entryError, setEntryError] = createSignal<string | null>(null);
+  const [compatibilityDiagnostics, setCompatibilityDiagnostics] = createSignal<
+    MarkdownConversionDiagnostic[]
+  >([]);
+  const [pendingCanonicalDraft, setPendingCanonicalDraft] = createSignal<
+    CompatDraft | null
+  >(null);
   const [showAccessPolicy, setShowAccessPolicy] = createSignal(false);
   const [assetEditorGeneration, setAssetEditorGeneration] = createSignal(0);
   const [hasUserEdited, setHasUserEdited] = createSignal(false);
@@ -844,6 +852,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setConflictMessage(null);
     setValidationError(null);
     setInvalidFields([]);
+    setCompatibilityDiagnostics([]);
+    setPendingCanonicalDraft(null);
     setDefaultedViewEntryId(null);
     // Reconcile the immediate parse through the Rust bridge (authority).
     // Guard on the loaded buffer so late reconciliation never wipes user
@@ -859,6 +869,14 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           }
           if (editorContent() !== content) return;
           if (draftTitle() !== (draft.title || loadedTitle)) return;
+          if (
+            canonical.diagnostics.length > 0 &&
+            (currentForm() || props.createForm?.())
+          ) {
+            setCompatibilityDiagnostics(canonical.diagnostics);
+            setPendingCanonicalDraft(canonical);
+            return;
+          }
           setDraftTitle(canonical.title || loadedTitle);
           setDraftFields(canonical.fields);
           setDraftTags(canonical.tags);
@@ -948,17 +966,75 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setConflictMessage(null);
     setValidationError(null);
     setInvalidFields([]);
+    setCompatibilityDiagnostics([]);
+    setPendingCanonicalDraft(null);
     persistCreateDraft();
     trackCompat(
       parseSourceToDraftViaWasm(content, fallbackTitle).then(
         (canonical) => {
           if (editorContent() !== content) return;
+          if (
+            canonical.diagnostics.length > 0 &&
+            (currentForm() || props.createForm?.())
+          ) {
+            setCompatibilityDiagnostics(canonical.diagnostics);
+            setPendingCanonicalDraft(canonical);
+            return;
+          }
           setDraftTitle(canonical.title || fallbackTitle);
           setDraftFields(canonical.fields);
           setDraftTags(canonical.tags);
           persistCreateDraft();
         },
         () => {},
+      ),
+    );
+  };
+
+  const acceptCanonicalDraft = () => {
+    const canonical = pendingCanonicalDraft();
+    if (!canonical) return;
+    const title = canonical.title || entry()?.title || "";
+    const formDef = currentForm() ?? props.createForm?.();
+    const render = formDef
+      ? renderDraftToSourceViaWasm(
+        formDef,
+        title,
+        canonical.tags,
+        canonical.fields,
+      )
+      : Promise.resolve(
+        [
+          canonical.tags.length > 0
+            ? `---\ntags:\n${canonical.tags.map((tag) => `  - ${tag}`).join("\n")}\n---\n`
+            : "",
+          `# ${title}`,
+          ...Object.entries(canonical.fields).flatMap(([name, value]) => [
+            `## ${name}`,
+            value,
+          ]),
+        ].join("\n\n").trim(),
+      );
+
+    trackCompat(
+      render.then(
+        (source) => {
+          if (pendingCanonicalDraft() !== canonical) return;
+          setDraftTitle(title);
+          setDraftFields(canonical.fields);
+          setDraftTags(canonical.tags);
+          setEditorContent(source);
+          setCompatibilityDiagnostics([]);
+          setPendingCanonicalDraft(null);
+          setHasUserEdited(true);
+          setIsDirty(true);
+          persistCreateDraft();
+        },
+        (error) => {
+          setConflictMessage(
+            formatUserFacingError(error, "entryDetail.saveFailed", "entry.update"),
+          );
+        },
       ),
     );
   };
@@ -1079,12 +1155,18 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     /* v8 ignore stop */
 
     // Saveability is decided by the shared Rust boundary. TypeScript hints
-    // (required guidance, boolean/list formatting) never block a save.
+    // (required guidance, boolean/list formatting) never block a save;
+    // loss-producing compatibility conversion is an explicit exception.
     // Lock before async validation so rapid saves still yield one revision.
     setIsSaving(true);
     // Settle pending source<->draft reconciliations first so a rapid
     // source-type + save can never persist TS-only semantics.
     await settleCompat();
+    if (compatibilityDiagnostics().length > 0) {
+      setIsSaving(false);
+      setConflictMessage(t("entryDetail.compatibilityLossSaveBlocked"));
+      return;
+    }
     const assetIssues = await validateAssetFields();
     if (assetIssues.length > 0) {
       setIsSaving(false);
@@ -1256,6 +1338,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setConflictMessage(null);
     setValidationError(null);
     setInvalidFields([]);
+    setCompatibilityDiagnostics([]);
+    setPendingCanonicalDraft(null);
   };
 
   const handleRefresh = async () => {
@@ -1520,7 +1604,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                   type="button"
                   class="ui-button ui-button-primary"
                   onClick={() => void handleSave()}
-                  disabled={!isDirty() || isSaving()}
+                  disabled={!isDirty() || isSaving() || compatibilityDiagnostics().length > 0}
                   aria-label={t("entryDetail.save")}
                 >
                   {isSaving() ? t("entryDetail.saving") : t("entryDetail.save")}
@@ -1887,6 +1971,28 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                     aria-label={t("entryDetail.mode.source")}
                     class="ui-entry-source-body"
                   >
+                    <Show when={compatibilityDiagnostics().length > 0}>
+                      <div class="ui-alert ui-alert-warning text-sm mb-3" role="alert">
+                        <p class="font-semibold">
+                          {t("entryDetail.compatibilityLossTitle")}
+                        </p>
+                        <ul class="mt-2 list-disc pl-5 space-y-1">
+                          <For each={compatibilityDiagnostics()}>
+                            {(diagnostic) => <li>{diagnostic.message}</li>}
+                          </For>
+                        </ul>
+                        <p class="mt-2">{t("entryDetail.compatibilityLossDescription")}</p>
+                        <Show when={pendingCanonicalDraft()}>
+                          <button
+                            type="button"
+                            class="ui-button ui-button-secondary mt-3"
+                            onClick={acceptCanonicalDraft}
+                          >
+                            {t("entryDetail.acceptCanonicalVersion")}
+                          </button>
+                        </Show>
+                      </div>
+                    </Show>
                     <textarea
                       class="ui-editor ui-entry-source-editor"
                       value={editorContent()}

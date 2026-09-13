@@ -206,7 +206,7 @@ fn test_extract_properties_precedence() {
         .output()
         .expect("create form");
 
-    let content = "---\nform: Entry\n---\n# Title Here\n\nContent before sections.\n\n## Section A\n\nValue A.";
+    let content = "---\nform: Entry\n---\n# Title Here\n\n## Section A\n\nValue A.";
     Command::new(ugoite_bin())
         .args([
             "entry",

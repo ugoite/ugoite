@@ -1415,9 +1415,12 @@ fn mcp_save_error(error: ApiError, operation: &str) -> Response {
     let detail = error.detail.get("detail").cloned();
 
     match code {
-        Some(code @ ("INVALID_INPUT" | "FORM_VALIDATION_FAILED" | "UNKNOWN_FORM_FIELDS")) => {
-            tool_error_with_detail(code, message.unwrap_or("Entry content is invalid"), detail)
-        }
+        Some(
+            code @ ("INVALID_INPUT"
+            | "FORM_VALIDATION_FAILED"
+            | "UNKNOWN_FORM_FIELDS"
+            | "MARKDOWN_CONVERSION_LOSS"),
+        ) => tool_error_with_detail(code, message.unwrap_or("Entry content is invalid"), detail),
         Some("FORM_NOT_FOUND") => {
             tool_error("FORM_NOT_FOUND", "The requested Entry form is unavailable")
         }

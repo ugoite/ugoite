@@ -591,7 +591,7 @@ async fn asset_text_search_applies_asset_policy_with_entry_parent() -> anyhow::R
         .create_entry(
             &space_id,
             "visible",
-            &format!("---\nform: Media\nAttachment: {reference_json}\n---\nVisible"),
+            &format!("---\nform: Media\nAttachment: {reference_json}\n---\n# Visible"),
             "owner",
         )
         .await?;
@@ -693,7 +693,7 @@ async fn asset_text_parser_limit_is_recorded_without_rolling_back_authoritative_
         &op,
         ws_path,
         "document-1",
-        &format!("---\nform: Documents\nAttachment: {reference_json}\n---\nDocument"),
+        &format!("---\nform: Documents\nAttachment: {reference_json}\n---\n# Document"),
         "author",
         &FakeIntegrityProvider,
     )
