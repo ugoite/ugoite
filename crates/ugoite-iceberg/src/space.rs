@@ -546,6 +546,12 @@ async fn list_spaces_discovery_with_storage<S: StorageBackend + ?Sized>(
         if !entry.is_dir {
             continue;
         }
+        // Some filesystem/object-store listers include the directory being
+        // listed as a synthetic entry. It is the discovery root, not a
+        // Space, and must never be interpreted as `spaces/{space_id}`.
+        if entry.name.trim_end_matches('/') == spaces_root.trim_end_matches('/') {
+            continue;
+        }
         let space_id = entry
             .name
             .trim_end_matches('/')
@@ -555,10 +561,14 @@ async fn list_spaces_discovery_with_storage<S: StorageBackend + ?Sized>(
         if space_id.is_empty() {
             continue;
         }
-        // This is Node-local control state, not a portable Space directory.
-        // It is intentionally excluded from Space discovery by its exact
-        // reserved name rather than by the absence of metadata.
-        if space_id == ".ugoite-space-slug-claims" {
+        // These are Node-local control state, not portable Space directories.
+        // They are intentionally excluded from Space discovery by their
+        // reserved names rather than by the absence of metadata. The PID
+        // suffix is used only for the root-filesystem fallback.
+        if space_id == ".ugoite-space-slug-claims"
+            || space_id == ".ugoite-atomic-writes"
+            || space_id.starts_with(".ugoite-atomic-writes-")
+        {
             continue;
         }
         let meta_path = format!("spaces/{space_id}/meta.json");
