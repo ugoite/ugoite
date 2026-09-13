@@ -54,7 +54,7 @@ pub(crate) fn space_discovery_failure(
     }
     AppError::internal_with_detail(
         ErrorCode::SpaceDiscoveryFailed,
-        format!("Space discovery failed for {space_id}"),
+        format!("Space discovery failed for {space_id}: {error:#}"),
         serde_json::json!({
             "space_id": space_id,
             "diagnostic": diagnostic,
