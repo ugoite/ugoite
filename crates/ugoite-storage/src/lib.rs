@@ -255,6 +255,10 @@ impl OpendalPublicationStore {
         let second = b"{\"stage\":\"second\"}".to_vec();
         let stale = b"{\"stage\":\"stale\"}".to_vec();
         let probe_path = self.path(&key);
+        // Keep a cancellation-safe cleanup guard from the moment the probe
+        // path is allocated. If the caller drops this future while an
+        // OpenDAL operation is in flight, Drop still schedules deletion of
+        // the temporary object.
         let mut probe_cleanup =
             PublicationProbeCleanup::new(self.operator.clone(), probe_path.clone());
         let result = match tokio::time::timeout(Duration::from_secs(5), async {
