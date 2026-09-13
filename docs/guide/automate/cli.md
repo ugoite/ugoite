@@ -28,6 +28,36 @@ In core mode, commands that address a Space take its full local path, such as
 such as `demo`. `ugoite space list` takes the workspace root only in core mode;
 omit the positional argument in backend/API mode.
 
+## Output contract
+
+The CLI keeps machine output and human output separate. When stdout is piped,
+or when `--format json` (or `-o json`) is selected, successful commands emit
+the existing JSON value on stdout. Failures emit the existing JSON error
+envelope on stderr and keep their existing exit code. These machine-facing
+schemas, field names, and streams are unchanged by the Quiet Accent
+presentation.
+
+Without an explicit format, a TTY uses a compact human rendering and a pipe
+uses JSON. `--format table` selects the human table projection explicitly;
+`--format plain` selects human key/value or receipt text. Human table output
+has no separator line, box, or trailing padding. Headers are muted, the first
+column is the primary identifier, and columns remain separated by two spaces.
+Widths are calculated from raw values before any terminal styling, so enabling
+or disabling ANSI does not change alignment. `search keyword`, `space list`,
+and `entry list` use the same `ID`/`TITLE` or single-column table convention.
+
+On a normal TTY, primary identifiers are cyan and metadata labels are dim;
+warnings are yellow, errors are red and bold, and help headings are bold.
+There are no background colors, box-drawing characters, emoji state markers,
+spinners, or animations. ANSI is enabled only for human-facing TTY output.
+`NO_COLOR`, `TERM=dumb`, pipes, JSON output, and `--format plain` in a pipe
+produce natural plain text.
+
+Mutation receipts keep their existing human line structure and machine fields:
+the resource kind and ID are followed by `revision:`, `change:`, and `run:`
+metadata when present. Error wording and recovery hints are likewise unchanged;
+only their human emphasis changes.
+
 ## Remote CLI authentication
 
 `ugoite auth login` generates a fresh P-256 key and starts browser-approved

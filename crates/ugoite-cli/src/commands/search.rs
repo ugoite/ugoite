@@ -258,12 +258,28 @@ pub async fn run(cmd: SearchCmd) -> Result<()> {
                     None,
                 )
                 .await?;
+                if fmt != Format::Json {
+                    if let Some(rows) = result.as_array() {
+                        let table = criteria_rows_table(rows);
+                        print_json_table(&table, &[("ID", "id"), ("TITLE", "title")]);
+                        return Ok(());
+                    }
+                }
                 print_json(&result);
                 return Ok(());
             }
             let service = UgoiteService::new_without_background_refresh(&root)?;
             let results = service.search_entries(&space_id, &query).await?;
-            print_json(&results);
+            if fmt != Format::Json {
+                let rows: Vec<serde_json::Value> = results
+                    .iter()
+                    .map(|result| serde_json::to_value(result).expect("keyword result is JSON"))
+                    .collect();
+                let table = criteria_rows_table(&rows);
+                print_json_table(&table, &[("ID", "id"), ("TITLE", "title")]);
+            } else {
+                print_json(&results);
+            }
         }
         SearchSubCmd::Query(args) => {
             let SearchQueryArgs {

@@ -56,6 +56,194 @@ fn error_envelope(stderr: &str) -> serde_json::Value {
     serde_json::from_str(stderr.trim()).expect("stderr must be a machine JSON envelope")
 }
 
+fn strip_ansi(text: &str) -> String {
+    let mut stripped = String::with_capacity(text.len());
+    let mut escape = false;
+    for character in text.chars() {
+        if escape {
+            if character.is_ascii_alphabetic() {
+                escape = false;
+            }
+        } else if character == '\u{1b}' {
+            escape = true;
+        } else {
+            stripped.push(character);
+        }
+    }
+    stripped
+}
+
+fn assert_success(output: &std::process::Output, command: &str) {
+    assert!(
+        output.status.success(),
+        "{command} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn run(config_path: &std::path::Path, args: &[&str]) -> std::process::Output {
+    Command::new(ugoite_bin())
+        .args(args)
+        .env("UGOITE_CLI_CONFIG_PATH", config_path)
+        .output()
+        .expect("run CLI")
+}
+
+/// Quiet Accent's representative human projections stay compact and
+/// borderless, while the same commands retain their machine JSON shape when
+/// stdout is piped.
+#[test]
+fn representative_commands_lock_human_and_machine_output_contracts() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, config_path) = setup_space_with_form(&dir, "quiet-accent-space");
+    let space_path = format!("{root}/spaces/quiet-accent-space");
+
+    for (entry_id, title, body) in [
+        ("note-1", "Planning", "planning details"),
+        ("note-2", "Decisions", "decision details"),
+    ] {
+        let content = format!("---\nform: Entry\n---\n# {title}\n\n## Body\n\n{body}\n");
+        let output = run(
+            &config_path,
+            &[
+                "entry",
+                "create",
+                "--content",
+                &content,
+                &space_path,
+                entry_id,
+            ],
+        );
+        assert_success(&output, "entry create");
+    }
+
+    let space_table = run(&config_path, &["space", "--format", "table", "list", &root]);
+    assert_success(&space_table, "space list table");
+    let space_json = run(&config_path, &["space", "list", &root]);
+    assert_success(&space_json, "space list JSON");
+    let spaces: serde_json::Value = serde_json::from_slice(&space_json.stdout).unwrap();
+    let space_id = spaces[0].as_str().expect("space list returns IDs");
+    assert_eq!(
+        strip_ansi(&String::from_utf8_lossy(&space_table.stdout)),
+        format!("SPACE_ID\n{space_id}\n")
+    );
+    assert!(
+        !space_table.stdout.contains(&0x1b),
+        "piped table must be plain"
+    );
+
+    let entry_table = run(
+        &config_path,
+        &["entry", "--format", "table", "list", &space_path],
+    );
+    assert_success(&entry_table, "entry list table");
+    assert_eq!(
+        strip_ansi(&String::from_utf8_lossy(&entry_table.stdout)),
+        "ID      TITLE\nnote-2  Decisions\nnote-1  Planning\n"
+    );
+    assert!(
+        !entry_table.stdout.contains(&0x1b),
+        "piped table must be plain"
+    );
+
+    let search_table = run(
+        &config_path,
+        &[
+            "search",
+            "--format",
+            "table",
+            "keyword",
+            &space_path,
+            "planning",
+        ],
+    );
+    assert_success(&search_table, "search keyword table");
+    assert_eq!(
+        strip_ansi(&String::from_utf8_lossy(&search_table.stdout)),
+        "ID      TITLE\nnote-1  Planning\n"
+    );
+    assert!(
+        !search_table.stdout.contains(&0x1b),
+        "piped table must be plain"
+    );
+
+    let receipt = run(
+        &config_path,
+        &[
+            "entry",
+            "--format",
+            "plain",
+            "create",
+            "--content",
+            "---\nform: Entry\n---\n# Receipt\n\n## Body\n\nreceipt\n",
+            &space_path,
+            "receipt-1",
+        ],
+    );
+    assert_success(&receipt, "entry create receipt");
+    let receipt_text = String::from_utf8_lossy(&receipt.stdout);
+    assert!(
+        receipt_text.starts_with("entry receipt-1\n"),
+        "stdout: {receipt_text}"
+    );
+    assert!(receipt_text.contains("revision:"), "stdout: {receipt_text}");
+    assert!(
+        !receipt.stdout.contains(&0x1b),
+        "piped receipt must be plain"
+    );
+
+    assert!(spaces
+        .as_array()
+        .is_some_and(|items| { items.iter().any(|item| item.as_str() == Some(space_id)) }));
+
+    let entry_json = run(&config_path, &["entry", "list", &space_path]);
+    assert_success(&entry_json, "entry list JSON");
+    let entries: serde_json::Value = serde_json::from_slice(&entry_json.stdout).unwrap();
+    assert_eq!(entries.as_array().map(Vec::len), Some(3));
+
+    let search_json = run(
+        &config_path,
+        &["search", "keyword", &space_path, "planning"],
+    );
+    assert_success(&search_json, "search keyword JSON");
+    let results: serde_json::Value = serde_json::from_slice(&search_json.stdout).unwrap();
+    assert_eq!(results[0]["id"], "note-1");
+    assert_eq!(results[0]["title"], "Planning");
+    assert!(results[0]["form"].is_string());
+}
+
+/// Piped help and parser failures remain plain text with the established
+/// command content and usage exit code.
+#[test]
+fn representative_help_and_invalid_arguments_are_plain_when_piped() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("cli-config.json");
+
+    let help = run(&config_path, &["--help"]);
+    assert_success(&help, "top-level help");
+    let help_text = String::from_utf8_lossy(&help.stdout);
+    assert!(help_text.contains("Quick start (local-first / core mode):"));
+    assert!(help_text.contains("ugoite space list ."));
+    assert!(!help.stdout.contains(&0x1b), "piped help must be plain");
+
+    let current = run(&config_path, &["config", "current"]);
+    assert_success(&current, "config current");
+    assert!(String::from_utf8_lossy(&current.stdout).starts_with("Current endpoint mode: core\n"));
+    assert!(
+        !current.stdout.contains(&0x1b),
+        "piped config must be plain"
+    );
+
+    let invalid = run(&config_path, &["entry", "get"]);
+    assert_eq!(invalid.status.code(), Some(2));
+    assert!(invalid.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("Usage:"));
+    assert!(
+        !invalid.stderr.contains(&0x1b),
+        "piped parser errors must be plain"
+    );
+}
+
 /// E0/E1: machine output keeps the existing shape on stdout with empty
 /// stderr; the receipt is TTY display only in 0.1.x (machine default switches
 /// to the receipt in v0.2).

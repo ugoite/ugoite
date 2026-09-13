@@ -24,8 +24,16 @@ cross-use REST credentials.
 
 ## Output conventions
 
-TTY output stays concise. `--format json` includes resource, revision, and
-durable Change IDs when the operation commits. Every command documents its exact
+TTY output stays concise and uses the Quiet Accent human presentation: muted
+headers and labels, cyan primary identifiers, and semantic colors only for
+success, warnings, and errors. Tables are borderless, use two-space column gaps,
+and calculate widths before styling. `NO_COLOR`, `TERM=dumb`, pipes, and JSON
+output never receive ANSI sequences.
+
+Piped success output and `--format json` keep the existing JSON schemas.
+Piped failures keep the existing JSON error envelope, stderr ownership, and
+exit-code mapping. Human receipts and errors retain their canonical wording and
+line structure; only TTY emphasis changes. Every command documents its exact
 behavior in `--help` before copying flags into automation.
 
 ## Command families
