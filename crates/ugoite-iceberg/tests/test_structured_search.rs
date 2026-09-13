@@ -51,6 +51,7 @@ fn criteria(conditions: Vec<(&str, SearchOperator, serde_json::Value)>) -> Struc
             })
             .collect(),
         limit: Some(100),
+        offset: None,
     }
 }
 
