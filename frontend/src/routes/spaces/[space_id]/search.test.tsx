@@ -13,6 +13,7 @@ import { server } from "~/test/mocks/server";
 import type { Form, KeywordSearchResult, Space } from "~/lib/types";
 import { testApiUrl } from "~/test/http-origin";
 import { setLocale } from "~/lib/i18n";
+import { localInputToRfc3339Instant } from "~/lib/search-date";
 
 const navigateMock = vi.fn();
 
@@ -198,8 +199,8 @@ describe("/spaces/:space_id/search", () => {
     await waitFor(() => {
       expect(queryBody?.criteria).toEqual({
         form: "Meeting",
-        updated_from: "2025-03-01",
-        updated_to: "2025-03-03",
+        updated_from: localInputToRfc3339Instant("2025-03-01", "start"),
+        updated_to: localInputToRfc3339Instant("2025-03-03", "end"),
         conditions: [{ field: "Status", operator: "equals", value: "Active" }],
         limit: 51,
       });

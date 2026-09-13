@@ -7,6 +7,7 @@ import { searchApi } from "~/lib/ugoite-client";
 import { sqlSessionApi } from "~/lib/ugoite-client";
 import { sqlApi } from "~/lib/ugoite-client";
 import { normalizeSqlVariables } from "~/lib/sql";
+import { localInputToRfc3339Instant } from "~/lib/search-date";
 import type { EntryRecord, KeywordSearchResult, SqlEntry } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t, type TranslationKey } from "~/lib/i18n";
@@ -188,12 +189,25 @@ function buildStructuredSearchCriteria(
   }
   return {
     form: criteria.formName,
-    ...(criteria.updatedFrom ? { updated_from: criteria.updatedFrom } : {}),
-    ...(criteria.updatedTo ? { updated_to: criteria.updatedTo } : {}),
+    ...(criteria.updatedFrom
+      ? {
+        updated_from: localInputToRfc3339Instant(
+          criteria.updatedFrom,
+          "start",
+        ),
+      }
+      : {}),
+    ...(criteria.updatedTo
+      ? {
+        updated_to: localInputToRfc3339Instant(criteria.updatedTo, "end"),
+      }
+      : {}),
     conditions: criteria.fieldConditions.map((condition) => ({
       field: condition.field,
       operator: condition.operator,
-      value: condition.value,
+      value: condition.type === "timestamp"
+        ? localInputToRfc3339Instant(condition.value)
+        : condition.value,
     })),
     limit: SEARCH_PAGE_SIZE,
   };
