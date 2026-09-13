@@ -431,13 +431,19 @@ export const handlers = [
   ),
 
   // List entries in space
-  testHttp.get("/spaces/:spaceId/entries", ({ params }) => {
+  testHttp.get("/spaces/:spaceId/entries", ({ params, request }) => {
     const spaceId = params.spaceId as string;
     if (!mockSpaces.has(spaceId)) {
       return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
     }
     const entries = Array.from(mockEntryIndex.get(spaceId)?.values() || []);
-    return HttpResponse.json(entries);
+    const url = new URL(request.url);
+    const offset = Number(url.searchParams.get("offset") || 0);
+    const limitValue = url.searchParams.get("limit");
+    const page = limitValue === null
+      ? entries.slice(offset)
+      : entries.slice(offset, offset + Number(limitValue));
+    return HttpResponse.json(page);
   }),
 
   // Create entry: legacy `{ markdown }` or additive structured
@@ -636,12 +642,19 @@ export const handlers = [
       return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
     }
 
-    const body = (await request.json()) as { filter: Record<string, unknown> };
+    const body = (await request.json()) as {
+      filter?: Record<string, unknown>;
+      criteria?: Record<string, unknown>;
+    };
     const entries = Array.from(mockEntryIndex.get(spaceId)?.values() || []);
+
+    if (body.criteria) {
+      return HttpResponse.json(entries);
+    }
 
     // Simple filtering
     const filtered = entries.filter((entry) => {
-      for (const [key, value] of Object.entries(body.filter)) {
+      for (const [key, value] of Object.entries(body.filter || {})) {
         if (key === "form" && entry.form !== value) return false;
         if (entry.properties[key] !== value) return false;
       }
@@ -670,7 +683,12 @@ export const handlers = [
       }\n${entryContent}`.toLowerCase();
       return haystack.includes(q);
     });
-    return HttpResponse.json(matches);
+    const limitValue = url.searchParams.get("limit");
+    const offset = Number(url.searchParams.get("offset") || 0);
+    const page = limitValue === null
+      ? matches.slice(offset)
+      : matches.slice(offset, offset + Number(limitValue));
+    return HttpResponse.json(page);
   }),
 
   // Upload asset

@@ -5,6 +5,9 @@ import { type TranslationKey } from "./i18n";
 import type { Entry, EntryRecord, EntryUpdatePayload } from "./types";
 import { entryApi, RevisionConflictError } from "./ugoite-client";
 import { searchApi } from "./ugoite-client";
+import { pageFromArray } from "./pagination";
+
+export const ENTRY_PAGE_SIZE = 100;
 
 export interface EntryStoreState {
   entries: EntryRecord[];
@@ -28,6 +31,8 @@ export function createEntryStore(spaceId: () => string) {
     null,
   );
   const [loading, setLoading] = createSignal(false);
+  const [loadingMore, setLoadingMore] = createSignal(false);
+  const [hasMore, setHasMore] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [errorCause, setErrorCause] = createSignal<unknown>(null);
 
@@ -70,19 +75,50 @@ export function createEntryStore(spaceId: () => string) {
     },
   );
 
-  /** Load all entries from server */
+  /** Load the first page of entries from the server. */
   async function loadEntries() {
     setLoading(true);
+    setLoadingMore(false);
+    setHasMore(false);
     clearError();
     try {
-      const fetchedEntries = await entryApi.list(spaceId());
-      setEntries(fetchedEntries);
+      const fetchedEntries = await entryApi.list(
+        spaceId(),
+        ENTRY_PAGE_SIZE + 1,
+      );
+      const page = pageFromArray(fetchedEntries, ENTRY_PAGE_SIZE);
+      setEntries(page.items);
+      setHasMore(page.hasMore);
     } catch (e) {
       /* v8 ignore start */
       reportError(e, "entriesPage.failedLoad", "entry.list");
       /* v8 ignore stop */
     } finally {
       setLoading(false);
+    }
+  }
+
+  /** Append the next server-ordered page without treating it as a total. */
+  async function loadMoreEntries() {
+    if (loading() || loadingMore() || !hasMore()) return;
+    const offset = entries().length;
+    setLoadingMore(true);
+    clearError();
+    try {
+      const fetchedEntries = await entryApi.list(
+        spaceId(),
+        ENTRY_PAGE_SIZE + 1,
+        offset,
+      );
+      const page = pageFromArray(fetchedEntries, ENTRY_PAGE_SIZE);
+      setEntries((current) => [...current, ...page.items]);
+      setHasMore(page.hasMore);
+    } catch (e) {
+      /* v8 ignore start */
+      reportError(e, "entriesPage.failedLoad", "entry.list");
+      /* v8 ignore stop */
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -246,11 +282,14 @@ export function createEntryStore(spaceId: () => string) {
     selectedEntryId,
     selectedEntry,
     loading,
+    loadingMore,
+    hasMore,
     error,
     errorCause,
 
     // Actions
     loadEntries,
+    loadMoreEntries,
     createEntry,
     updateEntry,
     deleteEntry,

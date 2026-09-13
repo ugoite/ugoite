@@ -13,6 +13,7 @@ import { t, type TranslationKey } from "~/lib/i18n";
 import { displaySqlName } from "~/lib/sql-metadata";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
+import { pageFromArray } from "~/lib/pagination";
 
 export const route = spaceRoute({ navigation: "search" });
 
@@ -56,7 +57,7 @@ type AdvancedSearchCriteria = {
   fieldConditions: AdvancedFieldCondition[];
 };
 
-const ADVANCED_SEARCH_LIMIT = 50;
+const SEARCH_PAGE_SIZE = 50;
 
 function parseTimestamp(value: string | number | null | undefined): number {
   if (typeof value === "number") return value;
@@ -160,6 +161,7 @@ type StructuredTransportCriteria = {
     value: string;
   }>;
   limit: number;
+  offset?: number;
 };
 
 /**
@@ -193,7 +195,7 @@ function buildStructuredSearchCriteria(
       operator: condition.operator,
       value: condition.value,
     })),
-    limit: ADVANCED_SEARCH_LIMIT,
+    limit: SEARCH_PAGE_SIZE,
   };
 }
 
@@ -212,6 +214,7 @@ export default function SpaceSearchRoute() {
 
   const [mode, setMode] = createSignal<SearchMode>("keyword");
   const [keywordQuery, setKeywordQuery] = createSignal("");
+  const [keywordSearchQuery, setKeywordSearchQuery] = createSignal("");
   const [keywordResults, setKeywordResults] = createSignal<
     KeywordSearchResult[]
   >([]);
@@ -219,6 +222,7 @@ export default function SpaceSearchRoute() {
     false,
   );
   const [keywordLoading, setKeywordLoading] = createSignal(false);
+  const [keywordHasMore, setKeywordHasMore] = createSignal(false);
   const [actionError, setActionError] = createSignal<string | null>(null);
   const [runningSearchId, setRunningSearchId] = createSignal<string | null>(
     null,
@@ -236,6 +240,10 @@ export default function SpaceSearchRoute() {
     false,
   );
   const [advancedLoading, setAdvancedLoading] = createSignal(false);
+  const [advancedHasMore, setAdvancedHasMore] = createSignal(false);
+  const [activeAdvancedCriteria, setActiveAdvancedCriteria] = createSignal<
+    StructuredTransportCriteria | null
+  >(null);
 
   const [savedSearches, { refetch: refetchSavedSearches }] = createResource(
     () => spaceId(),
@@ -301,6 +309,9 @@ export default function SpaceSearchRoute() {
 
   const keywordResultCountLabel = createMemo(() => {
     const count = keywordResults().length;
+    if (keywordHasMore()) {
+      return t("searchPage.resultsAtLeast", { count });
+    }
     return t(
       count === 1 ? "searchBar.results.one" : "searchBar.results.other",
       {
@@ -311,6 +322,9 @@ export default function SpaceSearchRoute() {
 
   const advancedResultCountLabel = createMemo(() => {
     const count = advancedResults().length;
+    if (advancedHasMore()) {
+      return t("searchPage.resultsAtLeast", { count });
+    }
     return t(
       count === 1 ? "searchBar.results.one" : "searchBar.results.other",
       {
@@ -355,19 +369,53 @@ export default function SpaceSearchRoute() {
     if (!query) {
       setKeywordSearchPerformed(false);
       setKeywordResults([]);
+      setKeywordSearchQuery("");
+      setKeywordHasMore(false);
       setActionError(t("searchPage.error.emptyKeyword"));
       return;
     }
 
     setMode("keyword");
     setKeywordSearchPerformed(true);
+    setKeywordSearchQuery(query);
+    setKeywordHasMore(false);
     setActionError(null);
     setKeywordLoading(true);
     try {
-      const results = await searchApi.keyword(spaceId(), query);
-      setKeywordResults(results);
+      const results = await searchApi.keyword(
+        spaceId(),
+        query,
+        SEARCH_PAGE_SIZE + 1,
+      );
+      const page = pageFromArray(results, SEARCH_PAGE_SIZE);
+      setKeywordResults(page.items);
+      setKeywordHasMore(page.hasMore);
     } catch (err) {
       setKeywordResults([]);
+      setActionError(
+        formatUserFacingError(err, "searchPage.error.searchFailed"),
+      );
+    } finally {
+      setKeywordLoading(false);
+    }
+  };
+
+  const loadMoreKeywordResults = async () => {
+    const query = keywordSearchQuery();
+    if (!query || keywordLoading() || !keywordHasMore()) return;
+    setActionError(null);
+    setKeywordLoading(true);
+    try {
+      const results = await searchApi.keyword(
+        spaceId(),
+        query,
+        SEARCH_PAGE_SIZE + 1,
+        keywordResults().length,
+      );
+      const page = pageFromArray(results, SEARCH_PAGE_SIZE);
+      setKeywordResults((current) => [...current, ...page.items]);
+      setKeywordHasMore(page.hasMore);
+    } catch (err) {
       setActionError(
         formatUserFacingError(err, "searchPage.error.searchFailed"),
       );
@@ -425,6 +473,8 @@ export default function SpaceSearchRoute() {
     } catch (error) {
       setAdvancedSearchPerformed(false);
       setAdvancedResults([]);
+      setActiveAdvancedCriteria(null);
+      setAdvancedHasMore(false);
       setActionError(
         error instanceof Error
           ? error.message
@@ -435,19 +485,55 @@ export default function SpaceSearchRoute() {
     if (!transport) {
       setAdvancedSearchPerformed(false);
       setAdvancedResults([]);
+      setActiveAdvancedCriteria(null);
+      setAdvancedHasMore(false);
       setActionError(t("searchPage.error.chooseForm"));
       return;
     }
 
     setMode("advanced");
     setAdvancedSearchPerformed(true);
+    const firstPageCriteria: StructuredTransportCriteria = {
+      ...transport,
+      limit: SEARCH_PAGE_SIZE + 1,
+    };
+    setActiveAdvancedCriteria(firstPageCriteria);
+    setAdvancedHasMore(false);
     setActionError(null);
     setAdvancedLoading(true);
     try {
-      const results = await searchApi.queryStructured(spaceId(), transport);
-      setAdvancedResults(results);
+      const results = await searchApi.queryStructured(
+        spaceId(),
+        firstPageCriteria,
+      );
+      const page = pageFromArray(results, SEARCH_PAGE_SIZE);
+      setAdvancedResults(page.items);
+      setAdvancedHasMore(page.hasMore);
     } catch (err) {
       setAdvancedResults([]);
+      setActionError(
+        formatUserFacingError(err, "searchPage.error.advancedSearchFailed"),
+      );
+    } finally {
+      setAdvancedLoading(false);
+    }
+  };
+
+  const loadMoreAdvancedResults = async () => {
+    const criteria = activeAdvancedCriteria();
+    if (!criteria || advancedLoading() || !advancedHasMore()) return;
+    setActionError(null);
+    setAdvancedLoading(true);
+    try {
+      const results = await searchApi.queryStructured(spaceId(), {
+        ...criteria,
+        limit: SEARCH_PAGE_SIZE + 1,
+        offset: advancedResults().length,
+      });
+      const page = pageFromArray(results, SEARCH_PAGE_SIZE);
+      setAdvancedResults((current) => [...current, ...page.items]);
+      setAdvancedHasMore(page.hasMore);
+    } catch (err) {
       setActionError(
         formatUserFacingError(err, "searchPage.error.advancedSearchFailed"),
       );
@@ -948,6 +1034,29 @@ export default function SpaceSearchRoute() {
                       </For>
                     </Show>
                   </div>
+                  <Show
+                    when={mode() === "keyword" && keywordHasMore() ||
+                      mode() === "advanced" && advancedHasMore()}
+                  >
+                    <div class="flex justify-center pt-2">
+                      <button
+                        type="button"
+                        class="ui-button ui-button-secondary text-sm"
+                        disabled={keywordLoading() || advancedLoading()}
+                        onClick={() => {
+                          if (mode() === "keyword") {
+                            void loadMoreKeywordResults();
+                          } else {
+                            void loadMoreAdvancedResults();
+                          }
+                        }}
+                      >
+                        {(keywordLoading() || advancedLoading())
+                          ? t("searchPage.loadingMore")
+                          : t("searchPage.loadMore")}
+                      </button>
+                    </div>
+                  </Show>
                 </div>
               </section>
 

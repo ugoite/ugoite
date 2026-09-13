@@ -163,6 +163,8 @@ export const entryApi = {
     spaceId: string,
     entryId: string,
     pin?: string,
+    limit?: number,
+    offset?: number,
   ): Promise<{ revisions: EntryRevision[] }> {
     return await protocolFetch<{ revisions: EntryRevision[] }>(
       "entry.history",
@@ -170,6 +172,8 @@ export const entryApi = {
         space_id: spaceId,
         entry_id: entryId,
         ...(pin ? { pin } : {}),
+        ...(limit === undefined ? {} : { limit }),
+        ...(offset === undefined ? {} : { offset }),
       },
     );
   },

@@ -259,6 +259,20 @@ export default function SpaceEntriesIndexPane() {
               )}
             </For>
           </div>
+          <Show when={!sessionId().trim() && ctx.entryStore.hasMore()}>
+            <div class="mt-6 flex justify-center">
+              <button
+                type="button"
+                class="ui-button ui-button-secondary text-sm"
+                disabled={ctx.entryStore.loadingMore()}
+                onClick={() => void ctx.entryStore.loadMoreEntries()}
+              >
+                {ctx.entryStore.loadingMore()
+                  ? t("entriesPage.loadingMore")
+                  : t("entriesPage.loadMore")}
+              </button>
+            </div>
+          </Show>
           <Show when={sessionId().trim() && totalCount() > 0}>
             <div class="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm ui-muted">
               <div>
