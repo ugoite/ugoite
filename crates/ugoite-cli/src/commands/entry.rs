@@ -105,7 +105,7 @@ pub enum EntrySubCmd {
     },
     /// Update an entry
     #[command(
-        long_about = "Update an entry in a space.\n\nExamples:\n  # Core mode\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated'\n\n  # Core mode - read content from a file\n  ugoite entry update /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode with optimistic concurrency\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated' --parent-revision-id rev-1\n\n  # Backend mode\n  ugoite entry update my-space my-note --markdown '# Updated'\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface. Merged --field/--fields-file values are the complete post-update field map: omitted fields are cleared, never patched.\n\nExamples:\n  # Core mode - structured update without Markdown\n  ugoite entry update /root/spaces/my-space task-01 --title 'New title' --fields-file entry-fields.json --parent-revision-id rev-1"
+        long_about = "Update an entry in a space.\n\nExamples:\n  # Core mode\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated'\n\n  # Core mode - read content from a file\n  ugoite entry update /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode with optimistic concurrency\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated' --parent-revision-id rev-1\n\n  # Backend mode\n  ugoite entry update my-space my-note --markdown '# Updated'\n\nWhen --parent-revision-id is omitted, the CLI reads the current Entry immediately before the update and uses its revision ID for optimistic concurrency.\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface. Merged --field/--fields-file values are the complete post-update field map: omitted fields are cleared, never patched.\n\nExamples:\n  # Core mode - structured update without Markdown\n  ugoite entry update /root/spaces/my-space task-01 --title 'New title' --fields-file entry-fields.json --parent-revision-id rev-1"
     )]
     Update {
         #[arg(
@@ -156,7 +156,7 @@ pub enum EntrySubCmd {
         fields_files: Vec<String>,
         #[arg(
             long,
-            help = "Expected current revision ID to enforce optimistic concurrency checks"
+            help = "Expected current revision ID to enforce optimistic concurrency checks; if omitted, the CLI reads it immediately before updating"
         )]
         parent_revision_id: Option<String>,
         #[arg(
@@ -241,6 +241,30 @@ fn entry_receipt(
     change_id: Option<String>,
 ) -> MutationReceipt {
     MutationReceipt::entry(id, revision_id, change_id)
+}
+
+fn current_entry_revision_id(entry: &serde_json::Value) -> Result<String> {
+    entry
+        .get("revision_id")
+        .and_then(serde_json::Value::as_str)
+        .filter(|revision_id| !revision_id.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| anyhow::anyhow!("current entry response is missing revision_id"))
+}
+
+async fn read_remote_entry_revision_id(
+    base_url: &str,
+    space_id: &str,
+    entry_id: &str,
+) -> Result<String> {
+    let entry = http::execute(
+        base_url,
+        "entry.get",
+        serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
+        None,
+    )
+    .await?;
+    current_entry_revision_id(&entry)
 }
 
 /// Parse one `--field KEY=VALUE` argument. Values stay strings; the shared
@@ -448,6 +472,10 @@ async fn update_structured_entry(
             )
             .into());
         }
+        let parent_revision_id = match parent_revision_id {
+            Some(parent_revision_id) => parent_revision_id,
+            None => read_remote_entry_revision_id(&base, &space_id, &entry_id).await?,
+        };
         let mut body = serde_json::json!({"fields": merged});
         if let Some(form) = form.as_deref() {
             body["form"] = serde_json::json!(form);
@@ -455,9 +483,7 @@ async fn update_structured_entry(
         if let Some(title) = title.as_deref() {
             body["title"] = serde_json::json!(title);
         }
-        if let Some(p) = &parent_revision_id {
-            body["parent_revision_id"] = serde_json::json!(p);
-        }
+        body["parent_revision_id"] = serde_json::json!(parent_revision_id);
         let result = http::execute(
             &base,
             "entry.update",
@@ -484,6 +510,10 @@ async fn update_structured_entry(
         return Ok(());
     }
     let service = UgoiteService::new_without_background_refresh(&root)?;
+    let parent_revision_id = match parent_revision_id {
+        Some(parent_revision_id) => parent_revision_id,
+        None => current_entry_revision_id(&service.get_entry(&space_id, &entry_id).await?)?,
+    };
     let result = service
         .update_structured_entry(
             &space_id,
@@ -491,7 +521,7 @@ async fn update_structured_entry(
             title,
             form,
             merged,
-            parent_revision_id.as_deref(),
+            Some(&parent_revision_id),
             &author,
         )
         .await?;
@@ -726,10 +756,12 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     )
                     .into());
                 }
+                let parent_revision_id = match parent_revision_id {
+                    Some(parent_revision_id) => parent_revision_id,
+                    None => read_remote_entry_revision_id(&base, &space_id, &entry_id).await?,
+                };
                 let mut body = serde_json::json!({"markdown": markdown});
-                if let Some(p) = &parent_revision_id {
-                    body["parent_revision_id"] = serde_json::json!(p);
-                }
+                body["parent_revision_id"] = serde_json::json!(parent_revision_id);
                 let result = http::execute(
                     &base,
                     "entry.update",
@@ -758,12 +790,16 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             }
             // Do not wait for Derived refreshes in a one-shot mutation.
             let service = UgoiteService::new_without_background_refresh(&root)?;
+            let parent_revision_id = match parent_revision_id {
+                Some(parent_revision_id) => parent_revision_id,
+                None => current_entry_revision_id(&service.get_entry(&space_id, &entry_id).await?)?,
+            };
             let result = service
                 .update_entry(
                     &space_id,
                     &entry_id,
                     &markdown,
-                    parent_revision_id.as_deref(),
+                    Some(&parent_revision_id),
                     &author,
                 )
                 .await?;
