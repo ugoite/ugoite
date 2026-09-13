@@ -25,6 +25,8 @@ use serde_json::Value;
 use ugoite_api_client::ApiProtocolError;
 use ugoite_core::error::{AppError, ErrorKind};
 
+pub mod style;
+
 /// Output format for CLI commands.
 #[derive(ValueEnum, Clone, Debug, Default, PartialEq)]
 pub enum Format {
