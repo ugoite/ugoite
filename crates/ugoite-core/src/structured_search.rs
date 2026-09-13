@@ -403,6 +403,12 @@ pub fn validate_structured_search_syntax(search: &StructuredSearch) -> Result<()
     if limit == 0 || limit > MAX_STRUCTURED_SEARCH_LIMIT as u64 {
         return Err(invalid_input("structured search limit is out of range"));
     }
+    if search
+        .offset
+        .is_some_and(|offset| offset >= MAX_STRUCTURED_SEARCH_LIMIT as u64)
+    {
+        return Err(invalid_input("structured search offset is out of range"));
+    }
     if let Some(raw) = search.updated_from.as_deref() {
         parse_updated_bound(raw, "updated_from")?;
     }
