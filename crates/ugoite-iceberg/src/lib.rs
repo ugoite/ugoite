@@ -166,18 +166,44 @@ const FIRST_FORM_FIELD_ID: i32 = 100;
 const NESTED_FIELD_ID_BASE: i32 = 1_000_000;
 
 fn authoritative_form_definition_read_failure(
-    table_identifier: &str,
-    diagnostic: &str,
+    _table_identifier: &str,
+    _diagnostic: &str,
 ) -> anyhow::Error {
     AppError::internal_with_detail(
         ErrorCode::FormDefinitionReadFailed,
-        format!("authoritative Form definition could not be read: {table_identifier}"),
+        "authoritative Form definition could not be read",
         serde_json::json!({
-            "table": table_identifier,
-            "diagnostic": diagnostic,
+            "diagnostic": "authoritative_form_definition_read",
         }),
     )
     .into()
+}
+
+#[cfg(test)]
+mod form_discovery_error_tests {
+    use super::*;
+
+    #[test]
+    fn form_discovery_errors_do_not_retain_backend_details() {
+        let error = authoritative_form_definition_read_failure(
+            "file:///private/node/spaces/space/forms/Entry",
+            "authoritative catalog listing failed: permission denied at /private/node",
+        );
+        let app_error = error
+            .downcast_ref::<AppError>()
+            .expect("form discovery failure is typed");
+
+        assert_eq!(app_error.code(), ErrorCode::FormDefinitionReadFailed);
+        assert_eq!(
+            app_error.detail(),
+            Some(&serde_json::json!({
+                "diagnostic": "authoritative_form_definition_read"
+            }))
+        );
+        assert!(!app_error
+            .message()
+            .contains("/private/node/spaces/space/forms/Entry"));
+    }
 }
 
 fn unsupported_form_field_type_change(
