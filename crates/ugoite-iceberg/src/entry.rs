@@ -3208,6 +3208,14 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
         timestamp = row.updated_at + 0.001;
     }
 
+    // A revision's state contains the complete durable Entry metadata. Restore
+    // must replay its title and tags as well as its structured fields; keeping
+    // the current metadata would create a hybrid that never existed in
+    // history.
+    if let Some(state) = revision.state.as_ref() {
+        row.title = state.title.clone();
+        row.tags = state.tags.clone();
+    }
     let field_order = form_field_names(&form_def);
     let merged_fields = merge_entry_fields(&revision.fields, &revision.extra_attributes);
     let markdown = render_markdown(
