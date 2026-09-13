@@ -70,7 +70,8 @@ describe("/spaces", () => {
 
   it("REQ-FE-002: creates a space only after explicit user submission", async () => {
     (spaceApi.create as ReturnType<typeof vi.fn>).mockResolvedValue({
-      id: "my-space",
+      id: "legacy-space-id",
+      space_uid: "019f1234-5678-7abc-8def-0123456789ab",
       name: "my-space",
     });
 
@@ -84,7 +85,7 @@ describe("/spaces", () => {
     fireEvent.input(screen.getByLabelText("Space name"), {
       target: { value: "プロジェクトメモ 📝" },
     });
-    fireEvent.input(screen.getByLabelText("Space ID"), {
+    fireEvent.input(screen.getByLabelText("Space slug"), {
       target: { value: "my-space" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Create space" }));
@@ -94,11 +95,13 @@ describe("/spaces", () => {
         name: "プロジェクトメモ 📝",
         slug: "my-space",
       });
-      expect(navigateMock).toHaveBeenCalledWith("/spaces/my-space/dashboard");
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/spaces/019f1234-5678-7abc-8def-0123456789ab/dashboard",
+      );
     });
   });
 
-  it("REQ-FE-002: labels the create-space field as a space ID and explains allowed characters", async () => {
+  it("REQ-FE-002: labels the create-space field as a Space slug and explains its mutable metadata semantics", async () => {
     render(() => <SpacesIndexRoute />);
 
     await waitFor(() => {
@@ -110,16 +113,16 @@ describe("/spaces", () => {
     expect(screen.getByLabelText("Space name")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("e.g. Project notes"))
       .toBeInTheDocument();
-    expect(screen.getByLabelText("Space ID")).toBeInTheDocument();
+    expect(screen.getByLabelText("Space slug")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("e.g. team-notes")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Use letters, numbers, hyphens, or underscores. This is the stable URL and storage identifier.",
+        "Use letters, numbers, hyphens, or underscores. This human-readable metadata can be changed later; remote operations use the server-returned Space UID.",
       ),
     ).toBeInTheDocument();
   });
 
-  it("REQ-FE-002: rewrites invalid space_id backend errors into user-facing guidance", async () => {
+  it("REQ-FE-002: rewrites invalid Space slug backend errors into user-facing guidance", async () => {
     (spaceApi.create as ReturnType<typeof vi.fn>).mockRejectedValue(
       new UgoiteApiError({
         kind: "invalid_arguments",
@@ -139,7 +142,7 @@ describe("/spaces", () => {
     fireEvent.input(screen.getByLabelText("Space name"), {
       target: { value: "My space" },
     });
-    fireEvent.input(screen.getByLabelText("Space ID"), {
+    fireEvent.input(screen.getByLabelText("Space slug"), {
       target: { value: "My Space" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Create space" }));
@@ -147,7 +150,7 @@ describe("/spaces", () => {
     await waitFor(() => {
       expect(
         screen.getByText(
-          "Space IDs can use only letters, numbers, hyphens, and underscores.",
+          "Space slugs can use only letters, numbers, hyphens, and underscores.",
         ),
       ).toBeInTheDocument();
     });
@@ -161,7 +164,11 @@ describe("/spaces", () => {
           { code: "RECENT_PASSKEY_REQUIRED" },
         ),
       )
-      .mockResolvedValueOnce({ id: "my-space", name: "my-space" });
+      .mockResolvedValueOnce({
+        id: "legacy-space-id",
+        space_uid: "019f1234-5678-7abc-8def-0123456789ab",
+        name: "my-space",
+      });
     (authApi.loginWithPasskey as ReturnType<typeof vi.fn>).mockResolvedValue(
       undefined,
     );
@@ -176,7 +183,7 @@ describe("/spaces", () => {
     fireEvent.input(screen.getByLabelText("Space name"), {
       target: { value: "My space" },
     });
-    fireEvent.input(screen.getByLabelText("Space ID"), {
+    fireEvent.input(screen.getByLabelText("Space slug"), {
       target: { value: "my-space" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Create space" }));
@@ -193,7 +200,9 @@ describe("/spaces", () => {
     await waitFor(() => {
       expect(authApi.loginWithPasskey).toHaveBeenCalledOnce();
       expect(spaceApi.create).toHaveBeenCalledTimes(2);
-      expect(navigateMock).toHaveBeenCalledWith("/spaces/my-space/dashboard");
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/spaces/019f1234-5678-7abc-8def-0123456789ab/dashboard",
+      );
     });
   });
 

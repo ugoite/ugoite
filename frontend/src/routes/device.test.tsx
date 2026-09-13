@@ -36,6 +36,7 @@ describe("/device", () => {
     vi.mocked(spaceApi.list).mockResolvedValue([{
       id: "space-1",
       name: "Docs",
+      space_uid: "space-uid-1",
     }]);
 
     render(() => <DeviceApprovalRoute />);
@@ -89,7 +90,7 @@ describe("/device", () => {
     );
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
       user_code: "ABCD",
-      space_id: "space-2",
+      space_id: "space-uid-2",
       granted_actions: ["read"],
     });
     expect(

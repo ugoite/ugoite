@@ -7,7 +7,7 @@ import {
   portablePreferences,
   setSelectedSpacePreference,
 } from "~/lib/preferences-store";
-import { DEFAULT_SPACE_ID, sortSpaces } from "./space-list";
+import { DEFAULT_SPACE_SLUG, sortSpaces, spaceUid } from "./space-list";
 import type { Space } from "./types";
 import { spaceApi } from "./ugoite-client";
 
@@ -58,10 +58,10 @@ export function createSpaceStore() {
       // Try to restore persisted space selection
       const persistedId = getPersistedSpaceId();
       const repairingPersistedSelection = persistedId !== null &&
-        !selectableSpaces.some((space) => space.id === persistedId);
+        !selectableSpaces.some((space) => spaceUid(space) === persistedId);
       if (
         persistedId &&
-        selectableSpaces.some((space) => space.id === persistedId)
+        selectableSpaces.some((space) => spaceUid(space) === persistedId)
       ) {
         setSelectedSpaceId(persistedId, false);
         setInitialized(true);
@@ -70,12 +70,14 @@ export function createSpaceStore() {
 
       // If default space exists, select it
       const defaultSpace = selectableSpaces.find((space) =>
-        space.id === DEFAULT_SPACE_ID
+        space.slug === DEFAULT_SPACE_SLUG ||
+        (!space.slug && space.id === DEFAULT_SPACE_SLUG)
       );
       if (defaultSpace) {
-        setSelectedSpaceId(DEFAULT_SPACE_ID, repairingPersistedSelection);
+        const defaultUid = spaceUid(defaultSpace);
+        setSelectedSpaceId(defaultUid, repairingPersistedSelection);
         setInitialized(true);
-        return DEFAULT_SPACE_ID;
+        return defaultUid;
       }
 
       // No client-side space creation; remain unselected when no user-facing spaces exist
@@ -87,9 +89,10 @@ export function createSpaceStore() {
 
       // Otherwise, select the first available user-facing space
       const firstSpace = selectableSpaces[0];
-      setSelectedSpaceId(firstSpace.id, repairingPersistedSelection);
+      const firstUid = spaceUid(firstSpace);
+      setSelectedSpaceId(firstUid, repairingPersistedSelection);
       setInitialized(true);
-      return firstSpace.id;
+      return firstUid;
     } catch (e) {
       /* v8 ignore start */
       setError(e instanceof Error ? e.message : "Failed to load spaces");
@@ -101,9 +104,9 @@ export function createSpaceStore() {
   }
 
   /** Select a space */
-  function selectSpace(spaceId: string): void {
-    if (spaces().some((space) => space.id === spaceId)) {
-      setSelectedSpaceId(spaceId);
+  function selectSpace(spaceUidValue: string): void {
+    if (spaces().some((space) => spaceUid(space) === spaceUidValue)) {
+      setSelectedSpaceId(spaceUidValue);
     }
   }
 

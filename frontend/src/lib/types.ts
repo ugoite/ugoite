@@ -26,7 +26,9 @@ export interface SpaceStorageConfig extends SpaceStorage {
 
 /** Space metadata */
 export interface Space {
+  /** Compatibility response alias; remote identity is `space_uid`. */
   id: string;
+  /** Immutable UUIDv7 used for remote operations and route addressing. */
   space_uid?: string;
   /** Durable Space compatibility identity; independent from Product version. */
   space_version?: string;

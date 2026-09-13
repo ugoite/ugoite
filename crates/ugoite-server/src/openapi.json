@@ -12257,7 +12257,8 @@
         ],
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "description": "Compatibility field equal to space_uid; remote clients use the immutable Space UID."
           },
           "space_uid": {
             "type": "string",
@@ -12270,10 +12271,12 @@
             "description": "Durable Space compatibility identity; independent from the Ugoite Product version."
           },
           "slug": {
-            "type": "string"
+            "type": "string",
+            "description": "Human-readable mutable Space metadata; it is not a remote route identity."
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "Display name for the Space; Unicode is supported."
           },
           "created_at": {
             "oneOf": [
@@ -12377,7 +12380,7 @@
         "properties": {
           "slug": {
             "type": "string",
-            "description": "Stable ASCII URL/storage identifier using letters, digits, '-' or '_'."
+            "description": "Human-readable mutable Space metadata using letters, digits, '-' or '_'; it is not a remote route identity."
           },
           "name": {
             "type": "string",
@@ -12397,14 +12400,17 @@
         ],
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "description": "Compatibility field equal to space_uid; remote clients use the immutable Space UID."
           },
           "slug": {
-            "type": "string"
+            "type": "string",
+            "description": "Human-readable mutable Space metadata; it is not a remote route identity."
           },
           "space_uid": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Immutable UUIDv7 used as the remote Space identity."
           },
           "space_version": {
             "type": "string",
@@ -12415,7 +12421,8 @@
             "type": "string"
           },
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "Core filesystem/object-store locator returned after creation; it is not a remote identity."
           }
         }
       },
