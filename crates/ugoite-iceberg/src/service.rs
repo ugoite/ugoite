@@ -26,7 +26,7 @@ use crate::{
     entry, form, iceberg_store, index, preferences, saved_sql, search, space, sql_session,
 };
 use crate::{CheckpointIntegrityError, CheckpointUnavailable, PublicationRef};
-use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_core::error::{AppError, ErrorCode, ErrorKind as AppErrorKind};
 use ugoite_core::query::EntryScope;
 use ugoite_domain::change::{ChangeCommand, RunId};
 use ugoite_domain::id::{
@@ -131,6 +131,14 @@ const MAX_BACKGROUND_REFRESH_WORKERS: usize = 1024;
 const MAX_BACKGROUND_REFRESH_RETRIES: usize = 8;
 const MAX_AUTHORIZED_SCOPE_FORMS: usize = 100_000;
 const MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES: usize = 256 * 1024 * 1024;
+
+fn is_explicit_authorization_denial(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<AppError>()
+            .is_some_and(|error| error.kind() == AppErrorKind::Forbidden)
+    })
+}
 
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
 struct SpaceSlugClaim {
@@ -1278,6 +1286,12 @@ impl UgoiteService {
     }
 
     pub async fn list_space_ids(&self) -> Result<Vec<String>> {
+        self.list_space_ids_inner()
+            .await
+            .map_err(|error| space::space_discovery_failure("<spaces>", "service_listing", error))
+    }
+
+    async fn list_space_ids_inner(&self) -> Result<Vec<String>> {
         let live_pending_space_ids = self.live_pending_claim_space_ids().await?;
         let discovered_space_ids = space::list_spaces_discovery(&self.operator).await?;
         let mut space_ids = Vec::with_capacity(discovered_space_ids.len());
@@ -1285,10 +1299,72 @@ impl UgoiteService {
             if live_pending_space_ids.contains(&space_id) {
                 continue;
             }
-            space::validate_complete_bootstrap(&self.operator, &space_id).await?;
+            space::validate_discoverable_space(&self.operator, &space_id).await?;
             space_ids.push(space_id);
         }
         Ok(space_ids)
+    }
+
+    /// Lists complete Spaces for already-resolved Node principals. `None`
+    /// denotes an explicit identity-level visibility denial; every other
+    /// failure remains a typed discovery diagnostic. Keeping this decision in
+    /// the application service prevents the HTTP adapter from treating
+    /// corruption or storage failures as invisible Spaces.
+    pub async fn list_spaces_authorized_for_principals(
+        &self,
+        principal_ids_by_space: &BTreeMap<String, Option<Vec<Uuid>>>,
+    ) -> Result<Vec<Value>> {
+        let space_ids = self.list_space_ids().await?;
+        let mut spaces = Vec::with_capacity(space_ids.len());
+        for space_id in space_ids {
+            let principal_ids = principal_ids_by_space.get(&space_id).ok_or_else(|| {
+                space::space_discovery_failure(
+                    &space_id,
+                    "missing_principal_scope",
+                    anyhow!("Space listing did not provide a principal scope"),
+                )
+            })?;
+            let Some(principal_ids) = principal_ids else {
+                continue;
+            };
+            if principal_ids.is_empty() {
+                return Err(space::space_discovery_failure(
+                    &space_id,
+                    "empty_principal_scope",
+                    anyhow!("Space listing principal scope is empty"),
+                ));
+            }
+
+            let id_for_read = space_id.clone();
+            let principals = principal_ids.clone();
+            let result = Authorizer::new(self.operator.clone())
+                .with_state_lock(&space_id, |state| async move {
+                    for principal_id in &principals {
+                        if !effective_actions_for_state(&state, *principal_id, None)?
+                            .contains(&Action::Read)
+                        {
+                            return Err(AppError::forbidden(
+                                "principal is not authorized for the requested read",
+                            )
+                            .into());
+                        }
+                    }
+                    self.get_space(&id_for_read).await
+                })
+                .await;
+            match result {
+                Ok(space) => spaces.push(space),
+                Err(error) if is_explicit_authorization_denial(&error) => continue,
+                Err(error) => {
+                    return Err(space::space_discovery_failure(
+                        &space_id,
+                        "authorized_space_read",
+                        error,
+                    ));
+                }
+            }
+        }
+        Ok(spaces)
     }
 
     async fn list_space_slug_claims(&self) -> Result<Vec<(String, SpaceSlugClaim)>> {

@@ -348,9 +348,13 @@ async fn incomplete_current_space_metadata_is_rejected() -> anyhow::Result<()> {
     let workspace_error = form::list_forms(&op, "spaces/incomplete-metadata")
         .await
         .unwrap_err();
-    assert!(workspace_error
-        .to_string()
-        .contains("unsupported Space layout"));
+    assert_eq!(
+        workspace_error
+            .downcast_ref::<AppError>()
+            .expect("corrupt authoritative Form discovery must be typed")
+            .code(),
+        ErrorCode::FormDefinitionReadFailed
+    );
     Ok(())
 }
 
@@ -402,9 +406,13 @@ async fn uuid_addressed_space_directory_must_match_metadata_uid() -> anyhow::Res
     let error = space::list_spaces(&op)
         .await
         .expect_err("UUID directory and metadata UID mismatch must be rejected");
-    assert!(error
-        .to_string()
-        .contains("UUID directory does not match space_uid"));
+    assert_eq!(
+        error
+            .downcast_ref::<AppError>()
+            .expect("Space discovery failures must be typed")
+            .code(),
+        ErrorCode::SpaceDiscoveryFailed
+    );
     Ok(())
 }
 
@@ -548,13 +556,21 @@ async fn test_space_req_sto_004_list_spaces_from_directory() -> anyhow::Result<(
 
 #[tokio::test]
 /// REQ-STO-008
-async fn test_space_req_sto_008_list_spaces_ignores_missing_meta() -> anyhow::Result<()> {
+async fn test_space_req_sto_008_list_spaces_fails_on_missing_meta() -> anyhow::Result<()> {
     let op = setup_operator()?;
 
     op.create_dir("spaces/no-meta/").await?;
 
-    let listed = space::list_spaces(&op).await?;
-    assert!(listed.is_empty());
+    let error = space::list_spaces(&op)
+        .await
+        .expect_err("a discovered Space directory without metadata must not be omitted");
+    assert_eq!(
+        error
+            .downcast_ref::<AppError>()
+            .expect("Space discovery failures must be typed")
+            .code(),
+        ErrorCode::SpaceDiscoveryFailed
+    );
 
     Ok(())
 }

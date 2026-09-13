@@ -34,6 +34,73 @@ fn unsupported_space_version_error(metadata: &serde_json::Value) -> anyhow::Erro
     AppError::unsupported_space_version(detected.as_deref(), SUPPORTED_SPACE_VERSIONS).into()
 }
 
+pub(crate) fn space_discovery_failure(
+    space_id: &str,
+    diagnostic: &str,
+    error: anyhow::Error,
+) -> anyhow::Error {
+    let typed_code = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<AppError>().map(AppError::code));
+    if matches!(
+        typed_code,
+        Some(
+            ErrorCode::UnsupportedSpaceVersion
+                | ErrorCode::SpaceDiscoveryFailed
+                | ErrorCode::FormDefinitionReadFailed
+        )
+    ) {
+        return error;
+    }
+    AppError::internal_with_detail(
+        ErrorCode::SpaceDiscoveryFailed,
+        safe_space_discovery_message(space_id, diagnostic, &error),
+        serde_json::json!({
+            "space_id": space_id,
+            "diagnostic": diagnostic,
+            "cause_code": typed_code.map(ErrorCode::as_str).unwrap_or("UNCLASSIFIED"),
+        }),
+    )
+    .into()
+}
+
+/// Keep discovery diagnostics useful without copying backend-specific error
+/// details (paths, credentials, request IDs, or provider responses) into a
+/// public API error. The markers below are stable, user-actionable classes
+/// that are already part of the Space contract; all other causes use the
+/// diagnostic boundary label only.
+fn safe_space_discovery_message(space_id: &str, diagnostic: &str, error: &anyhow::Error) -> String {
+    let reason = [
+        ("incomplete Space bootstrap", "incomplete Space bootstrap"),
+        (
+            "duplicate immutable space_uid",
+            "duplicate immutable space_uid",
+        ),
+        ("Space metadata is missing", "Space metadata is missing"),
+        (
+            "Space metadata has no immutable space_uid",
+            "Space metadata has no immutable space_uid",
+        ),
+        (
+            "Space is missing immutable space_uid",
+            "Space is missing immutable space_uid",
+        ),
+        ("Space metadata has no slug", "Space metadata has no slug"),
+        ("Space slug is not unique", "Space slug is not unique"),
+    ]
+    .into_iter()
+    .find_map(|(marker, safe_reason)| error.to_string().contains(marker).then_some(safe_reason))
+    .unwrap_or(match diagnostic {
+        "space_metadata_missing" => "Space metadata is missing",
+        "space_bootstrap" => "Space bootstrap is incomplete or invalid",
+        "authoritative_knowledge" => "authoritative Space knowledge could not be read",
+        "authorized_space_read" => "Space could not be read after authorization",
+        _ => "authoritative Space data could not be read",
+    });
+
+    format!("Space discovery failed for {space_id}: {reason}")
+}
+
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct StorageConnectionTestConfig {
     pub uri: String,
@@ -516,6 +583,12 @@ async fn list_spaces_discovery_with_storage<S: StorageBackend + ?Sized>(
         if !entry.is_dir {
             continue;
         }
+        // Some filesystem/object-store listers include the directory being
+        // listed as a synthetic entry. It is the discovery root, not a
+        // Space, and must never be interpreted as `spaces/{space_id}`.
+        if entry.name.trim_end_matches('/') == spaces_root.trim_end_matches('/') {
+            continue;
+        }
         let space_id = entry
             .name
             .trim_end_matches('/')
@@ -525,29 +598,44 @@ async fn list_spaces_discovery_with_storage<S: StorageBackend + ?Sized>(
         if space_id.is_empty() {
             continue;
         }
-        let meta_path = format!("spaces/{space_id}/meta.json");
-        if storage.exists(&meta_path).await? {
-            validate_space_path_segment(space_id)?;
-            let meta = ensure_space_identity(storage, space_id).await?;
-            let space_uid = meta
-                .get("space_uid")
-                .and_then(serde_json::Value::as_str)
-                .ok_or_else(|| anyhow!("Space is missing immutable space_uid"))
-                .and_then(|value| uuid::Uuid::parse_str(value).map_err(anyhow::Error::from))?;
-            if let Some(previous_id) = seen_uids.insert(space_uid, space_id.to_string()) {
-                bail!(
-                    "duplicate immutable space_uid {space_uid} is used by Spaces {previous_id} and {space_id}"
-                );
-            }
-            let slug = meta
-                .get("slug")
-                .and_then(serde_json::Value::as_str)
-                .ok_or_else(|| anyhow!("Space metadata has no slug"))?;
-            if let Some(previous_id) = seen_slugs.insert(slug.to_string(), space_id.to_string()) {
-                bail!("Space slug is not unique: {slug} ({previous_id}, {space_id})");
-            }
-            spaces.push(space_id.to_string());
+        // These are Node-local control state, not portable Space directories.
+        // They are intentionally excluded from Space discovery by their
+        // reserved names rather than by the absence of metadata. The PID
+        // suffix is used only for the root-filesystem fallback.
+        if space_id == ".ugoite-space-slug-claims"
+            || space_id == ".ugoite-atomic-writes"
+            || space_id.starts_with(".ugoite-atomic-writes-")
+        {
+            continue;
         }
+        let meta_path = format!("spaces/{space_id}/meta.json");
+        if !storage.exists(&meta_path).await? {
+            return Err(space_discovery_failure(
+                space_id,
+                "space_metadata_missing",
+                anyhow!("Space metadata is missing"),
+            ));
+        }
+        validate_space_path_segment(space_id)?;
+        let meta = ensure_space_identity(storage, space_id).await?;
+        let space_uid = meta
+            .get("space_uid")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| anyhow!("Space is missing immutable space_uid"))
+            .and_then(|value| uuid::Uuid::parse_str(value).map_err(anyhow::Error::from))?;
+        if let Some(previous_id) = seen_uids.insert(space_uid, space_id.to_string()) {
+            bail!(
+                "duplicate immutable space_uid {space_uid} is used by Spaces {previous_id} and {space_id}"
+            );
+        }
+        let slug = meta
+            .get("slug")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| anyhow!("Space metadata has no slug"))?;
+        if let Some(previous_id) = seen_slugs.insert(slug.to_string(), space_id.to_string()) {
+            bail!("Space slug is not unique: {slug} ({previous_id}, {space_id})");
+        }
+        spaces.push(space_id.to_string());
     }
 
     spaces.sort();
@@ -556,12 +644,11 @@ async fn list_spaces_discovery_with_storage<S: StorageBackend + ?Sized>(
 }
 
 pub async fn list_spaces(op: &Operator) -> Result<Vec<String>> {
-    let storage = OpendalStorage::from_operator(op);
-    let spaces = list_spaces_discovery_with_storage(&storage).await?;
+    let spaces = list_spaces_discovery(op).await?;
     // Directory listing is discovery only. Do not expose a metadata-only or
     // crash-left Space through a public enumeration result.
     for space_id in &spaces {
-        validate_complete_bootstrap(op, space_id).await?;
+        validate_discoverable_space(op, space_id).await?;
     }
     Ok(spaces)
 }
@@ -572,7 +659,22 @@ pub async fn list_spaces(op: &Operator) -> Result<Vec<String>> {
 /// while still strictly validating every unclaimed or committed Space.
 pub async fn list_spaces_discovery(op: &Operator) -> Result<Vec<String>> {
     let storage = OpendalStorage::from_operator(op);
-    list_spaces_discovery_with_storage(&storage).await
+    list_spaces_discovery_with_storage(&storage)
+        .await
+        .map_err(|error| space_discovery_failure("<spaces>", "space_discovery", error))
+}
+
+/// Validates the current bootstrap and every authoritative Form definition
+/// before a Space is exposed by a public discovery operation. Derived state is
+/// deliberately not part of this check.
+pub(crate) async fn validate_discoverable_space(op: &Operator, space_id: &str) -> Result<()> {
+    validate_complete_bootstrap(op, space_id)
+        .await
+        .map_err(|error| space_discovery_failure(space_id, "space_bootstrap", error))?;
+    form::list_forms(op, &format!("spaces/{space_id}"))
+        .await
+        .map_err(|error| space_discovery_failure(space_id, "authoritative_knowledge", error))?;
+    Ok(())
 }
 
 async fn get_space_with_storage<S: StorageBackend + ?Sized>(

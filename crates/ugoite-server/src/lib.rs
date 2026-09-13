@@ -843,7 +843,10 @@ impl ApiError {
     }
 
     fn from_core(error: anyhow::Error) -> Self {
-        if let Some(app_error) = error.downcast_ref::<AppError>() {
+        if let Some(app_error) = error
+            .chain()
+            .find_map(|cause| cause.downcast_ref::<AppError>())
+        {
             let status = match app_error.kind() {
                 ErrorKind::InvalidInput => StatusCode::UNPROCESSABLE_ENTITY,
                 ErrorKind::Forbidden => StatusCode::FORBIDDEN,
@@ -880,6 +883,25 @@ impl ApiError {
                 "message": format!("Invalid {}: {}", kind.as_str(), error.reason()),
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod api_error_tests {
+    use super::*;
+
+    #[test]
+    fn context_wrapped_core_errors_keep_their_typed_api_envelope() {
+        let error = anyhow::Error::from(AppError::internal(
+            ErrorCode::FormDefinitionReadFailed,
+            "authoritative Form definition could not be read",
+        ))
+        .context("read Form definition");
+
+        let api_error = ApiError::from_core(error);
+
+        assert_eq!(api_error.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(api_error.detail["code"], "FORM_DEFINITION_READ_FAILED");
     }
 }
 
@@ -6392,6 +6414,37 @@ async fn principal_for_space(
         .map_err(auth_error)
 }
 
+/// Resolve the Node-side principal used by the Space listing service. An
+/// account without a binding is an explicit visibility denial; failures while
+/// reading the binding state remain errors so the listing cannot mistake a
+/// broken Node store for an inaccessible Space.
+async fn principal_for_space_listing(
+    state: &AppState,
+    space_id: &str,
+    identity: &RequestIdentityContext,
+) -> ApiResult<Option<Uuid>> {
+    validate_id(space_id, "space_id")?;
+    let space_uid = state
+        .service
+        .space_uid(space_id)
+        .await
+        .map_err(ApiError::from_core)?;
+    if let Some(token_space_uid) = identity.token_space_uid {
+        if token_space_uid != space_uid {
+            return Ok(None);
+        }
+        return identity
+            .token_principal_id
+            .map(Some)
+            .ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "token principal is missing"));
+    }
+    state
+        .identity
+        .binding_for_account(space_uid, identity.account_id)
+        .await
+        .map_err(ApiError::from_core)
+}
+
 fn authorization_principal_ids(
     identity: &RequestIdentityContext,
     subject_principal_id: Uuid,
@@ -8045,30 +8098,37 @@ async fn list_spaces(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
 ) -> ApiResult<Json<Value>> {
+    if identity
+        .token_actions
+        .as_ref()
+        .is_some_and(|actions| !actions.contains("read"))
+    {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "access token does not grant the required action",
+        ));
+    }
     let ids = state
         .service
         .list_space_ids()
         .await
         .map_err(ApiError::from_core)?;
-    let mut items = Vec::new();
+    let mut principal_ids_by_space = BTreeMap::new();
     for id in ids {
-        let Ok(principal_id) = require_space_action(&state, &id, &identity, Action::Read).await
-        else {
-            continue;
-        };
-        let principals = authorization_principal_ids(&identity, principal_id);
-        let id_for_read = id.clone();
-        let service = state.service.clone();
-        let value = Authorizer::new(service.operator().clone())
-            .with_state_lock(&id, move |authorization| async move {
-                require_actions_in_authorization_state(&authorization, &principals, Action::Read)?;
-                service.get_space(&id_for_read).await
-            })
-            .await
-            .map(sanitize_space_response)
-            .map_err(ApiError::from_core)?;
-        items.push(value);
+        let principal_id = principal_for_space_listing(&state, &id, &identity).await?;
+        principal_ids_by_space.insert(
+            id,
+            principal_id.map(|principal_id| authorization_principal_ids(&identity, principal_id)),
+        );
     }
+    let items = state
+        .service
+        .list_spaces_authorized_for_principals(&principal_ids_by_space)
+        .await
+        .map_err(ApiError::from_core)?
+        .into_iter()
+        .map(sanitize_space_response)
+        .collect();
     Ok(Json(Value::Array(items)))
 }
 

@@ -47,6 +47,8 @@ pub enum ErrorCode {
     CheckpointIntegrity,
     CheckpointAlreadyExists,
     MarkdownConversionLoss,
+    FormDefinitionReadFailed,
+    SpaceDiscoveryFailed,
 }
 
 impl ErrorCode {
@@ -84,6 +86,8 @@ impl ErrorCode {
             Self::CheckpointIntegrity => "CHECKPOINT_INTEGRITY",
             Self::CheckpointAlreadyExists => "CHECKPOINT_ALREADY_EXISTS",
             Self::MarkdownConversionLoss => "MARKDOWN_CONVERSION_LOSS",
+            Self::FormDefinitionReadFailed => "FORM_DEFINITION_READ_FAILED",
+            Self::SpaceDiscoveryFailed => "SPACE_DISCOVERY_FAILED",
         }
     }
 }
@@ -203,6 +207,20 @@ impl AppError {
 
     pub fn dependency_unavailable(code: ErrorCode, message: impl Into<String>) -> Self {
         Self::new(ErrorKind::DependencyUnavailable, code, message)
+    }
+
+    pub fn internal(code: ErrorCode, message: impl Into<String>) -> Self {
+        Self::new(ErrorKind::Internal, code, message)
+    }
+
+    pub fn internal_with_detail(
+        code: ErrorCode,
+        message: impl Into<String>,
+        detail: Value,
+    ) -> Self {
+        let mut error = Self::internal(code, message);
+        error.detail = Some(detail);
+        error
     }
 
     pub fn unsupported_space_version(detected: Option<&str>, supported: &[&str]) -> Self {

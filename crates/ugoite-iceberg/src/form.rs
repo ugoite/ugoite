@@ -20,13 +20,39 @@ fn invalid_form_input(message: impl Into<String>) -> anyhow::Error {
     AppError::invalid_input(ErrorCode::InvalidInput, message).into()
 }
 
+fn form_definition_read_failure(form_name: &str, error: anyhow::Error) -> anyhow::Error {
+    if error
+        .chain()
+        .any(|cause| cause.downcast_ref::<AppError>().is_some())
+    {
+        return error;
+    }
+    AppError::internal_with_detail(
+        ErrorCode::FormDefinitionReadFailed,
+        format!("authoritative Form definition could not be read: {form_name}"),
+        serde_json::json!({
+            "form_name": form_name,
+            "diagnostic": "authoritative_form_definition_read",
+        }),
+    )
+    .into()
+}
+
 pub async fn list_forms(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
-    crate::space::ensure_existing_space_version(op, ws_path).await?;
+    crate::space::ensure_existing_space_version(op, ws_path)
+        .await
+        .map_err(|error| form_definition_read_failure("<space metadata>", error))?;
     let mut forms = Vec::new();
-    for form_name in list_form_names(op, ws_path).await? {
-        if let Ok(value) = read_form_definition(op, ws_path, &form_name).await {
-            forms.push(enrich_form_definition(&value)?);
-        }
+    let form_names = list_form_names(op, ws_path)
+        .await
+        .map_err(|error| form_definition_read_failure("<authoritative catalog>", error))?;
+    for form_name in form_names {
+        let value = read_form_definition(op, ws_path, &form_name)
+            .await
+            .map_err(|error| form_definition_read_failure(&form_name, error))?;
+        let value = enrich_form_definition(&value)
+            .map_err(|error| form_definition_read_failure(&form_name, error))?;
+        forms.push(value);
     }
     Ok(forms)
 }
@@ -257,7 +283,7 @@ pub(crate) async fn read_form_definition(
 ) -> Result<Value> {
     iceberg_store::load_form_definition(op, ws_path, form_name)
         .await
-        .context(format!("Form {} not found", form_name))
+        .map_err(|error| form_definition_read_failure(form_name, error))
 }
 
 fn normalize_form_definition(form_def: &Value) -> Result<Value> {

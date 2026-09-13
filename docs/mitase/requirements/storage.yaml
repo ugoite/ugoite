@@ -435,39 +435,39 @@ requirements:
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: tests::storage_connection_probe_times_out_without_external_service } }
 
   - id: REQ-STO-008
-    title: Resilient directory-based Space listing
-    description: Listing Spaces ignores incomplete directories that do not contain current metadata and returns valid Spaces without converting those incomplete directories into false entries or whole-list failures.
+    title: Fail-closed directory-based Space listing
+    description: Listing Spaces discovers only durable metadata-backed directories and reports missing or corrupt current metadata as a typed failure instead of silently omitting Knowledge or returning a partial successful list.
     priority: high
     status: implemented
     criteria:
       - id: incomplete-directory-filtering
         kind: behavior
-        statement: Space discovery ignores directories without meta.json and returns valid Space identifiers only.
+        statement: Space discovery fails closed when a durable Space directory is missing current metadata or has invalid identity; only explicitly reserved node-local control directories are excluded from discovery.
         governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
     bindings:
       - id: resilient-listing-verification
         role: verification
         facet: verification
-        responsibility: Verify that incomplete Space directories are ignored through the exact Iceberg integration case.
+        responsibility: Verify that incomplete Space directories fail closed through the exact Iceberg integration case.
         targets:
           - id: missing-meta-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_space.rs
-            selector: { kind: test, name: test_space_req_sto_008_list_spaces_ignores_missing_meta }
+            selector: { kind: test, name: test_space_req_sto_008_list_spaces_fails_on_missing_meta }
             claims:
               - kind: verifies
                 criterion: REQ-STO-008#criterion.incomplete-directory-filtering
                 covers:
                   - FEAT-STO-001#binding.space/target.list-spaces
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_008_list_spaces_ignores_missing_meta } }
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_008_list_spaces_fails_on_missing_meta } }
               - kind: verifies
                 criterion: REQ-STO-009#criterion.incomplete-space-filtering
                 covers: [FEAT-STO-001#binding.space/target.list-spaces]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_008_list_spaces_ignores_missing_meta } }
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_008_list_spaces_fails_on_missing_meta } }
 
   - id: REQ-STO-009
     title: Accessible Space listing API
-    description: The authenticated Space listing API returns only Spaces where the caller has read permission, relies on the resilient core listing behavior for incomplete directories, does not infer Space access from node administration, and propagates unexpected storage errors instead of returning false success.
+    description: The authenticated Space listing API returns only Spaces where the caller has read permission, relies on the fail-closed core listing boundary for durable metadata, does not infer Space access from node administration, and propagates unexpected storage errors instead of returning false success.
     priority: high
     status: implemented
     criteria:
@@ -481,7 +481,7 @@ requirements:
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
       - id: incomplete-space-filtering
         kind: behavior
-        statement: The API uses the metadata-backed core listing boundary, so incomplete Space directories are ignored rather than fabricated as accessible entries.
+        statement: The API uses the metadata-backed fail-closed core listing boundary, so corrupt or unreadable Space directories fail instead of being fabricated as accessible entries or silently omitted.
         governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-004#rule.governance]
       - id: storage-error-propagation
         kind: quality
