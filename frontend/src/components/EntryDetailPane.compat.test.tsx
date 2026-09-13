@@ -6,6 +6,10 @@ import { EntryDetailPane } from "./EntryDetailPane";
 import { entryApi, searchApi } from "~/lib/ugoite-client";
 import { setLocale } from "~/lib/i18n";
 import type { Form } from "~/lib/types";
+import {
+  clearCreateEntryDraftSession,
+  createEntryDraftSessionKey,
+} from "~/lib/create-entry-draft-session";
 
 vi.mock("@solidjs/router", () => ({
   A: (props: { href: string; class?: string; children: unknown }) => (
@@ -13,6 +17,7 @@ vi.mock("@solidjs/router", () => ({
       {props.children}
     </a>
   ),
+  useBeforeLeave: () => undefined,
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
@@ -38,6 +43,10 @@ const form: Form = {
 };
 
 describe("EntryDetailPane source compat bridge", () => {
+  beforeEach(() => {
+    clearCreateEntryDraftSession(createEntryDraftSessionKey("default"));
+  });
+
   it("returns source-edited legacy Markdown to the structured draft", async () => {
     setLocale("en");
     vi.resetAllMocks();

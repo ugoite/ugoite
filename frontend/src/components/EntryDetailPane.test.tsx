@@ -12,6 +12,10 @@ import {
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { setLocale } from "~/lib/i18n";
 import type { Form } from "~/lib/types";
+import {
+  clearCreateEntryDraftSession,
+  createEntryDraftSessionKey,
+} from "~/lib/create-entry-draft-session";
 
 vi.mock("@solidjs/router", () => ({
   A: (props: { href: string; class?: string; children: unknown }) => (
@@ -19,6 +23,7 @@ vi.mock("@solidjs/router", () => ({
       {props.children}
     </a>
   ),
+  useBeforeLeave: () => undefined,
 }));
 
 vi.mock("~/lib/ugoite-client", () => {
@@ -44,6 +49,7 @@ vi.mock("~/lib/ugoite-client", () => {
 describe("EntryDetailPane", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    clearCreateEntryDraftSession(createEntryDraftSessionKey("default"));
     setLocale("en");
   });
 
@@ -304,6 +310,92 @@ describe("EntryDetailPane", () => {
       id: "created-entry",
       revision_id: "created-revision",
     });
+  });
+
+  it("preserves each Form's work when the new-entry Form changes", async () => {
+    const formA: Form = {
+      name: "Meeting",
+      version: 1,
+      template: "# Meeting\n\n## Notes\n",
+      fields: { Notes: { type: "string", required: false } },
+    };
+    const formB: Form = {
+      name: "Task",
+      version: 1,
+      template: "# Task\n\n## Status\n",
+      fields: { Status: { type: "string", required: false } },
+    };
+    const [selected, setSelected] = createSignal(formA);
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [formA, formB]}
+        createForm={selected}
+        onCreateFormChange={(name) => setSelected(name === "Task" ? formB : formA)}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const notes = await screen.findByLabelText("Notes");
+    fireEvent.input(notes, { target: { value: "keep this Meeting work" } });
+    fireEvent.change(screen.getByLabelText("Form"), { target: { value: "Task" } });
+    const status = await screen.findByLabelText("Status");
+    fireEvent.input(status, { target: { value: "keep this Task work" } });
+    fireEvent.change(screen.getByLabelText("Form"), { target: { value: "Meeting" } });
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Notes")).toHaveValue("keep this Meeting work")
+    );
+    fireEvent.change(screen.getByLabelText("Form"), { target: { value: "Task" } });
+    await waitFor(() =>
+      expect(screen.getByLabelText("Status")).toHaveValue("keep this Task work")
+    );
+  });
+
+  it("keeps post-request edits in place and binds a completed create to update", async () => {
+    let resolveCreate!: (value: { id: string; revision_id: string }) => void;
+    const createMock = entryApi.create as ReturnType<typeof vi.fn>;
+    createMock.mockImplementation(
+      () => new Promise((resolve) => resolveCreate = resolve),
+    );
+    const updateMock = entryApi.update as ReturnType<typeof vi.fn>;
+    updateMock.mockResolvedValue({ id: "created-entry", revision_id: "rev-2" });
+    const onCreated = vi.fn();
+    const form: Form = {
+      name: "Note",
+      version: 1,
+      template: "# Note\n\n## Body\n",
+      fields: { Body: { type: "string", required: false } },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={onCreated}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const body = await screen.findByLabelText("Body");
+    fireEvent.input(body, { target: { value: "request snapshot" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
+    fireEvent.input(body, { target: { value: "typed while saving" } });
+    resolveCreate({ id: "created-entry", revision_id: "rev-1" });
+
+    await waitFor(() => expect(screen.getByLabelText("Body")).toHaveValue("typed while saving"));
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(updateMock).toHaveBeenCalledWith("default", "created-entry", expect.objectContaining({
+      parent_revision_id: "rev-1",
+      fields: { Body: "typed while saving" },
+    })));
   });
 
   it("creates an empty-title entry and keeps Untitled as presentation only", async () => {

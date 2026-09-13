@@ -1,4 +1,4 @@
-import { A } from "@solidjs/router";
+import { A, useBeforeLeave } from "@solidjs/router";
 import {
   createEffect,
   createMemo,
@@ -53,6 +53,12 @@ import {
   parseAssetReferenceList,
 } from "~/lib/asset-reference";
 import { formatUserFacingError } from "~/lib/user-facing-error";
+import {
+  clearCreateEntryDraftSession,
+  createEntryDraftSessionKey,
+  getCreateEntryDraftSession,
+  type CreateEntryDraftState,
+} from "~/lib/create-entry-draft-session";
 
 export interface EntryDetailPaneProps {
   spaceId: Accessor<string>;
@@ -515,6 +521,17 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   const [entryError, setEntryError] = createSignal<string | null>(null);
   const [showAccessPolicy, setShowAccessPolicy] = createSignal(false);
   const [assetEditorGeneration, setAssetEditorGeneration] = createSignal(0);
+  const [hasUserEdited, setHasUserEdited] = createSignal(false);
+  const [createdEntry, setCreatedEntry] = createSignal<{
+    id: string;
+    revision_id: string;
+  } | null>(null);
+  const [draftSessionFinished, setDraftSessionFinished] = createSignal(false);
+
+  const draftSessionKey = createMemo(() =>
+    createEntryDraftSessionKey(props.spaceId())
+  );
+  const draftSession = getCreateEntryDraftSession(draftSessionKey());
 
   // Asset upload/read state belongs to this Entry draft. Fields and Preview
   // are separate conditional subtrees, so keeping this map in either child
@@ -572,8 +589,26 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     },
   );
 
-  const isCreateMode = createMemo(() => Boolean(props.createForm?.()));
+  const isCreateMode = createMemo(() =>
+    !createdEntry() && Boolean(props.createForm?.())
+  );
+  const isAuthoringSession = createMemo(() =>
+    !draftSessionFinished() &&
+    (Boolean(props.createForm?.()) || Boolean(createdEntry()))
+  );
   const draftEntry = createMemo<Entry | null>(() => {
+    const created = createdEntry();
+    if (created) {
+      return {
+        id: created.id,
+        title: draftTitle(),
+        form: props.createForm?.()?.name,
+        content: editorContent(),
+        revision_id: created.revision_id,
+        created_at: "",
+        updated_at: "",
+      };
+    }
     const form = props.createForm?.();
     if (!form) return null;
     return {
@@ -586,7 +621,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       updated_at: "",
     };
   });
-  const entry = createMemo(() => isCreateMode() ? draftEntry() : remoteEntry());
+  const entry = createMemo(() =>
+    createdEntry() || isCreateMode() ? draftEntry() : remoteEntry()
+  );
   const entryLoading = createMemo(() =>
     isCreateMode() ? false : remoteEntry.loading
   );
@@ -608,7 +645,59 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   });
 
   onCleanup(() => {
+    persistCreateDraft();
     for (const state of assetFieldStates.values()) state.dispose();
+  });
+
+  const currentDraftState = (): CreateEntryDraftState | null => {
+    const formName = currentForm()?.name ?? props.createForm?.()?.name ?? "";
+    if (!formName) return null;
+    return {
+      title: draftTitle(),
+      fields: draftFields(),
+      tags: draftTags(),
+      source: editorContent(),
+      assetFields: Object.fromEntries(
+        Object.entries(draftFields()).filter(([name]) => name.startsWith("__")),
+      ),
+      dirty: isDirty() && hasUserEdited(),
+    };
+  };
+
+  function persistCreateDraft(): void {
+    if (!isAuthoringSession()) return;
+    const formName = props.createForm?.()?.name ?? "";
+    const state = currentDraftState();
+    if (formName && state) draftSession.save(formName, state);
+  }
+
+  const clearCreateDraft = () => {
+    clearCreateEntryDraftSession(draftSessionKey());
+  };
+
+  // The router guard covers SPA navigation. The browser event covers closing,
+  // reload, and navigation to a non-SPA destination.
+  useBeforeLeave?.((event) => {
+    persistCreateDraft();
+    if (!isAuthoringSession() || !draftSession.hasDirtyWork()) return;
+    if (event.defaultPrevented) return;
+    event.preventDefault();
+    if (typeof window === "undefined" || window.confirm(t("entryDetail.confirmLeave"))) {
+      clearCreateDraft();
+      event.retry(true);
+    }
+  });
+
+  createEffect(() => {
+    if (typeof window === "undefined" || !isAuthoringSession()) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      persistCreateDraft();
+      if (!draftSession.hasDirtyWork()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    onCleanup(() => window.removeEventListener("beforeunload", handleBeforeUnload));
   });
   const formWorkspaceHref = createMemo(() => {
     const formName = entry()?.form?.trim();
@@ -719,28 +808,39 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   createEffect(() => {
     const loadedEntry = entry();
     if (!loadedEntry) return;
+    // A create that completed while the author kept typing is already bound
+    // to the durable identity. Hydrating the synthetic entry here would make
+    // the unsaved post-request Work look saved.
+    if (createdEntry()) return;
     if (
       loadedEntry.id === lastLoadedEntryId() &&
       loadedEntry.revision_id === lastLoadedResourceRevisionId()
     ) {
       return;
     }
-    const content = loadedEntry.content ?? "";
+    const defaultContent = loadedEntry.content ?? "";
     const entryId = loadedEntry.id;
     const revisionId = loadedEntry.revision_id;
     const loadedTitle = loadedEntry.title || "";
-    const draft = parseMarkdownToStructuredDraft(content);
-    const tags = parseMarkdownFrontmatterTags(content) ?? [];
+    const saved = isCreateMode()
+      ? draftSession.restore(loadedEntry.form ?? "")
+      : undefined;
+    const content = saved?.source ?? defaultContent;
+    const draft = saved
+      ? { title: saved.title, fields: saved.fields }
+      : parseMarkdownToStructuredDraft(content);
+    const tags = saved?.tags ?? parseMarkdownFrontmatterTags(content) ?? [];
     setLastLoadedEntryId(entryId);
     setLastLoadedResourceRevisionId(revisionId);
-    setCurrentRevisionId(isCreateMode() ? null : revisionId);
+    setCurrentRevisionId(createdEntry()?.revision_id ?? (isCreateMode() ? null : revisionId));
     setAssetEditorGeneration((generation) => generation + 1);
     setDraftTitle(draft.title || loadedTitle);
     setDraftFields(draft.fields);
     setDraftTags(tags);
     setEditorContent(content);
     setLastSavedContent(isCreateMode() ? "" : content);
-    setIsDirty(isCreateMode());
+    setHasUserEdited(saved?.dirty ?? false);
+    setIsDirty(isCreateMode() ? true : false);
     setConflictMessage(null);
     setValidationError(null);
     setInvalidFields([]);
@@ -762,6 +862,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           setDraftTitle(canonical.title || loadedTitle);
           setDraftFields(canonical.fields);
           setDraftTags(canonical.tags);
+          persistCreateDraft();
         },
         () => {},
       ),
@@ -794,6 +895,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setConflictMessage(null);
     setValidationError(null);
     setInvalidFields([]);
+    persistCreateDraft();
 
     const formDef = currentForm() ?? props.createForm?.();
     if (!formDef) return;
@@ -818,6 +920,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           if (canonical === requestBaseline) return;
           setEditorContent(canonical);
           setIsDirty(canonical !== lastSavedContent());
+          persistCreateDraft();
         },
         () => {},
       ),
@@ -840,10 +943,12 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       // Ignore; the Rust reconciliation below remains authoritative.
     }
     setEditorContent(content);
+    setHasUserEdited(true);
     setIsDirty(content !== lastSavedContent());
     setConflictMessage(null);
     setValidationError(null);
     setInvalidFields([]);
+    persistCreateDraft();
     trackCompat(
       parseSourceToDraftViaWasm(content, fallbackTitle).then(
         (canonical) => {
@@ -851,6 +956,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           setDraftTitle(canonical.title || fallbackTitle);
           setDraftFields(canonical.fields);
           setDraftTags(canonical.tags);
+          persistCreateDraft();
         },
         () => {},
       ),
@@ -858,11 +964,13 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   };
 
   const handleTitleChange = (title: string) => {
+    setHasUserEdited(true);
     setDraftTitle(title);
     syncEditorFromDraft(title, draftFields());
   };
 
   const handleFieldChange = (fieldName: string, value: unknown) => {
+    setHasUserEdited(true);
     const next = { ...draftFields(), [fieldName]: value };
     setDraftFields(next);
     syncEditorFromDraft(draftTitle(), next);
@@ -919,7 +1027,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
   const resolveSaveContext = (): SaveContext => {
     const wsId = props.spaceId();
-    const entryId = props.entryId?.() ?? "";
+    const entryId = createdEntry()?.id ?? props.entryId?.() ?? "";
     if (isCreateMode()) {
       if (!wsId) {
         return { ok: false, reason: t("entryDetail.savePrerequisite") };
@@ -927,7 +1035,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       return { ok: true, wsId, create: true };
     }
     /* v8 ignore start */
-    const revisionId = currentRevisionId() || entry()?.revision_id;
+    const revisionId = currentRevisionId() || createdEntry()?.revision_id || entry()?.revision_id;
     if (!wsId || !entryId || !revisionId) {
       return {
         ok: false,
@@ -1050,7 +1158,21 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setConflictMessage(null);
     setValidationError(null);
     setInvalidFields([]);
-    const contentToSave = editorContent();
+    // This is the exact request-start snapshot. Any edits after this point
+    // remain Work and must not trigger a route transition on create.
+    const requestSnapshot = {
+      title: draftTitle(),
+      fields: JSON.stringify(fields),
+      tags: JSON.stringify(draftTags()),
+      source: editorContent(),
+    };
+    const contentToSave = requestSnapshot.source;
+    const currentSnapshot = () => ({
+      title: draftTitle(),
+      fields: JSON.stringify(formDef ? toTransportFields(formDef, draftFields()) : fields),
+      tags: JSON.stringify(draftTags()),
+      source: editorContent(),
+    });
     try {
       // Structured wire authority when the Form is known; the same
       // `entry.create`/`entry.update` operations carry either shape.
@@ -1077,9 +1199,25 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         });
       setCurrentRevisionId(result.revision_id);
       setLastSavedContent(contentToSave);
-      setIsDirty(editorContent() !== contentToSave);
+      const unchanged = JSON.stringify(currentSnapshot()) ===
+        JSON.stringify(requestSnapshot);
+      setIsDirty(!unchanged);
+      if (!unchanged && context.create) {
+        // Bind the durable identity without replacing the active draft. The
+        // next save is an optimistic update against this revision.
+        setCreatedEntry(result);
+        setHasUserEdited(true);
+        persistCreateDraft();
+      }
+      if (!context.create && createdEntry() && unchanged) {
+        clearCreateDraft();
+      }
       props.onAfterSave?.();
-      if (context.create) props.onCreated?.(result);
+      if (context.create && unchanged) {
+        setDraftSessionFinished(true);
+        clearCreateDraft();
+        props.onCreated?.(result);
+      }
     } catch (error) {
       handleSaveError(error);
     } finally {
@@ -1156,7 +1294,16 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     /* v8 ignore start */
     if (isDirty() && !confirm(t("entryDetail.confirmDiscard"))) return;
     /* v8 ignore stop */
+    clearCreateDraft();
+    setDraftSessionFinished(true);
     (props.onCancel ?? props.onDeleted)();
+  };
+
+  const handleCreateFormChange = (formName: string) => {
+    // Capture before the parent changes the Form accessor. The next load
+    // effect restores the state belonging to the selected Form.
+    persistCreateDraft();
+    props.onCreateFormChange?.(formName);
   };
 
   const renderFieldControl = (
@@ -1333,8 +1480,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                       id="entry-form-selector"
                       class="ui-input ui-input-sm"
                       value={currentEntry().form || ""}
+                      disabled={isSaving()}
                       onChange={(event) =>
-                        props.onCreateFormChange?.(event.currentTarget.value)}
+                        handleCreateFormChange(event.currentTarget.value)}
                     >
                       <For each={props.forms?.() ?? []}>
                         {(form) => (
