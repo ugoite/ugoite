@@ -62,7 +62,9 @@ const localDate = (parts: LocalDateParts, dayOffset = 0): Date => {
     date.getDate() !== parts.day
   ) {
     throw invalidLocalInput(
-      `${String(parts.year).padStart(4, "0")}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`,
+      `${String(parts.year).padStart(4, "0")}-${
+        String(parts.month).padStart(2, "0")
+      }-${String(parts.day).padStart(2, "0")}`,
     );
   }
 

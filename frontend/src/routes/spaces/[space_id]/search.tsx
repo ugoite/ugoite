@@ -35,6 +35,7 @@ type SearchFieldType =
   | "float"
   | "date"
   | "timestamp"
+  | "timestamp_tz"
   | "unsupported";
 
 type AvailableField = {
@@ -84,6 +85,9 @@ function normalizeFieldType(type: string): SearchFieldType {
       return "date";
     case "timestamp":
       return "timestamp";
+    case "timestamp_tz":
+    case "timestamp_tz_ns":
+      return "timestamp_tz";
     default:
       return "unsupported";
   }
@@ -94,7 +98,7 @@ function operatorsForFieldType(type: SearchFieldType): FieldMatchOperator[] {
   if (type === "boolean") return ["equals"];
   if (
     type === "integer" || type === "float" || type === "date" ||
-    type === "timestamp"
+    type === "timestamp" || type === "timestamp_tz"
   ) {
     return ["equals", "lt", "lte", "gt", "gte"];
   }
@@ -125,7 +129,9 @@ function fieldInputType(type: SearchFieldType):
   | "datetime-local" {
   if (type === "integer" || type === "float") return "number";
   if (type === "date") return "date";
-  if (type === "timestamp") return "datetime-local";
+  if (type === "timestamp" || type === "timestamp_tz") {
+    return "datetime-local";
+  }
   return "text";
 }
 
@@ -140,6 +146,7 @@ function fieldInputPlaceholder(type: SearchFieldType): TranslationKey {
     case "date":
       return "searchPage.datePlaceholder";
     case "timestamp":
+    case "timestamp_tz":
       return "searchPage.timestampPlaceholder";
     default:
       return "searchPage.valuePlaceholder";
@@ -205,7 +212,7 @@ function buildStructuredSearchCriteria(
     conditions: criteria.fieldConditions.map((condition) => ({
       field: condition.field,
       operator: condition.operator,
-      value: condition.type === "timestamp"
+      value: condition.type === "timestamp_tz"
         ? localInputToRfc3339Instant(condition.value)
         : condition.value,
     })),
