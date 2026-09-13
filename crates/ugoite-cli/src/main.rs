@@ -3,14 +3,26 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use ugoite_cli::commands;
-use ugoite_cli::output::project_error;
+use ugoite_cli::output::{project_error, render_error, stderr_style};
+
+const QUIET_ACCENT_STYLES: clap::builder::Styles = clap::builder::Styles::styled()
+    .header(anstyle::Style::new().bold())
+    .usage(anstyle::Style::new().bold())
+    .literal(anstyle::AnsiColor::Cyan.on_default())
+    .placeholder(anstyle::Style::new().dimmed())
+    .error(anstyle::AnsiColor::Red.on_default().bold())
+    .valid(anstyle::AnsiColor::Green.on_default())
+    .invalid(anstyle::AnsiColor::Yellow.on_default())
+    .context(anstyle::Style::new().dimmed())
+    .context_value(anstyle::Style::new());
 
 #[derive(Parser)]
 #[command(
     name = "ugoite",
     about = "Ugoite CLI - Knowledge base management",
     version = env!("CARGO_PKG_VERSION"),
-    long_about = "Ugoite CLI - Knowledge base management\n\nQuick start (local-first / core mode):\n  # Inspect the spaces in your current workspace\n  ugoite space list .\n\n  # Create your first space with an explicit local spaces path\n  ugoite space create /path/to/workspace/spaces/demo\n\nQuick start (backend / API mode):\n  # Point the CLI at your backend\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\n  # Authenticate, then list spaces from the backend\n  ugoite auth login\n  ugoite space list"
+    long_about = "Ugoite CLI - Knowledge base management\n\nQuick start (local-first / core mode):\n  # Inspect the spaces in your current workspace\n  ugoite space list .\n\n  # Create your first space with an explicit local spaces path\n  ugoite space create /path/to/workspace/spaces/demo\n\nQuick start (backend / API mode):\n  # Point the CLI at your backend\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\n  # Authenticate, then list spaces from the backend\n  ugoite auth login\n  ugoite space list",
+    styles = QUIET_ACCENT_STYLES
 )]
 struct Cli {
     #[command(subcommand)]
@@ -115,7 +127,7 @@ fn main() {
         if ugoite_cli::output::is_machine_stderr() {
             eprintln!("{}", projected.envelope());
         } else {
-            eprintln!("{}", projected.human());
+            eprintln!("{}", render_error(&projected, &stderr_style()));
         }
         std::process::exit(projected.exit_code());
     }
@@ -142,5 +154,32 @@ async fn run(cli: Cli) -> Result<()> {
             commands::space::create_space_cmd(root_path.as_deref(), &space_id, "create-space").await
         }
         Commands::Query { space_path, sql } => commands::index::query_cmd(&space_path, &sql).await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::CommandFactory;
+
+    use super::*;
+
+    #[test]
+    fn help_styles_match_quiet_accent_roles() {
+        let styles = Cli::command().get_styles().clone();
+
+        assert_eq!(styles.get_header(), &anstyle::Style::new().bold());
+        assert_eq!(styles.get_usage(), &anstyle::Style::new().bold());
+        assert_eq!(styles.get_literal(), &anstyle::AnsiColor::Cyan.on_default());
+        assert_eq!(styles.get_placeholder(), &anstyle::Style::new().dimmed());
+        assert_eq!(
+            styles.get_error(),
+            &anstyle::AnsiColor::Red.on_default().bold()
+        );
+        assert_eq!(
+            styles.get_invalid(),
+            &anstyle::AnsiColor::Yellow.on_default()
+        );
+        assert_eq!(styles.get_context(), &anstyle::Style::new().dimmed());
+        assert_eq!(styles.get_context_value(), &anstyle::Style::new());
     }
 }
