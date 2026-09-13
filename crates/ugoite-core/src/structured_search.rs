@@ -21,6 +21,8 @@ use crate::error::{AppError, ErrorCode};
 pub const MAX_STRUCTURED_SEARCH_CONDITIONS: usize = 32;
 /// Maximum rows a structured Search may request.
 pub const MAX_STRUCTURED_SEARCH_LIMIT: usize = 10_000;
+/// Default page size for a structured Search when the caller omits `limit`.
+pub const DEFAULT_STRUCTURED_SEARCH_LIMIT: usize = 1_000;
 /// Maximum bytes for logical `form` identity.
 pub const MAX_STRUCTURED_SEARCH_FORM_BYTES: usize = 256;
 /// Maximum bytes for logical `field` identity.
@@ -395,10 +397,11 @@ pub fn validate_structured_search_syntax(search: &StructuredSearch) -> Result<()
             "structured search exceeds the maximum condition count",
         ));
     }
-    if let Some(limit) = search.limit {
-        if limit == 0 || limit as usize > MAX_STRUCTURED_SEARCH_LIMIT {
-            return Err(invalid_input("structured search limit is out of range"));
-        }
+    let limit = search
+        .limit
+        .unwrap_or(DEFAULT_STRUCTURED_SEARCH_LIMIT as u64);
+    if limit == 0 || limit > MAX_STRUCTURED_SEARCH_LIMIT as u64 {
+        return Err(invalid_input("structured search limit is out of range"));
     }
     if let Some(raw) = search.updated_from.as_deref() {
         parse_updated_bound(raw, "updated_from")?;
@@ -811,6 +814,25 @@ mod tests {
         assert_eq!(error.code(), ErrorCode::InvalidInput);
         let mut criteria = search("Task", Vec::new());
         criteria.limit = Some(0);
+        assert!(resolve_structured_search(&criteria, &form).is_err());
+    }
+
+    #[test]
+    fn page_range_rejects_overflow_and_out_of_range_offsets() {
+        let form = fixture_form();
+        let mut criteria = search("Task", Vec::new());
+
+        criteria.limit = Some(u64::MAX);
+        assert!(resolve_structured_search(&criteria, &form).is_err());
+
+        criteria.limit = Some(1);
+        criteria.offset = Some(u64::MAX);
+        assert!(resolve_structured_search(&criteria, &form).is_err());
+
+        criteria.offset = Some((MAX_STRUCTURED_SEARCH_LIMIT as u64) - 1);
+        assert!(resolve_structured_search(&criteria, &form).is_ok());
+
+        criteria.offset = Some(MAX_STRUCTURED_SEARCH_LIMIT as u64);
         assert!(resolve_structured_search(&criteria, &form).is_err());
     }
 

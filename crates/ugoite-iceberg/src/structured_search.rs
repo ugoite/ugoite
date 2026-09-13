@@ -160,23 +160,23 @@ pub(crate) fn compile_validated_search(
 
     let limit = validated
         .limit
-        .map(|value| value as usize)
-        .unwrap_or(crate::MAX_NORMAL_READ_ROWS.min(1000));
-    let offset = validated
-        .offset
-        .map(|value| value as usize)
-        .unwrap_or_default();
+        .unwrap_or(ugoite_core::structured_search::DEFAULT_STRUCTURED_SEARCH_LIMIT as u64);
+    let limit = usize::try_from(limit).context("structured search limit does not fit usize")?;
+    let offset = validated.offset.unwrap_or_default();
+    let offset = usize::try_from(offset).context("structured search offset does not fit usize")?;
     let where_clause = if conditions.is_empty() {
         String::new()
     } else {
         format!(" WHERE {}", conditions.join(" AND "))
     };
+    // Pagination is deliberately owned by the authorized page executor below;
+    // keeping LIMIT/OFFSET out of this SQL preserves its full-result count and
+    // prevents the page range from being applied twice.
     let sql = format!(
-        "SELECT * FROM {}{where_clause} ORDER BY {} DESC, {} ASC, {} ASC LIMIT {limit} OFFSET {offset}",
+        "SELECT * FROM {}{where_clause} ORDER BY {} DESC, {} ASC",
         quote_identifier(&relation),
         quote_identifier("_ugoite_updated_at"),
         quote_identifier("_ugoite_id"),
-        quote_identifier("_ugoite_revision_id"),
     );
     Ok(CompiledStructuredSearch {
         sql,
@@ -234,6 +234,12 @@ pub async fn search_structured_with_scopes(
     }
     let validated = ugoite_core::structured_search::resolve_structured_search(criteria, form)?;
     let compiled = compile_validated_search(&validated, form)?;
+    if compiled.offset >= ugoite_core::structured_search::MAX_STRUCTURED_SEARCH_LIMIT {
+        return Ok(Vec::new());
+    }
+    let limit = compiled
+        .limit
+        .min(ugoite_core::structured_search::MAX_STRUCTURED_SEARCH_LIMIT - compiled.offset);
     let parameters = crate::index::datafusion_parameters(&compiled.values, &compiled.types)?;
     let (rows, _count) = crate::index::query_structured_search_page_with_parameters(
         op,
@@ -242,7 +248,7 @@ pub async fn search_structured_with_scopes(
         relation_scopes,
         parameters,
         compiled.offset,
-        compiled.limit,
+        limit,
     )
     .await?;
     Ok(rows)

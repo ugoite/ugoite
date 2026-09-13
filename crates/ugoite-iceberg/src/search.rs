@@ -261,8 +261,12 @@ pub(crate) async fn search_entries_with_scopes_paged_authorized(
     offset: usize,
     asset_authorization: Option<AssetAuthorization>,
 ) -> Result<Vec<KeywordSearchResult>> {
+    if offset >= crate::MAX_NORMAL_READ_ROWS {
+        return Ok(Vec::new());
+    }
+    let page_limit = limit.min(crate::MAX_NORMAL_READ_ROWS - offset);
     let fetch_limit = offset
-        .checked_add(limit)
+        .checked_add(page_limit)
         .ok_or_else(|| anyhow::anyhow!("search page range exceeds the configured maximum"))?;
     if fetch_limit > crate::MAX_NORMAL_READ_ROWS {
         return Err(ugoite_core::error::AppError::invalid_input(
@@ -284,7 +288,7 @@ pub(crate) async fn search_entries_with_scopes_paged_authorized(
         asset_authorization,
     )
     .await?;
-    Ok(results.into_iter().skip(offset).take(limit).collect())
+    Ok(results.into_iter().skip(offset).take(page_limit).collect())
 }
 
 fn is_after_cursor(result: &KeywordSearchResult, after: Option<(&str, &str, &str)>) -> bool {
