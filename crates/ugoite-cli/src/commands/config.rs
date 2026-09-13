@@ -43,11 +43,11 @@ pub enum ConfigSubCmd {
 pub async fn run(cmd: ConfigCmd) -> Result<()> {
     match cmd.sub {
         ConfigSubCmd::Show => {
-            let config = load_config();
+            let config = load_config()?;
             print_json(&config);
         }
         ConfigSubCmd::Current => {
-            let config = load_config();
+            let config = load_config()?;
             print_current_config(&config);
         }
         ConfigSubCmd::Set {
@@ -55,7 +55,7 @@ pub async fn run(cmd: ConfigCmd) -> Result<()> {
             backend_url,
             api_url,
         } => {
-            let mut config = load_config();
+            let mut config = load_config()?;
             let previous_mode = config.mode.clone();
             if let Some(m) = mode {
                 config.mode = match m.as_str() {

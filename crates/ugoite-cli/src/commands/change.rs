@@ -83,7 +83,7 @@ fn change_rows_table(rows: &[serde_json::Value]) -> Vec<serde_json::Value> {
 }
 
 pub async fn run(cmd: ChangeCmd) -> Result<()> {
-    let config = load_config();
+    let config = load_config()?;
     let fmt = effective_format(cmd.format);
     match cmd.sub {
         ChangeSubCmd::List { space_path } => {

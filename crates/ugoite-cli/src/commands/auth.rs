@@ -78,7 +78,7 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
             actions,
             target,
         } => {
-            let config = load_config();
+            let config = load_config()?;
             if config.mode == EndpointMode::Core {
                 bail!("auth login requires backend or api mode");
             }

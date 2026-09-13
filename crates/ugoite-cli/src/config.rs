@@ -106,17 +106,45 @@ pub fn non_empty_env_value(key: &str) -> Option<String> {
     std::env::var(key).ok().and_then(non_empty_string)
 }
 
-pub fn load_config() -> EndpointConfig {
+fn config_load_error(path: &Path, reason: &str) -> anyhow::Error {
+    crate::output::UsageError(format!(
+        "cannot load CLI configuration at {}: {reason}",
+        path.display()
+    ))
+    .into()
+}
+
+pub fn load_config() -> Result<EndpointConfig> {
     let path = config_path();
-    if !path.exists() {
-        return EndpointConfig::default();
-    }
-    let read_text = std::fs::read_to_string(&path);
-    let text = match read_text {
+    let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,
-        Err(_) => return EndpointConfig::default(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(EndpointConfig::default());
+        }
+        Err(error) => {
+            return Err(config_load_error(
+                &path,
+                &format!("configuration file is unreadable ({:?})", error.kind()),
+            ));
+        }
     };
-    serde_json::from_str(&text).unwrap_or_default()
+    let value: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|_| config_load_error(&path, "configuration file contains invalid JSON"))?;
+    let config: EndpointConfig = serde_json::from_value(value).map_err(|_| {
+        config_load_error(
+            &path,
+            "configuration contains invalid endpoint configuration",
+        )
+    })?;
+    validate_server_endpoint_url(&config.backend_url, "Backend endpoint")
+        .and_then(|_| validate_server_endpoint_url(&config.api_url, "API endpoint"))
+        .map_err(|_| {
+            config_load_error(
+                &path,
+                "configuration contains invalid endpoint configuration",
+            )
+        })?;
+    Ok(config)
 }
 
 pub fn load_auth_session() -> Option<AuthSession> {

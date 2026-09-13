@@ -44,7 +44,7 @@ pub enum AssetSubCmd {
 }
 
 pub async fn run(cmd: AssetCmd) -> Result<()> {
-    let config = load_config();
+    let config = load_config()?;
     match cmd.sub {
         AssetSubCmd::Upload {
             space_path,

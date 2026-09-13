@@ -182,7 +182,7 @@ fn test_cli_req_sec_011_config_set_rejects_non_loopback_cleartext_ipv6_api_urls(
 }
 
 #[test]
-fn test_cli_req_sec_011_config_current_warns_about_legacy_insecure_remote_endpoints() {
+fn test_cli_req_sec_011_config_current_rejects_saved_insecure_remote_endpoints() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config_path = dir.path().join("cli-config.json");
     write_endpoint_config(
@@ -196,16 +196,19 @@ fn test_cli_req_sec_011_config_current_warns_about_legacy_insecure_remote_endpoi
         .args(["config", "current"])
         .output()
         .expect("config current");
-    assert_success(&output, "config current");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Current endpoint mode: api"));
-    assert!(stdout.contains("Warning: API endpoint URL http://api.example.test/api uses cleartext http:// for a non-loopback host"));
-    assert!(stdout.contains("Server-backed commands will refuse this endpoint"));
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid endpoint"), "stderr: {stderr}");
+    assert!(
+        stderr.contains(&config_path.display().to_string()),
+        "stderr: {stderr}"
+    );
+    assert!(!stderr.contains("http://api.example.test/api"));
 }
 
 #[test]
-fn test_cli_req_sec_011_config_current_warns_about_legacy_insecure_backend_endpoints() {
+fn test_cli_req_sec_011_config_current_rejects_saved_insecure_backend_endpoints() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config_path = dir.path().join("cli-config.json");
     write_endpoint_config(
@@ -219,19 +222,19 @@ fn test_cli_req_sec_011_config_current_warns_about_legacy_insecure_backend_endpo
         .args(["config", "current"])
         .output()
         .expect("config current backend");
-    assert_success(&output, "config current backend");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Current endpoint mode: backend"));
-    assert!(stdout.contains(
-        "Warning: Backend endpoint URL http://backend.example.test uses cleartext http:// for a non-loopback host"
-    ));
-    assert!(stdout.contains("Server-backed commands will refuse this endpoint"));
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid endpoint"), "stderr: {stderr}");
+    assert!(
+        stderr.contains(&config_path.display().to_string()),
+        "stderr: {stderr}"
+    );
+    assert!(!stderr.contains("http://backend.example.test"));
 }
 
 #[test]
-fn test_cli_req_sec_011_server_backed_commands_refuse_legacy_insecure_remote_endpoints_before_requests_are_sent(
-) {
+fn test_cli_req_sec_011_server_backed_commands_reject_insecure_config_before_requests_are_sent() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config_path = dir.path().join("cli-config.json");
     write_endpoint_config(
@@ -251,7 +254,12 @@ fn test_cli_req_sec_011_server_backed_commands_refuse_legacy_insecure_remote_end
         "server-backed command should fail before sending a request"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("API endpoint URL http://api.example.test/api uses cleartext http:// for a non-loopback host"));
+    assert!(stderr.contains("invalid endpoint"), "stderr: {stderr}");
+    assert!(
+        stderr.contains(&config_path.display().to_string()),
+        "stderr: {stderr}"
+    );
+    assert!(!stderr.contains("http://api.example.test/api"));
     assert!(
         !stderr.contains("dns error"),
         "failure should come from the CLI guard, not network resolution"

@@ -113,29 +113,57 @@ fn test_cli_req_ops_006_config_path_precedence_and_home_fallback() {
     );
 }
 
-/// REQ-OPS-006: invalid or unreadable config files must fall back to defaults.
+/// REQ-OPS-006: only an absent config file may fall back to defaults; invalid
+/// or unreadable files must fail closed with a path-aware safe error.
 #[test]
-fn test_cli_req_ops_006_load_config_defaults_on_invalid_or_unreadable_data() {
+fn test_cli_req_ops_006_load_config_fails_closed_on_invalid_or_unreadable_data() {
     let _guard = env_lock().lock().expect("env lock");
     let _env = EnvState::capture();
     EnvState::clear_known_vars();
 
     let temp = tempfile::tempdir().expect("tempdir");
+    let missing_path = temp.path().join("missing.json");
+    std::env::set_var("UGOITE_CLI_CONFIG_PATH", &missing_path);
+    let missing_loaded = load_config().expect("missing config should use defaults");
+    assert_eq!(missing_loaded.mode, EndpointMode::Core);
+    assert_eq!(missing_loaded.backend_url, "http://localhost:8000");
+    assert_eq!(missing_loaded.api_url, "http://localhost:3000/api");
+
     let invalid_path = temp.path().join("invalid.json");
     std::fs::write(&invalid_path, "{not-json").expect("write invalid config");
     std::env::set_var("UGOITE_CLI_CONFIG_PATH", &invalid_path);
-    let invalid_loaded = load_config();
-    assert_eq!(invalid_loaded.mode, EndpointMode::Core);
-    assert_eq!(invalid_loaded.backend_url, "http://localhost:8000");
-    assert_eq!(invalid_loaded.api_url, "http://localhost:3000/api");
+    let invalid_error = load_config().expect_err("invalid JSON must fail closed");
+    let invalid_error_text = invalid_error.to_string();
+    assert!(invalid_error_text.contains(&invalid_path.display().to_string()));
+    assert!(invalid_error_text.contains("invalid JSON"));
+    assert!(!invalid_error_text.contains("localhost"));
 
     let unreadable_path = temp.path().join("directory-config");
     std::fs::create_dir_all(&unreadable_path).expect("create config dir");
     std::env::set_var("UGOITE_CLI_CONFIG_PATH", &unreadable_path);
-    let unreadable_loaded = load_config();
-    assert_eq!(unreadable_loaded.mode, EndpointMode::Core);
-    assert_eq!(unreadable_loaded.backend_url, "http://localhost:8000");
-    assert_eq!(unreadable_loaded.api_url, "http://localhost:3000/api");
+    let unreadable_error = load_config().expect_err("unreadable config must fail closed");
+    let unreadable_error_text = unreadable_error.to_string();
+    assert!(unreadable_error_text.contains(&unreadable_path.display().to_string()));
+    assert!(unreadable_error_text.contains("unreadable"));
+    assert!(!unreadable_error_text.contains("localhost"));
+
+    let invalid_endpoint_path = temp.path().join("invalid-endpoint.json");
+    std::fs::write(
+        &invalid_endpoint_path,
+        r#"{
+  "mode": "backend",
+  "backend_url": "not-an-endpoint",
+  "api_url": "https://api.example.test/api"
+}"#,
+    )
+    .expect("write invalid endpoint config");
+    std::env::set_var("UGOITE_CLI_CONFIG_PATH", &invalid_endpoint_path);
+    let invalid_endpoint_error =
+        load_config().expect_err("invalid endpoint config must fail closed");
+    let invalid_endpoint_error_text = invalid_endpoint_error.to_string();
+    assert!(invalid_endpoint_error_text.contains(&invalid_endpoint_path.display().to_string()));
+    assert!(invalid_endpoint_error_text.contains("invalid endpoint"));
+    assert!(!invalid_endpoint_error_text.contains("not-an-endpoint"));
 }
 
 /// REQ-OPS-006: saving CLI config must create parent directories and round-trip values.
@@ -151,17 +179,18 @@ fn test_cli_req_ops_006_save_config_creates_parent_dirs_and_roundtrips() {
 
     let config = EndpointConfig {
         mode: EndpointMode::Api,
-        backend_url: "http://backend.example.test".to_string(),
-        api_url: "http://frontend.example.test/api".to_string(),
+        backend_url: "https://backend.example.test".to_string(),
+        api_url: "https://frontend.example.test/api".to_string(),
     };
     let saved_path = save_config(&config).expect("save config");
     assert_eq!(saved_path, nested_path);
     assert!(saved_path.exists(), "config file should be written");
 
     let loaded = load_config();
+    let loaded = loaded.expect("saved config should load");
     assert_eq!(loaded.mode, EndpointMode::Api);
-    assert_eq!(loaded.backend_url, "http://backend.example.test");
-    assert_eq!(loaded.api_url, "http://frontend.example.test/api");
+    assert_eq!(loaded.backend_url, "https://backend.example.test");
+    assert_eq!(loaded.api_url, "https://frontend.example.test/api");
 
     std::env::set_var("UGOITE_CLI_CONFIG_PATH", "/");
     let save_err = save_config(&config).expect_err("root path should not be writable as config");

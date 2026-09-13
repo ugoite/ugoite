@@ -46,7 +46,7 @@ pub enum IndexSubCmd {
 }
 
 pub async fn run(cmd: IndexCmd) -> Result<()> {
-    let config = load_config();
+    let config = load_config()?;
     match cmd.sub {
         IndexSubCmd::Run {
             space_path,
@@ -89,7 +89,7 @@ pub async fn run(cmd: IndexCmd) -> Result<()> {
 }
 
 pub async fn query_cmd(space_path: &str, sql: &str) -> Result<()> {
-    let config = load_config();
+    let config = load_config()?;
     let (root, space_id) = resolve_space_reference(&config, space_path, "query")?;
     if let Some(base) = validated_base_url(&config)? {
         let session = http::execute(
