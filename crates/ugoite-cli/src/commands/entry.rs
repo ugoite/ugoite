@@ -1,8 +1,8 @@
 use crate::config::{load_config, resolve_space_reference, validated_base_url};
 use crate::http;
 use crate::output::{
-    effective_format, emit_success, print_json_table, read_compat_input, Format, MutationReceipt,
-    UsageError,
+    effective_format, emit_success, print_json_table, read_compat_input, render_receipt,
+    stdout_style, Format, MutationReceipt, UsageError,
 };
 use anyhow::Result;
 use clap::{Args, Subcommand};
@@ -374,7 +374,11 @@ async fn create_structured_entry(
                 .and_then(|value| value.as_str())
                 .map(str::to_string),
         );
-        emit_success(&result, fmt, Some(receipt.human()));
+        emit_success(
+            &result,
+            fmt,
+            Some(render_receipt(&receipt, &stdout_style())),
+        );
         return Ok(());
     }
     let author = author.unwrap_or_else(|| "cli".to_string());
@@ -401,7 +405,7 @@ async fn create_structured_entry(
             .and_then(|value| value.as_str())
             .map(str::to_string),
     );
-    emit_success(&meta, fmt, Some(receipt.human()));
+    emit_success(&meta, fmt, Some(render_receipt(&receipt, &stdout_style())));
     Ok(())
 }
 
@@ -472,7 +476,11 @@ async fn update_structured_entry(
                 .and_then(|value| value.as_str())
                 .map(str::to_string),
         );
-        emit_success(&result, fmt, Some(receipt.human()));
+        emit_success(
+            &result,
+            fmt,
+            Some(render_receipt(&receipt, &stdout_style())),
+        );
         return Ok(());
     }
     let service = UgoiteService::new_without_background_refresh(&root)?;
@@ -498,7 +506,11 @@ async fn update_structured_entry(
             .and_then(|value| value.as_str())
             .map(str::to_string),
     );
-    emit_success(&result, fmt, Some(receipt.human()));
+    emit_success(
+        &result,
+        fmt,
+        Some(render_receipt(&receipt, &stdout_style())),
+    );
     Ok(())
 }
 
@@ -640,7 +652,11 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                         .and_then(|value| value.as_str())
                         .map(str::to_string),
                 );
-                emit_success(&result, &fmt, Some(receipt.human()));
+                emit_success(
+                    &result,
+                    &fmt,
+                    Some(render_receipt(&receipt, &stdout_style())),
+                );
                 return Ok(());
             }
             let author = author.unwrap_or_else(|| "cli".to_string());
@@ -661,7 +677,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     .and_then(|value| value.as_str())
                     .map(str::to_string),
             );
-            emit_success(&meta, &fmt, Some(receipt.human()));
+            emit_success(&meta, &fmt, Some(render_receipt(&receipt, &stdout_style())));
         }
         EntrySubCmd::Update {
             space_path,
@@ -733,7 +749,11 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                         .and_then(|value| value.as_str())
                         .map(str::to_string),
                 );
-                emit_success(&result, &fmt, Some(receipt.human()));
+                emit_success(
+                    &result,
+                    &fmt,
+                    Some(render_receipt(&receipt, &stdout_style())),
+                );
                 return Ok(());
             }
             // Do not wait for Derived refreshes in a one-shot mutation.
@@ -758,7 +778,11 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     .and_then(|value| value.as_str())
                     .map(str::to_string),
             );
-            emit_success(&result, &fmt, Some(receipt.human()));
+            emit_success(
+                &result,
+                &fmt,
+                Some(render_receipt(&receipt, &stdout_style())),
+            );
         }
         EntrySubCmd::Delete {
             space_path,
@@ -801,7 +825,11 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                         .and_then(|value| value.as_str())
                         .map(str::to_string),
                 );
-                emit_success(&result, &fmt, Some(receipt.human()));
+                emit_success(
+                    &result,
+                    &fmt,
+                    Some(render_receipt(&receipt, &stdout_style())),
+                );
                 return Ok(());
             }
             if human_approval.is_some() {
@@ -826,7 +854,11 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     .and_then(|value| value.as_str())
                     .map(str::to_string),
             );
-            emit_success(&result, &fmt, Some(receipt.human()));
+            emit_success(
+                &result,
+                &fmt,
+                Some(render_receipt(&receipt, &stdout_style())),
+            );
         }
         EntrySubCmd::History {
             space_path,
@@ -908,7 +940,11 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                         .and_then(|value| value.as_str())
                         .map(str::to_string),
                 );
-                emit_success(&result, &fmt, Some(receipt.human()));
+                emit_success(
+                    &result,
+                    &fmt,
+                    Some(render_receipt(&receipt, &stdout_style())),
+                );
                 return Ok(());
             }
             // Do not wait for Derived refreshes in a one-shot mutation.
@@ -927,7 +963,11 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     .and_then(|value| value.as_str())
                     .map(str::to_string),
             );
-            emit_success(&result, &fmt, Some(receipt.human()));
+            emit_success(
+                &result,
+                &fmt,
+                Some(render_receipt(&receipt, &stdout_style())),
+            );
         }
     }
     Ok(())
