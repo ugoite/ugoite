@@ -9768,26 +9768,48 @@ async fn entry_history(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, entry_id)): Path<(String, String)>,
-    Query(query): Query<EntryReadQuery>,
+    Query(query): Query<EntryHistoryQuery>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     validate_id(&entry_id, "entry_id")?;
+    let limit = query.limit.unwrap_or(100);
+    validate_normal_read_limit(limit, "entry history")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
     let history = if let Some(pin) = query.pin.as_deref() {
         state
             .service
-            .entry_history_at_pin(&space_id, &entry_id, pin, &principals)
+            .entry_history_at_pin_page(
+                &space_id,
+                &entry_id,
+                pin,
+                &principals,
+                limit,
+                query.offset.unwrap_or(0),
+            )
             .await
             .map_err(ApiError::from_core)?
     } else {
         state
             .service
-            .entry_history_authorized_for_principals(&space_id, &entry_id, &principals)
+            .entry_history_authorized_for_principals_page(
+                &space_id,
+                &entry_id,
+                &principals,
+                limit,
+                query.offset.unwrap_or(0),
+            )
             .await
             .map_err(ApiError::from_core)?
     };
     Ok(Json(history))
+}
+
+#[derive(Default, Deserialize)]
+struct EntryHistoryQuery {
+    pin: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
 }
 
 async fn entry_revision(
@@ -9990,6 +10012,7 @@ async fn upsert_form(
 struct SearchQuery {
     q: String,
     limit: Option<usize>,
+    offset: Option<usize>,
 }
 
 fn validate_normal_read_limit(limit: usize, operation: &str) -> ApiResult<()> {
@@ -10031,7 +10054,13 @@ async fn search_entries(
         serde_json::to_value(
             state
                 .service
-                .search_entries_authorized_for_principals(&space_id, &principals, &query.q, limit)
+                .search_entries_authorized_for_principals_page(
+                    &space_id,
+                    &principals,
+                    &query.q,
+                    limit,
+                    query.offset.unwrap_or(0),
+                )
                 .await
                 .map_err(ApiError::from_core)?,
         )

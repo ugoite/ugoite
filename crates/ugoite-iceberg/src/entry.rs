@@ -2211,6 +2211,27 @@ pub(crate) async fn get_entry_history_at_checkpoint(
     checkpoint: &SpaceCheckpoint,
     form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
 ) -> Result<Value> {
+    get_entry_history_at_checkpoint_paged(
+        op,
+        ws_path,
+        entry_id,
+        checkpoint,
+        form_scopes,
+        usize::MAX,
+        0,
+    )
+    .await
+}
+
+pub(crate) async fn get_entry_history_at_checkpoint_paged(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    checkpoint: &SpaceCheckpoint,
+    form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
+    limit: usize,
+    offset: usize,
+) -> Result<Value> {
     let workspace = iceberg_store::native_workspace(op, ws_path).await?;
     let Some((_, _, mut revisions)) = checkpoint_revisions_for_entry(
         &workspace,
@@ -2224,6 +2245,11 @@ pub(crate) async fn get_entry_history_at_checkpoint(
         return Err(entry_not_found(entry_id).into());
     };
     revisions.sort_by_key(|revision| (revision.committed_at_micros, revision.revision_id));
+    let revisions = revisions
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .collect::<Vec<_>>();
     Ok(json!({
         "entry_id": entry_id,
         "revisions": revisions.into_iter().map(|revision| json!({
@@ -2250,9 +2276,39 @@ pub async fn get_entry_history_at_publication(
     publication: &PublicationRef,
     form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
 ) -> Result<Value> {
+    get_entry_history_at_publication_paged(
+        op,
+        ws_path,
+        entry_id,
+        publication,
+        form_scopes,
+        usize::MAX,
+        0,
+    )
+    .await
+}
+
+pub async fn get_entry_history_at_publication_paged(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    publication: &PublicationRef,
+    form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
+    limit: usize,
+    offset: usize,
+) -> Result<Value> {
     let workspace = iceberg_store::native_workspace(op, ws_path).await?;
     let checkpoint = workspace.resolve_publication(publication).await?;
-    get_entry_history_at_checkpoint(op, ws_path, entry_id, &checkpoint, form_scopes).await
+    get_entry_history_at_checkpoint_paged(
+        op,
+        ws_path,
+        entry_id,
+        &checkpoint,
+        form_scopes,
+        limit,
+        offset,
+    )
+    .await
 }
 
 pub(crate) async fn get_entry_revision_at_checkpoint(
@@ -2911,6 +2967,16 @@ pub async fn delete_entry_with_change_receipt(
 }
 
 pub async fn get_entry_history(op: &Operator, ws_path: &str, entry_id: &str) -> Result<Value> {
+    get_entry_history_paged(op, ws_path, entry_id, usize::MAX, 0).await
+}
+
+pub async fn get_entry_history_paged(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    limit: usize,
+    offset: usize,
+) -> Result<Value> {
     let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
@@ -2937,8 +3003,24 @@ pub async fn get_entry_history(op: &Operator, ws_path: &str, entry_id: &str) -> 
     revisions.sort_by(|a, b| {
         let a_ts = a.get("timestamp").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let b_ts = b.get("timestamp").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        a_ts.partial_cmp(&b_ts).unwrap_or(std::cmp::Ordering::Equal)
+        a_ts.partial_cmp(&b_ts)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                a.get("revision_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .cmp(
+                        b.get("revision_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                    )
+            })
     });
+    let revisions = revisions
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .collect::<Vec<_>>();
 
     Ok(serde_json::json!({
         "entry_id": entry_id,
@@ -2951,6 +3033,17 @@ pub async fn get_entry_history_authorized(
     ws_path: &str,
     entry_id: &str,
     relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<Value> {
+    get_entry_history_authorized_paged(op, ws_path, entry_id, relation_scopes, usize::MAX, 0).await
+}
+
+pub async fn get_entry_history_authorized_paged(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    limit: usize,
+    offset: usize,
 ) -> Result<Value> {
     let mut selected_form = None;
     for form_name in list_form_names(op, ws_path).await? {
@@ -2987,8 +3080,24 @@ pub async fn get_entry_history_authorized(
     revisions.sort_by(|a, b| {
         let a_ts = a.get("timestamp").and_then(Value::as_f64).unwrap_or(0.0);
         let b_ts = b.get("timestamp").and_then(Value::as_f64).unwrap_or(0.0);
-        a_ts.partial_cmp(&b_ts).unwrap_or(std::cmp::Ordering::Equal)
+        a_ts.partial_cmp(&b_ts)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                a.get("revision_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .cmp(
+                        b.get("revision_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                    )
+            })
     });
+    let revisions = revisions
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .collect::<Vec<_>>();
     Ok(serde_json::json!({"entry_id": entry_id, "revisions": revisions}))
 }
 

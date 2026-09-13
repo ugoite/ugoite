@@ -76,6 +76,8 @@ pub struct StructuredSearch {
     pub conditions: Vec<SearchCondition>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<u64>,
 }
 
 /// Logical field kind used for operator/type validation. This is a product
@@ -163,6 +165,7 @@ pub struct ValidatedStructuredSearch {
     pub updated_to: Option<DateTime<Utc>>,
     pub conditions: Vec<ValidatedSearchCondition>,
     pub limit: Option<u64>,
+    pub offset: Option<u64>,
 }
 
 fn invalid_input(message: impl Into<String>) -> AppError {
@@ -508,6 +511,7 @@ pub fn resolve_structured_search(
         updated_to,
         conditions,
         limit: search.limit,
+        offset: search.offset,
     })
 }
 
@@ -563,6 +567,7 @@ mod tests {
             updated_to: None,
             conditions,
             limit: None,
+            offset: None,
         }
     }
 
@@ -772,6 +777,7 @@ mod tests {
             updated_to: Some("2026-09-01".to_owned()),
             conditions: Vec::new(),
             limit: None,
+            offset: None,
         };
         let error = resolve_structured_search(&criteria, &form).expect_err("inverted");
         assert_eq!(error.code(), ErrorCode::InvalidInput);

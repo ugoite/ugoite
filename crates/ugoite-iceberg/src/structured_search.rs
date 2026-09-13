@@ -60,6 +60,7 @@ pub(crate) struct CompiledStructuredSearch {
     pub(crate) values: Map<String, Value>,
     pub(crate) types: BTreeMap<String, String>,
     pub(crate) limit: usize,
+    pub(crate) offset: usize,
 }
 
 /// Compile validated criteria into SQL with bound parameters.
@@ -161,22 +162,28 @@ pub(crate) fn compile_validated_search(
         .limit
         .map(|value| value as usize)
         .unwrap_or(crate::MAX_NORMAL_READ_ROWS.min(1000));
+    let offset = validated
+        .offset
+        .map(|value| value as usize)
+        .unwrap_or_default();
     let where_clause = if conditions.is_empty() {
         String::new()
     } else {
         format!(" WHERE {}", conditions.join(" AND "))
     };
     let sql = format!(
-        "SELECT * FROM {}{where_clause} ORDER BY {} DESC, {} ASC LIMIT {limit}",
+        "SELECT * FROM {}{where_clause} ORDER BY {} DESC, {} ASC, {} ASC LIMIT {limit} OFFSET {offset}",
         quote_identifier(&relation),
         quote_identifier("_ugoite_updated_at"),
         quote_identifier("_ugoite_id"),
+        quote_identifier("_ugoite_revision_id"),
     );
     Ok(CompiledStructuredSearch {
         sql,
         values,
         types,
         limit,
+        offset,
     })
 }
 
@@ -234,7 +241,7 @@ pub async fn search_structured_with_scopes(
         &compiled.sql,
         relation_scopes,
         parameters,
-        0,
+        compiled.offset,
         compiled.limit,
     )
     .await?;

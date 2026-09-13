@@ -97,6 +97,25 @@ pub async fn search_entries(
     search_entries_with_scopes(op, ws_path, query, &relation_scopes, limit).await
 }
 
+/// Keyword search with additive offset pagination. The public response stays
+/// an array; callers may request one extra row and derive `has_more` without
+/// changing the response shape.
+pub async fn search_entries_paged(
+    op: &Operator,
+    ws_path: &str,
+    query: &str,
+    limit: usize,
+    offset: usize,
+) -> Result<Vec<KeywordSearchResult>> {
+    ugoite_core::query::validate_keyword_query(query)?;
+    let relation_scopes = entry::list_form_names(op, ws_path)
+        .await?
+        .into_iter()
+        .map(|form_name| (form_name.to_ascii_lowercase(), EntryScope::AllCurrent))
+        .collect();
+    search_entries_with_scopes_paged(op, ws_path, query, &relation_scopes, limit, offset).await
+}
+
 /// Searches typed/system columns in one globally ordered DataFusion candidate
 /// plan. Search intentionally excludes `extra_attributes` and opaque asset or
 /// object-list structs; the searchable typed column set is defined by the
@@ -109,6 +128,26 @@ pub async fn search_entries_with_scopes(
     limit: usize,
 ) -> Result<Vec<KeywordSearchResult>> {
     search_entries_with_scopes_after(op, ws_path, query, relation_scopes, limit, None).await
+}
+
+pub async fn search_entries_with_scopes_paged(
+    op: &Operator,
+    ws_path: &str,
+    query: &str,
+    relation_scopes: &std::collections::BTreeMap<String, EntryScope>,
+    limit: usize,
+    offset: usize,
+) -> Result<Vec<KeywordSearchResult>> {
+    search_entries_with_scopes_paged_authorized(
+        op,
+        ws_path,
+        query,
+        relation_scopes,
+        limit,
+        offset,
+        None,
+    )
+    .await
 }
 
 pub async fn search_entries_with_scopes_after(
@@ -211,6 +250,41 @@ pub(crate) async fn search_entries_with_scopes_after_authorized(
     });
     results.truncate(limit);
     Ok(results)
+}
+
+pub(crate) async fn search_entries_with_scopes_paged_authorized(
+    op: &Operator,
+    ws_path: &str,
+    query: &str,
+    relation_scopes: &std::collections::BTreeMap<String, EntryScope>,
+    limit: usize,
+    offset: usize,
+    asset_authorization: Option<AssetAuthorization>,
+) -> Result<Vec<KeywordSearchResult>> {
+    let fetch_limit = offset
+        .checked_add(limit)
+        .ok_or_else(|| anyhow::anyhow!("search page range exceeds the configured maximum"))?;
+    if fetch_limit > crate::MAX_NORMAL_READ_ROWS {
+        return Err(ugoite_core::error::AppError::invalid_input(
+            ugoite_core::error::ErrorCode::InvalidInput,
+            format!(
+                "search page range exceeds the configured maximum of {} rows",
+                crate::MAX_NORMAL_READ_ROWS
+            ),
+        )
+        .into());
+    }
+    let results = search_entries_with_scopes_after_authorized(
+        op,
+        ws_path,
+        query,
+        relation_scopes,
+        fetch_limit,
+        None,
+        asset_authorization,
+    )
+    .await?;
+    Ok(results.into_iter().skip(offset).take(limit).collect())
 }
 
 fn is_after_cursor(result: &KeywordSearchResult, after: Option<(&str, &str, &str)>) -> bool {
