@@ -1530,7 +1530,8 @@ async fn entry_attribution_is_consistent_across_lifecycle() -> anyhow::Result<()
     ensure_entry_form(&op, ws_path).await?;
     let integrity = FakeIntegrityProvider;
     let entry_id = "attributed-entry";
-    let original_content = "---\nform: Entry\n---\n# Original\n\n## Body\nCreated";
+    let original_content =
+        "---\nform: Entry\ntags: [original]\n---\n# Original\n\n## Body\nCreated";
 
     entry::create_entry(
         &op,
@@ -1550,7 +1551,7 @@ async fn entry_attribution_is_consistent_across_lifecycle() -> anyhow::Result<()
         &op,
         ws_path,
         entry_id,
-        "---\nform: Entry\n---\n# Updated\n\n## Body\nEdited",
+        "---\nform: Entry\ntags: [updated]\n---\n# Updated\n\n## Body\nEdited",
         Some(&created.revision_id),
         "editor",
         &integrity,
@@ -1591,6 +1592,8 @@ async fn entry_attribution_is_consistent_across_lifecycle() -> anyhow::Result<()
     assert_eq!(restored.author, "creator");
     assert_eq!(restored.updated_by, "restorer");
     assert_eq!(restored.deleted_by, None);
+    assert_eq!(restored.title, "Original");
+    assert_eq!(restored.tags, vec!["original"]);
     assert!(restored.markdown.contains("Created"));
 
     let historical_delete =

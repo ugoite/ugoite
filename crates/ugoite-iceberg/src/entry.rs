@@ -104,6 +104,14 @@ pub struct EntryContent {
     pub parent_revision_id: Option<String>,
     #[serde(default)]
     pub timestamp: f64,
+    pub title: String,
+    pub form: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub operation: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restored_from: Option<String>,
     pub author: String,
     pub updated_by: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -613,6 +621,26 @@ fn revision_row_to_domain(
             .into_iter()
             .collect(),
     })
+}
+
+fn restore_revision_payload(
+    row: &RevisionRow,
+    historical_form: &ugoite_domain::form::FormDefinition,
+    current_form: &ugoite_domain::form::FormDefinition,
+) -> Result<(EntryRevision, Value, Value)> {
+    let historical_revision = revision_row_to_domain(row, historical_form)?;
+    let fields = current_form
+        .fields
+        .iter()
+        .filter_map(|field| {
+            historical_revision
+                .values
+                .get(&field.id)
+                .map(|value| Ok((field.name.clone(), serde_json::to_value(value)?)))
+        })
+        .collect::<Result<Map<String, Value>>>()?;
+    let extra_attributes = serde_json::to_value(&historical_revision.extra_attributes)?;
+    Ok((historical_revision, Value::Object(fields), extra_attributes))
 }
 
 fn entry_metadata_from_row(row: &EntryRow) -> EntryMetadata {
@@ -1987,6 +2015,11 @@ pub async fn get_entry_content(
         revision_id: row.revision_id,
         parent_revision_id: row.parent_revision_id,
         timestamp: row.updated_at,
+        title: row.title,
+        form: form_name.clone(),
+        tags: row.tags.clone(),
+        operation: "upsert".to_string(),
+        restored_from: None,
         author: row.author,
         updated_by: row.updated_by,
         deleted_by: row.deleted_by,
@@ -2041,10 +2074,17 @@ pub async fn get_entry_revision_content(
         &merged_fields,
         &field_order,
     );
+    let operation = revision.operation.clone();
+    let restored_from = revision.restored_from.clone();
     Ok(EntryContent {
         revision_id: revision.revision_id,
         parent_revision_id: revision.parent_revision_id,
         timestamp: revision.timestamp,
+        title: revision_title.to_string(),
+        form: form_name.clone(),
+        tags: revision_tags.to_vec(),
+        operation,
+        restored_from,
         author: revision.author,
         updated_by: revision.updated_by,
         deleted_by: revision.deleted_by,
@@ -2214,7 +2254,7 @@ pub(crate) async fn get_entry_history_at_checkpoint_paged(
     offset: usize,
 ) -> Result<Value> {
     let workspace = iceberg_store::native_workspace(op, ws_path).await?;
-    let Some((_, _, mut revisions)) = checkpoint_revisions_for_entry(
+    let Some((form, _, mut revisions)) = checkpoint_revisions_for_entry(
         &workspace,
         checkpoint,
         entry_id,
@@ -2233,20 +2273,30 @@ pub(crate) async fn get_entry_history_at_checkpoint_paged(
         .collect::<Vec<_>>();
     Ok(json!({
         "entry_id": entry_id,
-        "revisions": revisions.into_iter().map(|revision| json!({
-            "revision_id": revision.revision_id,
-            "timestamp": from_timestamp_micros(revision.committed_at_micros),
-            "checksum": revision.entry.integrity.checksum,
-            "signature": revision.entry.integrity.signature,
-            "entry_version": revision.entry_version,
-            "operation": revision.operation,
-            "source_kind": revision.source_kind,
-            "source_id": revision.source_id,
-            "restored_from": revision.entry.restored_from,
-            "author": revision.author_id,
-            "updated_by": revision.entry.updated_by,
-            "deleted_by": revision.entry.deleted_by,
-        })).collect::<Vec<_>>(),
+        "revisions": revisions.into_iter().map(|revision| {
+            let actor = if revision.entry.updated_by.trim().is_empty() {
+                revision.author_id.clone()
+            } else {
+                revision.entry.updated_by.clone()
+            };
+            json!({
+                "revision_id": revision.revision_id,
+                "timestamp": from_timestamp_micros(revision.committed_at_micros),
+                "checksum": revision.entry.integrity.checksum,
+                "signature": revision.entry.integrity.signature,
+                "entry_version": revision.entry_version,
+                "operation": revision.operation,
+                "source_kind": revision.source_kind,
+                "source_id": revision.source_id,
+                "restored_from": revision.entry.restored_from,
+                "author": revision.author_id,
+                "updated_by": revision.entry.updated_by,
+                "actor": actor,
+                "deleted_by": revision.entry.deleted_by,
+                "title": revision.entry.title,
+                "form": form.name.clone(),
+            })
+        }).collect::<Vec<_>>(),
     }))
 }
 
@@ -2325,6 +2375,13 @@ pub(crate) async fn get_entry_revision_at_checkpoint(
                 revision.form_version.get()
             )
         })?;
+    let operation = match revision.operation {
+        EntryOperation::Upsert => "upsert",
+        EntryOperation::Delete => "delete",
+        EntryOperation::Restore => "restore",
+    }
+    .to_string();
+    let restored_from = revision.entry.restored_from.map(|id| id.to_string());
     let row = revision_row_from_domain(revision, &form.name, revision_form)?
         .state
         .ok_or_else(|| revision_not_found(entry_id, revision_id))?;
@@ -2342,6 +2399,11 @@ pub(crate) async fn get_entry_revision_at_checkpoint(
         revision_id: row.revision_id,
         parent_revision_id: row.parent_revision_id,
         timestamp,
+        title: row.title,
+        form: form_name.clone(),
+        tags: row.tags.clone(),
+        operation,
+        restored_from,
         author: row.author,
         updated_by: row.updated_by,
         deleted_by: row.deleted_by,
@@ -2967,6 +3029,12 @@ pub async fn get_entry_history_paged(
         .into_iter()
         .filter(|rev| rev.entry_id == entry_id)
         .map(|rev| {
+            let state = rev.state.as_ref();
+            let actor = if rev.updated_by.trim().is_empty() {
+                rev.author.clone()
+            } else {
+                rev.updated_by.clone()
+            };
             serde_json::json!({
                 "revision_id": rev.revision_id,
                 "change_id": rev.change_id,
@@ -2975,8 +3043,13 @@ pub async fn get_entry_history_paged(
                 "signature": rev.integrity.signature,
                 "author": rev.author,
                 "updated_by": rev.updated_by,
+                "actor": actor,
                 "deleted_by": rev.deleted_by,
                 "operation": rev.operation,
+                "entry_version": rev.entry_version,
+                "restored_from": rev.restored_from,
+                "title": state.map(|state| state.title.clone()).unwrap_or_default(),
+                "form": state.map(|state| state.form.clone()).unwrap_or_else(|| form_name.clone()),
             })
         })
         .collect::<Vec<_>>();
@@ -3045,6 +3118,12 @@ pub async fn get_entry_history_authorized_paged(
         .into_iter()
         .filter(|revision| revision.entry_id == entry_id)
         .map(|revision| {
+            let state = revision.state.as_ref();
+            let actor = if revision.updated_by.trim().is_empty() {
+                revision.author.clone()
+            } else {
+                revision.updated_by.clone()
+            };
             serde_json::json!({
                 "revision_id": revision.revision_id,
                 "change_id": revision.change_id,
@@ -3053,8 +3132,13 @@ pub async fn get_entry_history_authorized_paged(
                 "signature": revision.integrity.signature,
                 "author": revision.author,
                 "updated_by": revision.updated_by,
+                "actor": actor,
                 "deleted_by": revision.deleted_by,
                 "operation": revision.operation,
+                "entry_version": revision.entry_version,
+                "restored_from": revision.restored_from,
+                "title": state.map(|state| state.title.clone()).unwrap_or_default(),
+                "form": state.map(|state| state.form.clone()).unwrap_or_else(|| form_name.clone()),
             })
         })
         .collect::<Vec<_>>();
@@ -3131,11 +3215,21 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
             return Err(AppError::forbidden("Form is not readable").into());
         }
     }
-    let (form_def, _, revisions) = revision_rows_for_form(op, ws_path, &form_name).await?;
+    let (form_def, form_history, revisions) =
+        revision_rows_for_form(op, ws_path, &form_name).await?;
+    let current_form = form::to_domain_form(&form_def)?;
     let revision = revisions
         .into_iter()
         .find(|rev| rev.entry_id == entry_id && rev.revision_id == revision_id)
         .ok_or_else(|| revision_not_found(entry_id, revision_id))?;
+    let historical_form = form_history.get(&revision.form_version).with_context(|| {
+        format!(
+            "Form version {} is missing from immutable Form history",
+            revision.form_version
+        )
+    })?;
+    let (historical_revision, fields, extra_attributes) =
+        restore_revision_payload(&revision, historical_form, &current_form)?;
 
     let mut row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
     let new_rev_id = Uuid::new_v4().to_string();
@@ -3144,8 +3238,15 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
         timestamp = row.updated_at + 0.001;
     }
 
+    // Rehydrate historical values by stable FieldId before serializing them
+    // with the current Form names. This keeps a renamed field's value attached
+    // to the same durable field instead of treating the old name as unknown.
+    if revision.state.is_some() {
+        row.title = historical_revision.entry.title.clone();
+        row.tags = historical_revision.entry.tags.clone();
+    }
     let field_order = form_field_names(&form_def);
-    let merged_fields = merge_entry_fields(&revision.fields, &revision.extra_attributes);
+    let merged_fields = merge_entry_fields(&fields, &extra_attributes);
     let markdown = render_markdown(
         &row.title,
         &form_name,
@@ -3160,8 +3261,8 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
     row.revision_id = new_rev_id.clone();
     row.entry_version = row.entry_version.saturating_add(1);
     row.updated_at = timestamp;
-    row.fields = revision.fields.clone();
-    row.extra_attributes = revision.extra_attributes.clone();
+    row.fields = fields;
+    row.extra_attributes = extra_attributes;
     row.deleted = false;
     row.deleted_at = None;
     row.integrity = IntegrityPayload {
@@ -3347,5 +3448,53 @@ mod input_conversion_tests {
         assert_eq!(revision.author_id, "human:creator");
         assert_eq!(revision.entry.updated_by, "human:editor");
         assert_eq!(revision.entry.deleted_by, None);
+    }
+
+    #[test]
+    fn restore_revision_payload_maps_values_by_stable_field_id() {
+        fn form(field_name: &str, version: u32) -> ugoite_domain::form::FormDefinition {
+            let mut value = field(FieldType::String, None);
+            value.name = field_name.to_string();
+            ugoite_domain::form::FormDefinition {
+                id: FormId::from(Uuid::from_u128(201)),
+                version: ugoite_domain::form::FormVersion::new(version).unwrap(),
+                name: "RenameTest".into(),
+                description: None,
+                fields: vec![value],
+                allow_extra_attributes: false,
+                extension_metadata: BTreeMap::new(),
+            }
+        }
+
+        let historical_form = form("old_name", 1);
+        let current_form = form("new_name", 2);
+        let row = RevisionRow {
+            revision_id: Uuid::from_u128(202).to_string(),
+            change_id: Uuid::from_u128(203).to_string(),
+            entry_id: Uuid::from_u128(204).to_string(),
+            parent_revision_id: None,
+            timestamp: 1.0,
+            author: "author".into(),
+            updated_by: "author".into(),
+            deleted_by: None,
+            fields: serde_json::json!({"old_name": "historical value"}),
+            extra_attributes: Value::Object(Map::new()),
+            markdown_checksum: String::new(),
+            integrity: IntegrityPayload::default(),
+            restored_from: None,
+            form_version: 1,
+            state: None,
+            entry_version: 1,
+            operation: "upsert".into(),
+            source_kind: "test".into(),
+            source_id: None,
+            extension_metadata: Value::Object(Map::new()),
+        };
+
+        let (_, fields, extra_attributes) =
+            restore_revision_payload(&row, &historical_form, &current_form).unwrap();
+
+        assert_eq!(fields["new_name"], "historical value");
+        assert!(extra_attributes.as_object().unwrap().is_empty());
     }
 }
