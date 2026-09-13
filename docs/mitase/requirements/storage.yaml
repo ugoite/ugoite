@@ -118,7 +118,7 @@ requirements:
 
   - id: REQ-STO-004
     title: Space registry management
-    description: The spaces/ directory and each Space's current metadata maintain the Space registry, while the service exposes immutable Space UIDs without fabricating incomplete entries.
+    description: The spaces/ directory and each Space's current metadata maintain the Space registry, while the service exposes validated local Space locators without fabricating incomplete entries. Remote adapters expose immutable Space UIDs from that metadata.
     priority: high
     status: implemented
     criteria:
@@ -128,7 +128,7 @@ requirements:
         governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
       - id: service-space-listing
         kind: behavior
-        statement: The application service exposes the current immutable Space UIDs through the same metadata-backed registry rather than a separate registry source.
+        statement: The application service exposes the current validated Space directory locators through the same metadata-backed registry rather than a separate registry source; remote adapters resolve immutable Space UIDs from each locator's metadata.
         governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
       - id: portable-storage-config
         kind: quality
@@ -138,7 +138,7 @@ requirements:
       - id: registry-verification
         role: verification
         facet: verification
-        responsibility: Verify directory-backed Space discovery and service-level Space UID listing through exact Rust tests.
+        responsibility: Verify directory-backed Space discovery and service-level Space locator listing through exact Rust tests.
         targets:
           - id: directory-list-case
             adapter: rust
