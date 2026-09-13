@@ -23,8 +23,9 @@ restore that appends rather than rewrites history.
 - A running server for the Browser path, or a local workspace for CLI core
   mode. See [Overview](index.md) for the container and local paths.
 - A Space you may write to. Core mode takes a local path such as
-  `/path/to/workspace/spaces/demo`. Backend mode takes a Space ID such as
-  `demo`.
+  `/path/to/workspace/spaces/demo`. Backend mode takes the immutable Space UID
+  returned by the server, such as
+  `019f1234-5678-7abc-8def-0123456789ab`.
 
 ## Create a Space
 
@@ -44,8 +45,8 @@ ugoite space create /path/to/workspace/spaces/demo
 ugoite space get /path/to/workspace/spaces/demo
 ```
 
-In backend mode, pass the Space ID instead of a path. See the [CLI
-guide](../guide/automate/cli.md) for endpoint modes.
+In backend mode, pass the returned immutable Space UID instead of a path. See
+the [CLI guide](../guide/automate/cli.md) for endpoint modes.
 
 </TabItem>
 </Tabs>

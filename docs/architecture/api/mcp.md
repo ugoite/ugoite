@@ -4,7 +4,7 @@ title: Model Context Protocol v1
 
 Ugoite MCP v1 is a small, authenticated semantic facade at `POST /mcp`. It is
 stateless and uses MCP protocol revision `2026-07-28`; clients do not send
-`initialize`, use `Mcp-Session-Id`, or select a Space by internal ID.
+`initialize`, use `Mcp-Session-Id`, or select a Space by an internal locator.
 
 MCP v1 is a separately versioned semantic contract. Its stable tool/resource
 surface is governed independently from the v0.1 Knowledge compatibility floor:
@@ -83,7 +83,8 @@ authenticated MCP protocol, its resource-bound credential flow, and ACL
 behavior. The `/device` approval page accepts MCP-scoped requests and REST CLI
 requests with an omitted resource; those credentials remain separated by
 audience and cannot cross-use. Agent credential flows remain future scope. The
-MCP adapter never asks for a Space ID, bucket, database, or filesystem path.
+MCP adapter never asks for a Space UID, slug, bucket, database, or filesystem
+path.
 
 The REST implementation remains `crates/ugoite-server`; `/openapi.json` is the
 REST API source of truth. MCP JSON-RPC is intentionally not represented as a

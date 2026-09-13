@@ -457,7 +457,7 @@ pub fn resolve_space_reference(
     }
     let (root, reference) = explicit_core_space_path(space_path).ok_or_else(|| {
         anyhow!(
-            "{command_name} requires SPACE_ID_OR_PATH as /path/to/root/spaces/<id> in core mode"
+            "{command_name} requires SPACE_UID_OR_PATH as /path/to/root/spaces/<slug> in core mode"
         )
     })?;
     let spaces = std::path::Path::new(&root).join("spaces");

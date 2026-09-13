@@ -118,7 +118,7 @@ requirements:
 
   - id: REQ-STO-004
     title: Space registry management
-    description: The spaces/ directory and each Space's current metadata maintain the Space registry, while the service exposes the current Space identifiers without fabricating incomplete entries.
+    description: The spaces/ directory and each Space's current metadata maintain the Space registry, while the service exposes validated local Space locators without fabricating incomplete entries. Remote adapters expose immutable Space UIDs from that metadata.
     priority: high
     status: implemented
     criteria:
@@ -128,7 +128,7 @@ requirements:
         governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
       - id: service-space-listing
         kind: behavior
-        statement: The application service exposes the current Space identifiers through the same metadata-backed registry rather than a separate registry source.
+        statement: The application service exposes the current validated Space directory locators through the same metadata-backed registry rather than a separate registry source; remote adapters resolve immutable Space UIDs from each locator's metadata.
         governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
       - id: portable-storage-config
         kind: quality
@@ -138,7 +138,7 @@ requirements:
       - id: registry-verification
         role: verification
         facet: verification
-        responsibility: Verify directory-backed Space discovery and service-level Space identifier listing through exact Rust tests.
+        responsibility: Verify directory-backed Space discovery and service-level Space locator listing through exact Rust tests.
         targets:
           - id: directory-list-case
             adapter: rust
@@ -504,14 +504,14 @@ requirements:
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: test_space_req_sto_009_openapi_documents_authenticated_space_listing } }
 
   - id: REQ-STO-010
-    title: Mode-appropriate CLI Space identifiers
-    description: When endpoint routing is backend or API, Space commands accept remote identifiers without misleading local-root positional arguments. When endpoint routing is core, commands that access local storage require an explicit local root before touching the filesystem.
+    title: Mode-appropriate CLI Space UID and path routing
+    description: When endpoint routing is backend or API, Space commands accept immutable Space UIDs without misleading local-root positional arguments. When endpoint routing is core, commands that access local storage require an explicit local root before touching the filesystem.
     priority: medium
     status: implemented
     criteria:
       - id: remote-identifier-routing
         kind: behavior
-        statement: Backend and API routing accept a bare remote Space identifier for commands that operate through the server.
+        statement: Backend and API routing accept a bare immutable Space UID for commands that operate through the server.
         governed_by: [POL-004#rule.governance, POL-005#rule.governance, POL-008#rule.governance]
       - id: explicit-core-root
         kind: security
@@ -519,7 +519,7 @@ requirements:
         governed_by: [POL-001#rule.governance, POL-003#rule.governance, POL-005#rule.governance]
       - id: routing-help-contract
         kind: quality
-        statement: CLI help explains the local Space path and remote Space identifier forms for the supported routing modes.
+        statement: CLI help explains the local Space path and immutable Space UID forms for the supported routing modes.
         governed_by: [POL-005#rule.governance, POL-008#rule.governance]
     bindings:
       - id: cli-routing-verification
@@ -548,12 +548,12 @@ requirements:
           - id: routing-help-case
             adapter: rust
             path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
-            selector: { kind: test, name: test_cli_help_req_sto_010_describes_space_id_or_path_routing }
+            selector: { kind: test, name: test_cli_help_req_sto_010_describes_space_uid_or_path_routing }
             claims:
               - kind: verifies
                 criterion: REQ-STO-010#criterion.routing-help-contract
                 covers: [FEAT-STO-001#binding.routing/target.space-command-routing]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_cli_help_req_sto_010_describes_space_id_or_path_routing } }
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_cli_help_req_sto_010_describes_space_uid_or_path_routing } }
 
   - id: REQ-STO-011
     title: Hashed portable user preference storage

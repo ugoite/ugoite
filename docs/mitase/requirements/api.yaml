@@ -449,13 +449,13 @@ requirements:
 
   - id: REQ-API-009
     title: Sample data Space generation
-    description: "The API is intended to provide a way to generate a sample-data Space from a small set of inputs: Space ID, scenario, Entry count, and seed. Backend REST exposure is currently unshipped; core implementation and tests remain retained for future re-exposure."
+    description: "The API is intended to provide a way to generate a sample-data Space from a small set of inputs: Space slug, scenario, Entry count, and seed. Backend REST exposure is currently unshipped; core implementation and tests remain retained for future re-exposure."
     priority: medium
     status: planned
     criteria:
       - id: sample-space-inputs
         kind: behavior
-        statement: A future sample-data operation accepts Space ID, scenario, Entry count, and seed as explicit inputs.
+        statement: A future sample-data operation accepts Space slug, scenario, Entry count, and seed as explicit inputs.
         governed_by: [POL-002#rule.governance, POL-004#rule.governance]
 
   - id: REQ-API-010

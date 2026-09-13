@@ -3,7 +3,7 @@ import { GlobalShell } from "~/components/GlobalShell";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { getDocsiteHref } from "~/lib/docsite-links";
 import { authApi, spaceApi } from "~/lib/ugoite-client";
-import { sortSpaces } from "~/lib/space-list";
+import { sortSpaces, spaceUid } from "~/lib/space-list";
 import type { Space } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
@@ -24,7 +24,7 @@ const normalizeCreateError = (value: unknown): string => {
     value instanceof UgoiteApiError &&
     value.code === "INVALID_IDENTIFIER"
   ) {
-    return t("spacesPage.invalidSpaceId");
+    return t("spacesPage.invalidSpaceSlug");
   }
   return formatUserFacingError(value, "spacesPage.failedCreate");
 };
@@ -44,21 +44,22 @@ function SpaceCards(props: { label: string; spaces: readonly Space[] }) {
         {(space) => (
           <li class="rowBtn">
             <span class="glyph active">
-              {(space.name || space.id).slice(0, 1).toUpperCase()}
+              {(space.name || space.slug || spaceUid(space)).slice(0, 1)
+                .toUpperCase()}
             </span>
             <span>
-              <b>{space.name || space.id}</b>
-              <small>ID: {space.slug || space.id}</small>
+              <b>{space.name || space.slug || spaceUid(space)}</b>
+              <small>{t("spacesPage.spaceSlug")}: {space.slug || "—"}</small>
             </span>
             <div class="flex flex-wrap gap-2">
               <A
-                href={`/spaces/${space.id}/settings`}
+                href={`/spaces/${spaceUid(space)}/settings`}
                 class="ui-button ui-button-secondary text-sm"
               >
                 {t("spacesPage.openSettings")}
               </A>
               <A
-                href={`/spaces/${space.id}/dashboard`}
+                href={`/spaces/${spaceUid(space)}/dashboard`}
                 class="ui-button ui-button-primary text-sm"
               >
                 {t("spacesPage.openSpace")}
@@ -131,7 +132,7 @@ export default function SpacesIndexRoute() {
     const created = await spaceApi.create({ name, slug });
     await refetchSpaces();
     closeCreateForm();
-    navigate(`/spaces/${created.id}/dashboard`);
+    navigate(`/spaces/${created.space_uid ?? created.id}/dashboard`);
   };
 
   const handleCreateSpace = async (event: Event) => {
@@ -143,7 +144,7 @@ export default function SpacesIndexRoute() {
       return;
     }
     if (!slug) {
-      setCreateError(t("spacesPage.spaceIdRequired"));
+      setCreateError(t("spacesPage.spaceSlugRequired"));
       return;
     }
     setIsCreating(true);
@@ -237,19 +238,19 @@ export default function SpacesIndexRoute() {
                 />
               </div>
               <div class="ui-field">
-                <label class="ui-label" for="space-id">
-                  {t("spacesPage.spaceId")}
+                <label class="ui-label" for="space-slug">
+                  {t("spacesPage.spaceSlug")}
                 </label>
                 <input
-                  id="space-id"
+                  id="space-slug"
                   type="text"
                   class="ui-input"
                   value={newSpaceId()}
                   onInput={(event) => setNewSpaceId(event.currentTarget.value)}
-                  placeholder={t("spacesPage.spaceIdPlaceholder")}
+                  placeholder={t("spacesPage.spaceSlugPlaceholder")}
                 />
                 <p class="mt-2 text-xs ui-muted">
-                  {t("spacesPage.spaceIdHelp")}
+                  {t("spacesPage.spaceSlugHelp")}
                 </p>
               </div>
               <Show when={createError()}>

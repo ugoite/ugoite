@@ -9,7 +9,8 @@ required permission.
 
 1. Check `ugoite config current`.
 2. Check `ugoite auth profile` or `GET /auth/session`.
-3. Use a bare Space ID in backend/API mode and a filesystem path in core mode.
+3. Use the immutable Space UID in backend/API mode and a local Space path in
+   core mode.
 4. Confirm membership and role for the identity.
 5. For Space creation, confirm the account has the Node administrator role;
    Space ownership does not grant it.

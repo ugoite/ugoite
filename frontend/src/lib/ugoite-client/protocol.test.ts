@@ -84,7 +84,7 @@ describe("portable Ugoite API protocol WASM", () => {
     });
   });
 
-  it("REQ-FE-065: sends row-reference lookups with the immutable Space ID", async () => {
+  it("REQ-FE-065: sends row-reference lookups with the immutable Space UID", async () => {
     const request = await prepareApiRequest("entry.options", {
       space_id: "01900000-0000-7000-8000-000000000001",
       form: "Project",

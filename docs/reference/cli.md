@@ -12,8 +12,10 @@ explains how to think about the CLI; task steps live in
 ## Modes
 
 Core mode opens operator-owned Space directories directly and performs no human
-login. Backend mode uses a Space ID with the configured remote endpoint. Inspect
-with `ugoite config current` and change with `ugoite config set`.
+login. Backend mode addresses a Space by its immutable Space UID with the
+configured remote endpoint. A Space slug is mutable display metadata used when
+creating or renaming a Space, not a remote identity. Inspect with
+`ugoite config current` and change with `ugoite config set`.
 
 ## Authentication
 

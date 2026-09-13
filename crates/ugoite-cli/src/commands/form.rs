@@ -14,23 +14,23 @@ pub struct FormCmd {
 pub enum FormSubCmd {
     /// List forms
     #[command(
-        long_about = "List forms for a space.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode\n  ugoite form list /root/spaces/my-space\n\n  # Backend mode\n  ugoite form list my-space"
+        long_about = "List forms for a space.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or a bare immutable `SPACE_UID`.\n\nExamples:\n  # Core mode\n  ugoite form list /root/spaces/my-space\n\n  # Backend mode (immutable Space UID)\n  ugoite form list 019f1234-5678-7abc-8def-0123456789ab"
     )]
     List {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
     },
     /// Get a form
     #[command(
-        long_about = "Get a form.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode\n  ugoite form get /root/spaces/my-space Note\n\n  # Backend mode\n  ugoite form get my-space Note"
+        long_about = "Get a form.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or a bare immutable `SPACE_UID`.\n\nExamples:\n  # Core mode\n  ugoite form get /root/spaces/my-space Note\n\n  # Backend mode (immutable Space UID)\n  ugoite form get 019f1234-5678-7abc-8def-0123456789ab Note"
     )]
     Get {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
         #[arg(
@@ -41,12 +41,12 @@ pub enum FormSubCmd {
     },
     /// Upsert a form from a JSON file
     #[command(
-        long_about = "Upsert a form from a JSON file.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode\n  ugoite form update /root/spaces/my-space ./note-form.json\n\n  # Backend mode\n  ugoite form update my-space ./note-form.json"
+        long_about = "Upsert a form from a JSON file.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or a bare immutable `SPACE_UID`.\n\nExamples:\n  # Core mode\n  ugoite form update /root/spaces/my-space ./note-form.json\n\n  # Backend mode (immutable Space UID)\n  ugoite form update 019f1234-5678-7abc-8def-0123456789ab ./note-form.json"
     )]
     Update {
         #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
         #[arg(

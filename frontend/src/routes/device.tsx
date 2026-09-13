@@ -2,6 +2,8 @@ import { createSignal, For, onMount, Show } from "solid-js";
 import { useSearchParams } from "@solidjs/router";
 import { spaceApi } from "~/lib/ugoite-client";
 import { formatUserFacingError } from "~/lib/user-facing-error";
+import { spaceUid } from "~/lib/space-list";
+import type { Space } from "~/lib/types";
 
 type PendingMcpAuthorization = {
   device_name: string;
@@ -13,10 +15,8 @@ type PendingMcpAuthorization = {
 export default function DeviceApprovalRoute() {
   const [params] = useSearchParams();
   const [code] = createSignal(params.user_code ?? "");
-  const [spaceId, setSpaceId] = createSignal("");
-  const [spaces, setSpaces] = createSignal<Array<{ id: string; name: string }>>(
-    [],
-  );
+  const [spaceUidValue, setSpaceUidValue] = createSignal("");
+  const [spaces, setSpaces] = createSignal<Space[]>([]);
   const [pending, setPending] = createSignal<PendingMcpAuthorization>();
   const [done, setDone] = createSignal(false);
   const [unsupported, setUnsupported] = createSignal(false);
@@ -58,10 +58,13 @@ export default function DeviceApprovalRoute() {
       setPending(pendingRequest);
       const values = await spaceApi.list();
       setSpaces(values);
-      setSpaceId(
-        values.find((space) =>
-          space.space_uid === pendingRequest.requested_space_uid
-        )?.id ?? values[0]?.id ?? "",
+      const requestedSpace = values.find((space) =>
+        spaceUid(space) === pendingRequest.requested_space_uid
+      );
+      setSpaceUidValue(
+        requestedSpace ? spaceUid(requestedSpace) : values[0]
+          ? spaceUid(values[0])
+          : "",
       );
     } catch (cause) {
       setError(
@@ -73,7 +76,7 @@ export default function DeviceApprovalRoute() {
   const approve = async (event: Event) => {
     event.preventDefault();
     const request = pending();
-    if (!request || !spaceId()) return;
+    if (!request || !spaceUidValue()) return;
     setError("");
     if (
       !confirm(
@@ -89,7 +92,7 @@ export default function DeviceApprovalRoute() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         user_code: code(),
-        space_id: spaceId(),
+        space_id: spaceUidValue(),
         granted_actions: request.requested_actions,
       }),
     });
@@ -147,13 +150,13 @@ export default function DeviceApprovalRoute() {
                     <span>Space</span>
                     <select
                       class="ui-input"
-                      value={spaceId()}
+                      value={spaceUidValue()}
                       onChange={(event) =>
-                        setSpaceId(event.currentTarget.value)}
+                        setSpaceUidValue(event.currentTarget.value)}
                     >
                       <For each={spaces()}>
                         {(space) => (
-                          <option value={space.id}>{space.name}</option>
+                          <option value={spaceUid(space)}>{space.name}</option>
                         )}
                       </For>
                     </select>
@@ -165,7 +168,7 @@ export default function DeviceApprovalRoute() {
                   <button
                     type="submit"
                     class="ui-button ui-button-primary"
-                    disabled={!spaceId()}
+                    disabled={!spaceUidValue()}
                   >
                     {request().resource
                       ? "Approve MCP access"

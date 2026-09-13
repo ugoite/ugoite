@@ -18,6 +18,7 @@ import type {
   UserPreferences,
   UserPreferencesPatchPayload,
 } from "~/lib/types";
+import { spaceUid } from "~/lib/space-list";
 
 // In-memory mock data store
 let mockSpaces: Map<string, Space> = new Map();
@@ -224,13 +225,14 @@ export const resetMockData = () => {
 
 // Seed data helpers
 export const seedSpace = (space: Space) => {
-  mockSpaces.set(space.id, space);
-  mockEntries.set(space.id, new Map());
-  mockEntryIndex.set(space.id, new Map());
-  mockAssets.set(space.id, new Map());
-  mockForms.set(space.id, new Map());
-  mockSqlEntries.set(space.id, new Map());
-  mockSqlSessions.set(space.id, new Map());
+  const key = spaceUid(space);
+  mockSpaces.set(key, space);
+  mockEntries.set(key, new Map());
+  mockEntryIndex.set(key, new Map());
+  mockAssets.set(key, new Map());
+  mockForms.set(key, new Map());
+  mockSqlEntries.set(key, new Map());
+  mockSqlSessions.set(key, new Map());
 };
 
 export const seedEntry = (
@@ -310,17 +312,24 @@ export const handlers = [
 
     const space: Space = {
       id,
+      space_uid: id,
       name: body.name,
       slug: body.slug,
       created_at: new Date().toISOString(),
     };
-    mockSpaces.set(id, space);
-    mockEntries.set(id, new Map());
-    mockEntryIndex.set(id, new Map());
-    mockAssets.set(id, new Map());
-    mockForms.set(id, new Map());
+    const key = spaceUid(space);
+    mockSpaces.set(key, space);
+    mockEntries.set(key, new Map());
+    mockEntryIndex.set(key, new Map());
+    mockAssets.set(key, new Map());
+    mockForms.set(key, new Map());
 
-    return HttpResponse.json({ id, name: body.name, slug: body.slug }, {
+    return HttpResponse.json({
+      id,
+      space_uid: space.space_uid,
+      name: body.name,
+      slug: body.slug,
+    }, {
       status: 201,
     });
   }),

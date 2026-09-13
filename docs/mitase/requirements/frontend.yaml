@@ -132,12 +132,12 @@ requirements:
           - id: create-space-guidance
             adapter: typescript
             path: frontend/src/routes/spaces/index.test.tsx
-            selector: { kind: test, name: "REQ-FE-002: labels the create-space field as a space ID and explains allowed characters" }
+            selector: { kind: test, name: "REQ-FE-002: labels the create-space field as a Space slug and explains its mutable metadata semantics" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-002#criterion.explicit-create-action
                 covers: [FEAT-FE-001#binding.frontend/target.spaces-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/index.test.tsx, test: "REQ-FE-002: labels the create-space field as a space ID and explains allowed characters" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/index.test.tsx, test: "REQ-FE-002: labels the create-space field as a Space slug and explains its mutable metadata semantics" } }
           - id: authorized-single-space
             adapter: typescript
             path: frontend/src/lib/space-store.test.ts
@@ -1589,7 +1589,7 @@ requirements:
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
       - id: protocol-binding
         kind: behavior
-        statement: Row-reference lookup protocol requests preserve the immutable Space ID and encode the target Form, limit, and optional keyword as the supported entry.options request.
+        statement: Row-reference lookup protocol requests preserve the immutable Space UID and encode the target Form, limit, and optional keyword as the supported entry.options request.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
     bindings:
       - id: row-reference-verification
@@ -1663,12 +1663,12 @@ requirements:
           - id: protocol-space
             adapter: typescript
             path: frontend/src/lib/ugoite-client/protocol.test.ts
-            selector: { kind: test, name: "REQ-FE-065: sends row-reference lookups with the immutable Space ID" }
+            selector: { kind: test, name: "REQ-FE-065: sends row-reference lookups with the immutable Space UID" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-065#criterion.protocol-binding
                 covers: [FEAT-FE-008#binding.frontend/target.row-reference-protocol]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/lib/ugoite-client/protocol.test.ts", test: "REQ-FE-065: sends row-reference lookups with the immutable Space ID" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/lib/ugoite-client/protocol.test.ts", test: "REQ-FE-065: sends row-reference lookups with the immutable Space UID" } }
           - id: browser-picker
             adapter: typescript
             path: e2e/entries.test.ts

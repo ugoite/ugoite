@@ -5,8 +5,8 @@ sidebar:
 ---
 
 `ugoite` has two endpoint modes. Core mode opens operator-owned Space
-directories directly and does not perform human login. Backend/API mode uses a
-Space ID and the configured remote endpoint.
+directories directly and does not perform human login. Backend/API mode uses an
+immutable Space UID and the configured remote endpoint.
 
 ## Choose an endpoint
 
@@ -23,35 +23,37 @@ ugoite config set --mode backend --backend-url https://ugoite.example.com
 ugoite config current
 ```
 
-In core mode, commands that address a Space take its full local path, such as
-`/path/to/workspace/spaces/demo`. In backend/API mode, pass the bare Space ID,
-such as `demo`. `ugoite space list` takes the workspace root only in core mode;
-omit the positional argument in backend/API mode.
+In core mode, commands that address a Space take its full local Space path, such
+as `/path/to/workspace/spaces/demo`. In backend/API mode, pass the bare
+immutable Space UID, such as `019f1234-5678-7abc-8def-0123456789ab`.
+`ugoite space list` takes the workspace root only in core mode; omit the
+positional argument in backend/API mode.
 
 ## Output contract
 
-The CLI keeps machine output and human output separate. When stdout is piped,
-or when `--format json` (or `-o json`) is selected, successful commands emit
-the existing JSON value on stdout. Failures emit the existing JSON error
-envelope on stderr and keep their existing exit code. These machine-facing
-schemas, field names, and streams are unchanged by the Quiet Accent
-presentation.
+The CLI keeps machine output and human output separate. When stdout is piped, or
+when `--format json` (or `-o json`) is selected, successful commands emit the
+existing JSON value on stdout. Failures emit the existing JSON error envelope on
+stderr and keep their existing exit code. These machine-facing schemas, field
+names, and streams are unchanged by the Quiet Accent presentation.
 
-Without an explicit format, a TTY uses a compact human rendering and a pipe
-uses JSON. `--format table` selects the human table projection explicitly;
-`--format plain` selects human key/value or receipt text. Human table output
-has no separator line, box, or trailing padding. Headers are muted, the first
-column is the primary identifier, and columns remain separated by two spaces.
-Widths are calculated from raw values before any terminal styling, so enabling
-or disabling ANSI does not change alignment. `search keyword`, `space list`,
-and `entry list` use the same `ID`/`TITLE` or single-column table convention.
+Without an explicit format, a TTY uses a compact human rendering and a pipe uses
+JSON. `--format table` selects the human table projection explicitly;
+`--format plain` selects human key/value or receipt text. Human table output has
+no separator line, box, or trailing padding. Headers are muted, the first column
+is the primary identifier, and columns remain separated by two spaces. Widths
+are calculated from raw values before any terminal styling, so enabling or
+disabling ANSI does not change alignment. `search keyword` and `entry list` use
+the same `ID`/`TITLE` table convention; Core-mode `space list` labels its
+filesystem locators as `LOCAL_SPACE_PATH`, while backend/API output uses
+`SPACE_UID` for immutable remote identities.
 
 On a normal TTY, primary identifiers are cyan and metadata labels are dim;
-warnings are yellow, errors are red and bold, and help headings are bold.
-There are no background colors, box-drawing characters, emoji state markers,
-spinners, or animations. ANSI is enabled only for human-facing TTY output.
-`NO_COLOR`, `TERM=dumb`, pipes, JSON output, and `--format plain` in a pipe
-produce natural plain text.
+warnings are yellow, errors are red and bold, and help headings are bold. There
+are no background colors, box-drawing characters, emoji state markers, spinners,
+or animations. ANSI is enabled only for human-facing TTY output. `NO_COLOR`,
+`TERM=dumb`, pipes, JSON output, and `--format plain` in a pipe produce natural
+plain text.
 
 Mutation receipts keep their existing human line structure and machine fields:
 the resource kind and ID are followed by `revision:`, `change:`, and `run:`
@@ -87,9 +89,9 @@ ugoite konase --prompt "Find the latest project note"
 
 Each model request has a finite timeout. The default is 120 seconds; set
 `UGOITE_MODEL_TIMEOUT_SECS` to a positive number of seconds to adjust it. A
-timeout, transport failure, or provider failure marks the current Work as
-failed and reports the observed Knowledge outcome separately. Knowledge saved
-before the failure remains saved, and its Work-scoped undo remains available.
+timeout, transport failure, or provider failure marks the current Work as failed
+and reports the observed Knowledge outcome separately. Knowledge saved before
+the failure remains saved, and its Work-scoped undo remains available.
 
 In an interactive `ugoite konase` session, press Ctrl-C while the model is
 waiting to interrupt the local model wait. The current Work is reported as
@@ -99,8 +101,8 @@ Work-scoped undo remains available. Ctrl-C while idle, during MCP/undo work, or
 while connecting retains the CLI's process-exit behavior. With `--prompt`, an
 interrupted model wait reports the interruption and exits non-zero.
 
-This is host-local interruption: dropping the model request future stops the
-CLI from waiting, but does not guarantee that a remote provider has stopped
+This is host-local interruption: dropping the model request future stops the CLI
+from waiting, but does not guarantee that a remote provider has stopped
 generation or billing. The CLI does not cancel MCP writes, because the server
 may have committed a write even if its response has not reached the client.
 
@@ -110,12 +112,12 @@ the other target.
 
 ## Spaces and entries
 
-Create and inspect a Space, using the path or ID appropriate for the selected
-mode:
+Create and inspect a Space, using the local path, creation slug, or immutable
+UID appropriate for the selected mode:
 
 ```bash
 ugoite space create /path/to/workspace/spaces/team-notes   # core
-ugoite space create team-notes                              # backend/API
+ugoite space create team-notes                              # backend/API slug
 ugoite space get /path/to/workspace/spaces/team-notes
 ugoite entry list /path/to/workspace/spaces/team-notes
 ```
@@ -124,7 +126,14 @@ Remote Space addressing uses immutable UIDs; a human slug is not a remote
 identifier and reads as not found. Remote creation additionally requires a
 node-admin human presence (a recent Passkey or a browser-approved step-up);
 plain token identities are rejected. Core mode keeps resolving local slugs to
-their immutable Space the way the filesystem layout does.
+their immutable Space UID the way the filesystem layout does.
+
+After remote creation, use the returned Space UID for subsequent commands:
+
+```bash
+ugoite space get 019f1234-5678-7abc-8def-0123456789ab
+ugoite entry list 019f1234-5678-7abc-8def-0123456789ab
+```
 
 An entry ID is a user-chosen storage-safe slug. It may contain ASCII letters,
 digits, `-`, and `_`, must be 1–128 bytes, and must not contain path separators,
@@ -140,9 +149,8 @@ ugoite entry get /path/to/workspace/spaces/team-notes first-note
 ugoite entry list /path/to/workspace/spaces/team-notes
 ```
 
-The CLI's structured Entry ingress uses Markdown with optional Form
-frontmatter and typed `##` fields. The same input can be read from a file or
-explicit stdin:
+The CLI's structured Entry ingress uses Markdown with optional Form frontmatter
+and typed `##` fields. The same input can be read from a file or explicit stdin:
 
 ```bash
 ugoite entry create /path/to/workspace/spaces/team-notes file-note \
@@ -168,9 +176,8 @@ revisions. Updates can include `--parent-revision-id` to enforce optimistic
 conflict checks. `entry delete` appends a deletion tombstone to the revision
 history. The currently accepted `--hard-delete` flag also writes a tombstone;
 permanent removal is not available in this release. Mutation commands return a
-receipt: TTY output stays concise, while `--format json` (or `-o json`)
-includes the resource ID, revision ID, and durable Change ID when the operation
-commits.
+receipt: TTY output stays concise, while `--format json` (or `-o json`) includes
+the resource ID, revision ID, and durable Change ID when the operation commits.
 
 ## Forms
 
@@ -214,11 +221,11 @@ ugoite query /path/to/workspace/spaces/team-notes \
   --sql 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> LIMIT 10'
 ```
 
-Each Form is exposed as the backend-provided `form_<FormId>` relation: the
-Form UUID without dashes, as returned in the `id` field of `ugoite form get`.
-Columns are the stable `field_<FieldId>` values plus `_ugoite_id`, `_ugoite_title`, `_ugoite_created_at`, and
-`_ugoite_updated_at`; `entries`, `links`, and `assets` are not SQL relations;
-references and assets are values in typed Form columns.
+Each Form is exposed as the backend-provided `form_<FormId>` relation: the Form
+UUID without dashes, as returned in the `id` field of `ugoite form get`. Columns
+are the stable `field_<FieldId>` values plus `_ugoite_id`, `_ugoite_title`,
+`_ugoite_created_at`, and `_ugoite_updated_at`; `entries`, `links`, and `assets`
+are not SQL relations; references and assets are values in typed Form columns.
 
 ## Indexes and assets
 
