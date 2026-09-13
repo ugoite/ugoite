@@ -5,11 +5,13 @@ import {
 import { type DraftValue, draftValueToDisplayString } from "~/lib/draft-values";
 import { toRustFormDefinition } from "~/lib/entry-validation";
 import type { Form } from "~/lib/types";
+import type { MarkdownConversionDiagnostic } from "~/lib/ugoite-client/protocol";
 
 export type CompatDraft = {
   title: string;
   tags: string[];
   fields: Record<string, string>;
+  diagnostics: MarkdownConversionDiagnostic[];
 };
 
 const toStringFields = (
@@ -38,6 +40,7 @@ export const parseSourceToDraftViaWasm = async (
     fields: toStringFields(
       (parsed.fields ?? {}) as Record<string, unknown>,
     ),
+    diagnostics: Array.isArray(parsed.diagnostics) ? parsed.diagnostics : [],
   };
 };
 

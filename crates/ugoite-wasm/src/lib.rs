@@ -354,7 +354,8 @@ fn entry_validation_error(error: &ugoite_core::error::AppError) -> serde_json::V
 ///   `preview_structured_draft` implementation used natively, preserving
 ///   `code` / `detail` so browser diagnostics match server mutations.
 /// - `entry.compat.parse_markdown` converts legacy Markdown to a
-///   `StructuredEntryDraft` via `legacy_markdown_to_draft` (no WASM parser).
+///   `StructuredEntryDraft` plus conversion diagnostics via the shared core
+///   parser (no WASM-only parser).
 /// - `entry.compat.render_markdown` converts `{form, draft}` back to the
 ///   current 0.1 representation via `draft_to_legacy_representation`.
 fn invoke_entry(request: serde_json::Value) -> String {
@@ -407,10 +408,17 @@ fn invoke_entry(request: serde_json::Value) -> String {
                         .to_string();
                     (markdown, fallback)
                 };
-                let draft =
+                let conversion =
                     ugoite_core::entry::legacy_markdown_to_draft(&markdown, &fallback_title);
-                serde_json::to_value(draft)
-                    .map_err(|error| serde_json::json!({"kind": "entry_validation", "code": "INVALID_INPUT", "message": error.to_string()}))
+                let mut value = serde_json::to_value(conversion.draft).map_err(|error| {
+                    serde_json::json!({"kind": "entry_validation", "code": "INVALID_INPUT", "message": error.to_string()})
+                })?;
+                value["diagnostics"] = serde_json::to_value(conversion.diagnostics).map_err(
+                    |error| {
+                        serde_json::json!({"kind": "entry_validation", "code": "INVALID_INPUT", "message": error.to_string()})
+                    },
+                )?;
+                Ok(value)
             }
             "entry.compat.render_markdown" => {
                 let form: ugoite_domain::form::FormDefinition = serde_json::from_value(
@@ -843,12 +851,12 @@ mod tests {
         assert_eq!(parsed["ok"], true, "{parsed}");
         assert_eq!(parsed["value"]["title"], "Title");
         assert_eq!(parsed["value"]["form_name"], "Note");
+        assert_eq!(parsed["value"]["diagnostics"], serde_json::json!([]));
         // No WASM-only parser: result equals the native Rust adapter output.
         let native_draft = ugoite_core::entry::legacy_markdown_to_draft(markdown, "fallback");
-        assert_eq!(
-            parsed["value"],
-            serde_json::to_value(native_draft.clone()).unwrap()
-        );
+        let mut native_value = serde_json::to_value(native_draft.draft.clone()).unwrap();
+        native_value["diagnostics"] = serde_json::json!([]);
+        assert_eq!(parsed["value"], native_value);
 
         let render_request = serde_json::json!({
             "action": "entry.compat.render_markdown",
@@ -867,7 +875,8 @@ mod tests {
         )
         .unwrap();
         let reparsed = ugoite_core::entry::legacy_markdown_to_draft(rendered_markdown, "fallback");
-        let second = ugoite_core::entry::preview_structured_draft(&form_def, &reparsed).unwrap();
+        let second =
+            ugoite_core::entry::preview_structured_draft(&form_def, &reparsed.draft).unwrap();
         assert_eq!(first, second);
     }
 
@@ -889,7 +898,9 @@ mod tests {
         let parsed: Value = serde_json::from_str(&super::invoke_json(&parse_request)).unwrap();
         assert_eq!(parsed["ok"], true, "{parsed}");
         let native_draft = ugoite_core::entry::legacy_markdown_to_draft(markdown, "fallback");
-        assert_eq!(parsed["value"], serde_json::to_value(native_draft).unwrap());
+        let mut native_value = serde_json::to_value(native_draft.draft).unwrap();
+        native_value["diagnostics"] = serde_json::json!([]);
+        assert_eq!(parsed["value"], native_value);
 
         let validate_request = serde_json::json!({
             "action": "entry.validate_draft",
@@ -919,10 +930,28 @@ mod tests {
             "fallback",
         );
         let renormalized =
-            ugoite_core::entry::preview_structured_draft(&form_def, &reparsed).unwrap();
+            ugoite_core::entry::preview_structured_draft(&form_def, &reparsed.draft).unwrap();
         let draft_again = super::parse_entry_draft(&parsed["value"]).unwrap();
         let original =
             ugoite_core::entry::preview_structured_draft(&form_def, &draft_again).unwrap();
         assert_eq!(original.values, renormalized.values);
+    }
+
+    #[test]
+    fn entry_compat_parse_reports_loss_without_rejecting_preview() {
+        let markdown = "---\nform: Note\n---\n# Title\n\nPreamble\n\n## Body\nhello\n";
+        let request = serde_json::json!({
+            "action": "entry.compat.parse_markdown",
+            "value": {"markdown": markdown, "fallback_title": "fallback"}
+        })
+        .to_string();
+        let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(
+            response["value"]["diagnostics"][0]["code"],
+            "markdown_unassigned_preamble"
+        );
+        assert_eq!(response["value"]["fields"]["Body"], "hello");
     }
 }

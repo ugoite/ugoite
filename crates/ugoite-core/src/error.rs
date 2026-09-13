@@ -46,6 +46,7 @@ pub enum ErrorCode {
     CheckpointUnavailable,
     CheckpointIntegrity,
     CheckpointAlreadyExists,
+    MarkdownConversionLoss,
 }
 
 impl ErrorCode {
@@ -82,6 +83,7 @@ impl ErrorCode {
             Self::CheckpointUnavailable => "CHECKPOINT_UNAVAILABLE",
             Self::CheckpointIntegrity => "CHECKPOINT_INTEGRITY",
             Self::CheckpointAlreadyExists => "CHECKPOINT_ALREADY_EXISTS",
+            Self::MarkdownConversionLoss => "MARKDOWN_CONVERSION_LOSS",
         }
     }
 }

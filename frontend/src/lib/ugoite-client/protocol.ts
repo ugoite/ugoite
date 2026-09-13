@@ -210,6 +210,11 @@ export const validateEntryDraft = async (
     value: { form, draft },
   });
 
+export type MarkdownConversionDiagnostic = {
+  code: string;
+  message: string;
+};
+
 export type EntryCompatParseValue = {
   title: string;
   form_name?: string | null;
@@ -217,6 +222,7 @@ export type EntryCompatParseValue = {
   tags: string[];
   fields: Record<string, unknown>;
   extra_attributes?: Record<string, unknown>;
+  diagnostics?: MarkdownConversionDiagnostic[];
 };
 
 /** Parse legacy Markdown into a structured draft via the Rust bridge. */

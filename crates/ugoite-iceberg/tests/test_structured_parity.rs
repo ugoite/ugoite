@@ -242,3 +242,29 @@ async fn unknown_fields_and_validation_agree_across_both_paths() -> anyhow::Resu
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn lossy_markdown_is_rejected_before_any_entry_mutation() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "markdown-loss", "/tmp").await?;
+    let ws_path = "spaces/markdown-loss";
+    ensure_note_form(&op, ws_path).await?;
+    let integrity = FakeIntegrityProvider;
+    let lossy = "---\nform: Note\n---\n# T\n\nThis preamble has no field.\n\n## Body\nkept\n";
+
+    let error = entry::create_entry(&op, ws_path, "lossy", lossy, "author", &integrity)
+        .await
+        .expect_err("lossy Markdown must not be persisted");
+    let app_error = error
+        .downcast_ref::<ugoite_core::error::AppError>()
+        .expect("loss must remain a typed application error");
+    assert_eq!(
+        app_error.code(),
+        ugoite_core::error::ErrorCode::MarkdownConversionLoss
+    );
+    assert!(app_error.detail().is_some_and(|detail| {
+        detail["diagnostics"][0]["code"] == "markdown_unassigned_preamble"
+    }));
+    assert!(entry::list_entries(&op, ws_path).await?.is_empty());
+    Ok(())
+}
