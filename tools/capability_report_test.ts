@@ -138,7 +138,7 @@ Deno.test("journey Mitase selectors match exact Playwright test names", async ()
   const declared = [...yaml.matchAll(/name: '([^']+)'/g)]
     .map((match) => match[1])
     .filter((name) => name.startsWith("JOURNEY-"));
-  assertEquals(declared.length, 8);
+  assertEquals(declared.length, 12);
   for (const name of declared) {
     assertEquals(
       testSource.includes(`test("${name}"`),
