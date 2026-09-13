@@ -4188,6 +4188,11 @@ impl SpaceCatalogStore {
         }
         let path = self.catalog_path(&format!("probes/{}.json", Uuid::now_v7()));
         let initial = b"{\"format_version\":1,\"stage\":\"created\"}".to_vec();
+        // Keep a cancellation-safe cleanup guard from the moment the probe
+        // path is allocated. If the caller drops this future while an
+        // OpenDAL operation is in flight, Drop still schedules deletion of
+        // the temporary object.
+        let mut probe_cleanup = PublicationProbeCleanup::new(self.operator.clone(), path.clone());
         let verification: Result<()> = match tokio::time::timeout(Duration::from_secs(5), async {
             self.operator
                 .write_options(
@@ -4199,7 +4204,7 @@ impl SpaceCatalogStore {
                     },
                 )
                 .await?;
-            let duplicate_create = self
+            let duplicate_create = match self
                 .operator
                 .write_options(
                     &path,
@@ -4210,7 +4215,14 @@ impl SpaceCatalogStore {
                     },
                 )
                 .await
-                .expect_err("conditional create probe must reject an existing object");
+            {
+                Ok(_) => {
+                    return Err(anyhow!(
+                        "conditional create probe accepted an existing object"
+                    ))
+                }
+                Err(error) => error,
+            };
             if !matches!(
                 duplicate_create.kind(),
                 ErrorKind::AlreadyExists | ErrorKind::ConditionNotMatch
@@ -4261,7 +4273,7 @@ impl SpaceCatalogStore {
                     "shared Catalog probe replacement did not change the ETag"
                 ));
             }
-            let stale_read = self
+            let stale_read = match self
                 .operator
                 .read_options(
                     &path,
@@ -4271,11 +4283,14 @@ impl SpaceCatalogStore {
                     },
                 )
                 .await
-                .expect_err("conditional read probe must reject a stale ETag");
+            {
+                Ok(_) => return Err(anyhow!("conditional read probe accepted a stale ETag")),
+                Err(error) => error,
+            };
             if stale_read.kind() != ErrorKind::ConditionNotMatch {
                 return Err(stale_read.into());
             }
-            let stale_replace = self
+            let stale_replace = match self
                 .operator
                 .write_options(
                     &path,
@@ -4286,7 +4301,14 @@ impl SpaceCatalogStore {
                     },
                 )
                 .await
-                .expect_err("conditional replacement probe must reject a stale ETag");
+            {
+                Ok(_) => {
+                    return Err(anyhow!(
+                        "conditional replacement probe accepted a stale ETag"
+                    ))
+                }
+                Err(error) => error,
+            };
             if stale_replace.kind() != ErrorKind::ConditionNotMatch {
                 return Err(stale_replace.into());
             }
@@ -4373,9 +4395,11 @@ impl SpaceCatalogStore {
                     "shared Catalog probe cleanup also failed: {cleanup_error:#}"
                 )));
             }
+            probe_cleanup.disarm();
             return Err(error);
         }
         cleanup.context("remove shared Catalog verification probe")?;
+        probe_cleanup.disarm();
         self.write_mode = CatalogWriteMode::SharedVerified;
         Ok(self)
     }

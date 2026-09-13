@@ -404,18 +404,12 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
         SpaceSubCmd::TestConnection {
             storage_config_json,
         } => {
-            let config_val: serde_json::Value = serde_json::from_str(&storage_config_json)?;
-            let uri = config_val.get("uri").and_then(|v| v.as_str()).unwrap_or("");
-            let mode = if uri.starts_with("file://") || uri.starts_with('/') {
-                "local"
-            } else if uri.starts_with("memory://") {
-                "memory"
-            } else if uri.starts_with("s3://") {
-                "s3"
-            } else {
-                "unknown"
-            };
-            print_json(&serde_json::json!({"status": "ok", "mode": mode}));
+            let payload: serde_json::Value = serde_json::from_str(&storage_config_json)?;
+            let result = ugoite_iceberg::service::probe_storage_connection(
+                &ugoite_iceberg::space::StorageConnectionTestConfig::from_payload(&payload)?,
+            )
+            .await?;
+            print_json(&result);
         }
         SpaceSubCmd::Members { space_path } => {
             let (_, space_id) = parse_space_path(&space_path);
