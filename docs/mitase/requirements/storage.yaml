@@ -408,13 +408,13 @@ requirements:
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_006_test_storage_connection_rejects_blocked_endpoint } }
           - id: blocked-addresses-case
             adapter: rust
-            path: crates/ugoite-iceberg/src/space.rs
-            selector: { kind: symbol, name: tests::storage_endpoints_reject_private_link_local_and_mapped_addresses }
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: service::storage_connection_tests::endpoint_validation_rejects_blocked_hosts }
             claims:
               - kind: verifies
                 criterion: REQ-STO-006#criterion.safe-remote-endpoint
                 covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: tests::storage_endpoints_reject_private_link_local_and_mapped_addresses } }
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: service::storage_connection_tests::endpoint_validation_rejects_blocked_hosts } }
           - id: unreachable-endpoint-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_space.rs
@@ -426,13 +426,13 @@ requirements:
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_006_test_storage_connection_accepts_custom_s3_endpoint_validation } }
           - id: typed-connectivity-failure-case
             adapter: rust
-            path: crates/ugoite-iceberg/src/space.rs
-            selector: { kind: symbol, name: tests::storage_connection_probe_times_out_without_external_service }
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: service::storage_connection_tests::probe_unreachable_endpoint_maps_to_storage_connection_failure }
             claims:
               - kind: verifies
                 criterion: REQ-STO-006#criterion.explicit-connectivity-failure
                 covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: tests::storage_connection_probe_times_out_without_external_service } }
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: service::storage_connection_tests::probe_unreachable_endpoint_maps_to_storage_connection_failure } }
 
   - id: REQ-STO-008
     title: Fail-closed directory-based Space listing
