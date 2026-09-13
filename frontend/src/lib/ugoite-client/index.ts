@@ -35,5 +35,6 @@ export {
   UGOITE_WASM_PROTOCOL_VERSION,
   UgoiteApiError,
   type UgoiteApiOperation,
+  encodeSpreadsheetCsv,
   validateAssetReference,
 } from "./protocol";

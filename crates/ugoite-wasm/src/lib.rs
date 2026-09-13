@@ -159,6 +159,13 @@ fn invoke_domain(request: serde_json::Value) -> String {
             .cloned()
             .ok_or_else(|| "value is required".to_string())?;
         match action {
+            "domain.encode_spreadsheet_csv" => {
+                let rows: Vec<Vec<String>> =
+                    serde_json::from_value(payload).map_err(|error| error.to_string())?;
+                Ok(serde_json::json!(
+                    ugoite_domain::spreadsheet::encode_spreadsheet_csv(&rows)
+                ))
+            }
             "domain.validate_asset_reference" => {
                 let reference: ugoite_domain::entry::AssetReference =
                     serde_json::from_value(payload).map_err(|error| error.to_string())?;
@@ -556,6 +563,22 @@ mod tests {
         let response: Value = serde_json::from_str(&response).unwrap();
         assert_eq!(response["ok"], true, "{response}");
         assert_eq!(response["value"]["protocol_version"], 1);
+    }
+
+    #[test]
+    fn spreadsheet_protocol_uses_the_shared_domain_encoder() {
+        let request = serde_json::json!({
+            "action": "domain.encode_spreadsheet_csv",
+            "value": [["=SUM(A1:A2)", "a,b", "line\nbreak", "日本語"]]
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(
+            response["value"],
+            "\"'=SUM(A1:A2)\",\"a,b\",\"line\nbreak\",\"日本語\""
+        );
     }
 
     #[test]

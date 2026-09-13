@@ -2,6 +2,7 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import {
   getWasmSupportedOperations,
+  encodeSpreadsheetCsv,
   prepareApiRequest,
   protocolFetch,
   protocolFetchResponse,
@@ -22,6 +23,14 @@ const validReference = {
 };
 
 describe("portable Ugoite API protocol WASM", () => {
+  it("uses the shared spreadsheet-safe CSV encoder", async () => {
+    await expect(
+      encodeSpreadsheetCsv([["=SUM(A1:A2)", "a,b", "line\nbreak", "日本語"]]),
+    ).resolves.toBe(
+      "\"'=SUM(A1:A2)\",\"a,b\",\"line\nbreak\",\"日本語\"",
+    );
+  });
+
   it("uses the Rust domain contract for AssetReference validation", async () => {
     await expect(
       validateAssetReference({ ...validReference, asset_id: "../asset" }),
