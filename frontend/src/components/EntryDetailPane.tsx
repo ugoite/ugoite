@@ -1211,6 +1211,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       }
       if (!context.create && createdEntry() && unchanged) {
         clearCreateDraft();
+        setDraftSessionFinished(true);
+        props.onCreated?.(result);
       }
       props.onAfterSave?.();
       if (context.create && unchanged) {

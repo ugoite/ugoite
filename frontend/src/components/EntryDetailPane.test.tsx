@@ -396,6 +396,10 @@ describe("EntryDetailPane", () => {
       parent_revision_id: "rev-1",
       fields: { Body: "typed while saving" },
     })));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith({
+      id: "created-entry",
+      revision_id: "rev-2",
+    }));
   });
 
   it("creates an empty-title entry and keeps Untitled as presentation only", async () => {
