@@ -2204,25 +2204,6 @@ pub async fn get_entry_at_publication(
     get_entry_at_checkpoint(op, ws_path, entry_id, &checkpoint, form_scopes).await
 }
 
-pub(crate) async fn get_entry_history_at_checkpoint(
-    op: &Operator,
-    ws_path: &str,
-    entry_id: &str,
-    checkpoint: &SpaceCheckpoint,
-    form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
-) -> Result<Value> {
-    get_entry_history_at_checkpoint_paged(
-        op,
-        ws_path,
-        entry_id,
-        checkpoint,
-        form_scopes,
-        usize::MAX,
-        0,
-    )
-    .await
-}
-
 pub(crate) async fn get_entry_history_at_checkpoint_paged(
     op: &Operator,
     ws_path: &str,
