@@ -55,6 +55,19 @@ features:
                 criterion: REQ-JOURNEY-001#criterion.search-keyword
               - kind: satisfies
                 criterion: REQ-JOURNEY-001#criterion.reopen
+              - kind: satisfies
+                criterion: REQ-JOURNEY-004#criterion.structured-search-narrow
+              - kind: satisfies
+                criterion: REQ-JOURNEY-004#criterion.recovered-search-reopen
+          - id: change-api
+            adapter: typescript
+            path: frontend/src/lib/change-api.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-JOURNEY-004#criterion.space-change-history
+              - kind: satisfies
+                criterion: REQ-JOURNEY-004#criterion.change-revert-append
       - id: server
         role: operation
         facet: backend
@@ -100,6 +113,14 @@ features:
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
             selector: { kind: symbol, name: search_entries }
+          - id: list-changes
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: list_changes }
+          - id: revert-change
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: revert_change }
       - id: cli-core
         role: implementation
         facet: cli
@@ -121,6 +142,21 @@ features:
                 criterion: REQ-JOURNEY-001#criterion.search-keyword
               - kind: satisfies
                 criterion: REQ-JOURNEY-001#criterion.reopen
+              - kind: satisfies
+                criterion: REQ-JOURNEY-004#criterion.structured-search-narrow
+              - kind: satisfies
+                criterion: REQ-JOURNEY-004#criterion.recovered-search-reopen
+          - id: change-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/change.rs
+            selector: { kind: symbol, name: run }
+            claims:
+              - kind: satisfies
+                criterion: REQ-JOURNEY-004#criterion.space-change-history
+              - kind: satisfies
+                criterion: REQ-JOURNEY-004#criterion.change-revert-append
+              - kind: satisfies
+                criterion: REQ-JOURNEY-004#criterion.recovered-search-reopen
       - id: cli-remote
         role: operation
         facet: cli

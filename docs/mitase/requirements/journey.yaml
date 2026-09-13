@@ -426,3 +426,128 @@ requirements:
                 criterion: REQ-JOURNEY-003#criterion.validation-focus
                 covers: [FEAT-JOURNEY-002#binding.frontend/target.entry-detail-pane]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: 'focuses an empty required asset field before creating an entry' } }
+
+  - id: REQ-JOURNEY-004
+    title: Locate and recover durable Knowledge
+    description: 'JOURNEY-LOCATE-RECOVER-001 carries one locate-and-recover outcome across typed structured Search narrowing, Space Change history, Change revert, recovered search, and reopen. Criteria state durable postconditions, never surface interaction steps; every surface must reach the same outcome with equivalent meaning.'
+    priority: high
+    status: implemented
+    criteria:
+      - id: structured-search-narrow
+        kind: behavior
+        statement: Typed structured Search narrows keyword discovery to the same intended Entry set on every surface.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-006#rule.governance, POL-014#rule.governance]
+      - id: space-change-history
+        kind: behavior
+        statement: Entry mutations remain observable as append-only Space Change history on every surface.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-006#rule.governance, POL-014#rule.governance]
+      - id: change-revert-append
+        kind: behavior
+        statement: Reverting a Change appends a new Change preserving all prior revisions and Changes on every surface.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-006#rule.governance, POL-014#rule.governance]
+      - id: recovered-search-reopen
+        kind: behavior
+        statement: Post-recovery search reflects the recovered state, and reopen reads identical durable history and search outcomes on every surface.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-006#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: locate-recover-frontend-verification
+        role: verification
+        facet: verification
+        responsibility: Verify every locate-and-recover postcondition through the exact server-backed browser journey cases. CLI core and CLI remote evidence attach to the same criteria without duplicating them.
+        targets:
+          - id: narrow-case
+            adapter: typescript
+            path: e2e/knowledge-journey.test.ts
+            selector: { kind: test, name: 'JOURNEY-LOCATE-RECOVER-001: Structured search narrows keyword discovery' }
+            claims:
+              - kind: verifies
+                criterion: REQ-JOURNEY-004#criterion.structured-search-narrow
+                covers:
+                  - FEAT-JOURNEY-001#binding.frontend/target.search-api
+                runner: { runner: e2e-playwright, arguments: { file: e2e/knowledge-journey.test.ts, test: 'JOURNEY-LOCATE-RECOVER-001: Structured search narrows keyword discovery' } }
+          - id: timeline-case
+            adapter: typescript
+            path: e2e/knowledge-journey.test.ts
+            selector: { kind: test, name: 'JOURNEY-LOCATE-RECOVER-001: Space history observes the timeline' }
+            claims:
+              - kind: verifies
+                criterion: REQ-JOURNEY-004#criterion.space-change-history
+                covers:
+                  - FEAT-JOURNEY-001#binding.frontend/target.change-api
+                runner: { runner: e2e-playwright, arguments: { file: e2e/knowledge-journey.test.ts, test: 'JOURNEY-LOCATE-RECOVER-001: Space history observes the timeline' } }
+          - id: revert-case
+            adapter: typescript
+            path: e2e/knowledge-journey.test.ts
+            selector: { kind: test, name: 'JOURNEY-LOCATE-RECOVER-001: Change revert appends without shortening history' }
+            claims:
+              - kind: verifies
+                criterion: REQ-JOURNEY-004#criterion.change-revert-append
+                covers:
+                  - FEAT-JOURNEY-001#binding.frontend/target.change-api
+                runner: { runner: e2e-playwright, arguments: { file: e2e/knowledge-journey.test.ts, test: 'JOURNEY-LOCATE-RECOVER-001: Change revert appends without shortening history' } }
+          - id: recovered-case
+            adapter: typescript
+            path: e2e/knowledge-journey.test.ts
+            selector: { kind: test, name: 'JOURNEY-LOCATE-RECOVER-001: Recovered search reflects recovered state on reopen' }
+            claims:
+              - kind: verifies
+                criterion: REQ-JOURNEY-004#criterion.recovered-search-reopen
+                covers:
+                  - FEAT-JOURNEY-001#binding.frontend/target.search-api
+                runner: { runner: e2e-playwright, arguments: { file: e2e/knowledge-journey.test.ts, test: 'JOURNEY-LOCATE-RECOVER-001: Recovered search reflects recovered state on reopen' } }
+      - id: locate-recover-cli-core-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the same locate-and-recover postconditions through the local/core CLI with explicit surface=cli transport=core/local evidence identity.
+        targets:
+          - id: core-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_locate_recover.rs
+            selector: { kind: test, name: test_journey_cli_core_locate_recover_durable_outcome }
+            claims:
+              - kind: verifies
+                criterion: REQ-JOURNEY-004#criterion.structured-search-narrow
+                covers: [FEAT-JOURNEY-001#binding.cli-core/target.search-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_locate_recover, test: test_journey_cli_core_locate_recover_durable_outcome } }
+              - kind: verifies
+                criterion: REQ-JOURNEY-004#criterion.space-change-history
+                covers: [FEAT-JOURNEY-001#binding.cli-core/target.change-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_locate_recover, test: test_journey_cli_core_locate_recover_durable_outcome } }
+              - kind: verifies
+                criterion: REQ-JOURNEY-004#criterion.change-revert-append
+                covers: [FEAT-JOURNEY-001#binding.cli-core/target.change-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_locate_recover, test: test_journey_cli_core_locate_recover_durable_outcome } }
+              - kind: verifies
+                criterion: REQ-JOURNEY-004#criterion.recovered-search-reopen
+                covers:
+                  - FEAT-JOURNEY-001#binding.cli-core/target.search-command
+                  - FEAT-JOURNEY-001#binding.cli-core/target.change-command
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_locate_recover, test: test_journey_cli_core_locate_recover_durable_outcome } }
+      - id: locate-recover-cli-remote-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the same locate-and-recover postconditions through the server-backed CLI with explicit surface=cli transport=remote evidence identity.
+        targets:
+          - id: remote-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_locate_recover_remote.rs
+            selector: { kind: test, name: journey_cli_remote_locate_recover_reaches_durable_outcome }
+            claims:
+              - kind: verifies
+                criterion: REQ-JOURNEY-004#criterion.structured-search-narrow
+                covers: [FEAT-JOURNEY-001#binding.cli-core/target.search-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_locate_recover_remote, test: journey_cli_remote_locate_recover_reaches_durable_outcome } }
+              - kind: verifies
+                criterion: REQ-JOURNEY-004#criterion.space-change-history
+                covers: [FEAT-JOURNEY-001#binding.cli-core/target.change-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_locate_recover_remote, test: journey_cli_remote_locate_recover_reaches_durable_outcome } }
+              - kind: verifies
+                criterion: REQ-JOURNEY-004#criterion.change-revert-append
+                covers: [FEAT-JOURNEY-001#binding.cli-core/target.change-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_locate_recover_remote, test: journey_cli_remote_locate_recover_reaches_durable_outcome } }
+              - kind: verifies
+                criterion: REQ-JOURNEY-004#criterion.recovered-search-reopen
+                covers:
+                  - FEAT-JOURNEY-001#binding.cli-core/target.search-command
+                  - FEAT-JOURNEY-001#binding.cli-core/target.change-command
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_locate_recover_remote, test: journey_cli_remote_locate_recover_reaches_durable_outcome } }
