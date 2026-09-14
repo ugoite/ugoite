@@ -62,8 +62,10 @@ export default function SpaceInvitationJoinRoute() {
     if (busy()) return;
     setBusy(true);
     setFailure(null);
+    let authenticated = false;
     try {
       const session = await authApi.getSession();
+      authenticated = session.authenticated;
       if (session.authenticated) {
         await authApi.acceptInvitation(token().trim());
       } else {
@@ -72,7 +74,13 @@ export default function SpaceInvitationJoinRoute() {
       history.replaceState(null, "", location.pathname);
       navigate("/spaces", { replace: true });
     } catch (cause) {
-      setFailure(failureFor(cause));
+      const failure = failureFor(cause);
+      if (authenticated && failure.showSpaces) {
+        history.replaceState(null, "", location.pathname);
+        navigate("/spaces", { replace: true });
+      } else {
+        setFailure(failure);
+      }
     } finally {
       setBusy(false);
     }
