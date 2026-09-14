@@ -50,8 +50,15 @@ export const sqlSessionRowToEntryRecord = (
   const properties = Object.fromEntries(
     Object.entries(row).filter(([key]) => key.startsWith("field_")),
   );
-  const form = typeof row.form === "string" ? row.form : undefined;
+  const form = typeof row.form === "string"
+    ? row.form
+    : typeof row._ugoite_form === "string"
+    ? row._ugoite_form
+    : undefined;
   const createdAt = timestampValue(row._ugoite_created_at);
+  const tags = Array.isArray(row._ugoite_tags)
+    ? row._ugoite_tags.filter((tag): tag is string => typeof tag === "string")
+    : [];
 
   return {
     id: row._ugoite_id,
@@ -60,7 +67,7 @@ export const sqlSessionRowToEntryRecord = (
     ...(createdAt ? { created_at: createdAt } : {}),
     updated_at: updatedAt,
     properties,
-    tags: [],
+    tags,
     links: [],
   };
 };

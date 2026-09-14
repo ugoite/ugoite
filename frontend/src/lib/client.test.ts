@@ -1114,6 +1114,41 @@ describe("error paths", () => {
     );
   });
 
+  it("maps structured Search index projections into Entry records", async () => {
+    server.use(
+      http.post(
+        testApiUrl("/spaces/ws-structured-search/query"),
+        () =>
+          HttpResponse.json([
+            {
+              _ugoite_id: "entry-structured",
+              _ugoite_title: "Structured result",
+              _ugoite_created_at: 1772960822.056,
+              _ugoite_updated_at: 1772960823.056,
+              _ugoite_form: "Task",
+              _ugoite_tags: ["search"],
+              field_100: "alice",
+            },
+          ]),
+      ),
+    );
+
+    const entries = await searchApi.queryStructured("ws-structured-search", {
+      form: "Task",
+      conditions: [{ field: "Owner Name", operator: "equals", value: "alice" }],
+      limit: 51,
+    });
+
+    expect(entries[0]).toMatchObject({
+      id: "entry-structured",
+      title: "Structured result",
+      form: "Task",
+      tags: ["search"],
+      properties: { field_100: "alice" },
+      updated_at: new Date(1772960823.056 * 1000).toISOString(),
+    });
+  });
+
   it("spaceApi.create uses fallback message when error response has no detail", async () => {
     server.use(
       http.post(
