@@ -1,4 +1,4 @@
-schema: mitase/spec/v1
+schema: mitase/authoring/v2
 kind: philosophies
 namespace: foundation
 category: Foundation
