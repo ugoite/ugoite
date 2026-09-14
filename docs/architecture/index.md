@@ -6,7 +6,7 @@ sidebar:
 ---
 
 This section explains how Ugoite is put together and why its boundaries look the
-way they do. Read it after [Core concepts](../guide/start/concepts.md) if you
+way they do. Read it after [Core concepts](../vision/core-concepts.md) if you
 are new: architecture names the owners and adapters around the Space model.
 
 ## Read the architecture map
