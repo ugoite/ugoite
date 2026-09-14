@@ -1,6 +1,10 @@
 mod common;
 use common::setup_operator;
-use ugoite_iceberg::{entry, form, search, space};
+use std::collections::BTreeMap;
+use ugoite_domain::change::ChangeCommand;
+use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
+use ugoite_iceberg::{entry, form, iceberg_store, publication_context_for_change, search, space};
+use uuid::Uuid;
 
 async fn create_test_entry(
     op: &opendal::Operator,
@@ -35,6 +39,68 @@ async fn create_test_entry(
         tags, entry_id, content
     );
     entry::create_entry(op, ws_path, entry_id, &markdown, "author", &MockIntegrity).await?;
+    Ok(())
+}
+
+async fn append_entries_at_search_cap(op: &opendal::Operator, ws_path: &str) -> anyhow::Result<()> {
+    let workspace = iceberg_store::native_mutation_workspace(op, ws_path).await?;
+    let form = workspace
+        .list_forms()
+        .await?
+        .into_iter()
+        .find(|form| form.name == "Entry")
+        .expect("Entry form");
+    let field_id = form.fields.first().expect("Entry field").id;
+    let revisions = (0..ugoite_iceberg::MAX_NORMAL_READ_ROWS)
+        .map(|index| {
+            let timestamp = i64::try_from(index).unwrap_or_default() + 1;
+            EntryRevision {
+                form_id: form.id,
+                entry_id: Uuid::from_u128(100_000 + index as u128).into(),
+                revision_id: Uuid::from_u128(200_000 + index as u128).into(),
+                parent_revision_id: None,
+                entry_version: 1,
+                change_id: "search-cap-change".to_owned(),
+                expected_version: None,
+                operation: EntryOperation::Upsert,
+                committed_at_micros: timestamp,
+                author_id: "author".to_owned(),
+                form_version: form.version,
+                source_kind: "test".to_owned(),
+                source_id: None,
+                entry: EntryMetadata {
+                    external_id: format!("cap-{index:05}"),
+                    title: format!("Match {index:05}"),
+                    created_at_micros: timestamp,
+                    updated_at_micros: timestamp,
+                    updated_by: "author".to_owned(),
+                    ..EntryMetadata::default()
+                },
+                values: BTreeMap::from([(
+                    field_id,
+                    FieldValue::String(format!("searchable content {index}")),
+                )]),
+                extra_attributes: BTreeMap::new(),
+                extension_metadata: BTreeMap::new(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let command = ChangeCommand {
+        change_id: "search-cap-change".to_owned(),
+        run_id: None,
+        actor_principal_id: "author".to_owned(),
+        message: Some("populate search cap boundary".to_owned()),
+        reverts_change_id: None,
+        created_at_micros: 1,
+    };
+    workspace
+        .commit(publication_context_for_change(
+            &command,
+            "test.search.cap",
+            &revisions,
+        )?)?
+        .append_revisions(form.id, revisions)
+        .await?;
     Ok(())
 }
 
@@ -382,5 +448,35 @@ async fn search_matches_unicode_compatibility_and_composed_forms() -> anyhow::Re
         );
     }
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn search_pagination_returns_the_terminal_row_at_the_normal_read_cap() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "search-cap-boundary", "/tmp").await?;
+    let ws_path = "spaces/search-cap-boundary";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Entry",
+            "fields": {"Body": {"type": "markdown"}}
+        }),
+    )
+    .await?;
+    append_entries_at_search_cap(&op, ws_path).await?;
+
+    let cap = ugoite_iceberg::MAX_NORMAL_READ_ROWS;
+    let terminal = search::search_entries_paged(&op, ws_path, "searchable", 2, cap - 1).await?;
+    assert_eq!(
+        terminal.len(),
+        1,
+        "the final in-cap page must return its row"
+    );
+    assert_eq!(terminal[0].id, format!("cap-{:05}", cap - 1));
+
+    let after_cap = search::search_entries_paged(&op, ws_path, "searchable", 2, cap).await?;
+    assert!(after_cap.is_empty(), "the page after the cap must be empty");
     Ok(())
 }

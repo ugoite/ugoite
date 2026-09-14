@@ -1072,6 +1072,23 @@ fn issue_2125_openapi_documents_entry_list_and_keyword_search_bounds() {
             .iter()
             .any(|parameter| parameter["$ref"] == "#/components/parameters/KeywordSearchQuery")
     );
+    assert!(
+        snapshot["paths"]["/spaces/{space_id}/search"]["get"]["parameters"]
+            .as_array()
+            .expect("search parameters")
+            .iter()
+            .any(|parameter| parameter["$ref"] == "#/components/parameters/Offset")
+    );
+    for parameter in ["Limit", "Offset"] {
+        assert!(
+            snapshot["paths"]["/spaces/{space_id}/entries/{entry_id}/history"]["get"]["parameters"]
+                .as_array()
+                .expect("history parameters")
+                .iter()
+                .any(|value| value["$ref"] == format!("#/components/parameters/{parameter}")),
+            "entry history must expose {parameter} pagination"
+        );
+    }
 }
 
 #[test]

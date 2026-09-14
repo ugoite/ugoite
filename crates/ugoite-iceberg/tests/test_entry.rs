@@ -3,13 +3,17 @@ use common::setup_operator;
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
+use ugoite_core::structured_search::StructuredSearch;
 use ugoite_domain::change::ChangeCommand;
+use ugoite_domain::form::{FormChange, FormChangeSet};
+use ugoite_domain::id::{FieldId, FormId};
 use ugoite_iceberg::asset;
 use ugoite_iceberg::entry;
 use ugoite_iceberg::form;
 use ugoite_iceberg::iceberg_store;
 use ugoite_iceberg::index;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
+use ugoite_iceberg::publication_context;
 use ugoite_iceberg::space;
 use uuid::Uuid;
 
@@ -394,6 +398,267 @@ async fn entry_list_supports_bounded_offset_pages_in_stable_order() -> anyhow::R
             .collect::<Vec<_>>(),
         ["entry-b", "entry-c"]
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn entry_history_pages_are_deterministic_for_current_and_pinned_views() -> anyhow::Result<()>
+{
+    let op = setup_operator()?;
+    space::create_space(&op, "paged-entry-history", "/tmp").await?;
+    let ws_path = "spaces/paged-entry-history";
+    ensure_entry_form(&op, ws_path).await?;
+    let integrity = FakeIntegrityProvider;
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "history-entry",
+        "---\nform: Entry\n---\n# First\n\n## Body\nOne",
+        "author",
+        &integrity,
+    )
+    .await?;
+    let first = entry::get_entry_content(&op, ws_path, "history-entry").await?;
+    entry::update_entry(
+        &op,
+        ws_path,
+        "history-entry",
+        "---\nform: Entry\n---\n# Second\n\n## Body\nTwo",
+        Some(&first.revision_id),
+        "author",
+        &integrity,
+    )
+    .await?;
+
+    let workspace = iceberg_store::native_workspace(&op, ws_path).await?;
+    let pin = workspace
+        .create_pin("after-second", "author", 1, "history-page-pin")
+        .await?;
+    let second = entry::get_entry_content(&op, ws_path, "history-entry").await?;
+    entry::update_entry(
+        &op,
+        ws_path,
+        "history-entry",
+        "---\nform: Entry\n---\n# Third\n\n## Body\nThree",
+        Some(&second.revision_id),
+        "author",
+        &integrity,
+    )
+    .await?;
+
+    let revision_ids = |history: &serde_json::Value| {
+        history["revisions"]
+            .as_array()
+            .expect("history revisions")
+            .iter()
+            .map(|revision| {
+                revision["revision_id"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned()
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let current_full = entry::get_entry_history(&op, ws_path, "history-entry").await?;
+    let current_page_one =
+        entry::get_entry_history_paged(&op, ws_path, "history-entry", 2, 0).await?;
+    let current_page_two =
+        entry::get_entry_history_paged(&op, ws_path, "history-entry", 2, 2).await?;
+    let current_ids = revision_ids(&current_full);
+    let mut current_paged_ids = revision_ids(&current_page_one);
+    current_paged_ids.extend(revision_ids(&current_page_two));
+    assert_eq!(current_paged_ids, current_ids);
+    assert_eq!(revision_ids(&current_page_one).len(), 2);
+    assert_eq!(revision_ids(&current_page_two).len(), 1);
+    assert_eq!(
+        current_page_one,
+        entry::get_entry_history_paged(&op, ws_path, "history-entry", 2, 0).await?
+    );
+
+    let pinned_full = entry::get_entry_history_at_publication(
+        &op,
+        ws_path,
+        "history-entry",
+        &pin.coordinate,
+        None,
+    )
+    .await?;
+    let pinned_page_one = entry::get_entry_history_at_publication_paged(
+        &op,
+        ws_path,
+        "history-entry",
+        &pin.coordinate,
+        None,
+        1,
+        0,
+    )
+    .await?;
+    let pinned_page_two = entry::get_entry_history_at_publication_paged(
+        &op,
+        ws_path,
+        "history-entry",
+        &pin.coordinate,
+        None,
+        1,
+        1,
+    )
+    .await?;
+    let pinned_ids = revision_ids(&pinned_full);
+    let mut pinned_paged_ids = revision_ids(&pinned_page_one);
+    pinned_paged_ids.extend(revision_ids(&pinned_page_two));
+    assert_eq!(pinned_ids, vec![first.revision_id, second.revision_id]);
+    assert_eq!(pinned_paged_ids, pinned_ids);
+    assert_eq!(revision_ids(&pinned_page_one).len(), 1);
+    assert_eq!(revision_ids(&pinned_page_two).len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn restore_after_form_field_rename_keeps_field_id_and_current_name() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "restore-renamed-field", "/tmp").await?;
+    let ws_path = "spaces/restore-renamed-field";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Rename",
+            "fields": {"old_name": {"type": "string"}}
+        }),
+    )
+    .await?;
+    let stored_form = form::get_form(&op, ws_path, "Rename").await?;
+    let form_id = FormId::from(Uuid::parse_str(
+        stored_form["id"].as_str().expect("stable Form ID"),
+    )?);
+    let field_id = FieldId::new(
+        stored_form["fields"]["old_name"]["id"]
+            .as_i64()
+            .expect("stable Field ID") as i32,
+    )?;
+    let integrity = FakeIntegrityProvider;
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "rename-entry",
+        "---\nform: Rename\n---\n# Historical\n\n## old_name\nhistorical value",
+        "author",
+        &integrity,
+    )
+    .await?;
+    let historical = entry::get_entry_content(&op, ws_path, "rename-entry").await?;
+
+    let workspace = iceberg_store::native_mutation_workspace(&op, ws_path).await?;
+    let current_form = workspace.load_form(form_id).await?;
+    let changes = FormChangeSet {
+        form_id,
+        expected_version: Some(current_form.version),
+        changes: vec![FormChange::RenameField {
+            field_id,
+            name: "new_name".to_owned(),
+        }],
+    };
+    let evolved_form = workspace
+        .commit(publication_context(
+            "rename-form-field",
+            "test.form.evolve",
+            &changes,
+        )?)?
+        .evolve_form(&changes)
+        .await?;
+    assert_eq!(evolved_form.fields[0].id, field_id);
+    assert_eq!(evolved_form.fields[0].name, "new_name");
+
+    entry::update_entry(
+        &op,
+        ws_path,
+        "rename-entry",
+        "---\nform: Rename\n---\n# Current\n\n## new_name\ncurrent value",
+        Some(&historical.revision_id),
+        "editor",
+        &integrity,
+    )
+    .await?;
+    let changed = entry::get_entry_content(&op, ws_path, "rename-entry").await?;
+    let restored = entry::restore_entry(
+        &op,
+        ws_path,
+        "rename-entry",
+        &historical.revision_id,
+        "restorer",
+        &integrity,
+    )
+    .await?;
+    let reopened = entry::get_entry_revision_content(
+        &op,
+        ws_path,
+        "rename-entry",
+        restored["revision_id"]
+            .as_str()
+            .expect("restore revision ID"),
+    )
+    .await?;
+    assert_eq!(reopened.operation, "restore");
+    assert_eq!(
+        reopened.parent_revision_id.as_deref(),
+        Some(changed.revision_id.as_str())
+    );
+    assert_eq!(
+        reopened.restored_from.as_deref(),
+        Some(historical.revision_id.as_str())
+    );
+    assert!(reopened.markdown.contains("## new_name\nhistorical value"));
+    assert!(!reopened.markdown.contains("## old_name"));
+
+    let record = entry::list_entries(&op, ws_path)
+        .await?
+        .into_iter()
+        .find(|entry| entry["id"] == "rename-entry")
+        .expect("restored Entry");
+    assert_eq!(record["properties"]["new_name"], "historical value");
+    assert!(record["properties"].get("old_name").is_none());
+
+    let history = entry::get_entry_history(&op, ws_path, "rename-entry").await?;
+    let history_ids = history["revisions"]
+        .as_array()
+        .expect("history")
+        .iter()
+        .map(|revision| revision["revision_id"].as_str().unwrap_or_default())
+        .collect::<Vec<_>>();
+    assert_eq!(history_ids.len(), 3);
+    assert_eq!(history_ids[0], historical.revision_id);
+    assert_eq!(
+        history_ids[2],
+        restored["revision_id"]
+            .as_str()
+            .expect("restore revision ID")
+    );
+
+    let search = ugoite_iceberg::structured_search::search_structured(
+        &op,
+        ws_path,
+        &StructuredSearch {
+            form: "Rename".to_owned(),
+            updated_from: None,
+            updated_to: None,
+            conditions: Vec::new(),
+            limit: Some(10),
+            offset: None,
+        },
+    )
+    .await?;
+    assert_eq!(
+        search
+            .iter()
+            .filter_map(|value| value["_ugoite_id"].as_str())
+            .collect::<Vec<_>>(),
+        vec!["rename-entry"]
+    );
+    let field_column = format!("field_{}", field_id.get());
+    assert_eq!(search[0][field_column.as_str()], "historical value");
     Ok(())
 }
 
