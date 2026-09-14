@@ -4,11 +4,11 @@ description: A private, portable Knowledge Space for humans and AI, built around
 hero:
   tagline: Knowledge persists. Work may disappear. Knowledge can become tools.
   actions:
-    - text: Container quick start
-      link: docs/guide/start/container-quickstart/
+    - text: Get started
+      link: docs/get-started/
       icon: right-arrow
-    - text: Run from source
-      link: docs/guide/develop/local-dev-auth-login/
+    - text: Explore the vision
+      link: docs/vision/
       variant: minimal
     - text: View on GitHub
       link: https://github.com/ugoite/ugoite
@@ -56,17 +56,17 @@ application builder or arbitrary code runtime is shipped. :::
 
 ## Choose a path
 
-- **Operate it:** start with the
-  [container quick start](guide/start/container-quickstart.md), then review
-  [operations](guide/operate/server/operations.md).
-- **Develop it:** follow the
-  [local development login guide](guide/develop/local-dev-auth-login.md) and the
-  [architecture overview](architecture/contracts/overview.md).
-- **Automate it:** use the [CLI guide](guide/automate/cli.md),
-  [REST API](architecture/api/rest.md), or current
-  [MCP surface](architecture/api/mcp.md).
-- **Verify it:** browse the [executable specification](spec/index.md), whose
-  registries point back to implementation and tests.
+- [Get started](get-started/index.md): understand the model and complete a
+  first durable workflow.
+- [Use Ugoite](use/index.md): create, edit, search, and recover Knowledge.
+- [Operate Ugoite](operate/index.md): install, configure, secure, and recover a
+  deployment.
+- [Vision & Concepts](vision/index.md): understand why Knowledge, Work, and
+  Experience are separate.
+- [Develop Ugoite](develop/index.md): build and extend the repository.
+- [Reference](reference/index.md): find exact CLI, REST, MCP, configuration,
+  and compatibility authorities.
+- [Specification](spec/index.md): inspect requirements, policies, and evidence.
 
 ## Current product boundary
 
