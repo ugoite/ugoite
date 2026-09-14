@@ -121,6 +121,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-E2E-003#criterion.system-color-mode
+          - id: mobile-regression
+            adapter: typescript
+            path: e2e/ui-mobile-regression.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-003#criterion.responsive-mobile-workflows
       - id: docsite
         role: implementation
         facet: docsite

@@ -10,6 +10,7 @@
     "owner-recovery": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test owner-space-recovery.test.ts",
     "forms": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test forms.test.ts",
     "knowledge-journey": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test knowledge-journey.test.ts",
+    "mobile-ui": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test ui-mobile-regression.test.ts",
     "full": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test --grep-invert @screenshot",
     "screenshot": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test ui-pages-screenshots.test.ts"
   },

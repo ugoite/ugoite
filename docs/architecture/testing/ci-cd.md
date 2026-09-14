@@ -34,7 +34,8 @@ Root task composition:
 - `verify:*`: checks packaged outputs without rebuilding them;
 - `ci`: formatting check, lint, architecture/OpenAPI/type checks, and `test`;
 - `ci:artifacts`: build/package/verify, a focused docsite-navigation E2E lane,
-  E2E smoke plus Form-owned Asset acceptance, and version validation;
+  E2E smoke plus Form-owned Asset acceptance, the mobile browser visual
+  regression suite, and version validation;
 - `ci:merge`: `ci` plus `ci:artifacts`;
 - `ci:release`: release artifact build/package/verification plus npm
   packaging/verification; it does not rerun `ci:merge` or full E2E.

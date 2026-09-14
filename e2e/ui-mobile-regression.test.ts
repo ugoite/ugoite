@@ -1,0 +1,177 @@
+import { expect, type Page, test } from "@playwright/test";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import {
+  ensureDefaultForm,
+  getBackendUrl,
+  getDefaultSpaceId,
+  waitForServers,
+} from "./lib/client.ts";
+
+const screenshotDir = path.resolve(
+  process.cwd(),
+  "../target/ui-screenshots/mobile",
+);
+const viewports = [
+  { width: 390, height: 844 },
+  { width: 360, height: 800 },
+] as const;
+
+async function expectNoHorizontalOverflow(page: Page): Promise<void> {
+  const overflow = await page.evaluate(() => ({
+    documentWidth: document.documentElement.scrollWidth,
+    viewportWidth: document.documentElement.clientWidth,
+  }));
+  expect(overflow.documentWidth).toBeLessThanOrEqual(
+    overflow.viewportWidth + 1,
+  );
+}
+
+async function expectMobileTouchTargets(page: Page): Promise<void> {
+  const sizes = await page.locator(
+    ".topbar .mobileMenu, .assistantPill, .accountMenu .avatar, .bottomNav a",
+  ).evaluateAll((elements) =>
+    elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return { height: rect.height, width: rect.width };
+    })
+  );
+
+  expect(sizes.length).toBeGreaterThan(0);
+  for (const size of sizes) {
+    expect(size.width).toBeGreaterThanOrEqual(44);
+    expect(size.height).toBeGreaterThanOrEqual(44);
+  }
+}
+
+test.describe("Mobile UI regression @screenshot", () => {
+  let spaceId = "";
+  let entryId = "";
+
+  test.beforeAll(async ({ request }) => {
+    await waitForServers(request);
+    spaceId = await getDefaultSpaceId(request);
+    await ensureDefaultForm(request, spaceId);
+
+    const response = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/entries`),
+      {
+        data: {
+          markdown:
+            `---\nform: Entry\n---\n# Mobile regression ${Date.now()}\n\n## Body\nMobile layout fixture.`,
+        },
+      },
+    );
+    expect(response.status()).toBe(201);
+    entryId = ((await response.json()) as { id: string }).id;
+    await fs.mkdir(screenshotDir, { recursive: true });
+  });
+
+  test.afterAll(async ({ request }) => {
+    if (entryId) {
+      await request.delete(
+        getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`),
+      );
+    }
+  });
+
+  test("REQ-E2E-003: preserves the Space UI at 390x844", async ({ page }) => {
+    test.setTimeout(120_000);
+    await runMobileRegression(page, spaceId, entryId, viewports[0]);
+  });
+
+  test("REQ-E2E-003: preserves the Space UI at 360x800", async ({ page }) => {
+    test.setTimeout(120_000);
+    await runMobileRegression(page, spaceId, entryId, viewports[1]);
+  });
+});
+
+async function runMobileRegression(
+  page: Page,
+  spaceId: string,
+  entryId: string,
+  viewport: (typeof viewports)[number],
+): Promise<void> {
+  await page.setViewportSize(viewport);
+  const cases = [
+    {
+      name: "dashboard",
+      path: `/spaces/${spaceId}/dashboard`,
+      ready: ".bottomNav",
+      assert: async () => {
+        // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
+        await expect(page.getByRole("heading", { name: "Home" }))
+          .toBeVisible();
+        await expectMobileTouchTargets(page);
+      },
+    },
+    {
+      name: "forms",
+      path: `/spaces/${spaceId}/forms?form=Entry`,
+      ready: ".mobileFormPicker",
+      assert: async () => {
+        // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
+        await expect(page.locator(".mobileFormPicker")).toBeVisible();
+        await expect(page.locator(".desktopFormPicker")).toBeHidden();
+        await expect(page.locator(".ui-table-mobile-list")).toBeVisible();
+        await expect(page.locator(".formTableActions")).toHaveCSS(
+          "flex-wrap",
+          "wrap",
+        );
+      },
+    },
+    {
+      name: "search",
+      path: `/spaces/${spaceId}/search`,
+      ready: "#search-keywords",
+      assert: async () => {
+        // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
+        await expect(page.getByLabel("Search keywords")).toBeVisible();
+        await expect(page.locator(".topbarMore")).toHaveCount(0);
+      },
+    },
+    {
+      name: "settings",
+      path: `/spaces/${spaceId}/settings`,
+      ready: ".settingsNav",
+      assert: async () => {
+        // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
+        await expect(page.locator(".settingsNav")).toBeVisible();
+      },
+    },
+    {
+      name: "entry",
+      path: `/spaces/${spaceId}/entries/${entryId}`,
+      ready: ".ui-entry-workspace",
+      assert: async () => {
+        // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
+        const columns = await page.locator(".ui-entry-workspace")
+          .evaluate((element) =>
+            getComputedStyle(element).gridTemplateColumns.trim().split(
+              /\s+/,
+            )
+          );
+        expect(columns).toHaveLength(1);
+      },
+    },
+  ];
+
+  for (const item of cases) {
+    await page.goto(item.path, { waitUntil: "domcontentloaded" });
+    await page.locator(item.ready).waitFor({ state: "visible" });
+    await item.assert();
+    await expect(page.locator(".desktopSidebar")).toBeHidden();
+    await expect(page.locator(".bottomNav")).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    const screenshotPath = path.join(
+      screenshotDir,
+      String(viewport.width),
+      `${item.name}.png`,
+    );
+    await fs.mkdir(path.dirname(screenshotPath), { recursive: true });
+    await page.screenshot({
+      path: screenshotPath,
+      fullPage: false,
+    });
+  }
+}

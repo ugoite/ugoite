@@ -123,6 +123,15 @@ describe("v5 SpaceShell", () => {
     fireEvent.click(utility);
     expect(screen.getByLabelText("Model API key")).toHaveValue("test-key");
   });
+  it("does not render a decorative topbar overflow control", () => {
+    const { container } = render(() => (
+      <SpaceShell spaceId="my-space-uid" activeNavigation="home">
+        <p>Content</p>
+      </SpaceShell>
+    ));
+
+    expect(container.querySelector(".topbarMore")).toBeNull();
+  });
   it("localizes navigation", () => {
     setLocale("ja");
     render(() => (

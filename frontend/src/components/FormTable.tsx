@@ -179,7 +179,7 @@ function formatCsvValues(entry: EntryRecord, headers: string[]) {
         val = String(entry.properties?.[field] ?? "");
       }
       return val;
-    })
+    });
 }
 /* v8 ignore stop */
 
@@ -507,7 +507,7 @@ export function FormTable(props: FormTableProps) {
       }`}
     >
       <div class="p-4 sm:p-6">
-        <div class="mb-4 sm:mb-6 flex flex-wrap justify-between items-start gap-3">
+        <div class="formTableToolbar mb-4 sm:mb-6 flex flex-wrap justify-between items-start gap-3">
           <div>
             <p class="ui-muted text-sm">
               {entries.error
@@ -519,7 +519,7 @@ export function FormTable(props: FormTableProps) {
                 })}
             </p>
           </div>
-          <div class="flex gap-2">
+          <div class="formTableActions flex flex-wrap justify-end gap-2">
             <button
               type="button"
               onClick={downloadCSV}
