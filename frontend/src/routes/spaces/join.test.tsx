@@ -120,7 +120,7 @@ describe("/spaces/join", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows the reuse reason with a Spaces continuation", async () => {
+  it("returns an authenticated visitor to Spaces when a consumed invitation is reopened", async () => {
     vi.mocked(authApi.getSession).mockResolvedValue({ authenticated: true });
     vi.mocked(authApi.acceptInvitation).mockRejectedValue(
       new UgoiteApiError({
@@ -137,16 +137,10 @@ describe("/spaces/join", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Accept invitation" }));
 
-    await screen.findByRole("alert");
-    expect(
-      screen.getByText("The invitation is no longer pending.", {
-        exact: false,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: "Go to Spaces" }),
-    ).toBeInTheDocument();
-    expect(navigateMock).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith("/spaces", { replace: true });
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("shows invalid invitations with resume guidance", async () => {

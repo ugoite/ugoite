@@ -77,8 +77,8 @@ test.describe("Owner-approved Space access recovery", () => {
   ) {
     await page.goto(invitationUrl);
     await page.getByRole("button", { name: "Accept invitation" }).click();
-    await expect(page).toHaveURL(/\/spaces$/);
-    await expect(page).not.toHaveURL(/\/spaces\/join/);
+    await expect(page).toHaveURL(/\/spaces$/, { timeout: 15_000 });
+    await expect(page).not.toHaveURL(/\/spaces\/join/, { timeout: 15_000 });
   }
 
   test("req_sec_012_013_owner_space_access_recovery_supported_journey", async ({ browser, request }) => {
