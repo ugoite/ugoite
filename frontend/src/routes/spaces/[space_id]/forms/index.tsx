@@ -131,9 +131,12 @@ export default function SpaceFormsIndexPane() {
               </button>
             </div>
           </div>
-          <aside class="listPane surface desktopFormPicker">
+          <aside
+            class="listPane surface desktopFormPicker"
+            aria-label={t("formsPage.formPicker")}
+          >
             <div class="paneHead">
-              <b>{t("spaceShell.bottom.grid")}</b>
+              <span class="ui-sr-only">{t("formsPage.formPicker")}</span>
               <button
                 class="btn iconBtn"
                 type="button"

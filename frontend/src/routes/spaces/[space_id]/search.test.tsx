@@ -1,6 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import { http, HttpResponse } from "msw";
 import SpaceSearchRoute from "./search";
 import {
@@ -483,13 +489,26 @@ describe("/spaces/:space_id/search", () => {
     );
   });
 
-  it("links the Assets facet to the Space asset workspace", () => {
+  it("keeps search modes and destinations in one navigation row", () => {
     render(() => <SpaceSearchRoute />);
 
-    expect(screen.getByRole("link", { name: /Assets/ })).toHaveAttribute(
-      "href",
-      "/spaces/default/assets",
+    const navigation = screen.getByRole("navigation", { name: "Search" });
+    expect(within(navigation).getByText("Quick")).toBeInTheDocument();
+    expect(within(navigation).getByText("Advanced")).toBeInTheDocument();
+    expect(within(navigation).getByRole("link", { name: "Files" }))
+      .toHaveAttribute(
+        "href",
+        "/spaces/default/assets",
+      );
+    expect(within(navigation).getByRole("link", { name: "Saved SQL" }))
+      .toHaveAttribute("href", "/spaces/default/sql");
+    expect(document.querySelector(".facet")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      within(navigation).getByRole("button", { name: "Advanced search" }),
     );
+    expect(document.querySelector(".searchCondition.ui-card"))
+      .not.toBeInTheDocument();
   });
 
   it("REQ-FE-044: keeps search controls and state messages in Japanese", () => {

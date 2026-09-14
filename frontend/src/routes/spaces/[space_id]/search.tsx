@@ -566,65 +566,49 @@ export default function SpaceSearchRoute() {
   return (
     <>
       <div class="searchWorkspace">
-        <div class="screenHead">
-          <div class="screenTitle">
-            <div class="eyebrow">{spaceId()}</div>
-            <h1>{t("searchPage.title")}</h1>
-          </div>
+        <h1 class="ui-sr-only" id="search-page-title">
+          {t("searchPage.title")}
+        </h1>
+        <nav
+          class="searchModeNav"
+          aria-label={t("searchPage.title")}
+          aria-labelledby="search-page-title"
+        >
+          <button
+            type="button"
+            aria-label={t("searchPage.quickSearch")}
+            aria-pressed={mode() === "keyword"}
+            classList={{ active: mode() === "keyword" }}
+            onClick={() => setMode("keyword")}
+          >
+            {t("searchPage.mode.quick")}
+          </button>
+          <button
+            type="button"
+            aria-label={t("searchPage.advancedSearch")}
+            aria-pressed={mode() === "advanced"}
+            classList={{ active: mode() === "advanced" }}
+            onClick={() => setMode("advanced")}
+          >
+            {t("searchPage.mode.advanced")}
+          </button>
+          <A href={`/spaces/${spaceId()}/assets`}>
+            {t("searchPage.nav.files")}
+          </A>
+          <A href={`/spaces/${spaceId()}/sql`}>
+            {t("searchPage.nav.savedSql")}
+          </A>
           <A
             href={`/spaces/${spaceId()}/queries/new`}
-            class="ui-button ui-button-secondary inline-flex items-center gap-2 text-sm"
+            class="searchModeNavEditor"
           >
             {t("searchPage.openSqlEditor")}
           </A>
-        </div>
+        </nav>
 
         <div class="searchPage">
-          <aside class="facet surface">
-            <button
-              type="button"
-              classList={{ active: mode() === "keyword" }}
-              onClick={() => setMode("keyword")}
-            >
-              <UiIcon name="entry" /> {t("searchPage.nav.entries")}
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("advanced")}
-              classList={{ active: mode() === "advanced" }}
-            >
-              <UiIcon name="forms" /> {t("searchPage.nav.forms")}
-            </button>
-            <A href={`/spaces/${spaceId()}/assets`}>
-              <UiIcon name="asset" /> {t("searchPage.nav.assets")}
-            </A>
-            <A href={`/spaces/${spaceId()}/sql`}>
-              <UiIcon name="sql" /> {t("searchPage.nav.savedSql")}
-            </A>
-          </aside>
           <main>
-            <div class="ui-card p-5">
-              <div class="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  class={mode() === "keyword"
-                    ? "ui-button ui-button-primary text-sm"
-                    : "ui-button ui-button-secondary text-sm"}
-                  onClick={() => setMode("keyword")}
-                >
-                  {t("searchPage.quickSearch")}
-                </button>
-                <button
-                  type="button"
-                  class={mode() === "advanced"
-                    ? "ui-button ui-button-primary text-sm"
-                    : "ui-button ui-button-secondary text-sm"}
-                  onClick={() => setMode("advanced")}
-                >
-                  {t("searchPage.advancedSearch")}
-                </button>
-              </div>
-
+            <section class="searchControls" aria-labelledby="search-page-title">
               <Show when={mode() === "keyword"}>
                 <form
                   class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center"
@@ -735,7 +719,7 @@ export default function SpaceSearchRoute() {
 
                     <Index each={fieldConditions()}>
                       {(condition) => (
-                        <div class="ui-card grid gap-3 p-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.6fr)_auto]">
+                        <div class="searchCondition grid gap-3 p-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.6fr)_auto]">
                           <div>
                             <label
                               class="ui-label"
@@ -913,7 +897,7 @@ export default function SpaceSearchRoute() {
                   </div>
                 </div>
               </Show>
-            </div>
+            </section>
 
             <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,1fr)]">
               <section class="ui-card p-5">
