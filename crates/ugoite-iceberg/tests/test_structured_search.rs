@@ -147,7 +147,7 @@ async fn structured_search_filters_by_typed_conditions() -> anyhow::Result<()> {
         &scopes,
     )
     .await?;
-    assert_eq!(open.len(), authorized.len());
+    assert_eq!(open, authorized);
 
     // The authorized page executor owns pagination. The second row must be
     // the same row selected by the full ordered result, not a second slice of
@@ -499,5 +499,19 @@ async fn structured_search_applies_permission_filtering_first() -> anyhow::Resul
     )
     .await?;
     assert!(filtered.is_empty());
+
+    // An unknown Form is intentionally indistinguishable from an inaccessible
+    // Form on the authorized boundary.
+    let unknown = structured_search::search_structured_with_scopes(
+        &op,
+        &ws_path,
+        &StructuredSearch {
+            form: "Missing".to_owned(),
+            ..criteria(Vec::new())
+        },
+        &BTreeMap::from([("task".to_owned(), EntryScope::AllCurrent)]),
+    )
+    .await?;
+    assert!(unknown.is_empty());
     Ok(())
 }

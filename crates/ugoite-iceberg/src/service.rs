@@ -4029,6 +4029,10 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         criteria: &ugoite_core::structured_search::StructuredSearch,
     ) -> Result<Vec<Value>> {
+        // Syntax-only validation is independent of Space state and Form
+        // existence. Admit it before principal, storage, or authorization
+        // reads so all service callers share the same cheap failure boundary.
+        ugoite_core::structured_search::validate_structured_search_syntax(criteria)?;
         require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         let authorizer = Authorizer::new(self.operator.clone());
@@ -4257,6 +4261,10 @@ impl UgoiteService {
         principal_id: Uuid,
         sql: &str,
     ) -> Result<Vec<Value>> {
+        // Reject writes and malformed SQL before storage discovery or
+        // authorization reads. This keeps the authorized service path on the
+        // same admission contract as direct SQL execution and SQL sessions.
+        index::validate_read_only_sql(sql)?;
         self.validate_complete_space(space_id).await?;
         let authorizer = Authorizer::new(self.operator.clone());
         authorizer
