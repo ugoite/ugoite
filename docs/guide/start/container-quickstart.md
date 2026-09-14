@@ -25,9 +25,9 @@ data-directory copy.
 
 On first startup, the container log prints a one-use setup URL. Open it in the
 browser, register the initial Passkey, save the bootstrap recovery codes, and
-register a second Passkey to finish setup. Then continue with
-[Create the first browser Entry](browser-first-entry.md). Subsequent browser
-visits use passwordless Passkey login.
+register a second Passkey to finish setup. Then continue with the canonical
+[Quickstart](../../get-started/quickstart.mdx). Subsequent browser visits use
+passwordless Passkey login.
 
 For a remote hostname, configure the public origin before first start:
 

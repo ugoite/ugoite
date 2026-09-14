@@ -13,8 +13,8 @@ rather than the browser session, remains the Knowledge authority.
 
 ## Follow this order
 
-1. Read [Vision & Concepts](../vision/index.md) to understand the Space
-   authority boundary and the Knowledge, Work, and Experience model.
+1. Read [Vision & Core Concepts](../vision/core-concepts.md) to understand the
+   Space authority boundary and the Knowledge, Work, and Experience model.
 2. Complete the [Quickstart](quickstart.mdx) once in Browser or CLI: Space,
    Form, Entry, Edit, Search, History, and Restore.
 3. Continue with [Use Ugoite](../use/index.md) for everyday Knowledge tasks.
