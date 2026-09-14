@@ -3194,6 +3194,12 @@ button.assistantPill[aria-expanded="true"] {
 /* Mobile interaction contract: reserve the iOS home-indicator inset and keep
  * every primary control large enough for a finger. */
 @media (max-width: 900px) {
+  .main, .content, .ui-content {
+    width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
   .bottomNav {
     height: calc(66px + env(safe-area-inset-bottom, 0px));
     padding-bottom: env(safe-area-inset-bottom, 0px);
