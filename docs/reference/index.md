@@ -22,8 +22,8 @@ its authority instead of copying every flag, endpoint, or schema into prose.
 
 ## Authorities
 
-- CLI behavior: `ugoite <command> --help` with the narrative in the
-  [CLI guide](../guide/automate/cli.md).
+- CLI behavior: `ugoite <command> --help` with the mode and task context in the
+  [CLI reference](cli.md).
 - REST behavior: `crates/ugoite-server` and `/openapi.json`, introduced in the
   [REST overview](../architecture/api/rest.md).
 - MCP behavior: the [MCP surface](../architecture/api/mcp.md).
