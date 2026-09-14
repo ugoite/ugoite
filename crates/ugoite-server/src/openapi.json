@@ -4579,6 +4579,12 @@
           },
           {
             "$ref": "#/components/parameters/Pin"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
           }
         ],
         "responses": {
@@ -6006,6 +6012,9 @@
           },
           {
             "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
           },
           {
             "$ref": "#/components/parameters/KeywordSearchQuery"
