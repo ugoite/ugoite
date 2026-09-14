@@ -27,7 +27,7 @@ describe("concept public pages", () => {
     expect(screen.getByRole("heading", { name: "About Ugoite" }))
       .toBeInTheDocument();
     expect(screen.getAllByText("Ugoite").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Home").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Spaces").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute(
       "href",
       "/login",
@@ -37,7 +37,7 @@ describe("concept public pages", () => {
       expect(screen.getByRole("heading", { name: "Ugoite について" }))
         .toBeInTheDocument()
     );
-    expect(screen.getAllByText("ホーム").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("スペース").length).toBeGreaterThan(0);
   });
 
   it("REQ-FE-064: public landing pages render the selected locale", async () => {
@@ -45,7 +45,9 @@ describe("concept public pages", () => {
 
     render(() => <IndexRoute />);
     expect(
-      screen.getByText("ローカルファーストの知識を、検索と自動化のために構造化"),
+      screen.getByText(
+        "ローカルファーストの知識を、検索と自動化のために構造化",
+      ),
     ).toBeInTheDocument();
 
     cleanup();

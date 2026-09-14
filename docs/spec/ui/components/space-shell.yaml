@@ -8,14 +8,25 @@ components:
     type: sidebar
     position: left-fixed
     width: 228px
+    items: [Spaces, About]
+    notes: Global routes only. Hidden below 900px and replaced by the global bottom navigation.
+  - id: space-sidebar
+    type: sidebar
+    position: left-fixed
+    width: 228px
     items: [Home, Forms, Search, Settings]
-    notes: Hidden below 900px and replaced by the bottom navigation.
+    notes: Space-scoped workspace navigation. Hidden below 900px and replaced by the Space bottom navigation.
   - id: workspace-topbar
     type: top-bar
     height: 58px
-    notes: Contains quiet Konase utility access, overflow actions, and the account entry point. The route context is expressed by the page itself to avoid duplicate headings.
+    notes: Contains quiet Konase utility access and the account entry point. The route context is expressed by the page itself to avoid duplicate headings.
   - id: mobile-bottom-navigation
     type: bottom-navigation
     height: 66px
     breakpoint: 900px
     items: [Home, Forms, Search, Settings]
+  - id: global-mobile-bottom-navigation
+    type: bottom-navigation
+    height: 66px
+    breakpoint: 900px
+    items: [Spaces, About]

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { GlobalShell } from "./GlobalShell";
 
 describe("GlobalShell router navigation", () => {
-  it("does not mark duplicate global links as current", () => {
+  it("exposes only Spaces and About in global navigation", () => {
     const history = createMemoryHistory();
     history.set({ value: "/spaces", replace: true, scroll: false });
 
@@ -14,7 +14,7 @@ describe("GlobalShell router navigation", () => {
         <Route
           path="/spaces"
           component={() => (
-            <GlobalShell title="Spaces">
+            <GlobalShell title="Spaces" active="spaces">
               <p>Content</p>
             </GlobalShell>
           )}
@@ -22,11 +22,27 @@ describe("GlobalShell router navigation", () => {
       </MemoryRouter>
     ));
 
+    expect(screen.getAllByRole("link", { name: "Spaces" })).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "About" })).toHaveLength(2);
+    expect(screen.queryByRole("link", { name: "Home" })).not
+      .toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Forms" })).not
+      .toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Search" })).not
+      .toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Settings" })).not
+      .toBeInTheDocument();
+
     const currentLinks = screen.getAllByRole("link").filter((link) =>
       link.getAttribute("aria-current") === "page"
     );
-    expect(currentLinks).toHaveLength(1);
-    expect(currentLinks[0]).toHaveAttribute("href", "/spaces");
+    expect(currentLinks).toHaveLength(2);
+    expect(
+      currentLinks.every((link) => link.getAttribute("href") === "/spaces"),
+    ).toBe(true);
+    for (const link of screen.getAllByRole("link", { name: "Spaces" })) {
+      expect(link).toHaveClass("active");
+    }
   });
 
   it("uses the exact About match for the About footer link", () => {
@@ -38,7 +54,7 @@ describe("GlobalShell router navigation", () => {
         <Route
           path="/about"
           component={() => (
-            <GlobalShell title="About">
+            <GlobalShell title="About" active="about">
               <p>Content</p>
             </GlobalShell>
           )}
@@ -49,7 +65,12 @@ describe("GlobalShell router navigation", () => {
     const currentLinks = screen.getAllByRole("link").filter((link) =>
       link.getAttribute("aria-current") === "page"
     );
-    expect(currentLinks).toHaveLength(1);
-    expect(currentLinks[0]).toHaveAttribute("href", "/about");
+    expect(currentLinks).toHaveLength(2);
+    expect(
+      currentLinks.every((link) => link.getAttribute("href") === "/about"),
+    ).toBe(true);
+    for (const link of screen.getAllByRole("link", { name: "About" })) {
+      expect(link).toHaveClass("active");
+    }
   });
 });

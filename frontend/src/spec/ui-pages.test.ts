@@ -290,6 +290,15 @@ describe("UI spec YAML registry", () => {
       type: "sidebar",
       position: "left-fixed",
       width: "228px",
+      items: ["Spaces", "About"],
+    });
+    const spaceSidebar = components.find((component) =>
+      component.id === "space-sidebar"
+    );
+    expect(spaceSidebar).toMatchObject({
+      type: "sidebar",
+      position: "left-fixed",
+      width: "228px",
       items: ["Home", "Forms", "Search", "Settings"],
     });
     expect(topbar).toMatchObject({ type: "top-bar", height: "58px" });
@@ -298,6 +307,15 @@ describe("UI spec YAML registry", () => {
       height: "66px",
       breakpoint: "900px",
       items: ["Home", "Forms", "Search", "Settings"],
+    });
+    const globalMobileNavigation = components.find((component) =>
+      component.id === "global-mobile-bottom-navigation"
+    );
+    expect(globalMobileNavigation).toMatchObject({
+      type: "bottom-navigation",
+      height: "66px",
+      breakpoint: "900px",
+      items: ["Spaces", "About"],
     });
   });
 
