@@ -533,3 +533,29 @@ async fn authorized_sql_rejects_non_read_only_input_before_space_lookup() -> Res
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn authorized_structured_search_rejects_invalid_input_before_space_lookup() -> Result<()> {
+    let service = UgoiteService::new("memory://authorized-structured-search-admission-order")?;
+    let criteria = StructuredSearch {
+        form: "Task".to_owned(),
+        updated_from: None,
+        updated_to: None,
+        conditions: Vec::new(),
+        limit: Some(0),
+        offset: None,
+    };
+    let error = service
+        .search_structured_authorized_for_principals(
+            "missing-space",
+            &[Uuid::from_u128(404)],
+            &criteria,
+        )
+        .await
+        .expect_err("invalid structured Search must fail before Space lookup");
+    let error = error
+        .downcast_ref::<ugoite_core::error::AppError>()
+        .expect("structured Search admission failure is typed");
+    assert_eq!(error.code(), ugoite_core::error::ErrorCode::InvalidInput);
+    Ok(())
+}

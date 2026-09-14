@@ -4029,6 +4029,10 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         criteria: &ugoite_core::structured_search::StructuredSearch,
     ) -> Result<Vec<Value>> {
+        // Syntax-only validation is independent of Space state and Form
+        // existence. Admit it before principal, storage, or authorization
+        // reads so all service callers share the same cheap failure boundary.
+        ugoite_core::structured_search::validate_structured_search_syntax(criteria)?;
         require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         let authorizer = Authorizer::new(self.operator.clone());
