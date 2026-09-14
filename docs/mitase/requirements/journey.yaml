@@ -174,6 +174,19 @@ requirements:
                   - FEAT-API-001#binding.cli-implementation/target.entry-command
                   - FEAT-JOURNEY-001#binding.cli-core/target.search-command
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_journey_cli_core_local_durable_outcome } }
+          - id: parent-revision-matrix-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_core.rs
+            selector: { kind: test, name: test_cli_core_entry_update_parent_revision_matrix }
+            claims:
+              - kind: verifies
+                criterion: REQ-JOURNEY-001#criterion.entry-edit
+                covers: [FEAT-API-001#binding.cli-implementation/target.entry-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_cli_core_entry_update_parent_revision_matrix } }
+              - kind: verifies
+                criterion: REQ-JOURNEY-002#criterion.stale-revision
+                covers: [FEAT-API-001#binding.cli-implementation/target.entry-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_cli_core_entry_update_parent_revision_matrix } }
       - id: journey-cli-remote-verification
         role: verification
         facet: verification
@@ -215,6 +228,19 @@ requirements:
                   - FEAT-API-001#binding.cli-implementation/target.entry-command
                   - FEAT-JOURNEY-001#binding.cli-core/target.search-command
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: journey_cli_remote_reaches_durable_outcome } }
+          - id: parent-revision-matrix-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector: { kind: test, name: test_cli_remote_entry_update_parent_revision_matrix }
+            claims:
+              - kind: verifies
+                criterion: REQ-JOURNEY-001#criterion.entry-edit
+                covers: [FEAT-API-001#binding.cli-implementation/target.entry-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: test_cli_remote_entry_update_parent_revision_matrix } }
+              - kind: verifies
+                criterion: REQ-JOURNEY-002#criterion.stale-revision
+                covers: [FEAT-API-001#binding.cli-implementation/target.entry-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: test_cli_remote_entry_update_parent_revision_matrix } }
 
   - id: REQ-JOURNEY-002
     title: Mutation semantic parity

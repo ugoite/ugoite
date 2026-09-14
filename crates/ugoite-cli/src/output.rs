@@ -353,22 +353,35 @@ fn from_protocol_error(error: &ApiProtocolError) -> CliError {
 }
 
 fn promote_conflict_detail(detail: Option<Value>, body: Option<&Value>) -> Option<Value> {
-    let mut detail = detail;
     let top_level = body
         .and_then(|body| body.get("current_revision_id"))
         .cloned();
-    if let (Some(current), Some(object)) =
-        (top_level, detail.as_mut().and_then(Value::as_object_mut))
-    {
-        object.entry("current_revision_id").or_insert(current);
-        if !object.contains_key("recovery_action") {
-            object.insert(
-                "recovery_action".to_string(),
-                Value::String("reload_and_retry".to_string()),
-            );
+    let Some(current) = top_level else {
+        return detail;
+    };
+
+    // Legacy 0.1.x responses put the revision at top level and may use a
+    // string (or no value) for `detail`. Normalize every such shape into the
+    // canonical object without discarding the legacy message.
+    let mut object = match detail {
+        Some(Value::Object(object)) => object,
+        Some(Value::String(message)) => {
+            let mut object = serde_json::Map::new();
+            object.insert("message".to_string(), Value::String(message));
+            object
         }
-    }
-    detail
+        Some(value) => {
+            let mut object = serde_json::Map::new();
+            object.insert("value".to_string(), value);
+            object
+        }
+        None => serde_json::Map::new(),
+    };
+    object.entry("current_revision_id").or_insert(current);
+    object
+        .entry("recovery_action")
+        .or_insert_with(|| Value::String("reload_and_retry".to_string()));
+    Some(Value::Object(object))
 }
 
 fn protocol_kind(code: &str, fallback: &str) -> &'static str {
@@ -566,6 +579,102 @@ mod tests {
             serde_json::Value::String("reload_and_retry".to_string())
         );
         assert!(projected.human().contains("reload"));
+    }
+
+    #[test]
+    fn protocol_conflict_preserves_nested_and_legacy_top_level_revision_detail() {
+        let nested = ApiProtocolError {
+            kind: "conflict".to_string(),
+            message: "entry.update failed".to_string(),
+            operation: Some("entry.update".to_string()),
+            status: Some(409),
+            detail: Some(Box::new(serde_json::json!({
+                "current_revision_id": "rev-nested",
+            }))),
+            payload: Some(Box::new(serde_json::json!({
+                "code": "REVISION_CONFLICT",
+                "message": "Revision conflict",
+                "detail": {"current_revision_id": "rev-nested"},
+            }))),
+        };
+        let nested = project_error(&anyhow::Error::from(nested));
+        assert_eq!(nested.code, "REVISION_CONFLICT");
+        assert_eq!(nested.kind, "conflict");
+        assert_eq!(
+            nested.detail.as_ref().unwrap()["current_revision_id"],
+            "rev-nested"
+        );
+
+        let legacy = ApiProtocolError {
+            kind: "conflict".to_string(),
+            message: "entry.update failed".to_string(),
+            operation: Some("entry.update".to_string()),
+            status: Some(409),
+            detail: Some(Box::new(serde_json::json!({
+                "code": "REVISION_CONFLICT",
+            }))),
+            payload: Some(Box::new(serde_json::json!({
+                "code": "REVISION_CONFLICT",
+                "message": "Revision conflict",
+                "detail": {"reason": "stale"},
+                "current_revision_id": "rev-top-level",
+            }))),
+        };
+        let legacy = project_error(&anyhow::Error::from(legacy));
+        assert_eq!(legacy.code, "REVISION_CONFLICT");
+        assert_eq!(legacy.kind, "conflict");
+        assert_eq!(
+            legacy.detail.as_ref().unwrap()["current_revision_id"],
+            "rev-top-level"
+        );
+        assert_eq!(
+            legacy.detail.as_ref().unwrap()["recovery_action"],
+            "reload_and_retry"
+        );
+
+        let legacy_string = ApiProtocolError {
+            kind: "conflict".to_string(),
+            message: "entry.update failed".to_string(),
+            operation: Some("entry.update".to_string()),
+            status: Some(409),
+            detail: Some(Box::new(Value::String("Revision mismatch".to_string()))),
+            payload: Some(Box::new(serde_json::json!({
+                "code": "REVISION_CONFLICT",
+                "message": "Revision conflict",
+                "current_revision_id": "rev-string-detail",
+            }))),
+        };
+        let legacy_string = project_error(&anyhow::Error::from(legacy_string));
+        assert_eq!(
+            legacy_string.detail.as_ref().unwrap()["message"],
+            "Revision mismatch"
+        );
+        assert_eq!(
+            legacy_string.detail.as_ref().unwrap()["current_revision_id"],
+            "rev-string-detail"
+        );
+
+        let legacy_missing = ApiProtocolError {
+            kind: "conflict".to_string(),
+            message: "entry.update failed".to_string(),
+            operation: Some("entry.update".to_string()),
+            status: Some(409),
+            detail: None,
+            payload: Some(Box::new(serde_json::json!({
+                "code": "REVISION_CONFLICT",
+                "message": "Revision conflict",
+                "current_revision_id": "rev-missing-detail",
+            }))),
+        };
+        let legacy_missing = project_error(&anyhow::Error::from(legacy_missing));
+        assert_eq!(
+            legacy_missing.detail.as_ref().unwrap()["current_revision_id"],
+            "rev-missing-detail"
+        );
+        assert_eq!(
+            legacy_missing.detail.as_ref().unwrap()["recovery_action"],
+            "reload_and_retry"
+        );
     }
 
     #[test]

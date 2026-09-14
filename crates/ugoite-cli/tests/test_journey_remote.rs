@@ -458,6 +458,310 @@ async fn journey_cli_remote() {
     assert!(contains_string(&results, entry_id));
 }
 
+/// The server-backed CLI uses the same parent-selection and conflict rules as
+/// core mode for structured and compatibility updates.
+#[tokio::test]
+async fn test_cli_remote_entry_update_parent_revision_matrix() {
+    let fixture = setup_remote().await;
+    setup_parity_form(
+        &fixture,
+        r#"{"Status":{"type":"string"},"Body":{"type":"markdown"}}"#,
+        "ParentMatrixRemoteForm",
+    )
+    .await;
+
+    let structured_created = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "entry",
+                "create",
+                &fixture.space_id,
+                "parent-matrix-structured",
+                "--form",
+                "ParentMatrixRemoteForm",
+                "--field",
+                "Body=structured v1",
+            ],
+        )
+        .await,
+        "remote structured matrix create",
+    );
+    assert!(contains_string(
+        &structured_created,
+        "parent-matrix-structured"
+    ));
+    let structured_history = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "entry",
+                "history",
+                &fixture.space_id,
+                "parent-matrix-structured",
+            ],
+        )
+        .await,
+        "remote structured matrix history after create",
+    );
+    let structured_rev1 = revision_ids(&structured_history)[0].clone();
+
+    let explicit = run_cli(
+        &fixture.config_path,
+        &[
+            "entry",
+            "update",
+            &fixture.space_id,
+            "parent-matrix-structured",
+            "--field",
+            "Body=structured explicit",
+            "--parent-revision-id",
+            &structured_rev1,
+        ],
+    )
+    .await;
+    assert!(
+        explicit.status.success(),
+        "remote explicit structured update failed: {}",
+        String::from_utf8_lossy(&explicit.stderr)
+    );
+    let structured_history = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "entry",
+                "history",
+                &fixture.space_id,
+                "parent-matrix-structured",
+            ],
+        )
+        .await,
+        "remote structured matrix history after explicit update",
+    );
+    let structured_rev2 = revision_ids(&structured_history)
+        .into_iter()
+        .find(|revision| revision != &structured_rev1)
+        .expect("remote structured rev2");
+    let structured_revision = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "entry",
+                "revision",
+                &fixture.space_id,
+                "parent-matrix-structured",
+                &structured_rev2,
+            ],
+        )
+        .await,
+        "remote structured matrix revision after explicit update",
+    );
+    assert_eq!(structured_revision["parent_revision_id"], structured_rev1);
+
+    let omitted = run_cli(
+        &fixture.config_path,
+        &[
+            "entry",
+            "update",
+            &fixture.space_id,
+            "parent-matrix-structured",
+            "--field",
+            "Body=structured omitted",
+        ],
+    )
+    .await;
+    assert!(
+        omitted.status.success(),
+        "remote omitted structured update failed: {}",
+        String::from_utf8_lossy(&omitted.stderr)
+    );
+    let structured_history = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "entry",
+                "history",
+                &fixture.space_id,
+                "parent-matrix-structured",
+            ],
+        )
+        .await,
+        "remote structured matrix history after omitted update",
+    );
+    let structured_rev3 = revision_ids(&structured_history)
+        .into_iter()
+        .find(|revision| revision != &structured_rev1 && revision != &structured_rev2)
+        .expect("remote structured rev3");
+    let structured_revision = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "entry",
+                "revision",
+                &fixture.space_id,
+                "parent-matrix-structured",
+                &structured_rev3,
+            ],
+        )
+        .await,
+        "remote structured matrix revision after omitted update",
+    );
+    assert_eq!(structured_revision["parent_revision_id"], structured_rev2);
+
+    let markdown_v1 =
+        "---\nform: ParentMatrixRemoteForm\n---\n# Matrix Markdown v1\n\n## Body\nmarkdown v1\n";
+    let created = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "entry",
+                "create",
+                "--content",
+                markdown_v1,
+                &fixture.space_id,
+                "parent-matrix-markdown",
+            ],
+        )
+        .await,
+        "remote Markdown matrix create",
+    );
+    assert!(contains_string(&created, "parent-matrix-markdown"));
+    let history = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "entry",
+                "history",
+                &fixture.space_id,
+                "parent-matrix-markdown",
+            ],
+        )
+        .await,
+        "remote Markdown matrix history after create",
+    );
+    let markdown_rev1 = revision_ids(&history)[0].clone();
+
+    let markdown_v2 = markdown_v1.replace("v1", "v2");
+    let markdown_v2_arg = format!("--markdown={markdown_v2}");
+    let explicit = run_cli(
+        &fixture.config_path,
+        &[
+            "entry",
+            "update",
+            &fixture.space_id,
+            "parent-matrix-markdown",
+            &markdown_v2_arg,
+            "--parent-revision-id",
+            &markdown_rev1,
+        ],
+    )
+    .await;
+    assert!(
+        explicit.status.success(),
+        "remote explicit Markdown update failed: {}",
+        String::from_utf8_lossy(&explicit.stderr)
+    );
+    let history = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "entry",
+                "history",
+                &fixture.space_id,
+                "parent-matrix-markdown",
+            ],
+        )
+        .await,
+        "remote Markdown matrix history after explicit update",
+    );
+    let markdown_rev2 = revision_ids(&history)
+        .into_iter()
+        .find(|revision| revision != &markdown_rev1)
+        .expect("remote Markdown rev2");
+    let revision = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "entry",
+                "revision",
+                &fixture.space_id,
+                "parent-matrix-markdown",
+                &markdown_rev2,
+            ],
+        )
+        .await,
+        "remote Markdown matrix revision after explicit update",
+    );
+    assert_eq!(revision["parent_revision_id"], markdown_rev1);
+
+    let markdown_v3 = markdown_v2.replace("v2", "v3");
+    let markdown_v3_arg = format!("--markdown={markdown_v3}");
+    let omitted = run_cli(
+        &fixture.config_path,
+        &[
+            "entry",
+            "update",
+            &fixture.space_id,
+            "parent-matrix-markdown",
+            &markdown_v3_arg,
+        ],
+    )
+    .await;
+    assert!(
+        omitted.status.success(),
+        "remote omitted Markdown update failed: {}",
+        String::from_utf8_lossy(&omitted.stderr)
+    );
+    let history = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "entry",
+                "history",
+                &fixture.space_id,
+                "parent-matrix-markdown",
+            ],
+        )
+        .await,
+        "remote Markdown matrix history after omitted update",
+    );
+    let markdown_rev3 = revision_ids(&history)
+        .into_iter()
+        .find(|revision| revision != &markdown_rev1 && revision != &markdown_rev2)
+        .expect("remote Markdown rev3");
+    let revision = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "entry",
+                "revision",
+                &fixture.space_id,
+                "parent-matrix-markdown",
+                &markdown_rev3,
+            ],
+        )
+        .await,
+        "remote Markdown matrix revision after omitted update",
+    );
+    assert_eq!(revision["parent_revision_id"], markdown_rev2);
+
+    let stale = run_cli(
+        &fixture.config_path,
+        &[
+            "entry",
+            "update",
+            &fixture.space_id,
+            "parent-matrix-markdown",
+            &markdown_v3_arg,
+            "--parent-revision-id",
+            &markdown_rev1,
+        ],
+    )
+    .await;
+    assert!(!stale.status.success(), "remote stale parent must conflict");
+    assert!(String::from_utf8_lossy(&stale.stderr).contains("REVISION_CONFLICT"));
+}
+
 async fn state_issue_rest_access(
     state: &AppState,
     public_key_jwk: serde_json::Value,

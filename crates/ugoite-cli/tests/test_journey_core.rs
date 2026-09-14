@@ -318,6 +318,277 @@ fn test_journey_cli_core_local_durable_outcome() {
     assert!(contains_string(&results, entry_id));
 }
 
+/// The CLI supplies the current revision when the caller omits a parent for
+/// both structured and compatibility updates. Explicit parents use the same
+/// write path, and a stale parent remains a canonical conflict.
+#[test]
+fn test_cli_core_entry_update_parent_revision_matrix() {
+    let space = setup_parity_space(r#"{"Status":{"type":"string"},"Body":{"type":"markdown"}}"#);
+
+    let structured_created = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "entry",
+                "create",
+                &space.space_path,
+                "parent-matrix-structured",
+                "--form",
+                space.form_name,
+                "--field",
+                "Body=structured v1",
+            ],
+        ),
+        "structured matrix create",
+    );
+    assert!(contains_string(
+        &structured_created,
+        "parent-matrix-structured"
+    ));
+    let structured_history = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "entry",
+                "history",
+                &space.space_path,
+                "parent-matrix-structured",
+            ],
+        ),
+        "structured matrix history after create",
+    );
+    let structured_rev1 = revision_ids(&structured_history)[0].clone();
+
+    let explicit = run_cli(
+        &space.config_path,
+        &[
+            "entry",
+            "update",
+            &space.space_path,
+            "parent-matrix-structured",
+            "--field",
+            "Body=structured explicit",
+            "--parent-revision-id",
+            &structured_rev1,
+        ],
+    );
+    assert!(
+        explicit.status.success(),
+        "explicit structured update failed"
+    );
+    let structured_history = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "entry",
+                "history",
+                &space.space_path,
+                "parent-matrix-structured",
+            ],
+        ),
+        "structured matrix history after explicit update",
+    );
+    let structured_rev2 = revision_ids(&structured_history)
+        .into_iter()
+        .find(|revision| revision != &structured_rev1)
+        .expect("structured rev2");
+    let structured_revision = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "entry",
+                "revision",
+                &space.space_path,
+                "parent-matrix-structured",
+                &structured_rev2,
+            ],
+        ),
+        "structured matrix revision after explicit update",
+    );
+    assert_eq!(structured_revision["parent_revision_id"], structured_rev1);
+
+    let omitted = run_cli(
+        &space.config_path,
+        &[
+            "entry",
+            "update",
+            &space.space_path,
+            "parent-matrix-structured",
+            "--field",
+            "Body=structured omitted",
+        ],
+    );
+    assert!(omitted.status.success(), "omitted structured update failed");
+    let structured_history = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "entry",
+                "history",
+                &space.space_path,
+                "parent-matrix-structured",
+            ],
+        ),
+        "structured matrix history after omitted update",
+    );
+    let structured_rev3 = revision_ids(&structured_history)
+        .into_iter()
+        .find(|revision| revision != &structured_rev1 && revision != &structured_rev2)
+        .expect("structured rev3");
+    let structured_revision = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "entry",
+                "revision",
+                &space.space_path,
+                "parent-matrix-structured",
+                &structured_rev3,
+            ],
+        ),
+        "structured matrix revision after omitted update",
+    );
+    assert_eq!(structured_revision["parent_revision_id"], structured_rev2);
+
+    let markdown_v1 = format!(
+        "---\nform: {}\n---\n# Matrix Markdown v1\n\n## Body\nmarkdown v1\n",
+        space.form_name
+    );
+    let created = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "entry",
+                "create",
+                "--content",
+                &markdown_v1,
+                &space.space_path,
+                "parent-matrix-markdown",
+            ],
+        ),
+        "markdown matrix create",
+    );
+    assert!(contains_string(&created, "parent-matrix-markdown"));
+    let history = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "entry",
+                "history",
+                &space.space_path,
+                "parent-matrix-markdown",
+            ],
+        ),
+        "markdown matrix history after create",
+    );
+    let markdown_rev1 = revision_ids(&history)[0].clone();
+
+    let markdown_v2 = markdown_v1.replace("v1", "v2");
+    let markdown_v2_arg = format!("--markdown={markdown_v2}");
+    let explicit = run_cli(
+        &space.config_path,
+        &[
+            "entry",
+            "update",
+            &space.space_path,
+            "parent-matrix-markdown",
+            &markdown_v2_arg,
+            "--parent-revision-id",
+            &markdown_rev1,
+        ],
+    );
+    assert!(explicit.status.success(), "explicit Markdown update failed");
+    let history = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "entry",
+                "history",
+                &space.space_path,
+                "parent-matrix-markdown",
+            ],
+        ),
+        "markdown matrix history after explicit update",
+    );
+    let markdown_rev2 = revision_ids(&history)
+        .into_iter()
+        .find(|revision| revision != &markdown_rev1)
+        .expect("markdown rev2");
+    let revision = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "entry",
+                "revision",
+                &space.space_path,
+                "parent-matrix-markdown",
+                &markdown_rev2,
+            ],
+        ),
+        "Markdown matrix revision after explicit update",
+    );
+    assert_eq!(revision["parent_revision_id"], markdown_rev1);
+
+    let markdown_v3 = markdown_v2.replace("v2", "v3");
+    let markdown_v3_arg = format!("--markdown={markdown_v3}");
+    let omitted = run_cli(
+        &space.config_path,
+        &[
+            "entry",
+            "update",
+            &space.space_path,
+            "parent-matrix-markdown",
+            &markdown_v3_arg,
+        ],
+    );
+    assert!(omitted.status.success(), "omitted Markdown update failed");
+    let history = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "entry",
+                "history",
+                &space.space_path,
+                "parent-matrix-markdown",
+            ],
+        ),
+        "markdown matrix history after omitted update",
+    );
+    let markdown_rev3 = revision_ids(&history)
+        .into_iter()
+        .find(|revision| revision != &markdown_rev1 && revision != &markdown_rev2)
+        .expect("markdown rev3");
+    let revision = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "entry",
+                "revision",
+                &space.space_path,
+                "parent-matrix-markdown",
+                &markdown_rev3,
+            ],
+        ),
+        "Markdown matrix revision after omitted update",
+    );
+    assert_eq!(revision["parent_revision_id"], markdown_rev2);
+
+    let stale = run_cli(
+        &space.config_path,
+        &[
+            "entry",
+            "update",
+            &space.space_path,
+            "parent-matrix-markdown",
+            &markdown_v3_arg,
+            "--parent-revision-id",
+            &markdown_rev1,
+        ],
+    );
+    assert!(!stale.status.success(), "stale parent must conflict");
+    assert!(String::from_utf8_lossy(&stale.stderr).contains("REVISION_CONFLICT"));
+}
+
 // --- Semantic parity corpus (surface=cli, transport=core/local) ---
 //
 // Each case asserts the same two things the remote corpus asserts: the

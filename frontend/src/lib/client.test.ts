@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { assetApi } from "./ugoite-client";
 import { formApi } from "./ugoite-client";
-import { entryApi, RevisionConflictError } from "./ugoite-client";
+import { entryApi } from "./ugoite-client";
 import { searchApi } from "./ugoite-client";
 import { spaceApi } from "./ugoite-client";
 import { joinUrl } from "./api";
@@ -318,7 +318,37 @@ describe("entryApi", () => {
           markdown: "# Stale Update",
           parent_revision_id: createResult.revision_id, // Stale!
         }),
-      ).rejects.toThrow(RevisionConflictError);
+      ).rejects.toMatchObject({
+        name: "RevisionConflictError",
+        currentRevisionId: expect.any(String),
+      });
+    });
+
+    it("reads current_revision_id from canonical nested 409 detail", async () => {
+      server.use(
+        http.put(
+          testApiUrl("/spaces/test-ws/entries/nested-conflict"),
+          () =>
+            HttpResponse.json(
+              {
+                code: "REVISION_CONFLICT",
+                message: "Revision conflict",
+                detail: { current_revision_id: "server-rev-nested" },
+              },
+              { status: 409 },
+            ),
+        ),
+      );
+
+      await expect(
+        entryApi.update("test-ws", "nested-conflict", {
+          markdown: "# Stale Update",
+          parent_revision_id: "client-rev",
+        }),
+      ).rejects.toMatchObject({
+        name: "RevisionConflictError",
+        currentRevisionId: "server-rev-nested",
+      });
     });
   });
 
