@@ -25,25 +25,7 @@ export function GlobalShell(
             />
             <span>Ugoite</span>
           </a>
-          <nav class="navGroup">
-            <a class="navItem" href="/spaces">
-              <UiIcon name="home" />
-              <span>{t("nav.home")}</span>
-            </a>
-            <a class="navItem" href="/spaces">
-              <UiIcon name="forms" />
-              <span>{t("spaceShell.bottom.grid")}</span>
-            </a>
-            <a class="navItem" href="/spaces">
-              <UiIcon name="search" />
-              <span>{t("spaceShell.top.search")}</span>
-            </a>
-            <a class="navItem" href="/spaces">
-              <UiIcon name="settings" />
-              <span>{t("globalShell.settings")}</span>
-            </a>
-          </nav>
-          <div class="sideFoot">
+          <nav class="sideFoot globalNav" aria-label={t("nav.spaces")}>
             <A
               class="navItem"
               classList={{ active: props.active === "spaces" }}
@@ -62,7 +44,7 @@ export function GlobalShell(
               <UiIcon name="about" />
               <span>{t("nav.about")}</span>
             </A>
-          </div>
+          </nav>
         </aside>
       </div>
       <section class="main">
@@ -81,12 +63,6 @@ export function GlobalShell(
               <span>{t("konase.title")}</span>
               <span class="assistantState">{t("konase.disconnected")}</span>
             </span>
-            <span
-              class="topbarMore"
-              aria-hidden="true"
-            >
-              <span aria-hidden="true">···</span>
-            </span>
             <Show
               when={props.authenticated !== false}
               fallback={
@@ -99,23 +75,28 @@ export function GlobalShell(
         </header>
         <div class="content">{props.children}</div>
       </section>
-      <nav class="bottomNav">
-        <a class="active" href="/spaces">
-          <UiIcon name="home" />
-          <span>{t("nav.home")}</span>
-        </a>
-        <a href="/spaces">
-          <UiIcon name="forms" />
-          <span>{t("spaceShell.bottom.grid")}</span>
-        </a>
-        <a href="/spaces">
-          <UiIcon name="search" />
-          <span>{t("spaceShell.top.search")}</span>
-        </a>
-        <a href="/spaces">
-          <UiIcon name="settings" />
-          <span>{t("globalShell.settings")}</span>
-        </a>
+      <nav
+        class="bottomNav globalBottomNav"
+        aria-label={t("nav.spaces")}
+      >
+        <A
+          classList={{ active: props.active === "spaces" }}
+          href="/spaces"
+          aria-current={props.active === "spaces" ? "page" : undefined}
+          end
+        >
+          <UiIcon name="spaces" />
+          <span>{t("nav.spaces")}</span>
+        </A>
+        <A
+          classList={{ active: props.active === "about" }}
+          href="/about"
+          aria-current={props.active === "about" ? "page" : undefined}
+          end
+        >
+          <UiIcon name="about" />
+          <span>{t("nav.about")}</span>
+        </A>
       </nav>
     </main>
   );

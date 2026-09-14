@@ -3129,6 +3129,10 @@ button.assistantPill[aria-expanded="true"] {
 }
 
 @media (max-width: 900px) {
+  .globalBottomNav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .topbar {
     padding: 0 14px;
   }

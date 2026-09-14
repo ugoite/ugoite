@@ -69,13 +69,22 @@ describe("GlobalShell account menu", () => {
     expect(screen.queryByRole("button", { name: "Account" })).toBeNull();
   });
 
-  it("keeps the generic settings label in English", () => {
+  it("keeps global navigation limited to Spaces and About", () => {
     render(() => (
       <GlobalShell title="Spaces">
         <p>Content</p>
       </GlobalShell>
     ));
 
-    expect(screen.getAllByText("Settings")).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "Spaces" })).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "About" })).toHaveLength(2);
+    expect(screen.queryByRole("link", { name: "Home" })).not
+      .toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Forms" })).not
+      .toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Search" })).not
+      .toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Settings" })).not
+      .toBeInTheDocument();
   });
 });
