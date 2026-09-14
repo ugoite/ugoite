@@ -15,9 +15,10 @@ use opendal::Operator;
 use serde_json::{Map, Value};
 use ugoite_core::query::EntryScope;
 use ugoite_core::structured_search::{
-    NormalizedConditionValue, SearchOperator, StructuredSearch, ValidatedStructuredSearch,
+    NormalizedConditionValue, SearchOperator, StructuredSearch, StructuredSearchFieldKind,
+    ValidatedStructuredSearch,
 };
-use ugoite_domain::form::{sql_column_name, sql_relation_name, FormDefinition};
+use ugoite_domain::form::{sql_column_name, sql_relation_name, FieldType, FormDefinition};
 
 /// Adapter-owned SQL identifier quoting. Never supplied by callers.
 pub(crate) fn quote_identifier(name: &str) -> String {
@@ -88,7 +89,7 @@ pub(crate) fn compile_validated_search(
     };
 
     if let Some(from) = validated.updated_from {
-        let text = from.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let text = from.to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
         let placeholder = bind(Value::String(text), "timestamp");
         conditions.push(format!(
             "{} >= {placeholder}",
@@ -96,7 +97,7 @@ pub(crate) fn compile_validated_search(
         ));
     }
     if let Some(to) = validated.updated_to {
-        let text = to.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let text = to.to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
         let placeholder = bind(Value::String(text), "timestamp");
         conditions.push(format!(
             "{} < {placeholder}",
@@ -114,6 +115,17 @@ pub(crate) fn compile_validated_search(
                 )
             })?;
         let quoted = quote_identifier(column);
+        let field_type = form
+            .fields
+            .iter()
+            .find(|field| field.name == condition.field)
+            .map(|field| &field.field_type)
+            .with_context(|| {
+                format!(
+                    "structured search field '{}' was not found",
+                    condition.field
+                )
+            })?;
         let operator_sql = match condition.operator {
             SearchOperator::Equals => "=",
             SearchOperator::Contains => "ILIKE",
@@ -138,13 +150,23 @@ pub(crate) fn compile_validated_search(
                 conditions.push(format!("{quoted} {operator_sql} {placeholder}"));
             }
             NormalizedConditionValue::Integer(number) => {
-                let placeholder = bind(Value::Number((*number).into()), "integer");
+                let parameter_type = match field_type {
+                    FieldType::Integer => "int32",
+                    FieldType::Long => "int64",
+                    _ => return Err(anyhow!("structured search integer type is invalid")),
+                };
+                let placeholder = bind(Value::Number((*number).into()), parameter_type);
                 conditions.push(format!("{quoted} {operator_sql} {placeholder}"));
             }
             NormalizedConditionValue::Numeric(number) => {
                 let number_value = serde_json::Number::from_f64(*number)
                     .ok_or_else(|| anyhow!("structured search numeric value is not finite"))?;
-                let placeholder = bind(Value::Number(number_value), "float");
+                let parameter_type = match field_type {
+                    FieldType::Float => "float32",
+                    FieldType::Double => "float64",
+                    _ => return Err(anyhow!("structured search numeric type is invalid")),
+                };
+                let placeholder = bind(Value::Number(number_value), parameter_type);
                 conditions.push(format!("{quoted} {operator_sql} {placeholder}"));
             }
             NormalizedConditionValue::Date(text) => {
@@ -152,7 +174,10 @@ pub(crate) fn compile_validated_search(
                 conditions.push(format!("{quoted} {operator_sql} {placeholder}"));
             }
             NormalizedConditionValue::Timestamp(text) => {
-                let placeholder = bind(Value::String(text.clone()), "timestamp");
+                let timestamp_kind = StructuredSearchFieldKind::timestamp_kind(field_type)
+                    .ok_or_else(|| anyhow!("structured search timestamp type is invalid"))?;
+                let parameter_type = timestamp_kind.parameter_type();
+                let placeholder = bind(Value::String(text.clone()), parameter_type);
                 conditions.push(format!("{quoted} {operator_sql} {placeholder}"));
             }
         }

@@ -265,6 +265,128 @@ async fn structured_search_contains_escapes_special_chars() -> anyhow::Result<()
 }
 
 #[tokio::test]
+async fn structured_search_preserves_timestamp_kind_precision_and_predicates() -> anyhow::Result<()>
+{
+    let op = setup_operator()?;
+    let ws_path = "spaces/structured-search-timestamps";
+    space::create_space(&op, "structured-search-timestamps", "/tmp").await?;
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Temporal",
+            "fields": {
+                "wall": {"type": "timestamp"},
+                "instant": {"type": "timestamp_tz"},
+                "wall_ns": {"type": "timestamp_ns"},
+                "instant_ns": {"type": "timestamp_tz_ns"}
+            }
+        }),
+    )
+    .await?;
+    let integrity = FakeIntegrityProvider;
+
+    for (entry_id, second) in [("temporal-a", "00"), ("temporal-b", "01")] {
+        entry::create_structured_entry_with_scopes_and_change(
+            &op,
+            ws_path,
+            entry_id,
+            Some(entry_id.to_owned()),
+            "Temporal".to_owned(),
+            Vec::new(),
+            fields(vec![
+                (
+                    "wall",
+                    serde_json::json!(format!("2026-09-10T09:00:{second}.123456789")),
+                ),
+                (
+                    "instant",
+                    serde_json::json!(format!("2026-09-10T09:00:{second}.123456789+09:00")),
+                ),
+                (
+                    "wall_ns",
+                    serde_json::json!(format!("2026-09-10T09:00:{second}.123456789")),
+                ),
+                (
+                    "instant_ns",
+                    serde_json::json!(format!("2026-09-10T09:00:{second}.123456789+09:00")),
+                ),
+            ]),
+            BTreeMap::new(),
+            "author",
+            &integrity,
+            None,
+            None,
+        )
+        .await?;
+    }
+
+    let timestamp_cases = [
+        (
+            "wall",
+            "2026-09-10T09:00:00.123456789",
+            "2026-09-10T09:00:00.123456789",
+        ),
+        (
+            "instant",
+            "2026-09-10T00:00:00.123456Z",
+            "2026-09-10T09:00:00.123456789+09:00",
+        ),
+        (
+            "wall_ns",
+            "2026-09-10T09:00:00.123456789",
+            "2026-09-10T09:00:00.123456789",
+        ),
+        (
+            "instant_ns",
+            "2026-09-10T00:00:00.123456789Z",
+            "2026-09-10T09:00:00.123456789+09:00",
+        ),
+    ];
+
+    for (field_name, equivalent_value, stored_value) in timestamp_cases {
+        let equals = StructuredSearch {
+            form: "Temporal".to_owned(),
+            updated_from: None,
+            updated_to: None,
+            conditions: vec![SearchCondition {
+                field: field_name.to_owned(),
+                operator: SearchOperator::Equals,
+                value: serde_json::json!(equivalent_value),
+            }],
+            limit: Some(100),
+            offset: None,
+        };
+        let rows = structured_search::search_structured(&op, ws_path, &equals).await?;
+        assert_eq!(
+            rows.iter()
+                .map(|row| row["_ugoite_id"].as_str().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            ["temporal-a"],
+            "{field_name} must compare its canonical value"
+        );
+
+        let greater_than = StructuredSearch {
+            conditions: vec![SearchCondition {
+                field: field_name.to_owned(),
+                operator: SearchOperator::Gt,
+                value: serde_json::json!(stored_value),
+            }],
+            ..equals
+        };
+        let rows = structured_search::search_structured(&op, ws_path, &greater_than).await?;
+        assert_eq!(
+            rows.iter()
+                .map(|row| row["_ugoite_id"].as_str().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            ["temporal-b"],
+            "{field_name} must preserve ordered predicate semantics"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn structured_search_rejects_invalid_before_execution() -> anyhow::Result<()> {
     let op = setup_operator()?;
     let ws_path = setup_task_space(&op, "structured-search-admission").await?;

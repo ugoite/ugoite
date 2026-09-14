@@ -10064,6 +10064,15 @@ async fn query_entries(
     Json(payload): Json<Value>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    if payload.get("criteria").is_some() && payload.get("filter").is_some() {
+        return Err(ApiError::from_core(
+            AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "structured search criteria and legacy filter cannot be supplied together",
+            )
+            .into(),
+        ));
+    }
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
     // Additive typed criteria input. Legacy `filter` passthrough remains
@@ -13956,6 +13965,106 @@ mod authentication_regression_tests {
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
         let error: Value = serde_json::from_slice(&body)?;
         assert_eq!(error["code"], "UNKNOWN_FORM_FIELDS");
+
+        // Backend implementation details are not part of the logical
+        // criteria protocol. Both the top-level criteria and nested
+        // conditions reject unknown keys before execution.
+        for criteria in [
+            json!({
+                "form": "Entry",
+                "relation": "form_backend_detail",
+                "conditions": []
+            }),
+            json!({
+                "form": "Entry",
+                "conditions": [{
+                    "field": "Body",
+                    "operator": "contains",
+                    "value": "secret",
+                    "sql_column": "field_100"
+                }]
+            }),
+        ] {
+            let response = route
+                .clone()
+                .oneshot(
+                    Request::post(format!("/spaces/{space_id}/query"))
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(json!({"criteria": criteria}).to_string()))?,
+                )
+                .await?;
+            assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+            let error: Value = serde_json::from_slice(&body)?;
+            assert_eq!(error["code"], "INVALID_INPUT");
+        }
+
+        let response = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/query"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "criteria": {
+                                "form": "Entry",
+                                "conditions": [{
+                                    "field": "Body",
+                                    "operator": "gte",
+                                    "value": "secret"
+                                }]
+                            }
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await?;
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        let error: Value = serde_json::from_slice(&body)?;
+        assert_eq!(error["code"], "INVALID_INPUT");
+
+        let response = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/query"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "criteria": {
+                                "form": "Missing",
+                                "conditions": []
+                            }
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await?;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        let error: Value = serde_json::from_slice(&body)?;
+        assert_eq!(error["code"], "FORM_NOT_FOUND");
+
+        // Criteria and the legacy filter are intentionally ambiguous when
+        // combined; do not silently select one of them.
+        let response = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/query"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "criteria": {"form": "Entry", "conditions": []},
+                            "filter": {"form": "Entry"}
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await?;
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        let error: Value = serde_json::from_slice(&body)?;
+        assert_eq!(error["code"], "INVALID_INPUT");
 
         // Legacy keyword path is unchanged.
         let keyword_route = Router::new()
