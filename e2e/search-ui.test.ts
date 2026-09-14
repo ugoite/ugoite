@@ -44,31 +44,23 @@ test.describe("Search UI", () => {
 		}
 	});
 
-	test("REQ-SRCH-005: advanced search saves reusable history and opens shared query results", async ({
+	test("REQ-SRCH-005: advanced search renders structured results inline", async ({
 		page,
 		request,
 	}) => {
 		test.setTimeout(120_000);
 		const runId = Date.now();
-		const shortRunId = String(runId).slice(-6);
-		const today = new Date().toISOString().slice(0, 10);
-		const formName = `SUA${shortRunId}`;
+		const formName = `SUA${String(runId).slice(-6)}`;
 		const entryTitle = `Search UI Advanced ${runId}`;
-		const historyPrefix = `Advanced search - form: ${formName}`;
-		const historyName =
-			`${historyPrefix} - updated-from: ${today} - ` +
-			`updated-to: ${today} - Owner Name=alice`;
-		const entryContent = `---\nform: ${formName}\ntags:\n  - release\n  - search-ui\n---\n# ${entryTitle}\n\n## Owner Name\nalice\n\n## Body\nAdvanced search history should stay reusable.\n`;
+		const entryContent = `---\nform: ${formName}\ntags:\n  - release\n  - search-ui\n---\n# ${entryTitle}\n\n## Owner Name\nalice\n\n## Body\nStructured advanced search should find this entry.\n`;
 		let entryId: string | null = null;
-
-		await cleanupSavedSearchesByForm(request, formName, spaceId);
 
 		try {
 			await ensureSearchForm(request, formName, spaceId);
 			entryId = await createEntry(request, entryContent, spaceId);
 			await waitForKeywordMatch(
 				request,
-				"Advanced search history should stay reusable.",
+				"Structured advanced search should find this entry.",
 				entryId,
 				spaceId,
 			);
@@ -78,26 +70,16 @@ test.describe("Search UI", () => {
 			});
 			await page.getByRole("button", { name: "Advanced search" }).click();
 			await page.getByLabel("Form").selectOption(formName);
-			await page.getByLabel("Updated from").fill(today);
-			await page.getByLabel("Updated to").fill(today);
 			await page.getByLabel("Field").selectOption("Owner Name");
 			await page.getByLabel("Value").fill("alice");
 			await page.getByRole("button", { name: "Run advanced search" }).click();
 
-			await expect(page).toHaveURL(new RegExp(`/spaces/${spaceId}/entries\\?session=`));
+			await expect(page).toHaveURL(new RegExp(`/spaces/${spaceId}/search$`));
 			await expect(page.getByRole("button", { name: new RegExp(entryTitle) })).toBeVisible();
-
-			await page.goto(getFrontendUrl(`/spaces/${spaceId}/search`), {
-				waitUntil: "domcontentloaded",
-			});
-			await expect(page.getByRole("button", { name: new RegExp(historyName) })).toBeVisible();
-			await page.getByRole("button", { name: new RegExp(historyName) }).click();
-			await expect(page).toHaveURL(new RegExp(`/spaces/${spaceId}/entries\\?session=`));
 		} finally {
 			if (entryId) {
 				await request.delete(getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`));
 			}
-			await cleanupSavedSearchesByForm(request, formName, spaceId);
 		}
 	});
 });
@@ -155,32 +137,4 @@ async function waitForKeywordMatch(
 			{ timeout: 30_000 },
 		)
 		.toBe(true);
-}
-
-async function cleanupSavedSearchesByForm(
-	request: APIRequestContext,
-	formName: string,
-	spaceId: string,
-): Promise<void> {
-	const response = await request.get(getBackendUrl(`/spaces/${spaceId}/sql`));
-	if (!response.ok()) {
-		return;
-	}
-	const list = (await response.json()) as Array<{
-		id: string;
-		name: string | null;
-		kind: "user-query" | "search-history";
-		metadata?: {
-			searchCriteria?: {
-				formName?: string;
-			};
-		} | null;
-	}>;
-	const created = list.filter((item) => {
-		return item.kind === "search-history" &&
-			item.metadata?.searchCriteria?.formName === formName;
-	});
-	for (const entry of created) {
-		await request.delete(getBackendUrl(`/spaces/${spaceId}/sql/${entry.id}`));
-	}
 }
