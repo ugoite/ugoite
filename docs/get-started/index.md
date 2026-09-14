@@ -13,14 +13,13 @@ rather than the browser session, remains the Knowledge authority.
 
 ## Follow this order
 
-1. Read [Core concepts](../guide/start/concepts.md) to understand Spaces, Forms,
-   Entries, Assets, revisions, and derived data.
-2. Run the [container quick start](../guide/start/container-quickstart.md) for
-   the smallest release-style deployment.
-3. Complete the [Quickstart](quickstart.mdx) once in Browser or CLI: Space,
+1. Read [Vision & Concepts](../vision/index.md) to understand the Space
+   authority boundary and the Knowledge, Work, and Experience model.
+2. Complete the [Quickstart](quickstart.mdx) once in Browser or CLI: Space,
    Form, Entry, Edit, Search, History, and Restore.
-4. Create the [first browser Entry](../guide/start/browser-first-entry.md) to
-   identify the main browser surfaces.
+3. Continue with [Use Ugoite](../use/index.md) for everyday Knowledge tasks.
+4. Choose [Operate Ugoite](../operate/install-deploy.md) when you need to
+   install or run a deployment.
 
 Browser and CLI reach the same Knowledge outcome with equivalent meaning. CLI
 core and remote differences are noted inline only where they change what to
@@ -28,7 +27,4 @@ type.
 
 ## After the first run
 
-- Continue with [Use Ugoite](../use/index.md) for everyday Knowledge tasks.
-- Continue with [Operate Ugoite](../operate/index.md) for deployment and
-  recovery procedures.
 - Continue with [Develop Ugoite](../develop/index.md) to run Ugoite from source.
