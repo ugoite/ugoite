@@ -39,7 +39,7 @@ Deno.test("authority gate permits presentation-only Markdown compatibility modul
       "frontend/src/lib/entry-input.ts",
       "replaceFirstH1(markdown, title)",
     ),
-      undefined,
+    undefined,
   );
   assertEquals(
     findEntryAuthorityViolations(
