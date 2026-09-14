@@ -2550,9 +2550,10 @@ impl UgoiteService {
 
     /// Update a Form-backed Entry in core (local filesystem) mode without
     /// regenerating Markdown. `fields` is the complete post-update field map;
-    /// no partial-patch semantics are invented here. Form identity is
-    /// immutable; mismatches surface the canonical InvalidInput error from
-    /// the shared boundary.
+    /// omitted fields are intentionally cleared. `extra_attributes` is carried
+    /// through unchanged because the CLI has no extra-attribute editing
+    /// surface. Form identity is immutable; mismatches surface the canonical
+    /// InvalidInput error from the shared boundary.
     #[allow(clippy::too_many_arguments)]
     pub async fn update_structured_entry(
         &self,
@@ -2561,6 +2562,7 @@ impl UgoiteService {
         title: Option<String>,
         form_name: Option<String>,
         fields: std::collections::BTreeMap<String, Value>,
+        extra_attributes: std::collections::BTreeMap<String, Value>,
         parent_revision_id: Option<&str>,
         author: &str,
     ) -> Result<Value> {
@@ -2579,7 +2581,7 @@ impl UgoiteService {
             form_name,
             None,
             fields,
-            std::collections::BTreeMap::new(),
+            extra_attributes,
             parent_revision_id,
             author,
             &integrity,
