@@ -73,6 +73,8 @@ describe("SpaceSettingsRoute", () => {
   it("renders the general, language, and storage route surfaces", async () => {
     render(() => <SpaceSettingsRoute />);
 
+    expect(screen.getByRole("heading", { name: "Settings" }))
+      .toHaveClass("ui-sr-only");
     expect(await screen.findByRole("heading", { name: "General" }))
       .toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Language" }))

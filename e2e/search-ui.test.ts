@@ -32,7 +32,7 @@ test.describe("Search UI", () => {
 			await page.goto(getFrontendUrl(`/spaces/${spaceId}/search`), {
 				waitUntil: "domcontentloaded",
 			});
-			await page.getByRole("heading", { name: "Search", level: 1 }).waitFor();
+			await page.getByRole("navigation", { name: "Search" }).waitFor();
 			await expect(page.getByLabel("Search keywords")).toBeVisible();
 			await page.getByLabel("Search keywords").fill("keyword-first");
 			await page.getByRole("button", { name: "Search entries" }).click();

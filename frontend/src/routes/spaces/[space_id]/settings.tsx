@@ -90,12 +90,6 @@ export default function SpaceSettingsRoute() {
   };
   return (
     <>
-      <div class="screenHead">
-        <div class="screenTitle">
-          <div class="eyebrow">{space()?.name || spaceId()}</div>
-          <h1>{t("settings.title")}</h1>
-        </div>
-      </div>
       <div class="settingsLayout settingsWorkspace">
         <aside class="settingsNav surface">
           <For each={settingsSections}>
@@ -112,6 +106,7 @@ export default function SpaceSettingsRoute() {
           </For>
         </aside>
         <main>
+          <h1 class="ui-sr-only">{t("settings.title")}</h1>
           <Show when={space.loading}>
             <div class="settingsMain surface ui-muted">
               {t("settings.loadingSpace")}

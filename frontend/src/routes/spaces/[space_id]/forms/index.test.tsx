@@ -135,6 +135,10 @@ describe("v5 Forms workspace", () => {
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
     expect(document.querySelectorAll(".desktopFormPicker .formItem b"))
       .toHaveLength(1);
+    expect(
+      within(document.querySelector(".desktopFormPicker")!)
+        .queryByText("Forms"),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Notes" })).toBeInTheDocument();
     expect(screen.getByText("Entries table for Notes")).toBeInTheDocument();
     expect(
@@ -168,7 +172,9 @@ describe("v5 Forms workspace", () => {
   it("shows the v5 empty state and Japanese copy", () => {
     setLocale("ja");
     renderPage([]);
-    expect(screen.getByText("フォーム")).toBeInTheDocument();
+    expect(
+      screen.getByRole("complementary", { name: "現在のフォーム" }),
+    ).toBeInTheDocument();
     expect(
       within(document.querySelector(".desktopFormPicker")!).getByText(
         "フォームがありません",
