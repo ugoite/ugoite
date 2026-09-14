@@ -76,7 +76,7 @@ export function GlobalShell(
           </a>
           <div class="topbarTools">
             <div class="crumbTop ui-sr-only">{props.title}</div>
-            <span class="assistantPill" role="status">
+            <span class="assistantPill">
               <span class="assistantDot" aria-hidden="true" />
               <span>{t("konase.title")}</span>
               <span class="assistantState">{t("konase.disconnected")}</span>
