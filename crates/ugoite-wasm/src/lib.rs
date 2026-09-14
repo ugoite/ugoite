@@ -364,6 +364,22 @@ fn entry_validation_error(error: &ugoite_core::error::AppError) -> serde_json::V
     envelope
 }
 
+fn entry_error_envelope(error: serde_json::Value) -> String {
+    let envelope = serde_json::json!({"ok": false, "error": error});
+    if ensure_json_size(&envelope, MAX_PROTOCOL_REQUEST_BYTES).is_err() {
+        return serde_json::json!({
+            "ok": false,
+            "error": {
+                "kind": "entry_validation",
+                "code": "INVALID_INPUT",
+                "message": "Entry protocol error output exceeds the size limit"
+            }
+        })
+        .to_string();
+    }
+    envelope.to_string()
+}
+
 /// Portable Entry authoring boundary (read-only, no Storage).
 ///
 /// - `entry.validate_draft` validates `{form, draft}` with the same
@@ -485,7 +501,7 @@ fn invoke_entry(request: serde_json::Value) -> String {
             }
             envelope.to_string()
         }
-        Err(error) => serde_json::json!({"ok": false, "error": error}).to_string(),
+        Err(error) => entry_error_envelope(error),
     }
 }
 
@@ -1040,6 +1056,22 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("output exceeds"));
+
+        let duplicate_sections = format!("---\nform: Note\n---\n{}", "## Body\nx\n".repeat(4096));
+        let oversized_error = serde_json::json!({
+            "action": "entry.compat.parse_markdown",
+            "value": {"markdown": duplicate_sections, "strict": true}
+        })
+        .to_string();
+        assert!(oversized_error.len() < MAX_PROTOCOL_REQUEST_BYTES);
+        let response: Value = serde_json::from_str(&super::invoke_json(&oversized_error)).unwrap();
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(response["error"]["kind"], "entry_validation", "{response}");
+        assert_eq!(response["error"]["code"], "INVALID_INPUT", "{response}");
+        assert!(response["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("error output exceeds"));
     }
 
     #[test]
