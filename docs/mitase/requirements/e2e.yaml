@@ -107,6 +107,10 @@ requirements:
         kind: quality
         statement: The fixed surface palette follows the operating system's light or dark color preference without losing the active Space workflow.
         governed_by: [POL-006#rule.governance, POL-014#rule.governance]
+      - id: responsive-mobile-workflows
+        kind: quality
+        statement: The server-backed Space workflow remains usable at 390x844 and 360x800, with mobile navigation, one-column Entry layout, wrapping Form controls, safe-area spacing, and touch-sized controls.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
     bindings:
       - id: surface-verification
         role: verification
@@ -128,6 +132,26 @@ requirements:
                 covers:
                   - FEAT-E2E-002#binding.application/target.system-color-mode
                 runner: { runner: e2e-playwright, arguments: { file: e2e/ui-surface.test.ts, test: 'REQ-E2E-003: the fixed surface palette follows the light system color mode' } }
+          - id: mobile-390-case
+            adapter: typescript
+            path: e2e/ui-mobile-regression.test.ts
+            selector: { kind: test, name: 'REQ-E2E-003: preserves the Space UI at 390x844' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-003#criterion.responsive-mobile-workflows
+                covers:
+                  - FEAT-E2E-002#binding.application/target.mobile-regression
+                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-mobile-regression.test.ts, test: 'REQ-E2E-003: preserves the Space UI at 390x844' } }
+          - id: mobile-360-case
+            adapter: typescript
+            path: e2e/ui-mobile-regression.test.ts
+            selector: { kind: test, name: 'REQ-E2E-003: preserves the Space UI at 360x800' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-003#criterion.responsive-mobile-workflows
+                covers:
+                  - FEAT-E2E-002#binding.application/target.mobile-regression
+                runner: { runner: e2e-playwright, arguments: { file: e2e/ui-mobile-regression.test.ts, test: 'REQ-E2E-003: preserves the Space UI at 360x800' } }
           - id: dark-mode-case
             adapter: typescript
             path: e2e/ui-surface.test.ts

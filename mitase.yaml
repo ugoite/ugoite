@@ -153,6 +153,7 @@ inventory:
             - frontend/src/routes/spaces/[space_id]/forms/types.tsx
             - frontend/src/routes/spaces/[space_id]/index.tsx
             - e2e/ui-surface.test.ts
+            - e2e/ui-mobile-regression.test.ts
             - e2e/public-pages.test.ts
             - e2e/saved-sql-route.test.ts
             - e2e/space-settings-storage-guidance.test.ts

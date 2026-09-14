@@ -4,7 +4,7 @@
 #
 # Usage: ./e2e/scripts/run-e2e-compose.sh [test-type]
 #   test-type: "smoke", "asset-owned", "smoke-and-asset-owned",
-#     "owner-recovery", "entries", "screenshot", or "full" (default)
+#     "owner-recovery", "mobile-ui", "entries", "screenshot", or "full"
 #
 # Environment variables:
 #   E2E_BUILD_IMAGES: "true" (default) to build local images before startup;
@@ -232,6 +232,9 @@ case "$TEST_TYPE" in
   owner-recovery)
     run_e2e_task owner-recovery "$base_report_file"
     ;;
+  mobile-ui)
+    run_e2e_task mobile-ui "$base_report_file"
+    ;;
   entries)
     run_e2e_task entries "$base_report_file"
     ;;
@@ -243,7 +246,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./run-e2e-compose.sh [smoke|asset-owned|smoke-and-asset-owned|owner-recovery|entries|screenshot|full]"
+    echo "Usage: ./run-e2e-compose.sh [smoke|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|entries|screenshot|full]"
     exit 1
     ;;
 esac

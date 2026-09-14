@@ -2484,25 +2484,6 @@ button.assistantPill[aria-expanded="true"] {
   font-size: 11px;
 }
 
-.topbarMore {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  background: #fff;
-  color: var(--muted);
-  font-size: 16px;
-  letter-spacing: 1px;
-  line-height: 1;
-}
-
-.topbarMore:hover {
-  border-color: var(--line2);
-  color: var(--ink);
-}
-
 .accountMenu .avatar {
   width: 34px;
   height: 34px;
@@ -3106,7 +3087,6 @@ button.assistantPill[aria-expanded="true"] {
 }
 
 :root[data-color-mode="dark"] .sidebar,
-:root[data-color-mode="dark"] .topbarMore,
 :root[data-color-mode="dark"] .accountMenu .avatar,
 :root[data-color-mode="dark"] .assistantPill,
 :root[data-color-mode="dark"] .konasePopover > .surface,
@@ -3208,5 +3188,49 @@ button.assistantPill[aria-expanded="true"] {
 
   .loginPanel {
     width: calc(100vw - 48px);
+  }
+}
+
+/* Mobile interaction contract: reserve the iOS home-indicator inset and keep
+ * every primary control large enough for a finger. */
+@media (max-width: 900px) {
+  .bottomNav {
+    height: calc(66px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .content, .ui-content, .ui-page {
+    padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .topbar .mobileMenu,
+  .mobileFormPickerActions .btn.iconBtn,
+  .accountMenu .avatar {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .assistantPill {
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .bottomNav a {
+    min-height: 44px;
+    padding: 8px 4px;
+  }
+
+  .formTableActions {
+    max-width: 100%;
+  }
+
+  .formTableActions > .ui-button {
+    min-height: 44px;
+  }
+
+  .mobileFormPickerActions .formVisibilityToggle {
+    min-height: 44px;
   }
 }
