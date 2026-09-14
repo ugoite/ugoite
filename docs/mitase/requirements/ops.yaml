@@ -1,4 +1,4 @@
-schema: mitase/spec/v1
+schema: mitase/authoring/v2
 kind: requirements
 namespace: ops
 category: Operations, development, and quality-gate requirements

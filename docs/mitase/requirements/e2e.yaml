@@ -1,4 +1,4 @@
-schema: mitase/spec/v1
+schema: mitase/authoring/v2
 kind: requirements
 namespace: e2e
 category: Browser smoke, cross-layer integration, and navigation stability

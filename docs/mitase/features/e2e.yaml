@@ -1,4 +1,4 @@
-schema: mitase/spec/v1
+schema: mitase/authoring/v2
 kind: features
 namespace: e2e
 category: Browser smoke and navigation surfaces
