@@ -42,9 +42,9 @@ import {
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { validateEntryDraftViaWasm } from "~/lib/entry-validation";
 import {
+  type CompatDraft,
   parseSourceToDraftViaWasm,
   renderDraftToSourceViaWasm,
-  type CompatDraft,
 } from "~/lib/entry-compat";
 import type { Entry, Form, FormField } from "~/lib/types";
 import type { MarkdownConversionDiagnostic } from "~/lib/ugoite-client/protocol";
@@ -54,12 +54,15 @@ import {
   parseAssetReference,
   parseAssetReferenceList,
 } from "~/lib/asset-reference";
-import { formatUserFacingError } from "~/lib/user-facing-error";
+import {
+  formatMarkdownConversionDiagnostic,
+  formatUserFacingError,
+} from "~/lib/user-facing-error";
 import {
   clearCreateEntryDraftSession,
   createEntryDraftSessionKey,
-  getCreateEntryDraftSession,
   type CreateEntryDraftState,
+  getCreateEntryDraftSession,
 } from "~/lib/create-entry-draft-session";
 
 export interface EntryDetailPaneProps {
@@ -530,10 +533,12 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   const [showAccessPolicy, setShowAccessPolicy] = createSignal(false);
   const [assetEditorGeneration, setAssetEditorGeneration] = createSignal(0);
   const [hasUserEdited, setHasUserEdited] = createSignal(false);
-  const [createdEntry, setCreatedEntry] = createSignal<{
-    id: string;
-    revision_id: string;
-  } | null>(null);
+  const [createdEntry, setCreatedEntry] = createSignal<
+    {
+      id: string;
+      revision_id: string;
+    } | null
+  >(null);
   const [draftSessionFinished, setDraftSessionFinished] = createSignal(false);
 
   const draftSessionKey = createMemo(() =>
@@ -690,7 +695,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     if (!isAuthoringSession() || !draftSession.hasDirtyWork()) return;
     if (event.defaultPrevented) return;
     event.preventDefault();
-    if (typeof window === "undefined" || window.confirm(t("entryDetail.confirmLeave"))) {
+    if (
+      typeof window === "undefined" ||
+      window.confirm(t("entryDetail.confirmLeave"))
+    ) {
       clearCreateDraft();
       event.retry(true);
     }
@@ -705,13 +713,17 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
-    onCleanup(() => window.removeEventListener("beforeunload", handleBeforeUnload));
+    onCleanup(() =>
+      window.removeEventListener("beforeunload", handleBeforeUnload)
+    );
   });
   const formWorkspaceHref = createMemo(() => {
     const formName = entry()?.form?.trim();
     const base = `/spaces/${props.spaceId()}/forms`;
     return formName ? `${base}?form=${encodeURIComponent(formName)}` : base;
   });
+
+  const loadedForms = () => props.forms?.() ?? [];
 
   const parsedSections = createMemo(() => {
     const map = new Map<string, string>();
@@ -840,7 +852,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     const tags = saved?.tags ?? parseMarkdownFrontmatterTags(content) ?? [];
     setLastLoadedEntryId(entryId);
     setLastLoadedResourceRevisionId(revisionId);
-    setCurrentRevisionId(createdEntry()?.revision_id ?? (isCreateMode() ? null : revisionId));
+    setCurrentRevisionId(
+      createdEntry()?.revision_id ?? (isCreateMode() ? null : revisionId),
+    );
     setAssetEditorGeneration((generation) => generation + 1);
     setDraftTitle(draft.title || loadedTitle);
     setDraftFields(draft.fields);
@@ -927,6 +941,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         requestTitle,
         requestTags,
         requestFields,
+        loadedForms(),
       ).then(
         (canonical) => {
           if (editorContent() !== requestBaseline) return;
@@ -1002,11 +1017,14 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         title,
         canonical.tags,
         canonical.fields,
+        loadedForms(),
       )
       : Promise.resolve(
         [
           canonical.tags.length > 0
-            ? `---\ntags:\n${canonical.tags.map((tag) => `  - ${tag}`).join("\n")}\n---\n`
+            ? `---\ntags:\n${
+              canonical.tags.map((tag) => `  - ${tag}`).join("\n")
+            }\n---\n`
             : "",
           `# ${title}`,
           ...Object.entries(canonical.fields).flatMap(([name, value]) => [
@@ -1032,7 +1050,11 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         },
         (error) => {
           setConflictMessage(
-            formatUserFacingError(error, "entryDetail.saveFailed", "entry.update"),
+            formatUserFacingError(
+              error,
+              "entryDetail.saveFailed",
+              "entry.update",
+            ),
           );
         },
       ),
@@ -1111,7 +1133,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       return { ok: true, wsId, create: true };
     }
     /* v8 ignore start */
-    const revisionId = currentRevisionId() || createdEntry()?.revision_id || entry()?.revision_id;
+    const revisionId = currentRevisionId() || createdEntry()?.revision_id ||
+      entry()?.revision_id;
     if (!wsId || !entryId || !revisionId) {
       return {
         ok: false,
@@ -1207,7 +1230,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           title,
           tags: draftTags(),
           fields,
-        });
+        }, loadedForms());
       } catch (error) {
         setIsSaving(false);
         showRustValidationFailure(
@@ -1251,7 +1274,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     const contentToSave = requestSnapshot.source;
     const currentSnapshot = () => ({
       title: draftTitle(),
-      fields: JSON.stringify(formDef ? toTransportFields(formDef, draftFields()) : fields),
+      fields: JSON.stringify(
+        formDef ? toTransportFields(formDef, draftFields()) : fields,
+      ),
       tags: JSON.stringify(draftTags()),
       source: editorContent(),
     });
@@ -1604,7 +1629,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                   type="button"
                   class="ui-button ui-button-primary"
                   onClick={() => void handleSave()}
-                  disabled={!isDirty() || isSaving() || compatibilityDiagnostics().length > 0}
+                  disabled={!isDirty() || isSaving() ||
+                    compatibilityDiagnostics().length > 0}
                   aria-label={t("entryDetail.save")}
                 >
                   {isSaving() ? t("entryDetail.saving") : t("entryDetail.save")}
@@ -1972,16 +1998,25 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                     class="ui-entry-source-body"
                   >
                     <Show when={compatibilityDiagnostics().length > 0}>
-                      <div class="ui-alert ui-alert-warning text-sm mb-3" role="alert">
+                      <div
+                        class="ui-alert ui-alert-warning text-sm mb-3"
+                        role="alert"
+                      >
                         <p class="font-semibold">
                           {t("entryDetail.compatibilityLossTitle")}
                         </p>
                         <ul class="mt-2 list-disc pl-5 space-y-1">
                           <For each={compatibilityDiagnostics()}>
-                            {(diagnostic) => <li>{diagnostic.message}</li>}
+                            {(diagnostic) => (
+                              <li>
+                                {formatMarkdownConversionDiagnostic(diagnostic)}
+                              </li>
+                            )}
                           </For>
                         </ul>
-                        <p class="mt-2">{t("entryDetail.compatibilityLossDescription")}</p>
+                        <p class="mt-2">
+                          {t("entryDetail.compatibilityLossDescription")}
+                        </p>
                         <Show when={pendingCanonicalDraft()}>
                           <button
                             type="button"

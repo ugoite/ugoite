@@ -4,16 +4,20 @@ import {
   renderDraftToSourceViaWasm,
 } from "~/lib/entry-compat";
 import { validateEntryDraftViaWasm } from "~/lib/entry-validation";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import type { Form } from "~/lib/types";
 
 const testForm = (): Form => ({
+  id: "00000000-0000-0000-0000-000000000001",
   name: "Note",
   version: 1,
   template: "# Note",
   fields: {
-    Body: { type: "string", required: true },
-    Done: { type: "boolean", required: false },
-    Count: { type: "integer", required: false },
+    Body: { id: 100, type: "string", required: true },
+    Done: { id: 101, type: "boolean", required: false },
+    Count: { id: 102, type: "integer", required: false },
+    Labels: { id: 103, type: "list", required: false },
+    Rows: { id: 104, type: "object_list", required: false },
   },
 });
 
@@ -26,6 +30,45 @@ describe("entry-compat", () => {
     expect(draft.fields.Body).toBe("hello");
     // Rust canonicalizes boolean aliases; TS helpers do not decide this.
     expect(draft.fields.Done).toBe("yes");
+  });
+
+  it("accepts typed non-scalar values at the compatibility render boundary", async () => {
+    const source = await renderDraftToSourceViaWasm(
+      testForm(),
+      "Website",
+      [],
+      {
+        Body: "hello",
+        Labels: ["one", "two"],
+        Rows: [{ step: "one" }],
+      },
+    );
+    expect(source).toContain("## Labels");
+    expect(source).toContain("## Rows");
+    expect(source).not.toContain("[object Object]");
+  });
+
+  it("preserves the typed MARKDOWN_CONVERSION_LOSS envelope", async () => {
+    await expect(
+      parseSourceToDraftViaWasm(
+        "---\nform: Note\n---\n# Note\n\nPreamble\n\n## Body\nkept\n",
+        "fallback",
+        { strict: true },
+      ),
+    ).rejects.toBeInstanceOf(UgoiteApiError);
+    try {
+      await parseSourceToDraftViaWasm(
+        "---\nform: Note\n---\n# Note\n\nPreamble\n\n## Body\nkept\n",
+        "fallback",
+        { strict: true },
+      );
+    } catch (error) {
+      expect(error).toBeInstanceOf(UgoiteApiError);
+      expect((error as UgoiteApiError).code).toBe("MARKDOWN_CONVERSION_LOSS");
+      expect((error as UgoiteApiError).detail).toMatchObject({
+        diagnostics: [{ code: "markdown_unassigned_preamble" }],
+      });
+    }
   });
 
   it("keeps fields->source->fields normalized values unchanged", async () => {

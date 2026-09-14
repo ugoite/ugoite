@@ -2,7 +2,7 @@ import {
   parseEntryMarkdownCompat,
   renderEntryMarkdownCompat,
 } from "~/lib/ugoite-client/protocol";
-import { type DraftValue, draftValueToDisplayString } from "~/lib/draft-values";
+import type { DraftFields } from "~/lib/draft-values";
 import { toRustFormDefinition } from "~/lib/entry-validation";
 import type { Form } from "~/lib/types";
 import type { MarkdownConversionDiagnostic } from "~/lib/ugoite-client/protocol";
@@ -10,18 +10,8 @@ import type { MarkdownConversionDiagnostic } from "~/lib/ugoite-client/protocol"
 export type CompatDraft = {
   title: string;
   tags: string[];
-  fields: Record<string, string>;
+  fields: DraftFields;
   diagnostics: MarkdownConversionDiagnostic[];
-};
-
-const toStringFields = (
-  fields: Record<string, unknown>,
-): Record<string, string> => {
-  const out: Record<string, string> = {};
-  for (const [name, value] of Object.entries(fields)) {
-    out[name] = draftValueToDisplayString(value as DraftValue);
-  }
-  return out;
 };
 
 /**
@@ -32,14 +22,17 @@ const toStringFields = (
 export const parseSourceToDraftViaWasm = async (
   markdown: string,
   fallbackTitle: string,
+  options: { strict?: boolean } = {},
 ): Promise<CompatDraft> => {
-  const parsed = await parseEntryMarkdownCompat(markdown, fallbackTitle);
+  const parsed = await parseEntryMarkdownCompat(
+    markdown,
+    fallbackTitle,
+    options,
+  );
   return {
     title: parsed.title,
     tags: Array.isArray(parsed.tags) ? parsed.tags : [],
-    fields: toStringFields(
-      (parsed.fields ?? {}) as Record<string, unknown>,
-    ),
+    fields: (parsed.fields ?? {}) as DraftFields,
     diagnostics: Array.isArray(parsed.diagnostics) ? parsed.diagnostics : [],
   };
 };
@@ -54,10 +47,11 @@ export const renderDraftToSourceViaWasm = async (
   form: Form,
   title: string,
   tags: string[],
-  fields: Record<string, unknown>,
+  fields: DraftFields,
+  knownForms: readonly Form[] = [],
 ): Promise<string> => {
   const rendered = await renderEntryMarkdownCompat(
-    toRustFormDefinition(form),
+    toRustFormDefinition(form, knownForms),
     {
       title,
       form_name: form.name,

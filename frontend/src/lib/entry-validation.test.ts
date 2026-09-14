@@ -8,16 +8,17 @@ import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import type { Form } from "~/lib/types";
 
 const testForm = (): Form => ({
+  id: "00000000-0000-0000-0000-000000000001",
   name: "Note",
   version: 1,
   template: "# Title",
   fields: {
-    Body: { type: "string", required: true },
-    Done: { type: "boolean", required: false },
-    Count: { type: "integer", required: false },
-    Due: { type: "date", required: false },
-    At: { type: "timestamp", required: false },
-    Tags: { type: "list", required: false },
+    Body: { id: 100, type: "string", required: true },
+    Done: { id: 101, type: "boolean", required: false },
+    Count: { id: 102, type: "integer", required: false },
+    Due: { id: 103, type: "date", required: false },
+    At: { id: 104, type: "timestamp", required: false },
+    Tags: { id: 105, type: "list", required: false },
   },
 });
 
@@ -70,6 +71,79 @@ describe("entry-validation", () => {
       },
     });
     expect(invalidFieldsFromError(error)).toEqual(["Done"]);
+  });
+
+  it("rejects missing stable Form and Field identities without synthesizing them", () => {
+    expect(() =>
+      toRustFormDefinition({
+        ...testForm(),
+        id: undefined,
+      })
+    ).toThrowError(/missing its stable FormId/);
+    expect(() =>
+      toRustFormDefinition({
+        ...testForm(),
+        fields: { Body: { type: "string", required: true } },
+      })
+    ).toThrowError(/missing its stable FieldId/);
+  });
+
+  it("resolves human-readable reference Form names through the loaded catalog", () => {
+    const target: Form = {
+      id: "00000000-0000-0000-0000-000000000002",
+      name: "Project",
+      version: 1,
+      template: "# Project",
+      fields: {},
+    };
+    const source: Form = {
+      id: "00000000-0000-0000-0000-000000000003",
+      name: "Task",
+      version: 1,
+      template: "# Task",
+      fields: {
+        Project: {
+          id: 100,
+          type: "row_reference",
+          required: false,
+          target_form: "Project",
+        },
+      },
+    };
+    const rust = toRustFormDefinition(source, [target]) as {
+      id: string;
+      fields: Array<{ id: number; reference_form?: string }>;
+    };
+    expect(rust.id).toBe(source.id);
+    expect(rust.fields[0]).toMatchObject({
+      id: 100,
+      reference_form: target.id,
+    });
+  });
+
+  it("rejects an unresolved reference as a typed admission error", () => {
+    const form: Form = {
+      ...testForm(),
+      fields: {
+        Link: {
+          id: 100,
+          type: "row_reference",
+          required: false,
+          target_form: "MissingForm",
+        },
+      },
+    };
+    expect(() => toRustFormDefinition(form)).toThrow(UgoiteApiError);
+    try {
+      toRustFormDefinition(form);
+    } catch (error) {
+      expect(error).toBeInstanceOf(UgoiteApiError);
+      expect((error as UgoiteApiError).code).toBe("INVALID_INPUT");
+      expect((error as UgoiteApiError).detail).toMatchObject({
+        kind: "form_identity",
+        target_form: "MissingForm",
+      });
+    }
   });
 
   it("uses one Rust classification for boolean/number/date/timestamp/list", async () => {

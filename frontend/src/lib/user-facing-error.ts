@@ -15,6 +15,7 @@ const CODE_KEYS: Record<string, TranslationKey> = {
   REVISION_CONFLICT: "errors.code.revisionConflict",
   FORM_VALIDATION_FAILED: "errors.code.formValidationFailed",
   UNKNOWN_FORM_FIELDS: "errors.code.unknownFormFields",
+  MARKDOWN_CONVERSION_LOSS: "entryDetail.compatibilityLossTitle",
   ASSET_NOT_FOUND: "errors.code.assetNotFound",
   INVITATION_EXPIRED: "errors.code.invitationExpired",
   INVITATION_NOT_FOUND: "errors.code.invitationNotFound",
@@ -78,6 +79,28 @@ const KIND_KEYS: Record<string, TranslationKey> = {
   dependency_unavailable: "errors.unavailable",
   unimplemented: "errors.unimplemented",
   internal: "errors.internal",
+};
+
+const MARKDOWN_DIAGNOSTIC_KEYS: Record<string, TranslationKey> = {
+  markdown_frontmatter_invalid:
+    "entryDetail.markdownDiagnostic.frontmatterInvalid",
+  markdown_frontmatter_not_object:
+    "entryDetail.markdownDiagnostic.frontmatterInvalid",
+  markdown_frontmatter_unclosed:
+    "entryDetail.markdownDiagnostic.frontmatterUnclosed",
+  markdown_duplicate_field_section:
+    "entryDetail.markdownDiagnostic.duplicateFieldSection",
+  markdown_unassigned_preamble:
+    "entryDetail.markdownDiagnostic.unassignedPreamble",
+};
+
+/** Keep Rust compatibility diagnostics typed while presenting localized copy. */
+export const formatMarkdownConversionDiagnostic = (diagnostic: {
+  code: string;
+  message: string;
+}): string => {
+  const key = MARKDOWN_DIAGNOSTIC_KEYS[diagnostic.code];
+  return key ? t(key) : diagnostic.message;
 };
 
 const STATUS_KEYS: Record<number, TranslationKey> = {

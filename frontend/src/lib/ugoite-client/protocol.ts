@@ -238,10 +238,15 @@ export type EntryCompatParseValue = {
 export const parseEntryMarkdownCompat = async (
   markdown: string,
   fallbackTitle = "",
+  options: { strict?: boolean } = {},
 ): Promise<EntryCompatParseValue> =>
   await invokeProtocol<EntryCompatParseValue>({
     action: "entry.compat.parse_markdown",
-    value: { markdown, fallback_title: fallbackTitle },
+    value: {
+      markdown,
+      fallback_title: fallbackTitle,
+      ...(options.strict ? { strict: true } : {}),
+    },
   });
 
 /** Render a structured draft to 0.1 Markdown via the Rust bridge. */

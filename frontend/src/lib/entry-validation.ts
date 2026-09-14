@@ -2,8 +2,6 @@ import { validateEntryDraft } from "~/lib/ugoite-client/protocol";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import type { Form, FormExtraAttributesPolicy } from "~/lib/types";
 
-const FALLBACK_FORM_ID = "00000000-0000-0000-0000-000000000001";
-const FALLBACK_REFERENCE_FORM_ID = "00000000-0000-0000-0000-000000000002";
 const EXTRA_ATTRIBUTES_POLICY_METADATA = "ugoite.extra_attributes_policy";
 
 const isUuid = (value: string) =>
@@ -11,14 +9,71 @@ const isUuid = (value: string) =>
     value.trim(),
   );
 
+const formIdentityError = (
+  message: string,
+  detail: Record<string, unknown>,
+): UgoiteApiError =>
+  new UgoiteApiError({
+    kind: "invalid_arguments",
+    operation: "entry.validate_draft",
+    code: "INVALID_INPUT",
+    message,
+    detail: { kind: "form_identity", ...detail },
+  });
+
+const requireFormId = (form: Form): string => {
+  if (!form.id || !isUuid(form.id)) {
+    throw formIdentityError(
+      `Form '${form.name}' is missing its stable FormId`,
+      { form: form.name },
+    );
+  }
+  return form.id;
+};
+
+const requireFieldId = (form: Form, name: string, id: number | undefined) => {
+  if (!Number.isInteger(id) || id < 100) {
+    throw formIdentityError(
+      `Field '${name}' in Form '${form.name}' is missing its stable FieldId`,
+      { form: form.name, field: name },
+    );
+  }
+  return id;
+};
+
+const resolveReferenceFormId = (
+  form: Form,
+  fieldName: string,
+  reference: string,
+  knownForms: readonly Form[],
+): string => {
+  const target = reference.trim();
+  // A server-read opaque FormId is already resolved. Human-readable names
+  // need the loaded catalog so this adapter never fabricates a target UUID.
+  if (isUuid(target)) return target;
+  const candidate = knownForms.find((known) =>
+    known.name === target || known.id === target
+  );
+  if (!candidate?.id || !isUuid(candidate.id)) {
+    throw formIdentityError(
+      `Reference target '${target}' for field '${fieldName}' in Form '${form.name}' could not be resolved`,
+      { form: form.name, field: fieldName, target_form: target },
+    );
+  }
+  return candidate.id;
+};
+
 /**
  * Convert a frontend Form to the Rust FormDefinition shape expected by
  * `entry.validate_draft`. This is a mechanical shape adapter only; coercion
- * and validation stay in Rust. The durable extra-attributes policy is carried
- * through the Rust extension metadata and projected to the current validator
- * boolean without changing the transport value.
+ * and validation stay in Rust. FormId, FieldId, and reference FormId are
+ * loaded durable identities: an incomplete fixture or unresolved name is a
+ * typed admission failure, never a synthetic identity.
  */
-export const toRustFormDefinition = (form: Form): Record<string, unknown> => {
+export const toRustFormDefinition = (
+  form: Form,
+  knownForms: readonly Form[] = [],
+): Record<string, unknown> => {
   const entries = Object.entries(form.fields || {});
   const policy: FormExtraAttributesPolicy = form.allow_extra_attributes ??
     "deny";
@@ -26,23 +81,26 @@ export const toRustFormDefinition = (form: Form): Record<string, unknown> => {
   // bare "number" variant and would otherwise reject the form shape instead
   // of producing field-level diagnostics.
   const toRustFieldType = (type: string) => type === "number" ? "double" : type;
+  const formId = requireFormId(form);
+  const forms = [form, ...knownForms.filter((known) => known !== form)];
   return {
-    id: form.id && isUuid(form.id) ? form.id : FALLBACK_FORM_ID,
+    id: formId,
     version: form.version ?? 1,
     name: form.name,
-    fields: entries.map(([name, field], index) => ({
-      id: typeof field.id === "number" && field.id >= 100
-        ? field.id
-        : 100 + index,
+    fields: entries.map(([name, field]) => ({
+      id: requireFieldId(form, name, field.id),
       name,
       field_type: toRustFieldType(field.type),
       required: Boolean(field.required),
       ...(field.deprecated ? { deprecated: true } : {}),
       ...(field.target_form?.trim()
         ? {
-          reference_form: isUuid(field.target_form.trim())
-            ? field.target_form.trim()
-            : FALLBACK_REFERENCE_FORM_ID,
+          reference_form: resolveReferenceFormId(
+            form,
+            name,
+            field.target_form,
+            forms,
+          ),
         }
         : {}),
       ...(field.items
@@ -51,9 +109,12 @@ export const toRustFormDefinition = (form: Form): Record<string, unknown> => {
             type: field.items.type,
             ...(field.items.target_form?.trim()
               ? {
-                target_form: isUuid(field.items.target_form.trim())
-                  ? field.items.target_form.trim()
-                  : FALLBACK_REFERENCE_FORM_ID,
+                target_form: resolveReferenceFormId(
+                  form,
+                  name,
+                  field.items.target_form,
+                  forms,
+                ),
               }
               : {}),
           },
@@ -129,10 +190,11 @@ export const invalidFieldsFromError = (error: unknown): string[] => {
 export const validateEntryDraftViaWasm = async (
   form: Form,
   draft: EntryDraftInput,
+  knownForms: readonly Form[] = [],
 ): Promise<EntryDraftValidationSuccess | EntryDraftValidationFailure> => {
   try {
     const normalized = await validateEntryDraft(
-      toRustFormDefinition(form),
+      toRustFormDefinition(form, knownForms),
       {
         title: draft.title,
         form_name: form.name,
