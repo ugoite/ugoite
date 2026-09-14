@@ -1296,3 +1296,462 @@ async fn test_remote_asset_upload_rejects_oversize() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("size limit"), "stderr: {stderr}");
 }
+
+/// Lane 1 acceptance: the consolidated structured fixture reaches the real
+/// server-backed CLI transport, not only the core implementation.
+#[tokio::test]
+async fn test_lane1_parity_fixture_converges_on_cli_remote() {
+    let acceptance_fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/entry/structured-compat/10-structured-authoring-parity.json"
+    ))
+    .expect("read structured authoring parity fixture");
+    let fixture = setup_remote().await;
+    let staging = tempdir().expect("parity staging directory");
+
+    let task_form_file = staging.path().join("parity-task-form.json");
+    std::fs::write(
+        &task_form_file,
+        r##"{"name":"ParityTask","version":1,"template":"# ParityTask","fields":{"Summary":{"type":"string"}}}"##,
+    )
+    .expect("write task form");
+    let task_form_update = run_cli(
+        &fixture.config_path,
+        &[
+            "form",
+            "update",
+            &fixture.space_id,
+            task_form_file.to_str().expect("task form path"),
+        ],
+    )
+    .await;
+    assert!(task_form_update.status.success());
+    let task_form = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &["form", "get", &fixture.space_id, "ParityTask"],
+        )
+        .await,
+        "get parity task form",
+    );
+    let task_form_id = task_form["id"].as_str().expect("task form id");
+
+    let mut parity_form_fields = serde_json::Map::new();
+    for fixture_field in acceptance_fixture["form"]["fields"]
+        .as_array()
+        .expect("fixture form fields")
+    {
+        let name = fixture_field["name"].as_str().expect("fixture field name");
+        let mut field = fixture_field
+            .as_object()
+            .expect("fixture field object")
+            .clone();
+        field.remove("name");
+        field.remove("id");
+        if let Some(field_type) = field.remove("field_type") {
+            field.insert("type".to_string(), field_type);
+        }
+        if name == "Ref" {
+            field.remove("reference_form");
+            field.insert("target_form".to_string(), json!(task_form_id));
+        }
+        parity_form_fields.insert(name.to_string(), serde_json::Value::Object(field));
+    }
+    let parity_form_file = staging.path().join("parity-form.json");
+    let parity_form = json!({
+        "name": "ParityRemote",
+        "version": 1,
+        "template": "# ParityRemote",
+        "fields": parity_form_fields
+    });
+    std::fs::write(
+        &parity_form_file,
+        serde_json::to_vec(&parity_form).expect("serialize parity form"),
+    )
+    .expect("write parity form");
+    let form_update = run_cli(
+        &fixture.config_path,
+        &[
+            "form",
+            "update",
+            &fixture.space_id,
+            parity_form_file.to_str().expect("parity form path"),
+        ],
+    )
+    .await;
+    assert!(
+        form_update.status.success(),
+        "parity form update failed: {}",
+        String::from_utf8_lossy(&form_update.stderr)
+    );
+    let parity_form_read = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &["form", "get", &fixture.space_id, "ParityRemote"],
+        )
+        .await,
+        "get remote parity form",
+    );
+    assert!(parity_form_read["id"].as_str().is_some());
+    assert_eq!(
+        parity_form_read["fields"]["Ref"]["target_form"],
+        task_form_id
+    );
+    let parity_form_id = parity_form_read["id"].clone();
+    let stable_field_ids: serde_json::Map<String, serde_json::Value> = parity_form_read["fields"]
+        .as_object()
+        .expect("remote parity fields")
+        .iter()
+        .map(|(name, field)| {
+            (
+                name.clone(),
+                field.get("id").cloned().expect("remote field id"),
+            )
+        })
+        .collect();
+    let parity_form_reopened = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &["form", "get", &fixture.space_id, "ParityRemote"],
+        )
+        .await,
+        "reopen remote parity form",
+    );
+    assert_eq!(parity_form_reopened["id"], parity_form_id);
+    for (name, field_id) in stable_field_ids {
+        assert_eq!(parity_form_reopened["fields"][name]["id"], field_id);
+    }
+
+    let target_output = run_cli(
+        &fixture.config_path,
+        &[
+            "entry",
+            "create",
+            &fixture.space_id,
+            "parity-task-01",
+            "--form",
+            "ParityTask",
+            "--field",
+            "Summary=build",
+        ],
+    )
+    .await;
+    assert!(target_output.status.success());
+    let target_two_output = run_cli(
+        &fixture.config_path,
+        &[
+            "entry",
+            "create",
+            &fixture.space_id,
+            "parity-task-02",
+            "--form",
+            "ParityTask",
+            "--field",
+            "Summary=review",
+        ],
+    )
+    .await;
+    assert!(target_two_output.status.success());
+
+    let asset_file = staging.path().join("spec.pdf");
+    std::fs::write(&asset_file, b"spec-bytes").expect("write parity asset");
+    let asset = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "asset",
+                "upload",
+                &fixture.space_id,
+                asset_file.to_str().expect("asset path"),
+            ],
+        )
+        .await,
+        "upload parity asset",
+    );
+    let mut fields = acceptance_fixture["structured"]["fields"]
+        .as_object()
+        .expect("fixture structured fields")
+        .clone();
+    fields.insert("Ref".to_string(), json!("parity-task-01"));
+    fields.insert("File".to_string(), asset.clone());
+    fields.insert("Files".to_string(), json!([asset.clone()]));
+    let fields = serde_json::Value::Object(fields);
+    let fields_file = staging.path().join("parity-fields.json");
+    std::fs::write(
+        &fields_file,
+        serde_json::to_vec(&fields).expect("serialize parity fields"),
+    )
+    .expect("write parity fields");
+    let created = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "entry",
+                "create",
+                &fixture.space_id,
+                "parity-remote-entry",
+                "--form",
+                "ParityRemote",
+                "--title",
+                "Website",
+                "--fields-file",
+                fields_file.to_str().expect("fields path"),
+            ],
+        )
+        .await,
+        "remote parity structured create",
+    );
+    assert!(contains_string(&created, "parity-remote-entry"));
+
+    let entry = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &["entry", "get", &fixture.space_id, "parity-remote-entry"],
+        )
+        .await,
+        "remote parity entry get",
+    );
+    assert_eq!(entry["form"], "ParityRemote");
+    assert_eq!(
+        entry["sections"]["Headline"],
+        acceptance_fixture["expected"]["values"]["100"]
+    );
+    assert_eq!(entry["sections"]["Ref"], "parity-task-01");
+    assert_eq!(
+        entry["sections"]["At"],
+        acceptance_fixture["expected"]["values"]["106"]
+    );
+    assert_eq!(
+        entry["sections"]["AtNs"],
+        acceptance_fixture["expected"]["values"]["112"]
+    );
+    let at_tz = entry["sections"]["AtTz"].as_str().expect("timestamp_tz");
+    let at_tz_ns = entry["sections"]["AtTzNs"]
+        .as_str()
+        .expect("timestamp_tz_ns");
+    assert_eq!(
+        chrono::DateTime::parse_from_rfc3339(at_tz)
+            .expect("valid timestamp_tz")
+            .timestamp(),
+        chrono::DateTime::parse_from_rfc3339("2026-09-11T10:00:00+09:00")
+            .expect("valid expected timestamp_tz")
+            .timestamp()
+    );
+    assert_eq!(
+        chrono::DateTime::parse_from_rfc3339(at_tz_ns)
+            .expect("valid timestamp_tz_ns")
+            .timestamp_nanos_opt(),
+        chrono::DateTime::parse_from_rfc3339("2026-09-11T10:00:00.123456789+09:00")
+            .expect("valid expected timestamp_tz_ns")
+            .timestamp_nanos_opt()
+    );
+    assert_eq!(entry["sections"]["Labels"], "- alpha\n- beta");
+    assert!(!entry["sections"]["Rows"]
+        .as_str()
+        .unwrap_or_default()
+        .is_empty());
+    let parsed_file: serde_json::Value = serde_json::from_str(
+        entry["sections"]["File"]
+            .as_str()
+            .expect("asset section is serialized JSON"),
+    )
+    .expect("asset section JSON");
+    assert_eq!(parsed_file["asset_id"], asset["asset_id"]);
+    let parsed_files: serde_json::Value = serde_json::from_str(
+        entry["sections"]["Files"]
+            .as_str()
+            .expect("asset list section is serialized JSON"),
+    )
+    .expect("asset list section JSON");
+    assert_eq!(parsed_files[0]["asset_id"], asset["asset_id"]);
+
+    let history = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &["entry", "history", &fixture.space_id, "parity-remote-entry"],
+        )
+        .await,
+        "remote parity history after create",
+    );
+    assert_eq!(history["revisions"].as_array().unwrap().len(), 1);
+    let rev1 = revision_ids(&history)[0].clone();
+    let rev1_json = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "entry",
+                "revision",
+                &fixture.space_id,
+                "parity-remote-entry",
+                &rev1,
+            ],
+        )
+        .await,
+        "remote parity created revision",
+    );
+    for name in [
+        "Headline", "Notes", "Done", "Count", "Score", "Due", "At", "AtNs", "AtTz", "AtTzNs",
+        "Labels", "Rows", "Ref",
+    ] {
+        assert_eq!(
+            rev1_json["sections"][name], entry["sections"][name],
+            "durable field {name}"
+        );
+    }
+    let revision_rows: serde_json::Value = serde_json::from_str(
+        rev1_json["sections"]["Rows"]
+            .as_str()
+            .expect("revision object list section"),
+    )
+    .expect("revision object list JSON");
+    assert_eq!(
+        revision_rows,
+        acceptance_fixture["expected"]["values"]["108"]
+    );
+    assert_eq!(rev1_json["sections"]["File"], entry["sections"]["File"]);
+    assert_eq!(rev1_json["sections"]["Files"], entry["sections"]["Files"]);
+
+    let mut updated_fields = acceptance_fixture["update"]["fields"]
+        .as_object()
+        .expect("fixture update fields")
+        .clone();
+    updated_fields.remove("Notes");
+    updated_fields.remove("Labels");
+    updated_fields.remove("Files");
+    updated_fields.insert("Ref".to_string(), json!("parity-task-02"));
+    updated_fields.insert("File".to_string(), asset.clone());
+    let updated_fields_file = staging.path().join("parity-fields-update.json");
+    std::fs::write(
+        &updated_fields_file,
+        serde_json::to_vec(&updated_fields).expect("serialize update fields"),
+    )
+    .expect("write update fields");
+    let update = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "entry",
+                "update",
+                &fixture.space_id,
+                "parity-remote-entry",
+                "--title",
+                "Website v2",
+                "--fields-file",
+                updated_fields_file.to_str().expect("updated fields path"),
+                "--parent-revision-id",
+                &rev1,
+            ],
+        )
+        .await,
+        "remote parity structured update",
+    );
+    assert!(contains_string(&update, "parity-remote-entry"));
+
+    let history = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &["entry", "history", &fixture.space_id, "parity-remote-entry"],
+        )
+        .await,
+        "remote parity history after update",
+    );
+    let revisions = history["revisions"].as_array().unwrap();
+    assert_eq!(revisions.len(), 2);
+    let rev2 = revision_ids(&history)
+        .into_iter()
+        .find(|id| id != &rev1)
+        .expect("updated revision");
+    let revision = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "entry",
+                "revision",
+                &fixture.space_id,
+                "parity-remote-entry",
+                &rev2,
+            ],
+        )
+        .await,
+        "remote parity updated revision",
+    );
+    assert_eq!(revision["parent_revision_id"], rev1);
+
+    let reopened = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &["entry", "get", &fixture.space_id, "parity-remote-entry"],
+        )
+        .await,
+        "remote parity reopen",
+    );
+    assert_eq!(reopened["title"], "Website v2");
+    assert_eq!(reopened["sections"]["Count"], "43");
+    assert!(reopened["sections"].get("Notes").is_none());
+    assert!(reopened["sections"].get("Labels").is_none());
+    assert!(reopened["sections"].get("Files").is_none());
+
+    let invalid = run_cli(
+        &fixture.config_path,
+        &[
+            "entry",
+            "create",
+            &fixture.space_id,
+            "parity-remote-invalid",
+            "--form",
+            "ParityRemote",
+            "--field",
+            "Headline=hello",
+            "--field",
+            "Count=not-an-integer",
+        ],
+    )
+    .await;
+    assert!(!invalid.status.success());
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("FORM_VALIDATION_FAILED"));
+
+    let legacy_markdown = acceptance_fixture["markdown"]
+        .as_str()
+        .expect("fixture Markdown")
+        .replace("form: Parity", "form: ParityRemote")
+        .replace("task-01", "parity-task-01")
+        .replace(
+            r#"{"asset_id": "01900000-0000-7000-8000-000000000001", "name": "spec.pdf", "media_type": "application/pdf", "size_bytes": 12, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
+            &serde_json::to_string(&asset).expect("serialize uploaded asset"),
+        )
+        .replace(
+            r#"{"asset_id": "01900000-0000-7000-8000-000000000002", "name": "a.png", "media_type": "image/png", "size_bytes": 4, "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#,
+            &serde_json::to_string(&asset).expect("serialize uploaded asset"),
+        );
+    let legacy = run_cli(
+        &fixture.config_path,
+        &[
+            "entry",
+            "create",
+            "--content",
+            &legacy_markdown,
+            &fixture.space_id,
+            "parity-remote-legacy",
+        ],
+    )
+    .await;
+    assert!(
+        legacy.status.success(),
+        "legacy parity create failed: {}",
+        String::from_utf8_lossy(&legacy.stderr)
+    );
+    let legacy_entry = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &["entry", "get", &fixture.space_id, "parity-remote-legacy"],
+        )
+        .await,
+        "remote legacy parity entry get",
+    );
+    assert_eq!(legacy_entry["form"], entry["form"]);
+    assert_eq!(legacy_entry["title"], entry["title"]);
+    for field in [
+        "Headline", "Done", "Count", "At", "AtNs", "AtTz", "AtTzNs", "Labels", "Rows", "Ref",
+    ] {
+        assert_eq!(legacy_entry["sections"][field], entry["sections"][field]);
+    }
+}

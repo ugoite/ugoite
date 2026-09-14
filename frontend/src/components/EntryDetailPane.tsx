@@ -21,13 +21,12 @@ import { formatDateTimeLabel } from "~/lib/date-format";
 import {
   parseMarkdownH2Sections,
   renderMarkdownPreview,
-  replaceFirstH1,
-  updateH2Section,
 } from "~/lib/markdown";
 import {
   buildEntryMarkdownFromFields,
-  parseMarkdownFrontmatterTags,
-  parseMarkdownToStructuredDraft,
+  parseEntryMarkdownPresentation,
+  readEntryTagsPresentation,
+  updateEntryMarkdownPresentation,
 } from "~/lib/entry-input";
 import {
   type DraftFields,
@@ -849,8 +848,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     const content = saved?.source ?? defaultContent;
     const draft = saved
       ? { title: saved.title, fields: saved.fields }
-      : parseMarkdownToStructuredDraft(content);
-    const tags = saved?.tags ?? parseMarkdownFrontmatterTags(content) ?? [];
+      : parseEntryMarkdownPresentation(content);
+    const tags = saved?.tags ?? readEntryTagsPresentation(content) ?? [];
     setLastLoadedEntryId(entryId);
     setLastLoadedResourceRevisionId(revisionId);
     setCurrentRevisionId(
@@ -915,14 +914,16 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     // source textarea responsive. The Rust compatibility bridge then
     // reconciles to the canonical 0.1 representation (authority): when both
     // agree nothing changes; when they disagree the Rust output wins.
-    let content = replaceFirstH1(editorContent(), title);
-    for (const [name, value] of Object.entries(fields)) {
-      content = updateH2Section(
-        content,
-        name,
-        draftValueToDisplayString(value),
-      );
-    }
+    const content = updateEntryMarkdownPresentation(
+      editorContent(),
+      title,
+      Object.fromEntries(
+        Object.entries(fields).map(([name, value]) => [
+          name,
+          draftValueToDisplayString(value),
+        ]),
+      ),
+    );
     setEditorContent(content);
     setIsDirty(content !== lastSavedContent());
     setConflictMessage(null);
@@ -968,8 +969,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     // previous draft until the canonical parse lands.
     const fallbackTitle = entry()?.title || "";
     try {
-      const draft = parseMarkdownToStructuredDraft(content);
-      const tags = parseMarkdownFrontmatterTags(content);
+      const draft = parseEntryMarkdownPresentation(content);
+      const tags = readEntryTagsPresentation(content);
       setDraftTitle(draft.title || fallbackTitle);
       setDraftFields(draft.fields);
       if (tags !== null) setDraftTags(tags);
@@ -1341,8 +1342,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     /* v8 ignore stop */
     const content = lastSavedContent();
     const discardTitle = entry()?.title || "";
-    const draft = parseMarkdownToStructuredDraft(content);
-    const tags = parseMarkdownFrontmatterTags(content) ?? [];
+    const draft = parseEntryMarkdownPresentation(content);
+    const tags = readEntryTagsPresentation(content) ?? [];
     setDraftTitle(draft.title || discardTitle);
     setDraftFields(draft.fields);
     setDraftTags(tags);

@@ -6,6 +6,9 @@ import {
 } from "~/lib/entry-validation";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import type { Form } from "~/lib/types";
+import parityFixture from "../../../fixtures/entry/structured-compat/10-structured-authoring-parity.json" with {
+  type: "json"
+};
 
 const testForm = (): Form => ({
   id: "00000000-0000-0000-0000-000000000001",
@@ -176,5 +179,150 @@ describe("entry-validation", () => {
       fields: { Body: "hello", Done: "yes", Count: 3 },
     });
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("lane1 parity fixture", () => {
+  // Mirrors fixtures/entry/structured-compat/10-structured-authoring-parity.json
+  // invalid_cases: the browser surface must converge on the same codes and
+  // fields as core preview, the WASM bridge, and both CLI modes.
+  const fixtureFields = parityFixture.structured.fields as Record<
+    string,
+    unknown
+  >;
+  const parityForm = (): Form => ({
+    id: "01900000-0000-7000-8000-0000000000b0",
+    name: "Parity",
+    version: 1,
+    template: "# Parity",
+    fields: {
+      Headline: { id: 100, type: "string", required: true },
+      Notes: { id: 101, type: "markdown", required: false },
+      Done: { id: 102, type: "boolean", required: false },
+      Count: { id: 103, type: "integer", required: false },
+      Score: { id: 104, type: "double", required: false },
+      Due: { id: 105, type: "date", required: false },
+      At: { id: 106, type: "timestamp", required: false },
+      AtNs: { id: 112, type: "timestamp_ns", required: false },
+      AtTz: { id: 113, type: "timestamp_tz", required: false },
+      AtTzNs: { id: 114, type: "timestamp_tz_ns", required: false },
+      Labels: { id: 107, type: "list", required: false },
+      Rows: { id: 108, type: "object_list", required: false },
+      Ref: {
+        id: 109,
+        type: "row_reference",
+        required: false,
+        target_form: "01900000-0000-7000-8000-0000000000a1",
+      },
+      File: { id: 110, type: "asset_reference", required: false },
+      Files: {
+        id: 111,
+        type: "list",
+        required: false,
+        items: { type: "asset_reference" },
+      },
+    },
+  });
+
+  it("converges on the same invalid codes and fields as the fixture", async () => {
+    for (const fixtureField of parityFixture.form.fields) {
+      const field = parityForm().fields[fixtureField.name];
+      expect(field?.id).toBe(fixtureField.id);
+      expect(field?.type).toBe(
+        fixtureField.field_type === "double"
+          ? "double"
+          : fixtureField.field_type,
+      );
+    }
+    const cases: Array<{
+      field: string;
+      fields: Record<string, unknown>;
+      code: string;
+    }> = [
+      {
+        field: "Done",
+        fields: { Headline: "hello", Done: "maybe" },
+        code: "FORM_VALIDATION_FAILED",
+      },
+      {
+        field: "Count",
+        fields: { Headline: "hello", Count: "not-an-int" },
+        code: "FORM_VALIDATION_FAILED",
+      },
+      {
+        field: "Score",
+        fields: { Headline: "hello", Score: "not-a-number" },
+        code: "FORM_VALIDATION_FAILED",
+      },
+      {
+        field: "Due",
+        fields: { Headline: "hello", Due: "tomorrow" },
+        code: "FORM_VALIDATION_FAILED",
+      },
+      {
+        field: "At",
+        fields: { Headline: "hello", At: "not-a-timestamp" },
+        code: "FORM_VALIDATION_FAILED",
+      },
+      {
+        field: "Labels",
+        fields: { Headline: "hello", Labels: 42 },
+        code: "FORM_VALIDATION_FAILED",
+      },
+      {
+        field: "Rows",
+        fields: { Headline: "hello", Rows: "not-an-array" },
+        code: "FORM_VALIDATION_FAILED",
+      },
+      {
+        field: "Ref",
+        fields: { Headline: "hello", Ref: 7 },
+        code: "FORM_VALIDATION_FAILED",
+      },
+      {
+        field: "File",
+        fields: { Headline: "hello", File: { asset_id: "not-a-uuid" } },
+        code: "FORM_VALIDATION_FAILED",
+      },
+      {
+        field: "Headline",
+        fields: { Done: true },
+        code: "FORM_VALIDATION_FAILED",
+      },
+      {
+        field: "Nope",
+        fields: { Headline: "hello", Nope: "x" },
+        code: "UNKNOWN_FORM_FIELDS",
+      },
+    ];
+    for (const { field, fields, code } of cases) {
+      const result = await validateEntryDraftViaWasm(parityForm(), {
+        title: "T",
+        tags: [],
+        fields,
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe(code);
+        expect(result.invalidFields).toEqual([field]);
+      }
+    }
+  });
+
+  it("accepts the fixture valid draft and reopens it unchanged", async () => {
+    const fields = { ...fixtureFields };
+    const first = await validateEntryDraftViaWasm(parityForm(), {
+      title: "Website",
+      tags: ["inbox"],
+      fields,
+    });
+    expect(first.ok).toBe(true);
+    // Reopen resolves through the same boundary to the same outcome.
+    const second = await validateEntryDraftViaWasm(parityForm(), {
+      title: "Website",
+      tags: ["inbox"],
+      fields,
+    });
+    expect(second).toEqual(first);
   });
 });

@@ -1086,3 +1086,433 @@ fn test_structured_update_usage_errors() {
     assert!(bare_stderr.contains("requires --field or --fields-file"));
     assert!(bare_stderr.contains("complete post-update field map"));
 }
+
+/// Lane1 PR9: the consolidated parity fixture converges on CLI core.
+///
+/// Same logical input reaches the same stored values, Form identity,
+/// revision history, and validation codes as the core preview, the WASM
+/// bridge, and the frontend. Each CLI invocation reopens the 0.1 Space, so
+/// sequential calls also prove close/reopen stability.
+#[test]
+fn test_lane1_parity_fixture_converges_on_cli_core() {
+    let acceptance_fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/entry/structured-compat/10-structured-authoring-parity.json"
+    ))
+    .expect("read structured authoring parity fixture");
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.json");
+    let space_path = format!("{root}/spaces/parity-space");
+    let run = |args: &[&str]| {
+        Command::new(ugoite_bin())
+            .args(args)
+            .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+            .output()
+            .expect("run cli")
+    };
+    let json_of = |output: &std::process::Output| {
+        serde_json::from_str::<serde_json::Value>(&String::from_utf8_lossy(&output.stdout))
+            .expect("stdout is JSON")
+    };
+    let assert_timestamp_meaning = |actual: &serde_json::Value, expected: &serde_json::Value| {
+        let actual = chrono::DateTime::parse_from_rfc3339(actual.as_str().expect("timestamp"))
+            .expect("valid actual timestamp");
+        let expected =
+            chrono::DateTime::parse_from_rfc3339(expected.as_str().expect("expected timestamp"))
+                .expect("valid expected timestamp");
+        assert_eq!(actual.timestamp_nanos_opt(), expected.timestamp_nanos_opt());
+    };
+
+    assert!(run(&["create-space", "--root", &root, "parity-space"])
+        .status
+        .success());
+
+    // Target form for the row_reference field.
+    let task_form = dir.path().join("task-form.json");
+    std::fs::write(
+        &task_form,
+        r#"{"name":"Task","fields":{"Summary":{"id":100,"type":"string"}}}"#,
+    )
+    .unwrap();
+    assert!(
+        run(&["form", "update", &space_path, task_form.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let task_form_got = run(&["form", "get", &space_path, "Task"]);
+    assert!(task_form_got.status.success());
+    let task_form_id = json_of(&task_form_got)["id"].as_str().unwrap().to_string();
+
+    // Representative form across every Lane 1 field family.
+    let mut parity_form_fields = serde_json::Map::new();
+    for fixture_field in acceptance_fixture["form"]["fields"]
+        .as_array()
+        .expect("fixture form fields")
+    {
+        let name = fixture_field["name"].as_str().expect("fixture field name");
+        let mut field = fixture_field
+            .as_object()
+            .expect("fixture field object")
+            .clone();
+        field.remove("name");
+        if let Some(field_type) = field.remove("field_type") {
+            field.insert("type".to_string(), field_type);
+        }
+        if name == "Ref" {
+            field.remove("reference_form");
+            field.insert("target_form".to_string(), serde_json::json!(task_form_id));
+        }
+        parity_form_fields.insert(name.to_string(), serde_json::Value::Object(field));
+    }
+    let parity_form = dir.path().join("parity-form.json");
+    std::fs::write(
+        &parity_form,
+        serde_json::json!({
+            "name": "Parity",
+            "fields": parity_form_fields
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let parity_form_update = run(&["form", "update", &space_path, parity_form.to_str().unwrap()]);
+    assert!(
+        parity_form_update.status.success(),
+        "parity form update failed: {}",
+        String::from_utf8_lossy(&parity_form_update.stderr)
+    );
+    let parity_form_got = run(&["form", "get", &space_path, "Parity"]);
+    assert!(parity_form_got.status.success());
+    let parity_form_json = json_of(&parity_form_got);
+    assert!(parity_form_json["id"].as_str().is_some());
+    assert_eq!(
+        parity_form_json["fields"]["Ref"]["target_form"],
+        task_form_id
+    );
+    for fixture_field in acceptance_fixture["form"]["fields"]
+        .as_array()
+        .expect("fixture form fields")
+    {
+        let name = fixture_field["name"].as_str().expect("fixture field name");
+        assert_eq!(parity_form_json["fields"][name]["id"], fixture_field["id"]);
+    }
+    let parity_form_id = parity_form_json["id"].clone();
+    let parity_form_reopened = json_of(&run(&["form", "get", &space_path, "Parity"]));
+    assert_eq!(parity_form_reopened["id"], parity_form_id);
+    assert_eq!(
+        parity_form_reopened["fields"]["Ref"]["target_form"],
+        task_form_id
+    );
+
+    // Row target and uploaded asset backing the reference fields.
+    let mut target = Command::new(ugoite_bin());
+    target.args([
+        "entry",
+        "create",
+        &space_path,
+        "task-01",
+        "--form",
+        "Task",
+        "--field",
+        "Summary=build",
+    ]);
+    target.env("UGOITE_CLI_CONFIG_PATH", &config_path);
+    assert!(target.output().unwrap().status.success());
+    let mut target_two = Command::new(ugoite_bin());
+    target_two.args([
+        "entry",
+        "create",
+        &space_path,
+        "task-02",
+        "--form",
+        "Task",
+        "--field",
+        "Summary=review",
+    ]);
+    target_two.env("UGOITE_CLI_CONFIG_PATH", &config_path);
+    assert!(target_two.output().unwrap().status.success());
+    let asset_file = dir.path().join("spec.pdf");
+    std::fs::write(&asset_file, b"spec-bytes").unwrap();
+    let mut upload = Command::new(ugoite_bin());
+    upload.args(["asset", "upload", &space_path, asset_file.to_str().unwrap()]);
+    upload.env("UGOITE_CLI_CONFIG_PATH", &config_path);
+    let upload = upload.output().unwrap();
+    assert!(
+        upload.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&upload.stderr)
+    );
+    let asset: serde_json::Value = json_of(&upload);
+
+    // Structured create with every field family.
+    let create_fields = dir.path().join("parity-create.json");
+    let mut create_values = acceptance_fixture["structured"]["fields"]
+        .as_object()
+        .expect("fixture structured fields")
+        .clone();
+    create_values.insert("File".to_string(), asset.clone());
+    create_values.insert("Files".to_string(), serde_json::json!([asset.clone()]));
+    std::fs::write(
+        &create_fields,
+        serde_json::to_string(&serde_json::Value::Object(create_values)).unwrap(),
+    )
+    .unwrap();
+    let mut create = Command::new(ugoite_bin());
+    create.args([
+        "entry",
+        "create",
+        &space_path,
+        "parity-entry",
+        "--form",
+        "Parity",
+        "--title",
+        "Website",
+        "--fields-file",
+        create_fields.to_str().unwrap(),
+    ]);
+    create.env("UGOITE_CLI_CONFIG_PATH", &config_path);
+    let created = create.output().unwrap();
+    assert!(
+        created.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+
+    // Canonical read: stored values, Form identity, title, tags.
+    let mut get = Command::new(ugoite_bin());
+    get.args(["entry", "get", &space_path, "parity-entry"]);
+    get.env("UGOITE_CLI_CONFIG_PATH", &config_path);
+    let got = get.output().unwrap();
+    assert!(got.status.success());
+    let entry = json_of(&got);
+    assert_eq!(entry["form"], serde_json::json!("Parity"));
+    assert_eq!(entry["title"], serde_json::json!("Website"));
+    assert_eq!(
+        entry["sections"]["Headline"],
+        acceptance_fixture["expected"]["values"]["100"]
+    );
+    assert_eq!(
+        entry["sections"]["Done"],
+        serde_json::json!(acceptance_fixture["expected"]["values"]["102"]
+            .as_bool()
+            .expect("boolean expected")
+            .to_string())
+    );
+    assert_eq!(
+        entry["sections"]["Count"],
+        serde_json::json!(acceptance_fixture["expected"]["values"]["103"]
+            .as_i64()
+            .expect("integer expected")
+            .to_string())
+    );
+    assert_eq!(
+        entry["sections"]["At"],
+        acceptance_fixture["expected"]["values"]["106"]
+    );
+    assert_eq!(
+        entry["sections"]["AtNs"],
+        acceptance_fixture["expected"]["values"]["112"]
+    );
+    assert_timestamp_meaning(
+        &entry["sections"]["AtTz"],
+        &acceptance_fixture["expected"]["values"]["113"],
+    );
+    assert_timestamp_meaning(
+        &entry["sections"]["AtTzNs"],
+        &acceptance_fixture["expected"]["values"]["114"],
+    );
+    assert_eq!(entry["sections"]["Ref"], serde_json::json!("task-01"));
+    assert_eq!(entry["sections"]["Labels"], "- alpha\n- beta");
+    assert!(!entry["sections"]["Rows"]
+        .as_str()
+        .unwrap_or_default()
+        .is_empty());
+    let parsed_file: serde_json::Value = serde_json::from_str(
+        entry["sections"]["File"]
+            .as_str()
+            .expect("asset section is serialized JSON"),
+    )
+    .expect("asset section JSON");
+    assert_eq!(parsed_file["asset_id"], asset["asset_id"]);
+    let parsed_files: serde_json::Value = serde_json::from_str(
+        entry["sections"]["Files"]
+            .as_str()
+            .expect("asset list section is serialized JSON"),
+    )
+    .expect("asset list section JSON");
+    assert_eq!(parsed_files[0]["asset_id"], asset["asset_id"]);
+
+    // History: one revision; update appends a second with intact ancestry.
+    let mut history = Command::new(ugoite_bin());
+    history.args(["entry", "history", &space_path, "parity-entry"]);
+    history.env("UGOITE_CLI_CONFIG_PATH", &config_path);
+    let history = history.output().unwrap();
+    let history_json = json_of(&history);
+    assert_eq!(history_json["revisions"].as_array().unwrap().len(), 1);
+    let rev1 = history_json["revisions"][0]["revision_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let mut rev1_command = Command::new(ugoite_bin());
+    rev1_command.args(["entry", "revision", &space_path, "parity-entry", &rev1]);
+    rev1_command.env("UGOITE_CLI_CONFIG_PATH", &config_path);
+    let rev1_json = json_of(&rev1_command.output().unwrap());
+    for field_id in [
+        "100", "101", "102", "103", "104", "105", "106", "107", "108", "109", "112", "113", "114",
+    ] {
+        let field_name = acceptance_fixture["form"]["fields"]
+            .as_array()
+            .expect("fixture form fields")
+            .iter()
+            .find(|field| field["id"].as_i64() == field_id.parse::<i64>().ok())
+            .and_then(|field| field["name"].as_str())
+            .expect("fixture field for durable value");
+        assert!(
+            rev1_json["sections"].get(field_name).is_some(),
+            "durable field {field_id} ({field_name})"
+        );
+    }
+    assert_eq!(rev1_json["sections"]["Headline"], "hello");
+    assert_eq!(rev1_json["sections"]["Done"], "true");
+    assert_eq!(rev1_json["sections"]["Count"], "42");
+    assert_eq!(rev1_json["sections"]["Rows"], entry["sections"]["Rows"]);
+    let revision_rows: serde_json::Value = serde_json::from_str(
+        rev1_json["sections"]["Rows"]
+            .as_str()
+            .expect("revision object list section"),
+    )
+    .expect("revision object list JSON");
+    assert_eq!(
+        revision_rows,
+        acceptance_fixture["expected"]["values"]["108"]
+    );
+    assert_eq!(rev1_json["sections"]["File"], entry["sections"]["File"]);
+    assert_eq!(rev1_json["sections"]["Files"], entry["sections"]["Files"]);
+    assert_timestamp_meaning(
+        &rev1_json["sections"]["AtTz"],
+        &acceptance_fixture["expected"]["values"]["113"],
+    );
+    assert_timestamp_meaning(
+        &rev1_json["sections"]["AtTzNs"],
+        &acceptance_fixture["expected"]["values"]["114"],
+    );
+
+    let update_fields = dir.path().join("parity-update.json");
+    let mut update_values = acceptance_fixture["update"]["fields"]
+        .as_object()
+        .expect("fixture update fields")
+        .clone();
+    // Structured update keeps the documented replacement semantics: fields
+    // omitted from this complete map are cleared. Tags/extra attributes are
+    // outside this CLI map and remain covered by the A5 regression tests.
+    update_values.remove("Notes");
+    update_values.remove("Labels");
+    update_values.remove("Files");
+    update_values.insert("File".to_string(), asset.clone());
+    std::fs::write(
+        &update_fields,
+        serde_json::to_string(&serde_json::Value::Object(update_values)).unwrap(),
+    )
+    .unwrap();
+    let mut update = Command::new(ugoite_bin());
+    update.args([
+        "entry",
+        "update",
+        &space_path,
+        "parity-entry",
+        "--title",
+        "Website v2",
+        "--fields-file",
+        update_fields.to_str().unwrap(),
+        "--parent-revision-id",
+        &rev1,
+    ]);
+    update.env("UGOITE_CLI_CONFIG_PATH", &config_path);
+    let updated = update.output().unwrap();
+    assert!(
+        updated.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&updated.stderr)
+    );
+
+    let mut history2 = Command::new(ugoite_bin());
+    history2.args(["entry", "history", &space_path, "parity-entry"]);
+    history2.env("UGOITE_CLI_CONFIG_PATH", &config_path);
+    let history2 = history2.output().unwrap();
+    let history2_json = json_of(&history2);
+    let revisions = history2_json["revisions"].as_array().unwrap();
+    assert_eq!(revisions.len(), 2);
+    assert_ne!(revisions[0]["revision_id"], revisions[1]["revision_id"]);
+
+    // Existing revision still reads back the original values.
+    let mut rev = Command::new(ugoite_bin());
+    rev.args(["entry", "revision", &space_path, "parity-entry", &rev1]);
+    rev.env("UGOITE_CLI_CONFIG_PATH", &config_path);
+    let rev = rev.output().unwrap();
+    assert!(rev.status.success());
+    assert!(String::from_utf8_lossy(&rev.stdout).contains("hello"));
+
+    // Reopen (a fresh one-shot invocation) changes nothing.
+    let mut reopened = Command::new(ugoite_bin());
+    reopened.args(["entry", "get", &space_path, "parity-entry"]);
+    reopened.env("UGOITE_CLI_CONFIG_PATH", &config_path);
+    let reopened = reopened.output().unwrap();
+    let reopened_json = json_of(&reopened);
+    assert_eq!(reopened_json["title"], serde_json::json!("Website v2"));
+    assert_eq!(reopened_json["sections"]["Count"], serde_json::json!("43"));
+    assert!(reopened_json["sections"].get("Notes").is_none());
+    assert!(reopened_json["sections"].get("Labels").is_none());
+    assert!(reopened_json["sections"].get("Files").is_none());
+
+    // Same validation codes as preview, WASM, and frontend surfaces.
+    let mut invalid = Command::new(ugoite_bin());
+    invalid.args([
+        "entry",
+        "create",
+        &space_path,
+        "parity-bad",
+        "--form",
+        "Parity",
+        "--field",
+        "Count=xx",
+    ]);
+    invalid.env("UGOITE_CLI_CONFIG_PATH", &config_path);
+    let invalid = invalid.output().unwrap();
+    assert!(!invalid.status.success());
+    let stderr = String::from_utf8_lossy(&invalid.stderr);
+    assert!(
+        stderr.contains("FORM_VALIDATION_FAILED"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("Count"), "stderr: {stderr}");
+
+    let mut unknown = Command::new(ugoite_bin());
+    unknown.args([
+        "entry",
+        "create",
+        &space_path,
+        "parity-unknown",
+        "--form",
+        "Parity",
+        "--field",
+        "Headline=x",
+        "--field",
+        "Nope=x",
+    ]);
+    unknown.env("UGOITE_CLI_CONFIG_PATH", &config_path);
+    let unknown = unknown.output().unwrap();
+    assert!(!unknown.status.success());
+    assert!(String::from_utf8_lossy(&unknown.stderr).contains("UNKNOWN_FORM_FIELDS"));
+
+    // Legacy Markdown input reaches the same durable outcome.
+    let mut legacy = Command::new(ugoite_bin());
+    legacy.args([
+        "entry",
+        "create",
+        "--content",
+        "---\nform: Parity\n---\n# Website\n\n## Headline\n\nhello\n\n## Done\ntrue\n",
+        &space_path,
+        "parity-legacy",
+    ]);
+    legacy.env("UGOITE_CLI_CONFIG_PATH", &config_path);
+    assert!(legacy.output().unwrap().status.success());
+}

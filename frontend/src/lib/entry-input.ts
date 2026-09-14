@@ -142,3 +142,29 @@ export const parseMarkdownToStructuredDraft = (
   push();
   return { title, fields };
 };
+
+/**
+ * Compatibility-only presentation adapters. The editor may use these for
+ * responsive local updates, but Rust remains the authority for validation,
+ * normalization, and persistence.
+ */
+export const parseEntryMarkdownPresentation = (
+  markdown: string,
+): { title: string; fields: Record<string, string> } =>
+  parseMarkdownToStructuredDraft(markdown);
+
+export const readEntryTagsPresentation = (
+  markdown: string,
+): string[] | null => parseMarkdownFrontmatterTags(markdown);
+
+export const updateEntryMarkdownPresentation = (
+  markdown: string,
+  title: string,
+  fieldValues: Record<string, string>,
+): string => {
+  let content = replaceFirstH1(markdown, title);
+  for (const [name, value] of Object.entries(fieldValues)) {
+    content = updateH2Section(content, name, value);
+  }
+  return content;
+};
