@@ -16,23 +16,38 @@ const assetRef = {
 };
 
 const typedForm = (): Form => ({
+  id: "00000000-0000-0000-0000-000000000001",
   name: "Project",
   version: 1,
   template: "# Project",
   fields: {
-    Title: { type: "string", required: true },
-    Done: { type: "boolean", required: false },
-    Count: { type: "integer", required: false },
-    Tags: { type: "list", required: false },
-    Rows: { type: "object_list", required: false },
-    Ref: { type: "row_reference", required: false, target_form: "Task" },
-    File: { type: "asset_reference", required: false },
+    Title: { id: 100, type: "string", required: true },
+    Done: { id: 101, type: "boolean", required: false },
+    Count: { id: 102, type: "integer", required: false },
+    Tags: { id: 103, type: "list", required: false },
+    Rows: { id: 104, type: "object_list", required: false },
+    Ref: {
+      id: 105,
+      type: "row_reference",
+      required: false,
+      target_form: "Task",
+    },
+    File: { id: 106, type: "asset_reference", required: false },
     Files: {
+      id: 107,
       type: "list",
       required: false,
       items: { type: "asset_reference" },
     },
   },
+});
+
+const taskForm = (): Form => ({
+  id: "00000000-0000-0000-0000-000000000002",
+  name: "Task",
+  version: 1,
+  template: "# Task",
+  fields: {},
 });
 
 describe("draft-values", () => {
@@ -93,7 +108,7 @@ describe("draft-values", () => {
         Title: "T",
         File: { asset_id: "not-a-uuid" } as unknown as Record<string, unknown>,
       },
-    });
+    }, [taskForm()]);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.code).toBe("FORM_VALIDATION_FAILED");
@@ -106,6 +121,7 @@ describe("draft-values", () => {
       await import("~/lib/entry-compat");
     const { toTransportFields } = await import("~/lib/draft-values");
     const form = typedForm();
+    const knownForms = [taskForm()];
     const fields = {
       Title: "Website",
       Ref: "task-01",
@@ -126,18 +142,19 @@ describe("draft-values", () => {
       "Website",
       [],
       fields,
+      knownForms,
     );
     const reparsed = await parseSourceToDraftViaWasm(source, "Website");
     const first = await validateEntryDraftViaWasm(form, {
       title: "Website",
       tags: [],
       fields,
-    });
+    }, knownForms);
     const second = await validateEntryDraftViaWasm(form, {
       title: reparsed.title,
       tags: reparsed.tags,
       fields: reparsed.fields,
-    });
+    }, knownForms);
     expect(first.ok).toBe(true);
     expect(second.ok).toBe(true);
     if (first.ok && second.ok) {

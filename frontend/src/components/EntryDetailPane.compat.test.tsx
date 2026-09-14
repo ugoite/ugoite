@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
-import { EntryDetailPane } from "./EntryDetailPane";
+import { EntryDetailPane as ActualEntryDetailPane } from "./EntryDetailPane";
 import { entryApi, searchApi } from "~/lib/ugoite-client";
 import { setLocale } from "~/lib/i18n";
 import type { Form } from "~/lib/types";
@@ -31,6 +31,54 @@ vi.mock("~/lib/ugoite-client", () => ({
   searchApi: { rowReferenceOptions: vi.fn() },
   RevisionConflictError: class RevisionConflictError extends Error {},
 }));
+
+// The mocked Form responses are normalized here to the stable identities a
+// real server read supplies. The production adapter must never do this.
+const fixtureUuid = (value: string): string => {
+  let hash = 0x811c9dc5;
+  for (const char of value) {
+    hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193);
+  }
+  return `00000000-0000-7000-8000-${
+    (hash >>> 0).toString(16).padStart(12, "0")
+  }`;
+};
+
+const EntryDetailPane = (
+  props: Parameters<typeof ActualEntryDetailPane>[0],
+) => {
+  const sourceForms = props.forms?.() ?? [];
+  const ids = new Map<string, string>();
+  for (const form of sourceForms) {
+    const id = fixtureUuid(`form:${form.name}`);
+    ids.set(form.name, id);
+    if (form.id) ids.set(form.id, id);
+  }
+  const normalize = (form: Form): Form => ({
+    ...form,
+    id: ids.get(form.name) ?? fixtureUuid(`form:${form.name}`),
+    fields: Object.fromEntries(
+      Object.entries(form.fields ?? {}).map(([name, field], index) => [name, {
+        ...field,
+        id: field.id && field.id >= 100 ? field.id : 100 + index,
+        ...(field.target_form
+          ? { target_form: ids.get(field.target_form) ?? field.target_form }
+          : {}),
+      }]),
+    ),
+  });
+  const normalizedForms = sourceForms.map(normalize);
+  return (
+    <ActualEntryDetailPane
+      {...props}
+      forms={() => normalizedForms}
+      createForm={() => {
+        const form = props.createForm?.();
+        return form ? normalize(form) : undefined;
+      }}
+    />
+  );
+};
 
 const form: Form = {
   name: "Note",
@@ -169,7 +217,9 @@ describe("EntryDetailPane source compat bridge", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(updateMock).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Use canonical version" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Use canonical version" }),
+    );
     await waitFor(() => {
       expect(screen.queryByText("Review Markdown conversion before saving"))
         .not.toBeInTheDocument();

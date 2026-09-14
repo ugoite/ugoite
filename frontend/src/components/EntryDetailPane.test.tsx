@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createSignal } from "solid-js";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
-import { EntryDetailPane } from "./EntryDetailPane";
+import { EntryDetailPane as ActualEntryDetailPane } from "./EntryDetailPane";
 import {
   entryApi,
   RevisionConflictError,
@@ -45,6 +45,64 @@ vi.mock("~/lib/ugoite-client", () => {
     RevisionConflictError,
   };
 });
+
+// Test fixtures predate the server's stable Form/Field identity response.
+// Normalize them at the mocked read boundary so production code still has to
+// reject incomplete identity rather than inventing it.
+const fixtureUuid = (value: string): string => {
+  let hash = 0x811c9dc5;
+  for (const char of value) {
+    hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193);
+  }
+  return `00000000-0000-7000-8000-${
+    (hash >>> 0).toString(16).padStart(12, "0")
+  }`;
+};
+
+const EntryDetailPane = (
+  props: Parameters<typeof ActualEntryDetailPane>[0],
+) => {
+  const sourceForms = props.forms?.() ?? [];
+  const ids = new Map<string, string>();
+  for (const form of sourceForms) {
+    const id = fixtureUuid(`form:${form.name}`);
+    ids.set(form.name, id);
+    if (form.id) ids.set(form.id, id);
+  }
+  const normalize = (form: Form): Form => ({
+    ...form,
+    id: ids.get(form.name) ?? fixtureUuid(`form:${form.name}`),
+    fields: Object.fromEntries(
+      Object.entries(form.fields ?? {}).map(([name, field], index) => [name, {
+        ...field,
+        id: field.id && field.id >= 100 ? field.id : 100 + index,
+        ...(field.target_form
+          ? { target_form: ids.get(field.target_form) ?? field.target_form }
+          : {}),
+        ...(field.items?.target_form
+          ? {
+            items: {
+              ...field.items,
+              target_form: ids.get(field.items.target_form) ??
+                field.items.target_form,
+            },
+          }
+          : {}),
+      }]),
+    ),
+  });
+  const normalizedForms = sourceForms.map(normalize);
+  return (
+    <ActualEntryDetailPane
+      {...props}
+      forms={() => normalizedForms}
+      createForm={() => {
+        const form = props.createForm?.();
+        return form ? normalize(form) : undefined;
+      }}
+    />
+  );
+};
 
 describe("EntryDetailPane", () => {
   beforeEach(() => {
@@ -332,7 +390,8 @@ describe("EntryDetailPane", () => {
         spaceId={() => "default"}
         forms={() => [formA, formB]}
         createForm={selected}
-        onCreateFormChange={(name) => setSelected(name === "Task" ? formB : formA)}
+        onCreateFormChange={(name) =>
+          setSelected(name === "Task" ? formB : formA)}
         onCreated={vi.fn()}
         onDeleted={vi.fn()}
       />
@@ -340,15 +399,23 @@ describe("EntryDetailPane", () => {
 
     const notes = await screen.findByLabelText("Notes");
     fireEvent.input(notes, { target: { value: "keep this Meeting work" } });
-    fireEvent.change(screen.getByLabelText("Form"), { target: { value: "Task" } });
+    fireEvent.change(screen.getByLabelText("Form"), {
+      target: { value: "Task" },
+    });
     const status = await screen.findByLabelText("Status");
     fireEvent.input(status, { target: { value: "keep this Task work" } });
-    fireEvent.change(screen.getByLabelText("Form"), { target: { value: "Meeting" } });
+    fireEvent.change(screen.getByLabelText("Form"), {
+      target: { value: "Meeting" },
+    });
 
     await waitFor(() =>
-      expect(screen.getByLabelText("Notes")).toHaveValue("keep this Meeting work")
+      expect(screen.getByLabelText("Notes")).toHaveValue(
+        "keep this Meeting work",
+      )
     );
-    fireEvent.change(screen.getByLabelText("Form"), { target: { value: "Task" } });
+    fireEvent.change(screen.getByLabelText("Form"), {
+      target: { value: "Task" },
+    });
     await waitFor(() =>
       expect(screen.getByLabelText("Status")).toHaveValue("keep this Task work")
     );
@@ -387,19 +454,29 @@ describe("EntryDetailPane", () => {
     fireEvent.input(body, { target: { value: "typed while saving" } });
     resolveCreate({ id: "created-entry", revision_id: "rev-1" });
 
-    await waitFor(() => expect(screen.getByLabelText("Body")).toHaveValue("typed while saving"));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Body")).toHaveValue("typed while saving")
+    );
     expect(onCreated).not.toHaveBeenCalled();
     expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(updateMock).toHaveBeenCalledWith("default", "created-entry", expect.objectContaining({
-      parent_revision_id: "rev-1",
-      fields: { Body: "typed while saving" },
-    })));
-    await waitFor(() => expect(onCreated).toHaveBeenCalledWith({
-      id: "created-entry",
-      revision_id: "rev-2",
-    }));
+    await waitFor(() =>
+      expect(updateMock).toHaveBeenCalledWith(
+        "default",
+        "created-entry",
+        expect.objectContaining({
+          parent_revision_id: "rev-1",
+          fields: { Body: "typed while saving" },
+        }),
+      )
+    );
+    await waitFor(() =>
+      expect(onCreated).toHaveBeenCalledWith({
+        id: "created-entry",
+        revision_id: "rev-2",
+      })
+    );
   });
 
   it("creates an empty-title entry and keeps Untitled as presentation only", async () => {
