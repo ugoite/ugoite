@@ -103,6 +103,26 @@ describe("v5 SpaceShell", () => {
       "my-space-uid",
     );
   });
+  it("preserves Konase state while the utility panel is closed", () => {
+    render(() => (
+      <SpaceShell spaceId="my-space-uid" activeNavigation="home">
+        <p>Content</p>
+      </SpaceShell>
+    ));
+
+    const utility = screen.getByRole("button", { name: "Konase" });
+    fireEvent.click(utility);
+    const apiKey = screen.getByLabelText("Model API key");
+    fireEvent.input(apiKey, { target: { value: "test-key" } });
+    fireEvent.click(utility);
+
+    expect(screen.getByLabelText("Model API key")).toHaveValue("test-key");
+    expect(screen.getByLabelText("Model API key").closest(".konasePopover"))
+      .toHaveAttribute("hidden");
+
+    fireEvent.click(utility);
+    expect(screen.getByLabelText("Model API key")).toHaveValue("test-key");
+  });
   it("localizes navigation", () => {
     setLocale("ja");
     render(() => (

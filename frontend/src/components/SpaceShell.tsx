@@ -146,11 +146,9 @@ export function SpaceShell(props: SpaceShellProps) {
             />
           </div>
         </header>
-        <Show when={konaseOpen()}>
-          <div class="konasePopover">
-            <KonasePanel spaceId={props.spaceId} />
-          </div>
-        </Show>
+        <div class="konasePopover" hidden={!konaseOpen()}>
+          <KonasePanel spaceId={props.spaceId} />
+        </div>
         <div class="content">{props.children}</div>
       </section>
       {navigation(true)}
