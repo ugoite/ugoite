@@ -8,6 +8,14 @@ ambiguous evidence becomes an explicit gap and never narrows a Requirement.
 Mitase validates declared relationships and evidence; it does not execute tests
 or become a second Knowledge authority.
 
+All canonical documents under `docs/mitase` now use Mitase's
+`mitase/authoring/v2` full-document form. The migration changes only the
+authoring schema declaration; the complete requirements, features, policies,
+philosophies, bindings, claims, and verification metadata remain intact and
+continue to normalize into the same semantic graph. The repository-level
+`mitase.yaml` intentionally remains `mitase/config/v1`, which is the current
+Mitase configuration schema and is separate from specification authoring.
+
 ## Migrated domain authority
 
 Foundation, Policy, Search, Entry, Form, Indexer, API, Asset, Frontend, E2E,

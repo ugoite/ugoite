@@ -7,6 +7,29 @@ async function readText(path: string): Promise<string> {
   return await Deno.readTextFile(new URL(path, root));
 }
 
+async function yamlFiles(directory: string): Promise<string[]> {
+  const files: string[] = [];
+  for await (const entry of Deno.readDir(directory)) {
+    const path = `${directory}/${entry.name}`;
+    if (entry.isDirectory) {
+      files.push(...await yamlFiles(path));
+    } else if (entry.isFile && entry.name.endsWith(".yaml")) {
+      files.push(path);
+    }
+  }
+  return files.sort();
+}
+
+Deno.test("canonical Mitase documents use authoring v2", async () => {
+  const documents = await yamlFiles(new URL("docs/mitase/", root).pathname);
+  assertEquals(documents.length > 0, true);
+  for (const document of documents) {
+    const source = await Deno.readTextFile(document);
+    const schema = source.match(/^schema:\s*(\S+)\s*$/m)?.[1];
+    assertEquals(schema, "mitase/authoring/v2", document);
+  }
+});
+
 async function executable(path: string, contents: string): Promise<void> {
   await Deno.writeTextFile(path, contents);
   await Deno.chmod(path, 0o755);

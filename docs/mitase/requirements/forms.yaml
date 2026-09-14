@@ -1,4 +1,4 @@
-schema: mitase/spec/v1
+schema: mitase/authoring/v2
 kind: requirements
 namespace: forms
 category: Form structure, validation, and lifecycle

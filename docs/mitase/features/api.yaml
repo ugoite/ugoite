@@ -1,4 +1,4 @@
-schema: mitase/spec/v1
+schema: mitase/authoring/v2
 kind: features
 namespace: api
 category: API contract surfaces

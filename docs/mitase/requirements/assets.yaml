@@ -1,4 +1,4 @@
-schema: mitase/spec/v1
+schema: mitase/authoring/v2
 kind: requirements
 namespace: assets
 category: Asset lifecycle and derived content
