@@ -6,6 +6,9 @@ import {
 } from "~/lib/entry-validation";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import type { Form } from "~/lib/types";
+import parityFixture from "../../../fixtures/entry/structured-compat/10-structured-authoring-parity.json" with {
+  type: "json"
+};
 
 const testForm = (): Form => ({
   id: "00000000-0000-0000-0000-000000000001",
@@ -183,6 +186,10 @@ describe("lane1 parity fixture", () => {
   // Mirrors fixtures/entry/structured-compat/10-structured-authoring-parity.json
   // invalid_cases: the browser surface must converge on the same codes and
   // fields as core preview, the WASM bridge, and both CLI modes.
+  const fixtureFields = parityFixture.structured.fields as Record<
+    string,
+    unknown
+  >;
   const parityForm = (): Form => ({
     id: "01900000-0000-7000-8000-0000000000b0",
     name: "Parity",
@@ -218,6 +225,15 @@ describe("lane1 parity fixture", () => {
   });
 
   it("converges on the same invalid codes and fields as the fixture", async () => {
+    for (const fixtureField of parityFixture.form.fields) {
+      const field = parityForm().fields[fixtureField.name];
+      expect(field?.id).toBe(fixtureField.id);
+      expect(field?.type).toBe(
+        fixtureField.field_type === "double"
+          ? "double"
+          : fixtureField.field_type,
+      );
+    }
     const cases: Array<{
       field: string;
       fields: Record<string, unknown>;
@@ -294,21 +310,7 @@ describe("lane1 parity fixture", () => {
   });
 
   it("accepts the fixture valid draft and reopens it unchanged", async () => {
-    const fields = {
-      Headline: "hello",
-      Notes: "Some *markdown* body.",
-      Done: true,
-      Count: 42,
-      Score: 3.14,
-      Due: "2026-09-11",
-      At: "2026-09-11T10:00:00",
-      AtNs: "2026-09-11T10:00:00.123456789",
-      AtTz: "2026-09-11T10:00:00+09:00",
-      AtTzNs: "2026-09-11T10:00:00.123456789+09:00",
-      Labels: ["alpha", "beta"],
-      Rows: [{ step: "one" }],
-      Ref: "task-01",
-    };
+    const fields = { ...fixtureFields };
     const first = await validateEntryDraftViaWasm(parityForm(), {
       title: "Website",
       tags: ["inbox"],

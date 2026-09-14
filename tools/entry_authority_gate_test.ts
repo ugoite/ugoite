@@ -15,8 +15,10 @@ Deno.test("Entry authoring keeps Knowledge semantics behind the Rust bridge", as
 
 Deno.test("authority gate rejects a new semantic Markdown helper dependency", () => {
   const negativeFixture = `
+    import { parseMarkdownToStructuredDraft as parseDraft } from "~/lib/entry-input";
     export function saveEntry(markdown: string) {
-      return updateH2Section(markdown, "Status", "open");
+      const draft = parseDraft(markdown);
+      return updateH2Section(draft, "Status", "open");
     }
   `;
   assertEquals(
@@ -26,7 +28,7 @@ Deno.test("authority gate rejects a new semantic Markdown helper dependency", ()
     ),
     {
       path: "frontend/src/components/NewEntryAuthoring.tsx",
-      symbols: ["updateH2Section"],
+      symbols: ["parseMarkdownToStructuredDraft", "updateH2Section"],
     },
   );
 });
@@ -36,6 +38,13 @@ Deno.test("authority gate permits presentation-only Markdown compatibility modul
     findEntryAuthorityViolations(
       "frontend/src/lib/entry-input.ts",
       "replaceFirstH1(markdown, title)",
+    ),
+      undefined,
+  );
+  assertEquals(
+    findEntryAuthorityViolations(
+      "frontend/src/components/FormTable.tsx",
+      "updateH2Section(markdown, field, value)",
     ),
     undefined,
   );

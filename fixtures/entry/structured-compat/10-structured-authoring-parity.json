@@ -24,7 +24,7 @@
     ],
     "allow_extra_attributes": false
   },
-  "markdown": "---\nform: Parity\ntags:\n  - inbox\n---\n# Website\n\n## Headline\n\nhello\n\n## Notes\n\nSome *markdown* body.\n\n## Done\nyes\n\n## Count\n42\n\n## Score\n3.14\n\n## Due\n2026-09-11\n\n## At\n2026-09-11T10:00:00\n\n## AtNs\n2026-09-11T10:00:00.123456789\n\n## AtTz\n2026-09-11T10:00:00+09:00\n\n## AtTzNs\n2026-09-11T10:00:00.123456789+09:00\n\n## Labels\n- alpha\n- beta\n\n## Rows\n[{\"step\": \"one\"}]\n\n## Ref\ntask-01\n\n## File\n{\"asset_id\": \"01900000-0000-7000-8000-000000000001\", \"name\": \"spec.pdf\", \"media_type\": \"application/pdf\", \"size_bytes\": 12, \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n\n## Files\n[{\"asset_id\": \"01900000-0000-7000-8000-000000000002\", \"name\": \"a.png\", \"media_type\": \"image/png\", \"size_bytes\": 4, \"sha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}]\n",
+  "markdown": "---\nform: Parity\ntags:\n  - inbox\n---\n# Website\n\n## Headline\n\nhello\n\n## Notes\n\nSome *markdown* body.\n\n## Done\nyes\n\n## Count\n42\n\n## Score\n3.14\n\n## Due\n2026-09-11\n\n## At\n2026-09-11T10:00:00\n\n## AtNs\n2026-09-11T10:00:00.123456789\n\n## AtTz\n2026-09-11T10:00:00+09:00\n\n## AtTzNs\n2026-09-11T10:00:00.123456789+09:00\n\n## Labels\n- alpha\n- beta\n\n## Rows\n[{\"type\": \"task\", \"name\": \"write\", \"description\": \"write docs\"}]\n\n## Ref\ntask-01\n\n## File\n{\"asset_id\": \"01900000-0000-7000-8000-000000000001\", \"name\": \"spec.pdf\", \"media_type\": \"application/pdf\", \"size_bytes\": 12, \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n\n## Files\n[{\"asset_id\": \"01900000-0000-7000-8000-000000000002\", \"name\": \"a.png\", \"media_type\": \"image/png\", \"size_bytes\": 4, \"sha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}]\n",
   "structured": {
     "title": "Website",
     "form": "Parity",
@@ -41,7 +41,7 @@
       "AtTz": "2026-09-11T10:00:00+09:00",
       "AtTzNs": "2026-09-11T10:00:00.123456789+09:00",
       "Labels": ["alpha", "beta"],
-      "Rows": [{ "step": "one" }],
+      "Rows": [{ "type": "task", "name": "write", "description": "write docs" }],
       "Ref": "task-01",
       "File": {
         "asset_id": "01900000-0000-7000-8000-000000000001",
@@ -76,7 +76,7 @@
       "113": "2026-09-11T01:00:00+00:00",
       "114": "2026-09-11T01:00:00.123456789+00:00",
       "107": ["alpha", "beta"],
-      "108": [{ "step": "one" }],
+      "108": [{ "type": "task", "name": "write", "description": "write docs" }],
       "109": "task-01",
       "110": {
         "asset_id": "01900000-0000-7000-8000-000000000001",
@@ -111,7 +111,7 @@
       "AtTz": "2026-09-12T10:00:00+09:00",
       "AtTzNs": "2026-09-12T10:00:00.987654321+09:00",
       "Labels": ["alpha"],
-      "Rows": [{ "step": "two" }],
+      "Rows": [{ "type": "task", "name": "review", "description": "review docs" }],
       "Ref": "task-02",
       "File": {
         "asset_id": "01900000-0000-7000-8000-000000000001",

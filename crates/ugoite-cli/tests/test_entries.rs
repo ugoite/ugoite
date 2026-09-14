@@ -1095,6 +1095,10 @@ fn test_structured_update_usage_errors() {
 /// sequential calls also prove close/reopen stability.
 #[test]
 fn test_lane1_parity_fixture_converges_on_cli_core() {
+    let acceptance_fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/entry/structured-compat/10-structured-authoring-parity.json"
+    ))
+    .expect("read structured authoring parity fixture");
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_string_lossy().to_string();
     let config_path = dir.path().join("cli-config.json");
@@ -1109,6 +1113,14 @@ fn test_lane1_parity_fixture_converges_on_cli_core() {
     let json_of = |output: &std::process::Output| {
         serde_json::from_str::<serde_json::Value>(&String::from_utf8_lossy(&output.stdout))
             .expect("stdout is JSON")
+    };
+    let assert_timestamp_meaning = |actual: &serde_json::Value, expected: &serde_json::Value| {
+        let actual = chrono::DateTime::parse_from_rfc3339(actual.as_str().expect("timestamp"))
+            .expect("valid actual timestamp");
+        let expected =
+            chrono::DateTime::parse_from_rfc3339(expected.as_str().expect("expected timestamp"))
+                .expect("valid expected timestamp");
+        assert_eq!(actual.timestamp_nanos_opt(), expected.timestamp_nanos_opt());
     };
 
     assert!(run(&["create-space", "--root", &root, "parity-space"])
@@ -1132,28 +1144,32 @@ fn test_lane1_parity_fixture_converges_on_cli_core() {
     let task_form_id = json_of(&task_form_got)["id"].as_str().unwrap().to_string();
 
     // Representative form across every Lane 1 field family.
+    let mut parity_form_fields = serde_json::Map::new();
+    for fixture_field in acceptance_fixture["form"]["fields"]
+        .as_array()
+        .expect("fixture form fields")
+    {
+        let name = fixture_field["name"].as_str().expect("fixture field name");
+        let mut field = fixture_field
+            .as_object()
+            .expect("fixture field object")
+            .clone();
+        field.remove("name");
+        if let Some(field_type) = field.remove("field_type") {
+            field.insert("type".to_string(), field_type);
+        }
+        if name == "Ref" {
+            field.remove("reference_form");
+            field.insert("target_form".to_string(), serde_json::json!(task_form_id));
+        }
+        parity_form_fields.insert(name.to_string(), serde_json::Value::Object(field));
+    }
     let parity_form = dir.path().join("parity-form.json");
     std::fs::write(
         &parity_form,
         serde_json::json!({
             "name": "Parity",
-            "fields": {
-                "Headline": {"id": 100, "type": "string", "required": true},
-                "Notes": {"id": 101, "type": "markdown"},
-                "Done": {"id": 102, "type": "boolean"},
-                "Count": {"id": 103, "type": "integer"},
-                "Score": {"id": 104, "type": "double"},
-                "Due": {"id": 105, "type": "date"},
-                "At": {"id": 106, "type": "timestamp"},
-                "AtNs": {"id": 112, "type": "timestamp_ns"},
-                "AtTz": {"id": 113, "type": "timestamp_tz"},
-                "AtTzNs": {"id": 114, "type": "timestamp_tz_ns"},
-                "Labels": {"id": 107, "type": "list"},
-                "Rows": {"id": 108, "type": "object_list"},
-                "Ref": {"id": 109, "type": "row_reference", "target_form": task_form_id},
-                "File": {"id": 110, "type": "asset_reference"},
-                "Files": {"id": 111, "type": "list", "items": {"type": "asset_reference"}}
-            }
+            "fields": parity_form_fields
         })
         .to_string(),
     )
@@ -1172,6 +1188,20 @@ fn test_lane1_parity_fixture_converges_on_cli_core() {
         parity_form_json["fields"]["Ref"]["target_form"],
         task_form_id
     );
+    for fixture_field in acceptance_fixture["form"]["fields"]
+        .as_array()
+        .expect("fixture form fields")
+    {
+        let name = fixture_field["name"].as_str().expect("fixture field name");
+        assert_eq!(parity_form_json["fields"][name]["id"], fixture_field["id"]);
+    }
+    let parity_form_id = parity_form_json["id"].clone();
+    let parity_form_reopened = json_of(&run(&["form", "get", &space_path, "Parity"]));
+    assert_eq!(parity_form_reopened["id"], parity_form_id);
+    assert_eq!(
+        parity_form_reopened["fields"]["Ref"]["target_form"],
+        task_form_id
+    );
 
     // Row target and uploaded asset backing the reference fields.
     let mut target = Command::new(ugoite_bin());
@@ -1187,6 +1217,19 @@ fn test_lane1_parity_fixture_converges_on_cli_core() {
     ]);
     target.env("UGOITE_CLI_CONFIG_PATH", &config_path);
     assert!(target.output().unwrap().status.success());
+    let mut target_two = Command::new(ugoite_bin());
+    target_two.args([
+        "entry",
+        "create",
+        &space_path,
+        "task-02",
+        "--form",
+        "Task",
+        "--field",
+        "Summary=review",
+    ]);
+    target_two.env("UGOITE_CLI_CONFIG_PATH", &config_path);
+    assert!(target_two.output().unwrap().status.success());
     let asset_file = dir.path().join("spec.pdf");
     std::fs::write(&asset_file, b"spec-bytes").unwrap();
     let mut upload = Command::new(ugoite_bin());
@@ -1202,26 +1245,15 @@ fn test_lane1_parity_fixture_converges_on_cli_core() {
 
     // Structured create with every field family.
     let create_fields = dir.path().join("parity-create.json");
+    let mut create_values = acceptance_fixture["structured"]["fields"]
+        .as_object()
+        .expect("fixture structured fields")
+        .clone();
+    create_values.insert("File".to_string(), asset.clone());
+    create_values.insert("Files".to_string(), serde_json::json!([asset.clone()]));
     std::fs::write(
         &create_fields,
-        serde_json::json!({
-            "Headline": "hello",
-            "Notes": "Some *markdown* body.",
-            "Done": true,
-            "Count": 42,
-            "Score": 3.5,
-            "Due": "2026-09-11",
-            "At": "2026-09-11T10:00:00",
-            "AtNs": "2026-09-11T10:00:00.123456789",
-            "AtTz": "2026-09-11T10:00:00+09:00",
-            "AtTzNs": "2026-09-11T10:00:00.123456789+09:00",
-            "Labels": ["alpha", "beta"],
-            "Rows": [{"step": "one"}],
-            "Ref": "task-01",
-            "File": asset,
-            "Files": [asset]
-        })
-        .to_string(),
+        serde_json::to_string(&serde_json::Value::Object(create_values)).unwrap(),
     )
     .unwrap();
     let mut create = Command::new(ugoite_bin());
@@ -1254,14 +1286,60 @@ fn test_lane1_parity_fixture_converges_on_cli_core() {
     let entry = json_of(&got);
     assert_eq!(entry["form"], serde_json::json!("Parity"));
     assert_eq!(entry["title"], serde_json::json!("Website"));
-    assert_eq!(entry["sections"]["Headline"], serde_json::json!("hello"));
-    assert_eq!(entry["sections"]["Done"], serde_json::json!("true"));
-    assert_eq!(entry["sections"]["Count"], serde_json::json!("42"));
+    assert_eq!(
+        entry["sections"]["Headline"],
+        acceptance_fixture["expected"]["values"]["100"]
+    );
+    assert_eq!(
+        entry["sections"]["Done"],
+        serde_json::json!(acceptance_fixture["expected"]["values"]["102"]
+            .as_bool()
+            .expect("boolean expected")
+            .to_string())
+    );
+    assert_eq!(
+        entry["sections"]["Count"],
+        serde_json::json!(acceptance_fixture["expected"]["values"]["103"]
+            .as_i64()
+            .expect("integer expected")
+            .to_string())
+    );
+    assert_eq!(
+        entry["sections"]["At"],
+        acceptance_fixture["expected"]["values"]["106"]
+    );
     assert_eq!(
         entry["sections"]["AtNs"],
-        serde_json::json!("2026-09-11T10:00:00.123456789")
+        acceptance_fixture["expected"]["values"]["112"]
+    );
+    assert_timestamp_meaning(
+        &entry["sections"]["AtTz"],
+        &acceptance_fixture["expected"]["values"]["113"],
+    );
+    assert_timestamp_meaning(
+        &entry["sections"]["AtTzNs"],
+        &acceptance_fixture["expected"]["values"]["114"],
     );
     assert_eq!(entry["sections"]["Ref"], serde_json::json!("task-01"));
+    assert_eq!(entry["sections"]["Labels"], "- alpha\n- beta");
+    assert!(!entry["sections"]["Rows"]
+        .as_str()
+        .unwrap_or_default()
+        .is_empty());
+    let parsed_file: serde_json::Value = serde_json::from_str(
+        entry["sections"]["File"]
+            .as_str()
+            .expect("asset section is serialized JSON"),
+    )
+    .expect("asset section JSON");
+    assert_eq!(parsed_file["asset_id"], asset["asset_id"]);
+    let parsed_files: serde_json::Value = serde_json::from_str(
+        entry["sections"]["Files"]
+            .as_str()
+            .expect("asset list section is serialized JSON"),
+    )
+    .expect("asset list section JSON");
+    assert_eq!(parsed_files[0]["asset_id"], asset["asset_id"]);
 
     // History: one revision; update appends a second with intact ancestry.
     let mut history = Command::new(ugoite_bin());
@@ -1274,28 +1352,65 @@ fn test_lane1_parity_fixture_converges_on_cli_core() {
         .as_str()
         .unwrap()
         .to_string();
+    let mut rev1_command = Command::new(ugoite_bin());
+    rev1_command.args(["entry", "revision", &space_path, "parity-entry", &rev1]);
+    rev1_command.env("UGOITE_CLI_CONFIG_PATH", &config_path);
+    let rev1_json = json_of(&rev1_command.output().unwrap());
+    for field_id in [
+        "100", "101", "102", "103", "104", "105", "106", "107", "108", "109", "112", "113", "114",
+    ] {
+        let field_name = acceptance_fixture["form"]["fields"]
+            .as_array()
+            .expect("fixture form fields")
+            .iter()
+            .find(|field| field["id"].as_i64() == field_id.parse::<i64>().ok())
+            .and_then(|field| field["name"].as_str())
+            .expect("fixture field for durable value");
+        assert!(
+            rev1_json["sections"].get(field_name).is_some(),
+            "durable field {field_id} ({field_name})"
+        );
+    }
+    assert_eq!(rev1_json["sections"]["Headline"], "hello");
+    assert_eq!(rev1_json["sections"]["Done"], "true");
+    assert_eq!(rev1_json["sections"]["Count"], "42");
+    assert_eq!(rev1_json["sections"]["Rows"], entry["sections"]["Rows"]);
+    let revision_rows: serde_json::Value = serde_json::from_str(
+        rev1_json["sections"]["Rows"]
+            .as_str()
+            .expect("revision object list section"),
+    )
+    .expect("revision object list JSON");
+    assert_eq!(
+        revision_rows,
+        acceptance_fixture["expected"]["values"]["108"]
+    );
+    assert_eq!(rev1_json["sections"]["File"], entry["sections"]["File"]);
+    assert_eq!(rev1_json["sections"]["Files"], entry["sections"]["Files"]);
+    assert_timestamp_meaning(
+        &rev1_json["sections"]["AtTz"],
+        &acceptance_fixture["expected"]["values"]["113"],
+    );
+    assert_timestamp_meaning(
+        &rev1_json["sections"]["AtTzNs"],
+        &acceptance_fixture["expected"]["values"]["114"],
+    );
 
     let update_fields = dir.path().join("parity-update.json");
+    let mut update_values = acceptance_fixture["update"]["fields"]
+        .as_object()
+        .expect("fixture update fields")
+        .clone();
+    // Structured update keeps the documented replacement semantics: fields
+    // omitted from this complete map are cleared. Tags/extra attributes are
+    // outside this CLI map and remain covered by the A5 regression tests.
+    update_values.remove("Notes");
+    update_values.remove("Labels");
+    update_values.remove("Files");
+    update_values.insert("File".to_string(), asset.clone());
     std::fs::write(
         &update_fields,
-        serde_json::json!({
-            "Headline": "hello again",
-            "Notes": "Some *markdown* body.",
-            "Done": false,
-            "Count": 43,
-            "Score": 2.5,
-            "Due": "2026-09-12",
-            "At": "2026-09-12T10:00:00",
-            "AtNs": "2026-09-12T10:00:00.987654321",
-            "AtTz": "2026-09-12T10:00:00+09:00",
-            "AtTzNs": "2026-09-12T10:00:00.987654321+09:00",
-            "Labels": ["alpha"],
-            "Rows": [{"step": "two"}],
-            "Ref": "task-01",
-            "File": asset,
-            "Files": []
-        })
-        .to_string(),
+        serde_json::to_string(&serde_json::Value::Object(update_values)).unwrap(),
     )
     .unwrap();
     let mut update = Command::new(ugoite_bin());
@@ -1344,6 +1459,9 @@ fn test_lane1_parity_fixture_converges_on_cli_core() {
     let reopened_json = json_of(&reopened);
     assert_eq!(reopened_json["title"], serde_json::json!("Website v2"));
     assert_eq!(reopened_json["sections"]["Count"], serde_json::json!("43"));
+    assert!(reopened_json["sections"].get("Notes").is_none());
+    assert!(reopened_json["sections"].get("Labels").is_none());
+    assert!(reopened_json["sections"].get("Files").is_none());
 
     // Same validation codes as preview, WASM, and frontend surfaces.
     let mut invalid = Command::new(ugoite_bin());
