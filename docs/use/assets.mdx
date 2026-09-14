@@ -1,14 +1,15 @@
 ---
 title: "Add an Asset"
-description: Attach files to Space-owned Knowledge in core mode.
+description: Attach files to Space-owned Knowledge.
 sidebar:
   order: 5
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Assets are Space-owned files referenced by Entries. Upload and delete use the
-local Space path in core mode.
+Assets are Space-owned files referenced by Entries. Upload and delete are
+available from core mode and authenticated remote modes; a Form-owned Entry
+reference connects the file to Knowledge.
 
 ## Outcome
 
@@ -16,8 +17,8 @@ An uploaded file is stored as a Space Asset and can be deleted by ID.
 
 ## Before you begin
 
-Open the Space from [Spaces](spaces.mdx). Asset upload is local-core
-functionality in this release.
+Open the Space from [Spaces](spaces.mdx). For remote upload, sign in with a
+credential that is authorized to mutate that Space.
 
 ## Steps
 
@@ -32,13 +33,17 @@ functionality in this release.
 <TabItem label="CLI">
 
 ```bash
+# Core mode
 ugoite asset upload /path/to/workspace/spaces/demo ./diagram.png
 ugoite asset delete /path/to/workspace/spaces/demo asset-id
+
+# Backend or API mode, using the immutable Space UID
+ugoite asset upload 019f1234-5678-7abc-8def-0123456789ab ./diagram.png
+ugoite asset delete 019f1234-5678-7abc-8def-0123456789ab asset-id
 ```
 
-Use `--filename` in core mode to choose the logical filename. The backend CLI
-does not support asset upload in the v0.1.1 documented surface. Run
-`ugoite asset --help` for exact flags.
+Use `--filename` to choose the logical filename where the selected command
+supports it. Run `ugoite asset --help` for exact flags and mode requirements.
 
 </TabItem>
 </Tabs>
@@ -54,7 +59,8 @@ state.
 
 ## If it fails
 
-- Upload rejected in backend mode: use CLI core mode with a local Space path.
+- Upload rejected in a remote mode: confirm the immutable Space UID and the
+  authenticated credential's Space mutation permission.
 - Unsafe filename: the server applies safe-basename rules; retry with
   `--filename`.
 

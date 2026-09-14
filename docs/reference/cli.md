@@ -1,52 +1,107 @@
 ---
 title: "CLI"
-description: Command families, modes, and output conventions.
+description: Command families, endpoint modes, authentication, and output conventions.
 sidebar:
   order: 2
 ---
 
-`ugoite <command> --help` is the authority for flags and JSON shapes. This page
-explains how to think about the CLI; task steps live in
-[Use Ugoite](../use/index.md).
+`ugoite <command> --help` is the authority for the installed CLI's flags,
+arguments, output fields, and exit behavior. This page explains how to choose a
+mode and find the right command; task steps live in [Use
+Ugoite](../use/index.md).
 
-## Modes
+## Endpoint modes
 
-Core mode opens operator-owned Space directories directly and performs no human
-login. Backend mode addresses a Space by its immutable Space UID with the
-configured remote endpoint. A Space slug is mutable display metadata used when
-creating or renaming a Space, not a remote identity. Inspect with
-`ugoite config current` and change with `ugoite config set`.
+Core mode opens an operator-owned Space directory directly. It is the local,
+server-free path and does not require human login. Commands that address a
+Space use its local path, and `ugoite space list` takes the workspace root.
+
+Backend mode sends the same portable operations to the configured Rust server.
+It addresses an existing Space by its immutable Space UID; a human-readable
+slug is creation metadata and is not a remote identity. Backend mode uses the
+server's authentication and authorization checks.
+
+API mode sends requests to the configured REST API endpoint. It also addresses
+remote Spaces by immutable Space UID and uses the server's authentication and
+authorization checks. Backend mode and API mode are separate endpoint
+configurations; use the mode that matches the server surface you intend to
+call.
+
+Inspect the active mode and endpoint with `ugoite config current`. Change them
+with `ugoite config set --help`; use `--backend-url` for backend mode and
+`--api-url` for API mode. Do not copy an example endpoint or flag set into
+automation without checking the installed help. The [Spaces task
+page](../use/spaces.mdx) shows the corresponding local-path and remote-UID
+examples.
 
 ## Authentication
 
-`ugoite auth login` starts browser-approved device authorization with a fresh
-P-256 key and DPoP-bound credentials. `ugoite auth logout` deletes local
-credentials only. MCP credentials use a separate `--for mcp` target and cannot
-cross-use REST credentials.
+`ugoite auth login` starts browser-approved device authorization for backend
+use. It creates a fresh P-256 key and DPoP-bound REST credentials. `ugoite auth
+logout` removes the local credential and key; run `ugoite auth --help` for the
+exact credential lifecycle and device options.
+
+MCP credentials are a separate target. Use `ugoite auth login --for mcp` when
+pairing a Konase/MCP host; REST credentials cannot be used for MCP, and MCP
+credentials cannot be used for REST. The matching task and command help are the
+authority for the currently supported pairing flow.
+
+Agent principals and service-account automation are future design material, not
+current v0.1 client capabilities. Do not treat them as an alternative login
+path in a production procedure.
 
 ## Output conventions
 
-TTY output stays concise and uses the Quiet Accent human presentation: muted
-headers and labels, cyan primary identifiers, and semantic colors only for
-success, warnings, and errors. Tables are borderless, use two-space column gaps,
-and calculate widths before styling. `NO_COLOR`, `TERM=dumb`, pipes, and JSON
-output never receive ANSI sequences.
+Interactive terminals use compact human output. Piped success output and
+`--format json` (also exposed as `-o json` where supported) use the command's
+machine-readable JSON value. Piped failures use the JSON error envelope on
+stderr and preserve the command's exit-code mapping. Use `--format table` or
+`--format plain` only where the command's help advertises those projections.
 
-Piped success output and `--format json` keep the existing JSON schemas.
-Piped failures keep the existing JSON error envelope, stderr ownership, and
-exit-code mapping. Human receipts and errors retain their canonical wording and
-line structure; only TTY emphasis changes. Every command documents its exact
-behavior in `--help` before copying flags into automation.
+ANSI emphasis is limited to human-facing TTY output. Pipes, JSON, `NO_COLOR`,
+and `TERM=dumb` remain plain and stable. Mutation receipts expose the resource
+identifier, revision, Change, and Run metadata when the operation commits;
+these durable IDs are the values to record or pass to a later recovery task.
+
+The CLI does not promise that human styling is a machine contract. Scripts
+should consume the documented JSON shape and stderr/exit behavior, and should
+obtain the exact field names from the installed command's `--help` output.
 
 ## Command families
 
-Auth, Config, Space, Entry, Form, Asset, Search, SQL and Query, Index, and
-Konase. Index maintenance and asset upload are local-core functionality in
-this release; asset delete also works in backend mode. Run
-`ugoite <command> --help` for the exact per-mode surface.
+The command families map to Knowledge tasks rather than separate Browser and
+CLI documentation trees:
 
-## Related
+- `space`: create, inspect, and list Spaces;
+- `form`: list, inspect, and update Form definitions;
+- `entry`: create, read, update, list, history, restore, and delete Entries;
+- `asset`: upload and delete Space-owned file content in core and authenticated
+  remote modes;
+- `search`, `sql`, and `query`: keyword, structured, saved-query, and
+  read-only SQL workflows;
+- `change` and `run`: inspect the Space timeline and append inverse Changes for
+  recovery;
+- `index`: rebuild derived local indexes; and
+- `auth`, `config`, and `konase`: configure endpoint credentials and run the
+  supported model-assisted experience.
 
-- [CLI guide](../guide/automate/cli.md) for the narrative walkthrough.
-- [Spaces](../use/spaces.mdx) and [Create and Edit Entries](../use/entries.mdx)
-  for task steps.
+Start with the task page for the outcome, then use the matching command help:
+
+| Outcome | Task page | Command authority |
+| --- | --- | --- |
+| Open or create a Space | [Spaces](../use/spaces.mdx) | `ugoite space --help` |
+| Define a Form | [Create a Form](../use/forms.mdx) | `ugoite form --help` |
+| Create or edit an Entry | [Create and Edit Entries](../use/entries.mdx) | `ugoite entry --help` |
+| Add an Asset | [Add an Asset](../use/assets.mdx) | `ugoite asset --help` |
+| Search and query | [Search and Query](../use/search.mdx) | `ugoite search --help`, `ugoite query --help` |
+| Restore or undo | [Revisions and Recovery](../use/revisions.mdx) | `ugoite entry history --help`, `ugoite change --help`, `ugoite run --help` |
+
+Use the command's subcommand help for exact required arguments, mode
+availability, JSON fields, and exit behavior. The reference intentionally does
+not duplicate every flag from the executable.
+
+## Related reference
+
+- [REST API and OpenAPI](rest.md) for server endpoints and schemas.
+- [MCP](mcp.md) for the authenticated semantic facade.
+- [Configuration](configuration.md) for operator environment variables.
