@@ -9,6 +9,7 @@ import type {
 } from "./types";
 import { normalizeEntryRecord, normalizeTimestamp } from "./date-format";
 import { buildStructuredEntryFields } from "./entry-input";
+import type { DraftFields } from "./draft-values";
 import { protocolFetch, UgoiteApiError } from "./ugoite-client/protocol";
 
 type EntryResponse = Omit<Entry, "content"> & {
@@ -110,7 +111,7 @@ export const entryApi = {
     spaceId: string,
     formDef: Form,
     title: string,
-    fieldValues: Record<string, string>,
+    fieldValues: DraftFields,
     id?: string,
   ): Promise<{ id: string; revision_id: string }> {
     // Structured dogfood path: no Markdown generation. The shared Rust
@@ -128,7 +129,7 @@ export const entryApi = {
     spaceId: string,
     formDef: Form,
     title: string,
-    answers: Record<string, string>,
+    answers: DraftFields,
     id?: string,
   ): Promise<{ id: string; revision_id: string }> {
     // Chat answers ride the same structured path as webforms (no Markdown

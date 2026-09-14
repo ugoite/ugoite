@@ -3,41 +3,13 @@ import {
   replaceFirstH1,
   updateH2Section,
 } from "~/lib/markdown";
+import {
+  type DraftFields,
+  normalizeEntryFieldValue,
+  toTransportFields,
+} from "~/lib/draft-values";
 import type { Form } from "~/lib/types";
-
-const ZONED_TIMESTAMP_TYPES = new Set(["timestamp_tz", "timestamp_tz_ns"]);
-const LOCAL_DATETIME_PATTERN =
-  /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?::(\d{2})(\.\d+)?)?$/;
-
-const pad = (value: number) => String(value).padStart(2, "0");
-
-const addBrowserTimezoneOffset = (value: string): string => {
-  const match = LOCAL_DATETIME_PATTERN.exec(value);
-  if (!match) return value;
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-
-  const offsetMinutes = -date.getTimezoneOffset();
-  const sign = offsetMinutes >= 0 ? "+" : "-";
-  const absoluteOffset = Math.abs(offsetMinutes);
-  const offset = `${sign}${pad(Math.floor(absoluteOffset / 60))}:${
-    pad(
-      absoluteOffset % 60,
-    )
-  }`;
-  const seconds = match[2] ?? "00";
-  const fraction = match[3] ?? "";
-  return `${match[1]}:${seconds}${fraction}${offset}`;
-};
-
-export const normalizeEntryFieldValue = (
-  field: Form["fields"][string],
-  value: string,
-): string => {
-  if (!ZONED_TIMESTAMP_TYPES.has(field.type)) return value;
-  return addBrowserTimezoneOffset(value);
-};
+export { normalizeEntryFieldValue } from "~/lib/draft-values";
 
 export type EntryInputMode = "markdown" | "webform" | "chat";
 
@@ -77,26 +49,15 @@ export const buildEntryMarkdownByMode = (
 
 /**
  * Build a structured fields map for the additive `{ form, title, fields }`
- * payload. Values stay strings here; the shared Rust boundary owns coercion
- * and validation. `__*` control keys and blank values are dropped, matching
- * the Markdown builder. Zoned timestamps get the same browser-offset
+ * payload. Typed values remain typed here; the shared Rust boundary owns
+ * coercion and validation. `__*` control keys and blank values are dropped,
+ * matching the Markdown builder. Zoned timestamps get the same browser-offset
  * normalization as the Markdown path so `datetime-local` controls round-trip.
  */
 export const buildStructuredEntryFields = (
   formDef: Form,
-  values: Record<string, string>,
-): Record<string, string> => {
-  const fields: Record<string, string> = {};
-  for (const [name, value] of Object.entries(values)) {
-    if (name.startsWith("__")) continue;
-    if (!value.trim()) continue;
-    const field = formDef.fields?.[name];
-    fields[name] = field
-      ? normalizeEntryFieldValue(field, value.trim())
-      : value.trim();
-  }
-  return fields;
-};
+  values: DraftFields,
+): Record<string, unknown> => toTransportFields(formDef, values);
 
 /**
  * Read `tags:` from Markdown frontmatter. Returns `null` when frontmatter

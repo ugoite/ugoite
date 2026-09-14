@@ -9,12 +9,8 @@ import {
   createAssetFieldState,
   type PendingAssetUpload,
 } from "~/lib/asset-field-state";
-import {
-  formatAssetSize,
-  isAssetReference,
-  parseAssetReference,
-  parseAssetReferenceList,
-} from "~/lib/asset-reference";
+import { formatAssetSize } from "~/lib/asset-reference";
+import { readAssetReferences } from "~/lib/draft-values";
 import { previewMediaType, resolvePreviewKind } from "~/lib/asset-preview";
 import type { AssetReference } from "~/lib/types";
 
@@ -70,40 +66,17 @@ export function AssetField(props: AssetFieldProps) {
     state.bindDraft(binding);
   }
 
-  const readReferences = (value: unknown): AssetReference[] | null => {
-    if (value === null || value === undefined) return [];
-    if (typeof value === "string") {
-      if (!value.trim()) return [];
-      return props.multiple ? parseAssetReferenceList(value) : (() => {
-        const reference = parseAssetReference(value);
-        return reference ? [reference] : null;
-      })();
-    }
-    if (Array.isArray(value)) {
-      return value.every((item) => isAssetReference(item))
-        ? (value as AssetReference[])
-        : null;
-    }
-    return isAssetReference(value) ? [value as AssetReference] : null;
-  };
-
-  const isBlankValue = (value: unknown): boolean =>
-    value === null ||
-    value === undefined ||
-    (typeof value === "string" && !value.trim()) ||
-    (Array.isArray(value) && value.length === 0);
-
   const parsedValue = createMemo(() => {
-    const references = readReferences(props.value);
+    const result = readAssetReferences(props.value, props.multiple);
     return {
-      references: references ?? [],
-      invalid: !isBlankValue(props.value) && references === null,
+      references: result.references,
+      issue: result.issue,
     };
   });
 
   const persistedIds = createMemo(() => {
-    const persisted = readReferences(props.persistedValue) ?? [];
-    return new Set(persisted.map((reference) => reference.asset_id));
+    const persisted = readAssetReferences(props.persistedValue, props.multiple);
+    return new Set(persisted.references.map((reference) => reference.asset_id));
   });
   const previewSignature = (reference: AssetReference) =>
     `${reference.name}\u0000${previewMediaType(reference)}\u0000${
@@ -384,9 +357,11 @@ export function AssetField(props: AssetFieldProps) {
         )}
       </p>
 
-      <Show when={parsedValue().invalid}>
+      <Show when={parsedValue().issue}>
         <p class="ui-alert ui-alert-error text-sm" role="alert">
-          {t("assetField.error.invalid")}
+          {parsedValue().issue === "duplicate"
+            ? t("assetField.error.duplicate")
+            : t("assetField.error.invalid")}
         </p>
       </Show>
 

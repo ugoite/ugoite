@@ -23,6 +23,12 @@ vi.mock("~/lib/asset-reference", () => ({
     !!value && typeof value === "object" &&
     "asset_id" in value && "name" in value && "media_type" in value &&
     "size_bytes" in value && "sha256" in value,
+  isAssetReferenceListField: (
+    field: { type?: string; items?: { type?: string } },
+  ) => field.type === "list" && field.items?.type === "asset_reference",
+  hasDuplicateAssetReferences: (references: Array<{ asset_id: string }>) =>
+    new Set(references.map((reference) => reference.asset_id)).size !==
+      references.length,
 }));
 
 vi.mock("~/lib/user-facing-error", () => ({
@@ -82,8 +88,13 @@ describe("/spaces/:space_id/assets", () => {
   });
 
   it("loads all pages when the asset inventory crosses a read boundary", async () => {
-    const firstPage = Array.from({ length: 1_000 }, (_, index) =>
-      entry(index === 0 ? { Attachments: [reference] } : {}, `entry-${index}`)
+    const firstPage = Array.from(
+      { length: 1_000 },
+      (_, index) =>
+        entry(
+          index === 0 ? { Attachments: [reference] } : {},
+          `entry-${index}`,
+        ),
     );
     const laterReference = {
       ...reference,
@@ -92,7 +103,9 @@ describe("/spaces/:space_id/assets", () => {
     };
     vi.mocked(entryApi.list)
       .mockResolvedValueOnce(firstPage)
-      .mockResolvedValueOnce([entry({ Attachments: [laterReference] }, "entry-1000")]);
+      .mockResolvedValueOnce([
+        entry({ Attachments: [laterReference] }, "entry-1000"),
+      ]);
 
     render(() => <SpaceAssetsRoute />);
 

@@ -1,11 +1,47 @@
 import {
+  hasDuplicateAssetReferences,
   isAssetReference,
   isAssetReferenceListField,
-  parseAssetReference,
-  parseAssetReferenceList,
 } from "~/lib/asset-reference";
-import { normalizeEntryFieldValue } from "~/lib/entry-input";
 import type { AssetReference, Form } from "~/lib/types";
+
+const ZONED_TIMESTAMP_TYPES = new Set(["timestamp_tz", "timestamp_tz_ns"]);
+const LOCAL_DATETIME_PATTERN =
+  /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?::(\d{2})(\.\d+)?)?$/;
+
+const pad = (value: number) => String(value).padStart(2, "0");
+
+const addBrowserTimezoneOffset = (value: string): string => {
+  const match = LOCAL_DATETIME_PATTERN.exec(value);
+  if (!match) return value;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  const offsetMinutes = -date.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const absoluteOffset = Math.abs(offsetMinutes);
+  const offset = `${sign}${pad(Math.floor(absoluteOffset / 60))}:${
+    pad(
+      absoluteOffset % 60,
+    )
+  }`;
+  const seconds = match[2] ?? "00";
+  const fraction = match[3] ?? "";
+  return `${match[1]}:${seconds}${fraction}${offset}`;
+};
+
+/**
+ * Preserve a browser datetime-local control's local offset for timezone-aware
+ * fields. Rust remains the authority for timestamp validation/normalization.
+ */
+export const normalizeEntryFieldValue = (
+  field: Form["fields"][string],
+  value: string,
+): string => {
+  if (!ZONED_TIMESTAMP_TYPES.has(field.type)) return value;
+  return addBrowserTimezoneOffset(value);
+};
 
 /**
  * Typed structured-draft value (Lane 1 PR6).
@@ -60,28 +96,83 @@ export const draftValueToDisplayString = (value: DraftValue): string => {
   }
 };
 
-const isBlankString = (value: unknown): value is string =>
+const isBlankString = (value: unknown): boolean =>
   typeof value === "string" && value.trim() === "";
 
-const coerceAssetValue = (value: DraftValue): unknown => {
-  if (typeof value === "string") {
-    // Back-compat: older drafts and persisted sections carry the canonical
-    // object as a JSON string. Parse at the transport boundary (the
-    // compatibility bridge), never in field components.
-    if (!value.trim()) return undefined;
-    return parseAssetReference(value) ?? value;
+export type AssetReferenceReadIssue = "invalid" | "duplicate";
+
+export type AssetReferenceReadResult = {
+  references: AssetReference[];
+  issue?: AssetReferenceReadIssue;
+};
+
+const invalidAssetReferences = (): AssetReferenceReadResult => ({
+  references: [],
+  issue: "invalid",
+});
+
+const finishAssetReferenceRead = (
+  references: AssetReference[],
+): AssetReferenceReadResult => ({
+  references,
+  ...(hasDuplicateAssetReferences(references) ? { issue: "duplicate" } : {}),
+});
+
+/**
+ * Read canonical typed references and the JSON-string form accepted by the
+ * compatibility bridge. Form-owned callers pass `multiple`; inventory
+ * callers omit it to accept either scalar or list properties. Malformed
+ * values are reported instead of being silently filtered out.
+ */
+export const readAssetReferences = (
+  value: unknown,
+  multiple?: boolean,
+): AssetReferenceReadResult => {
+  if (value === null || value === undefined || isBlankString(value)) {
+    return { references: [] };
   }
-  if (value === null || value === undefined) return undefined;
-  return value;
+
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value.trim());
+    } catch {
+      return invalidAssetReferences();
+    }
+  }
+
+  if (Array.isArray(parsed)) {
+    if (multiple === false || !parsed.every(isAssetReference)) {
+      return invalidAssetReferences();
+    }
+    return finishAssetReferenceRead(parsed);
+  }
+
+  if (multiple === true || !isAssetReference(parsed)) {
+    return invalidAssetReferences();
+  }
+  return finishAssetReferenceRead([parsed]);
+};
+
+const coerceAssetValue = (value: DraftValue): unknown => {
+  // Back-compat: older drafts and persisted sections carry the canonical
+  // object as a JSON string. Parse at the transport boundary (the
+  // compatibility bridge), never in field components. Invalid values remain
+  // intact so the Rust boundary can return its canonical diagnostic.
+  const result = readAssetReferences(value, false);
+  return result.references[0] ??
+    (value === null || value === undefined || isBlankString(value)
+      ? undefined
+      : value);
 };
 
 const coerceAssetListValue = (value: DraftValue): unknown => {
-  if (typeof value === "string") {
-    if (!value.trim()) return undefined;
-    return parseAssetReferenceList(value) ?? value;
-  }
-  if (value === null || value === undefined) return undefined;
-  return value;
+  const result = readAssetReferences(value, true);
+  return result.issue === "invalid"
+    ? value
+    : result.references.length === 0
+    ? undefined
+    : result.references;
 };
 
 /**

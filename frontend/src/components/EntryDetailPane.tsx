@@ -32,6 +32,7 @@ import {
 import {
   type DraftFields,
   draftValueToDisplayString,
+  readAssetReferences,
   toTransportFields,
 } from "~/lib/draft-values";
 import {
@@ -48,12 +49,7 @@ import {
 } from "~/lib/entry-compat";
 import type { Entry, Form, FormField } from "~/lib/types";
 import type { MarkdownConversionDiagnostic } from "~/lib/ugoite-client/protocol";
-import {
-  hasDuplicateAssetReferences,
-  isAssetReferenceListField,
-  parseAssetReference,
-  parseAssetReferenceList,
-} from "~/lib/asset-reference";
+import { isAssetReferenceListField } from "~/lib/asset-reference";
 import {
   formatMarkdownConversionDiagnostic,
   formatUserFacingError,
@@ -173,8 +169,8 @@ function isMissingRequiredValue(fieldDef: FormField, content: string) {
   }
 
   if (isAssetReferenceListField(fieldDef)) {
-    const references = parseAssetReferenceList(value);
-    return references !== null && references.length === 0;
+    const result = readAssetReferences(value, true);
+    return result.issue !== "invalid" && result.references.length === 0;
   }
 
   return false;
@@ -255,13 +251,18 @@ function buildEditorGuidance(form: Form | null, markdown: string) {
     ) {
       typeIssues.push(`${fieldName}: ${t("entryGuidance.listValue")}`);
     }
-    if (fieldDef.type === "asset_reference" && !parseAssetReference(value)) {
+    if (
+      fieldDef.type === "asset_reference" &&
+      readAssetReferences(value, false).issue === "invalid"
+    ) {
       typeIssues.push(`${fieldName}: ${t("assetField.error.invalid")}`);
     }
     if (isAssetReferenceListField(fieldDef)) {
-      const references = parseAssetReferenceList(value);
-      if (!references || hasDuplicateAssetReferences(references)) {
+      const result = readAssetReferences(value, true);
+      if (result.issue === "invalid") {
         typeIssues.push(`${fieldName}: ${t("assetField.error.invalid")}`);
+      } else if (result.issue === "duplicate") {
+        typeIssues.push(`${fieldName}: ${t("assetField.error.duplicate")}`);
       }
     }
     /* v8 ignore stop */
