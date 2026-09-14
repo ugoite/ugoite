@@ -1109,12 +1109,9 @@ fn coerce_value(
                     .map_err(|_| "asset reference field must contain a JSON object".to_string())?,
                 value => value.clone(),
             };
-            let reference = serde_json::from_value::<ugoite_domain::entry::AssetReference>(parsed)
-                .map_err(|_| "invalid asset reference value".to_string())?;
-            reference
-                .validate()
-                .map_err(|error| format!("invalid asset reference value: {error}"))?;
-            Ok(FieldValue::AssetReference(reference))
+            serde_json::from_value::<ugoite_domain::entry::AssetReference>(parsed)
+                .map(FieldValue::AssetReference)
+                .map_err(|_| "invalid asset reference value".to_string())
         }
         FieldType::List => {
             let is_asset_list = list_item
@@ -1860,14 +1857,11 @@ mod tests {
     }
 
     #[test]
-    fn valid_asset_reference_is_checked_by_the_core_boundary() {
+    fn malformed_asset_reference_is_rejected_by_the_core_boundary() {
         let form = preview_test_form();
         let invalid = serde_json::json!({
             "asset_id": "01900000-0000-7000-8000-000000000001",
-            "name": "file.txt",
-            "media_type": "text/plain",
-            "size_bytes": 1,
-            "sha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            "name": "file.txt"
         });
         let draft = structured_fields_to_draft(
             "T",
@@ -1879,7 +1873,7 @@ mod tests {
             ]),
             BTreeMap::new(),
         );
-        let error = preview_structured_draft(&form, &draft).expect_err("invalid checksum");
+        let error = preview_structured_draft(&form, &draft).expect_err("incomplete reference");
         assert_eq!(error.code(), ErrorCode::FormValidationFailed);
         assert_eq!(validation_warnings(&error).unwrap()[0].field, "File");
     }
