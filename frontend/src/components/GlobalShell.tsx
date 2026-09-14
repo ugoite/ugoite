@@ -81,13 +81,12 @@ export function GlobalShell(
               <span>{t("konase.title")}</span>
               <span class="assistantState">{t("konase.disconnected")}</span>
             </span>
-            <button
+            <span
               class="topbarMore"
-              type="button"
-              aria-label={t("common.more")}
+              aria-hidden="true"
             >
               <span aria-hidden="true">···</span>
-            </button>
+            </span>
             <Show
               when={props.authenticated !== false}
               fallback={

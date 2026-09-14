@@ -135,13 +135,12 @@ export function SpaceShell(props: SpaceShellProps) {
               <span>{t("konase.title")}</span>
               <span class="assistantState">{t("konase.ready")}</span>
             </button>
-            <button
+            <span
               class="topbarMore"
-              type="button"
-              aria-label={t("common.more")}
+              aria-hidden="true"
             >
               <span aria-hidden="true">···</span>
-            </button>
+            </span>
             <AccountMenu
               settingsHref={`/spaces/${props.spaceId}/settings?section=credentials`}
             />
