@@ -783,9 +783,31 @@ describe("error paths", () => {
     const formDef = {
       name: "Task",
       template: "# Task\n\n## Status\n",
-      fields: { Status: { type: "text" } },
+      fields: {
+        Status: { type: "text" },
+        Zoned: { type: "timestamp_tz" },
+        Row: { type: "row_reference" },
+        File: { type: "asset_reference" },
+        Tags: { type: "list" },
+        Rows: { type: "object_list" },
+      },
     };
-    const answers = { Status: "Pending" };
+    const answers = {
+      Status: "  Pending  ",
+      Zoned: "2026-08-21T10:48",
+      Row: "entry-01",
+      File: {
+        asset_id: "01900000-0000-7000-8000-000000000001",
+        name: "report.pdf",
+        media_type: "application/pdf",
+        size_bytes: 10,
+        sha256: "a".repeat(64),
+      },
+      Tags: ["alpha", "beta"],
+      Rows: [{ label: "one" }],
+      __control: "drop",
+      Blank: "   ",
+    };
     const calls: unknown[][] = [];
     const original = entryApi.create;
     entryApi.create = (async (...args: unknown[]) => {
@@ -819,7 +841,19 @@ describe("error paths", () => {
     expect(chatPayload.form).toBe("Task");
     expect(chatPayload.title).toBe("Same Task");
     expect(chatPayload.fields).toEqual(webformPayload.fields);
-    expect(chatPayload.fields).toEqual({ Status: "Pending" });
+    expect(chatPayload.fields).toMatchObject({
+      Status: "Pending",
+      Row: "entry-01",
+      File: answers.File,
+      Tags: ["alpha", "beta"],
+      Rows: [{ label: "one" }],
+    });
+    expect(chatPayload.fields).not.toHaveProperty("__control");
+    expect(chatPayload.fields).not.toHaveProperty("Blank");
+    expect(chatPayload.fields).toHaveProperty(
+      "Zoned",
+      expect.stringMatching(/^2026-08-21T10:48:00[+-]\d{2}:\d{2}$/),
+    );
   });
 
   it("entryApi.get includes detail in error", async () => {

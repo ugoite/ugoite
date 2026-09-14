@@ -2,7 +2,8 @@ import { A, useParams } from "@solidjs/router";
 import { For, Show } from "solid-js";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateLabel } from "~/lib/date-format";
-import { formatAssetSize, isAssetReference } from "~/lib/asset-reference";
+import { formatAssetSize } from "~/lib/asset-reference";
+import { readAssetReferences } from "~/lib/draft-values";
 import { intlLocale, t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import { entryApi } from "~/lib/ugoite-client";
@@ -42,9 +43,7 @@ const listAllEntries = async (spaceId: string): Promise<EntryRecord[]> => {
 };
 
 const referencesFromValue = (value: unknown): AssetReference[] => {
-  if (isAssetReference(value)) return [value];
-  if (!Array.isArray(value)) return [];
-  return value.filter(isAssetReference);
+  return readAssetReferences(value).references;
 };
 
 const groupAssetReferences = (entries: EntryRecord[]): AssetGroup[] => {

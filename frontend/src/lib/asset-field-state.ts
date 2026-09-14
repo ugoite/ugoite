@@ -1,5 +1,6 @@
 import { type Accessor, createSignal, type Setter } from "solid-js";
 import { isAssetReference } from "./asset-reference";
+import { readAssetReferences } from "./draft-values";
 import type { AssetReference } from "./types";
 
 export type PendingAssetUpload = {
@@ -129,28 +130,13 @@ export function createAssetFieldState(): AssetFieldState {
   const isActiveUpload = (item: PendingAssetUpload) =>
     !item.controller.signal.aborted && isActive(item.generation);
 
-  const readReferences = (value: unknown): AssetReference[] => {
-    if (value === null || value === undefined) return [];
-    if (typeof value === "string") {
-      if (!value.trim()) return [];
-      try {
-        const parsed: unknown = JSON.parse(value);
-        if (Array.isArray(parsed)) {
-          return parsed.filter(isAssetReference);
-        }
-        return isAssetReference(parsed) ? [parsed] : [];
-      } catch {
-        return [];
-      }
-    }
-    if (Array.isArray(value)) return value.filter(isAssetReference);
-    return isAssetReference(value) ? [value] : [];
-  };
-
   const currentReferences = () => {
     const binding = draftBinding;
     if (!binding) return [];
-    const references = readReferences(binding.getValue());
+    const references = readAssetReferences(
+      binding.getValue(),
+      binding.multiple,
+    ).references;
     return binding.multiple ? references : references.slice(0, 1);
   };
 

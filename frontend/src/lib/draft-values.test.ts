@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   draftValueToDisplayString,
   isCanonicalAssetValue,
+  readAssetReferences,
   toTransportFields,
 } from "~/lib/draft-values";
 import { validateEntryDraftViaWasm } from "~/lib/entry-validation";
@@ -98,6 +99,29 @@ describe("draft-values", () => {
     });
     expect(transported.File).toEqual(assetRef);
     expect(transported.Files).toEqual([assetRef]);
+  });
+
+  it("shares asset reference presence, invalid, and duplicate semantics", () => {
+    expect(readAssetReferences(undefined, false)).toEqual({ references: [] });
+    expect(readAssetReferences("   ", true)).toEqual({ references: [] });
+    expect(readAssetReferences([], true)).toEqual({ references: [] });
+    expect(readAssetReferences([assetRef], true)).toEqual({
+      references: [assetRef],
+    });
+    expect(readAssetReferences("not-json", false).issue).toBe("invalid");
+    expect(readAssetReferences([{}], true).issue).toBe("invalid");
+    expect(readAssetReferences([assetRef, assetRef], true).issue).toBe(
+      "duplicate",
+    );
+
+    const transported = toTransportFields(typedForm(), {
+      Tags: [],
+      Files: [],
+    });
+    // Empty generic lists are meaningful typed values; an empty asset list is
+    // omitted so the Rust boundary sees the same absence as an empty control.
+    expect(transported.Tags).toEqual([]);
+    expect(transported.Files).toBeUndefined();
   });
 
   it("rejects invalid AssetReference through the shared validator", async () => {
