@@ -351,17 +351,14 @@ pub fn normalize_and_validate_draft(
 /// This intentionally does not apply required-field or extra-attribute
 /// admission. Those checks belong to the revision validator; historical rows
 /// only need their typed value map. The conversion itself remains shared so
-/// storage cannot grow a second type system.
+/// storage cannot grow a second type system. The `INVALID_INPUT` error code
+/// and empty-map handling for malformed legacy storage are retained here
+/// because this helper is also used by existing read/restore paths.
 pub fn stored_fields_to_values(
     fields: &Value,
     form: &FormDefinition,
 ) -> Result<BTreeMap<FieldId, FieldValue>, AppError> {
-    let object = fields.as_object().ok_or_else(|| {
-        AppError::invalid_input(
-            ErrorCode::FormValidationFailed,
-            "stored Entry fields must be a JSON object",
-        )
-    })?;
+    let object = fields.as_object().cloned().unwrap_or_default();
     let mut values = BTreeMap::new();
     for field in &form.fields {
         let Some(value) = object.get(&field.name) else {
@@ -369,10 +366,9 @@ pub fn stored_fields_to_values(
         };
         let value =
             coerce_value(value, &field.field_type, field.list_item.as_ref()).map_err(|reason| {
-                AppError::invalid_input_with_detail(
-                    ErrorCode::FormValidationFailed,
-                    "stored Entry field value is invalid",
-                    serde_json::json!({"field": field.name, "reason": reason}),
+                AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    format!("Field '{}': {reason}", field.name),
                 )
             })?;
         values.insert(field.id, value);
@@ -1876,6 +1872,18 @@ mod tests {
         let error = preview_structured_draft(&form, &draft).expect_err("incomplete reference");
         assert_eq!(error.code(), ErrorCode::FormValidationFailed);
         assert_eq!(validation_warnings(&error).unwrap()[0].field, "File");
+    }
+
+    #[test]
+    fn persisted_field_decode_keeps_legacy_read_contract() {
+        let form = preview_test_form();
+        let error = stored_fields_to_values(&serde_json::json!({"Count": "not-an-int"}), &form)
+            .expect_err("invalid persisted value");
+        assert_eq!(error.code(), ErrorCode::InvalidInput);
+        assert_eq!(
+            stored_fields_to_values(&Value::Null, &form).expect("legacy non-object payload"),
+            BTreeMap::new()
+        );
     }
 
     #[test]
