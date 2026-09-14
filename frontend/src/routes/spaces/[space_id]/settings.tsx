@@ -96,7 +96,7 @@ export default function SpaceSettingsRoute() {
           <h1>{t("settings.title")}</h1>
         </div>
       </div>
-      <div class="settingsLayout">
+      <div class="settingsLayout settingsWorkspace">
         <aside class="settingsNav surface">
           <For each={settingsSections}>
             {(section) => (

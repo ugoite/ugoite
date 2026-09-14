@@ -5,6 +5,7 @@ import { t, type TranslationKey } from "~/lib/i18n";
 import { loadingState } from "~/lib/loading";
 import { UiIcon, type UiIconName } from "~/components/UiIcon";
 import { AccountMenu } from "~/components/AccountMenu";
+import { KonasePanel } from "~/components/konase/KonasePanel";
 import { createSpaceStore } from "~/lib/space-store";
 import { spaceUid } from "~/lib/space-list";
 
@@ -42,6 +43,7 @@ export function SpaceShell(props: SpaceShellProps) {
   const spaceStore = createSpaceStore();
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = createSignal(false);
+  const [konaseOpen, setKonaseOpen] = createSignal(false);
   onMount(() => {
     void spaceStore.loadSpaces().catch(() => undefined);
   });
@@ -64,10 +66,10 @@ export function SpaceShell(props: SpaceShellProps) {
     ) return "forms";
     return "home";
   });
-  const crumb = createMemo(() => props.title ?? t(navigationLabels[active()]));
   const activePath = createMemo(() =>
     navItems.find((item) => item.id === active())?.path ?? "dashboard"
   );
+  const crumb = createMemo(() => props.title ?? t(navigationLabels[active()]));
 
   const switchSpace = (spaceId: string) => {
     if (!spaceId || spaceId === props.spaceId) return;
@@ -120,11 +122,33 @@ export function SpaceShell(props: SpaceShellProps) {
           >
             <UiIcon name="menu" />
           </button>
-          <div class="crumbTop">{crumb()}</div>
-          <AccountMenu
-            settingsHref={`/spaces/${props.spaceId}/settings?section=credentials`}
-          />
+          <div class="topbarTools">
+            <div class="crumbTop ui-sr-only">{crumb()}</div>
+            <button
+              class="assistantPill"
+              type="button"
+              aria-label={t("konase.title")}
+              aria-expanded={konaseOpen()}
+              onClick={() => setKonaseOpen((open) => !open)}
+            >
+              <span class="assistantDot" aria-hidden="true" />
+              <span>{t("konase.title")}</span>
+              <span class="assistantState">{t("konase.ready")}</span>
+            </button>
+            <span
+              class="topbarMore"
+              aria-hidden="true"
+            >
+              <span aria-hidden="true">···</span>
+            </span>
+            <AccountMenu
+              settingsHref={`/spaces/${props.spaceId}/settings?section=credentials`}
+            />
+          </div>
         </header>
+        <div class="konasePopover" hidden={!konaseOpen()}>
+          <KonasePanel spaceId={props.spaceId} />
+        </div>
         <div class="content">{props.children}</div>
       </section>
       {navigation(true)}
@@ -135,11 +159,17 @@ export function SpaceShell(props: SpaceShellProps) {
     return (
       <aside class="sidebar">
         <A class="brand" href={`/spaces/${props.spaceId}/dashboard`}>
-          <span class="brandMark">U</span>
+          <img
+            class="brandMark"
+            src="/brand/ugoite-mark.svg"
+            alt=""
+            aria-hidden="true"
+          />
           <span>Ugoite</span>
         </A>
         <label class="sidebarSpaceSelect">
           <span class="ui-sr-only">{t("common.space")}</span>
+          <span class="spaceIndicator" aria-hidden="true" />
           <select
             aria-label={t("common.space")}
             value={props.spaceId}

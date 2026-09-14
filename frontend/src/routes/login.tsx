@@ -55,11 +55,15 @@ export default function LoginRoute() {
   };
 
   return (
-    <main class="publicShell">
-      <section class="publicCard ui-stack">
-        <div>
-          <h1 class="ui-page-title">Sign in to Ugoite</h1>
-          <p class="ui-page-subtitle mt-2">
+    <main class="loginShell">
+      <section class="loginPanel">
+        <a class="loginBrand" href="/" aria-label="Ugoite">
+          <img class="brandMark" src="/brand/ugoite-mark.svg" alt="" />
+          <strong>Ugoite</strong>
+        </a>
+        <div class="loginCopy">
+          <h1>Sign in to your space</h1>
+          <p>
             Use a passkey registered with this Ugoite node.
           </p>
         </div>
@@ -71,19 +75,19 @@ export default function LoginRoute() {
         >
           <button
             type="button"
-            class="ui-button ui-button-primary"
+            class="btn primary"
             disabled={busy()}
             onClick={() => void login()}
           >
             {busy() ? "Waiting for passkey…" : "Sign in with a passkey"}
           </button>
           <Show when={providers().length > 0}>
-            <div class="ui-divider" aria-hidden="true">or</div>
+            <div class="or" aria-hidden="true"><span /><b>or</b><span /></div>
             <For each={providers()}>
               {(provider) => (
                 <button
                   type="button"
-                  class="ui-button ui-button-secondary"
+                  class="btn tonal"
                   disabled={busy()}
                   onClick={() =>
                     authApi.loginWithOidc(
@@ -97,14 +101,19 @@ export default function LoginRoute() {
               )}
             </For>
           </Show>
-          <a class="ui-link text-sm" href={`/recover/account${nextQuery()}`}>
+          <a class="loginLink" href={`/recover/account${nextQuery()}`}>
             Lost your Passkey?
           </a>
         </Show>
         <Show when={error()}>
-          <p class="ui-alert ui-alert-error text-sm">{error()}</p>
+          <p class="ui-alert ui-alert-error text-sm" role="alert">{error()}</p>
         </Show>
       </section>
+      <aside class="loginStatement" aria-label="Ugoite principles">
+        <span class="statementMark" aria-hidden="true" />
+        <p>Knowledge persists.</p>
+        <p>Work may disappear.</p>
+      </aside>
     </main>
   );
 }

@@ -565,7 +565,7 @@ export default function SpaceSearchRoute() {
 
   return (
     <>
-      <div>
+      <div class="searchWorkspace">
         <div class="screenHead">
           <div class="screenTitle">
             <div class="eyebrow">{spaceId()}</div>

@@ -17,7 +17,12 @@ export function GlobalShell(
       <div class="desktopSidebar">
         <aside class="sidebar">
           <a class="brand" href="/spaces">
-            <span class="brandMark">U</span>
+            <img
+              class="brandMark"
+              src="/brand/ugoite-mark.svg"
+              alt=""
+              aria-hidden="true"
+            />
             <span>Ugoite</span>
           </a>
           <nav class="navGroup">
@@ -69,18 +74,28 @@ export function GlobalShell(
           >
             <UiIcon name="menu" />
           </a>
-          <select class="spaceSelect" aria-label={t("common.space")}>
-            <option>Ugoite</option>
-          </select>
-          <div class="crumbTop">{props.title}</div>
-          <Show
-            when={props.authenticated !== false}
-            fallback={
-              <a class="btn" href="/login">{t("globalShell.signIn")}</a>
-            }
-          >
-            <AccountMenu />
-          </Show>
+          <div class="topbarTools">
+            <div class="crumbTop ui-sr-only">{props.title}</div>
+            <span class="assistantPill">
+              <span class="assistantDot" aria-hidden="true" />
+              <span>{t("konase.title")}</span>
+              <span class="assistantState">{t("konase.disconnected")}</span>
+            </span>
+            <span
+              class="topbarMore"
+              aria-hidden="true"
+            >
+              <span aria-hidden="true">···</span>
+            </span>
+            <Show
+              when={props.authenticated !== false}
+              fallback={
+                <a class="btn" href="/login">{t("globalShell.signIn")}</a>
+              }
+            >
+              <AccountMenu />
+            </Show>
+          </div>
         </header>
         <div class="content">{props.children}</div>
       </section>

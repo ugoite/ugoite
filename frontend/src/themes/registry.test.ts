@@ -8,15 +8,15 @@ describe("v5 design system", () => {
     "utf8",
   );
   it("uses the approved concept palette", () => {
-    expect(css).toContain("--bg: #f7f7f4");
-    expect(css).toContain("--ink: #151515");
-    expect(css).toContain("--line: #e4e1da");
+    expect(css).toContain("--bg: #F6F8FC");
+    expect(css).toContain("--ink: #10243C");
+    expect(css).toContain("--line: #D7E0EA");
     expect(css).toContain("--black: #111");
   });
   it("uses the approved shell dimensions and responsive breakpoint", () => {
-    expect(css).toContain("grid-template-columns: 218px minmax(0, 1fr)");
+    expect(css).toContain("grid-template-columns: 228px minmax(0, 1fr)");
     expect(css).toContain("height: 58px");
-    expect(css).toContain("max-width: 1180px");
+    expect(css).toContain("max-width: 1230px");
     expect(css).toContain("@media (max-width: 900px)");
     expect(css).toContain("height: 66px");
   });

@@ -1,5 +1,5 @@
 version: "0.2"
-updated: "2026-07-17"
+updated: "2026-09-14"
 component_group:
   id: space-shell-shared
   title: Space Shell Shared Components
@@ -7,13 +7,13 @@ components:
   - id: global-sidebar
     type: sidebar
     position: left-fixed
-    width: 218px
+    width: 228px
     items: [Home, Forms, Search, Settings]
     notes: Hidden below 900px and replaced by the bottom navigation.
   - id: workspace-topbar
     type: top-bar
     height: 58px
-    notes: Contains the Space selector, route context, and account entry point.
+    notes: Contains quiet Konase utility access, overflow actions, and the account entry point. The route context is expressed by the page itself to avoid duplicate headings.
   - id: mobile-bottom-navigation
     type: bottom-navigation
     height: 66px
