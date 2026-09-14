@@ -150,8 +150,8 @@ export default function SpaceEntriesIndexPane() {
 
   return (
     <>
-      <div class="mx-auto max-w-6xl">
-        <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="mx-auto max-w-6xl entriesPage">
+        <div class="flex flex-wrap items-center justify-between gap-3 entriesHeader">
           <div>
             <h1 class="ui-page-title">
               {sessionId().trim()
@@ -189,7 +189,7 @@ export default function SpaceEntriesIndexPane() {
           </div>
         </div>
 
-        <div class="mt-6">
+        <div class="mt-6 entriesBody">
           <Show when={sessionId().trim() && session()?.status === "running"}>
             <p class="text-sm ui-muted">{t("querySession.preparing")}</p>
           </Show>
@@ -234,7 +234,7 @@ export default function SpaceEntriesIndexPane() {
               </div>
             </div>
           </Show>
-          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 entriesGrid">
             <For each={displayEntries()}>
               {(entry) => (
                 <button

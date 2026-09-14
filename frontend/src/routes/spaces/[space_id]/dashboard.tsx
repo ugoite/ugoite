@@ -2,7 +2,6 @@ import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { CreateFormDialog } from "~/components/create-dialogs";
 import { UiIcon } from "~/components/UiIcon";
-import { KonasePanel } from "~/components/konase/KonasePanel";
 import { createEntryStore } from "~/lib/entry-store";
 import { getDocsiteHref } from "~/lib/docsite-links";
 import { t } from "~/lib/i18n";
@@ -79,10 +78,14 @@ export default function SpaceDashboardRoute() {
 
   return (
     <>
-      <div class="screenHead">
-        <div class="screenTitle">
-          <div class="eyebrow">{spaceName()}</div>
-          <h1>{t("dashboard.home")}</h1>
+      <div class="dashboardIntro heroLine">
+        <span class="heroPill">{t("dashboard.heroTag")}</span>
+        <p>{t("dashboard.heroDescription")}</p>
+        <h1 class="ui-sr-only">{t("dashboard.home")}</h1>
+      </div>
+      <div class="actionbar">
+        <div class="actionLead">
+          <span class="eyebrow">{spaceName()}</span>
         </div>
         <button
           class="btn primary"
@@ -94,7 +97,10 @@ export default function SpaceDashboardRoute() {
         </button>
       </div>
 
-      <KonasePanel spaceId={spaceId()} />
+      <div class="workInline">
+        <span class="workInlineMark" aria-hidden="true" />
+        <span>{t("dashboard.konaseDescription")}</span>
+      </div>
 
       <Show when={forms.error}>
         <section class="surface emptyState" role="alert">

@@ -86,7 +86,7 @@ export default function SpaceAssetsRoute() {
   const assetGroups = () => groupAssetReferences(entries() ?? []);
 
   return (
-    <>
+    <div class="assetInventory">
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">{t("assetsPage.eyebrow")}</div>
@@ -215,6 +215,6 @@ export default function SpaceAssetsRoute() {
           </div>
         </Show>
       </Show>
-    </>
+    </div>
   );
 }

@@ -289,7 +289,7 @@ describe("UI spec YAML registry", () => {
     expect(sidebar).toMatchObject({
       type: "sidebar",
       position: "left-fixed",
-      width: "218px",
+      width: "228px",
       items: ["Home", "Forms", "Search", "Settings"],
     });
     expect(topbar).toMatchObject({ type: "top-bar", height: "58px" });

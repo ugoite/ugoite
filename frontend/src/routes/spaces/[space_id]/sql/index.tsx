@@ -38,7 +38,7 @@ export default function SpaceSqlIndexRoute() {
           )}
         </p>
       </Show>
-      <div class="rowStack">
+      <div class="rowStack sqlRows">
         <For
           each={queries() ?? []}
           fallback={
