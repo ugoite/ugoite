@@ -10,7 +10,7 @@
 //! [`AppError`] failures for unknown Forms/fields, unsupported
 //! operator/type combinations, and invalid typed values.
 
-use chrono::{DateTime, NaiveDate, SecondsFormat, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, SecondsFormat, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ugoite_domain::form::{FieldType, FormDefinition};
@@ -59,6 +59,7 @@ impl SearchOperator {
 /// never a SQL column name. `value` is the raw JSON value supplied by the
 /// caller and normalized during validation.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SearchCondition {
     pub field: String,
     pub operator: SearchOperator,
@@ -68,6 +69,7 @@ pub struct SearchCondition {
 /// Typed structured Search criteria. `form` is the logical Form name; never
 /// a SQL relation name.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StructuredSearch {
     pub form: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -94,6 +96,35 @@ pub enum StructuredSearchFieldKind {
     Timestamp,
 }
 
+/// Physical precision and logical meaning of a timestamp field.
+///
+/// Timezone-free values are compared as wall-clock coordinates. Timezone-aware
+/// values are compared as instants after normalization to UTC. The precision
+/// is kept here so the storage adapter cannot accidentally canonicalize a
+/// nanosecond condition through a millisecond or microsecond parameter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StructuredSearchTimestampKind {
+    WallClockMicros,
+    InstantMicros,
+    WallClockNanos,
+    InstantNanos,
+}
+
+impl StructuredSearchTimestampKind {
+    pub const fn parameter_type(self) -> &'static str {
+        match self {
+            Self::WallClockMicros => "timestamp",
+            Self::InstantMicros => "timestamp_tz",
+            Self::WallClockNanos => "timestamp_ns",
+            Self::InstantNanos => "timestamp_tz_ns",
+        }
+    }
+
+    pub const fn nanosecond_precision(self) -> bool {
+        matches!(self, Self::WallClockNanos | Self::InstantNanos)
+    }
+}
+
 impl StructuredSearchFieldKind {
     pub fn of(field_type: &FieldType) -> Option<Self> {
         match field_type {
@@ -106,7 +137,39 @@ impl StructuredSearchFieldKind {
             | FieldType::TimestampTz
             | FieldType::TimestampNs
             | FieldType::TimestampTzNs => Some(Self::Timestamp),
-            _ => None,
+            FieldType::Sql
+            | FieldType::Time
+            | FieldType::Uuid
+            | FieldType::Binary
+            | FieldType::List
+            | FieldType::ObjectList
+            | FieldType::RowReference
+            | FieldType::AssetReference => None,
+        }
+    }
+
+    pub fn timestamp_kind(field_type: &FieldType) -> Option<StructuredSearchTimestampKind> {
+        match field_type {
+            FieldType::Timestamp => Some(StructuredSearchTimestampKind::WallClockMicros),
+            FieldType::TimestampTz => Some(StructuredSearchTimestampKind::InstantMicros),
+            FieldType::TimestampNs => Some(StructuredSearchTimestampKind::WallClockNanos),
+            FieldType::TimestampTzNs => Some(StructuredSearchTimestampKind::InstantNanos),
+            FieldType::String
+            | FieldType::Markdown
+            | FieldType::Sql
+            | FieldType::Boolean
+            | FieldType::Integer
+            | FieldType::Long
+            | FieldType::Float
+            | FieldType::Double
+            | FieldType::Date
+            | FieldType::Time
+            | FieldType::Uuid
+            | FieldType::Binary
+            | FieldType::List
+            | FieldType::ObjectList
+            | FieldType::RowReference
+            | FieldType::AssetReference => None,
         }
     }
 
@@ -344,46 +407,79 @@ fn normalize_date_value(value: &Value, field: &str) -> Result<String, AppError> 
     }
 }
 
-fn normalize_timestamp_value(value: &Value, field: &str) -> Result<String, AppError> {
+fn format_wall_timestamp(
+    timestamp: NaiveDateTime,
+    timestamp_kind: StructuredSearchTimestampKind,
+) -> String {
+    let base = timestamp.format("%Y-%m-%dT%H:%M:%S").to_string();
+    let nanos = if timestamp_kind.nanosecond_precision() {
+        timestamp.nanosecond()
+    } else {
+        (timestamp.nanosecond() / 1_000) * 1_000
+    };
+    if nanos == 0 {
+        return base;
+    }
+    let fraction = format!("{nanos:09}").trim_end_matches('0').to_owned();
+    format!("{base}.{fraction}")
+}
+
+fn normalize_timestamp_value(
+    value: &Value,
+    field: &str,
+    timestamp_kind: StructuredSearchTimestampKind,
+) -> Result<String, AppError> {
     match value {
         Value::String(text) => {
             let trimmed = text.trim();
             if trimmed.is_empty() {
                 return Err(invalid_input(format!(
-                    "structured search value for field '{field}' must be RFC3339"
+                    "structured search value for field '{field}' must be a timestamp"
                 )));
             }
-            if let Ok(date) = NaiveDate::parse_from_str(trimmed, "%Y-%m-%d") {
-                let naive = date.and_hms_opt(0, 0, 0).ok_or_else(|| {
+            if matches!(
+                timestamp_kind,
+                StructuredSearchTimestampKind::WallClockMicros
+                    | StructuredSearchTimestampKind::WallClockNanos
+            ) {
+                let naive = NaiveDate::parse_from_str(trimmed, "%Y-%m-%d")
+                    .ok()
+                    .and_then(|date| date.and_hms_opt(0, 0, 0))
+                    .or_else(|| NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%dT%H:%M:%S%.f").ok())
+                    .or_else(|| NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%dT%H:%M").ok())
+                    .ok_or_else(|| {
+                        invalid_input(format!(
+                            "structured search value for field '{field}' must be timezone-free"
+                        ))
+                    })?;
+                return Ok(format_wall_timestamp(naive, timestamp_kind));
+            }
+
+            let timestamp = DateTime::parse_from_rfc3339(trimmed)
+                .map_err(|_| {
                     invalid_input(format!(
-                        "structured search value for field '{field}' must be RFC3339"
+                        "structured search value for field '{field}' must include a timezone"
                     ))
-                })?;
-                let dt = DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc);
-                return Ok(dt.to_rfc3339_opts(SecondsFormat::Millis, true));
-            }
-            if let Ok(dt) = trimmed.parse::<DateTime<Utc>>() {
-                return Ok(dt.to_rfc3339_opts(SecondsFormat::Millis, true));
-            }
-            if let Ok(dt) = DateTime::parse_from_rfc3339(trimmed) {
-                return Ok(dt
-                    .with_timezone(&Utc)
-                    .to_rfc3339_opts(SecondsFormat::Millis, true));
-            }
-            if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%dT%H:%M") {
-                let dt = DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc);
-                return Ok(dt.to_rfc3339_opts(SecondsFormat::Millis, true));
-            }
-            if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%dT%H:%M:%S") {
-                let dt = DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc);
-                return Ok(dt.to_rfc3339_opts(SecondsFormat::Millis, true));
-            }
-            Err(invalid_input(format!(
-                "structured search value for field '{field}' must be RFC3339"
-            )))
+                })?
+                .with_timezone(&Utc);
+            let timestamp = if timestamp_kind.nanosecond_precision() {
+                timestamp
+            } else {
+                timestamp
+                    .with_nanosecond((timestamp.nanosecond() / 1_000) * 1_000)
+                    .expect("a truncated nanosecond remains in range")
+            };
+            Ok(timestamp.to_rfc3339_opts(
+                if timestamp_kind.nanosecond_precision() {
+                    SecondsFormat::Nanos
+                } else {
+                    SecondsFormat::Micros
+                },
+                true,
+            ))
         }
         _ => Err(invalid_input(format!(
-            "structured search value for field '{field}' must be RFC3339"
+            "structured search value for field '{field}' must be a timestamp"
         ))),
     }
 }
@@ -428,12 +524,13 @@ pub fn validate_structured_search_syntax(search: &StructuredSearch) -> Result<()
     }
     for condition in &search.conditions {
         validate_field_identity(&condition.field)?;
-        if let Value::String(text) = &condition.value {
-            if text.len() > MAX_STRUCTURED_SEARCH_VALUE_BYTES {
-                return Err(invalid_input(
-                    "structured search value exceeds the byte limit",
-                ));
-            }
+        let serialized_size = serde_json::to_vec(&condition.value)
+            .map_err(|_| invalid_input("structured search value is not valid JSON"))?
+            .len();
+        if serialized_size > MAX_STRUCTURED_SEARCH_VALUE_BYTES {
+            return Err(invalid_input(
+                "structured search value exceeds the byte limit",
+            ));
         }
     }
     Ok(())
@@ -479,6 +576,7 @@ pub fn resolve_structured_search(
                 definition.field_type.as_str()
             )));
         };
+        let timestamp_kind = StructuredSearchFieldKind::timestamp_kind(&definition.field_type);
         if !kind.supports(condition.operator) {
             return Err(invalid_input(format!(
                 "structured search operator '{}' is not supported for field '{field_name}' of type '{}'",
@@ -493,19 +591,42 @@ pub fn resolve_structured_search(
             StructuredSearchFieldKind::Boolean => NormalizedConditionValue::Boolean(
                 normalize_boolean_value(&condition.value, &field_name)?,
             ),
-            StructuredSearchFieldKind::Integer => NormalizedConditionValue::Integer(
-                normalize_integer_value(&condition.value, &field_name)?,
-            ),
-            StructuredSearchFieldKind::Numeric => NormalizedConditionValue::Numeric(
-                normalize_numeric_value(&condition.value, &field_name)?,
-            ),
+            StructuredSearchFieldKind::Integer => {
+                let number = normalize_integer_value(&condition.value, &field_name)?;
+                if definition.field_type == FieldType::Integer && i32::try_from(number).is_err() {
+                    return Err(invalid_input(format!(
+                        "structured search value for field '{field_name}' is outside the Int32 range"
+                    )));
+                }
+                NormalizedConditionValue::Integer(number)
+            }
+            StructuredSearchFieldKind::Numeric => {
+                let number = normalize_numeric_value(&condition.value, &field_name)?;
+                if definition.field_type == FieldType::Float && !(number as f32).is_finite() {
+                    return Err(invalid_input(format!(
+                        "structured search value for field '{field_name}' is outside the Float32 range"
+                    )));
+                }
+                NormalizedConditionValue::Numeric(number)
+            }
             StructuredSearchFieldKind::Date => {
                 NormalizedConditionValue::Date(normalize_date_value(&condition.value, &field_name)?)
             }
-            StructuredSearchFieldKind::Timestamp => NormalizedConditionValue::Timestamp(
-                normalize_timestamp_value(&condition.value, &field_name)?,
-            ),
+            StructuredSearchFieldKind::Timestamp => {
+                NormalizedConditionValue::Timestamp(normalize_timestamp_value(
+                    &condition.value,
+                    &field_name,
+                    timestamp_kind.expect("timestamp field has a timestamp kind"),
+                )?)
+            }
         };
+        if condition.operator == SearchOperator::Contains
+            && matches!(&value, NormalizedConditionValue::String(text) if text.is_empty())
+        {
+            return Err(invalid_input(format!(
+                "structured search contains value for field '{field_name}' must not be empty"
+            )));
+        }
         conditions.push(ValidatedSearchCondition {
             field: field_name,
             operator: condition.operator,
@@ -562,7 +683,10 @@ mod tests {
                 field(104, "score", FieldType::Float),
                 field(105, "due", FieldType::Date),
                 field(106, "remind_at", FieldType::Timestamp),
-                field(107, "blob", FieldType::Binary),
+                field(107, "remind_at_tz", FieldType::TimestampTz),
+                field(108, "remind_at_ns", FieldType::TimestampNs),
+                field(109, "remind_at_tz_ns", FieldType::TimestampTzNs),
+                field(110, "blob", FieldType::Binary),
             ],
             allow_extra_attributes: false,
             extension_metadata: Default::default(),
@@ -648,7 +772,7 @@ mod tests {
             ("priority", json!(3)),
             ("score", json!(1.5)),
             ("due", json!("2026-09-01")),
-            ("remind_at", json!("2026-09-01T00:00:00Z")),
+            ("remind_at", json!("2026-09-01T00:00:00")),
         ];
         for (field_name, value) in cases {
             for operator in [
@@ -729,10 +853,15 @@ mod tests {
             condition("priority", SearchOperator::Equals, json!("3.5")),
             condition("priority", SearchOperator::Equals, json!(1.5)),
             condition("score", SearchOperator::Equals, json!("nan-value")),
+            condition("score", SearchOperator::Equals, json!("NaN")),
+            condition("score", SearchOperator::Equals, json!("Infinity")),
+            condition("score", SearchOperator::Equals, json!("-Infinity")),
             condition("due", SearchOperator::Equals, json!("2026-13-01")),
             condition("due", SearchOperator::Equals, json!("not-a-date")),
             condition("remind_at", SearchOperator::Equals, json!("not-a-time")),
             condition("title", SearchOperator::Equals, json!(3)),
+            condition("title", SearchOperator::Equals, Value::Null),
+            condition("title", SearchOperator::Equals, json!([])),
         ];
         for invalid in cases {
             let field_name = invalid.field.clone();
@@ -763,7 +892,186 @@ mod tests {
         .expect("date shorthand for timestamp must normalize");
         assert_eq!(
             resolved.conditions[0].value,
-            NormalizedConditionValue::Timestamp("2026-09-01T00:00:00.000Z".to_owned())
+            NormalizedConditionValue::Timestamp("2026-09-01T00:00:00".to_owned())
+        );
+    }
+
+    #[test]
+    fn timestamp_variants_preserve_wall_clock_and_instant_precision() {
+        let form = fixture_form();
+        let cases = [
+            (
+                "remind_at",
+                json!("2026-09-01T01:02:03.123456789"),
+                "2026-09-01T01:02:03.123456",
+                StructuredSearchTimestampKind::WallClockMicros,
+            ),
+            (
+                "remind_at_tz",
+                json!("2026-09-01T01:02:03.123456789+09:00"),
+                "2026-08-31T16:02:03.123456Z",
+                StructuredSearchTimestampKind::InstantMicros,
+            ),
+            (
+                "remind_at_ns",
+                json!("2026-09-01T01:02:03.123456789"),
+                "2026-09-01T01:02:03.123456789",
+                StructuredSearchTimestampKind::WallClockNanos,
+            ),
+            (
+                "remind_at_tz_ns",
+                json!("2026-09-01T01:02:03.123456789+09:00"),
+                "2026-08-31T16:02:03.123456789Z",
+                StructuredSearchTimestampKind::InstantNanos,
+            ),
+        ];
+
+        for (field_name, raw, expected, expected_kind) in cases {
+            let resolved = resolve_structured_search(
+                &search(
+                    "Task",
+                    vec![condition(field_name, SearchOperator::Equals, raw)],
+                ),
+                &form,
+            )
+            .expect("timestamp variant must validate");
+            let definition = form
+                .fields
+                .iter()
+                .find(|definition| definition.name == field_name)
+                .expect("timestamp field definition");
+            assert_eq!(
+                StructuredSearchFieldKind::timestamp_kind(&definition.field_type),
+                Some(expected_kind)
+            );
+            assert_eq!(
+                resolved.conditions[0].value,
+                NormalizedConditionValue::Timestamp(expected.to_owned())
+            );
+        }
+    }
+
+    #[test]
+    fn structured_search_serialization_rejects_backend_fields() {
+        let unknown_search = serde_json::from_value::<StructuredSearch>(json!({
+            "form": "Task",
+            "relation": "form_123",
+            "conditions": []
+        }));
+        assert!(unknown_search.is_err());
+
+        let unknown_condition = serde_json::from_value::<StructuredSearch>(json!({
+            "form": "Task",
+            "conditions": [{
+                "field": "title",
+                "operator": "equals",
+                "value": "x",
+                "sql_column": "field_100"
+            }]
+        }));
+        assert!(unknown_condition.is_err());
+    }
+
+    #[test]
+    fn search_scalar_bounds_and_representations_are_explicit() {
+        let form = fixture_form();
+
+        let empty_contains = resolve_structured_search(
+            &search(
+                "Task",
+                vec![condition("title", SearchOperator::Contains, json!(""))],
+            ),
+            &form,
+        )
+        .expect_err("empty contains must be rejected");
+        assert_eq!(empty_contains.code(), ErrorCode::InvalidInput);
+
+        let boolean_alias = resolve_structured_search(
+            &search(
+                "Task",
+                vec![condition("done", SearchOperator::Equals, json!(" TRUE "))],
+            ),
+            &form,
+        )
+        .expect("true/false string aliases are accepted");
+        assert_eq!(
+            boolean_alias.conditions[0].value,
+            NormalizedConditionValue::Boolean(true)
+        );
+        for value in [json!("yes"), json!(1)] {
+            assert!(resolve_structured_search(
+                &search(
+                    "Task",
+                    vec![condition("done", SearchOperator::Equals, value)],
+                ),
+                &form,
+            )
+            .is_err());
+        }
+
+        assert!(resolve_structured_search(
+            &search(
+                "Task",
+                vec![condition("priority", SearchOperator::Equals, json!("-1"))],
+            ),
+            &form,
+        )
+        .is_ok());
+        assert!(resolve_structured_search(
+            &search(
+                "Task",
+                vec![condition("priority", SearchOperator::Equals, json!("+1"))],
+            ),
+            &form,
+        )
+        .is_err());
+        for value in [
+            json!(i64::from(i32::MAX) + 1),
+            json!(i64::from(i32::MIN) - 1),
+        ] {
+            assert!(resolve_structured_search(
+                &search(
+                    "Task",
+                    vec![condition("priority", SearchOperator::Equals, value)],
+                ),
+                &form,
+            )
+            .is_err());
+        }
+
+        let oversized = search(
+            "Task",
+            vec![condition(
+                "title",
+                SearchOperator::Equals,
+                json!("x".repeat(MAX_STRUCTURED_SEARCH_VALUE_BYTES)),
+            )],
+        );
+        let error = validate_structured_search_syntax(&oversized)
+            .expect_err("serialized scalar value must be bounded");
+        assert_eq!(error.code(), ErrorCode::InvalidInput);
+
+        let too_many_conditions = search(
+            "Task",
+            vec![
+                condition("title", SearchOperator::Equals, json!("x"));
+                MAX_STRUCTURED_SEARCH_CONDITIONS + 1
+            ],
+        );
+        assert_eq!(
+            validate_structured_search_syntax(&too_many_conditions)
+                .expect_err("condition count must be bounded")
+                .code(),
+            ErrorCode::InvalidInput
+        );
+
+        let mut over_limit = search("Task", Vec::new());
+        over_limit.limit = Some(MAX_STRUCTURED_SEARCH_LIMIT as u64 + 1);
+        assert_eq!(
+            validate_structured_search_syntax(&over_limit)
+                .expect_err("limit must be bounded")
+                .code(),
+            ErrorCode::InvalidInput
         );
     }
 

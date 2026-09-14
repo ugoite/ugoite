@@ -6166,7 +6166,7 @@
     "/spaces/{space_id}/query": {
       "post": {
         "summary": "Structured entry query",
-        "description": "Legacy filter passthrough remains supported. Additive typed input: {\"criteria\": {\"form\": \"Task\", \"updated_from\": \"2026-09-01\", \"conditions\": [{\"field\": \"status\", \"operator\": \"equals\", \"value\": \"open\"}], \"limit\": 100}}. Logical form/field identity only; SQL relation/column names are never accepted.",
+        "description": "Legacy filter passthrough remains supported. Additive typed input: {\"criteria\": {\"form\": \"Task\", \"updated_from\": \"2026-09-01\", \"conditions\": [{\"field\": \"status\", \"operator\": \"equals\", \"value\": \"open\"}], \"limit\": 100}}. Logical form/field identity only; SQL relation/column names are never accepted. `criteria` and legacy `filter` cannot be supplied together. Structured values are validated against the Form field type, including timezone-free wall-clock and timezone-aware instant timestamp variants.",
         "parameters": [
           {
             "$ref": "#/components/parameters/SpaceId"

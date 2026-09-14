@@ -252,17 +252,73 @@ pub fn datafusion_parameters(
                         .ok_or_else(|| anyhow!("SQL parameter {name} must be an integer"))?
                         .into(),
                 ),
+                ("int32", Value::Number(value)) => {
+                    let value = value
+                        .as_i64()
+                        .and_then(|value| i32::try_from(value).ok())
+                        .ok_or_else(|| anyhow!("SQL parameter {name} must be an Int32"))?;
+                    datafusion::scalar::ScalarValue::Int32(Some(value))
+                }
+                ("int64", Value::Number(value)) => datafusion::scalar::ScalarValue::Int64(
+                    value
+                        .as_i64()
+                        .ok_or_else(|| anyhow!("SQL parameter {name} must be an Int64"))?
+                        .into(),
+                ),
                 ("float", Value::Number(value)) => datafusion::scalar::ScalarValue::Float64(
                     value
                         .as_f64()
                         .ok_or_else(|| anyhow!("SQL parameter {name} must be a float"))?
                         .into(),
                 ),
+                ("float32", Value::Number(value)) => {
+                    let value = value
+                        .as_f64()
+                        .map(|value| value as f32)
+                        .filter(|value| value.is_finite())
+                        .ok_or_else(|| anyhow!("SQL parameter {name} must be a finite Float32"))?;
+                    datafusion::scalar::ScalarValue::Float32(Some(value))
+                }
+                ("float64", Value::Number(value)) => datafusion::scalar::ScalarValue::Float64(
+                    value
+                        .as_f64()
+                        .filter(|value| value.is_finite())
+                        .ok_or_else(|| anyhow!("SQL parameter {name} must be a finite Float64"))?
+                        .into(),
+                ),
                 ("timestamp", Value::String(value)) => {
-                    let value = DateTime::parse_from_rfc3339(value)
-                        .map_err(|_| anyhow!("SQL parameter {name} must be an RFC3339 timestamp"))?
-                        .timestamp_micros();
+                    let value = crate::parse_wall_timestamp_micros(value)
+                        .or_else(|_| {
+                            DateTime::parse_from_rfc3339(value)
+                                .map(|timestamp| Some(timestamp.timestamp_micros()))
+                                .map_err(anyhow::Error::from)
+                        })?
+                        .ok_or_else(|| anyhow!("SQL parameter {name} must be a timestamp"))?;
                     datafusion::scalar::ScalarValue::TimestampMicrosecond(Some(value), None)
+                }
+                ("timestamp_tz", Value::String(value)) => {
+                    let value = crate::parse_zoned_timestamp_micros(value)
+                        .map_err(|_| anyhow!("SQL parameter {name} must be an RFC3339 timestamp"))?
+                        .ok_or_else(|| anyhow!("SQL parameter {name} must be a timestamp"))?;
+                    datafusion::scalar::ScalarValue::TimestampMicrosecond(
+                        Some(value),
+                        Some(Arc::from("+00:00")),
+                    )
+                }
+                ("timestamp_ns", Value::String(value)) => {
+                    let value = crate::parse_wall_timestamp_nanos(value)
+                        .map_err(|_| anyhow!("SQL parameter {name} must be a timestamp"))?
+                        .ok_or_else(|| anyhow!("SQL parameter {name} timestamp is out of range"))?;
+                    datafusion::scalar::ScalarValue::TimestampNanosecond(Some(value), None)
+                }
+                ("timestamp_tz_ns", Value::String(value)) => {
+                    let value = crate::parse_zoned_timestamp_nanos(value)
+                        .map_err(|_| anyhow!("SQL parameter {name} must be an RFC3339 timestamp"))?
+                        .ok_or_else(|| anyhow!("SQL parameter {name} timestamp is out of range"))?;
+                    datafusion::scalar::ScalarValue::TimestampNanosecond(
+                        Some(value),
+                        Some(Arc::from("+00:00")),
+                    )
                 }
                 ("date", Value::String(value)) => {
                     let value = NaiveDate::parse_from_str(value, "%Y-%m-%d")
@@ -274,12 +330,36 @@ pub fn datafusion_parameters(
                 ("string", Value::Null) => datafusion::scalar::ScalarValue::Utf8(None),
                 ("boolean", Value::Null) => datafusion::scalar::ScalarValue::Boolean(None),
                 ("integer", Value::Null) => datafusion::scalar::ScalarValue::Int64(None),
+                ("int32", Value::Null) => datafusion::scalar::ScalarValue::Int32(None),
+                ("int64", Value::Null) => datafusion::scalar::ScalarValue::Int64(None),
                 ("float", Value::Null) => datafusion::scalar::ScalarValue::Float64(None),
+                ("float32", Value::Null) => datafusion::scalar::ScalarValue::Float32(None),
+                ("float64", Value::Null) => datafusion::scalar::ScalarValue::Float64(None),
                 ("timestamp", Value::Null) => {
                     datafusion::scalar::ScalarValue::TimestampMicrosecond(None, None)
                 }
+                ("timestamp_tz", Value::Null) => {
+                    datafusion::scalar::ScalarValue::TimestampMicrosecond(
+                        None,
+                        Some(Arc::from("+00:00")),
+                    )
+                }
+                ("timestamp_ns", Value::Null) => {
+                    datafusion::scalar::ScalarValue::TimestampNanosecond(None, None)
+                }
+                ("timestamp_tz_ns", Value::Null) => {
+                    datafusion::scalar::ScalarValue::TimestampNanosecond(
+                        None,
+                        Some(Arc::from("+00:00")),
+                    )
+                }
                 ("date", Value::Null) => datafusion::scalar::ScalarValue::Date32(None),
-                ("string" | "boolean" | "integer" | "float" | "timestamp" | "date", _) => {
+                (
+                    "string" | "boolean" | "integer" | "int32" | "int64" | "float" | "float32"
+                    | "float64" | "timestamp" | "timestamp_tz" | "timestamp_ns" | "timestamp_tz_ns"
+                    | "date",
+                    _,
+                ) => {
                     return Err(anyhow!(
                         "SQL parameter {name} does not match declared type {kind}"
                     ))
@@ -3869,6 +3949,66 @@ mod tests {
         assert!(matches!(
             parameters.get("day"),
             Some(datafusion::scalar::ScalarValue::Date32(Some(value))) if *value == 20150
+        ));
+    }
+
+    #[test]
+    fn native_parameters_preserve_timestamp_timezone_and_nanosecond_precision() {
+        let values = Map::from_iter([
+            (
+                "wall".to_string(),
+                Value::String("2025-03-03T23:59:59.123456".to_string()),
+            ),
+            (
+                "instant".to_string(),
+                Value::String("2025-03-03T23:59:59.123456+09:00".to_string()),
+            ),
+            (
+                "wall_ns".to_string(),
+                Value::String("2025-03-03T23:59:59.123456789".to_string()),
+            ),
+            (
+                "instant_ns".to_string(),
+                Value::String("2025-03-03T23:59:59.123456789+09:00".to_string()),
+            ),
+        ]);
+        let types = BTreeMap::from_iter([
+            ("wall".to_string(), "timestamp".to_string()),
+            ("instant".to_string(), "timestamp_tz".to_string()),
+            ("wall_ns".to_string(), "timestamp_ns".to_string()),
+            ("instant_ns".to_string(), "timestamp_tz_ns".to_string()),
+        ]);
+        let parameters = datafusion_parameters(&values, &types).expect("typed parameters");
+
+        assert!(matches!(
+            parameters.get("wall"),
+            Some(ScalarValue::TimestampMicrosecond(Some(value), None))
+                if *value == crate::parse_wall_timestamp_micros("2025-03-03T23:59:59.123456")
+                    .expect("wall timestamp")
+                    .expect("wall timestamp value")
+        ));
+        assert!(matches!(
+            parameters.get("instant"),
+            Some(ScalarValue::TimestampMicrosecond(Some(value), Some(timezone)))
+                if *value == crate::parse_zoned_timestamp_micros("2025-03-03T23:59:59.123456+09:00")
+                    .expect("instant timestamp")
+                    .expect("instant timestamp value")
+                    && timezone.as_ref() == "+00:00"
+        ));
+        assert!(matches!(
+            parameters.get("wall_ns"),
+            Some(ScalarValue::TimestampNanosecond(Some(value), None))
+                if *value == crate::parse_wall_timestamp_nanos("2025-03-03T23:59:59.123456789")
+                    .expect("wall nanosecond timestamp")
+                    .expect("wall nanosecond timestamp value")
+        ));
+        assert!(matches!(
+            parameters.get("instant_ns"),
+            Some(ScalarValue::TimestampNanosecond(Some(value), Some(timezone)))
+                if *value == crate::parse_zoned_timestamp_nanos("2025-03-03T23:59:59.123456789+09:00")
+                    .expect("instant nanosecond timestamp")
+                    .expect("instant nanosecond timestamp value")
+                    && timezone.as_ref() == "+00:00"
         ));
     }
 
