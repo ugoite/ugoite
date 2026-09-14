@@ -31,10 +31,15 @@ use crate::error::{AppError, ErrorCode};
 /// normalization.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct StructuredEntryDraft {
+    #[serde(default)]
     pub title: String,
+    #[serde(default)]
     pub form_name: Option<String>,
+    #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default)]
     pub fields: BTreeMap<String, Value>,
+    #[serde(default)]
     pub extra_attributes: BTreeMap<String, Value>,
 }
 
@@ -338,6 +343,41 @@ pub fn normalize_and_validate_draft(
             BTreeMap::new()
         },
     })
+}
+
+/// Decode persisted Form fields through the same coercion boundary used by
+/// structured and Markdown drafts.
+///
+/// This intentionally does not apply required-field or extra-attribute
+/// admission. Those checks belong to the revision validator; historical rows
+/// only need their typed value map. The conversion itself remains shared so
+/// storage cannot grow a second type system.
+pub fn stored_fields_to_values(
+    fields: &Value,
+    form: &FormDefinition,
+) -> Result<BTreeMap<FieldId, FieldValue>, AppError> {
+    let object = fields.as_object().ok_or_else(|| {
+        AppError::invalid_input(
+            ErrorCode::FormValidationFailed,
+            "stored Entry fields must be a JSON object",
+        )
+    })?;
+    let mut values = BTreeMap::new();
+    for field in &form.fields {
+        let Some(value) = object.get(&field.name) else {
+            continue;
+        };
+        let value =
+            coerce_value(value, &field.field_type, field.list_item.as_ref()).map_err(|reason| {
+                AppError::invalid_input_with_detail(
+                    ErrorCode::FormValidationFailed,
+                    "stored Entry field value is invalid",
+                    serde_json::json!({"field": field.name, "reason": reason}),
+                )
+            })?;
+        values.insert(field.id, value);
+    }
+    Ok(values)
 }
 
 /// Preview one structured draft without touching Storage.
@@ -689,7 +729,7 @@ fn render_frontmatter(form_name: &str, tags: &[String]) -> String {
     frontmatter
 }
 
-fn render_markdown(
+pub fn render_markdown(
     title: &str,
     form_name: &str,
     tags: &[String],
@@ -730,6 +770,19 @@ fn render_markdown(
     }
 
     markdown.trim_end().to_string()
+}
+
+/// Render field values into the section object used by the existing Entry
+/// response contract. The string conversion is the same compatibility
+/// representation used by [`render_markdown`].
+pub fn fields_to_sections(fields: &Value) -> Value {
+    let mut sections = Map::new();
+    if let Some(map) = fields.as_object() {
+        for (key, value) in map {
+            sections.insert(key.clone(), Value::String(section_value_to_string(value)));
+        }
+    }
+    Value::Object(sections)
 }
 
 // ---------------------------------------------------------------------------
@@ -1056,9 +1109,12 @@ fn coerce_value(
                     .map_err(|_| "asset reference field must contain a JSON object".to_string())?,
                 value => value.clone(),
             };
-            serde_json::from_value::<ugoite_domain::entry::AssetReference>(parsed)
-                .map(FieldValue::AssetReference)
-                .map_err(|_| "invalid asset reference value".to_string())
+            let reference = serde_json::from_value::<ugoite_domain::entry::AssetReference>(parsed)
+                .map_err(|_| "invalid asset reference value".to_string())?;
+            reference
+                .validate()
+                .map_err(|error| format!("invalid asset reference value: {error}"))?;
+            Ok(FieldValue::AssetReference(reference))
         }
         FieldType::List => {
             let is_asset_list = list_item
@@ -1162,6 +1218,39 @@ mod tests {
             allow_extra_attributes: false,
             extension_metadata: BTreeMap::new(),
         }
+    }
+
+    fn draft_from_fixture(value: &Value, fallback_title: &str) -> StructuredEntryDraft {
+        let fields = value
+            .get("fields")
+            .or_else(|| value.get("structured_fields"))
+            .and_then(Value::as_object)
+            .cloned()
+            .or_else(|| value.as_object().cloned())
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        structured_fields_to_draft(
+            value
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or(fallback_title),
+            value
+                .get("form")
+                .or_else(|| value.get("form_name"))
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            value
+                .get("tags")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|value| value.as_str().map(str::to_string))
+                .collect(),
+            fields,
+            BTreeMap::new(),
+        )
     }
 
     #[test]
@@ -1706,5 +1795,198 @@ mod tests {
         );
         assert_eq!(first.title, "T");
         assert_eq!(first.tags, vec!["a".to_string()]);
+    }
+
+    #[test]
+    fn draft_and_normalized_values_serde_round_trip_with_stable_field_keys() {
+        let form = preview_test_form();
+        let draft = structured_fields_to_draft(
+            "T",
+            Some("Preview"),
+            vec!["one".into()],
+            BTreeMap::from([
+                ("Title".into(), Value::String("hello".into())),
+                ("Score".into(), serde_json::json!(1.23456789012345)),
+            ]),
+            BTreeMap::new(),
+        );
+        let draft_json = serde_json::to_value(&draft).expect("draft serializes");
+        assert_eq!(
+            draft_json["fields"]["Score"],
+            serde_json::json!(1.23456789012345)
+        );
+        assert_eq!(
+            serde_json::from_value::<StructuredEntryDraft>(draft_json).unwrap(),
+            draft
+        );
+
+        let normalized = normalize_and_validate_draft(&form, &draft).expect("draft is valid");
+        let normalized_json = serde_json::to_value(&normalized).expect("normalized serializes");
+        assert_eq!(
+            normalized_json["values"]["103"],
+            serde_json::json!(1.23456789012345)
+        );
+        assert_eq!(
+            serde_json::from_value::<NormalizedStructuredEntry>(normalized_json).unwrap(),
+            normalized
+        );
+    }
+
+    #[test]
+    fn diagnostic_extractors_fail_closed_for_missing_or_unexpected_detail() {
+        let errors = [
+            AppError::invalid_input_with_detail(
+                ErrorCode::FormValidationFailed,
+                "missing",
+                Value::Null,
+            ),
+            AppError::invalid_input_with_detail(
+                ErrorCode::FormValidationFailed,
+                "wrong warnings",
+                serde_json::json!({"warnings": {"field": "Body"}}),
+            ),
+            AppError::invalid_input_with_detail(
+                ErrorCode::UnknownFormFields,
+                "wrong fields",
+                serde_json::json!({"fields": [1, {"unexpected": true}]}),
+            ),
+        ];
+        assert!(errors
+            .iter()
+            .all(|error| validation_warnings(error).is_none()));
+        assert!(errors
+            .iter()
+            .all(|error| unknown_field_names(error).is_none()));
+    }
+
+    #[test]
+    fn valid_asset_reference_is_checked_by_the_core_boundary() {
+        let form = preview_test_form();
+        let invalid = serde_json::json!({
+            "asset_id": "01900000-0000-7000-8000-000000000001",
+            "name": "file.txt",
+            "media_type": "text/plain",
+            "size_bytes": 1,
+            "sha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        });
+        let draft = structured_fields_to_draft(
+            "T",
+            Some("Preview"),
+            Vec::new(),
+            BTreeMap::from([
+                ("Title".into(), Value::String("hello".into())),
+                ("File".into(), invalid),
+            ]),
+            BTreeMap::new(),
+        );
+        let error = preview_structured_draft(&form, &draft).expect_err("invalid checksum");
+        assert_eq!(error.code(), ErrorCode::FormValidationFailed);
+        assert_eq!(validation_warnings(&error).unwrap()[0].field, "File");
+    }
+
+    #[test]
+    fn compatibility_fixture_cases_cover_all_declared_rules() {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/entry/structured-compat");
+        let fixture: Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.join("04-compat-rules.json")).expect("read rules"),
+        )
+        .expect("rules JSON");
+        let allow: FormDefinition =
+            serde_json::from_value(fixture["form_allow"].clone()).expect("allow form");
+        let deny: FormDefinition =
+            serde_json::from_value(fixture["form_deny"].clone()).expect("deny form");
+
+        for case in fixture["cases"].as_array().expect("cases") {
+            let markdown = case["markdown"].as_str().expect("case markdown");
+            let parsed = legacy_markdown_to_draft(markdown, "fallback");
+            assert!(parsed.diagnostics.is_empty(), "{}", case["name"]);
+            let form = if case["allow_extra"].as_bool().unwrap_or(true) {
+                &allow
+            } else {
+                &deny
+            };
+            let normalized = normalize_and_validate_draft(form, &parsed.draft);
+            if let Some(expected_fields) = case["expected_values"].as_object() {
+                let normalized = normalized.expect("case should normalize");
+                for (id, expected) in expected_fields {
+                    let id = FieldId::new(id.parse().expect("field id")).expect("valid id");
+                    let expected = if expected == "Null" {
+                        FieldValue::Null
+                    } else {
+                        serde_json::from_value::<FieldValue>(expected.clone()).expect("field value")
+                    };
+                    assert_eq!(
+                        normalized.values.get(&id),
+                        Some(&expected),
+                        "{}",
+                        case["name"]
+                    );
+                }
+            } else if let Some(expected_extra) = case["expected_extra"].as_object() {
+                let normalized = normalized.expect("extra case should normalize");
+                for (name, expected) in expected_extra {
+                    assert_eq!(normalized.extra_attributes.get(name), Some(expected));
+                }
+            } else if let Some(expected_fields) = case["expect_unknown_fields"].as_array() {
+                let error = normalized.expect_err("unknown field should fail");
+                assert_eq!(error.code(), ErrorCode::UnknownFormFields);
+                assert_eq!(
+                    unknown_field_names(&error).unwrap(),
+                    expected_fields
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                );
+            } else {
+                let normalized = normalized.expect("alias/list case should normalize");
+                if case["name"] == "boolean-aliases" {
+                    assert_eq!(
+                        normalized.values.get(&FieldId::new(101).unwrap()),
+                        Some(&FieldValue::Boolean(true))
+                    );
+                    let structured = draft_from_fixture(&case["structured_fields"], "T");
+                    let structured = normalize_and_validate_draft(&allow, &structured)
+                        .expect("structured alias");
+                    assert_eq!(
+                        structured.values.get(&FieldId::new(101).unwrap()),
+                        Some(&FieldValue::Boolean(false))
+                    );
+                }
+                if case["name"] == "markdown-list-syntax" {
+                    assert_eq!(
+                        normalized.values.get(&FieldId::new(103).unwrap()),
+                        Some(&FieldValue::List(vec![
+                            FieldValue::String("Alpha".into()),
+                            FieldValue::String("Beta".into()),
+                            FieldValue::String("Gamma".into()),
+                        ]))
+                    );
+                }
+            }
+        }
+
+        let required: Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.join("05-required.json")).expect("read required"),
+        )
+        .expect("required JSON");
+        let form: FormDefinition =
+            serde_json::from_value(required["form"].clone()).expect("required form");
+        let valid = &required["valid"];
+        let markdown = legacy_markdown_to_draft(valid["markdown"].as_str().unwrap(), "T");
+        assert!(normalize_and_validate_draft(&form, &markdown.draft).is_ok());
+        assert!(normalize_and_validate_draft(&form, &draft_from_fixture(valid, "T")).is_ok());
+        for fields in required["invalid_structured"].as_array().unwrap() {
+            assert!(normalize_and_validate_draft(
+                &form,
+                &draft_from_fixture(&serde_json::json!({"fields": fields}), "T")
+            )
+            .is_err());
+        }
+        for markdown in required["invalid_markdowns"].as_array().unwrap() {
+            let draft = legacy_markdown_to_draft(markdown.as_str().unwrap(), "T");
+            assert!(normalize_and_validate_draft(&form, &draft.draft).is_err());
+        }
     }
 }
