@@ -1633,7 +1633,7 @@ mod tests {
         // Legacy Markdown and structured inputs reach the same durable outcome.
         let markdown = fixture["markdown"].as_str().expect("markdown");
         let legacy = legacy_markdown_to_draft(markdown, "fallback");
-        let from_legacy = preview_structured_draft(&form, &legacy).expect("legacy valid");
+        let from_legacy = preview_structured_draft(&form, &legacy.draft).expect("legacy valid");
         let structured = &fixture["structured"];
         let structured_draft = draft_from_fields(
             structured["title"].as_str().unwrap_or_default(),
@@ -1720,7 +1720,7 @@ mod tests {
         // The 0.1 representation round-trips: close/reopen keeps values.
         let rendered = normalized_to_legacy_representation(&form, &form.name, &from_structured);
         let reparsed = legacy_markdown_to_draft(&rendered, "fallback");
-        let reopened = preview_structured_draft(&form, &reparsed).expect("reopen valid");
+        let reopened = preview_structured_draft(&form, &reparsed.draft).expect("reopen valid");
         assert_eq!(from_structured.values, reopened.values);
     }
 

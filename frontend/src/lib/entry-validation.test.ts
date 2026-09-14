@@ -184,22 +184,32 @@ describe("lane1 parity fixture", () => {
   // invalid_cases: the browser surface must converge on the same codes and
   // fields as core preview, the WASM bridge, and both CLI modes.
   const parityForm = (): Form => ({
+    id: "01900000-0000-7000-8000-0000000000b0",
     name: "Parity",
     version: 1,
     template: "# Parity",
     fields: {
-      Title: { type: "string", required: true },
-      Notes: { type: "markdown", required: false },
-      Done: { type: "boolean", required: false },
-      Count: { type: "integer", required: false },
-      Score: { type: "double", required: false },
-      Due: { type: "date", required: false },
-      At: { type: "timestamp", required: false },
-      Tags: { type: "list", required: false },
-      Rows: { type: "object_list", required: false },
-      Ref: { type: "row_reference", required: false, target_form: "Task" },
-      File: { type: "asset_reference", required: false },
+      Headline: { id: 100, type: "string", required: true },
+      Notes: { id: 101, type: "markdown", required: false },
+      Done: { id: 102, type: "boolean", required: false },
+      Count: { id: 103, type: "integer", required: false },
+      Score: { id: 104, type: "double", required: false },
+      Due: { id: 105, type: "date", required: false },
+      At: { id: 106, type: "timestamp", required: false },
+      AtNs: { id: 112, type: "timestamp_ns", required: false },
+      AtTz: { id: 113, type: "timestamp_tz", required: false },
+      AtTzNs: { id: 114, type: "timestamp_tz_ns", required: false },
+      Labels: { id: 107, type: "list", required: false },
+      Rows: { id: 108, type: "object_list", required: false },
+      Ref: {
+        id: 109,
+        type: "row_reference",
+        required: false,
+        target_form: "01900000-0000-7000-8000-0000000000a1",
+      },
+      File: { id: 110, type: "asset_reference", required: false },
       Files: {
+        id: 111,
         type: "list",
         required: false,
         items: { type: "asset_reference" },
@@ -215,57 +225,57 @@ describe("lane1 parity fixture", () => {
     }> = [
       {
         field: "Done",
-        fields: { Title: "hello", Done: "maybe" },
+        fields: { Headline: "hello", Done: "maybe" },
         code: "FORM_VALIDATION_FAILED",
       },
       {
         field: "Count",
-        fields: { Title: "hello", Count: "not-an-int" },
+        fields: { Headline: "hello", Count: "not-an-int" },
         code: "FORM_VALIDATION_FAILED",
       },
       {
         field: "Score",
-        fields: { Title: "hello", Score: "not-a-number" },
+        fields: { Headline: "hello", Score: "not-a-number" },
         code: "FORM_VALIDATION_FAILED",
       },
       {
         field: "Due",
-        fields: { Title: "hello", Due: "tomorrow" },
+        fields: { Headline: "hello", Due: "tomorrow" },
         code: "FORM_VALIDATION_FAILED",
       },
       {
         field: "At",
-        fields: { Title: "hello", At: "not-a-timestamp" },
+        fields: { Headline: "hello", At: "not-a-timestamp" },
         code: "FORM_VALIDATION_FAILED",
       },
       {
-        field: "Tags",
-        fields: { Title: "hello", Tags: 42 },
+        field: "Labels",
+        fields: { Headline: "hello", Labels: 42 },
         code: "FORM_VALIDATION_FAILED",
       },
       {
         field: "Rows",
-        fields: { Title: "hello", Rows: "not-an-array" },
+        fields: { Headline: "hello", Rows: "not-an-array" },
         code: "FORM_VALIDATION_FAILED",
       },
       {
         field: "Ref",
-        fields: { Title: "hello", Ref: 7 },
+        fields: { Headline: "hello", Ref: 7 },
         code: "FORM_VALIDATION_FAILED",
       },
       {
         field: "File",
-        fields: { Title: "hello", File: { asset_id: "not-a-uuid" } },
+        fields: { Headline: "hello", File: { asset_id: "not-a-uuid" } },
         code: "FORM_VALIDATION_FAILED",
       },
       {
-        field: "Title",
+        field: "Headline",
         fields: { Done: true },
         code: "FORM_VALIDATION_FAILED",
       },
       {
         field: "Nope",
-        fields: { Title: "hello", Nope: "x" },
+        fields: { Headline: "hello", Nope: "x" },
         code: "UNKNOWN_FORM_FIELDS",
       },
     ];
@@ -285,14 +295,17 @@ describe("lane1 parity fixture", () => {
 
   it("accepts the fixture valid draft and reopens it unchanged", async () => {
     const fields = {
-      Title: "hello",
+      Headline: "hello",
       Notes: "Some *markdown* body.",
       Done: true,
       Count: 42,
       Score: 3.14,
       Due: "2026-09-11",
       At: "2026-09-11T10:00:00",
-      Tags: ["alpha", "beta"],
+      AtNs: "2026-09-11T10:00:00.123456789",
+      AtTz: "2026-09-11T10:00:00+09:00",
+      AtTzNs: "2026-09-11T10:00:00.123456789+09:00",
+      Labels: ["alpha", "beta"],
       Rows: [{ step: "one" }],
       Ref: "task-01",
     };

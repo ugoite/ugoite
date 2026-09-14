@@ -1181,7 +1181,8 @@ mod tests {
             "action": "entry.compat.parse_markdown",
             "value": {"markdown": markdown, "fallback_title": "fallback"}
         });
-        let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
 
         assert_eq!(response["ok"], true, "{response}");
         assert_eq!(
@@ -1197,7 +1198,10 @@ mod tests {
         let strict: Value =
             serde_json::from_str(&super::invoke_json(&strict_request.to_string())).unwrap();
         assert_eq!(strict["ok"], false, "{strict}");
-        assert_eq!(strict["error"]["code"], "MARKDOWN_CONVERSION_LOSS", "{strict}");
+        assert_eq!(
+            strict["error"]["code"], "MARKDOWN_CONVERSION_LOSS",
+            "{strict}"
+        );
     }
 
     #[test]

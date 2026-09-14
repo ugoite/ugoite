@@ -1138,14 +1138,17 @@ fn test_lane1_parity_fixture_converges_on_cli_core() {
         serde_json::json!({
             "name": "Parity",
             "fields": {
-                "Title": {"id": 100, "type": "string", "required": true},
+                "Headline": {"id": 100, "type": "string", "required": true},
                 "Notes": {"id": 101, "type": "markdown"},
                 "Done": {"id": 102, "type": "boolean"},
                 "Count": {"id": 103, "type": "integer"},
                 "Score": {"id": 104, "type": "double"},
                 "Due": {"id": 105, "type": "date"},
                 "At": {"id": 106, "type": "timestamp"},
-                "Tags": {"id": 107, "type": "list"},
+                "AtNs": {"id": 112, "type": "timestamp_ns"},
+                "AtTz": {"id": 113, "type": "timestamp_tz"},
+                "AtTzNs": {"id": 114, "type": "timestamp_tz_ns"},
+                "Labels": {"id": 107, "type": "list"},
                 "Rows": {"id": 108, "type": "object_list"},
                 "Ref": {"id": 109, "type": "row_reference", "target_form": task_form_id},
                 "File": {"id": 110, "type": "asset_reference"},
@@ -1155,10 +1158,19 @@ fn test_lane1_parity_fixture_converges_on_cli_core() {
         .to_string(),
     )
     .unwrap();
+    let parity_form_update = run(&["form", "update", &space_path, parity_form.to_str().unwrap()]);
     assert!(
-        run(&["form", "update", &space_path, parity_form.to_str().unwrap()])
-            .status
-            .success()
+        parity_form_update.status.success(),
+        "parity form update failed: {}",
+        String::from_utf8_lossy(&parity_form_update.stderr)
+    );
+    let parity_form_got = run(&["form", "get", &space_path, "Parity"]);
+    assert!(parity_form_got.status.success());
+    let parity_form_json = json_of(&parity_form_got);
+    assert!(parity_form_json["id"].as_str().is_some());
+    assert_eq!(
+        parity_form_json["fields"]["Ref"]["target_form"],
+        task_form_id
     );
 
     // Row target and uploaded asset backing the reference fields.
@@ -1193,14 +1205,17 @@ fn test_lane1_parity_fixture_converges_on_cli_core() {
     std::fs::write(
         &create_fields,
         serde_json::json!({
-            "Title": "hello",
+            "Headline": "hello",
             "Notes": "Some *markdown* body.",
             "Done": true,
             "Count": 42,
             "Score": 3.5,
             "Due": "2026-09-11",
             "At": "2026-09-11T10:00:00",
-            "Tags": ["alpha", "beta"],
+            "AtNs": "2026-09-11T10:00:00.123456789",
+            "AtTz": "2026-09-11T10:00:00+09:00",
+            "AtTzNs": "2026-09-11T10:00:00.123456789+09:00",
+            "Labels": ["alpha", "beta"],
             "Rows": [{"step": "one"}],
             "Ref": "task-01",
             "File": asset,
@@ -1239,9 +1254,13 @@ fn test_lane1_parity_fixture_converges_on_cli_core() {
     let entry = json_of(&got);
     assert_eq!(entry["form"], serde_json::json!("Parity"));
     assert_eq!(entry["title"], serde_json::json!("Website"));
-    assert_eq!(entry["sections"]["Title"], serde_json::json!("hello"));
+    assert_eq!(entry["sections"]["Headline"], serde_json::json!("hello"));
     assert_eq!(entry["sections"]["Done"], serde_json::json!("true"));
     assert_eq!(entry["sections"]["Count"], serde_json::json!("42"));
+    assert_eq!(
+        entry["sections"]["AtNs"],
+        serde_json::json!("2026-09-11T10:00:00.123456789")
+    );
     assert_eq!(entry["sections"]["Ref"], serde_json::json!("task-01"));
 
     // History: one revision; update appends a second with intact ancestry.
@@ -1260,14 +1279,17 @@ fn test_lane1_parity_fixture_converges_on_cli_core() {
     std::fs::write(
         &update_fields,
         serde_json::json!({
-            "Title": "hello again",
+            "Headline": "hello again",
             "Notes": "Some *markdown* body.",
             "Done": false,
             "Count": 43,
             "Score": 2.5,
             "Due": "2026-09-12",
             "At": "2026-09-12T10:00:00",
-            "Tags": ["alpha"],
+            "AtNs": "2026-09-12T10:00:00.987654321",
+            "AtTz": "2026-09-12T10:00:00+09:00",
+            "AtTzNs": "2026-09-12T10:00:00.987654321+09:00",
+            "Labels": ["alpha"],
             "Rows": [{"step": "two"}],
             "Ref": "task-01",
             "File": asset,
@@ -1354,7 +1376,7 @@ fn test_lane1_parity_fixture_converges_on_cli_core() {
         "--form",
         "Parity",
         "--field",
-        "Title=x",
+        "Headline=x",
         "--field",
         "Nope=x",
     ]);
@@ -1369,7 +1391,7 @@ fn test_lane1_parity_fixture_converges_on_cli_core() {
         "entry",
         "create",
         "--content",
-        "---\nform: Parity\n---\n# Website\n\n## Title\n\nhello\n\n## Done\ntrue\n",
+        "---\nform: Parity\n---\n# Website\n\n## Headline\n\nhello\n\n## Done\ntrue\n",
         &space_path,
         "parity-legacy",
     ]);
