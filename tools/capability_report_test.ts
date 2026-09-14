@@ -155,7 +155,7 @@ Deno.test("parity Mitase selectors match exact Rust test functions", async () =>
   const selectors = [...yaml.matchAll(
     /path: (crates\/ugoite-cli\/tests\/test_journey_(?:core|remote)\.rs)\n\s*selector: \{ kind: test, name: ([a-z0-9_]+) \}/g,
   )].map((match) => ({ file: match[1], name: match[2] }));
-  assertEquals(selectors.length, 15);
+  assertEquals(selectors.length, 17);
   const sources = new Map<string, string>();
   for (const { file, name } of selectors) {
     if (!sources.has(file)) sources.set(file, await Deno.readTextFile(file));

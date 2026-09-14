@@ -569,6 +569,58 @@ mod tests {
     }
 
     #[test]
+    fn protocol_conflict_preserves_nested_and_legacy_top_level_revision_detail() {
+        let nested = ApiProtocolError {
+            kind: "conflict".to_string(),
+            message: "entry.update failed".to_string(),
+            operation: Some("entry.update".to_string()),
+            status: Some(409),
+            detail: Some(Box::new(serde_json::json!({
+                "current_revision_id": "rev-nested",
+            }))),
+            payload: Some(Box::new(serde_json::json!({
+                "code": "REVISION_CONFLICT",
+                "message": "Revision conflict",
+                "detail": {"current_revision_id": "rev-nested"},
+            }))),
+        };
+        let nested = project_error(&anyhow::Error::from(nested));
+        assert_eq!(nested.code, "REVISION_CONFLICT");
+        assert_eq!(nested.kind, "conflict");
+        assert_eq!(
+            nested.detail.as_ref().unwrap()["current_revision_id"],
+            "rev-nested"
+        );
+
+        let legacy = ApiProtocolError {
+            kind: "conflict".to_string(),
+            message: "entry.update failed".to_string(),
+            operation: Some("entry.update".to_string()),
+            status: Some(409),
+            detail: Some(Box::new(serde_json::json!({
+                "code": "REVISION_CONFLICT",
+            }))),
+            payload: Some(Box::new(serde_json::json!({
+                "code": "REVISION_CONFLICT",
+                "message": "Revision conflict",
+                "detail": {"reason": "stale"},
+                "current_revision_id": "rev-top-level",
+            }))),
+        };
+        let legacy = project_error(&anyhow::Error::from(legacy));
+        assert_eq!(legacy.code, "REVISION_CONFLICT");
+        assert_eq!(legacy.kind, "conflict");
+        assert_eq!(
+            legacy.detail.as_ref().unwrap()["current_revision_id"],
+            "rev-top-level"
+        );
+        assert_eq!(
+            legacy.detail.as_ref().unwrap()["recovery_action"],
+            "reload_and_retry"
+        );
+    }
+
+    #[test]
     fn protocol_warnings_render_like_core_warnings() {
         let protocol = ApiProtocolError {
             kind: "invalid_arguments".to_string(),

@@ -2211,9 +2211,9 @@ impl UgoiteService {
     }
 
     /// Create an Entry and return the durable commit receipt alongside the
-    /// existing Entry representation. Callers that expose mutation receipts
-    /// should use this boundary rather than deriving the Change ID from
-    /// history after the commit.
+    /// existing Entry representation. The representation also carries the
+    /// committed Change ID, so callers do not derive it from history after
+    /// the commit.
     pub async fn create_entry_with_receipt(
         &self,
         space_id: &str,
@@ -2238,7 +2238,8 @@ impl UgoiteService {
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
-        let result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
+        let mut result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
+        result["change_id"] = json!(receipt.command_id);
         self.record_committed_entry_revision(
             space_id,
             entry_id,
