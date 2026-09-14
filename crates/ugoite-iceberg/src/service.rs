@@ -4257,6 +4257,10 @@ impl UgoiteService {
         principal_id: Uuid,
         sql: &str,
     ) -> Result<Vec<Value>> {
+        // Reject writes and malformed SQL before storage discovery or
+        // authorization reads. This keeps the authorized service path on the
+        // same admission contract as direct SQL execution and SQL sessions.
+        index::validate_read_only_sql(sql)?;
         self.validate_complete_space(space_id).await?;
         let authorizer = Authorizer::new(self.operator.clone());
         authorizer

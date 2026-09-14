@@ -3,6 +3,7 @@
 use anyhow::Result;
 use chrono::Utc;
 use serde_json::json;
+use ugoite_core::structured_search::StructuredSearch;
 use ugoite_domain::identity::{
     AccessPolicy, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
 };
@@ -395,5 +396,140 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
         .await?;
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0]["id"], "visible");
+    Ok(())
+}
+
+#[tokio::test]
+async fn authorized_structured_search_has_exact_policy_filtered_rows_and_no_form_leak() -> Result<()>
+{
+    let service = UgoiteService::new("memory://authorized-structured-search-contract")?;
+    let owner = Uuid::from_u128(401);
+    let viewer = Uuid::from_u128(402);
+    let space_id = service
+        .create_space_for_principal("authorized-structured-search-contract", owner, "Owner")
+        .await?
+        .to_string();
+    service
+        .upsert_form(
+            &space_id,
+            &json!({
+                "name": "Task",
+                "fields": {"summary": {"type": "string"}}
+            }),
+        )
+        .await?;
+    service
+        .create_entry(
+            &space_id,
+            "visible-task",
+            "---\nform: Task\nsummary: visible\n---\n# Visible",
+            "owner",
+        )
+        .await?;
+    service
+        .create_entry(
+            &space_id,
+            "hidden-task",
+            "---\nform: Task\nsummary: hidden\n---\n# Hidden",
+            "owner",
+        )
+        .await?;
+
+    let criteria = StructuredSearch {
+        form: "Task".to_owned(),
+        updated_from: None,
+        updated_to: None,
+        conditions: Vec::new(),
+        limit: Some(100),
+        offset: None,
+    };
+    let direct = service.search_structured(&space_id, &criteria).await?;
+    let direct_ids = direct
+        .iter()
+        .map(|row| row["_ugoite_id"].as_str().expect("Entry id").to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(direct_ids, vec!["hidden-task", "visible-task"]);
+
+    let authorizer = Authorizer::new(service.operator().clone());
+    authorizer
+        .add_human_member(
+            &space_id,
+            owner,
+            SpacePrincipal {
+                principal_id: viewer,
+                kind: PrincipalKind::Human,
+                display_name: "Viewer".to_owned(),
+                state: PrincipalState::Active,
+                created_at: Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Viewer,
+        )
+        .await?;
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &ResourceRef {
+                kind: ResourceKind::Entry,
+                id: "hidden-task".to_owned(),
+                parent: None,
+            },
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: Vec::new(),
+            },
+        )
+        .await?;
+
+    let viewer_rows = service
+        .search_structured_authorized_for_principals(&space_id, &[viewer], &criteria)
+        .await?;
+    let viewer_ids = viewer_rows
+        .iter()
+        .map(|row| row["_ugoite_id"].as_str().expect("Entry id").to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(viewer_ids, vec!["visible-task"]);
+
+    let unknown = StructuredSearch {
+        form: "NotARealForm".to_owned(),
+        ..criteria
+    };
+    let authorized_unknown = service
+        .search_structured_authorized_for_principals(&space_id, &[viewer], &unknown)
+        .await?;
+    assert!(authorized_unknown.is_empty());
+    let direct_error = service
+        .search_structured(&space_id, &unknown)
+        .await
+        .expect_err("direct Search retains the explicit Form-not-found error");
+    let direct_error = direct_error
+        .downcast_ref::<ugoite_core::error::AppError>()
+        .expect("direct unknown Form error is typed");
+    assert_eq!(
+        direct_error.code(),
+        ugoite_core::error::ErrorCode::FormNotFound
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn authorized_sql_rejects_non_read_only_input_before_space_lookup() -> Result<()> {
+    let service = UgoiteService::new("memory://authorized-sql-admission-order")?;
+    let error = service
+        .execute_sql_query_authorized(
+            "missing-space",
+            Uuid::from_u128(403),
+            "INSERT INTO hidden_table VALUES (1)",
+        )
+        .await
+        .expect_err("authorized SQL must reject writes before Space lookup");
+    let error = error
+        .downcast_ref::<ugoite_core::error::AppError>()
+        .expect("read-only SQL failure is typed");
+    assert_eq!(
+        error.code(),
+        ugoite_core::error::ErrorCode::ReadOnlySqlRequired
+    );
     Ok(())
 }

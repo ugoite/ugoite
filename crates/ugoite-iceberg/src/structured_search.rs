@@ -40,19 +40,6 @@ async fn load_form_definitions(op: &Operator, ws_path: &str) -> Result<Vec<FormD
         .await
 }
 
-fn resolve_form<'a>(forms: &'a [FormDefinition], form_name: &str) -> Result<&'a FormDefinition> {
-    forms
-        .iter()
-        .find(|form| form.name == form_name)
-        .ok_or_else(|| {
-            ugoite_core::error::AppError::not_found(
-                ugoite_core::error::ErrorCode::FormNotFound,
-                format!("structured search form '{form_name}' was not found"),
-            )
-            .into()
-        })
-}
-
 /// Compiled SQL plan with bound parameters. Relation/columns are trusted
 /// adapter resolution; callers never supply them.
 #[derive(Debug, Clone)]
@@ -236,7 +223,7 @@ pub async fn search_structured(
     criteria: &StructuredSearch,
 ) -> Result<Vec<Value>> {
     let scopes = crate::index::all_current_form_scopes(op, ws_path).await?;
-    search_structured_with_scopes(op, ws_path, criteria, &scopes).await
+    search_structured_with_scopes_internal(op, ws_path, criteria, &scopes, false).await
 }
 
 /// Authorized execution: caller-supplied scopes are applied before query
@@ -248,12 +235,34 @@ pub async fn search_structured_with_scopes(
     criteria: &StructuredSearch,
     relation_scopes: &BTreeMap<String, EntryScope>,
 ) -> Result<Vec<Value>> {
+    search_structured_with_scopes_internal(op, ws_path, criteria, relation_scopes, true).await
+}
+
+async fn search_structured_with_scopes_internal(
+    op: &Operator,
+    ws_path: &str,
+    criteria: &StructuredSearch,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    hide_unknown_form: bool,
+) -> Result<Vec<Value>> {
     // Admission first: syntax validation before any Storage-heavy work beyond
     // Form registry load. Full validation happens after Form resolve.
     // Preserve typed AppError through anyhow so transports keep code/detail parity.
     ugoite_core::structured_search::validate_structured_search_syntax(criteria)?;
     let forms = load_form_definitions(op, ws_path).await?;
-    let form = resolve_form(&forms, &criteria.form)?;
+    let Some(form) = forms.iter().find(|form| form.name == criteria.form) else {
+        if hide_unknown_form {
+            // Authorized callers must not learn whether an inaccessible Form
+            // exists. An unknown Form has the same observable result as a
+            // known-but-inaccessible Form: an empty row set.
+            return Ok(Vec::new());
+        }
+        return Err(ugoite_core::error::AppError::not_found(
+            ugoite_core::error::ErrorCode::FormNotFound,
+            format!("structured search form '{}' was not found", criteria.form),
+        )
+        .into());
+    };
     if !form_authorized(form, relation_scopes) {
         return Ok(Vec::new());
     }

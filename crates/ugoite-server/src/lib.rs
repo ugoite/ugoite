@@ -10033,10 +10033,13 @@ async fn search_entries(
     Query(query): Query<SearchQuery>,
 ) -> ApiResult<Json<Value>> {
     // This handler is the authorization boundary for the canonical Search HTTP operation.
-    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let limit = query.limit.unwrap_or(100);
     validate_normal_read_limit(limit, "search")?;
     validate_keyword_search_query(&query.q)?;
+    // Pure request admission must precede permission/storage work. In
+    // particular, malformed or oversized input has a stable typed response
+    // even when the Space is unavailable to the caller.
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
     Ok(Json(
@@ -10063,7 +10066,6 @@ async fn query_entries(
     Path(space_id): Path<String>,
     Json(payload): Json<Value>,
 ) -> ApiResult<Json<Value>> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     if payload.get("criteria").is_some() && payload.get("filter").is_some() {
         return Err(ApiError::from_core(
             AppError::invalid_input(
@@ -10073,11 +10075,10 @@ async fn query_entries(
             .into(),
         ));
     }
-    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
-    let principals = authorization_principal_ids(&identity, principal_id);
-    // Additive typed criteria input. Legacy `filter` passthrough remains
-    // unchanged for v0.1.x compatibility.
-    if let Some(criteria_value) = payload.get("criteria") {
+    // Deserialize and syntactically validate typed criteria before permission
+    // and principal reads. Form existence and field authorization remain in
+    // the service boundary so an unauthorized caller cannot infer them.
+    let criteria = if let Some(criteria_value) = payload.get("criteria") {
         let criteria: ugoite_core::structured_search::StructuredSearch =
             serde_json::from_value(criteria_value.clone()).map_err(|error| {
                 ApiError::new(
@@ -10088,6 +10089,18 @@ async fn query_entries(
                     }),
                 )
             })?;
+        ugoite_core::structured_search::validate_structured_search_syntax(&criteria)
+            .map_err(|error| ApiError::from_core(error.into()))?;
+        Some(criteria)
+    } else {
+        None
+    };
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    // Additive typed criteria input. Legacy `filter` passthrough remains
+    // unchanged for v0.1.x compatibility.
+    if let Some(criteria) = criteria {
         return Ok(Json(Value::Array(
             state
                 .service
@@ -13870,6 +13883,60 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
+    async fn search_admits_invalid_input_before_space_authorization() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-search-admission-order")?;
+        let route = Router::new()
+            .route("/spaces/{space_id}/search", get(search_entries))
+            .layer(Extension(content_identity(
+                Uuid::from_u128(2116011),
+                Uuid::from_u128(2116012),
+            )))
+            .with_state(state);
+
+        let response = route
+            .oneshot(Request::get("/spaces/missing/search?q=%20").body(Body::empty())?)
+            .await?;
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        let error: Value = serde_json::from_slice(&body)?;
+        assert_eq!(error["code"], "SEARCH_QUERY_EMPTY");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn structured_search_admits_malformed_criteria_before_space_authorization(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-structured-admission-order")?;
+        let route = Router::new()
+            .route("/spaces/{space_id}/query", post(query_entries))
+            .layer(Extension(content_identity(
+                Uuid::from_u128(2116021),
+                Uuid::from_u128(2116022),
+            )))
+            .with_state(state);
+        let response = route
+            .oneshot(
+                Request::post("/spaces/missing/query")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "criteria": {
+                                "form": "Missing",
+                                "sql": "SELECT * FROM hidden_backend_detail",
+                            }
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await?;
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        let error: Value = serde_json::from_slice(&body)?;
+        assert_eq!(error["code"], "INVALID_INPUT");
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn structured_criteria_query_matches_core_and_preserves_errors() -> anyhow::Result<()> {
         let state = AppState::new_for_tests("memory://server-structured-criteria-route")?;
         let owner = Uuid::from_u128(2117001);
@@ -14040,10 +14107,12 @@ mod authentication_regression_tests {
                     ))?,
             )
             .await?;
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        // Authorized Search does not reveal whether a requested Form exists.
+        // Unknown and known-but-inaccessible Forms have the same empty result.
+        assert_eq!(response.status(), StatusCode::OK);
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
-        let error: Value = serde_json::from_slice(&body)?;
-        assert_eq!(error["code"], "FORM_NOT_FOUND");
+        let rows: Value = serde_json::from_slice(&body)?;
+        assert_eq!(rows, json!([]));
 
         // Criteria and the legacy filter are intentionally ambiguous when
         // combined; do not silently select one of them.

@@ -3817,10 +3817,10 @@ pub async fn asset_text_search_matches(
     ws_path: &str,
     query: &str,
 ) -> Result<Option<HashSet<String>>> {
+    // Keep AssetText Search on the same admission contract as keyword Search,
+    // before loading the derived relation or touching storage.
+    ugoite_core::query::validate_keyword_query(query)?;
     validate_asset_text_read_boundary(op, ws_path).await?;
-    if query.len() > MAX_ASSET_TEXT_QUERY_BYTES {
-        bail!("AssetText search query exceeds its byte limit");
-    }
     let context =
         crate::query_context::bounded_session_context(&ugoite_core::query::QueryLimits {
             max_memory_bytes: 64 * 1024 * 1024,
@@ -4370,7 +4370,24 @@ mod tests {
         )
         .await
         .expect_err("oversized query must fail before DataFusion planning");
-        assert!(error.to_string().contains("query exceeds"));
+        let error = error
+            .downcast_ref::<ugoite_core::error::AppError>()
+            .expect("oversized AssetText query keeps the canonical AppError");
+        assert_eq!(error.code(), ugoite_core::error::ErrorCode::InvalidInput);
+        assert!(error.message().contains("query exceeds"));
+
+        for query in ["", "   "] {
+            let error = asset_text_search_matches(&op, "spaces/missing", query)
+                .await
+                .expect_err("empty AssetText query must fail before any storage read");
+            let error = error
+                .downcast_ref::<ugoite_core::error::AppError>()
+                .expect("empty AssetText query keeps the canonical AppError");
+            assert_eq!(
+                error.code(),
+                ugoite_core::error::ErrorCode::SearchQueryEmpty
+            );
+        }
         Ok(())
     }
 
