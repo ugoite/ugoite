@@ -155,7 +155,7 @@ fn spawn_entry_update_server() -> (String, mpsc::Receiver<Vec<String>>, thread::
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut requests = Vec::with_capacity(2);
         for body in [
-            r#"{"id":"task-01","revision_id":"rev-1"}"#,
+            r#"{"id":"task-01","revision_id":"rev-1","extra_attributes":{}}"#,
             r#"{"id":"task-01","revision_id":"rev-2"}"#,
         ] {
             let (mut stream, _) = loop {
@@ -986,10 +986,7 @@ fn test_entry_create_structured_routes_form_fields_without_markdown() {
 fn test_entry_update_structured_routes_fields_without_markdown() {
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("config.json");
-    let (base_url, request_rx, server_handle) = spawn_recording_server(
-        "HTTP/1.1 200 OK",
-        r#"{"id":"task-01","revision_id":"rev-2"}"#,
-    );
+    let (base_url, request_rx, server_handle) = spawn_entry_update_server();
 
     let set_output = Command::new(ugoite_bin())
         .args([
@@ -1022,13 +1019,20 @@ fn test_entry_update_structured_routes_fields_without_markdown() {
         .output()
         .expect("failed to execute");
 
+    let requests = request_rx.recv().unwrap();
     server_handle.join().unwrap();
-    let request = request_rx.recv().unwrap();
     assert!(
         output.status.success(),
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests[0].starts_with("GET /spaces/remote-space/entries/task-01 HTTP/1.1\r\n"),
+        "{}",
+        requests[0]
+    );
+    let request = &requests[1];
     assert!(
         request.starts_with("PUT /spaces/remote-space/entries/task-01 HTTP/1.1\r\n"),
         "{request}"

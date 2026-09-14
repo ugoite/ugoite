@@ -94,7 +94,7 @@ pub enum EntrySubCmd {
         #[arg(
             long = "fields-file",
             value_name = "PATH",
-            help = "Read structured fields as a JSON object from PATH, or from explicit stdin with --fields-file - (repeatable; duplicate keys with --field are an error)"
+            help = "Read structured fields as a JSON object from PATH, or from explicit stdin with --fields-file - (duplicate inputs are errors; duplicate keys within one JSON object use the parser's last value)"
         )]
         fields_files: Vec<String>,
         #[arg(
@@ -105,7 +105,7 @@ pub enum EntrySubCmd {
     },
     /// Update an entry
     #[command(
-        long_about = "Update an entry in a space.\n\nExamples:\n  # Core mode\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated'\n\n  # Core mode - read content from a file\n  ugoite entry update /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode with optimistic concurrency\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated' --parent-revision-id rev-1\n\n  # Backend mode (immutable Space UID)\n  ugoite entry update 019f1234-5678-7abc-8def-0123456789ab my-note --markdown '# Updated'\n\nWhen --parent-revision-id is omitted, the CLI reads the current Entry immediately before the update and uses its revision ID for optimistic concurrency.\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface. Merged --field/--fields-file values are the complete post-update field map: omitted fields are cleared, never patched.\n\nExamples:\n  # Core mode - structured update without Markdown\n  ugoite entry update /root/spaces/my-space task-01 --title 'New title' --fields-file entry-fields.json --parent-revision-id rev-1"
+        long_about = "Update an entry in a space.\n\nExamples:\n  # Core mode\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated'\n\n  # Core mode - read content from a file\n  ugoite entry update /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode with optimistic concurrency\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated' --parent-revision-id rev-1\n\n  # Backend mode (immutable Space UID)\n  ugoite entry update 019f1234-5678-7abc-8def-0123456789ab my-note --markdown '# Updated'\n\nWhen --parent-revision-id is omitted, the CLI reads the current Entry immediately before the update and uses its revision ID for optimistic concurrency.\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface. --field/--fields-file values are the complete post-update field map: omitted fields are cleared, never patched. Tags and extra attributes are preserved because they are not editable through this CLI command.\n\nExamples:\n  # Core mode - structured update without Markdown\n  ugoite entry update /root/spaces/my-space task-01 --title 'New title' --fields-file entry-fields.json --parent-revision-id rev-1"
     )]
     Update {
         #[arg(
@@ -151,7 +151,7 @@ pub enum EntrySubCmd {
         #[arg(
             long = "fields-file",
             value_name = "PATH",
-            help = "Read structured fields as a JSON object from PATH, or from explicit stdin with --fields-file - (repeatable; duplicate keys with --field are an error)"
+            help = "Read structured fields as a JSON object from PATH, or from explicit stdin with --fields-file - (duplicate inputs are errors; duplicate keys within one JSON object use the parser's last value)"
         )]
         fields_files: Vec<String>,
         #[arg(
@@ -267,6 +267,33 @@ async fn read_remote_entry_revision_id(
     current_entry_revision_id(&entry)
 }
 
+fn entry_object_map(
+    entry: &serde_json::Value,
+    key: &str,
+) -> Result<std::collections::BTreeMap<String, serde_json::Value>> {
+    let value = entry
+        .get(key)
+        .ok_or_else(|| anyhow::anyhow!("current entry response is missing {key}"))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("current entry response field {key} must be an object"))?;
+    Ok(object.clone().into_iter().collect())
+}
+
+fn validate_entry_input_style(
+    has_structured: bool,
+    has_markdown: bool,
+    markdown_flags: &str,
+) -> Result<()> {
+    if has_structured && has_markdown {
+        return Err(UsageError(format!(
+            "structured options (--form/--title/--field/--fields-file) and {markdown_flags} cannot be combined; specify exactly one input style"
+        ))
+        .into());
+    }
+    Ok(())
+}
+
 /// Parse one `--field KEY=VALUE` argument. Values stay strings; the shared
 /// Rust boundary owns all coercion, so the CLI never interprets types here.
 fn parse_field_arg(arg: &str) -> Result<(String, serde_json::Value), UsageError> {
@@ -336,8 +363,9 @@ fn merge_structured_fields(
     }
     if !duplicates.is_empty() {
         let names: Vec<String> = duplicates.into_iter().collect();
+        let noun = if names.len() == 1 { "field" } else { "fields" };
         return Err(UsageError(format!(
-            "duplicate field {} from --field/--fields-file; specify each field once",
+            "duplicate {noun} {} from --field/--fields-file; specify each field once",
             names.join(", ")
         ))
         .into());
@@ -407,7 +435,7 @@ async fn create_structured_entry(
     }
     let author = author.unwrap_or_else(|| "cli".to_string());
     let service = UgoiteService::new_without_background_refresh(&root)?;
-    let (mut meta, commit_receipt) = service
+    let (meta, _commit_receipt) = service
         .create_structured_entry_with_receipt(
             &space_id,
             &entry_id,
@@ -419,7 +447,6 @@ async fn create_structured_entry(
             &author,
         )
         .await?;
-    meta["change_id"] = serde_json::json!(commit_receipt.command_id);
     let receipt = entry_receipt(
         entry_id,
         meta.get("revision_id")
@@ -446,23 +473,14 @@ async fn update_structured_entry(
     parent_revision_id: Option<String>,
     author: String,
 ) -> Result<()> {
-    if form.is_none() && title.is_none() && fields.is_empty() && fields_files.is_empty() {
-        return Err(UsageError(
-            "structured update requires --title, --form, --field, or --fields-file".to_string(),
-        )
-        .into());
-    }
-    // Structured fields are the complete post-update field map; no partial
-    // patch semantics are invented here. Bare --title/--form without field
-    // inputs would silently clear optional fields, so field inputs are
-    // required (pass an explicit empty JSON object to clear deliberately).
     if fields.is_empty() && fields_files.is_empty() {
         return Err(UsageError(
-            "structured update requires --field or --fields-file carrying the complete post-update field map".to_string(),
+            "structured update requires --field or --fields-file carrying the complete post-update field map"
+                .to_string(),
         )
         .into());
     }
-    let merged = merge_structured_fields(fields, fields_files)?;
+    let fields = merge_structured_fields(fields, fields_files)?;
     let (root, space_id) = resolve_space_reference(config, &space_path, "entry update")?;
     if let Some(base) = validated_base_url(config)? {
         if author != "cli" {
@@ -472,11 +490,22 @@ async fn update_structured_entry(
             )
             .into());
         }
+        let current = http::execute(
+            &base,
+            "entry.get",
+            serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
+            None,
+        )
+        .await?;
+        let extra_attributes = entry_object_map(&current, "extra_attributes")?;
         let parent_revision_id = match parent_revision_id {
             Some(parent_revision_id) => parent_revision_id,
-            None => read_remote_entry_revision_id(&base, &space_id, &entry_id).await?,
+            None => current_entry_revision_id(&current)?,
         };
-        let mut body = serde_json::json!({"fields": merged});
+        let mut body = serde_json::json!({
+            "fields": fields,
+            "extra_attributes": extra_attributes,
+        });
         if let Some(form) = form.as_deref() {
             body["form"] = serde_json::json!(form);
         }
@@ -510,9 +539,11 @@ async fn update_structured_entry(
         return Ok(());
     }
     let service = UgoiteService::new_without_background_refresh(&root)?;
+    let current = service.get_entry(&space_id, &entry_id).await?;
+    let extra_attributes = entry_object_map(&current, "extra_attributes")?;
     let parent_revision_id = match parent_revision_id {
         Some(parent_revision_id) => parent_revision_id,
-        None => current_entry_revision_id(&service.get_entry(&space_id, &entry_id).await?)?,
+        None => current_entry_revision_id(&current)?,
     };
     let result = service
         .update_structured_entry(
@@ -520,7 +551,8 @@ async fn update_structured_entry(
             &entry_id,
             title,
             form,
-            merged,
+            fields,
+            extra_attributes,
             Some(&parent_revision_id),
             &author,
         )
@@ -618,13 +650,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             let has_structured =
                 form.is_some() || title.is_some() || !fields.is_empty() || !fields_files.is_empty();
             let has_markdown = content.is_some() || file.is_some();
-            if has_structured && has_markdown {
-                return Err(UsageError(
-                    "structured options (--form/--title/--field/--fields-file) and --content/--file cannot be combined; specify exactly one input style"
-                        .to_string(),
-                )
-                .into());
-            }
+            validate_entry_input_style(has_structured, has_markdown, "--content/--file")?;
             if has_structured {
                 return create_structured_entry(
                     &config,
@@ -724,13 +750,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             let has_structured =
                 form.is_some() || title.is_some() || !fields.is_empty() || !fields_files.is_empty();
             let has_markdown = markdown.is_some() || file.is_some();
-            if has_structured && has_markdown {
-                return Err(UsageError(
-                    "structured options (--form/--title/--field/--fields-file) and --markdown/--file cannot be combined; specify exactly one input style"
-                        .to_string(),
-                )
-                .into());
-            }
+            validate_entry_input_style(has_structured, has_markdown, "--markdown/--file")?;
             if has_structured {
                 return update_structured_entry(
                     &config,

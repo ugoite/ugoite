@@ -652,6 +652,125 @@ fn test_structured_create_fields_file_and_stdin() {
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+
+    // serde_json keeps the final value for duplicate keys inside one JSON
+    // object. Cross-source duplicates remain usage errors in the CLI merger.
+    let duplicate_file = dir.path().join("duplicate-keys.json");
+    std::fs::write(&duplicate_file, r#"{"Body":"first","Body":"last"}"#).unwrap();
+    let duplicate = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "create",
+            &space_path,
+            "duplicate-entry",
+            "--form",
+            "Entry",
+            "--fields-file",
+            duplicate_file.to_str().unwrap(),
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    assert!(
+        duplicate.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&duplicate.stderr)
+    );
+    let duplicate_get = Command::new(ugoite_bin())
+        .args(["entry", "get", &space_path, "duplicate-entry"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    let duplicate_json: serde_json::Value =
+        serde_json::from_slice(&duplicate_get.stdout).expect("duplicate entry should be JSON");
+    assert_eq!(duplicate_json["sections"]["Body"], "last");
+}
+
+/// Lane1 PR8 follow-up: structured field replacement does not discard
+/// metadata that this CLI cannot edit.
+#[test]
+fn test_structured_update_preserves_tags_and_extra_attributes_without_merging_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.json");
+    let space_path = format!("{root}/spaces/metadata-space");
+
+    let create_space = Command::new(ugoite_bin())
+        .args(["create-space", "--root", &root, "metadata-space"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    assert!(create_space.status.success());
+
+    let form_file = dir.path().join("metadata-form.json");
+    std::fs::write(
+        &form_file,
+        r#"{"name":"Entry","allow_extra_attributes":"allow_columns","fields":{"Body":{"type":"markdown"},"Count":{"type":"string"}}}"#,
+    )
+    .unwrap();
+    let create_form = Command::new(ugoite_bin())
+        .args(["form", "update", &space_path, form_file.to_str().unwrap()])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    assert!(
+        create_form.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&create_form.stderr)
+    );
+
+    let markdown = "---\nform: Entry\ntags: [keep-tag]\n---\n# Original\n\n## Body\nv1\n\n## Count\nold\n\n## Extra\nkeep\n";
+    let create = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "create",
+            "--content",
+            markdown,
+            &space_path,
+            "metadata-entry",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    assert!(
+        create.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&create.stderr)
+    );
+
+    // The field map is a complete replacement: Count is intentionally
+    // omitted and must clear. Tags and the unknown Extra attribute are not
+    // editable by this command and must survive the read-modify-write.
+    let update = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "update",
+            &space_path,
+            "metadata-entry",
+            "--field",
+            "Body=v2",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    assert!(
+        update.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&update.stderr)
+    );
+
+    let current = Command::new(ugoite_bin())
+        .args(["entry", "get", &space_path, "metadata-entry"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    assert!(current.status.success());
+    let current: serde_json::Value = serde_json::from_slice(&current.stdout).unwrap();
+    assert_eq!(current["tags"], serde_json::json!(["keep-tag"]));
+    assert_eq!(current["sections"]["Body"], "v2");
+    assert!(current["sections"].get("Count").is_none());
+    assert_eq!(current["sections"]["Extra"], "keep");
+    assert_eq!(current["extra_attributes"]["Extra"], "keep");
 }
 
 /// Lane1 PR8: structured update appends one revision and keeps history.
@@ -963,5 +1082,7 @@ fn test_structured_update_usage_errors() {
     env(&mut bare);
     let bare = bare.output().unwrap();
     assert!(!bare.status.success());
-    assert!(String::from_utf8_lossy(&bare.stderr).contains("requires --field or --fields-file"));
+    let bare_stderr = String::from_utf8_lossy(&bare.stderr);
+    assert!(bare_stderr.contains("requires --field or --fields-file"));
+    assert!(bare_stderr.contains("complete post-update field map"));
 }

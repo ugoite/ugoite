@@ -1637,6 +1637,10 @@ pub async fn get_entry(op: &Operator, ws_path: &str, entry_id: &str) -> Result<V
         "title": row.title,
         "form": row.form,
         "tags": row.tags,
+        // Preserve non-editable structured metadata for lossless CLI
+        // read-modify-write updates. Content and sections remain presentation
+        // projections.
+        "extra_attributes": row.extra_attributes,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
         "author": row.author,
@@ -1700,6 +1704,7 @@ pub async fn get_entry_authorized(
         "title": row.title,
         "form": row.form,
         "tags": row.tags,
+        "extra_attributes": row.extra_attributes,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
         "author": row.author,
