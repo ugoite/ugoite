@@ -14,10 +14,9 @@ use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
 use ugoite_domain::change::ChangeCommand;
 use ugoite_domain::entry::{
-    AssetReference, EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
-    RevisionError,
+    EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue, RevisionError,
 };
-use ugoite_domain::form::{sql_relation_name, FieldType, FormField, ListItemDefinition};
+use ugoite_domain::form::{sql_relation_name, FieldType};
 use ugoite_domain::id::{validate_asset_id, FieldId, FormId, RevisionId};
 use uuid::Uuid;
 
@@ -313,48 +312,6 @@ fn form_field_names(form_def: &Value) -> Vec<String> {
     names
 }
 
-fn render_frontmatter(form_name: &str, tags: &[String]) -> String {
-    let mut frontmatter = String::from("---\n");
-    frontmatter.push_str(&format!("form: {}\n", form_name));
-    if !tags.is_empty() {
-        frontmatter.push_str("tags:\n");
-        for tag in tags {
-            frontmatter.push_str(&format!("  - {}\n", tag));
-        }
-    }
-    frontmatter.push_str("---\n");
-    frontmatter
-}
-
-fn section_value_to_string(value: &Value) -> String {
-    match value {
-        Value::Null => String::new(),
-        Value::String(s) => s.clone(),
-        Value::Number(n) => n.to_string(),
-        Value::Bool(b) => b.to_string(),
-        Value::Array(items) => {
-            let has_complex = items
-                .iter()
-                .any(|item| matches!(item, Value::Object(_) | Value::Array(_)));
-            if has_complex {
-                serde_json::to_string(value).unwrap_or_default()
-            } else {
-                items
-                    .iter()
-                    .map(|item| match item {
-                        Value::String(s) => format!("- {}", s),
-                        Value::Number(n) => format!("- {}", n),
-                        Value::Bool(b) => format!("- {}", b),
-                        _ => "-".to_string(),
-                    })
-                    .collect::<Vec<String>>()
-                    .join("\n")
-            }
-        }
-        Value::Object(_) => serde_json::to_string(value).unwrap_or_default(),
-    }
-}
-
 pub(crate) fn render_markdown(
     title: &str,
     form_name: &str,
@@ -362,51 +319,11 @@ pub(crate) fn render_markdown(
     fields: &Value,
     field_order: &[String],
 ) -> String {
-    let mut markdown = String::new();
-    markdown.push_str(&render_frontmatter(form_name, tags));
-    markdown.push_str(&format!("# {}\n\n", title));
-
-    let mut ordered_fields = Vec::new();
-    let field_map = fields.as_object();
-    if let Some(map) = field_map {
-        let mut seen = HashSet::new();
-        for name in field_order {
-            if let Some(value) = map.get(name) {
-                ordered_fields.push((name.clone(), value.clone()));
-                seen.insert(name.clone());
-            }
-        }
-        let mut remaining = Vec::new();
-        for (name, value) in map {
-            if !seen.contains(name) {
-                remaining.push((name.clone(), value.clone()));
-            }
-        }
-        remaining.sort_by(|a, b| a.0.cmp(&b.0));
-        ordered_fields.extend(remaining);
-    }
-
-    for (name, value) in ordered_fields {
-        markdown.push_str(&format!("## {}\n", name));
-        let rendered = section_value_to_string(&value);
-        if !rendered.is_empty() {
-            markdown.push_str(&rendered);
-            markdown.push('\n');
-        }
-        markdown.push('\n');
-    }
-
-    markdown.trim_end().to_string()
+    core_entry::render_markdown(title, form_name, tags, fields, field_order)
 }
 
 fn sections_from_fields(fields: &Value) -> Value {
-    let mut sections = Map::new();
-    if let Some(map) = fields.as_object() {
-        for (key, value) in map {
-            sections.insert(key.clone(), Value::String(section_value_to_string(value)));
-        }
-    }
-    Value::Object(sections)
+    core_entry::fields_to_sections(fields)
 }
 
 pub(crate) fn render_markdown_for_form(
@@ -558,7 +475,7 @@ fn revision_row_to_domain(
     let values = if operation == EntryOperation::Delete {
         Default::default()
     } else {
-        form_values_to_domain(&row.fields, form)?
+        core_entry::stored_fields_to_values(&row.fields, form).map_err(anyhow::Error::from)?
     };
     let extra_attributes = row
         .extra_attributes
@@ -660,206 +577,6 @@ fn entry_metadata_from_row(row: &EntryRow) -> EntryMetadata {
         deleted_by: row.deleted_by.clone(),
         restored_from: None,
     }
-}
-
-fn form_values_to_domain(
-    fields: &Value,
-    form: &ugoite_domain::form::FormDefinition,
-) -> Result<std::collections::BTreeMap<FieldId, FieldValue>> {
-    let object = fields.as_object().cloned().unwrap_or_default();
-    let mut values = std::collections::BTreeMap::new();
-    for field in &form.fields {
-        if let Some(value) = object.get(&field.name) {
-            values.insert(
-                field.id,
-                json_to_field_value_for_field(value, field).map_err(|error| {
-                    invalid_entry_input(format!("Field '{}': {error}", field.name))
-                })?,
-            );
-        }
-    }
-    Ok(values)
-}
-
-fn json_to_field_value_for_field(value: &Value, field: &FormField) -> Result<FieldValue> {
-    json_to_field_value_for_type(value, &field.field_type, field.list_item.as_ref())
-}
-
-/// Convert transport JSON to the canonical domain value exactly once.
-///
-/// The Form type is part of the conversion boundary: JSON integers remain
-/// `FieldValue::Integer`, while floating fields become `FieldValue::Number`.
-/// List items use the same canonicalization as scalar fields, so writers and
-/// validators do not need a second transport coercion step.
-fn json_to_field_value_for_type(
-    value: &Value,
-    field_type: &FieldType,
-    list_item: Option<&ListItemDefinition>,
-) -> Result<FieldValue> {
-    if value.is_null() {
-        return Ok(FieldValue::Null);
-    }
-    // Markdown lists arrive as strings because Markdown has no native JSON
-    // scalar type. Treat the explicit null transport markers as null for
-    // typed items, while preserving the literal string "null" for string
-    // lists.
-    if !matches!(
-        field_type,
-        FieldType::String | FieldType::Markdown | FieldType::Sql
-    ) && value
-        .as_str()
-        .is_some_and(|value| matches!(value.trim(), "null" | "~"))
-    {
-        return Ok(FieldValue::Null);
-    }
-    match field_type {
-        FieldType::String | FieldType::Markdown | FieldType::Sql | FieldType::RowReference => {
-            Ok(FieldValue::String(
-                value
-                    .as_str()
-                    .context("typed string field must be a string")?
-                    .to_string(),
-            ))
-        }
-        FieldType::Boolean => Ok(FieldValue::Boolean(
-            value
-                .as_bool()
-                .or_else(|| {
-                    value.as_str().and_then(|value| match value.trim() {
-                        "true" | "True" | "TRUE" => Some(true),
-                        "false" | "False" | "FALSE" => Some(false),
-                        _ => None,
-                    })
-                })
-                .context("boolean field must be a boolean")?,
-        )),
-        FieldType::Integer => Ok(FieldValue::Integer(i64::from(
-            i32::try_from(
-                value
-                    .as_i64()
-                    .or_else(|| value.as_str().and_then(|value| value.trim().parse().ok()))
-                    .context("integer field must be an integer")?,
-            )
-            .context("integer field is outside the Int32 range")?,
-        ))),
-        FieldType::Long => Ok(FieldValue::Integer(
-            value
-                .as_i64()
-                .or_else(|| value.as_str().and_then(|value| value.trim().parse().ok()))
-                .context("long field must be an integer")?,
-        )),
-        FieldType::Float | FieldType::Double => {
-            let value = value
-                .as_f64()
-                .or_else(|| value.as_str().and_then(|value| value.trim().parse().ok()))
-                .context("floating field must be a number")?;
-            if !value.is_finite() {
-                return Err(anyhow!("floating field must be finite"));
-            }
-            Ok(FieldValue::Number(value))
-        }
-        FieldType::Date => {
-            let value = value.as_str().context("date field must be a string")?;
-            let date = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")?;
-            Ok(FieldValue::String(date.format("%Y-%m-%d").to_string()))
-        }
-        FieldType::Time => Ok(FieldValue::String(
-            index::normalize_time(value.as_str().context("time field must be a string")?)
-                .context("invalid time field")?,
-        )),
-        FieldType::Timestamp => Ok(FieldValue::String(
-            index::normalize_wall_timestamp(
-                value.as_str().context("timestamp field must be a string")?,
-                false,
-            )
-            .context("invalid timestamp field")?,
-        )),
-        FieldType::TimestampTz => Ok(FieldValue::String(
-            index::normalize_zoned_timestamp(
-                value
-                    .as_str()
-                    .context("timestamp_tz field must be a string")?,
-                false,
-            )
-            .context("invalid timestamp_tz field")?,
-        )),
-        FieldType::TimestampNs => Ok(FieldValue::String(
-            index::normalize_wall_timestamp(
-                value
-                    .as_str()
-                    .context("timestamp_ns field must be a string")?,
-                true,
-            )
-            .context("invalid timestamp_ns field")?,
-        )),
-        FieldType::TimestampTzNs => Ok(FieldValue::String(
-            index::normalize_zoned_timestamp(
-                value
-                    .as_str()
-                    .context("timestamp_tz_ns field must be a string")?,
-                true,
-            )
-            .context("invalid timestamp_tz_ns field")?,
-        )),
-        FieldType::Uuid => Ok(FieldValue::String(
-            Uuid::parse_str(value.as_str().context("UUID field must be a string")?)?.to_string(),
-        )),
-        FieldType::Binary => Ok(FieldValue::String(
-            index::normalize_binary(value.as_str().context("binary field must be a string")?)
-                .context("invalid binary field")?,
-        )),
-        FieldType::AssetReference => Ok(FieldValue::AssetReference(
-            serde_json::from_value::<AssetReference>(match value {
-                Value::String(raw) => serde_json::from_str(raw)
-                    .context("asset reference list item must contain a JSON object")?,
-                value => value.clone(),
-            })
-            .context("invalid asset reference value")?,
-        )),
-        FieldType::List => {
-            let values = value
-                .as_array()
-                .context("typed list field must be an array")?
-                .iter()
-                .map(|item| {
-                    let item_type = list_item
-                        .map(|item| &item.field_type)
-                        .unwrap_or(&FieldType::String);
-                    json_to_field_value_for_type(item, item_type, None)
-                })
-                .collect::<Result<Vec<_>>>()?;
-            Ok(FieldValue::List(values))
-        }
-        FieldType::ObjectList => Ok(FieldValue::List(
-            value
-                .as_array()
-                .context("object list field must be an array")?
-                .iter()
-                .map(json_to_untyped_field_value)
-                .collect::<Result<Vec<_>>>()?,
-        )),
-    }
-}
-
-fn json_to_untyped_field_value(value: &Value) -> Result<FieldValue> {
-    Ok(match value {
-        Value::Null => FieldValue::Null,
-        Value::Bool(value) => FieldValue::Boolean(*value),
-        Value::String(value) => FieldValue::String(value.clone()),
-        Value::Number(value) => FieldValue::Number(value.as_f64().context("invalid number")?),
-        Value::Array(values) => FieldValue::List(
-            values
-                .iter()
-                .map(json_to_untyped_field_value)
-                .collect::<Result<Vec<_>>>()?,
-        ),
-        Value::Object(values) => FieldValue::Object(
-            values
-                .iter()
-                .map(|(key, value)| Ok((key.clone(), json_to_untyped_field_value(value)?)))
-                .collect::<Result<_>>()?,
-        ),
-    })
 }
 
 fn revision_row_from_domain(
@@ -3318,7 +3035,7 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
 #[cfg(test)]
 mod input_conversion_tests {
     use super::*;
-    use ugoite_domain::form::ListItemDefinition;
+    use ugoite_domain::form::{FormDefinition, FormField, FormVersion, ListItemDefinition};
 
     fn field(field_type: FieldType, list_item: Option<FieldType>) -> FormField {
         FormField {
@@ -3340,40 +3057,55 @@ mod input_conversion_tests {
         }
     }
 
+    fn convert(value: Value, field_type: FieldType, list_item: Option<FieldType>) -> FieldValue {
+        let form = FormDefinition {
+            id: FormId::from(Uuid::from_u128(100)),
+            version: FormVersion::new(1).expect("version"),
+            name: "StoredValues".into(),
+            description: None,
+            fields: vec![field(field_type, list_item)],
+            allow_extra_attributes: false,
+            extension_metadata: BTreeMap::new(),
+        };
+        core_entry::stored_fields_to_values(&serde_json::json!({"value": value}), &form)
+            .expect("stored value should be valid")
+            .into_values()
+            .next()
+            .expect("stored value should be present")
+    }
+
     #[test]
     fn transport_json_is_canonicalized_by_scalar_and_list_type() {
         assert_eq!(
-            json_to_field_value_for_field(&serde_json::json!(7), &field(FieldType::Integer, None))
-                .unwrap(),
+            convert(serde_json::json!(7), FieldType::Integer, None),
             FieldValue::Integer(7)
         );
         assert_eq!(
-            json_to_field_value_for_field(&serde_json::json!(7), &field(FieldType::Long, None))
-                .unwrap(),
+            convert(serde_json::json!(7), FieldType::Long, None),
             FieldValue::Integer(7)
         );
         assert_eq!(
-            json_to_field_value_for_field(
-                &serde_json::json!("A7F9F5D2-8B7E-4DB1-9B0A-0E9A2B3F4C5D"),
-                &field(FieldType::Uuid, None),
-            )
-            .unwrap(),
+            convert(
+                serde_json::json!("A7F9F5D2-8B7E-4DB1-9B0A-0E9A2B3F4C5D"),
+                FieldType::Uuid,
+                None,
+            ),
             FieldValue::String("a7f9f5d2-8b7e-4db1-9b0a-0e9a2b3f4c5d".into())
         );
         assert_eq!(
-            json_to_field_value_for_field(
-                &serde_json::json!("base64:ZGF0YQ=="),
-                &field(FieldType::Binary, None),
-            )
-            .unwrap(),
+            convert(
+                serde_json::json!("base64:ZGF0YQ=="),
+                FieldType::Binary,
+                None,
+            ),
             FieldValue::String("base64:ZGF0YQ==".into())
         );
         assert_eq!(
-            json_to_field_value_for_field(
-                &serde_json::json!([7, null, 8]),
-                &field(FieldType::List, Some(FieldType::Integer)),
-            )
-            .unwrap(),
+            convert(
+                serde_json::json!([7, null, 8]),
+                FieldType::List,
+                Some(FieldType::Integer),
+            ),
             FieldValue::List(vec![
                 FieldValue::Integer(7),
                 FieldValue::Null,
@@ -3381,30 +3113,26 @@ mod input_conversion_tests {
             ])
         );
         assert_eq!(
-            json_to_field_value_for_field(
-                &serde_json::json!(["base64:ZGF0YQ==", null]),
-                &field(FieldType::List, Some(FieldType::Binary)),
-            )
-            .unwrap(),
+            convert(
+                serde_json::json!(["base64:ZGF0YQ==", null]),
+                FieldType::List,
+                Some(FieldType::Binary),
+            ),
             FieldValue::List(vec![
                 FieldValue::String("base64:ZGF0YQ==".into()),
                 FieldValue::Null,
             ])
         );
         assert_eq!(
-            json_to_field_value_for_field(
-                &serde_json::json!("12:34"),
-                &field(FieldType::Time, None),
-            )
-            .unwrap(),
+            convert(serde_json::json!("12:34"), FieldType::Time, None),
             FieldValue::String("12:34:00".into())
         );
         assert_eq!(
-            json_to_field_value_for_field(
-                &serde_json::json!("2025-01-02T03:04:05.123456789Z"),
-                &field(FieldType::TimestampTzNs, None),
-            )
-            .unwrap(),
+            convert(
+                serde_json::json!("2025-01-02T03:04:05.123456789Z"),
+                FieldType::TimestampTzNs,
+                None,
+            ),
             FieldValue::String("2025-01-02T03:04:05.123456789+00:00".into())
         );
     }
