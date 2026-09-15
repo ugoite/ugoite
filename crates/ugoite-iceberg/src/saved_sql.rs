@@ -12,6 +12,7 @@ use ugoite_core::query::EntryScope;
 use uuid::Uuid;
 
 const SQL_FORM_NAME: &str = "SQL";
+pub(crate) const SQL_FORM_NAME_FOR_AUDIT: &str = SQL_FORM_NAME;
 const SQL_VALIDATION_PREFIX: &str = "UGOITE_SQL_VALIDATION";
 
 fn validation_error(message: impl std::fmt::Display) -> anyhow::Error {
@@ -412,15 +413,27 @@ pub async fn get_sql(op: &Operator, ws_path: &str, sql_id: &str) -> Result<Value
 }
 
 /// Reads the committed saved-SQL revision identity for audit reconciliation,
-/// including tombstones. Returns `(revision_id, parent_revision_id, deleted)`
-/// or `None` when no row was ever committed. Only identity fields cross this
-/// boundary; SQL text and variables never leave storage here.
+/// including tombstones. Returns
+/// `(revision_id, parent_revision_id, deleted, committed_actor)` or `None`
+/// when no row was ever committed. Only identity fields cross this boundary;
+/// SQL text and variables never leave storage here.
 pub(crate) async fn read_sql_row_for_audit(
     op: &Operator,
     ws_path: &str,
     sql_id: &str,
-) -> Result<Option<(String, Option<String>, bool)>> {
-    ensure_sql_form(op, ws_path).await?;
+) -> Result<Option<(String, Option<String>, bool, String)>> {
+    // Read-only presence check: reconciliation must never bootstrap the SQL
+    // form as a side effect. A missing form means no row was ever committed.
+    match crate::form::read_form_definition(op, ws_path, SQL_FORM_NAME).await {
+        Ok(_) => {}
+        Err(error)
+            if error.to_string().to_lowercase().contains("not found")
+                || error.to_string().contains("was not found") =>
+        {
+            return Ok(None);
+        }
+        Err(error) => return Err(error),
+    }
     let row = match entry::read_entry_row(op, ws_path, SQL_FORM_NAME, sql_id).await {
         Ok(row) => row,
         Err(error)
@@ -433,7 +446,29 @@ pub(crate) async fn read_sql_row_for_audit(
         }
         Err(error) => return Err(error),
     };
-    Ok(Some((row.revision_id, row.parent_revision_id, row.deleted)))
+    // Committed actor is the authority for reconciliation: prefer the
+    // revision updater, then the original author, exactly like Entry
+    // history attribution.
+    let committed_actor = if row.updated_by.trim().is_empty() {
+        row.author.clone()
+    } else {
+        row.updated_by.clone()
+    };
+    Ok(Some((
+        row.revision_id,
+        row.parent_revision_id,
+        row.deleted,
+        committed_actor,
+    )))
+}
+
+/// Lists committed saved-SQL IDs for audit reconciliation, tombstones
+/// included. Deleted rows have no listable state but their delete evidence
+/// may still be missing, so reconciliation enumerates them too. Returns an
+/// empty list when the SQL form was never created; enumeration never creates
+/// storage state.
+pub(crate) async fn list_sql_ids_for_audit(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
+    crate::entry::list_form_entry_ids_for_audit(op, ws_path, SQL_FORM_NAME).await
 }
 
 pub async fn find_sql_id_by_text(
