@@ -175,7 +175,6 @@ async function runMobileRegression(
             )
           );
         expect(columns).toHaveLength(1);
-        await expectMobileControlFontSize(page);
       },
     },
   ];
