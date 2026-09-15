@@ -140,6 +140,25 @@ describe("ListPanel", () => {
       expect(screen.getByText("Test Entry 2")).toBeInTheDocument();
     });
 
+    it("does not coerce structured properties into object text", () => {
+      const [filterForm, setFilterForm] = createSignal("");
+      render(() => (
+        <ListPanel
+          mode="entries"
+          forms={mockForms}
+          filterForm={filterForm}
+          onFilterFormChange={setFilterForm}
+          entries={[{
+            ...mockEntries[0],
+            properties: { metadata: { source: "import" } },
+          }]}
+        />
+      ));
+
+      expect(screen.queryByText("[object Object]")).not.toBeInTheDocument();
+      expect(screen.getByText("-")).toBeInTheDocument();
+    });
+
     it("should highlight selected entry", () => {
       const [filterForm, setFilterForm] = createSignal("");
       render(() => (

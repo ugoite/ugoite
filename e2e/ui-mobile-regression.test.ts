@@ -44,6 +44,28 @@ async function expectMobileTouchTargets(page: Page): Promise<void> {
   }
 }
 
+async function expectMobileControlFontSize(page: Page): Promise<void> {
+  const sizes = await page.locator(
+    "input:not([type='hidden']), select, textarea",
+  ).evaluateAll((elements) =>
+    elements
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0
+          ? Number.parseFloat(getComputedStyle(element).fontSize)
+          : null;
+      })
+      .filter((size): size is number => size !== null)
+  );
+
+  // Some responsive screens intentionally have no form controls. The zoom
+  // guard applies to controls when present, not to the screen as a whole.
+  if (sizes.length === 0) return;
+  for (const size of sizes) {
+    expect(size).toBeGreaterThanOrEqual(16);
+  }
+}
+
 test.describe("Mobile UI regression @screenshot", () => {
   let spaceId = "";
   let entryId = "";
@@ -118,6 +140,7 @@ async function runMobileRegression(
           "flex-wrap",
           "wrap",
         );
+        await expectMobileControlFontSize(page);
       },
     },
     {
@@ -128,6 +151,7 @@ async function runMobileRegression(
         // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
         await expect(page.getByLabel("Search keywords")).toBeVisible();
         await expect(page.locator(".topbarMore")).toHaveCount(0);
+        await expectMobileControlFontSize(page);
       },
     },
     {
@@ -137,6 +161,7 @@ async function runMobileRegression(
       assert: async () => {
         // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
         await expect(page.locator(".settingsNav")).toBeVisible();
+        await expectMobileControlFontSize(page);
       },
     },
     {

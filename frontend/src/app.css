@@ -2985,6 +2985,14 @@ button.assistantPill[aria-expanded="true"] {
     overflow-x: hidden;
   }
 
+  /* iOS Safari zooms focused controls smaller than 16px. */
+  button,
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
   .bottomNav {
     height: calc(66px + env(safe-area-inset-bottom, 0px));
     padding-bottom: env(safe-area-inset-bottom, 0px);

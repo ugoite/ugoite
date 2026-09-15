@@ -182,7 +182,11 @@ describe("EntryList", () => {
         title: "",
         form: "Meeting",
         updated_at: "2025-01-01T00:00:00Z",
-        properties: { Count: 5, Active: true },
+        properties: {
+          Count: 5,
+          Active: true,
+          Structured: { nested: "value" },
+        },
         tags: [],
       };
       const { entries, loading, error } = createControlledProps([record]);
@@ -192,6 +196,7 @@ describe("EntryList", () => {
       expect(screen.getByText("Untitled")).toBeInTheDocument();
       expect(screen.getByText("Meeting")).toBeInTheDocument();
       expect(screen.getByText("5")).toBeInTheDocument();
+      expect(screen.queryByText("[object Object]")).not.toBeInTheDocument();
     });
   });
 
