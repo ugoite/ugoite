@@ -83,6 +83,7 @@ impl MakeRequestId for MakeRequestUuidV7 {
     }
 }
 use uuid::Uuid;
+use uuid::Version as UuidVersion;
 use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 
 pub const OPENAPI_JSON: &str = include_str!("openapi.json");
@@ -5345,6 +5346,23 @@ async fn start_step_up(
             StatusCode::UNPROCESSABLE_ENTITY,
             json!({"code":"STEP_UP_SPACE_UNEXPECTED","message":"step-up for space creation takes no space_id"}),
         ));
+    }
+    // Step-up binds the exact Knowledge authority under escalation: slugs,
+    // paths, and non-UUIDv7 identifiers never bind a challenge, so a typo
+    // cannot escalate authority over another Space.
+    if let Some(space_id) = space_id {
+        let parsed = space_id.parse::<Uuid>().map_err(|_| {
+            ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({"code":"STEP_UP_SPACE_INVALID","message":"step-up space_id must be an immutable Space UID (UUIDv7)"}),
+            )
+        })?;
+        if parsed.get_version() != Some(UuidVersion::SortRand) {
+            return Err(ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({"code":"STEP_UP_SPACE_INVALID","message":"step-up space_id must be an immutable Space UID (UUIDv7)"}),
+            ));
+        }
     }
     let started = state
         .identity
@@ -12522,6 +12540,16 @@ mod authentication_regression_tests {
                 "STEP_UP_OPERATION_NOT_ELIGIBLE",
             ),
             ("space.patch", None, "STEP_UP_SPACE_REQUIRED"),
+            (
+                "space.patch",
+                Some("team-notes".to_string()),
+                "STEP_UP_SPACE_INVALID",
+            ),
+            (
+                "space.patch",
+                Some(Uuid::new_v4().to_string()),
+                "STEP_UP_SPACE_INVALID",
+            ),
         ] {
             let mut payload = json!({"operation": operation});
             if let Some(space) = space {
@@ -12535,11 +12563,12 @@ mod authentication_regression_tests {
         }
 
         // A challenge bound to another Space cannot satisfy this mutation.
+        let other_space = Uuid::now_v7().to_string();
         let (status, started) = client
             .json(
                 Method::POST,
                 "/auth/step-up/start",
-                Some(json!({"operation": "space.patch", "space_id": "other-space"})),
+                Some(json!({"operation": "space.patch", "space_id": other_space})),
             )
             .await?;
         assert_eq!(status, StatusCode::CREATED, "{started}");
