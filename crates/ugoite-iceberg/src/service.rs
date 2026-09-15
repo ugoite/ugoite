@@ -3342,21 +3342,27 @@ impl UgoiteService {
                 Ok::<Value, anyhow::Error>(serde_json::to_value(diff)?)
             })
             .await?;
-        if let Some(changes) = diff.get_mut("changes").and_then(Value::as_array_mut) {
-            for change in changes {
-                let external_id = ["to", "from"].into_iter().find_map(|side| {
-                    change
-                        .get(side)
-                        .and_then(|revision| revision.get("entry"))
-                        .and_then(|entry| entry.get("external_id"))
-                        .and_then(Value::as_str)
-                        .filter(|external_id| !external_id.is_empty())
-                });
-                if let Some(external_id) = external_id {
-                    change["entry_id"] = Value::String(external_id.to_string());
-                }
-            }
-        }
+        project_pin_diff_entry_ids(&mut diff);
+        Ok(diff)
+    }
+
+    /// Compares two named Pins as the local operator with full visibility.
+    ///
+    /// Both Pins are named explicitly: no implicit latest/current revision is
+    /// ever selected. Read-only; Entry history is untouched.
+    pub async fn diff_pins(&self, space_id: &str, from_name: &str, to_name: &str) -> Result<Value> {
+        self.validate_complete_space(space_id).await?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let from = self.load_named_pin(space_id, from_name).await?;
+        let to = self.load_named_pin(space_id, to_name).await?;
+        let mut diff = serde_json::to_value(
+            workspace
+                .diff_publications(&from, &to)
+                .await
+                .map_err(map_checkpoint_error)?,
+        )?;
+        project_pin_diff_entry_ids(&mut diff);
         Ok(diff)
     }
 
@@ -5111,6 +5117,28 @@ fn map_checkpoint_error(error: anyhow::Error) -> anyhow::Error {
         .into();
     }
     error
+}
+
+/// Projects stable entry identities onto pin diff changes.
+///
+/// Checkpoint revisions carry internal coordinates; automation needs the
+/// portable Entry ID, taken from either diff side without preferring one.
+fn project_pin_diff_entry_ids(diff: &mut Value) {
+    if let Some(changes) = diff.get_mut("changes").and_then(Value::as_array_mut) {
+        for change in changes {
+            let external_id = ["to", "from"].into_iter().find_map(|side| {
+                change
+                    .get(side)
+                    .and_then(|revision| revision.get("entry"))
+                    .and_then(|entry| entry.get("external_id"))
+                    .and_then(Value::as_str)
+                    .filter(|external_id| !external_id.is_empty())
+            });
+            if let Some(external_id) = external_id {
+                change["entry_id"] = Value::String(external_id.to_string());
+            }
+        }
+    }
 }
 
 /// Top-level fields accepted by the public Space patch contract. This allow-list
