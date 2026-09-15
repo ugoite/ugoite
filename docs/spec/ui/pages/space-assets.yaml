@@ -12,8 +12,8 @@ components:
       reference: ../components/space-shell.yaml
   body:
     - id: asset-reference-list
-      type: grid-list
-      description: Groups current Form-owned AssetReference values by asset ID and links each occurrence back to its Entry. It reads entry.list in bounded pages until the complete current inventory is available.
+      type: list
+      description: Presents current Form-owned AssetReference values as a border-separated inventory grouped by asset ID, keeps each occurrence linked to its Entry, and reveals secondary metadata through Details. It reads entry.list in bounded pages until the complete current inventory is available.
       source: entry.list
       states:
         - loading
@@ -26,5 +26,5 @@ components:
       description: Explains that assets appear here only after an Entry saves a Form-owned asset reference.
       target_page: space-form-grid
 responsive:
-  desktop: two-column-card-grid
-  mobile: stacked
+  desktop: border-separated-list
+  mobile: stacked-border-separated-list

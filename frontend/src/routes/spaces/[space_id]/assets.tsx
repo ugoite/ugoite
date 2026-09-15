@@ -146,7 +146,7 @@ export default function SpaceAssetsRoute() {
           <div class="assetRows" role="list">
             <For each={assetGroups()}>
               {(asset) => (
-                <article class="assetRow" role="listitem">
+                <article class="spaceAssetRow" role="listitem">
                   <div class="assetRowHeader">
                     <span class="assetRowIcon" aria-hidden="true">
                       <UiIcon name="asset" />

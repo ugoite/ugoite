@@ -114,9 +114,25 @@ describe("/spaces/:space_id/entries", () => {
     expect(screen.getByRole("button", { name: /Alpha note/ }))
       .toBeInTheDocument();
 
+    fireEvent.input(screen.getByLabelText("Filter entries"), {
+      target: { value: "" },
+    });
     fireEvent.change(screen.getByLabelText("Sort entries"), {
       target: { value: "title" },
     });
+    expect(
+      [...document.querySelectorAll(".entryRowTitle")].map((node) =>
+        node.textContent
+      ),
+    ).toEqual(["Alpha note", "Zebra note"]);
+    fireEvent.change(screen.getByLabelText("Sort entries"), {
+      target: { value: "updated" },
+    });
+    expect(
+      [...document.querySelectorAll(".entryRowTitle")].map((node) =>
+        node.textContent
+      ),
+    ).toEqual(["Zebra note", "Alpha note"]);
     expect(document.querySelector(".entryRow")).toBeInTheDocument();
     expect(document.querySelector(".entryRow .ui-card")).toBeNull();
   });

@@ -1159,7 +1159,7 @@ code {
   display: grid;
   gap: 8px;
 }
-.assetRow {
+.spaceAssetRow {
   border: 1px solid var(--line);
   background: #fff;
   border-radius: 14px;

@@ -110,14 +110,23 @@ export default function SpaceEntriesIndexPane() {
       )
       : displayEntries();
 
-    if (entrySort() === "title") {
-      return [...filtered].sort((left, right) =>
-        (left.title || t("common.untitled")).localeCompare(
+    return [...filtered].sort((left, right) => {
+      if (entrySort() === "title") {
+        return (left.title || t("common.untitled")).localeCompare(
           right.title || t("common.untitled"),
-        )
-      );
-    }
-    return filtered;
+        );
+      }
+
+      const leftUpdated = Date.parse(left.updated_at);
+      const rightUpdated = Date.parse(right.updated_at);
+      const leftTime = Number.isNaN(leftUpdated)
+        ? Number.NEGATIVE_INFINITY
+        : leftUpdated;
+      const rightTime = Number.isNaN(rightUpdated)
+        ? Number.NEGATIVE_INFINITY
+        : rightUpdated;
+      return rightTime - leftTime || left.id.localeCompare(right.id);
+    });
   });
 
   const totalCount = createMemo(() =>
