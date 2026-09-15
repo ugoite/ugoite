@@ -6,6 +6,7 @@ pub mod entry;
 pub mod form;
 pub mod index;
 pub mod konase;
+pub mod pin;
 pub mod run;
 pub mod search;
 pub mod space;

@@ -58,6 +58,10 @@ enum Commands {
     ///
     /// Run `ugoite config current` to check whether you should pass `/root/spaces/<slug>` in core mode or a bare `SPACE_UID` in backend/api mode.
     Change(commands::change::ChangeCmd),
+    /// Knowledge snapshot (pin) commands.
+    ///
+    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<slug>` in core mode or a bare `SPACE_UID` in backend/api mode.
+    Pin(commands::pin::PinCmd),
     /// Run undo commands.
     ///
     /// Run `ugoite config current` to check whether you should pass `/root/spaces/<slug>` in core mode or a bare `SPACE_UID` in backend/api mode.
@@ -143,6 +147,7 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Asset(cmd) => commands::asset::run(cmd).await,
         Commands::Search(cmd) => commands::search::run(cmd).await,
         Commands::Change(cmd) => commands::change::run(cmd).await,
+        Commands::Pin(cmd) => commands::pin::run(cmd).await,
         Commands::Run(cmd) => commands::run::run(cmd).await,
         Commands::Sql(cmd) => commands::sql::run(cmd).await,
         Commands::Index(cmd) => commands::index::run(cmd).await,
