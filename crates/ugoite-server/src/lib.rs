@@ -8114,16 +8114,19 @@ async fn list_spaces(
         .await
         .map_err(ApiError::from_core)?;
     let mut principal_ids_by_space = BTreeMap::new();
-    for id in ids {
-        let principal_id = principal_for_space_listing(&state, &id, &identity).await?;
+    for id in &ids {
+        let principal_id = principal_for_space_listing(&state, id, &identity).await?;
         principal_ids_by_space.insert(
-            id,
+            id.clone(),
             principal_id.map(|principal_id| authorization_principal_ids(&identity, principal_id)),
         );
     }
+    // Reuse the validated inventory from the single discovery/validation
+    // above. A second list_space_ids call here would rescan the same Space
+    // tree inside one request; the next request still reads fresh state.
     let items = state
         .service
-        .list_spaces_authorized_for_principals(&principal_ids_by_space)
+        .list_spaces_authorized_for_inventory(ids, &principal_ids_by_space)
         .await
         .map_err(ApiError::from_core)?
         .into_iter()

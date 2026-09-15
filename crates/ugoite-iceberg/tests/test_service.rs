@@ -514,6 +514,40 @@ async fn authorized_structured_search_has_exact_policy_filtered_rows_and_no_form
 }
 
 #[tokio::test]
+async fn listing_inventory_is_authoritative_for_one_operation() -> Result<()> {
+    use std::collections::BTreeMap;
+    let service = UgoiteService::new("memory://listing-inventory-authority")?;
+    service.create_space("demo").await?;
+    let validated = service.list_space_ids().await?;
+    assert_eq!(validated, vec!["demo"]);
+
+    // The inventory method must not re-run discovery: an explicitly empty
+    // inventory stays empty even though durable state contains a Space.
+    let empty = service
+        .list_spaces_authorized_for_inventory(Vec::new(), &BTreeMap::new())
+        .await?;
+    assert!(empty.is_empty());
+
+    // A validated ID without a principal scope fails closed instead of
+    // falling back to another Space or a repeated scan.
+    let error = service
+        .list_spaces_authorized_for_inventory(validated, &BTreeMap::new())
+        .await
+        .expect_err("missing principal scope must fail");
+    let typed = error
+        .downcast_ref::<ugoite_core::error::AppError>()
+        .expect("listing inventory failure is typed");
+    assert_eq!(
+        typed.code(),
+        ugoite_core::error::ErrorCode::SpaceDiscoveryFailed
+    );
+    let message = typed.to_string();
+    assert!(!message.contains("memory://"), "{message}");
+    assert!(!message.contains("request"), "{message}");
+    Ok(())
+}
+
+#[tokio::test]
 async fn authorized_sql_rejects_non_read_only_input_before_space_lookup() -> Result<()> {
     let service = UgoiteService::new("memory://authorized-sql-admission-order")?;
     let error = service
