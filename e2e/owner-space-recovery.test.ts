@@ -1,6 +1,10 @@
 import { type Browser, expect, test } from "@playwright/test";
 import { getBackendUrl, waitForServers } from "./lib/client.ts";
 import { startMockOidcServer } from "./lib/mock-oidc.ts";
+import {
+  describeFailure,
+  openIsolatedPasskeyPage,
+} from "./lib/security-context.ts";
 import { addVirtualAuthenticator } from "./lib/webauthn.ts";
 
 type Member = {
@@ -58,27 +62,25 @@ test.describe("Owner-approved Space access recovery", () => {
 
   // Each path-separated test below uses a fresh browser context with its own
   // virtual authenticator so recovery paths cannot leak credentials or
-  // sessions into each other. The long supported journey keeps its flow
-  // untouched.
+  // sessions into each other. Teardown removes the authenticator and the
+  // WebAuthn session before closing the context. The long supported journey
+  // keeps its flow untouched.
   async function newPasskeyPage(browser: Browser) {
-    const target = await browser.newContext({
-      storageState: { cookies: [], origins: [] },
-    });
-    const page = await target.newPage();
-    const cdp = await target.newCDPSession(page);
-    await cdp.send("WebAuthn.enable");
-    await addVirtualAuthenticator(cdp);
-    return { target, page };
+    return await openIsolatedPasskeyPage(browser);
   }
 
   async function acceptInvitation(
     page: import("@playwright/test").Page,
     invitationUrl: string,
   ) {
-    await page.goto(invitationUrl);
-    await page.getByRole("button", { name: "Accept invitation" }).click();
-    await expect(page).toHaveURL(/\/spaces$/, { timeout: 15_000 });
-    await expect(page).not.toHaveURL(/\/spaces\/join/, { timeout: 15_000 });
+    try {
+      await page.goto(invitationUrl);
+      await page.getByRole("button", { name: "Accept invitation" }).click();
+      await expect(page).toHaveURL(/\/spaces$/, { timeout: 15_000 });
+      await expect(page).not.toHaveURL(/\/spaces\/join/, { timeout: 15_000 });
+    } catch (error) {
+      throw describeFailure(error, "invitation accept");
+    }
   }
 
   test("req_sec_012_013_owner_space_access_recovery_supported_journey", async ({ browser, request }) => {
@@ -345,7 +347,7 @@ test.describe("Owner-approved Space access recovery", () => {
       spaceId,
       "Accept target",
     );
-    const { target, page } = await newPasskeyPage(browser);
+    const { target, page, close } = await newPasskeyPage(browser);
     try {
       await acceptInvitation(page, invitationUrl);
       const list = await members(request, spaceId);
@@ -355,7 +357,7 @@ test.describe("Owner-approved Space access recovery", () => {
         ),
       ).toBe(true);
     } finally {
-      await target.close();
+      await close();
     }
   });
 
@@ -378,7 +380,7 @@ test.describe("Owner-approved Space access recovery", () => {
       secondSpaceId,
       "Second target",
     );
-    const { target, page } = await newPasskeyPage(browser);
+    const { target, page, close } = await newPasskeyPage(browser);
     try {
       await acceptInvitation(page, firstUrl);
       await acceptInvitation(page, secondUrl);
@@ -391,12 +393,12 @@ test.describe("Owner-approved Space access recovery", () => {
         ).toBe(true);
       }
     } finally {
-      await target.close();
+      await close();
     }
   });
 
   test("unknown invitation shows a reason and stays on join", async ({ browser }) => {
-    const { target, page } = await newPasskeyPage(browser);
+    const { target, page, close } = await newPasskeyPage(browser);
     try {
       await page.goto("/spaces/join#token=not-a-real-invitation");
       await page.getByRole("button", { name: "Accept invitation" }).click();
@@ -406,7 +408,7 @@ test.describe("Owner-approved Space access recovery", () => {
       );
       await expect(page).toHaveURL(/\/spaces\/join/);
     } finally {
-      await target.close();
+      await close();
     }
   });
 
@@ -436,7 +438,7 @@ test.describe("Owner-approved Space access recovery", () => {
       await acceptInvitation(first.page, primerUrl);
       await acceptInvitation(first.page, invitationUrl);
     } finally {
-      await first.target.close();
+      await first.close();
     }
     const before = await members(request, spaceId);
     const second = await newPasskeyPage(browser);
@@ -453,7 +455,7 @@ test.describe("Owner-approved Space access recovery", () => {
       await expect(second.page).toHaveURL(/\/spaces\/join/);
       expect(await members(request, spaceId)).toEqual(before);
     } finally {
-      await second.target.close();
+      await second.close();
     }
   });
 
@@ -467,7 +469,7 @@ test.describe("Owner-approved Space access recovery", () => {
       spaceId,
       "Double target",
     );
-    const { target, page } = await newPasskeyPage(browser);
+    const { target, page, close } = await newPasskeyPage(browser);
     try {
       await page.goto(invitationUrl);
       await page.getByRole("button", { name: "Accept invitation" }).dblclick();
@@ -479,7 +481,7 @@ test.describe("Owner-approved Space access recovery", () => {
         ),
       ).toHaveLength(1);
     } finally {
-      await target.close();
+      await close();
     }
   });
 
@@ -493,12 +495,12 @@ test.describe("Owner-approved Space access recovery", () => {
       spaceId,
       "Revisit target",
     );
-    const { target, page } = await newPasskeyPage(browser);
+    const { target, page, close } = await newPasskeyPage(browser);
     try {
       await acceptInvitation(page, invitationUrl);
       await acceptInvitation(page, invitationUrl);
     } finally {
-      await target.close();
+      await close();
     }
   });
 });

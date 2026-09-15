@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { getBackendUrl, waitForServers } from "./lib/client.ts";
-import { addVirtualAuthenticator } from "./lib/webauthn.ts";
+import {
+  describeFailure,
+  openIsolatedPasskeyPage,
+} from "./lib/security-context.ts";
 
 test.describe("Space Membership", () => {
   test.beforeAll(async ({ request }) => await waitForServers(request));
@@ -21,20 +24,20 @@ test.describe("Space Membership", () => {
       invitation_url: string;
     };
 
-    const invited = await browser.newContext({
-      storageState: { cookies: [], origins: [] },
-    });
-    const page = await invited.newPage();
-    const cdp = await invited.newCDPSession(page);
-    await cdp.send("WebAuthn.enable");
+    const { target: invited, page, close } = await openIsolatedPasskeyPage(
+      browser,
+    );
     // REQ-SEC-007: invitation acceptance must register a real Passkey.
-    await addVirtualAuthenticator(cdp);
 
     try {
       await page.goto(invitationUrl);
       await page.getByRole("button", { name: "Accept invitation" })
         .click();
-      await expect(page).toHaveURL(/\/spaces$/);
+      try {
+        await expect(page).toHaveURL(/\/spaces$/);
+      } catch (error) {
+        throw describeFailure(error, "first Passkey invitation accept");
+      }
       const space = await invited.request.get(
         getBackendUrl(`/spaces/${spaceId}`),
       );
@@ -66,7 +69,7 @@ test.describe("Space Membership", () => {
       );
       expect(denied.status()).toBe(403);
     } finally {
-      await invited.close();
+      await close();
     }
   });
 
