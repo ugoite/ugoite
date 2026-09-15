@@ -4,6 +4,7 @@ import { createEntryStore } from "~/lib/entry-store";
 import type { EntryRecord } from "~/lib/types";
 import { t } from "~/lib/i18n";
 import { formatDateLabel } from "~/lib/date-format";
+import { formatValueForDisplay } from "~/lib/display-value";
 
 /** Props for controlled mode (passing external state) */
 export interface EntryListControlledProps {
@@ -196,7 +197,7 @@ function EntryListItem(props: EntryListItemProps) {
                     {key}:
                   </span>
                   <span class="truncate">
-                    {typeof value === "string" ? value : JSON.stringify(value)}
+                    {formatValueForDisplay(value)}
                   </span>
                 </div>
               )}

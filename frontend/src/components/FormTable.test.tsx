@@ -86,6 +86,49 @@ describe("FormTable", () => {
     spy.mockRestore();
   });
 
+  it("formats structured fields safely and keeps them read-only", async () => {
+    const entryForm = {
+      name: "Test",
+      fields: {
+        asset: { type: "asset_reference" },
+        metadata: { type: "object" },
+      },
+    } as any;
+    vi.spyOn(searchApi, "query").mockResolvedValue([{
+      id: "1",
+      title: "Entry1",
+      properties: {
+        asset: {
+          asset_id: "asset-1",
+          name: "hero-banner.png",
+          media_type: "image/png",
+          size_bytes: 1_800_000,
+          sha256: "a".repeat(64),
+        },
+        metadata: { source: "import" },
+      },
+      updated_at: "2026-01-01",
+    }] as any);
+
+    const { getByTitle } = render(() => (
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+      />
+    ));
+
+    await waitFor(() => {
+      expect(desktopTable().getByText(/PNG ·/)).toBeInTheDocument();
+      expect(desktopTable().getByText("-")).toBeInTheDocument();
+    });
+
+    fireEvent.click(getByTitle("Enable Editing"));
+    fireEvent.click(desktopTable().getByText(/PNG ·/));
+    expect(desktopTable().queryByDisplayValue(/PNG/)).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("[object Object]");
+  });
+
   it("REQ-FE-019: sorts entries when clicking headers", async () => {
     const entryForm = {
       name: "Test",

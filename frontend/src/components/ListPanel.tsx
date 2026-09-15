@@ -2,6 +2,7 @@ import { createMemo, For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
 import { t } from "~/lib/i18n";
 import { formatDateLabel } from "~/lib/date-format";
+import { formatValueForDisplay } from "~/lib/display-value";
 import type { EntryRecord, Form } from "~/lib/types";
 import { SearchBar } from "./SearchBar";
 
@@ -304,7 +305,7 @@ function EntryListItem(props: EntryListItemProps) {
                     {key}:
                   </span>
                   <span class="truncate">
-                    {typeof value === "string" ? value : JSON.stringify(value)}
+                    {formatValueForDisplay(value)}
                   </span>
                 </div>
               )}

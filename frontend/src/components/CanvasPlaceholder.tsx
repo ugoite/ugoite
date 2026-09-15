@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import type { EntryRecord } from "~/lib/types";
+import { formatValueForDisplay } from "~/lib/display-value";
 
 export interface CanvasPlaceholderProps {
   entries: EntryRecord[];
@@ -140,9 +141,7 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
                                 {key}:
                               </span>
                               <span class="truncate">
-                                {typeof value === "string"
-                                  ? value
-                                  : JSON.stringify(value)}
+                                {formatValueForDisplay(value)}
                               </span>
                             </div>
                           )}

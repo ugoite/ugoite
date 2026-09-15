@@ -13,6 +13,11 @@ import { encodeSpreadsheetCsv, entryApi, searchApi } from "~/lib/ugoite-client";
 import { replaceFirstH1, updateH2Section } from "~/lib/markdown";
 import { t } from "~/lib/i18n";
 import { formatDateLabel } from "~/lib/date-format";
+import {
+  formatValueForDisplay,
+  formatValueForInput,
+  isPlainEditableValue,
+} from "~/lib/display-value";
 
 interface FormTableProps {
   spaceId: string;
@@ -36,7 +41,8 @@ function filterEntries(
     const title = (entry.title || "").toLowerCase();
     if (title.includes(text)) return true;
     for (const field of fields) {
-      const val = String(entry.properties?.[field] ?? "").toLowerCase();
+      const val = formatValueForDisplay(entry.properties?.[field], "en-US", "")
+        .toLowerCase();
       if (val.includes(text)) return true;
     }
     /* v8 ignore stop */
@@ -61,7 +67,9 @@ function applyColumnFilters(
       if (field === "title") val = entry.title || "";
       else if (field === "updated_at") {
         val = formatDateLabel(entry.updated_at);
-      } else val = String(entry.properties?.[field] ?? "");
+      } else {
+        val = formatValueForDisplay(entry.properties?.[field], "en-US", "");
+      }
       /* v8 ignore stop */
 
       if (!val.toLowerCase().includes(filterLower)) return false;
@@ -77,8 +85,8 @@ function sortEntries(
 ) {
   if (!field || !direction) return entries;
   return [...entries].sort((a, b) => {
-    let valA: string | number | unknown;
-    let valB: string | number | unknown;
+    let valA: string | number;
+    let valB: string | number;
 
     if (field === "title") {
       /* v8 ignore start */
@@ -90,8 +98,14 @@ function sortEntries(
       valA = a.updated_at;
       valB = b.updated_at;
     } else {
-      valA = a.properties?.[field] ?? "";
-      valB = b.properties?.[field] ?? "";
+      const propertyA = a.properties?.[field];
+      const propertyB = b.properties?.[field];
+      valA = typeof propertyA === "number"
+        ? propertyA
+        : formatValueForDisplay(propertyA, "en-US", "");
+      valB = typeof propertyB === "number"
+        ? propertyB
+        : formatValueForDisplay(propertyB, "en-US", "");
     }
     /* v8 ignore stop */
 
@@ -176,7 +190,7 @@ function formatCsvValues(entry: EntryRecord, headers: string[]) {
           val = entry.updated_at;
         }
       } else {
-        val = String(entry.properties?.[field] ?? "");
+        val = formatValueForDisplay(entry.properties?.[field], "en-US", "");
       }
       return val;
     });
@@ -347,7 +361,9 @@ export function FormTable(props: FormTableProps) {
         updatedMarkdown = replaceFirstH1(updatedMarkdown, value);
       } else {
         /* v8 ignore start */
-        const currentValue = String(currentRow?.properties?.[field] ?? "");
+        const currentValue = formatValueForInput(
+          currentRow?.properties?.[field],
+        );
         if (currentValue === value) return;
         /* v8 ignore stop */
         updatedMarkdown = updateH2Section(updatedMarkdown, field, value);
@@ -426,7 +442,13 @@ export function FormTable(props: FormTableProps) {
       const colIdx = i + 1;
       /* v8 ignore start */
       if (colIdx >= c1 && colIdx <= c2) {
-        rowData.push(String(entry.properties?.[currentFields[i]] ?? ""));
+        rowData.push(
+          formatValueForDisplay(
+            entry.properties?.[currentFields[i]],
+            "en-US",
+            "",
+          ),
+        );
       }
       /* v8 ignore stop */
     }
@@ -926,7 +948,10 @@ export function FormTable(props: FormTableProps) {
                               fieldIndex() + 1,
                             )}
                           onClick={(e) => {
-                            if (isEditMode()) {
+                            if (
+                              isEditMode() &&
+                              isPlainEditableValue(entry.properties?.[field])
+                            ) {
                               e.stopPropagation();
                               setEditingCell({ id: entry.id, field });
                             }
@@ -934,10 +959,14 @@ export function FormTable(props: FormTableProps) {
                         >
                           <Show
                             when={isCellEditing(entry.id, field)}
-                            fallback={String(entry.properties?.[field] ?? "-")}
+                            fallback={formatValueForDisplay(
+                              entry.properties?.[field],
+                            )}
                           >
                             <input
-                              value={String(entry.properties?.[field] ?? "")}
+                              value={formatValueForInput(
+                                entry.properties?.[field],
+                              )}
                               onBlur={(e) => {
                                 const newVal = e.currentTarget.value;
                                 handleCellUpdate(entry.id, field, newVal);
@@ -1044,10 +1073,15 @@ export function FormTable(props: FormTableProps) {
                             when={isCellEditing(entry.id, field)}
                             fallback={
                               <Show
-                                when={isEditMode()}
+                                when={isEditMode() &&
+                                  isPlainEditableValue(
+                                    entry.properties?.[field],
+                                  )}
                                 fallback={
                                   <span class="ui-table-mobile-value">
-                                    {String(entry.properties?.[field] ?? "-")}
+                                    {formatValueForDisplay(
+                                      entry.properties?.[field],
+                                    )}
                                   </span>
                                 }
                               >
@@ -1057,13 +1091,17 @@ export function FormTable(props: FormTableProps) {
                                   onClick={() =>
                                     setEditingCell({ id: entry.id, field })}
                                 >
-                                  {String(entry.properties?.[field] ?? "-")}
+                                  {formatValueForDisplay(
+                                    entry.properties?.[field],
+                                  )}
                                 </button>
                               </Show>
                             }
                           >
                             <input
-                              value={String(entry.properties?.[field] ?? "")}
+                              value={formatValueForInput(
+                                entry.properties?.[field],
+                              )}
                               class="ui-table-cell-input"
                               autofocus
                               aria-label={field}
@@ -1111,11 +1149,14 @@ export function FormTable(props: FormTableProps) {
                                 when={isCellEditing(entry.id, field)}
                                 fallback={
                                   <Show
-                                    when={isEditMode()}
+                                    when={isEditMode() &&
+                                      isPlainEditableValue(
+                                        entry.properties?.[field],
+                                      )}
                                     fallback={
                                       <span class="ui-table-mobile-value">
-                                        {String(
-                                          entry.properties?.[field] ?? "-",
+                                        {formatValueForDisplay(
+                                          entry.properties?.[field],
                                         )}
                                       </span>
                                     }
@@ -1126,16 +1167,16 @@ export function FormTable(props: FormTableProps) {
                                       onClick={() =>
                                         setEditingCell({ id: entry.id, field })}
                                     >
-                                      {String(
-                                        entry.properties?.[field] ?? "-",
+                                      {formatValueForDisplay(
+                                        entry.properties?.[field],
                                       )}
                                     </button>
                                   </Show>
                                 }
                               >
                                 <input
-                                  value={String(
-                                    entry.properties?.[field] ?? "",
+                                  value={formatValueForInput(
+                                    entry.properties?.[field],
                                   )}
                                   class="ui-table-cell-input"
                                   autofocus

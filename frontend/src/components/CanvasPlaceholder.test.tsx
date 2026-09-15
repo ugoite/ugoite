@@ -122,4 +122,18 @@ describe("CanvasPlaceholder", () => {
     expect(screen.getByText("Report")).toBeInTheDocument();
     expect(screen.getByText("+1 more")).toBeInTheDocument();
   });
+
+  it("does not coerce structured properties into object text", () => {
+    render(() => (
+      <CanvasPlaceholder
+        entries={[{
+          ...mockEntries[0],
+          properties: { metadata: { source: "import" } },
+        }]}
+      />
+    ));
+
+    expect(screen.queryByText("[object Object]")).not.toBeInTheDocument();
+    expect(screen.getByText("-")).toBeInTheDocument();
+  });
 });
