@@ -897,4 +897,71 @@ describe("FormTable", () => {
       );
     });
   });
+
+  it("exposes the filter toggle with expanded state and controlled regions", async () => {
+    const entryForm = {
+      name: "Test",
+      fields: { col: { type: "string" } },
+    } as any;
+    vi.spyOn(searchApi, "query").mockResolvedValue([] as any);
+
+    const { getByRole, getAllByRole } = render(() => (
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
+    ));
+
+    await waitFor(() => expect(document.querySelector("tbody")).toBeTruthy());
+
+    const toggle = getByRole("button", { name: "Filter" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const controls = (toggle.getAttribute("aria-controls") ?? "").split(/\s+/);
+    expect(controls).toContain("form-table-mobile-filters");
+    expect(controls).toContain("form-table-desktop");
+    for (const id of controls) {
+      expect(document.getElementById(id)).not.toBeNull();
+    }
+
+    expect(getByRole("textbox", { name: "Global Search..." })).toBeInTheDocument();
+    // Desktop header inputs and the mobile panel share accessible names.
+    expect(getAllByRole("textbox", { name: "Title Filter..." }).length).toBeGreaterThan(0);
+    expect(getAllByRole("textbox", { name: "col Filter..." }).length).toBeGreaterThan(0);
+  });
+
+  it("restores focus to the filter toggle when panels close under focus", async () => {
+    const entryForm = {
+      name: "Test",
+      fields: { col: { type: "string" } },
+    } as any;
+    vi.spyOn(searchApi, "query").mockResolvedValue([] as any);
+
+    const { getByRole } = render(() => (
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
+    ));
+
+    await waitFor(() => expect(document.querySelector("tbody")).toBeTruthy());
+
+    const toggle = getByRole("button", { name: "Filter" });
+    const filterInput = document.querySelector(
+      "#form-table-mobile-filters input",
+    ) as HTMLInputElement;
+    expect(filterInput).not.toBeNull();
+    filterInput.focus();
+    expect(filterInput).toHaveFocus();
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(toggle).toHaveFocus());
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(
+      document.querySelector("#form-table-mobile-filters input"),
+    ).toBeNull();
+  });
 });
