@@ -10,6 +10,7 @@ describe("v5 design system", () => {
   it("uses the approved concept palette", () => {
     expect(css).toContain("--bg: #F6F8FC");
     expect(css).toContain("--ink: #10243C");
+    expect(css).toContain("--faint: #8290A3");
     expect(css).toContain("--line: #D7E0EA");
     expect(css).toContain("--black: #111");
   });
@@ -29,6 +30,7 @@ describe("v5 design system", () => {
     expect(css).toContain(':root[data-color-mode="dark"]');
     expect(css).toContain("--panel: #1b1d22");
     expect(css).toContain("--muted: #b8bbc4");
+    expect(css).toContain("--faint: #8f98a8");
     expect(css).not.toContain("data-ui-theme");
     expect(css).not.toContain("data-primary-color");
   });
