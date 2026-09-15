@@ -175,7 +175,7 @@ inventory:
             - frontend/vitest.config.ts
             - docsite/vitest.config.ts
             - docsite/src/ssot.test.ts
-            - docsite/src/spec-integrity.test.ts
+            - tools/spec_integrity_test.ts
             - tools/coverage_gates_test.ts
             - tools/knowledge_compatibility_test.ts
             - tools/pr_body_gate_test.ts
@@ -220,6 +220,7 @@ inventory:
             - docs/mitase/requirements/ops.yaml
             - docs/mitase/features/ops.yaml
             - docs/index.md
+            - docs/get-started/index.md
             - docs/guide/start/container-quickstart.md
             - docs/guide/operate/server/operations.md
             - docs/architecture/api/rest.md
@@ -313,7 +314,7 @@ inventory:
             - tools/pr_body_gate_test.ts
             - tools/coverage_gates_test.ts
             - tools/release.ts
-            - docsite/src/spec-integrity.test.ts
+            - tools/spec_integrity_test.ts
             - crates/ugoite-core/src/lib.rs
             - crates/ugoite-server/src/lib.rs
             - crates/ugoite-server/src/main.rs

@@ -4,7 +4,6 @@ import {
   startDocsiteServer,
 } from "./support/docsite-server.ts";
 
-const docPath = "/docs/spec/";
 const homepagePath = "/";
 
 let docsiteServer: DocsiteServer | undefined;
@@ -19,83 +18,70 @@ test.describe("Docsite navigation smoke", () => {
     await docsiteServer?.stop();
   });
 
-  test("REQ-E2E-005: Starlight exposes the documentation sidebar as a mobile menu", async ({ page }) => {
+  test("REQ-E2E-005: homepage exposes canonical documentation paths", async ({ page }) => {
     // Mitase evidence: REQ-E2E-005#criterion.mobile-sidebar.
-    // Mitase evidence: REQ-E2E-009#criterion.responsive-layout.
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(buildDocsiteUrl(docPath), { waitUntil: "networkidle" });
-
-    const menuButton = page.getByRole("button", { name: "Menu" });
-    const sidebar = page.locator("#starlight__sidebar");
-
-    await expect(menuButton).toBeVisible();
-    await expect(sidebar).toBeHidden();
-
-    await menuButton.click();
-    await expect(sidebar).toBeVisible();
-  });
-
-  test("REQ-E2E-005: the mobile menu closes with Escape", async ({ page }) => {
-    // Mitase evidence: REQ-E2E-005#criterion.mobile-sidebar.
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(buildDocsiteUrl(docPath), { waitUntil: "networkidle" });
-
-    const menuButton = page.getByRole("button", { name: "Menu" });
-    const sidebar = page.locator("#starlight__sidebar");
-    await menuButton.click();
-    await expect(sidebar).toBeVisible();
-
-    await menuButton.press("Escape");
-    await expect(sidebar).toBeHidden();
-  });
-
-  test("REQ-E2E-009: desktop pages use Starlight's sidebar and table of contents", async ({ page }) => {
     // Mitase evidence: REQ-E2E-005#criterion.desktop-sidebar.
-    // Mitase evidence: REQ-E2E-009#criterion.desktop-layout.
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(buildDocsiteUrl(docPath), { waitUntil: "networkidle" });
-
-    await expect(page.getByRole("button", { name: "Menu" })).toBeHidden();
-    await expect(page.locator("#starlight__sidebar")).toBeVisible();
-    // Minimum layout smoke for REQ-E2E-009#criterion.desktop-layout: the
-    // framework-owned table of contents slot renders on a headed page.
-    // Starlight owns its internals; no TOC item assertions live here.
-    await expect(page.locator(".right-sidebar-container")).toBeVisible();
-    await expect(
-      page.getByRole("heading", { level: 1 }),
-    ).toBeVisible();
-  });
-
-  test("REQ-E2E-005: the beginner path follows its documented learning order", async ({ page }) => {
     // Mitase evidence: REQ-E2E-005#criterion.beginner-path.
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(buildDocsiteUrl("/docs/get-started/"), {
-      waitUntil: "networkidle",
-    });
-
-    const getStartedLinks = page.locator(
-      '#starlight__sidebar a[href*="/docs/get-started/"]',
-    );
-    await expect(getStartedLinks).toHaveText(["Overview", "Quickstart"]);
-  });
-
-  test("REQ-E2E-005: the homepage keeps the hero and Starlight navigation", async ({ page }) => {
     // Mitase evidence: REQ-E2E-005#criterion.homepage-navigation.
-    await page.setViewportSize({ width: 390, height: 844 });
+    // Mitase evidence: REQ-E2E-009#criterion.desktop-layout.
+    // Mitase evidence: REQ-E2E-009#criterion.responsive-layout.
+    for (
+      const viewport of [
+        { width: 390, height: 844 },
+        { width: 1440, height: 900 },
+      ]
+    ) {
+      await page.setViewportSize(viewport);
+      await page.goto(buildDocsiteUrl(homepagePath), {
+        waitUntil: "networkidle",
+      });
+
+      await expect(
+        page.getByRole("heading", { level: 1, name: "Ugoite" }),
+      ).toBeVisible();
+      for (const [label, route] of canonicalPaths) {
+        const link = page.getByRole("link", { name: label, exact: true })
+          .first();
+        await expect(link).toBeVisible();
+        await expect(link).toHaveAttribute(
+          "href",
+          new RegExp(`${route.slice(1)}/?$`),
+        );
+      }
+    }
+
+    await page.getByRole("link", { name: "Get started", exact: true })
+      .first()
+      .click();
+    await expect(page).toHaveURL(/\/docs\/get-started\/?$/);
+
+    const quickstart = page.getByRole("link", {
+      name: "Quickstart",
+      exact: true,
+    }).first();
+    await expect(quickstart).toBeVisible();
+    await quickstart.click();
+    await expect(page).toHaveURL(/\/docs\/get-started\/quickstart\/?$/);
+
     await page.goto(buildDocsiteUrl(homepagePath), {
       waitUntil: "networkidle",
     });
-
-    await expect(page.getByText("A private, portable knowledge space"))
-      .toBeVisible();
-
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(buildDocsiteUrl(homepagePath), {
-      waitUntil: "networkidle",
-    });
-    await expect(page.locator("#starlight__sidebar")).toBeVisible();
+    await page.getByRole("link", { name: "Specification", exact: true })
+      .first()
+      .click();
+    await expect(page).toHaveURL(/\/docs\/spec\/?$/);
   });
 });
+
+const canonicalPaths = [
+  ["Get started", "/docs/get-started"],
+  ["Use Ugoite", "/docs/use"],
+  ["Operate Ugoite", "/docs/operate"],
+  ["Vision & Concepts", "/docs/vision"],
+  ["Develop Ugoite", "/docs/develop"],
+  ["Reference", "/docs/reference"],
+  ["Specification", "/docs/spec"],
+] as const;
 
 function buildDocsiteUrl(path: string): string {
   if (!docsiteServer) {

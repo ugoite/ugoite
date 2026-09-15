@@ -57,7 +57,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: docsite/src/spec-integrity.test.ts
+  - file: tools/spec_integrity_test.ts
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -414,7 +414,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-024
   title: Docsite Coverage Convenience
-  description: The required hosted CI job runs the root docsite coverage task as developer convenience. The Vitest V8 configuration reports coverage for authored docsite source while excluding framework-only wiring and test files, without hard-failing coverage thresholds, so documentation navigation changes cannot fail the repository quality lane on uncovered docsite shell lines.
+  description: "The canonical root and hosted web tasks run the normal docsite behavior/type suite. The separate docsite coverage task remains developer convenience: its Vitest V8 report covers authored source while excluding framework-only wiring and test files, without hard-failing coverage thresholds."
   related_spec:
   - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md

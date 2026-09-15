@@ -20,15 +20,18 @@ Root task composition:
 - `test:*`: authoritative assertions that may reuse `build:*` outputs but always
   execute when called; focused frontend/docsite tasks remain useful during
   development;
-- `test`: the canonical non-E2E suite, including Rust and tooling tests plus the
-  frontend and docsite coverage gates;
+- `test`: the canonical non-E2E suite, including Rust and tooling tests, the
+  frontend coverage gate, and the normal docsite behavior/type suite;
 - `test:rust`: the canonical Rust test interface; cargo-nextest runs unit,
   integration, binary, and library tests, followed by
   `cargo test --workspace --doc --locked` for doctests;
 - `test:smoke`: the focused Rust smoke interface uses the same
   nextest-plus-doctest split before the frontend smoke task;
-- `test:frontend:coverage` and `test:docsite:coverage`: V8 coverage assertions
-  with package-owned hard thresholds for authored frontend/docsite source;
+- `test:frontend:coverage`: the frontend V8 coverage assertion with its
+  package-owned hard threshold for the portable Rust/WASM protocol boundary;
+- `test:docsite`: the normal docsite behavior/type test suite;
+- `test:docsite:coverage`: an explicit developer-convenience V8 report for
+  authored docsite source, without a hard threshold or merge-gate role;
 - `package:*`: staging under `target/artifacts/` only; packaging must fail if
   required build outputs are absent;
 - `verify:*`: checks packaged outputs without rebuilding them;
@@ -145,10 +148,10 @@ development override.
 The required `ci-required` aggregator runs after all four lanes on pull
 requests, merge queues, and pushes to `main`. It fails unless `ci-rust-check`,
 `ci-rust-test`, `ci-web`, and `artifacts` are all successful. The canonical
-`test` Mise task invokes both package-level Vitest coverage gates, and
-`ci:lane:web` packs those same coverage tasks for Hosted CI, so their hard
-thresholds remain merge gates without duplicating individual coverage commands
-in GitHub Actions. The active `main only pr` repository ruleset must require the
+`test` Mise task and `ci:lane:web` run the normal docsite test suite; only
+frontend coverage remains a hard coverage gate. The docsite coverage task is
+intentionally separate developer convenience and is not a merge-quality
+metric. The active `main only pr` repository ruleset must require the
 `ci-required` status-check context; a successful push-to-`main` run alone is not
 merge enforcement.
 
@@ -166,7 +169,7 @@ composition and workflow entrypoints. `mise run ci` and `mise run ci:merge`
 remain the developer-facing canonical interfaces. Frontend's unit coverage gate
 explicitly covers the portable Rust/WASM protocol boundary in
 `frontend/src/lib/ugoite-client/protocol.ts`; UI behavior remains covered by
-behavior tests and E2E. Docsite coverage includes authored
+behavior tests and E2E. The optional docsite coverage report includes authored
 `src/**/*.{js,mjs,ts,tsx}` while excluding test files, `src/env.d.ts`, and
 Astro's framework-only `src/content.config.ts`.
 
