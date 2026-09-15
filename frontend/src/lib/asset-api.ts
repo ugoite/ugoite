@@ -4,6 +4,13 @@ import { protocolFetch, protocolFetchResponse } from "./ugoite-client/protocol";
 const ASSET_UPLOAD_OPERATION = "asset.upload";
 const ASSET_DELETE_OPERATION = "asset.delete";
 const ASSET_READ_OPERATION = "asset.read";
+const ASSET_LIST_OPERATION = "asset.list";
+
+export interface AssetListItem extends AssetReference {
+  form: string;
+  entry_id: string;
+  field: string;
+}
 
 /** Asset API client backed by the shared Rust/WASM protocol. */
 export const assetApi = {
@@ -47,5 +54,14 @@ export const assetApi = {
       entry_id: entryId,
     }, { signal });
     return await response.blob();
+  },
+
+  async list(
+    spaceId: string,
+    signal?: AbortSignal,
+  ): Promise<AssetListItem[]> {
+    return await protocolFetch<AssetListItem[]>(ASSET_LIST_OPERATION, {
+      space_id: spaceId,
+    }, undefined, { signal });
   },
 };

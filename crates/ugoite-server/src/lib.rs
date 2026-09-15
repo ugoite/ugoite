@@ -1121,7 +1121,10 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             "/spaces/{space_id}/sql/{sql_id}",
             get(get_sql).put(update_sql).delete(delete_sql),
         )
-        .route("/spaces/{space_id}/assets", post(upload_asset))
+        .route(
+            "/spaces/{space_id}/assets",
+            post(upload_asset).get(list_assets),
+        )
         .route(
             "/spaces/{space_id}/assets/{asset_id}",
             get(get_asset).delete(delete_asset),
@@ -10458,6 +10461,25 @@ async fn upload_asset(
 struct AssetReadQuery {
     form: Option<String>,
     entry_id: Option<String>,
+}
+
+async fn list_assets(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    // Metadata only, never bytes. References inherit the visibility of
+    // their owning entries through the authorized service boundary.
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    Ok(Json(Value::Array(
+        state
+            .service
+            .list_assets_authorized_for_principals(&space_id, &principals)
+            .await
+            .map_err(ApiError::from_core)?,
+    )))
 }
 
 async fn get_asset(

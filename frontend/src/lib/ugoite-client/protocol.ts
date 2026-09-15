@@ -70,6 +70,7 @@ export const UGOITE_API_OPERATIONS = [
   "asset.upload",
   "asset.read",
   "asset.delete",
+  "asset.list",
 ] as const;
 
 export type UgoiteApiOperation = (typeof UGOITE_API_OPERATIONS)[number];

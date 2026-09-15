@@ -111,6 +111,68 @@ async fn upload_normalizes_the_display_name_without_leaking_storage_details() ->
 }
 
 #[tokio::test]
+async fn list_assets_projects_form_owned_references_with_ownership() -> anyhow::Result<()> {
+    let service = UgoiteService::new("memory://asset-list")?;
+    let owner = Uuid::now_v7();
+    let space_id = service
+        .create_space_for_principal("asset-list", owner, "Owner")
+        .await?
+        .to_string();
+    service
+        .upsert_form(
+            &space_id,
+            &serde_json::json!({
+                "name": "Media",
+                "fields": {
+                    "Attachment": {"type": "asset_reference"},
+                    "Attachments": {
+                        "type": "list",
+                        "items": {"type": "asset_reference"}
+                    }
+                }
+            }),
+        )
+        .await?;
+    let reference = service.save_asset(&space_id, "image.png", b"bytes").await?;
+    let reference_json = serde_json::to_string(&reference)?;
+    // An uploaded-but-unreferenced object is not Space-visible Knowledge.
+    let _unreferenced = service.save_asset(&space_id, "loose.txt", b"loose").await?;
+    service
+        .create_entry_authorized_for_principals(
+            &space_id,
+            "media-1",
+            &format!(
+                "---\nform: Media\nAttachment: {reference_json}\nAttachments: [{reference_json}]\n---\n# Photo"
+            ),
+            "owner",
+            &[owner],
+        )
+        .await?;
+
+    let listed = service.list_assets(&space_id).await?;
+    assert_eq!(listed.len(), 2);
+    for item in &listed {
+        assert_eq!(item["asset_id"], reference.asset_id);
+        assert_eq!(item["form"], "Media");
+        assert_eq!(item["entry_id"], "media-1");
+        assert_eq!(item["name"], "image.png");
+        assert_eq!(item["size_bytes"], 5);
+    }
+    let fields: Vec<&str> = listed
+        .iter()
+        .filter_map(|item| item.get("field").and_then(serde_json::Value::as_str))
+        .collect();
+    assert!(fields.contains(&"Attachment"));
+    assert!(fields.contains(&"Attachments"));
+
+    let authorized = service
+        .list_assets_authorized_for_principals(&space_id, &[owner])
+        .await?;
+    assert_eq!(authorized, listed);
+    Ok(())
+}
+
+#[tokio::test]
 async fn typed_form_asset_references_round_trip_and_guard_deletion() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "asset-form", "/tmp").await?;

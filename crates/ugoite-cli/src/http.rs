@@ -6,6 +6,47 @@ use ugoite_api_client::{
     RequestBodyKind,
 };
 
+/// Execute a portable API operation whose success body is raw bytes.
+///
+/// Asset content is never JSON: success returns the exact response bytes
+/// while failures still decode through the canonical error projection so
+/// machine output keeps stable error codes. Only the server response is
+/// ever surfaced: never local paths, credentials, or request headers.
+pub async fn execute_bytes(base_url: &str, operation: &str, arguments: Value) -> Result<Vec<u8>> {
+    let prepared = prepare_request(operation, &arguments, None)?;
+    if prepared.body_kind != RequestBodyKind::None {
+        bail!("operation {operation} does not return raw bytes");
+    }
+    let (_, request) = authenticated_request(base_url, &prepared).await?;
+    let response = request
+        .send()
+        .await
+        .with_context(|| format!("send {operation} request"))?;
+    let status = response.status();
+    let status_text = status.canonical_reason().unwrap_or_default().to_string();
+    let bytes = response
+        .bytes()
+        .await
+        .with_context(|| format!("read {operation} response"))?
+        .to_vec();
+    if !status.is_success() {
+        let decoded = decode_response(
+            operation,
+            ApiResponse {
+                status: status.as_u16(),
+                status_text,
+                headers: Vec::new(),
+                body: String::from_utf8_lossy(&bytes).into_owned(),
+            },
+        );
+        match decoded {
+            Ok(_) => bail!("{operation} failed with status {}", status.as_u16()),
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(bytes)
+}
+
 /// Execute a portable API operation through the native reqwest transport.
 pub async fn execute(
     base_url: &str,

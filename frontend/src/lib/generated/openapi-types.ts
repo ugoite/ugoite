@@ -9,6 +9,7 @@ export const OPENAPI_SCHEMA_NAMES = [
   "ApplyRequest",
   "ApplyUpdate",
   "AssetReference",
+  "AssetReferenceList",
   "AuditStatus",
   "AuthConfig",
   "AuthSession",

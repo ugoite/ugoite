@@ -81,6 +81,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "asset.upload",
     "asset.read",
     "asset.delete",
+    "asset.list",
 ];
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -962,6 +963,15 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
+            "asset.list" => (
+                OperationSpec::get("Failed to list assets"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "assets".into(),
+                ],
+                vec![],
+            ),
 
             _ => return Err(ApiProtocolError::invalid_operation(operation)),
         };
@@ -1588,6 +1598,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
         "asset.delete" => (
             HttpMethod::Delete,
             "Failed to delete asset",
+            RequestBodyKind::None,
+        ),
+        "asset.list" => (
+            HttpMethod::Get,
+            "Failed to list assets",
             RequestBodyKind::None,
         ),
         _ => return None,
