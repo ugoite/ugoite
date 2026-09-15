@@ -8,7 +8,7 @@ page:
 components:
   body:
     - id: entry-list-toolbar
-      type: filter-sort-toolbar
+      type: toolbar
       description: Provides local title/Form filtering and updated-or-title sorting for the loaded Entry list.
     - id: plain-entry-list
       type: list
