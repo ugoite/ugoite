@@ -7,8 +7,9 @@ use ugoite_cli::commands::auth::active_session_for;
 use ugoite_cli::config::{
     auth_session_path, base_url, clear_auth_session, config_path, effective_format_for_stdout,
     load_auth_session, load_config, normalize_space_root, operator_for_path, parse_space_path,
-    print_json, print_json_table, resolve_space_reference, save_auth_session, save_config,
-    space_ws_path, validate_server_endpoint_url, AuthSession, EndpointConfig, EndpointMode, Format,
+    parse_space_uid, print_json, print_json_table, resolve_backend_space_uid,
+    resolve_space_reference, save_auth_session, save_config, space_ws_path,
+    validate_server_endpoint_url, AuthSession, EndpointConfig, EndpointMode, Format,
 };
 
 fn env_lock() -> &'static Mutex<()> {
@@ -375,6 +376,55 @@ fn test_cli_req_ops_006_parse_space_path_variants() {
     assert_eq!(normalize_space_root("/spaces"), "/");
     assert_eq!(normalize_space_root("/tmp/demo/spaces"), "/tmp/demo");
     assert_eq!(normalize_space_root("/tmp/demo"), "/tmp/demo");
+}
+
+/// PR1: remote operations address the Knowledge authority by immutable UUIDv7 only.
+#[test]
+fn test_cli_pr1_remote_space_reference_requires_uuidv7() {
+    let backend = EndpointConfig {
+        mode: EndpointMode::Backend,
+        backend_url: "http://localhost:8000".to_string(),
+        api_url: "http://localhost:3000/api".to_string(),
+    };
+    let uid = uuid::Uuid::now_v7().to_string();
+    let (root, space_id) = resolve_space_reference(&backend, &uid, "space get")
+        .expect("UUIDv7 must resolve in backend mode");
+    assert_eq!(root, "");
+    assert_eq!(space_id, uid);
+
+    for bad in [
+        "team-notes",
+        "/tmp/demo/spaces/my-space",
+        "/root/spaces/019f1234-5678-7abc-8def-0123456789ab",
+        "not-a-uuid",
+        "",
+        "00000000-0000-0000-0000-000000000000",
+    ] {
+        let err = resolve_space_reference(&backend, bad, "space get")
+            .expect_err("remote slug/path/non-v7 must fail");
+        let message = err.to_string();
+        assert!(
+            message.contains("requires SPACE_UID in backend/api mode"),
+            "{message}"
+        );
+        // Fail-closed without echoing local paths or raw identifiers.
+        assert!(!message.contains("/tmp/demo"), "{message}");
+        assert!(!message.contains("/root/spaces"), "{message}");
+    }
+
+    // UUIDv4 is well-formed but not a Space UID.
+    let v4 = uuid::Uuid::new_v4().to_string();
+    assert!(parse_space_uid(&v4).is_err());
+    assert_eq!(parse_space_uid(&uid).expect("v7"), uid);
+
+    // Backend-only commands use the same exact authority.
+    assert_eq!(
+        resolve_backend_space_uid(&uid, "space members").expect("v7"),
+        uid
+    );
+    let err = resolve_backend_space_uid("/tmp/demo/spaces/my-space", "space members")
+        .expect_err("path must fail");
+    assert!(!err.to_string().contains("/tmp/demo"));
 }
 
 /// REQ-OPS-006: endpoint helpers must stay covered for path, URL, and JSON output handling.

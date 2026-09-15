@@ -431,6 +431,36 @@ fn validate_local_space_candidate(
     Ok(metadata)
 }
 
+/// Parse an immutable Space UID for backend/api mode.
+///
+/// Remote operations address a Knowledge authority by its immutable UUIDv7
+/// Space UID only. Slugs, filesystem paths, and other fallback identifiers
+/// are never accepted here so a typo cannot silently select another Space.
+pub fn parse_space_uid(value: &str) -> Result<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty()
+        || trimmed.contains('/')
+        || trimmed.contains('\\')
+        || trimmed.contains('\0')
+    {
+        bail!("backend/api mode requires SPACE_UID (UUIDv7)");
+    }
+    let parsed = uuid::Uuid::parse_str(trimmed)
+        .map_err(|_| anyhow!("backend/api mode requires SPACE_UID (UUIDv7)"))?;
+    if parsed.get_version() != Some(uuid::Version::SortRand) {
+        bail!("backend/api mode requires SPACE_UID (UUIDv7)");
+    }
+    Ok(parsed.to_string())
+}
+
+/// Resolve a backend/api-only Space reference without leaking the raw input.
+///
+/// Core-mode paths are never accepted here; only an exact UUIDv7 works.
+pub fn resolve_backend_space_uid(space_uid: &str, command_name: &str) -> Result<String> {
+    parse_space_uid(space_uid)
+        .with_context(|| format!("{command_name} requires SPACE_UID in backend/api mode"))
+}
+
 pub fn parse_space_path(space_path: &str) -> (String, String) {
     if let Some(explicit) = explicit_core_space_path(space_path) {
         return explicit;
@@ -451,9 +481,10 @@ pub fn resolve_space_reference(
     space_path: &str,
     command_name: &str,
 ) -> Result<(String, String)> {
-    let parsed = parse_space_path(space_path);
     if validated_base_url(config)?.is_some() {
-        return Ok(parsed);
+        let space_uid = parse_space_uid(space_path)
+            .with_context(|| format!("{command_name} requires SPACE_UID in backend/api mode"))?;
+        return Ok((String::new(), space_uid));
     }
     let (root, reference) = explicit_core_space_path(space_path).ok_or_else(|| {
         anyhow!(
