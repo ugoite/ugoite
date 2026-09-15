@@ -1,8 +1,5 @@
-import {
-  type AssetReference,
-  formatAssetSize,
-  isAssetReference,
-} from "./asset-reference";
+import { formatAssetSize, isAssetReference } from "./asset-reference";
+import type { AssetReference } from "./types";
 
 export type DisplayLocale = "en-US" | "ja-JP";
 
