@@ -18,6 +18,9 @@ export type UiIconName =
   | "storage"
   | "appearance"
   | "history"
+  | "refresh"
+  | "info"
+  | "trash"
   | "preview"
   | "download"
   | "close";
@@ -134,6 +137,26 @@ const paths: Record<UiIconName, () => JSX.Element> = {
     <>
       <path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5" />
       <path d="M4 4v4.5h4.5M12 8v5l3 2" />
+    </>
+  ),
+  refresh: () => (
+    <>
+      <path d="M20 6v5h-5" />
+      <path d="M4 18v-5h5" />
+      <path d="M18.5 9A7 7 0 0 0 6.2 6.2L4 11" />
+      <path d="M5.5 15A7 7 0 0 0 17.8 17.8L20 13" />
+    </>
+  ),
+  info: () => (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v6M12 7h.01" />
+    </>
+  ),
+  trash: () => (
+    <>
+      <path d="M4 7h16M9 7V4h6v3" />
+      <path d="M8 10v8M12 10v8M16 10v8M6 7l1 14h10l1-14" />
     </>
   ),
   preview: () => (

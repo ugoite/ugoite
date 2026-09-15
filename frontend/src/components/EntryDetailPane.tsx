@@ -11,6 +11,7 @@ import type { Accessor } from "solid-js";
 
 import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
 import { AssetField } from "~/components/AssetField";
+import { UiIcon } from "~/components/UiIcon";
 import {
   type AssetFieldState,
   createAssetFieldState,
@@ -18,10 +19,7 @@ import {
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import { formatDateTimeLabel } from "~/lib/date-format";
-import {
-  parseMarkdownH2Sections,
-  renderMarkdownPreview,
-} from "~/lib/markdown";
+import { parseMarkdownH2Sections, renderMarkdownPreview } from "~/lib/markdown";
 import {
   buildEntryMarkdownFromFields,
   parseEntryMarkdownPresentation,
@@ -1640,6 +1638,101 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
               </div>
             </header>
 
+            <Show when={!isCreateMode()}>
+              <div
+                class="ui-entry-action-bar"
+                role="toolbar"
+                aria-label={t("entryDetail.actionBarLabel")}
+              >
+                <button
+                  type="button"
+                  class="ui-entry-tool"
+                  title={t("entryDetail.refresh")}
+                  onClick={() => {
+                    void handleRefresh();
+                  }}
+                >
+                  <UiIcon name="refresh" />
+                  <span>{t("entryDetail.refresh")}</span>
+                </button>
+                <A
+                  href={`/spaces/${props.spaceId()}/entries/${
+                    encodeURIComponent(props.entryId?.() ?? "")
+                  }/history`}
+                  class="ui-entry-tool"
+                  title={t("entryDetail.history")}
+                >
+                  <UiIcon name="history" />
+                  <span>{t("entryDetail.history")}</span>
+                </A>
+                <A
+                  href={`/spaces/${props.spaceId()}/entries/${
+                    encodeURIComponent(props.entryId?.() ?? "")
+                  }/restore`}
+                  class="ui-entry-tool"
+                  title={t("entryDetail.restore")}
+                >
+                  <UiIcon name="history" />
+                  <span>{t("entryDetail.restore")}</span>
+                </A>
+                <a
+                  href="#entry-details"
+                  class="ui-entry-tool"
+                  title={t("entryDetail.info")}
+                >
+                  <UiIcon name="info" />
+                  <span>{t("entryDetail.info")}</span>
+                </a>
+                <button
+                  type="button"
+                  class="ui-entry-tool"
+                  onClick={handleDiscard}
+                  disabled={!isDirty()}
+                >
+                  <UiIcon name="close" />
+                  <span>{t("entryDetail.discard")}</span>
+                </button>
+                <button
+                  type="button"
+                  class="ui-entry-tool"
+                  onClick={() => setShowAccessPolicy((value) => !value)}
+                >
+                  <UiIcon name="members" />
+                  <span>
+                    {showAccessPolicy()
+                      ? t("entryDetail.closeSharing")
+                      : t("entryDetail.sharing")}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  class="ui-entry-tool ui-entry-tool-danger"
+                  title={t("entryDetail.delete")}
+                  aria-label={t("entryDetail.delete")}
+                  onClick={handleDelete}
+                >
+                  <UiIcon name="trash" />
+                  <span>{t("entryDetail.delete")}</span>
+                </button>
+              </div>
+            </Show>
+            <Show when={isCreateMode()}>
+              <div
+                class="ui-entry-action-bar"
+                role="toolbar"
+                aria-label={t("entryDetail.actionBarLabel")}
+              >
+                <button
+                  type="button"
+                  class="ui-entry-tool"
+                  onClick={handleCancel}
+                >
+                  <UiIcon name="close" />
+                  <span>{t("entryDetail.back")}</span>
+                </button>
+              </div>
+            </Show>
+
             <Show when={validationError()}>
               {(error) => (
                 <div
@@ -2049,43 +2142,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
               </main>
 
               <aside class="ui-entry-sidebar">
-                <Show when={!isCreateMode()}>
-                  <section class="ui-entry-secondary-action">
-                    <A
-                      href={`/spaces/${props.spaceId()}/entries/${
-                        encodeURIComponent(props.entryId?.() ?? "")
-                      }/history`}
-                      class="ui-entry-history-action"
-                    >
-                      <span>
-                        <strong class="ui-entry-history-label">
-                          {t("entryDetail.history")}
-                        </strong>
-                        <span class="ui-entry-history-description">
-                          {t("entryDetail.historyDescription")}
-                        </span>
-                      </span>
-                      <span aria-hidden="true">›</span>
-                    </A>
-                    <A
-                      href={`/spaces/${props.spaceId()}/entries/${
-                        encodeURIComponent(props.entryId?.() ?? "")
-                      }/restore`}
-                      class="ui-entry-history-action"
-                    >
-                      <span>
-                        <strong class="ui-entry-history-label">
-                          {t("entryDetail.restore")}
-                        </strong>
-                        <span class="ui-entry-history-description">
-                          {t("entryDetail.restoreDescription")}
-                        </span>
-                      </span>
-                      <span aria-hidden="true">›</span>
-                    </A>
-                  </section>
-                </Show>
-                <section class="ui-card ui-entry-side-card">
+                <section class="ui-entry-side-card" id="entry-details">
                   <h2 class="ui-entry-side-heading">
                     {t("entryDetail.detailsHeading")}
                   </h2>
@@ -2126,70 +2183,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                         </div>
                       </dl>
                     </details>
-                  </Show>
-                </section>
-
-                <section class="ui-card ui-entry-side-card">
-                  <h2 class="ui-entry-side-heading">
-                    {t("entryDetail.actionsHeading")}
-                  </h2>
-                  <div class="ui-entry-action-list">
-                    <Show when={!isCreateMode()}>
-                      <button
-                        type="button"
-                        class="ui-entry-action"
-                        onClick={() => void handleRefresh()}
-                      >
-                        <span>{t("entryDetail.refresh")}</span>
-                        <span aria-hidden="true">↻</span>
-                      </button>
-                    </Show>
-                    <Show when={!isCreateMode()}>
-                      <button
-                        type="button"
-                        class="ui-entry-action"
-                        onClick={handleDiscard}
-                        disabled={!isDirty()}
-                      >
-                        <span>{t("entryDetail.discard")}</span>
-                        <span aria-hidden="true">×</span>
-                      </button>
-                    </Show>
-                    <Show when={!isCreateMode()}>
-                      <button
-                        type="button"
-                        class="ui-entry-action"
-                        onClick={() => setShowAccessPolicy((value) => !value)}
-                      >
-                        <span>
-                          {showAccessPolicy()
-                            ? t("entryDetail.closeSharing")
-                            : t("entryDetail.sharing")}
-                        </span>
-                        <span aria-hidden="true">›</span>
-                      </button>
-                    </Show>
-                    <Show when={isCreateMode()}>
-                      <button
-                        type="button"
-                        class="ui-entry-action"
-                        onClick={handleCancel}
-                      >
-                        <span>{t("entryDetail.back")}</span>
-                        <span aria-hidden="true">×</span>
-                      </button>
-                    </Show>
-                  </div>
-                  <Show when={!isCreateMode()}>
-                    <div class="ui-entry-danger-zone">
-                      <button
-                        type="button"
-                        onClick={handleDelete}
-                        class="ui-button ui-button-danger ui-button-sm w-full"
-                      >
-                        {t("entryDetail.delete")}
-                      </button>
-                    </div>
                   </Show>
                 </section>
               </aside>

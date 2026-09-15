@@ -69,24 +69,22 @@ components:
           type: field-level-preview
       secondary:
         - id: entry-details
-          type: metadata-card
+          type: list
           items:
             - form
             - updated_at
             - technical-details:
                 - entry_id
-        - id: entry-history-recovery
-          type: secondary-action
-          actions:
-            - history
-            - restore
-        - id: entry-management
-          type: action-card
-          actions:
-            - refresh
-            - discard-draft
-            - sharing
-            - delete
+    - id: entry-action-bar
+      type: toolbar
+      actions:
+        - refresh
+        - history
+        - restore
+        - info
+        - discard-draft
+        - sharing
+        - delete
 responsive:
   desktop: two-column
   mobile: stacked-primary-first
