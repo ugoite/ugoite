@@ -217,6 +217,7 @@ async function runMobileRegression(
         await expect(page.locator(".ui-entry-action-bar")).toBeVisible();
         await expect(page.getByRole("link", { name: "Info" }))
           .toHaveAttribute("href", "#entry-details");
+        await expectMobileTouchTargets(page);
       },
     },
   ];
