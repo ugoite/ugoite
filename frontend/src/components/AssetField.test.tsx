@@ -383,18 +383,20 @@ describe("AssetField", () => {
     const encoded = serializeAssetReference(first);
 
     render(() => (
-      <AssetField
-        fieldId="document"
-        fieldName="document"
-        value={encoded}
-        persistedValue={encoded}
-        multiple={false}
-        spaceId="default"
-        formName="Contracts"
-        entryId="entry-1"
-        state={state}
-        onChange={() => undefined}
-      />
+      <div id="app">
+        <AssetField
+          fieldId="document"
+          fieldName="document"
+          value={encoded}
+          persistedValue={encoded}
+          multiple={false}
+          spaceId="default"
+          formName="Contracts"
+          entryId="entry-1"
+          state={state}
+          onChange={() => undefined}
+        />
+      </div>
     ));
 
     state.setPreviewBlobs(
@@ -416,9 +418,19 @@ describe("AssetField", () => {
     const dialog = await screen.findByRole("dialog", { name: first.name });
     expect(dialog).toBeInTheDocument();
     expect(dialog.querySelector(".ui-asset-preview-panel")).not.toBeNull();
+    expect(document.getElementById("app")).toHaveAttribute("inert");
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Close" }),
+    );
+
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Close" }),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.getElementById("app")).not.toHaveAttribute("inert");
     expect(row?.querySelector(".ui-asset-preview-panel")).toBeNull();
   });
 
