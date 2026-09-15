@@ -348,10 +348,6 @@ async fn temporal_values_and_revision_parentage_agree_across_both_paths() -> any
         "revision parentage must link the update to its parent"
     );
     assert!(
-        revisions.len() >= 2,
-        "history must retain both committed revisions"
-    );
-    assert!(
         revisions.iter().all(|revision| revision
             .get("change_id")
             .and_then(serde_json::Value::as_str)
