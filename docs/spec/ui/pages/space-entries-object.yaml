@@ -7,10 +7,16 @@ page:
   implementation: implemented
 components:
   body:
+    - id: entry-list-toolbar
+      type: toolbar
+      description: Provides local title/Form filtering and updated-or-title sorting for the loaded Entry list.
     - id: plain-entry-list
-      type: entry-card-grid
-      description: The plain Entries route loads the Space's Entry list and exposes the first-entry flow without redirecting to Forms.
+      type: list
+      description: The plain Entries route loads the Space's Entry list as border-separated rows, exposes local filtering and sorting, and keeps the first-entry flow without redirecting to Forms.
     - id: sql-session-results
       type: query-results
       condition: session query parameter is present
       description: Cross-Form SQL session results remain available at this route.
+responsive:
+  desktop: border-separated-list
+  mobile: stacked-border-separated-list

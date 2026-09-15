@@ -335,7 +335,7 @@ describe("UI spec YAML registry", () => {
         component.id === "plain-entry-list"
       ),
     ).toMatchObject({
-      type: "entry-card-grid",
+      type: "list",
     });
   });
 });

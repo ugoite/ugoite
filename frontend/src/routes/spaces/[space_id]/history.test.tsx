@@ -63,6 +63,8 @@ describe("space history route", () => {
     // Advanced detail, shown as-is.
     expect(await screen.findByText("Change change-2")).toBeInTheDocument();
     expect(await screen.findByText("Run run-7")).toBeInTheDocument();
+    expect(document.querySelector(".historyRow")).toBeInTheDocument();
+    expect(document.querySelector(".historyRow.ui-card")).toBeNull();
     expect(changeApi.list).toHaveBeenCalledWith("default");
   });
 

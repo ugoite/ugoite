@@ -85,6 +85,9 @@ describe("/spaces/:space_id/assets", () => {
     );
     expect(screen.getByRole("link", { name: /Quarterly report/ }))
       .toHaveAttribute("href", "/spaces/default/entries/entry-1");
+    expect(document.querySelector(".spaceAssetRow")).toBeInTheDocument();
+    expect(document.querySelector(".spaceAssetRow.ui-card")).toBeNull();
+    expect(document.querySelector(".assetReferenceRow.ui-card")).toBeNull();
   });
 
   it("loads all pages when the asset inventory crosses a read boundary", async () => {
