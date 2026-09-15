@@ -421,7 +421,18 @@ pub(crate) async fn read_sql_row_for_audit(
     ws_path: &str,
     sql_id: &str,
 ) -> Result<Option<(String, Option<String>, bool, String)>> {
-    ensure_sql_form(op, ws_path).await?;
+    // Read-only presence check: reconciliation must never bootstrap the SQL
+    // form as a side effect. A missing form means no row was ever committed.
+    match crate::form::read_form_definition(op, ws_path, SQL_FORM_NAME).await {
+        Ok(_) => {}
+        Err(error)
+            if error.to_string().to_lowercase().contains("not found")
+                || error.to_string().contains("was not found") =>
+        {
+            return Ok(None);
+        }
+        Err(error) => return Err(error),
+    }
     let row = match entry::read_entry_row(op, ws_path, SQL_FORM_NAME, sql_id).await {
         Ok(row) => row,
         Err(error)
@@ -456,29 +467,7 @@ pub(crate) async fn read_sql_row_for_audit(
 /// empty list when the SQL form was never created; enumeration never creates
 /// storage state.
 pub(crate) async fn list_sql_ids_for_audit(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
-    let rows = match index::query_form_entry_rows_authorized(
-        op,
-        ws_path,
-        SQL_FORM_NAME,
-        EntryScope::AllCurrent,
-        None,
-        crate::MAX_NORMAL_READ_ROWS,
-    )
-    .await
-    {
-        Ok(rows) => rows,
-        Err(error)
-            if error.to_string().contains("was not found")
-                || error.to_string().contains("not found") =>
-        {
-            return Ok(Vec::new());
-        }
-        Err(error) => return Err(error),
-    };
-    let mut ids: Vec<String> = rows.into_iter().map(|row| row.entry_id).collect();
-    ids.sort();
-    ids.dedup();
-    Ok(ids)
+    crate::entry::list_form_entry_ids_for_audit(op, ws_path, SQL_FORM_NAME).await
 }
 
 pub async fn find_sql_id_by_text(

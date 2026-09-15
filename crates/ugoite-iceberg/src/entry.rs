@@ -687,6 +687,33 @@ pub(crate) async fn list_form_names(op: &Operator, ws_path: &str) -> Result<Vec<
     form::list_form_names(op, ws_path).await
 }
 
+/// Lists every committed Entry ID for one Form, tombstones included.
+///
+/// Audit reconciliation enumerates from revision rows rather than the
+/// Current view so missing delete evidence closes too. A missing Form
+/// yields an empty list; enumeration never creates storage state, and a
+/// corrupt Form fails the caller instead of being skipped.
+pub(crate) async fn list_form_entry_ids_for_audit(
+    op: &Operator,
+    ws_path: &str,
+    form_name: &str,
+) -> Result<Vec<String>> {
+    let rows = match revision_rows_for_form(op, ws_path, form_name).await {
+        Ok((_, _, rows)) => rows,
+        Err(error)
+            if error.to_string().to_lowercase().contains("not found")
+                || error.to_string().contains("was not found") =>
+        {
+            return Ok(Vec::new());
+        }
+        Err(error) => return Err(error),
+    };
+    let mut ids: Vec<String> = rows.into_iter().map(|row| row.entry_id).collect();
+    ids.sort();
+    ids.dedup();
+    Ok(ids)
+}
+
 pub(crate) async fn find_entry_form(
     op: &Operator,
     ws_path: &str,

@@ -32,7 +32,7 @@
 use anyhow::{Context, Result};
 use opendal::Operator;
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use uuid::Uuid;
 
 use crate::audit;
@@ -420,6 +420,13 @@ impl UgoiteService {
             return Ok(None);
         }
         let space_uid = self.space_uid(space_id).await?;
+        // History order is timestamp-based, so clock skew could mislabel the
+        // create revision; entry_version is the authoritative creation order
+        // when present, with position as the fallback.
+        let created_version = revisions
+            .iter()
+            .filter_map(|revision| revision.get("entry_version").and_then(Value::as_u64))
+            .min();
         let mut delivered = None;
         for (index, revision) in revisions.iter().enumerate() {
             let Some(revision_id) = revision
@@ -437,9 +444,16 @@ impl UgoiteService {
                 .get("operation")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
+            let is_first = match (
+                revision.get("entry_version").and_then(Value::as_u64),
+                created_version,
+            ) {
+                (Some(version), Some(created)) => version == created,
+                _ => index == 0,
+            };
             let action = if operation == "delete" {
                 ENTRY_DELETED_ACTION
-            } else if index == 0 {
+            } else if is_first {
                 ENTRY_CREATED_ACTION
             } else {
                 ENTRY_UPDATED_ACTION
@@ -529,6 +543,10 @@ impl UgoiteService {
     /// Returns the number of targets converged.
     pub async fn reconcile_space_audit(&self, space_id: &str) -> Result<usize> {
         let workspace = self.workspace_path(space_id);
+        // Enumerate from revision rows (never the Current view) so
+        // tombstoned entries are included: their delete evidence may be the
+        // very gap being closed. Enumeration is read-only and unbounded by
+        // row caps; a corrupt Form fails the sweep instead of being skipped.
         let mut entry_ids = BTreeSet::new();
         let form_names = match crate::entry::list_form_names(self.operator(), &workspace).await {
             Ok(names) => names,
@@ -540,35 +558,15 @@ impl UgoiteService {
             }
             Err(error) => return Err(error),
         };
-        if !form_names.is_empty() {
-            let relation_scopes: BTreeMap<String, ugoite_core::query::EntryScope> = form_names
-                .into_iter()
-                .map(|form_name| {
-                    (
-                        form_name.to_ascii_lowercase(),
-                        ugoite_core::query::EntryScope::AllCurrent,
-                    )
-                })
-                .collect();
-            let mut offset = 0;
-            loop {
-                let rows = crate::index::query_entry_rows_authorized(
-                    self.operator(),
-                    &workspace,
-                    &relation_scopes,
-                    None,
-                    None,
-                    crate::MAX_NORMAL_READ_ROWS,
-                    offset,
-                )
-                .await?;
-                let page_len = rows.len();
-                entry_ids.extend(rows.into_iter().map(|(_, row)| row.entry_id));
-                if page_len < crate::MAX_NORMAL_READ_ROWS {
-                    break;
-                }
-                offset += page_len;
-            }
+        for form_name in form_names {
+            let ids = crate::entry::list_form_entry_ids_for_audit(
+                self.operator(),
+                &workspace,
+                &form_name,
+            )
+            .await
+            .with_context(|| format!("enumerate audit targets for Form {form_name}"))?;
+            entry_ids.extend(ids);
         }
         let sql_ids = crate::saved_sql::list_sql_ids_for_audit(self.operator(), &workspace).await?;
         let mut converged = 0;
@@ -812,7 +810,8 @@ mod tests {
             .expect("reconcile converges after success");
         assert_eq!(delivered["action"], json!(ENTRY_CREATED_ACTION));
         assert_eq!(audit_total(&service, &space_id).await?, 1);
-        // Unknown targets reconcile to no evidence, not an error.
+        // Unknown targets reconcile to no evidence, not an error, and the
+        // read-only check must not bootstrap storage state as a side effect.
         assert!(service
             .reconcile_entry_audit(&space_id, "missing-entry", &[], "author")
             .await?
@@ -821,6 +820,16 @@ mod tests {
             .reconcile_saved_sql_audit(&space_id, "missing-sql", &[], "author")
             .await?
             .is_none());
+        assert!(
+            crate::form::read_form_definition(
+                service.operator(),
+                &service.workspace_path(&space_id),
+                "SQL"
+            )
+            .await
+            .is_err(),
+            "reconciling a missing target must not create the SQL form"
+        );
         Ok(())
     }
 
@@ -898,9 +907,20 @@ mod tests {
             &integrity,
         )
         .await?;
+        // A tombstone without delivery must converge too: enumeration reads
+        // revision rows (never the Current view) so deleted entries are not
+        // skipped.
+        crate::entry::delete_entry(
+            service.operator(),
+            &service.workspace_path(&space_id),
+            "entry-1",
+            false,
+            "author",
+        )
+        .await?;
         assert_eq!(audit_total(&service, &space_id).await?, 0);
 
-        // Reopen the Space and sweep: both committed revisions converge.
+        // Reopen the Space and sweep: every committed revision converges.
         let root_uri = service.root_uri().to_string();
         let service2 = UgoiteService::from_operator(service.operator().clone(), root_uri);
         let converged = service2.reconcile_space_audit(&space_id).await?;
@@ -911,7 +931,7 @@ mod tests {
             crate::audit::AuditListOptions::default(),
         )
         .await?;
-        assert_eq!(listed.get("total").and_then(Value::as_u64), Some(2));
+        assert_eq!(listed.get("total").and_then(Value::as_u64), Some(3));
         let items = listed
             .get("items")
             .and_then(Value::as_array)
@@ -922,6 +942,7 @@ mod tests {
             .collect();
         assert!(actions.contains(&ENTRY_CREATED_ACTION));
         assert!(actions.contains(&ENTRY_UPDATED_ACTION));
+        assert!(actions.contains(&ENTRY_DELETED_ACTION));
 
         // Attribution matches committed history, not sweep-caller input.
         let history = crate::entry::get_entry_history(
@@ -969,7 +990,7 @@ mod tests {
 
         // A second sweep converges without duplicating evidence.
         assert_eq!(service2.reconcile_space_audit(&space_id).await?, 1);
-        assert_eq!(audit_total(&service2, &space_id).await?, 2);
+        assert_eq!(audit_total(&service2, &space_id).await?, 3);
         Ok(())
     }
 
