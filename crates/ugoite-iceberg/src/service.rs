@@ -1635,11 +1635,26 @@ impl UgoiteService {
     /// failure remains a typed discovery diagnostic. Keeping this decision in
     /// the application service prevents the HTTP adapter from treating
     /// corruption or storage failures as invisible Spaces.
+    ///
+    /// The caller supplies a validated inventory from a single
+    /// `list_space_ids` call in this operation. This method never re-runs
+    /// discovery/validation itself, so one listing operation performs exactly
+    /// one full Space-tree scan. No cross-request cache is used: the next
+    /// request always reads fresh durable state.
     pub async fn list_spaces_authorized_for_principals(
         &self,
         principal_ids_by_space: &BTreeMap<String, Option<Vec<Uuid>>>,
     ) -> Result<Vec<Value>> {
         let space_ids = self.list_space_ids().await?;
+        self.list_spaces_authorized_for_inventory(space_ids, principal_ids_by_space)
+            .await
+    }
+
+    pub async fn list_spaces_authorized_for_inventory(
+        &self,
+        space_ids: Vec<String>,
+        principal_ids_by_space: &BTreeMap<String, Option<Vec<Uuid>>>,
+    ) -> Result<Vec<Value>> {
         let mut spaces = Vec::with_capacity(space_ids.len());
         for space_id in space_ids {
             let principal_ids = principal_ids_by_space.get(&space_id).ok_or_else(|| {
