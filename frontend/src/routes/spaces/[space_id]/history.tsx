@@ -104,14 +104,14 @@ export default function SpaceHistoryRoute() {
             when={data().length > 0}
             fallback={<p class="ui-muted">{t("spaceHistory.empty")}</p>}
           >
-            <div class="rowStack">
+            <div class="historyRows">
               <For each={data()}>
                 {(change) => (
-                  <div class="ui-card">
-                    <span class="glyph active">
+                  <article class="historyRow">
+                    <span class="historyRowIcon glyph active">
                       <UiIcon name="history" />
                     </span>
-                    <span>
+                    <div class="historyRowBody">
                       <b>{changeKind(change)}</b>
                       <Show when={change.message}>
                         <span>{change.message}</span>
@@ -203,8 +203,8 @@ export default function SpaceHistoryRoute() {
                           </span>
                         </span>
                       </Show>
-                    </span>
-                  </div>
+                    </div>
+                  </article>
                 )}
               </For>
             </div>
