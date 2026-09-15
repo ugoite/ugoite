@@ -37,9 +37,7 @@ async function expectMobileTouchTargets(page: Page): Promise<void> {
     })
   );
 
-  // Some responsive screens intentionally have no form controls. The zoom
-  // guard applies to controls when present, not to the screen as a whole.
-  if (sizes.length === 0) return;
+  expect(sizes.length).toBeGreaterThan(0);
   for (const size of sizes) {
     expect(size.width).toBeGreaterThanOrEqual(44);
     expect(size.height).toBeGreaterThanOrEqual(44);
@@ -60,7 +58,9 @@ async function expectMobileControlFontSize(page: Page): Promise<void> {
       .filter((size): size is number => size !== null)
   );
 
-  expect(sizes.length).toBeGreaterThan(0);
+  // Some responsive screens intentionally have no form controls. The zoom
+  // guard applies to controls when present, not to the screen as a whole.
+  if (sizes.length === 0) return;
   for (const size of sizes) {
     expect(size).toBeGreaterThanOrEqual(16);
   }
