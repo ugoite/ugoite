@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import {
   type DocsiteServer,
   startDocsiteServer,
@@ -21,35 +21,35 @@ test.describe("Docsite onboarding", () => {
     // Mitase evidence: REQ-E2E-008#criterion.start-paths.
     await page.goto(buildDocsiteUrl("/"), { waitUntil: "networkidle" });
 
-    await expect(page.getByRole("heading", { level: 1, name: "Ugoite" }))
-      .toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Ugoite" }),
+    ).toBeVisible();
     await expect(
       page.getByText(/private, portable Knowledge Space for humans and AI/i),
     ).toBeVisible();
-    await expect(primaryQuickStartCta(page)).toBeVisible();
-    await expect(page.getByText(/operator-owned Space/i)).toBeVisible();
-    await expect(page.getByRole("link", { name: "Run from source" }))
-      .toBeVisible();
-    await expect(page.getByRole("link", { name: "View on GitHub" }))
-      .toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Get started", exact: true }).first(),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Explore the vision", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "View on GitHub", exact: true }),
+    ).toBeVisible();
     await expect(page.getByText("Browser caveat today")).toBeVisible();
-    await expect(page.getByRole("heading", { level: 2, name: "Choose a path" }))
-      .toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 2, name: "Choose a path" }),
+    ).toBeVisible();
     await expect(
       page.getByRole("heading", { level: 2, name: "Source-of-truth rules" }),
     ).toBeVisible();
-  });
 
-  test("REQ-E2E-008: the primary action opens the canonical quick-start document", async ({ page }) => {
-    // Mitase evidence: REQ-E2E-008#criterion.start-paths.
-    await page.goto(buildDocsiteUrl("/"), { waitUntil: "networkidle" });
-    await primaryQuickStartCta(page).click();
-
-    await expect(page).toHaveURL(
-      /\/docs\/guide\/start\/container-quickstart\/$/,
-    );
+    await page.getByRole("link", { name: "Get started", exact: true })
+      .first()
+      .click();
+    await expect(page).toHaveURL(/\/docs\/get-started\/?$/);
     await expect(
-      page.getByRole("heading", { level: 1, name: /container quick start/i }),
+      page.getByRole("heading", { level: 1, name: "Get started" }),
     ).toBeVisible();
   });
 });
@@ -59,11 +59,4 @@ function buildDocsiteUrl(path: string): string {
     throw new Error("Docsite server is unavailable");
   }
   return docsiteServer.buildUrl(path);
-}
-
-function primaryQuickStartCta(page: Page) {
-  return page.getByRole("main").getByRole("link", {
-    name: "Container quick start",
-    exact: true,
-  });
 }

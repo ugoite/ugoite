@@ -131,7 +131,7 @@ features:
       - id: docsite
         role: implementation
         facet: docsite
-        responsibility: Keep the Starlight shell, repository docs loader, link processor, canonical landing page, and documented navigation structure connected as one docsite surface.
+        responsibility: Keep the Starlight shell, repository docs loader, link processor, canonical landing page, and Ugoite-owned navigation paths connected as one docsite surface.
         targets:
           - id: docsite-config
             adapter: declared
@@ -190,10 +190,12 @@ features:
                 criterion: REQ-E2E-008#criterion.landing-content
               - kind: satisfies
                 criterion: REQ-E2E-008#criterion.start-paths
-          - id: quickstart
+          - id: get-started-path
             adapter: declared
-            path: docs/guide/start/container-quickstart.md
+            path: docs/get-started/index.md
             selector: { kind: file }
             claims:
+              - kind: satisfies
+                criterion: REQ-E2E-005#criterion.beginner-path
               - kind: satisfies
                 criterion: REQ-E2E-008#criterion.start-paths

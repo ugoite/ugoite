@@ -213,89 +213,66 @@ requirements:
                 runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-004: dynamic traversal has no console or SolidJS errors' } }
 
   - id: REQ-E2E-005
-    title: Docsite responsive navigation
-    description: The docsite delegates responsive global and document navigation to Starlight, exposing the sidebar through an accessible mobile menu and a persistent desktop layout while preserving the documented beginner path.
+    title: Canonical docsite navigation
+    description: The documentation homepage and Get started path expose the canonical Ugoite information architecture at both small and desktop viewports.
     priority: high
     status: implemented
     criteria:
       - id: mobile-sidebar
         kind: behavior
-        statement: A small viewport exposes the Starlight documentation sidebar through an accessible menu button, and Escape closes the expanded menu.
+        statement: At a small viewport, the documentation homepage exposes links to the canonical Ugoite documentation paths.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
       - id: desktop-sidebar
         kind: quality
-        statement: A desktop viewport exposes the persistent Starlight sidebar and the documented navigation groups.
+        statement: At a desktop viewport, the documentation homepage exposes links to the canonical Ugoite documentation paths.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance]
       - id: beginner-path
         kind: behavior
-        statement: The Guide landing page exposes the documented beginner path in its canonical learning order.
+        statement: The Get started page exposes the canonical Quickstart path for the documented beginner journey.
         governed_by: [POL-006#rule.governance, POL-014#rule.governance]
       - id: homepage-navigation
         kind: behavior
-        statement: The documentation homepage preserves its hero content and Starlight navigation at both mobile and desktop viewport sizes.
+        statement: The documentation homepage preserves its hero content and canonical top-level paths at both mobile and desktop viewport sizes.
         governed_by: [POL-006#rule.governance, POL-014#rule.governance]
     bindings:
       - id: responsive-navigation-verification
         role: verification
         facet: verification
-        responsibility: Verify responsive sidebar behavior, Escape handling, desktop navigation, beginner ordering, and homepage navigation through exact Playwright cases.
+        responsibility: Verify canonical documentation route reachability at small and desktop viewport sizes through one Ugoite-owned Playwright smoke case.
         targets:
-          - id: mobile-menu-case
+          - id: canonical-paths-case
             adapter: typescript
             path: e2e/docsite-mobile-nav.test.ts
-            selector: { kind: test, name: 'REQ-E2E-005: Starlight exposes the documentation sidebar as a mobile menu' }
+            selector: { kind: test, name: 'REQ-E2E-005: homepage exposes canonical documentation paths' }
             claims:
               - kind: verifies
                 criterion: REQ-E2E-005#criterion.mobile-sidebar
                 covers: [FEAT-E2E-002#binding.docsite/target.docsite-config]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: 'REQ-E2E-005: Starlight exposes the documentation sidebar as a mobile menu' } }
-              - kind: verifies
-                criterion: REQ-E2E-009#criterion.responsive-layout
-                covers: [FEAT-E2E-002#binding.docsite/target.docsite-config]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: 'REQ-E2E-005: Starlight exposes the documentation sidebar as a mobile menu' } }
-          - id: escape-case
-            adapter: typescript
-            path: e2e/docsite-mobile-nav.test.ts
-            selector: { kind: test, name: 'REQ-E2E-005: the mobile menu closes with Escape' }
-            claims:
-              - kind: verifies
-                criterion: REQ-E2E-005#criterion.mobile-sidebar
-                covers: [FEAT-E2E-002#binding.docsite/target.docsite-config]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: 'REQ-E2E-005: the mobile menu closes with Escape' } }
-          - id: desktop-case
-            adapter: typescript
-            path: e2e/docsite-mobile-nav.test.ts
-            selector: { kind: test, name: "REQ-E2E-009: desktop pages use Starlight's sidebar and table of contents" }
-            claims:
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: 'REQ-E2E-005: homepage exposes canonical documentation paths' } }
               - kind: verifies
                 criterion: REQ-E2E-005#criterion.desktop-sidebar
                 covers: [FEAT-E2E-002#binding.docsite/target.docsite-config]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: "REQ-E2E-009: desktop pages use Starlight's sidebar and table of contents" } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: 'REQ-E2E-005: homepage exposes canonical documentation paths' } }
               - kind: verifies
                 criterion: REQ-E2E-009#criterion.desktop-layout
                 covers: [FEAT-E2E-002#binding.docsite/target.docsite-config]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: "REQ-E2E-009: desktop pages use Starlight's sidebar and table of contents" } }
-          - id: beginner-case
-            adapter: typescript
-            path: e2e/docsite-mobile-nav.test.ts
-            selector: { kind: test, name: 'REQ-E2E-005: the beginner path follows its documented learning order' }
-            claims:
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: 'REQ-E2E-005: homepage exposes canonical documentation paths' } }
               - kind: verifies
                 criterion: REQ-E2E-005#criterion.beginner-path
                 covers:
                   - FEAT-E2E-002#binding.docsite/target.docsite-config
-                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: 'REQ-E2E-005: the beginner path follows its documented learning order' } }
-          - id: homepage-case
-            adapter: typescript
-            path: e2e/docsite-mobile-nav.test.ts
-            selector: { kind: test, name: 'REQ-E2E-005: the homepage keeps the hero and Starlight navigation' }
-            claims:
+                  - FEAT-E2E-002#binding.docsite/target.get-started-path
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: 'REQ-E2E-005: homepage exposes canonical documentation paths' } }
               - kind: verifies
                 criterion: REQ-E2E-005#criterion.homepage-navigation
                 covers:
                   - FEAT-E2E-002#binding.docsite/target.homepage
                   - FEAT-E2E-002#binding.docsite/target.docsite-config
-                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: 'REQ-E2E-005: the homepage keeps the hero and Starlight navigation' } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: 'REQ-E2E-005: homepage exposes canonical documentation paths' } }
+              - kind: verifies
+                criterion: REQ-E2E-009#criterion.responsive-layout
+                covers: [FEAT-E2E-002#binding.docsite/target.docsite-config]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-mobile-nav.test.ts, test: 'REQ-E2E-005: homepage exposes canonical documentation paths' } }
 
   - id: REQ-E2E-006
     title: Docsite internal link integrity
@@ -406,13 +383,13 @@ requirements:
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-013#rule.governance]
       - id: start-paths
         kind: behavior
-        statement: The documentation landing page exposes concrete container, source, and GitHub paths, and its primary action opens the canonical container quick-start page.
+        statement: The documentation landing page exposes the canonical Get started, Vision, GitHub, and top-level documentation paths, and its primary action opens Get started.
         governed_by: [POL-005#rule.governance, POL-006#rule.governance, POL-014#rule.governance]
     bindings:
       - id: landing-verification
         role: verification
         facet: verification
-        responsibility: Verify the canonical landing content and primary quick-start navigation through exact docsite assertions.
+        responsibility: Verify the canonical landing content and primary Get started navigation through exact docsite assertions.
         targets:
           - id: landing-case
             adapter: typescript
@@ -427,31 +404,19 @@ requirements:
                 criterion: REQ-E2E-008#criterion.start-paths
                 covers:
                   - FEAT-E2E-002#binding.docsite/target.homepage
-                  - FEAT-E2E-002#binding.docsite/target.quickstart
+                  - FEAT-E2E-002#binding.docsite/target.get-started-path
                 runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-onboarding.test.ts, test: 'REQ-E2E-008: the canonical docs landing page gives users concrete start paths' } }
-          - id: primary-action-case
-            adapter: typescript
-            path: e2e/docsite-onboarding.test.ts
-            selector: { kind: test, name: 'REQ-E2E-008: the primary action opens the canonical quick-start document' }
-            claims:
-              - kind: verifies
-                criterion: REQ-E2E-008#criterion.start-paths
-                covers:
-                  - FEAT-E2E-002#binding.docsite/target.homepage
-                  - FEAT-E2E-002#binding.docsite/target.quickstart
-                runner: { runner: e2e-playwright, arguments: { file: e2e/docsite-onboarding.test.ts, test: 'REQ-E2E-008: the primary action opens the canonical quick-start document' } }
-
   - id: REQ-E2E-009
-    title: Framework-owned desktop documentation layout
-    description: Desktop documentation pages use Starlight's persistent documentation sidebar and page table of contents, while smaller viewports use the accessible mobile menu.
+    title: Responsive canonical documentation navigation
+    description: Ugoite's documentation homepage keeps its canonical navigation paths reachable at desktop and small viewport sizes without making Starlight layout internals a product contract.
     priority: high
     status: implemented
     criteria:
       - id: desktop-layout
         kind: quality
-        statement: Desktop documentation pages expose Starlight's persistent sidebar and right-side table of contents.
+        statement: A desktop documentation homepage renders the canonical Ugoite navigation paths and a readable primary heading.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance]
       - id: responsive-layout
         kind: quality
-        statement: Smaller documentation viewports use the Starlight accessible mobile menu for the same documentation navigation.
+        statement: A small documentation viewport renders the same canonical Ugoite navigation paths without requiring framework-specific selectors.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance]

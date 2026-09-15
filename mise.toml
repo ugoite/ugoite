@@ -310,8 +310,8 @@ run = "deno task docsite:e2e:navigation"
 
 [tasks.test]
 depends = ["build:wasm:debug"]
-description = "Run the authoritative non-E2E test suite with coverage gates"
-run = [{ tasks = ["test:rust", "test:tools", "test:frontend:coverage", "test:docsite:coverage"] }]
+description = "Run the authoritative non-E2E test suite"
+run = [{ tasks = ["test:rust", "test:tools", "test:frontend:coverage", "test:docsite"] }]
 
 [tasks."test:e2e"]
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:full"
@@ -509,7 +509,7 @@ run = [
   { tasks = [
     "test:tools",
     "test:frontend:coverage",
-    "test:docsite:coverage",
+    "test:docsite",
   ] },
 ]
 

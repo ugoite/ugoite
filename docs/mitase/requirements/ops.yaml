@@ -86,17 +86,17 @@ requirements:
       - id: taxonomy-integrity-verification
         role: verification
         facet: docsite-test
-        responsibility: Verify the current legacy registry link-integrity contract through the exact docsite test. The legacy registries remain migration evidence for this slice; later domain migrations may move the checked authority.
+        responsibility: Verify the current legacy registry link-integrity contract through the exact repository test. The legacy registries remain migration evidence for this slice; later domain migrations may move the checked authority.
         targets:
           - id: taxonomy-integrity-test
             adapter: typescript
-            path: docsite/src/spec-integrity.test.ts
+            path: tools/spec_integrity_test.ts
             selector: { kind: test, name: 'REQ-OPS-003: requirement IDs, related documents, and test references resolve' }
             claims:
               - kind: verifies
                 criterion: REQ-OPS-003#criterion.taxonomy-integrity
                 covers: [FEAT-OPS-001#binding.registries/target.taxonomy-registry]
-                runner: { runner: docsite-vitest-file, arguments: { file: src/spec-integrity.test.ts, test: 'REQ-OPS-003: requirement IDs, related documents, and test references resolve' } }
+                runner: { runner: deno-test-file, arguments: { file: tools/spec_integrity_test.ts, test: 'REQ-OPS-003: requirement IDs, related documents, and test references resolve' } }
 
   - id: REQ-OPS-004
     title: Version Milestone Definitions
@@ -112,17 +112,17 @@ requirements:
       - id: milestone-status-verification
         role: verification
         facet: docsite-test
-        responsibility: Verify the version status and source-integrity contract through the exact docsite test; this does not promote planned milestones to implemented behavior.
+        responsibility: Verify the version status and source-integrity contract through the exact repository test; this does not promote planned milestones to implemented behavior.
         targets:
           - id: milestone-status-test
             adapter: typescript
-            path: docsite/src/spec-integrity.test.ts
+            path: tools/spec_integrity_test.ts
             selector: { kind: test, name: 'REQ-OPS-004: version statuses agree with their tasks and canonical sources' }
             claims:
               - kind: verifies
                 criterion: REQ-OPS-004#criterion.milestone-status
                 covers: [FEAT-OPS-001#binding.versions/target.version-v01, FEAT-OPS-001#binding.versions/target.version-v02]
-                runner: { runner: docsite-vitest-file, arguments: { file: src/spec-integrity.test.ts, test: 'REQ-OPS-004: version statuses agree with their tasks and canonical sources' } }
+                runner: { runner: deno-test-file, arguments: { file: tools/spec_integrity_test.ts, test: 'REQ-OPS-004: version statuses agree with their tasks and canonical sources' } }
 
   - id: REQ-OPS-005
     title: Repository Lint and Hygiene Gates
@@ -937,13 +937,13 @@ requirements:
 
   - id: REQ-OPS-024
     title: Docsite Coverage Convenience
-    description: The required hosted CI job runs the root docsite coverage task as developer convenience. The Vitest V8 configuration reports coverage for authored docsite source while excluding framework-only wiring and test files, without hard-failing coverage thresholds.
+    description: "The canonical root and hosted web tasks run the normal docsite behavior/type suite. The separate docsite coverage task remains developer convenience: its Vitest V8 report covers authored source while excluding framework-only wiring and test files, without hard-failing coverage thresholds."
     priority: medium
     status: implemented
     criteria:
       - id: docsite-coverage-gate
         kind: quality
-        statement: The docsite coverage configuration and root task keep coverage reporting available for authored docsite source and are included in the canonical repository test gate without hard-failing coverage thresholds.
+        statement: The docsite coverage configuration and separate root task keep coverage reporting available for authored docsite source, while canonical repository tests use the normal docsite suite and do not make coverage percentage a merge gate.
         governed_by: [POL-006#rule.governance, POL-008#rule.governance]
     bindings:
       - id: docsite-coverage-verification
@@ -954,12 +954,12 @@ requirements:
           - id: docsite-coverage-test
             adapter: typescript
             path: tools/coverage_gates_test.ts
-            selector: { kind: test, name: 'REQ-OPS-024: docsite coverage remains a canonical test contract' }
+            selector: { kind: test, name: 'REQ-OPS-024: docsite coverage remains developer convenience' }
             claims:
               - kind: verifies
                 criterion: REQ-OPS-024#criterion.docsite-coverage-gate
                 covers: [FEAT-OPS-001#binding.migrated-ops-coverage/target.docsite-coverage-config, FEAT-OPS-001#binding.automation/target.root-mise]
-                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: 'REQ-OPS-024: docsite coverage remains a canonical test contract' } }
+                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: 'REQ-OPS-024: docsite coverage remains developer convenience' } }
 
   - id: REQ-OPS-044
     title: Repository-Native Candidate Promotion

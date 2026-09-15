@@ -326,7 +326,7 @@ features:
       - id: migrated-ops-coverage
         role: implementation
         facet: quality-gates
-        responsibility: Connect the frontend and docsite coverage configurations to the exact repository tests that verify their 100 percent coverage contracts.
+        responsibility: Connect the frontend hard coverage configuration and the optional docsite coverage report to the exact repository tests that verify their distinct quality roles.
         targets:
           - id: frontend-coverage-config
             adapter: typescript

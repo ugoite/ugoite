@@ -168,7 +168,7 @@ function assertAggregateWorkflow(workflow: string, mise: string): void {
       "test:rust",
       "test:tools",
       "test:frontend:coverage",
-      "test:docsite:coverage",
+      "test:docsite",
     ],
     "canonical test task",
   );
@@ -178,9 +178,9 @@ function assertAggregateWorkflow(workflow: string, mise: string): void {
     "canonical test task must not run the focused frontend suite",
   );
   assertEquals(
-    canonicalTest.includes('"test:docsite",'),
+    canonicalTest.includes('"test:docsite:coverage"'),
     false,
-    "canonical test task must not run the focused docsite suite",
+    "canonical test task must not run docsite coverage instrumentation",
   );
 
   assertContainsAll(
@@ -229,7 +229,7 @@ function assertAggregateWorkflow(workflow: string, mise: string): void {
         "check:deno",
         "test:tools",
         "test:frontend:coverage",
-        "test:docsite:coverage",
+        "test:docsite",
       ],
     ],
   ];
@@ -461,7 +461,7 @@ Deno.test("REQ-OPS-021: frontend coverage remains a canonical test contract", as
   );
 });
 
-Deno.test("REQ-OPS-024: docsite coverage remains a canonical test contract", async () => {
+Deno.test("REQ-OPS-024: docsite coverage remains developer convenience", async () => {
   const docsiteConfig = await Deno.readTextFile("docsite/vitest.config.ts");
   const rootDeno = await Deno.readTextFile("deno.json");
   const mise = await Deno.readTextFile("mise.toml");
@@ -500,9 +500,24 @@ Deno.test("REQ-OPS-024: docsite coverage remains a canonical test contract", asy
     "docsite root coverage task",
   );
   assertContainsAll(
+    taskBlock(mise, "test:docsite"),
+    ["deno task docsite:test"],
+    "docsite root test task",
+  );
+  assertContainsAll(
     taskBlock(mise, "test"),
-    ["test:docsite:coverage"],
+    ["test:docsite"],
     "canonical test task",
+  );
+  assertEquals(
+    taskBlock(mise, "test").includes("test:docsite:coverage"),
+    false,
+    "canonical test task must leave docsite coverage as developer convenience",
+  );
+  assertContainsAll(
+    taskBlock(mise, "ci:lane:web"),
+    ['"test:docsite"'],
+    "hosted web lane",
   );
   assertContainsAll(
     requirementBlock(

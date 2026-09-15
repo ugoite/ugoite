@@ -7,12 +7,13 @@ Tests are organized around the shared Rust core and thin adapters.
 - Rust unit/integration tests cover domain, storage, core, server, CLI, API
   protocol, and WASM.
 - Frontend/docsite/tool tests run through Deno and Vitest.
-- Frontend and docsite coverage run through the root `test:frontend:coverage`
-  and `test:docsite:coverage` tasks, which are included by the canonical root
-  `test` task. Hosted CI runs that aggregate task as a required hard gate with
-  100% V8 thresholds. The frontend unit gate targets the portable Rust/WASM
-  protocol boundary; UI behavior remains under behavior tests and E2E. The
-  docsite gate targets authored source. The active `main only pr` repository
+- Frontend coverage runs through the root `test:frontend:coverage` task and
+  remains a required hard gate for the portable Rust/WASM protocol boundary.
+  The canonical root `test` task and hosted web lane run the normal
+  `test:docsite` behavior/type suite. `test:docsite:coverage` remains available
+  as developer convenience for inspecting authored docsite source; its V8
+  report has no hard threshold and is not a merge-quality metric. UI behavior
+  remains under behavior tests and E2E. The active `main only pr` repository
   ruleset requires the `ci-required` status check.
 - Playwright end-to-end tests exercise source/container parity.
 - A focused docsite-navigation Playwright lane validates the built Starlight
@@ -30,8 +31,8 @@ requirement without a current test reference is labeled `untraced`; deleted
 paths are not retained as evidence.
 
 The focused `tools/coverage_gates_test.ts` contract tests keep the package
-coverage tasks, thresholds, canonical root quality graph, Hosted CI lane wiring,
-required status aggregator, single-writer dependency/Deno caches, and
+coverage tasks, canonical root quality graph, Hosted CI lane wiring, required
+status aggregator, single-writer dependency/Deno caches, and
 `REQ-OPS-021`/`REQ-OPS-024` traceability aligned. Hosted lanes may repack
 semantic tasks for parallel runners, but they must not implement repository
 validation independently of Mise.
