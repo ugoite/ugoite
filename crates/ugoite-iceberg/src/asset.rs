@@ -283,6 +283,7 @@ fn is_asset_reference(value: &Value) -> bool {
         && value.get("name").and_then(Value::as_str).is_some()
         && value.get("media_type").and_then(Value::as_str).is_some()
         && value.get("size_bytes").and_then(Value::as_u64).is_some()
+        && value.get("sha256").and_then(Value::as_str).is_some()
 }
 
 pub async fn current_asset_reference_exists(

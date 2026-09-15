@@ -248,6 +248,10 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
             field,
             out,
         } => {
+            let use_stdout = out.trim() == "-";
+            if use_stdout && std::io::stdout().is_terminal() {
+                anyhow::bail!("refusing to write binary asset bytes to a terminal; use --out PATH");
+            }
             let context = resolve_asset_context(
                 &config,
                 &space_path,
@@ -257,12 +261,7 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
                 "asset download",
             )
             .await?;
-            if out.trim() == "-" {
-                if std::io::stdout().is_terminal() {
-                    anyhow::bail!(
-                        "refusing to write binary asset bytes to a terminal; use --out PATH"
-                    );
-                }
+            if use_stdout {
                 IoWrite::write_all(&mut std::io::stdout().lock(), &context.bytes)
                     .map_err(|error| anyhow::anyhow!("write asset bytes to stdout: {error}"))?;
                 return Ok(());
