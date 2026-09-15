@@ -1,7 +1,7 @@
 use crate::config::{
     effective_format, load_config, normalize_space_root, operator_for_path, parse_space_path,
-    print_json, print_json_table, print_list_table, resolve_space_reference, validated_base_url,
-    EndpointConfig, Format,
+    print_json, print_json_table, print_list_table, resolve_backend_space_uid,
+    resolve_space_reference, validated_base_url, EndpointConfig, Format,
 };
 use crate::http;
 use crate::step_up;
@@ -156,16 +156,16 @@ pub enum SpaceSubCmd {
     /// List space members (backend/api mode only)
     Members {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_UID",
+            help = "Immutable Space UID in backend/api mode."
         )]
         space_path: String,
     },
     /// Audit events (backend/api mode only)
     AuditEvents {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_UID",
+            help = "Immutable Space UID in backend/api mode."
         )]
         space_path: String,
         #[arg(long, default_value_t = 0)]
@@ -241,9 +241,12 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
     let fmt = effective_format(cmd.format);
     match cmd.sub {
         SpaceSubCmd::Create { space_path } => {
-            let requested_slug = parse_space_path(&space_path).1;
-            let (root, _) = resolve_space_reference(&config, &space_path, "space create")?;
             if let Some(base) = validated_base_url(&config)? {
+                // Backend/api creation takes a new human-readable slug; the
+                // server-generated Space UID in the response is the authority
+                // for all later operations. Never treat the requested slug as
+                // a UID and never fall back to another Space.
+                let requested_slug = parse_space_path(&space_path).1;
                 let result = step_up::execute_with_step_up(
                     &base,
                     "space.create",
@@ -255,6 +258,8 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
+            let requested_slug = parse_space_path(&space_path).1;
+            let (root, _) = resolve_space_reference(&config, &space_path, "space create")?;
             let service = UgoiteService::new_without_background_refresh(&root)?;
             let outcome = service.ensure_operator_space(&requested_slug).await?;
             print_json(
@@ -422,7 +427,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             print_json(&result);
         }
         SpaceSubCmd::Members { space_path } => {
-            let (_, space_id) = parse_space_path(&space_path);
+            let space_id = resolve_backend_space_uid(&space_path, "space members")?;
             if let Some(base) = validated_base_url(&config)? {
                 let result = http::execute(
                     &base,
@@ -441,12 +446,11 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             offset,
             limit,
         } => {
-            let (_, space_id) = parse_space_path(&space_path);
+            let space_id = resolve_backend_space_uid(&space_path, "space audit-events")?;
             if validated_base_url(&config)?.is_some() {
-                bail!(
-                    "space audit-events for {space_id} (offset {offset}, limit {limit}) is not available in backend/api mode in this release"
-                );
+                bail!("space audit-events is not available in backend/api mode in this release");
             }
+            let _ = (space_id, offset, limit);
             bail!("{}", backend_api_mode_error(&config, "audit-events"));
         }
     }

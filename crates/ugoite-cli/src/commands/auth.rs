@@ -182,6 +182,15 @@ async fn login(
         .as_str()
         .ok_or_else(|| anyhow!("token response omitted credential_id"))?
         .parse()?;
+    let granted_space_uid: Uuid = token["space_uid"]
+        .as_str()
+        .ok_or_else(|| anyhow!("token response omitted space_uid"))?
+        .parse()?;
+    if let Some(requested) = space_uid {
+        if requested != granted_space_uid {
+            bail!("approved Space differs from the requested Space UID; refusing to fall back to another Space");
+        }
+    }
     let private_key = URL_SAFE_NO_PAD.encode(signing_key.to_pkcs8_der()?.as_bytes());
     let stored_in_keychain = keyring::Entry::new("ugoite-cli", &credential_id.to_string())
         .and_then(|entry| entry.set_password(&private_key))
@@ -202,10 +211,7 @@ async fn login(
         expires_at: Utc::now().timestamp() + token["expires_in"].as_i64().unwrap_or(300),
         base_url: base.to_string(),
         resource,
-        space_uid: token["space_uid"]
-            .as_str()
-            .ok_or_else(|| anyhow!("token response omitted space_uid"))?
-            .parse()?,
+        space_uid: granted_space_uid,
     };
     let path = save_auth_session(&session)?;
     println!(

@@ -293,7 +293,8 @@ fn change_recovery_remote_uses_canonical_routes() {
         .expect("config set");
     assert!(set_output.status.success());
 
-    let output = run_cli(&config_path, &["change", "list", "remote-space"]);
+    let remote_space_uid = uuid::Uuid::now_v7().to_string();
+    let output = run_cli(&config_path, &["change", "list", &remote_space_uid]);
     assert!(
         output.status.success(),
         "remote change list: {}",
@@ -302,7 +303,7 @@ fn change_recovery_remote_uses_canonical_routes() {
 
     let output = run_cli(
         &config_path,
-        &["change", "revert", "remote-space", "change-1"],
+        &["change", "revert", &remote_space_uid, "change-1"],
     );
     assert!(
         output.status.success(),
@@ -310,7 +311,7 @@ fn change_recovery_remote_uses_canonical_routes() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let output = run_cli(&config_path, &["run", "undo", "remote-space", "run-1"]);
+    let output = run_cli(&config_path, &["run", "undo", &remote_space_uid, "run-1"]);
     assert!(
         output.status.success(),
         "remote run undo: {}",
@@ -325,21 +326,21 @@ fn change_recovery_remote_uses_canonical_routes() {
     assert!(
         captured[0]
             .0
-            .starts_with("GET /spaces/remote-space/changes "),
+            .starts_with(&format!("GET /spaces/{remote_space_uid}/changes ")),
         "change list route: {}",
         captured[0].0
     );
     assert!(
-        captured[1]
-            .0
-            .starts_with("POST /spaces/remote-space/changes/change-1/revert "),
+        captured[1].0.starts_with(&format!(
+            "POST /spaces/{remote_space_uid}/changes/change-1/revert "
+        )),
         "change revert route: {}",
         captured[1].0
     );
     assert!(
         captured[2]
             .0
-            .starts_with("POST /spaces/remote-space/runs/run-1/undo "),
+            .starts_with(&format!("POST /spaces/{remote_space_uid}/runs/run-1/undo ")),
         "run undo route: {}",
         captured[2].0
     );
