@@ -1,8 +1,11 @@
 import { expect, test } from "@playwright/test";
 import { getBackendUrl, waitForServers } from "./lib/client.ts";
 import { startMockOidcServer } from "./lib/mock-oidc.ts";
+import {
+  describeFailure,
+  openIsolatedPasskeyPage,
+} from "./lib/security-context.ts";
 import { totpCodeAt } from "./lib/totp.ts";
-import { addVirtualAuthenticator } from "./lib/webauthn.ts";
 
 type RecoveryFixture = {
   accountId: string;
@@ -50,13 +53,7 @@ test.describe("Account Self-Recovery", () => {
     } finally {
       await linkedContext.close();
     }
-    const target = await browser.newContext({
-      storageState: { cookies: [], origins: [] },
-    });
-    const page = await target.newPage();
-    const cdp = await target.newCDPSession(page);
-    await cdp.send("WebAuthn.enable");
-    await addVirtualAuthenticator(cdp);
+    const { target, page, close } = await openIsolatedPasskeyPage(browser);
 
     try {
       await page.goto(
@@ -72,7 +69,11 @@ test.describe("Account Self-Recovery", () => {
         response.request().method() === "POST"
       );
       await page.getByRole("button", { name: "Register new Passkey" }).click();
-      expect((await finishResponse).status()).toBe(201);
+      try {
+        expect((await finishResponse).status()).toBe(201);
+      } catch (error) {
+        throw describeFailure(error, "owner-approved recovery finish");
+      }
       await expect(
         page.getByRole("heading", { name: "Save your new recovery codes" }),
       ).toBeVisible();
@@ -157,7 +158,7 @@ test.describe("Account Self-Recovery", () => {
       expect(auditText).not.toContain(fixture.totpSecret);
       expect(recoveryEvent?.safe_metadata.method).toBe("recovery_code+totp");
     } finally {
-      await target.close();
+      await close();
       mockOidc.close();
     }
   });
