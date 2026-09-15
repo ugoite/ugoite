@@ -775,6 +775,11 @@ impl AppState {
             reconcile_recovery_fences(self, space_id).await?;
             reconcile_recovery_audit_outbox(self, space_id).await?;
             reconcile_human_approval_audit_outbox(self, space_id).await?;
+            // Converge commit-coupled audit evidence from durable history:
+            // crash windows between a Knowledge commit and its audit append
+            // must not leave committed revisions without evidence. Failures
+            // propagate instead of hiding as success.
+            self.service.reconcile_space_audit(space_id).await?;
         }
         for space_id in space_ids {
             // Rehydrate relation-local maintenance on every server start.
@@ -8437,6 +8442,14 @@ async fn list_audit_events(
 ) -> ApiResult<Json<Value>> {
     let principal_id = require_space_action(&state, &space_id, &identity, Action::Share).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
+    // Converge un-delivered commit evidence before reading: listing must
+    // reflect every committed revision, not only deliveries that happened
+    // to succeed inline.
+    state
+        .service
+        .reconcile_space_audit(&space_id)
+        .await
+        .map_err(ApiError::from_core)?;
     let space_id_for_read = space_id.clone();
     Authorizer::new(state.service.operator().clone())
         .with_state_lock(&space_id, move |authorization| async move {

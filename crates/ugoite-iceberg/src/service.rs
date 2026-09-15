@@ -4853,7 +4853,7 @@ impl UgoiteService {
         // snapshot would name the wrong revision and never converge with
         // reconcile. An unreadable tombstone means storage itself failed, in
         // which case delivery would fail too; reconcile closes the gap.
-        if let Some((revision_id, _, _)) = saved_sql::read_sql_row_for_audit(
+        if let Some((revision_id, _, _, _)) = saved_sql::read_sql_row_for_audit(
             &self.operator,
             &self.workspace_path(space_id),
             sql_id,

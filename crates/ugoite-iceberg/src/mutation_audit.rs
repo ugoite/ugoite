@@ -32,6 +32,7 @@
 use anyhow::{Context, Result};
 use opendal::Operator;
 use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 use crate::audit;
@@ -88,6 +89,30 @@ pub fn audit_attribution(
         return (author_fallback.trim().to_string(), None);
     }
     (space_uid.to_string(), None)
+}
+
+/// Resolves reconciliation attribution from committed history only.
+///
+/// The committed revision actor (author or principal ID string, as stored at
+/// commit time) is the authority: the reconcile caller never reinterprets the
+/// past with its own identity. A UUID-valued actor is recorded as both
+/// subject and actor principal; a free-form author becomes the subject with
+/// no actor principal. Only when history carries no actor does the Space UID
+/// mark the event as unattributed, exactly like the live last resort.
+pub fn committed_actor_attribution(
+    committed_actor: Option<&str>,
+    space_uid: &Uuid,
+) -> (String, Option<String>) {
+    let actor = committed_actor
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    match actor {
+        Some(value) => (
+            value.to_string(),
+            Uuid::parse_str(value).ok().map(|_| value.to_string()),
+        ),
+        None => (space_uid.to_string(), None),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -341,13 +366,23 @@ impl UgoiteService {
         .await;
     }
 
-    /// Re-derives the expected audit event for `entry_id` from committed
-    /// truth (Entry history) and delivers it idempotently.
+    /// Re-derives the expected audit events for `entry_id` from committed
+    /// truth (Entry history, tombstones included) and delivers every missing
+    /// one idempotently.
     ///
-    /// Returns `None` when the Entry has no committed revisions, including
-    /// when it never existed (consistent with saved-SQL reconcile). Closing a
-    /// commit→delivery crash gap is a second call away however long after
-    /// the crash the Space is reopened.
+    /// Every committed revision gets its own deterministic event: the first
+    /// revision is `entry.created`, a delete-operation revision is
+    /// `entry.deleted`, all others are `entry.updated`. Reconciling only the
+    /// latest revision would permanently drop evidence for earlier mutations
+    /// whose delivery failed, so the whole chain converges here.
+    ///
+    /// Attribution comes from the committed revision actors, never from the
+    /// reconcile caller: the caller-supplied principals/author only fill the
+    /// gap when a committed revision carries no actor at all. Returns the
+    /// last delivered event, or `None` when the Entry has no committed
+    /// revisions, including when it never existed (consistent with saved-SQL
+    /// reconcile). Closing a commit→delivery crash gap is a second call away
+    /// however long after the crash the Space is reopened.
     pub async fn reconcile_entry_audit(
         &self,
         space_id: &str,
@@ -384,34 +419,60 @@ impl UgoiteService {
         if revisions.is_empty() {
             return Ok(None);
         }
-        let Some((revision_id, change_id, operation)) = latest_entry_revision(&history) else {
-            return Ok(None);
-        };
-        let action = if operation == "delete" {
-            ENTRY_DELETED_ACTION
-        } else if revisions.len() == 1 {
-            ENTRY_CREATED_ACTION
-        } else {
-            ENTRY_UPDATED_ACTION
-        };
         let space_uid = self.space_uid(space_id).await?;
-        let (subject, actor) = audit_attribution(principal_ids, author_fallback, &space_uid);
-        let event = entry_mutation_event(
-            &space_uid,
-            action,
-            entry_id,
-            &revision_id,
-            change_id.as_deref(),
-            &subject,
-            actor.as_deref(),
-        );
-        Ok(Some(
-            deliver_mutation_audit_event(self.operator(), space_id, &event).await?,
-        ))
+        let mut delivered = None;
+        for (index, revision) in revisions.iter().enumerate() {
+            let Some(revision_id) = revision
+                .get("revision_id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+            else {
+                continue;
+            };
+            let change_id = revision
+                .get("change_id")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            let operation = revision
+                .get("operation")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let action = if operation == "delete" {
+                ENTRY_DELETED_ACTION
+            } else if index == 0 {
+                ENTRY_CREATED_ACTION
+            } else {
+                ENTRY_UPDATED_ACTION
+            };
+            let committed_actor = revision.get("actor").and_then(Value::as_str);
+            let (subject, actor) = match committed_actor
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                Some(_) => committed_actor_attribution(committed_actor, &space_uid),
+                None => audit_attribution(principal_ids, author_fallback, &space_uid),
+            };
+            let event = entry_mutation_event(
+                &space_uid,
+                action,
+                entry_id,
+                &revision_id,
+                change_id.as_deref(),
+                &subject,
+                actor.as_deref(),
+            );
+            delivered =
+                Some(deliver_mutation_audit_event(self.operator(), space_id, &event).await?);
+        }
+        Ok(delivered)
     }
 
     /// Re-derives the expected audit event for `sql_id` from committed truth
     /// (saved-SQL row, including tombstones) and delivers it idempotently.
+    ///
+    /// Attribution comes from the committed row actor, never from the
+    /// reconcile caller; the caller-supplied principals/author only fill the
+    /// gap when the committed row carries no actor at all.
     pub async fn reconcile_saved_sql_audit(
         &self,
         space_id: &str,
@@ -419,7 +480,7 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         author_fallback: &str,
     ) -> Result<Option<Value>> {
-        let Some((revision_id, parent_revision_id, deleted)) =
+        let Some((revision_id, parent_revision_id, deleted, committed_actor)) =
             crate::saved_sql::read_sql_row_for_audit(
                 self.operator(),
                 &self.workspace_path(space_id),
@@ -437,7 +498,10 @@ impl UgoiteService {
             SAVED_SQL_UPDATED_ACTION
         };
         let space_uid = self.space_uid(space_id).await?;
-        let (subject, actor) = audit_attribution(principal_ids, author_fallback, &space_uid);
+        let (subject, actor) = match committed_actor.trim() {
+            "" => audit_attribution(principal_ids, author_fallback, &space_uid),
+            _ => committed_actor_attribution(Some(&committed_actor), &space_uid),
+        };
         let event = saved_sql_mutation_event(
             &space_uid,
             action,
@@ -449,6 +513,78 @@ impl UgoiteService {
         Ok(Some(
             deliver_mutation_audit_event(self.operator(), space_id, &event).await?,
         ))
+    }
+
+    /// Converges audit evidence for every committed Entry and saved-SQL
+    /// target in one Space from committed history.
+    ///
+    /// Crash windows and delivery failures are per-mutation: a sweep must not
+    /// stop at the latest revision of one target. Every committed Entry
+    /// revision (tombstones included) and every committed saved-SQL row is
+    /// reconciled through the same per-target paths above, so attribution
+    /// always comes from committed metadata, never from the sweep caller
+    /// (empty principals and a blank author fallback force the committed
+    /// authority). Failures propagate instead of hiding as success; existing
+    /// events are never rewritten and Change/revision IDs never change.
+    /// Returns the number of targets converged.
+    pub async fn reconcile_space_audit(&self, space_id: &str) -> Result<usize> {
+        let workspace = self.workspace_path(space_id);
+        let mut entry_ids = BTreeSet::new();
+        let form_names = match crate::entry::list_form_names(self.operator(), &workspace).await {
+            Ok(names) => names,
+            Err(error)
+                if error.to_string().contains("not found")
+                    || error.to_string().contains("NotFound") =>
+            {
+                Vec::new()
+            }
+            Err(error) => return Err(error),
+        };
+        if !form_names.is_empty() {
+            let relation_scopes: BTreeMap<String, ugoite_core::query::EntryScope> = form_names
+                .into_iter()
+                .map(|form_name| {
+                    (
+                        form_name.to_ascii_lowercase(),
+                        ugoite_core::query::EntryScope::AllCurrent,
+                    )
+                })
+                .collect();
+            let mut offset = 0;
+            loop {
+                let rows = crate::index::query_entry_rows_authorized(
+                    self.operator(),
+                    &workspace,
+                    &relation_scopes,
+                    None,
+                    None,
+                    crate::MAX_NORMAL_READ_ROWS,
+                    offset,
+                )
+                .await?;
+                let page_len = rows.len();
+                entry_ids.extend(rows.into_iter().map(|(_, row)| row.entry_id));
+                if page_len < crate::MAX_NORMAL_READ_ROWS {
+                    break;
+                }
+                offset += page_len;
+            }
+        }
+        let sql_ids = crate::saved_sql::list_sql_ids_for_audit(self.operator(), &workspace).await?;
+        let mut converged = 0;
+        for entry_id in entry_ids {
+            self.reconcile_entry_audit(space_id, &entry_id, &[], "")
+                .await
+                .with_context(|| format!("reconcile audit for Entry {entry_id}"))?;
+            converged += 1;
+        }
+        for sql_id in sql_ids {
+            self.reconcile_saved_sql_audit(space_id, &sql_id, &[], "")
+                .await
+                .with_context(|| format!("reconcile audit for saved SQL {sql_id}"))?;
+            converged += 1;
+        }
+        Ok(converged)
     }
 }
 
@@ -722,6 +858,118 @@ mod tests {
             .reconcile_entry_audit(&space_id, "entry-1", &[], "author")
             .await?;
         assert_eq!(audit_total(&service2, &space_id).await?, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn space_sweep_restores_every_missing_revision_once() -> anyhow::Result<()> {
+        let (service, space_id) = audit_test_space("sweep").await?;
+        // Simulate two commit-without-delivery mutations through the
+        // low-level entry layer, bypassing the audited service methods.
+        let integrity =
+            crate::integrity::RealIntegrityProvider::from_space(service.operator(), &space_id)
+                .await?;
+        crate::entry::create_entry(
+            service.operator(),
+            &service.workspace_path(&space_id),
+            "entry-1",
+            ENTRY_MARKDOWN,
+            "author",
+            &integrity,
+        )
+        .await?;
+        let created_history = crate::entry::get_entry_history(
+            service.operator(),
+            &service.workspace_path(&space_id),
+            "entry-1",
+        )
+        .await?;
+        let created_revision_id = created_history["revisions"][0]["revision_id"]
+            .as_str()
+            .expect("created revision")
+            .to_string();
+        crate::entry::update_entry(
+            service.operator(),
+            &service.workspace_path(&space_id),
+            "entry-1",
+            ENTRY_MARKDOWN_V2,
+            Some(&created_revision_id),
+            "author",
+            &integrity,
+        )
+        .await?;
+        assert_eq!(audit_total(&service, &space_id).await?, 0);
+
+        // Reopen the Space and sweep: both committed revisions converge.
+        let root_uri = service.root_uri().to_string();
+        let service2 = UgoiteService::from_operator(service.operator().clone(), root_uri);
+        let converged = service2.reconcile_space_audit(&space_id).await?;
+        assert_eq!(converged, 1);
+        let listed = crate::audit::list_audit_events(
+            service2.operator(),
+            &space_id,
+            crate::audit::AuditListOptions::default(),
+        )
+        .await?;
+        assert_eq!(listed.get("total").and_then(Value::as_u64), Some(2));
+        let items = listed
+            .get("items")
+            .and_then(Value::as_array)
+            .expect("items");
+        let actions: Vec<&str> = items
+            .iter()
+            .filter_map(|item| item.get("action").and_then(Value::as_str))
+            .collect();
+        assert!(actions.contains(&ENTRY_CREATED_ACTION));
+        assert!(actions.contains(&ENTRY_UPDATED_ACTION));
+
+        // Attribution matches committed history, not sweep-caller input.
+        let history = crate::entry::get_entry_history(
+            service2.operator(),
+            &service2.workspace_path(&space_id),
+            "entry-1",
+        )
+        .await?;
+        let committed: std::collections::BTreeMap<String, (String, String, String)> = history
+            ["revisions"]
+            .as_array()
+            .expect("revisions")
+            .iter()
+            .map(|revision| {
+                (
+                    revision["revision_id"].as_str().expect("rev").to_string(),
+                    (
+                        revision["actor"].as_str().expect("actor").to_string(),
+                        revision["change_id"].as_str().expect("change").to_string(),
+                        revision["operation"].as_str().expect("op").to_string(),
+                    ),
+                )
+            })
+            .collect();
+        for item in items {
+            let revision_id = item["metadata"]["revision_id"]
+                .as_str()
+                .expect("event revision");
+            let (actor, change_id, _) = committed
+                .get(revision_id)
+                .expect("event names a committed revision");
+            assert_eq!(item["target_id"], json!("entry-1"));
+            assert_eq!(item["subject_principal_id"], json!(actor));
+            assert_eq!(item["metadata"]["change_id"], json!(change_id));
+        }
+
+        // Committed IDs are unchanged by reconciliation.
+        let reopened = crate::entry::get_entry_history(
+            service2.operator(),
+            &service2.workspace_path(&space_id),
+            "entry-1",
+        )
+        .await?;
+        assert_eq!(reopened, history);
+
+        // A second sweep converges without duplicating evidence.
+        assert_eq!(service2.reconcile_space_audit(&space_id).await?, 1);
+        assert_eq!(audit_total(&service2, &space_id).await?, 2);
         Ok(())
     }
 
