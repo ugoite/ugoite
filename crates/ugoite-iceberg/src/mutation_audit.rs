@@ -901,6 +901,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn principal_live_delivery_converges_with_committed_reconcile() -> anyhow::Result<()> {
+        // Live delivery attributes to the first caller principal while the
+        // commit stores the author string; server handlers pass the principal
+        // ID as the author, so committed reconciliation must rebuild the
+        // byte-identical payload instead of failing closed on a fingerprint
+        // conflict.
+        let service = UgoiteService::new("memory://mutation-audit-principal")?;
+        let principal = Uuid::now_v7();
+        let space_id = service
+            .create_space_for_principal("audit-principal", principal, "Owner")
+            .await?
+            .to_string();
+        service
+            .create_entry_authorized_for_principals(
+                &space_id,
+                "entry-1",
+                ENTRY_MARKDOWN,
+                &principal.to_string(),
+                &[principal],
+            )
+            .await?;
+        assert_eq!(audit_total(&service, &space_id).await?, 1);
+        let delivered = service
+            .reconcile_entry_audit(&space_id, "entry-1", &[principal], &principal.to_string())
+            .await?
+            .expect("principal reconcile converges");
+        assert_eq!(
+            delivered["subject_principal_id"],
+            json!(principal.to_string())
+        );
+        assert_eq!(
+            delivered["actor_principal_id"],
+            json!(principal.to_string())
+        );
+        assert_eq!(audit_total(&service, &space_id).await?, 1);
+        // The sweep path (no caller identity at all) converges too, purely
+        // from committed metadata.
+        assert_eq!(service.reconcile_space_audit(&space_id).await?, 1);
+        assert_eq!(audit_total(&service, &space_id).await?, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn space_sweep_restores_every_missing_revision_once() -> anyhow::Result<()> {
         let (service, space_id) = audit_test_space("sweep").await?;
         // Simulate two commit-without-delivery mutations through the
