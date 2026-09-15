@@ -77,6 +77,7 @@ export function parseSyncArgs(
   if (!version) {
     fail("missing required --version 0.1.N");
   }
+  version = version.trim();
   validateSyncVersion(version);
   for (const target of CANONICAL_TARGETS) {
     if (!digests.has(target)) {
@@ -85,7 +86,7 @@ export function parseSyncArgs(
   }
   const baseUrl = env.MITASE_RELEASE_BASE_URL?.trim() ||
     DEFAULT_RELEASE_BASE_URL;
-  if (/\/latest\/?$/i.test(baseUrl) || baseUrl.includes("latest")) {
+  if (/latest/i.test(baseUrl)) {
     fail("mutable release URLs are not accepted; pin an exact version");
   }
   return { version, digests, baseUrl, lockPath };
