@@ -213,6 +213,13 @@ export function FormTable(props: FormTableProps) {
     { id: string; field: string } | null
   >(null);
 
+  const canEditField = (field: string, value: unknown): boolean => {
+    const type = props.entryForm.fields?.[field]?.type?.toLowerCase() ?? "";
+    const structured = type === "list" || type.includes("asset") ||
+      type.includes("object") || type.includes("relation");
+    return !structured && isPlainEditableValue(value);
+  };
+
   const [entries, { refetch }] = createResource(
     () => {
       /* v8 ignore start */
@@ -950,7 +957,7 @@ export function FormTable(props: FormTableProps) {
                           onClick={(e) => {
                             if (
                               isEditMode() &&
-                              isPlainEditableValue(entry.properties?.[field])
+                              canEditField(field, entry.properties?.[field])
                             ) {
                               e.stopPropagation();
                               setEditingCell({ id: entry.id, field });
@@ -1074,7 +1081,8 @@ export function FormTable(props: FormTableProps) {
                             fallback={
                               <Show
                                 when={isEditMode() &&
-                                  isPlainEditableValue(
+                                  canEditField(
+                                    field,
                                     entry.properties?.[field],
                                   )}
                                 fallback={
@@ -1150,7 +1158,8 @@ export function FormTable(props: FormTableProps) {
                                 fallback={
                                   <Show
                                     when={isEditMode() &&
-                                      isPlainEditableValue(
+                                      canEditField(
+                                        field,
                                         entry.properties?.[field],
                                       )}
                                     fallback={
