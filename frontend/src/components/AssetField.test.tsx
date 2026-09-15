@@ -35,6 +35,13 @@ const second: AssetReference = {
   sha256: "b".repeat(64),
 };
 
+const video: AssetReference = {
+  ...first,
+  asset_id: "01900000-0000-7000-8000-000000000003",
+  name: "clip.mp4",
+  media_type: "video/mp4",
+};
+
 const queuedFirst: AssetReference = {
   ...first,
   asset_id: "01900000-0000-7000-8000-000000000011",
@@ -458,6 +465,45 @@ describe("AssetField", () => {
         .toBeInTheDocument()
     );
     expect(screen.getByText("first.txt")).toBeInTheDocument();
+  });
+
+  it("keeps native media controls in the preview dialog tab order", async () => {
+    const state = createAssetFieldState();
+    const encoded = serializeAssetReference(video);
+    render(() => (
+      <AssetField
+        fieldId="video"
+        fieldName="video"
+        value={encoded}
+        persistedValue={encoded}
+        multiple={false}
+        spaceId="default"
+        formName="Media"
+        entryId="entry-1"
+        state={state}
+        onChange={() => undefined}
+      />
+    ));
+    state.setPreviewBlobs(new Map([[video.asset_id, new Blob(["video"])]]));
+    state.setPreviewUrls(new Map([[video.asset_id, "blob:video"]]));
+    state.setPreviewSignatures(
+      new Map([[
+        video.asset_id,
+        `${video.name}\u0000${video.media_type}\u0000video`,
+      ]]),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    const dialog = await screen.findByRole("dialog", { name: video.name });
+    const close = screen.getByRole("button", { name: "Close" });
+    const media = dialog.querySelector("video");
+    expect(media).not.toBeNull();
+    expect(document.activeElement).toBe(close);
+
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(document.activeElement).toBe(media);
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(document.activeElement).toBe(close);
   });
 
   it("downloads cached preview bytes without issuing a second authorized read", async () => {

@@ -351,7 +351,7 @@ export function AssetField(props: AssetFieldProps) {
 
     const focusable = Array.from(
       previewDialog.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe, audio, video, [tabindex]:not([tabindex="-1"])',
       ),
     );
     if (focusable.length === 0) {
@@ -360,20 +360,16 @@ export function AssetField(props: AssetFieldProps) {
     }
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
-    const current = document.activeElement;
-    if (
-      event.shiftKey &&
-      (current === first || !focusable.includes(current as HTMLElement))
-    ) {
-      event.preventDefault();
-      last.focus();
-    } else if (
-      !event.shiftKey &&
-      (current === last || !focusable.includes(current as HTMLElement))
-    ) {
-      event.preventDefault();
-      first.focus();
-    }
+    const currentIndex = focusable.indexOf(
+      document.activeElement as HTMLElement,
+    );
+    const nextIndex = event.shiftKey
+      ? currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1
+      : currentIndex < 0 || currentIndex === focusable.length - 1
+      ? 0
+      : currentIndex + 1;
+    event.preventDefault();
+    focusable[nextIndex].focus();
   };
 
   const downloadReference = (reference: AssetReference) => {
@@ -692,7 +688,7 @@ export function AssetField(props: AssetFieldProps) {
                     : item.error ?? t("assetField.error.uploadFailed")}
                 </p>
               </div>
-              <div class="flex gap-2">
+              <div class="ui-asset-item-actions flex flex-wrap gap-2">
                 <Show when={item.status === "failed"}>
                   <button
                     type="button"

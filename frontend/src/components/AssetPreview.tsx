@@ -131,6 +131,7 @@ function NativeMediaPreview(props: {
             controls
             preload="metadata"
             src={props.url}
+            tabindex="0"
             onError={() => setFailed(true)}
           />
         }
@@ -140,6 +141,7 @@ function NativeMediaPreview(props: {
           controls
           preload="metadata"
           src={props.url}
+          tabindex="0"
           onError={() => setFailed(true)}
         />
       </Show>
@@ -166,6 +168,7 @@ export function AssetPreview(props: AssetPreviewProps) {
             class="ui-asset-document-preview"
             src={props.url}
             title={props.reference.name}
+            tabindex="0"
           />
         </Match>
         <Match when={kind() === "text"}>
