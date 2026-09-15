@@ -451,7 +451,7 @@ fn search_query_remote_sends_identical_criteria_dto() {
         &[
             "search",
             "query",
-            "remote-space",
+            "019f1234-5678-7abc-8def-0123456789ab",
             "--form",
             "Task",
             "--eq",
@@ -468,7 +468,7 @@ fn search_query_remote_sends_identical_criteria_dto() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        request.starts_with("POST /spaces/remote-space/query HTTP/1.1"),
+        request.starts_with("POST /spaces/019f1234-5678-7abc-8def-0123456789ab/query HTTP/1.1"),
         "{request}"
     );
     let body_start = request.find("\r\n\r\n").expect("request body") + 4;

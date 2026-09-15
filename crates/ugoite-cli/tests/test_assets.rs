@@ -189,11 +189,12 @@ fn test_asset_remote_upload_rejects_oversize_without_request() {
     )
     .unwrap();
 
+    let remote_space_uid = uuid::Uuid::now_v7().to_string();
     let output = Command::new(ugoite_bin())
         .args([
             "asset",
             "upload",
-            "remote-space",
+            &remote_space_uid,
             asset_file.to_str().unwrap(),
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)

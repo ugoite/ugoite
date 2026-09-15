@@ -437,7 +437,7 @@ fn test_entry_create_req_api_002_routes_to_backend_post_entries() {
         .args([
             "entry",
             "create",
-            "remote-space",
+            "019f1234-5678-7abc-8def-0123456789ab",
             "entry-1",
             "--content",
             "# Remote Entry",
@@ -455,11 +455,13 @@ fn test_entry_create_req_api_002_routes_to_backend_post_entries() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        request.starts_with("POST /spaces/remote-space/entries HTTP/1.1\r\n"),
+        request
+            .starts_with("POST /spaces/019f1234-5678-7abc-8def-0123456789ab/entries HTTP/1.1\r\n"),
         "{request}"
     );
     assert!(
-        !request.contains("POST /spaces/remote-space/entries/entry-1 HTTP/1.1"),
+        !request
+            .contains("POST /spaces/019f1234-5678-7abc-8def-0123456789ab/entries/entry-1 HTTP/1.1"),
         "{request}"
     );
     assert!(request.contains(r#""id":"entry-1""#), "{request}");
@@ -498,7 +500,7 @@ fn test_saved_sql_create_req_api_006_uses_server_generated_id() {
         .args([
             "sql",
             "saved-create",
-            "remote-space",
+            "019f1234-5678-7abc-8def-0123456789ab",
             "--name",
             "Remote query",
             "--sql",
@@ -517,7 +519,7 @@ fn test_saved_sql_create_req_api_006_uses_server_generated_id() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        request.starts_with("POST /spaces/remote-space/sql HTTP/1.1\r\n"),
+        request.starts_with("POST /spaces/019f1234-5678-7abc-8def-0123456789ab/sql HTTP/1.1\r\n"),
         "{request}"
     );
     assert!(request.contains(r#""name":"Remote query"#), "{request}");
@@ -560,7 +562,7 @@ fn test_saved_sql_update_req_api_006_sends_parent_revision_without_author() {
         .args([
             "sql",
             "saved-update",
-            "remote-space",
+            "019f1234-5678-7abc-8def-0123456789ab",
             "remote-sql-1",
             "--name",
             "Remote query",
@@ -582,7 +584,9 @@ fn test_saved_sql_update_req_api_006_sends_parent_revision_without_author() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        request.starts_with("PUT /spaces/remote-space/sql/remote-sql-1 HTTP/1.1\r\n"),
+        request.starts_with(
+            "PUT /spaces/019f1234-5678-7abc-8def-0123456789ab/sql/remote-sql-1 HTTP/1.1\r\n"
+        ),
         "{request}"
     );
     assert!(
@@ -952,7 +956,7 @@ fn test_entry_create_structured_routes_form_fields_without_markdown() {
         .args([
             "entry",
             "create",
-            "remote-space",
+            "019f1234-5678-7abc-8def-0123456789ab",
             "task-01",
             "--form",
             "Task",
@@ -973,7 +977,8 @@ fn test_entry_create_structured_routes_form_fields_without_markdown() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        request.starts_with("POST /spaces/remote-space/entries HTTP/1.1\r\n"),
+        request
+            .starts_with("POST /spaces/019f1234-5678-7abc-8def-0123456789ab/entries HTTP/1.1\r\n"),
         "{request}"
     );
     assert!(request.contains(r#""form":"Task""#), "{request}");
@@ -1006,7 +1011,7 @@ fn test_entry_update_structured_routes_fields_without_markdown() {
         .args([
             "entry",
             "update",
-            "remote-space",
+            "019f1234-5678-7abc-8def-0123456789ab",
             "task-01",
             "--title",
             "New title",
@@ -1028,13 +1033,17 @@ fn test_entry_update_structured_routes_fields_without_markdown() {
     );
     assert_eq!(requests.len(), 2);
     assert!(
-        requests[0].starts_with("GET /spaces/remote-space/entries/task-01 HTTP/1.1\r\n"),
+        requests[0].starts_with(
+            "GET /spaces/019f1234-5678-7abc-8def-0123456789ab/entries/task-01 HTTP/1.1\r\n"
+        ),
         "{}",
         requests[0]
     );
     let request = &requests[1];
     assert!(
-        request.starts_with("PUT /spaces/remote-space/entries/task-01 HTTP/1.1\r\n"),
+        request.starts_with(
+            "PUT /spaces/019f1234-5678-7abc-8def-0123456789ab/entries/task-01 HTTP/1.1\r\n"
+        ),
         "{request}"
     );
     assert!(request.contains(r#""status":"done""#), "{request}");
@@ -1072,7 +1081,7 @@ fn test_entry_update_default_parent_reads_current_entry_before_write() {
         .args([
             "entry",
             "update",
-            "remote-space",
+            "019f1234-5678-7abc-8def-0123456789ab",
             "task-01",
             "--markdown",
             "# Updated",
@@ -1090,12 +1099,16 @@ fn test_entry_update_default_parent_reads_current_entry_before_write() {
     );
     assert_eq!(requests.len(), 2);
     assert!(
-        requests[0].starts_with("GET /spaces/remote-space/entries/task-01 HTTP/1.1\r\n"),
+        requests[0].starts_with(
+            "GET /spaces/019f1234-5678-7abc-8def-0123456789ab/entries/task-01 HTTP/1.1\r\n"
+        ),
         "{}",
         requests[0]
     );
     assert!(
-        requests[1].starts_with("PUT /spaces/remote-space/entries/task-01 HTTP/1.1\r\n"),
+        requests[1].starts_with(
+            "PUT /spaces/019f1234-5678-7abc-8def-0123456789ab/entries/task-01 HTTP/1.1\r\n"
+        ),
         "{}",
         requests[1]
     );
