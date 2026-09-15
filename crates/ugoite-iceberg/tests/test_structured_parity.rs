@@ -244,6 +244,120 @@ async fn unknown_fields_and_validation_agree_across_both_paths() -> anyhow::Resu
 }
 
 #[tokio::test]
+async fn temporal_values_and_revision_parentage_agree_across_both_paths() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "structured-temporal", "/tmp").await?;
+    let ws_path = "spaces/structured-temporal";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Task",
+            "fields": {
+                "Summary": {"type": "string"},
+                "Due": {"type": "date"},
+            },
+            "allow_extra_attributes": "deny",
+        }),
+    )
+    .await?;
+    let integrity = FakeIntegrityProvider;
+
+    // Same temporal meaning from raw Markdown and structured input.
+    let markdown = "---\nform: Task\n---\n# Launch\n\n## Summary\nShip it.\n\n## Due\n2026-01-15\n";
+    entry::create_entry(&op, ws_path, "legacy-task", markdown, "author", &integrity).await?;
+    let mut fields = BTreeMap::new();
+    fields.insert(
+        "Summary".to_string(),
+        serde_json::Value::String("Ship it.".to_string()),
+    );
+    fields.insert(
+        "Due".to_string(),
+        serde_json::Value::String("2026-01-15".to_string()),
+    );
+    entry::create_structured_entry_with_scopes_and_change(
+        &op,
+        ws_path,
+        "structured-task",
+        Some("Launch".to_string()),
+        "Task".to_string(),
+        vec![],
+        fields,
+        BTreeMap::new(),
+        "author",
+        &integrity,
+        None,
+        None,
+    )
+    .await?;
+    let legacy = entry::get_entry(&op, ws_path, "legacy-task").await?;
+    let structured = entry::get_entry(&op, ws_path, "structured-task").await?;
+    assert_eq!(legacy["form"], structured["form"]);
+    assert_eq!(
+        legacy["sections"]["Due"], structured["sections"]["Due"],
+        "temporal values must share one normalized meaning"
+    );
+
+    // Revision parentage survives a cross-path update with Change identity.
+    let created_revision = structured["revision_id"]
+        .as_str()
+        .expect("revision_id")
+        .to_string();
+    let mut update_fields = BTreeMap::new();
+    update_fields.insert(
+        "Summary".to_string(),
+        serde_json::Value::String("Ship it soon.".to_string()),
+    );
+    update_fields.insert(
+        "Due".to_string(),
+        serde_json::Value::String("2026-01-16".to_string()),
+    );
+    entry::update_structured_entry_authorized_with_change(
+        &op,
+        ws_path,
+        "structured-task",
+        Some("Launch".to_string()),
+        Some("Task".to_string()),
+        Some(vec![]),
+        update_fields,
+        BTreeMap::new(),
+        Some(&created_revision),
+        "author",
+        &integrity,
+        None,
+        None,
+    )
+    .await?;
+    let updated = entry::get_entry(&op, ws_path, "structured-task").await?;
+    let updated_revision = updated["revision_id"]
+        .as_str()
+        .expect("updated revision_id")
+        .to_string();
+    assert_ne!(updated_revision, created_revision);
+    let history = entry::get_entry_history(&op, ws_path, "structured-task").await?;
+    let revisions = history["revisions"].as_array().expect("history revisions");
+    assert!(
+        revisions.len() >= 2,
+        "history must retain both committed revisions"
+    );
+    let updated_history =
+        entry::get_entry_revision(&op, ws_path, "structured-task", &updated_revision).await?;
+    assert_eq!(
+        updated_history["parent_revision_id"],
+        serde_json::Value::String(created_revision.clone()),
+        "revision parentage must link the update to its parent"
+    );
+    assert!(
+        revisions.iter().all(|revision| revision
+            .get("change_id")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|change_id| !change_id.is_empty())),
+        "every committed revision must surface its Change identity"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn lossy_markdown_is_rejected_before_any_entry_mutation() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "markdown-loss", "/tmp").await?;
