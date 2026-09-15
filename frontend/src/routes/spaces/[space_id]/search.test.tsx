@@ -9,12 +9,7 @@ import {
 } from "@solidjs/testing-library";
 import { http, HttpResponse } from "msw";
 import SpaceSearchRoute from "./search";
-import {
-  resetMockData,
-  seedForm,
-  seedSpace,
-  seedSqlEntry,
-} from "~/test/mocks/handlers";
+import { resetMockData, seedForm, seedSpace } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Form, KeywordSearchResult, Space } from "~/lib/types";
 import { testApiUrl } from "~/test/http-origin";
@@ -52,28 +47,6 @@ describe("/spaces/:space_id/search", () => {
   });
 
   afterEach(() => setLocale("en"));
-
-  it("REQ-FE-054: renders human-readable updated dates in search history", async () => {
-    seedSqlEntry("default", {
-      id: "query-1",
-      name: "Recent Search",
-      sql: "SELECT * FROM entries LIMIT 10",
-      variables: [],
-      created_at: 1772960822.056,
-      updated_at: 1772960822.056,
-      revision_id: "rev-1",
-    });
-
-    render(() => <SpaceSearchRoute />);
-
-    const expectedDate = new Date(1772960822.056 * 1000).toLocaleDateString();
-    expect(await screen.findByRole("button", { name: /Recent Search/ }))
-      .toBeInTheDocument();
-    expect(await screen.findByText(`Updated ${expectedDate}`))
-      .toBeInTheDocument();
-    expect(screen.queryByText("Updated 1772960822.056")).not
-      .toBeInTheDocument();
-  });
 
   it("REQ-SRCH-004: runs a direct keyword search and renders matching entries", async () => {
     const record: KeywordSearchResult = {
@@ -424,72 +397,7 @@ describe("/spaces/:space_id/search", () => {
     expect(await screen.findByText(/Choose a Form/)).toBeInTheDocument();
   });
 
-  it("REQ-SRCH-005: saved history entries rerun directly or open variable input when needed", async () => {
-    const relation = "form_entry";
-    seedForm("default", {
-      name: "Entry",
-      sql_relation: relation,
-      version: 1,
-      template: "# Entry\n",
-      fields: {},
-    });
-    seedSqlEntry("default", {
-      id: "saved-ready",
-      name: "Ready history",
-      sql:
-        `SELECT * FROM "${relation}" WHERE _ugoite_title = 'Alpha' ORDER BY _ugoite_id`,
-      variables: [],
-      created_at: "2025-01-01T00:00:00Z",
-      updated_at: "2025-01-02T00:00:00Z",
-      revision_id: "rev-1",
-    });
-    seedSqlEntry("default", {
-      id: "saved-vars",
-      name: "Needs variables",
-      sql:
-        `SELECT * FROM "${relation}" WHERE _ugoite_title = $title ORDER BY _ugoite_id`,
-      variables: [{ type: "string", name: "title", description: "Title" }],
-      created_at: "2025-01-01T00:00:00Z",
-      updated_at: "2025-01-03T00:00:00Z",
-      revision_id: "rev-2",
-    });
-
-    let sessionSqlBody: { sql?: string } | null = null;
-    server.use(
-      http.post(
-        testApiUrl("/spaces/default/sql-sessions"),
-        async ({ request }) => {
-          sessionSqlBody = (await request.json()) as { sql?: string };
-          return HttpResponse.json(
-            { id: "history-session", status: "ready", error: null },
-            { status: 201 },
-          );
-        },
-      ),
-    );
-
-    render(() => <SpaceSearchRoute />);
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Ready history/ }),
-    );
-    await waitFor(() => {
-      expect(sessionSqlBody?.sql).toBe(
-        `SELECT * FROM "${relation}" WHERE _ugoite_title = 'Alpha' ORDER BY _ugoite_id`,
-      );
-      expect(navigateMock).toHaveBeenCalledWith(
-        "/spaces/default/entries?session=history-session",
-      );
-    });
-
-    navigateMock.mockReset();
-    fireEvent.click(screen.getByRole("button", { name: /Needs variables/ }));
-    expect(navigateMock).toHaveBeenCalledWith(
-      "/spaces/default/queries/saved-vars/variables",
-    );
-  });
-
-  it("keeps search modes and destinations in one navigation row", () => {
+  it("keeps the four search destinations in one navigation row", () => {
     render(() => <SpaceSearchRoute />);
 
     const navigation = screen.getByRole("navigation", { name: "Search" });
@@ -500,8 +408,11 @@ describe("/spaces/:space_id/search", () => {
         "href",
         "/spaces/default/assets",
       );
-    expect(within(navigation).getByRole("link", { name: "Saved SQL" }))
+    expect(within(navigation).getByRole("link", { name: "Saved" }))
       .toHaveAttribute("href", "/spaces/default/sql");
+    expect(within(navigation).queryByText("Open SQL editor"))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText("Search history")).not.toBeInTheDocument();
     expect(document.querySelector(".facet")).not.toBeInTheDocument();
 
     fireEvent.click(
@@ -526,41 +437,7 @@ describe("/spaces/:space_id/search", () => {
       "タイトル、フィールド、タグ、本文からエントリを検索",
     );
     expect(screen.getByText("キーワード検索結果")).toBeInTheDocument();
-    expect(screen.getByText("検索履歴")).toBeInTheDocument();
+    expect(screen.queryByText("検索履歴")).not.toBeInTheDocument();
     expect(screen.queryByText("Search")).not.toBeInTheDocument();
-  });
-
-  it("REQ-FE-044: renders generated history in the selected locale", async () => {
-    seedSqlEntry("default", {
-      id: "generated-history",
-      name: null,
-      kind: "search-history",
-      metadata: {
-        searchCriteria: {
-          formName: "Meeting",
-          tags: ["project"],
-          updatedFrom: "",
-          updatedTo: "",
-          fieldConditions: [],
-        },
-      },
-      sql: "SELECT * FROM entries WHERE form = 'Meeting'",
-      variables: [],
-      created_at: "2026-01-01T00:00:00Z",
-      updated_at: "2026-01-02T00:00:00Z",
-      revision_id: "rev-generated",
-    });
-
-    render(() => <SpaceSearchRoute />);
-    expect(
-      await screen.findByRole("button", {
-        name: /Advanced search - form: Meeting/,
-      }),
-    ).toBeInTheDocument();
-
-    setLocale("ja");
-    expect(
-      screen.getByRole("button", { name: /詳細検索 - フォーム: Meeting/ }),
-    ).toBeInTheDocument();
   });
 });

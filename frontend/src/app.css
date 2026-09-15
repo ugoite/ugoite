@@ -1254,6 +1254,54 @@ code {
 .searchControls {
   min-width: 0;
 }
+.searchResults {
+  min-width: 0;
+  margin-top: 32px;
+  border-top: 1px solid var(--line);
+}
+.searchResultsHead {
+  padding: 18px 2px 12px;
+}
+.searchResultList {
+  min-width: 0;
+  border-top: 1px solid var(--line);
+}
+.searchResultRow {
+  width: 100%;
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.searchResultRow:hover {
+  background: var(--soft2);
+}
+.searchResultRow:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+.searchResultContent {
+  min-width: 0;
+  flex: 1;
+}
+.searchResultContent h3 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.searchResultChevron {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+}
 .searchCondition {
   min-width: 0;
   border-top: 1px solid var(--line);
@@ -2784,6 +2832,62 @@ button.assistantPill[aria-expanded="true"] {
 
 .sqlRows .rowBtn {
   min-height: 66px;
+}
+.sqlHistoryGroup {
+  margin-top: 36px;
+}
+.sqlHistoryHeading {
+  padding: 0 2px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.sqlHistoryRows {
+  border-top: 0;
+}
+.sqlHistoryRow {
+  min-width: 0;
+  min-height: 66px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+.sqlRowLink {
+  min-width: 0;
+  min-height: 66px;
+  padding: 8px 2px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 11px;
+  align-items: center;
+  color: inherit;
+}
+.sqlRowLink b,
+.sqlRowLink small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sqlRowAction {
+  min-height: 44px;
+  margin-right: 2px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--brand-ink);
+  font-size: 13px;
+  font-weight: 670;
+  white-space: nowrap;
+}
+.sqlRowAction:hover {
+  background: var(--soft2);
+  border-color: var(--line2);
+}
+.sqlRowAction:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .loginShell {

@@ -1,11 +1,19 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@solidjs/testing-library";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SpaceSqlRoute from "./index";
 import { formatDateLabel } from "~/lib/date-format";
 import { setLocale } from "~/lib/i18n";
-import { sqlApi } from "~/lib/ugoite-client";
+import { sqlApi, sqlSessionApi } from "~/lib/ugoite-client";
 import type { SqlEntry } from "~/lib/types";
+
+const navigateMock = vi.fn();
 
 vi.mock("@solidjs/router", () => ({
   A: (props: { href: string; class?: string; children: unknown }) => (
@@ -13,17 +21,21 @@ vi.mock("@solidjs/router", () => ({
       {props.children}
     </a>
   ),
+  useNavigate: () => navigateMock,
   useParams: () => ({ space_id: "default" }),
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
   sqlApi: { list: vi.fn().mockResolvedValue([]) },
+  sqlSessionApi: { create: vi.fn() },
 }));
 
 describe("/spaces/:space_id/sql", () => {
   beforeEach(() => {
     setLocale("en");
+    navigateMock.mockReset();
     vi.mocked(sqlApi.list).mockResolvedValue([]);
+    vi.mocked(sqlSessionApi.create).mockReset();
   });
 
   it("REQ-FE-061: saved SQL route provides the v5 list and create action", async () => {
@@ -31,10 +43,12 @@ describe("/spaces/:space_id/sql", () => {
 
     expect(screen.getByRole("heading", { name: "Saved SQL" }))
       .toBeInTheDocument();
-    expect(screen.getByText("No saved SQL", { exact: true }))
+    expect(await screen.findByText("No saved SQL", { exact: true }))
       .toBeInTheDocument();
     expect(
-      screen.getByText("Create a query to reuse it here.", { exact: true }),
+      await screen.findByText("Create a query to reuse it here.", {
+        exact: true,
+      }),
     )
       .toBeInTheDocument();
     expect(screen.getByRole("link", { name: "SQL" })).toHaveAttribute(
@@ -107,5 +121,94 @@ describe("/spaces/:space_id/sql", () => {
       .toBeInTheDocument();
     expect(screen.getByText(formatDateLabel(entry.updated_at)))
       .toBeInTheDocument();
+  });
+
+  it("keeps search history in Saved and preserves direct rerun actions", async () => {
+    const entry: SqlEntry = {
+      id: "history-1",
+      name: null,
+      kind: "search-history",
+      metadata: {
+        searchCriteria: {
+          formName: "Incident",
+          tags: [],
+          updatedFrom: "",
+          updatedTo: "",
+          fieldConditions: [],
+        },
+      },
+      sql: "SELECT * FROM entries",
+      variables: [],
+      created_at: "2026-07-30T00:00:00Z",
+      updated_at: "2026-07-31T00:00:00Z",
+      revision_id: "rev-1",
+    };
+    vi.mocked(sqlApi.list).mockResolvedValue([entry]);
+    const createSession = vi.mocked(sqlSessionApi.create);
+    createSession.mockResolvedValue({
+      id: "history-session",
+      space_id: "default",
+      sql_id: "history-1",
+      sql: entry.sql,
+      status: "ready",
+      expires_at: "2026-07-31T01:00:00Z",
+      error: null,
+      view: { sql_id: "history-1", snapshot_id: 1 },
+      pagination: {
+        strategy: "offset",
+        order_by: [],
+        default_limit: 50,
+        max_limit: 100,
+      },
+    });
+
+    render(() => <SpaceSqlRoute />);
+
+    expect(await screen.findByRole("heading", { name: "Search history" }))
+      .toBeInTheDocument();
+    const runButton = await screen.findByRole("button", {
+      name: /Run again: Advanced search - form: Incident/,
+    });
+    fireEvent.click(runButton);
+    await waitFor(() => {
+      expect(createSession).toHaveBeenCalledWith("default", entry.sql);
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/spaces/default/entries?session=history-session",
+      );
+    });
+  });
+
+  it("routes history entries with variables to their input flow", async () => {
+    const entry: SqlEntry = {
+      id: "history-with-variables",
+      name: null,
+      kind: "search-history",
+      metadata: {
+        searchCriteria: {
+          formName: "Incident",
+          tags: [],
+          updatedFrom: "",
+          updatedTo: "",
+          fieldConditions: [],
+        },
+      },
+      sql: "SELECT * FROM entries WHERE title = $title",
+      variables: [{ type: "string", name: "title", description: "Title" }],
+      created_at: "2026-07-30T00:00:00Z",
+      updated_at: "2026-07-31T00:00:00Z",
+      revision_id: "rev-1",
+    };
+    vi.mocked(sqlApi.list).mockResolvedValue([entry]);
+
+    render(() => <SpaceSqlRoute />);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Variables: Advanced search - form: Incident/,
+      }),
+    );
+    expect(navigateMock).toHaveBeenCalledWith(
+      "/spaces/default/queries/history-with-variables/variables",
+    );
   });
 });

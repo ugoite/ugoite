@@ -4,14 +4,10 @@ import { UiIcon } from "~/components/UiIcon";
 import { formatDateLabel } from "~/lib/date-format";
 import { formApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
-import { sqlSessionApi } from "~/lib/ugoite-client";
-import { sqlApi } from "~/lib/ugoite-client";
-import { normalizeSqlVariables } from "~/lib/sql";
 import { localInputToRfc3339Instant } from "~/lib/search-date";
-import type { EntryRecord, KeywordSearchResult, SqlEntry } from "~/lib/types";
+import type { EntryRecord, KeywordSearchResult } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t, type TranslationKey } from "~/lib/i18n";
-import { displaySqlName } from "~/lib/sql-metadata";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 import { pageFromArray } from "~/lib/pagination";
@@ -60,13 +56,6 @@ type AdvancedSearchCriteria = {
 };
 
 const SEARCH_PAGE_SIZE = 50;
-
-function parseTimestamp(value: string | number | null | undefined): number {
-  if (typeof value === "number") return value;
-  if (typeof value !== "string") return 0;
-  const timestamp = Date.parse(value);
-  return Number.isNaN(timestamp) ? 0 : timestamp;
-}
 
 function normalizeFieldType(type: string): SearchFieldType {
   switch (type) {
@@ -245,9 +234,6 @@ export default function SpaceSearchRoute() {
   const [keywordLoading, setKeywordLoading] = createSignal(false);
   const [keywordHasMore, setKeywordHasMore] = createSignal(false);
   const [actionError, setActionError] = createSignal<string | null>(null);
-  const [runningSearchId, setRunningSearchId] = createSignal<string | null>(
-    null,
-  );
   const [advancedFormName, setAdvancedFormName] = createSignal("");
   const [advancedUpdatedFrom, setAdvancedUpdatedFrom] = createSignal("");
   const [advancedUpdatedTo, setAdvancedUpdatedTo] = createSignal("");
@@ -266,10 +252,6 @@ export default function SpaceSearchRoute() {
     StructuredTransportCriteria | null
   >(null);
 
-  const [savedSearches, { refetch: refetchSavedSearches }] = createResource(
-    () => spaceId(),
-    async (id) => sqlApi.list(id),
-  );
   const [forms] = createResource(
     () => spaceId(),
     async (id) => formApi.list(id),
@@ -300,13 +282,6 @@ export default function SpaceSearchRoute() {
       })
       .sort((left, right) => left.name.localeCompare(right.name));
   });
-
-  const searchHistory = createMemo(() =>
-    [...(savedSearches() || [])].sort(
-      (left, right) =>
-        parseTimestamp(right.updated_at) - parseTimestamp(left.updated_at),
-    )
-  );
 
   const advancedCriteria = createMemo<AdvancedSearchCriteria>(() => ({
     formName: advancedFormName().trim(),
@@ -445,47 +420,6 @@ export default function SpaceSearchRoute() {
     }
   };
 
-  const runSavedSearch = async (entry: SqlEntry) => {
-    if (entry.variables && entry.variables.length > 0) {
-      navigate(
-        `/spaces/${spaceId()}/queries/${
-          encodeURIComponent(entry.id)
-        }/variables`,
-      );
-      return;
-    }
-
-    setActionError(null);
-    setRunningSearchId(entry.id);
-    try {
-      const session = await sqlSessionApi.create(
-        spaceId(),
-        normalizeSqlVariables(entry.sql).sql,
-      );
-      if (session.status === "failed") {
-        setActionError(
-          formatUserFacingError(
-            session.error,
-            "searchPage.error.searchFailed",
-            "sql_session.create",
-          ),
-        );
-        return;
-      }
-      navigate(
-        `/spaces/${spaceId()}/entries?session=${
-          encodeURIComponent(session.id)
-        }`,
-      );
-    } catch (err) {
-      setActionError(
-        formatUserFacingError(err, "searchPage.error.savedSearchFailed"),
-      );
-    } finally {
-      setRunningSearchId(null);
-    }
-  };
-
   const handleAdvancedSearch = async () => {
     const criteria = advancedCriteria();
     let transport: StructuredTransportCriteria | null;
@@ -596,13 +530,7 @@ export default function SpaceSearchRoute() {
             {t("searchPage.nav.files")}
           </A>
           <A href={`/spaces/${spaceId()}/sql`}>
-            {t("searchPage.nav.savedSql")}
-          </A>
-          <A
-            href={`/spaces/${spaceId()}/queries/new`}
-            class="searchModeNavEditor"
-          >
-            {t("searchPage.openSqlEditor")}
+            {t("searchPage.nav.saved")}
           </A>
         </nav>
 
@@ -880,10 +808,7 @@ export default function SpaceSearchRoute() {
                     </Index>
                   </div>
 
-                  <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
-                    <p class="text-sm ui-muted">
-                      {t("searchPage.advancedDescription")}
-                    </p>
+                  <div class="mt-6 flex justify-end">
                     <button
                       type="button"
                       class="ui-button ui-button-primary text-sm"
@@ -899,256 +824,179 @@ export default function SpaceSearchRoute() {
               </Show>
             </section>
 
-            <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,1fr)]">
-              <section class="ui-card p-5">
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h2 class="text-lg font-semibold">
-                      {mode() === "advanced"
-                        ? t("searchPage.advancedResults")
-                        : t("searchPage.keywordResults")}
-                    </h2>
-                    <Show
-                      when={mode() === "keyword" && keywordSearchPerformed() &&
-                        !keywordLoading()}
-                    >
-                      <p class="mt-1 text-sm ui-muted">
-                        {keywordResultCountLabel()}
-                      </p>
-                    </Show>
-                    <Show
-                      when={mode() === "advanced" &&
-                        advancedSearchPerformed() && !advancedLoading()}
-                    >
-                      <p class="mt-1 text-sm ui-muted">
-                        {advancedResultCountLabel()}
-                      </p>
-                    </Show>
-                  </div>
-                </div>
-
-                <div class="mt-4 ui-stack-sm">
-                  <Show when={actionError()}>
-                    <p class="text-sm ui-text-danger">{actionError()}</p>
-                  </Show>
+            <section
+              class="searchResults"
+              aria-labelledby="search-results-title"
+            >
+              <div class="searchResultsHead flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 class="text-lg font-semibold" id="search-results-title">
+                    {mode() === "advanced"
+                      ? t("searchPage.advancedResults")
+                      : t("searchPage.keywordResults")}
+                  </h2>
                   <Show
-                    when={keywordLoading() ||
-                      (mode() === "advanced" && advancedLoading())}
+                    when={mode() === "keyword" && keywordSearchPerformed() &&
+                      !keywordLoading()}
                   >
-                    <p class="text-sm ui-muted">
-                      {t("searchPage.searchingEntries")}
-                    </p>
-                  </Show>
-                  <Show
-                    when={mode() === "keyword" && !keywordLoading() &&
-                      keywordSearchPerformed() &&
-                      keywordResults().length === 0 &&
-                      !actionError()}
-                  >
-                    <p class="text-sm ui-muted">
-                      {t("searchPage.noMatchingEntries")}
-                    </p>
-                  </Show>
-                  <Show
-                    when={mode() === "advanced" && !advancedLoading() &&
-                      advancedSearchPerformed() &&
-                      advancedResults().length === 0 &&
-                      !actionError()}
-                  >
-                    <p class="text-sm ui-muted">
-                      {t("searchPage.noMatchingEntries")}
-                    </p>
-                  </Show>
-                  <Show
-                    when={mode() === "keyword" && !keywordSearchPerformed() &&
-                      !keywordLoading() &&
-                      !actionError()}
-                  >
-                    <p class="text-sm ui-muted">
-                      {t("searchPage.initialHelp")}
-                    </p>
-                  </Show>
-                  <Show
-                    when={mode() === "advanced" && !advancedSearchPerformed() &&
-                      !advancedLoading() &&
-                      !actionError()}
-                  >
-                    <p class="text-sm ui-muted">
-                      {t("searchPage.initialHelp")}
-                    </p>
-                  </Show>
-                  <div class="grid gap-4 sm:grid-cols-2">
-                    <Show when={mode() === "keyword"}>
-                      <For each={keywordResults()}>
-                        {(entry) => (
-                          <button
-                            type="button"
-                            class="ui-card ui-card-interactive text-left"
-                            onClick={() =>
-                              navigate(
-                                `/spaces/${spaceId()}/entries/${
-                                  encodeURIComponent(entry.id)
-                                }`,
-                              )}
-                          >
-                            <div class="flex items-start justify-between gap-2">
-                              <h3 class="text-base font-semibold">
-                                {entry.title || t("common.untitled")}
-                              </h3>
-                              <Show when={entry.form}>
-                                <span class="ui-pill">{entry.form}</span>
-                              </Show>
-                            </div>
-                            <p class="mt-2 text-xs ui-muted">
-                              {t("common.updatedAt", {
-                                date: formatDateLabel(entry.updated_at),
-                              })}
-                            </p>
-                          </button>
-                        )}
-                      </For>
-                    </Show>
-                    <Show when={mode() === "advanced"}>
-                      <For each={advancedResults()}>
-                        {(entry) => (
-                          <button
-                            type="button"
-                            class="ui-card ui-card-interactive text-left"
-                            onClick={() =>
-                              navigate(
-                                `/spaces/${spaceId()}/entries/${
-                                  encodeURIComponent(entry.id)
-                                }`,
-                              )}
-                          >
-                            <div class="flex items-start justify-between gap-2">
-                              <h3 class="text-base font-semibold">
-                                {entry.title || t("common.untitled")}
-                              </h3>
-                              <Show when={entry.form}>
-                                <span class="ui-pill">{entry.form}</span>
-                              </Show>
-                            </div>
-                            <p class="mt-2 text-xs ui-muted">
-                              {t("common.updatedAt", {
-                                date: formatDateLabel(entry.updated_at),
-                              })}
-                            </p>
-                          </button>
-                        )}
-                      </For>
-                    </Show>
-                  </div>
-                  <Show
-                    when={mode() === "keyword" && keywordHasMore() ||
-                      mode() === "advanced" && advancedHasMore()}
-                  >
-                    <div class="flex justify-center pt-2">
-                      <button
-                        type="button"
-                        class="ui-button ui-button-secondary text-sm"
-                        disabled={keywordLoading() || advancedLoading()}
-                        onClick={() => {
-                          if (mode() === "keyword") {
-                            void loadMoreKeywordResults();
-                          } else {
-                            void loadMoreAdvancedResults();
-                          }
-                        }}
-                      >
-                        {(keywordLoading() || advancedLoading())
-                          ? t("searchPage.loadingMore")
-                          : t("searchPage.loadMore")}
-                      </button>
-                    </div>
-                  </Show>
-                </div>
-              </section>
-
-              <aside class="ui-card p-5">
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h2 class="text-lg font-semibold">
-                      {t("searchPage.searchHistory")}
-                    </h2>
                     <p class="mt-1 text-sm ui-muted">
-                      {t("searchPage.searchHistoryDescription")}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    class="ui-button ui-button-secondary text-sm"
-                    onClick={() => void refetchSavedSearches()}
-                  >
-                    {t("searchPage.refreshHistory")}
-                  </button>
-                </div>
-
-                <div class="mt-4 ui-stack-sm">
-                  <Show when={savedSearches.loading}>
-                    <p class="text-sm ui-muted">
-                      {t("searchPage.loadingHistory")}
-                    </p>
-                  </Show>
-                  <Show when={savedSearches.error}>
-                    <p class="text-sm ui-text-danger">
-                      {formatUserFacingError(
-                        savedSearches.error,
-                        "searchPage.failedLoadHistory",
-                      )}
-                    </p>
-                  </Show>
-                  <Show when={forms.loading}>
-                    <p class="text-sm ui-muted">
-                      {t("searchPage.loadingFormFilters")}
-                    </p>
-                  </Show>
-                  <Show when={forms.error}>
-                    <p class="text-sm ui-text-danger">
-                      {formatUserFacingError(
-                        forms.error,
-                        "searchPage.failedLoadForms",
-                      )}
+                      {keywordResultCountLabel()}
                     </p>
                   </Show>
                   <Show
-                    when={!savedSearches.loading &&
-                      searchHistory().length === 0}
+                    when={mode() === "advanced" &&
+                      advancedSearchPerformed() && !advancedLoading()}
                   >
-                    <p class="text-sm ui-muted">
-                      {t("searchPage.noSearchHistory")}
+                    <p class="mt-1 text-sm ui-muted">
+                      {advancedResultCountLabel()}
                     </p>
                   </Show>
-                  <For each={searchHistory()}>
-                    {(entry) => (
-                      <button
-                        type="button"
-                        class="ui-card ui-card-interactive w-full text-left"
-                        onClick={() => void runSavedSearch(entry)}
-                      >
-                        <div class="flex items-center justify-between gap-2">
-                          <h3 class="text-sm font-semibold">
-                            {displaySqlName(entry)}
-                          </h3>
-                          <span class="text-xs ui-muted">
-                            {runningSearchId() === entry.id
-                              ? t("searchPage.runningSaved")
-                              : entry.variables?.length
-                              ? t("searchPage.variables")
-                              : t("searchPage.runAgain")}
-                          </span>
-                        </div>
-                        <p class="mt-2 text-xs ui-muted">
-                          {t("common.updatedAt", {
-                            date: formatDateLabel(entry.updated_at),
-                          })}
-                        </p>
-                      </button>
-                    )}
-                  </For>
                 </div>
-              </aside>
-            </div>
+              </div>
+
+              <div class="mt-4 ui-stack-sm">
+                <Show when={actionError()}>
+                  <p class="text-sm ui-text-danger">{actionError()}</p>
+                </Show>
+                <Show
+                  when={keywordLoading() ||
+                    (mode() === "advanced" && advancedLoading())}
+                >
+                  <p class="text-sm ui-muted">
+                    {t("searchPage.searchingEntries")}
+                  </p>
+                </Show>
+                <Show
+                  when={mode() === "keyword" && !keywordLoading() &&
+                    keywordSearchPerformed() &&
+                    keywordResults().length === 0 &&
+                    !actionError()}
+                >
+                  <p class="text-sm ui-muted">
+                    {t("searchPage.noMatchingEntries")}
+                  </p>
+                </Show>
+                <Show
+                  when={mode() === "advanced" && !advancedLoading() &&
+                    advancedSearchPerformed() &&
+                    advancedResults().length === 0 &&
+                    !actionError()}
+                >
+                  <p class="text-sm ui-muted">
+                    {t("searchPage.noMatchingEntries")}
+                  </p>
+                </Show>
+                <Show
+                  when={mode() === "keyword" && !keywordSearchPerformed() &&
+                    !keywordLoading() &&
+                    !actionError()}
+                >
+                  <p class="text-sm ui-muted">
+                    {t("searchPage.initialHelp")}
+                  </p>
+                </Show>
+                <Show
+                  when={mode() === "advanced" && !advancedSearchPerformed() &&
+                    !advancedLoading() &&
+                    !actionError()}
+                >
+                  <p class="text-sm ui-muted">
+                    {t("searchPage.initialHelp")}
+                  </p>
+                </Show>
+                <div class="searchResultList">
+                  <Show when={mode() === "keyword"}>
+                    <For each={keywordResults()}>
+                      {(entry) => (
+                        <button
+                          type="button"
+                          class="searchResultRow"
+                          onClick={() =>
+                            navigate(
+                              `/spaces/${spaceId()}/entries/${
+                                encodeURIComponent(entry.id)
+                              }`,
+                            )}
+                        >
+                          <div class="searchResultContent">
+                            <h3 class="text-base font-semibold">
+                              {entry.title || t("common.untitled")}
+                            </h3>
+                            <Show when={entry.form}>
+                              <span class="ui-pill">{entry.form}</span>
+                            </Show>
+                            <p class="mt-2 text-xs ui-muted">
+                              {t("common.updatedAt", {
+                                date: formatDateLabel(entry.updated_at),
+                              })}
+                            </p>
+                          </div>
+                          <span class="searchResultChevron" aria-hidden="true">
+                            ›
+                          </span>
+                        </button>
+                      )}
+                    </For>
+                  </Show>
+                  <Show when={mode() === "advanced"}>
+                    <For each={advancedResults()}>
+                      {(entry) => (
+                        <button
+                          type="button"
+                          class="searchResultRow"
+                          onClick={() =>
+                            navigate(
+                              `/spaces/${spaceId()}/entries/${
+                                encodeURIComponent(entry.id)
+                              }`,
+                            )}
+                        >
+                          <div class="searchResultContent">
+                            <h3 class="text-base font-semibold">
+                              {entry.title || t("common.untitled")}
+                            </h3>
+                            <Show when={entry.form}>
+                              <span class="ui-pill">{entry.form}</span>
+                            </Show>
+                            <p class="mt-2 text-xs ui-muted">
+                              {t("common.updatedAt", {
+                                date: formatDateLabel(entry.updated_at),
+                              })}
+                            </p>
+                          </div>
+                          <span class="searchResultChevron" aria-hidden="true">
+                            ›
+                          </span>
+                        </button>
+                      )}
+                    </For>
+                  </Show>
+                </div>
+                <Show
+                  when={mode() === "keyword" && keywordHasMore() ||
+                    mode() === "advanced" && advancedHasMore()}
+                >
+                  <div class="flex justify-center pt-2">
+                    <button
+                      type="button"
+                      class="ui-button ui-button-secondary text-sm"
+                      disabled={keywordLoading() || advancedLoading()}
+                      onClick={() => {
+                        if (mode() === "keyword") {
+                          void loadMoreKeywordResults();
+                        } else {
+                          void loadMoreAdvancedResults();
+                        }
+                      }}
+                    >
+                      {(keywordLoading() || advancedLoading())
+                        ? t("searchPage.loadingMore")
+                        : t("searchPage.loadMore")}
+                    </button>
+                  </div>
+                </Show>
+              </div>
+            </section>
           </main>
         </div>
       </div>

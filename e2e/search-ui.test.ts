@@ -16,6 +16,27 @@ test.describe("Search UI", () => {
 		await ensureDefaultForm(request, spaceId);
 	});
 
+	test("REQ-SRCH-006: search navigation exposes the four primary destinations", async ({ page }) => {
+		await page.goto(getFrontendUrl(`/spaces/${spaceId}/search`), {
+			waitUntil: "domcontentloaded",
+		});
+
+		const navigation = page.getByRole("navigation", { name: "Search" });
+		await expect(navigation).toBeVisible();
+		await expect(navigation.getByRole("button", { name: "Quick search" }))
+			.toBeVisible();
+		await expect(navigation.getByRole("button", { name: "Advanced search" }))
+			.toBeVisible();
+		await expect(navigation.getByRole("link", { name: "Files" }))
+			.toHaveAttribute("href", `/spaces/${spaceId}/assets`);
+		await expect(navigation.getByRole("link", { name: "Saved" }))
+			.toHaveAttribute("href", `/spaces/${spaceId}/sql`);
+		await expect(navigation.getByRole("link", { name: "Open SQL editor" }))
+			.not.toBeAttached();
+		await expect(page.getByRole("heading", { name: "Search history" }))
+			.not.toBeAttached();
+	});
+
 	test("REQ-SRCH-004: search page starts with direct keyword search", async ({ page, request }) => {
 		test.setTimeout(120_000);
 		const runId = Date.now();
