@@ -618,6 +618,27 @@ test.describe("Entries CRUD", () => {
 			expect(assetReadResponse.status()).toBe(200);
 			expect(await assetReadResponse.body()).toEqual(Buffer.from("thumbnail"));
 
+			const previewResponse = page.waitForResponse(
+				(response) => {
+					const requestEvent = response.request();
+					const url = new URL(response.url());
+					return requestEvent.method() === "GET" &&
+						url.pathname.includes(`/api/spaces/${spaceId}/assets/`) &&
+						url.searchParams.get("form") === mediaForm &&
+						url.searchParams.get("entry_id") === mediaEntryId;
+				},
+				{ timeout: 15_000 },
+			);
+			await thumbnail.getByRole("button", { name: "Preview" }).click();
+			expect((await previewResponse).status()).toBe(200);
+			const previewDialog = page.getByRole("dialog", {
+				name: "thumbnail.txt",
+			});
+			await expect(previewDialog).toBeVisible();
+			await expect(thumbnail.locator(".ui-asset-preview-panel")).toHaveCount(0);
+			await previewDialog.getByRole("button", { name: "Close" }).click();
+			await expect(page.getByRole("dialog")).toHaveCount(0);
+
 			const replacement = page.locator('[data-field-name="thumbnail"]');
 			await replacement.getByLabel("Replace").setInputFiles({
 				name: "thumbnail-replaced.txt",

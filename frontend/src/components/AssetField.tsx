@@ -1,5 +1,13 @@
-import { createEffect, createMemo, For, onCleanup, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
 import { AssetPreview } from "./AssetPreview";
+import { UiIcon } from "./UiIcon";
 import { assetApi } from "~/lib/ugoite-client";
 import { locale, t } from "~/lib/i18n";
 import {
@@ -10,6 +18,7 @@ import {
   type PendingAssetUpload,
 } from "~/lib/asset-field-state";
 import { formatAssetSize } from "~/lib/asset-reference";
+import { formatAssetSummary } from "~/lib/display-value";
 import { readAssetReferences } from "~/lib/draft-values";
 import { previewMediaType, resolvePreviewKind } from "~/lib/asset-preview";
 import type { AssetReference } from "~/lib/types";
@@ -55,6 +64,8 @@ export function AssetField(props: AssetFieldProps) {
   const readingIds = state.readingIds;
   const setReadingIds = state.setReadingIds;
   const localFiles = state.localFiles;
+  const [previewAssetId, setPreviewAssetId] = createSignal<string | null>(null);
+  let previewTrigger: HTMLButtonElement | undefined;
   let disposed = false;
 
   if (!state.hasDraftBinding()) {
@@ -261,7 +272,12 @@ export function AssetField(props: AssetFieldProps) {
     }
   };
 
-  const previewReference = (reference: AssetReference) => {
+  const previewReference = (
+    reference: AssetReference,
+    trigger?: HTMLButtonElement,
+  ) => {
+    previewTrigger = trigger;
+    setPreviewAssetId(reference.asset_id);
     const signature = previewSignature(reference);
     if (
       previewUrls().has(reference.asset_id) &&
@@ -290,6 +306,30 @@ export function AssetField(props: AssetFieldProps) {
       });
     });
   };
+
+  const closePreview = () => {
+    setPreviewAssetId(null);
+    const trigger = previewTrigger;
+    previewTrigger = undefined;
+    queueMicrotask(() => {
+      if (trigger?.isConnected) trigger.focus();
+    });
+  };
+
+  const activePreviewReference = createMemo(() => {
+    const assetId = previewAssetId();
+    return assetId
+      ? parsedValue().references.find((reference) =>
+        reference.asset_id === assetId
+      )
+      : undefined;
+  });
+
+  createEffect(() => {
+    if (previewAssetId() && !activePreviewReference()) {
+      setPreviewAssetId(null);
+    }
+  });
 
   const downloadReference = (reference: AssetReference) => {
     const existingUrl = previewSignatures().get(reference.asset_id) ===
@@ -367,13 +407,18 @@ export function AssetField(props: AssetFieldProps) {
 
       <For each={parsedValue().references}>
         {(reference, index) => (
-          <div class="ui-card ui-asset-item ui-asset-item-with-preview">
+          <div class="ui-card ui-asset-item">
             <div class="ui-asset-item-header">
-              <div class="min-w-0 flex-1">
-                <p class="truncate font-medium">{reference.name}</p>
-                <p class="text-xs ui-muted">
-                  {reference.media_type} · {formatAssetSize(
-                    reference.size_bytes,
+              <div class="ui-asset-item-info">
+                <p
+                  class="ui-asset-item-name truncate font-medium"
+                  title={reference.name}
+                >
+                  {reference.name}
+                </p>
+                <p class="ui-asset-item-meta text-xs ui-muted">
+                  {formatAssetSummary(
+                    reference,
                     locale() === "ja" ? "ja-JP" : "en-US",
                   )}
                 </p>
@@ -381,34 +426,49 @@ export function AssetField(props: AssetFieldProps) {
                   {statusText(reference)}
                 </p>
               </div>
-              <div class="flex flex-wrap items-center justify-end gap-2">
+              <div class="ui-asset-item-actions flex flex-wrap items-center justify-end gap-2">
                 <Show when={resolvePreviewKind(reference) !== "unsupported"}>
                   <button
                     type="button"
-                    class="ui-button ui-button-secondary ui-button-sm"
-                    onClick={() => previewReference(reference)}
+                    class="ui-button ui-button-secondary ui-button-sm ui-asset-icon-button"
+                    aria-label={readingIds().has(reference.asset_id)
+                      ? t("assetField.status.reading")
+                      : t("assetField.action.preview")}
+                    title={t("assetField.action.preview")}
+                    onClick={(event) =>
+                      previewReference(reference, event.currentTarget)}
                     disabled={readingIds().has(reference.asset_id) ||
                       (!localFiles().has(reference.asset_id) &&
                         (!persistedIds().has(reference.asset_id) ||
                           !props.formName?.trim() || !props.entryId?.trim()))}
                   >
-                    {readingIds().has(reference.asset_id)
-                      ? t("assetField.status.reading")
-                      : t("assetField.action.preview")}
+                    <UiIcon name="preview" />
+                    <span class="ui-sr-only">
+                      {readingIds().has(reference.asset_id)
+                        ? t("assetField.status.reading")
+                        : t("assetField.action.preview")}
+                    </span>
                   </button>
                 </Show>
                 <button
                   type="button"
-                  class="ui-button ui-button-secondary ui-button-sm"
+                  class="ui-button ui-button-secondary ui-button-sm ui-asset-icon-button"
+                  aria-label={readingIds().has(reference.asset_id)
+                    ? t("assetField.status.reading")
+                    : t("assetField.action.download")}
+                  title={t("assetField.action.download")}
                   onClick={() => downloadReference(reference)}
                   disabled={readingIds().has(reference.asset_id) ||
                     (!localFiles().has(reference.asset_id) &&
                       (!persistedIds().has(reference.asset_id) ||
                         !props.formName?.trim() || !props.entryId?.trim()))}
                 >
-                  {readingIds().has(reference.asset_id)
-                    ? t("assetField.status.reading")
-                    : t("assetField.action.download")}
+                  <UiIcon name="download" />
+                  <span class="ui-sr-only">
+                    {readingIds().has(reference.asset_id)
+                      ? t("assetField.status.reading")
+                      : t("assetField.action.download")}
+                  </span>
                 </button>
                 <Show when={!props.readOnly}>
                   <label class="ui-button ui-button-secondary ui-button-sm">
@@ -466,18 +526,89 @@ export function AssetField(props: AssetFieldProps) {
                 </Show>
               </div>
             </div>
-            <Show when={previewFor(reference.asset_id)}>
-              {(preview) => (
-                <AssetPreview
-                  reference={reference}
-                  blob={preview().blob}
-                  url={preview().url}
-                />
-              )}
-            </Show>
           </div>
         )}
       </For>
+
+      <Show when={activePreviewReference()}>
+        {(reference) => (
+          <div
+            class="ui-backdrop ui-asset-dialog-backdrop"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) closePreview();
+            }}
+          >
+            <section
+              class="ui-dialog ui-asset-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={`asset-preview-title-${reference().asset_id}`}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") closePreview();
+              }}
+            >
+              <header class="ui-dialog-header">
+                <div class="min-w-0">
+                  <h2
+                    class="ui-dialog-title truncate"
+                    id={`asset-preview-title-${reference().asset_id}`}
+                    title={reference().name}
+                  >
+                    {reference().name}
+                  </h2>
+                  <p class="ui-asset-dialog-meta text-xs ui-muted">
+                    {formatAssetSummary(
+                      reference(),
+                      locale() === "ja" ? "ja-JP" : "en-US",
+                    )}
+                  </p>
+                </div>
+                <button
+                  ref={(element) => {
+                    queueMicrotask(() => element.focus());
+                  }}
+                  type="button"
+                  class="ui-button ui-button-secondary ui-asset-icon-button"
+                  aria-label={t("common.close")}
+                  title={t("common.close")}
+                  onClick={closePreview}
+                >
+                  <UiIcon name="close" />
+                  <span class="ui-sr-only">{t("common.close")}</span>
+                </button>
+              </header>
+
+              <div class="ui-asset-dialog-body">
+                <Show
+                  when={previewFor(reference().asset_id)}
+                  fallback={
+                    <Show
+                      when={readingIds().has(reference().asset_id)}
+                      fallback={
+                        <p class="ui-alert ui-alert-error text-sm" role="alert">
+                          {t("assetField.preview.failed")}
+                        </p>
+                      }
+                    >
+                      <p class="text-sm ui-muted" role="status">
+                        {t("assetField.preview.loading")}
+                      </p>
+                    </Show>
+                  }
+                >
+                  {(preview) => (
+                    <AssetPreview
+                      reference={reference()}
+                      blob={preview().blob}
+                      url={preview().url}
+                    />
+                  )}
+                </Show>
+              </div>
+            </section>
+          </div>
+        )}
+      </Show>
 
       <Show when={!props.readOnly}>
         <For each={pendingUploads()}>

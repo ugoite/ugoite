@@ -378,6 +378,50 @@ describe("AssetField", () => {
     expect(screen.queryByRole("img", { name: "diagram.svg" })).toBeNull();
   });
 
+  it("opens a cached preview in an accessible dialog", async () => {
+    const state = createAssetFieldState();
+    const encoded = serializeAssetReference(first);
+
+    render(() => (
+      <AssetField
+        fieldId="document"
+        fieldName="document"
+        value={encoded}
+        persistedValue={encoded}
+        multiple={false}
+        spaceId="default"
+        formName="Contracts"
+        entryId="entry-1"
+        state={state}
+        onChange={() => undefined}
+      />
+    ));
+
+    state.setPreviewBlobs(
+      new Map([[first.asset_id, new Blob(["cached"])]]),
+    );
+    state.setPreviewUrls(new Map([[first.asset_id, "blob:cached"]]));
+    state.setPreviewSignatures(
+      new Map([[
+        first.asset_id,
+        `${first.name}\u0000${first.media_type}\u0000text`,
+      ]]),
+    );
+
+    const row = screen.getByText(first.name).closest(".ui-asset-item");
+    expect(row?.querySelector(".ui-asset-preview-panel")).toBeNull();
+    expect(screen.getByText("TXT · 10 bytes")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    const dialog = await screen.findByRole("dialog", { name: first.name });
+    expect(dialog).toBeInTheDocument();
+    expect(dialog.querySelector(".ui-asset-preview-panel")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(row?.querySelector(".ui-asset-preview-panel")).toBeNull();
+  });
+
   it("keeps logical metadata visible when persisted bytes are unavailable", async () => {
     (assetApi.read as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error("missing bytes"),

@@ -2079,16 +2079,62 @@ code {
   align-items: center;
   gap: 12px;
   min-width: 0;
-  padding: 12px;
-}
-.ui-asset-item-with-preview {
-  display: block;
+  padding: 10px 12px;
 }
 .ui-asset-item-header {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 12px;
   min-width: 0;
+}
+.ui-asset-item-info {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.ui-asset-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-asset-item-meta,
+.ui-asset-dialog-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-asset-item-actions {
+  flex: 0 0 auto;
+}
+.ui-asset-icon-button {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+}
+.ui-asset-icon-button .icon {
+  width: 18px;
+  height: 18px;
+}
+.ui-asset-dialog-backdrop {
+  z-index: 80;
+}
+.ui-asset-dialog {
+  display: flex;
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+}
+.ui-asset-dialog-body {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+.ui-asset-dialog-body .ui-asset-preview-panel {
+  margin-top: 0;
 }
 .ui-asset-preview {
   width: 56px;
@@ -3031,5 +3077,29 @@ button.assistantPill[aria-expanded="true"] {
 
   .mobileFormPickerActions .formVisibilityToggle {
     min-height: 44px;
+  }
+
+  .ui-asset-item {
+    align-items: flex-start;
+  }
+
+  .ui-asset-item-header {
+    align-items: flex-start;
+  }
+
+  .ui-asset-item-actions {
+    max-width: 100%;
+  }
+
+  .ui-asset-dialog-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .ui-asset-dialog {
+    width: 100%;
+    max-height: calc(100vh - env(safe-area-inset-top, 0px));
+    border-radius: 18px 18px 0 0;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
   }
 }
