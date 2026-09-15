@@ -11099,7 +11099,7 @@
             }
           },
           "403": {
-            "description": "No recent ceremony, or not approved/invalid challenge (STEP_UP_NOT_APPROVED, STEP_UP_INVALID)",
+            "description": "No recent ceremony (RECENT_PASSKEY_REQUIRED), or not approved/invalid challenge (STEP_UP_NOT_APPROVED, STEP_UP_INVALID)",
             "content": {
               "application/json": {
                 "schema": {
