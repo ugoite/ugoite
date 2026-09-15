@@ -13,11 +13,39 @@ use p256::{
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::io::IsTerminal;
 use std::time::Duration;
 use url::Url;
 use uuid::Uuid;
 
 pub const DEFAULT_DEVICE_ACTIONS: &str = "read,create,update";
+
+/// Renders the device-authorization prompt without leaking the one-time
+/// secret into logs.
+///
+/// Interactive terminals address a human who must type the code now, so the
+/// secret appears exactly once on stderr with explicit entry guidance and is
+/// never emitted as a plain log line. Non-interactive output (CI, pipes)
+/// omits the secret entirely and reports machine-readable ceremony state:
+/// the verification URL plus the fact that a code is required.
+pub fn device_authorization_prompt(
+    user_code: &str,
+    verification_uri: &str,
+    stderr_is_terminal: bool,
+) -> String {
+    if stderr_is_terminal {
+        format!(
+            "Open {verification_uri} on any signed-in device.\nEnter this one-time code now: {user_code}\n(The code is shown only here; it is never logged.)"
+        )
+    } else {
+        serde_json::to_string(&json!({
+            "code": "DEVICE_AUTHORIZATION_REQUIRED",
+            "verification_uri": verification_uri,
+            "user_code_required": true,
+        }))
+        .expect("device ceremony state serializes")
+    }
+}
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum AuthLoginTarget {
@@ -142,7 +170,10 @@ async fn login(
     let verification_uri = device["verification_uri"]
         .as_str()
         .ok_or_else(|| anyhow!("server omitted verification_uri"))?;
-    eprintln!("Open {verification_uri} on any signed-in device and approve code {user_code}.");
+    eprintln!(
+        "{}",
+        device_authorization_prompt(user_code, verification_uri, std::io::stderr().is_terminal())
+    );
     let device_code = device["device_code"]
         .as_str()
         .ok_or_else(|| anyhow!("server omitted device_code"))?;
@@ -441,8 +472,9 @@ fn public_jwk(key: &SigningKey) -> Value {
 #[cfg(test)]
 mod tests {
     use super::{
-        active_session_for, api_base_root, canonical_dpop_htu, load_auth_session, login,
-        mcp_resource, mcp_target, oauth_payload, public_jwk, save_auth_session,
+        active_session_for, api_base_root, canonical_dpop_htu, device_authorization_prompt,
+        load_auth_session, login, mcp_resource, mcp_target, oauth_payload, public_jwk,
+        save_auth_session,
     };
     use base64::Engine as _;
     use p256::pkcs8::EncodePrivateKey;
@@ -514,6 +546,23 @@ mod tests {
             }
         });
         (format!("http://{address}"), receiver, handle)
+    }
+
+    #[test]
+    fn device_prompt_marks_the_secret_for_interactive_entry_only() {
+        let interactive =
+            device_authorization_prompt("ABCD-EFGH", "https://node.example/device", true);
+        assert!(interactive.contains("ABCD-EFGH"));
+        assert!(interactive.contains("one-time code"));
+        assert!(interactive.contains("never logged"));
+
+        let machine =
+            device_authorization_prompt("ABCD-EFGH", "https://node.example/device", false);
+        assert!(!machine.contains("ABCD-EFGH"));
+        let state: serde_json::Value = serde_json::from_str(&machine).expect("machine JSON");
+        assert_eq!(state["code"], "DEVICE_AUTHORIZATION_REQUIRED");
+        assert_eq!(state["verification_uri"], "https://node.example/device");
+        assert_eq!(state["user_code_required"], true);
     }
 
     #[test]

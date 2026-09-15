@@ -10927,6 +10927,7 @@
     "/auth/step-up/start": {
       "post": {
         "summary": "Start browser-approved step-up challenge",
+        "description": "Starts a step-up challenge bound to one operation and immutable Space UID. Slugs, paths, and non-UUIDv7 identifiers are rejected with STEP_UP_SPACE_INVALID; the Space UID allow-list is STEP_UP_OPERATION_NOT_ELIGIBLE, STEP_UP_SPACE_REQUIRED, STEP_UP_SPACE_UNEXPECTED, STEP_UP_SPACE_INVALID.",
         "requestBody": {
           "required": true,
           "content": {
@@ -10939,7 +10940,8 @@
                     "type": "string"
                   },
                   "space_id": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Immutable Space UID (UUIDv7). Required except for space.create, which takes none."
                   }
                 },
                 "additionalProperties": true
@@ -10968,6 +10970,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Ineligible operation or invalid Space binding (STEP_UP_OPERATION_NOT_ELIGIBLE, STEP_UP_SPACE_REQUIRED, STEP_UP_SPACE_UNEXPECTED, STEP_UP_SPACE_INVALID)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -10975,6 +10987,7 @@
     "/auth/step-up/status": {
       "get": {
         "summary": "Check step-up challenge status",
+        "description": "Reports a challenge without mutating it. Unknown challenges are STEP_UP_NOT_FOUND (404), expired ones STEP_UP_EXPIRED (410), unapproved or mismatched ones STEP_UP_NOT_APPROVED or STEP_UP_INVALID (403).",
         "parameters": [
           {
             "name": "challenge_id",
@@ -11007,6 +11020,36 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Not approved or invalid challenge (STEP_UP_NOT_APPROVED, STEP_UP_INVALID)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown challenge (STEP_UP_NOT_FOUND)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired challenge (STEP_UP_EXPIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -11014,6 +11057,7 @@
     "/auth/step-up/approve": {
       "post": {
         "summary": "Approve step-up challenge from a recent Passkey session",
+        "description": "Approval requires a recent Passkey ceremony and never consumes the challenge; consumption happens atomically at mutation time and reuse is rejected. Failure codes mirror status: STEP_UP_NOT_FOUND (404), STEP_UP_EXPIRED (410), STEP_UP_NOT_APPROVED or STEP_UP_INVALID (403).",
         "requestBody": {
           "required": true,
           "content": {
@@ -11046,6 +11090,36 @@
           },
           "401": {
             "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No recent ceremony, or not approved/invalid challenge (STEP_UP_NOT_APPROVED, STEP_UP_INVALID)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown challenge (STEP_UP_NOT_FOUND)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired challenge (STEP_UP_EXPIRED)",
             "content": {
               "application/json": {
                 "schema": {

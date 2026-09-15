@@ -5684,6 +5684,18 @@ impl NodeIdentityService {
     ) -> Result<serde_json::Value> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        // Prune first so expired requests never count against the pending
+        // bound and cannot accumulate into an unbounded map.
+        state.device_authorizations.retain(|_, request| {
+            parse_timestamp(&request.expires_at).is_ok_and(|ts| ts > Utc::now())
+                && request.used_at.is_none()
+        });
+        const MAX_PENDING_DEVICE_AUTHORIZATIONS: usize = 100;
+        if state.device_authorizations.len() >= MAX_PENDING_DEVICE_AUTHORIZATIONS {
+            anyhow::bail!(
+                "too many pending device authorizations; approve or wait for expiry before starting another"
+            );
+        }
         let device_code = random_token(32)?;
         let user_code = random_user_code()?;
         let expires_at = timestamp(Utc::now() + Duration::minutes(10));
@@ -6046,6 +6058,22 @@ impl NodeIdentityService {
         state.step_up_challenges.retain(|_, challenge| {
             parse_timestamp(&challenge.expires_at).is_ok_and(|ts| ts > Utc::now())
         });
+        // Per-account pending cap: one account cannot accumulate unbounded
+        // unapproved challenges. Expired entries were pruned just above, so
+        // only live pending/approved-but-unconsumed challenges count.
+        const MAX_PENDING_STEP_UP_CHALLENGES_PER_ACCOUNT: usize = 10;
+        let pending_for_account = state
+            .step_up_challenges
+            .values()
+            .filter(|challenge| {
+                challenge.account_id == account_id && challenge.consumed_at.is_none()
+            })
+            .count();
+        if pending_for_account >= MAX_PENDING_STEP_UP_CHALLENGES_PER_ACCOUNT {
+            anyhow::bail!(
+                "too many pending step-up challenges for this account; approve, consume, or wait for expiry before starting another"
+            );
+        }
         let challenge_id = Uuid::now_v7();
         let now = Utc::now();
         let expires_at = timestamp(now + Duration::minutes(10));
@@ -11027,6 +11055,91 @@ mod tests {
             .start_step_up_challenge(other_account, None, "space.create", None)
             .await
             .is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn step_up_pending_challenges_are_capped_per_account() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        let (account_id, credential_id) = step_up_test_account(&service).await?;
+        for _ in 0..10 {
+            service
+                .start_step_up_challenge(account_id, Some(credential_id), "space.create", None)
+                .await?;
+        }
+        let capped = service
+            .start_step_up_challenge(account_id, Some(credential_id), "space.create", None)
+            .await
+            .expect_err("eleventh pending challenge must be rejected");
+        assert!(capped
+            .to_string()
+            .contains("too many pending step-up challenges"));
+        // Expiring one challenge frees the slot: expiry is pruned, never counted.
+        let mut state = service.read_state().await?;
+        let oldest = *state.step_up_challenges.keys().next().expect("pending");
+        if let Some(challenge) = state.step_up_challenges.get_mut(&oldest) {
+            challenge.expires_at = timestamp(Utc::now() - chrono::Duration::minutes(1));
+        }
+        service.write_state(&state).await?;
+        service
+            .start_step_up_challenge(account_id, Some(credential_id), "space.create", None)
+            .await?;
+        let state = service.read_state().await?;
+        assert_eq!(state.step_up_challenges.len(), 10);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn device_authorizations_are_capped_with_expiry_pruning() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        for index in 0..100 {
+            service
+                .start_device_authorization(
+                    &format!("device-{index}"),
+                    serde_json::json!({"kty": "EC"}),
+                    None,
+                    std::collections::BTreeSet::from(["read".to_string()]),
+                    None,
+                )
+                .await?;
+        }
+        let capped = service
+            .start_device_authorization(
+                "device-overflow",
+                serde_json::json!({"kty": "EC"}),
+                None,
+                std::collections::BTreeSet::from(["read".to_string()]),
+                None,
+            )
+            .await
+            .expect_err("pending device authorizations must be bounded");
+        assert!(capped
+            .to_string()
+            .contains("too many pending device authorizations"));
+        // An expired request is pruned instead of counting against the bound.
+        let mut state = service.read_state().await?;
+        let oldest = state
+            .device_authorizations
+            .keys()
+            .next()
+            .cloned()
+            .expect("pending");
+        if let Some(request) = state.device_authorizations.get_mut(&oldest) {
+            request.expires_at = timestamp(Utc::now() - chrono::Duration::minutes(1));
+        }
+        service.write_state(&state).await?;
+        service
+            .start_device_authorization(
+                "device-after-expiry",
+                serde_json::json!({"kty": "EC"}),
+                None,
+                std::collections::BTreeSet::from(["read".to_string()]),
+                None,
+            )
+            .await?;
+        let state = service.read_state().await?;
+        assert_eq!(state.device_authorizations.len(), 100);
         Ok(())
     }
 }
