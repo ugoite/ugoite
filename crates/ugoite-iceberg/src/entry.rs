@@ -698,20 +698,33 @@ pub(crate) async fn list_form_entry_ids_for_audit(
     ws_path: &str,
     form_name: &str,
 ) -> Result<Vec<String>> {
-    let rows = match revision_rows_for_form(op, ws_path, form_name).await {
-        Ok((_, _, rows)) => rows,
-        Err(error)
-            if error.to_string().to_lowercase().contains("not found")
-                || error.to_string().contains("was not found") =>
-        {
-            return Ok(Vec::new());
-        }
-        Err(error) => return Err(error),
-    };
+    let rows = form_revision_rows_for_audit(op, ws_path, form_name).await?;
     let mut ids: Vec<String> = rows.into_iter().map(|row| row.entry_id).collect();
     ids.sort();
     ids.dedup();
     Ok(ids)
+}
+
+/// Reads every committed revision row for one Form, tombstones included.
+///
+/// Shared by audit enumeration and per-target reconciliation so both see
+/// the same committed truth. A missing Form yields an empty list without
+/// creating storage state; a corrupt Form fails the caller.
+pub(crate) async fn form_revision_rows_for_audit(
+    op: &Operator,
+    ws_path: &str,
+    form_name: &str,
+) -> Result<Vec<RevisionRow>> {
+    match revision_rows_for_form(op, ws_path, form_name).await {
+        Ok((_, _, rows)) => Ok(rows),
+        Err(error)
+            if error.to_string().to_lowercase().contains("not found")
+                || error.to_string().contains("was not found") =>
+        {
+            Ok(Vec::new())
+        }
+        Err(error) => Err(error),
+    }
 }
 
 pub(crate) async fn find_entry_form(

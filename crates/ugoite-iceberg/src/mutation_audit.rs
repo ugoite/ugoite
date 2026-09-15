@@ -481,12 +481,19 @@ impl UgoiteService {
         Ok(delivered)
     }
 
-    /// Re-derives the expected audit event for `sql_id` from committed truth
-    /// (saved-SQL row, including tombstones) and delivers it idempotently.
+    /// Re-derives the expected audit events for `sql_id` from committed
+    /// truth (saved-SQL revision rows, including tombstones) and delivers
+    /// every missing one idempotently.
     ///
-    /// Attribution comes from the committed row actor, never from the
+    /// Like Entries, every committed revision gets its own deterministic
+    /// event (first revision without a parent is `saved_sql.created`, a
+    /// deleted row is `saved_sql.deleted`, all others are
+    /// `saved_sql.updated`), so an earlier update whose delivery failed is
+    /// not dropped when a later revision reconciles.
+    ///
+    /// Attribution comes from the committed revision actors, never from the
     /// reconcile caller; the caller-supplied principals/author only fill the
-    /// gap when the committed row carries no actor at all.
+    /// gap when a committed revision carries no actor at all.
     pub async fn reconcile_saved_sql_audit(
         &self,
         space_id: &str,
@@ -494,39 +501,55 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         author_fallback: &str,
     ) -> Result<Option<Value>> {
-        let Some((revision_id, parent_revision_id, deleted, committed_actor)) =
-            crate::saved_sql::read_sql_row_for_audit(
+        let mut revisions: Vec<crate::entry::RevisionRow> =
+            crate::entry::form_revision_rows_for_audit(
                 self.operator(),
                 &self.workspace_path(space_id),
-                sql_id,
+                crate::saved_sql::SQL_FORM_NAME_FOR_AUDIT,
             )
             .await?
-        else {
+            .into_iter()
+            .filter(|row| row.entry_id == sql_id)
+            .collect();
+        if revisions.is_empty() {
             return Ok(None);
-        };
-        let action = if deleted {
-            SAVED_SQL_DELETED_ACTION
-        } else if parent_revision_id.is_none() {
-            SAVED_SQL_CREATED_ACTION
-        } else {
-            SAVED_SQL_UPDATED_ACTION
-        };
+        }
+        revisions.sort_by(|a, b| {
+            (a.entry_version, a.timestamp)
+                .partial_cmp(&(b.entry_version, b.timestamp))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let space_uid = self.space_uid(space_id).await?;
-        let (subject, actor) = match committed_actor.trim() {
-            "" => audit_attribution(principal_ids, author_fallback, &space_uid),
-            _ => committed_actor_attribution(Some(&committed_actor), &space_uid),
-        };
-        let event = saved_sql_mutation_event(
-            &space_uid,
-            action,
-            sql_id,
-            &revision_id,
-            &subject,
-            actor.as_deref(),
-        );
-        Ok(Some(
-            deliver_mutation_audit_event(self.operator(), space_id, &event).await?,
-        ))
+        let mut delivered = None;
+        for revision in &revisions {
+            let action = if revision.operation == "delete" {
+                SAVED_SQL_DELETED_ACTION
+            } else if revision.parent_revision_id.is_none() {
+                SAVED_SQL_CREATED_ACTION
+            } else {
+                SAVED_SQL_UPDATED_ACTION
+            };
+            let committed_actor = if revision.updated_by.trim().is_empty() {
+                revision.author.clone()
+            } else {
+                revision.updated_by.clone()
+            };
+            let (subject, actor) = match committed_actor.trim() {
+                "" => audit_attribution(principal_ids, author_fallback, &space_uid),
+                _ => committed_actor_attribution(Some(&committed_actor), &space_uid),
+            };
+            let event = saved_sql_mutation_event(
+                &space_uid,
+                action,
+                sql_id,
+                &revision.revision_id,
+                &subject,
+                actor.as_deref(),
+            );
+            delivered =
+                Some(deliver_mutation_audit_event(self.operator(), space_id, &event).await?);
+        }
+        Ok(delivered)
     }
 
     /// Converges audit evidence for every committed Entry and saved-SQL
@@ -559,6 +582,13 @@ impl UgoiteService {
             Err(error) => return Err(error),
         };
         for form_name in form_names {
+            // Saved-SQL rows are Entry storage rows too, but their evidence
+            // lives under saved_sql.* actions: the SQL loop below owns them.
+            // Emitting entry.* events for SQL rows would double-record one
+            // committed revision under two action families.
+            if form_name.eq_ignore_ascii_case(crate::saved_sql::SQL_FORM_NAME_FOR_AUDIT) {
+                continue;
+            }
             let ids = crate::entry::list_form_entry_ids_for_audit(
                 self.operator(),
                 &workspace,
@@ -918,20 +948,52 @@ mod tests {
             "author",
         )
         .await?;
+        // Saved-SQL create+update without delivery: only the latest row is
+        // listable, but every committed revision row still converges below.
+        let sql_payload = crate::saved_sql::SqlPayload {
+            name: Some("q".to_string()),
+            kind: crate::saved_sql::SqlKind::UserQuery,
+            metadata: None,
+            sql: "SELECT 1".to_string(),
+            variables: serde_json::json!([]),
+        };
+        let created_sql = crate::saved_sql::create_sql(
+            service.operator(),
+            &service.workspace_path(&space_id),
+            "sql-1",
+            &sql_payload,
+            "author",
+            &integrity,
+        )
+        .await?;
+        let sql_revision_id = created_sql["revision_id"]
+            .as_str()
+            .expect("sql revision")
+            .to_string();
+        crate::saved_sql::update_sql(
+            service.operator(),
+            &service.workspace_path(&space_id),
+            "sql-1",
+            &sql_payload,
+            &sql_revision_id,
+            "author",
+            &integrity,
+        )
+        .await?;
         assert_eq!(audit_total(&service, &space_id).await?, 0);
 
         // Reopen the Space and sweep: every committed revision converges.
         let root_uri = service.root_uri().to_string();
         let service2 = UgoiteService::from_operator(service.operator().clone(), root_uri);
         let converged = service2.reconcile_space_audit(&space_id).await?;
-        assert_eq!(converged, 1);
+        assert_eq!(converged, 2);
         let listed = crate::audit::list_audit_events(
             service2.operator(),
             &space_id,
             crate::audit::AuditListOptions::default(),
         )
         .await?;
-        assert_eq!(listed.get("total").and_then(Value::as_u64), Some(3));
+        assert_eq!(listed.get("total").and_then(Value::as_u64), Some(5));
         let items = listed
             .get("items")
             .and_then(Value::as_array)
@@ -943,6 +1005,8 @@ mod tests {
         assert!(actions.contains(&ENTRY_CREATED_ACTION));
         assert!(actions.contains(&ENTRY_UPDATED_ACTION));
         assert!(actions.contains(&ENTRY_DELETED_ACTION));
+        assert!(actions.contains(&SAVED_SQL_CREATED_ACTION));
+        assert!(actions.contains(&SAVED_SQL_UPDATED_ACTION));
 
         // Attribution matches committed history, not sweep-caller input.
         let history = crate::entry::get_entry_history(
@@ -968,6 +1032,12 @@ mod tests {
             })
             .collect();
         for item in items {
+            // Entry evidence is attributed from Entry history; saved-SQL
+            // evidence is checked against its own committed rows below.
+            let action = item["action"].as_str().unwrap_or_default();
+            if !action.starts_with("entry.") {
+                continue;
+            }
             let revision_id = item["metadata"]["revision_id"]
                 .as_str()
                 .expect("event revision");
@@ -977,6 +1047,34 @@ mod tests {
             assert_eq!(item["target_id"], json!("entry-1"));
             assert_eq!(item["subject_principal_id"], json!(actor));
             assert_eq!(item["metadata"]["change_id"], json!(change_id));
+        }
+
+        // Saved-SQL evidence is attributed from its own committed rows.
+        let sql_rows = crate::entry::form_revision_rows_for_audit(
+            service2.operator(),
+            &service2.workspace_path(&space_id),
+            crate::saved_sql::SQL_FORM_NAME_FOR_AUDIT,
+        )
+        .await?;
+        for item in items {
+            let action = item["action"].as_str().unwrap_or_default();
+            if !action.starts_with("saved_sql.") {
+                continue;
+            }
+            let revision_id = item["metadata"]["revision_id"]
+                .as_str()
+                .expect("sql event revision");
+            let row = sql_rows
+                .iter()
+                .find(|row| row.entry_id == "sql-1" && row.revision_id == revision_id)
+                .expect("sql event names a committed revision");
+            let committed_actor = if row.updated_by.trim().is_empty() {
+                row.author.clone()
+            } else {
+                row.updated_by.clone()
+            };
+            assert_eq!(item["target_id"], json!("sql-1"));
+            assert_eq!(item["subject_principal_id"], json!(committed_actor));
         }
 
         // Committed IDs are unchanged by reconciliation.
@@ -989,8 +1087,8 @@ mod tests {
         assert_eq!(reopened, history);
 
         // A second sweep converges without duplicating evidence.
-        assert_eq!(service2.reconcile_space_audit(&space_id).await?, 1);
-        assert_eq!(audit_total(&service2, &space_id).await?, 3);
+        assert_eq!(service2.reconcile_space_audit(&space_id).await?, 2);
+        assert_eq!(audit_total(&service2, &space_id).await?, 5);
         Ok(())
     }
 

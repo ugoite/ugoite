@@ -12,6 +12,7 @@ use ugoite_core::query::EntryScope;
 use uuid::Uuid;
 
 const SQL_FORM_NAME: &str = "SQL";
+pub(crate) const SQL_FORM_NAME_FOR_AUDIT: &str = SQL_FORM_NAME;
 const SQL_VALIDATION_PREFIX: &str = "UGOITE_SQL_VALIDATION";
 
 fn validation_error(message: impl std::fmt::Display) -> anyhow::Error {
