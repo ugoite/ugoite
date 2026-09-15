@@ -294,6 +294,15 @@ describe("EntryDetailPane", () => {
     const technical = screen.getByText("Technical details").closest("details");
     expect(technical).not.toHaveAttribute("open");
     expect(
+      screen.getByRole("toolbar", { name: "Entry actions" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Info" })).toHaveAttribute(
+      "href",
+      "#entry-details",
+    );
+    expect(screen.queryByRole("heading", { name: "Manage" }))
+      .not.toBeInTheDocument();
+    expect(
       screen.getByRole("link", { name: /History & recovery/ }),
     ).toHaveAttribute(
       "href",

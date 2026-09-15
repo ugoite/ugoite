@@ -29,7 +29,7 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
 
 async function expectMobileTouchTargets(page: Page): Promise<void> {
   const sizes = await page.locator(
-    ".topbar .mobileMenu, .assistantPill, .accountMenu .avatar, .bottomNav a",
+    ".topbar .mobileMenu, .assistantPill, .accountMenu .avatar, .bottomNav a, .ui-entry-action-bar .ui-entry-tool",
   ).evaluateAll((elements) =>
     elements.map((element) => {
       const rect = element.getBoundingClientRect();
@@ -214,6 +214,9 @@ async function runMobileRegression(
             )
           );
         expect(columns).toHaveLength(1);
+        await expect(page.locator(".ui-entry-action-bar")).toBeVisible();
+        await expect(page.getByRole("link", { name: "Info" }))
+          .toHaveAttribute("href", "#entry-details");
       },
     },
   ];
