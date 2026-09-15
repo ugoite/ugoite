@@ -15,10 +15,11 @@ needs them.
 1. Read [Engineering Principles](engineering-principles.md) for why the
    architecture stays stable while product discovery continues.
 2. Read [Repository Map](repository-map.md) to find where behavior lives.
-3. Run Ugoite from source with [Develop Ugoite](../guide/develop/index.md) and
-   complete the local authentication flow in
-   [Local development login](../guide/develop/local-dev-auth-login.md).
-4. Read [Documentation Development](documentation.md) before adding or moving
+3. Follow [Development Setup](development-setup.md) to build from source,
+   start the local server/frontend, and complete local authentication.
+4. Read [Cross-surface Features](cross-surface-features.md) before adding a
+   capability that spans Rust, adapters, frontend, tests, and documentation.
+5. Read [Documentation Development](documentation.md) before adding or moving
    prose.
 
 ## Architecture re-entry points

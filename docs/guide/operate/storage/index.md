@@ -1,21 +1,10 @@
 ---
 title: "Spaces and storage"
-description: Move, verify, and clean up operator-owned Space data safely.
+description: Compatibility entry for canonical storage and recovery guidance.
 sidebar:
   label: "Spaces & storage"
   order: 3
 ---
 
-A Space is a portable directory, not a database row that can be replaced by a
-derived index. Use this group whenever a change affects the location, contents,
-or schema of Space data.
-
-## Choose the operation
-
-- [Space settings and storage](space-settings-storage.md) explains the portable
-  boundary and connection checks.
-- [Storage cleanup](storage-cleanup.md) explains what is derived and what must
-  never be removed casually.
-- A pre-release format migration is not supported. An old or incompatible
-  Space must fail explicitly; preserve the complete Space prefix and restore it
-  with the same current format instead.
+Storage moves, backups, restore verification, and cleanup boundaries moved to
+[Storage and Recovery](../../../operate/storage-recovery.md).
