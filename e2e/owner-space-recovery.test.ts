@@ -347,7 +347,7 @@ test.describe("Owner-approved Space access recovery", () => {
       spaceId,
       "Accept target",
     );
-    const { target, page, close } = await newPasskeyPage(browser);
+    const { page, close } = await newPasskeyPage(browser);
     try {
       await acceptInvitation(page, invitationUrl);
       const list = await members(request, spaceId);
@@ -380,7 +380,7 @@ test.describe("Owner-approved Space access recovery", () => {
       secondSpaceId,
       "Second target",
     );
-    const { target, page, close } = await newPasskeyPage(browser);
+    const { page, close } = await newPasskeyPage(browser);
     try {
       await acceptInvitation(page, firstUrl);
       await acceptInvitation(page, secondUrl);
@@ -398,7 +398,7 @@ test.describe("Owner-approved Space access recovery", () => {
   });
 
   test("unknown invitation shows a reason and stays on join", async ({ browser }) => {
-    const { target, page, close } = await newPasskeyPage(browser);
+    const { page, close } = await newPasskeyPage(browser);
     try {
       await page.goto("/spaces/join#token=not-a-real-invitation");
       await page.getByRole("button", { name: "Accept invitation" }).click();
@@ -469,7 +469,7 @@ test.describe("Owner-approved Space access recovery", () => {
       spaceId,
       "Double target",
     );
-    const { target, page, close } = await newPasskeyPage(browser);
+    const { page, close } = await newPasskeyPage(browser);
     try {
       await page.goto(invitationUrl);
       await page.getByRole("button", { name: "Accept invitation" }).dblclick();
@@ -495,7 +495,7 @@ test.describe("Owner-approved Space access recovery", () => {
       spaceId,
       "Revisit target",
     );
-    const { target, page, close } = await newPasskeyPage(browser);
+    const { page, close } = await newPasskeyPage(browser);
     try {
       await acceptInvitation(page, invitationUrl);
       await acceptInvitation(page, invitationUrl);
