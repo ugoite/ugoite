@@ -4481,6 +4481,46 @@ impl UgoiteService {
             .await
     }
 
+    /// Lists Form-owned Asset reference metadata visible in a Space.
+    ///
+    /// Metadata only, never bytes: names, media types, and sizes belong to
+    /// the referencing Entry fields. Tombstoned entries are excluded because
+    /// their references are no longer visible Knowledge.
+    pub async fn list_assets(&self, space_id: &str) -> Result<Vec<Value>> {
+        self.validate_complete_space(space_id).await?;
+        let entries =
+            crate::entry::list_entries(self.operator(), &self.workspace_path(space_id)).await?;
+        Ok(crate::asset::collect_asset_references(&entries))
+    }
+
+    /// Lists Form-owned Asset references through per-Entry authorization.
+    ///
+    /// Only entries the principals may read contribute references; anything
+    /// else is excluded rather than reported. Same projection as
+    /// [`Self::list_assets`].
+    pub async fn list_assets_authorized_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Vec<Value>> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        let mut entries = Vec::new();
+        let mut offset = 0;
+        loop {
+            let page = self
+                .list_entries_authorized_for_principals(space_id, principal_ids, 1000, offset)
+                .await?;
+            let page_len = page.len();
+            entries.extend(page);
+            if page_len < 1000 {
+                break;
+            }
+            offset += page_len;
+        }
+        Ok(crate::asset::collect_asset_references(&entries))
+    }
+
     pub async fn ensure_asset_reference_is_readable(
         &self,
         space_id: &str,

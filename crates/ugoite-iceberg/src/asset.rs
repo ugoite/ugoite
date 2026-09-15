@@ -2,6 +2,7 @@ use anyhow::Result;
 use futures::TryStreamExt;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
@@ -202,6 +203,87 @@ pub(crate) async fn asset_exists(op: &Operator, ws_path: &str, asset_id: &str) -
     validate_asset_id(asset_id)
         .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
     Ok(op.exists(&asset_path(ws_path, asset_id)).await?)
+}
+
+/// Collects Form-owned Asset reference metadata from listed Entry views.
+///
+/// Assets are Knowledge references, not standalone blobs: names, media
+/// types, and sizes live on the referencing Entry fields, so listing walks
+/// those fields (single references and reference lists) and projects each
+/// one with its owning form/entry/field identity. Raw bytes are never
+/// touched here. Output is sorted by (entry_id, field, asset_id) for a
+/// stable machine contract.
+pub fn collect_asset_references(entries: &[Value]) -> Vec<Value> {
+    let mut items = Vec::new();
+    for entry in entries {
+        let entry_id = entry.get("id").and_then(Value::as_str).unwrap_or_default();
+        let form = entry
+            .get("form")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let Some(properties) = entry.get("properties").and_then(Value::as_object) else {
+            continue;
+        };
+        for (field, value) in properties {
+            for reference in asset_reference_values(value) {
+                items.push(serde_json::json!({
+                    "asset_id": reference.get("asset_id"),
+                    "name": reference.get("name"),
+                    "media_type": reference.get("media_type"),
+                    "size_bytes": reference.get("size_bytes"),
+                    "sha256": reference.get("sha256"),
+                    "form": form,
+                    "entry_id": entry_id,
+                    "field": field,
+                }));
+            }
+        }
+    }
+    items.sort_by(|a, b| {
+        sort_key(a)
+            .partial_cmp(&sort_key(b))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    items
+}
+
+fn sort_key(item: &Value) -> (String, String, String) {
+    (
+        item.get("entry_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        item.get("field")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        item.get("asset_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+    )
+}
+
+fn asset_reference_values(value: &Value) -> Vec<&Value> {
+    match value {
+        Value::Array(items) => items
+            .iter()
+            .filter(|item| is_asset_reference(item))
+            .collect(),
+        value if is_asset_reference(value) => vec![value],
+        _ => Vec::new(),
+    }
+}
+
+fn is_asset_reference(value: &Value) -> bool {
+    value
+        .get("asset_id")
+        .and_then(Value::as_str)
+        .is_some_and(|id| !id.trim().is_empty())
+        && value.get("name").and_then(Value::as_str).is_some()
+        && value.get("media_type").and_then(Value::as_str).is_some()
+        && value.get("size_bytes").and_then(Value::as_u64).is_some()
+        && value.get("sha256").and_then(Value::as_str).is_some()
 }
 
 pub async fn current_asset_reference_exists(

@@ -7139,6 +7139,89 @@
       }
     },
     "/spaces/{space_id}/assets": {
+      "get": {
+        "summary": "List Form-owned asset references",
+        "description": "Lists asset reference metadata visible in the Space. Metadata only, never bytes. Each item carries the owning form, entry, and field identity.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetReferenceList"
+                }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          }
+        }
+      },
       "post": {
         "summary": "Upload asset",
         "parameters": [
@@ -13388,6 +13471,50 @@
           }
         },
         "additionalProperties": false
+      },
+      "AssetReferenceList": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "asset_id",
+            "name",
+            "media_type",
+            "size_bytes",
+            "form",
+            "entry_id",
+            "field"
+          ],
+          "properties": {
+            "asset_id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "media_type": {
+              "type": "string"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "sha256": {
+              "type": "string"
+            },
+            "form": {
+              "type": "string"
+            },
+            "entry_id": {
+              "type": "string"
+            },
+            "field": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
       }
     }
   }
