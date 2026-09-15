@@ -29,7 +29,17 @@ A portable recovery preserves three things separately: the Space prefix, the
 Node control-store prefix, and the node secret. A `/data` directory copy alone
 is not a complete recovery set when the control store or secret lives elsewhere.
 
-Detailed legacy procedures remain in [Deploy Ugoite](../guide/deploy/index.md),
-[Operate Ugoite](../guide/operate/index.md), and
-[Troubleshoot Ugoite](../guide/troubleshoot/index.md) until they are folded
-here.
+## Safe operating sequence
+
+1. Choose a deployment shape in [Install and Deploy](install-deploy.md).
+2. Configure the public origin, storage locations, control store, and node
+   secret in [Configure](configure.md).
+3. Complete the supported bootstrap and access flow in [Identity and
+   Access](identity-access.md).
+4. Verify health, a representative Space read/write/restore path, and the
+   recovery inputs after any deployment change.
+
+If a failure interrupts this sequence, stop writes and use
+[Storage and Recovery](storage-recovery.md) before attempting cleanup. The
+Space prefix remains the Knowledge authority; diagnostics, sessions, and
+derived indexes do not replace it.

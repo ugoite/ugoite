@@ -157,7 +157,7 @@ Deno.test("devcontainer provides an isolated Docker engine for local E2E", async
   assertEquals(config.privileged, true);
 
   const developmentGuide = await Deno.readTextFile(
-    "docs/guide/develop/index.md",
+    "docs/develop/development-setup.md",
   );
   assertEquals(developmentGuide.includes("docker info"), true);
   assertEquals(developmentGuide.includes("mise run e2e:smoke"), true);
@@ -228,9 +228,9 @@ Deno.test("devcontainer SSH access remains optional and host-only", async () => 
     true,
   );
   const developmentGuide = await Deno.readTextFile(
-    "docs/guide/develop/index.md",
+    "docs/develop/development-setup.md",
   );
-  assertEquals(developmentGuide.includes("devcontainer-ssh.md"), true);
+  assertEquals(developmentGuide.includes("mise run devcontainer:ssh"), true);
 });
 
 Deno.test("devcontainer SSH key comparison ignores public-key comments", async () => {

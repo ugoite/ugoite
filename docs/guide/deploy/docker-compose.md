@@ -1,33 +1,10 @@
 ---
 title: Docker Compose
+description: Compatibility entry for the canonical deployment procedure.
 sidebar:
   order: 2
 ---
 
-> Release note: Passkey/WebAuthn account bootstrap and passwordless browser
-> login are supported in v0.1. Account Self-Recovery is supported after
-> explicitly enrolling a recovery-only TOTP; invitation-gated OIDC linking is
-> also supported when a provider is configured.
-
-Generate an encryption root and start the source image:
-
-```bash
-export UGOITE_NODE_SECRET_KEY="$(head -c 32 /dev/urandom | base64)"
-docker compose up --build -d
-```
-
-This builds the image, binds localhost port `${UGOITE_PORT:-8000}`, and mounts
-the local runtime data directory from `./data` at `/data`. Read the setup URL
-with `docker compose logs ugoite`.
-
-The default mount contains local Space storage and the default Node control
-store. If `UGOITE_NODE_CONTROL_URI` selects another backend, that backend is a
-separate recovery input and is not in `/data`.
-
-Set `UGOITE_PUBLIC_ORIGIN` and `UGOITE_WEBAUTHN_RP_ID` to the externally visible
-HTTPS origin and host before registering Passkeys. Set `UGOITE_NODE_SECRET_KEY`
-to at least 32 random bytes, or adapt the deployment to mount
-`UGOITE_NODE_SECRET_FILE`. This encryption root is not a login credential and
-must not be stored in the Node control namespace. Preserve it in a deployment
-secret across restarts; losing it makes encrypted recovery and OIDC material
-unusable.
+This deployment procedure moved to [Install and Deploy](../../operate/install-deploy.md).
+Use that page for source Compose, release containers, verification, and recovery
+boundaries. Exact variables live in the [Configuration Reference](../../reference/configuration.md).

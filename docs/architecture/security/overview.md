@@ -8,7 +8,7 @@ graph still contains the unresolved upstream `rsa 0.9.10` advisory; it is not
 treated as silently clean.
 
 Authentication and authorization follow
-[the operator guide](../../guide/operate/auth/auth-overview.md). The v0.1
+[the canonical operator guide](../../operate/identity-access.md). The v0.1
 normative security contract includes:
 
 - Passkey/WebAuthn is the supported primary human authenticator and browser

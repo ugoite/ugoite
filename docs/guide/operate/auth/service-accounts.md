@@ -1,24 +1,10 @@
 ---
 title: Agent identities
+description: Compatibility entry for the current/future identity boundary.
 sidebar:
   order: 3
 ---
 
-> Future capability: Agent Principals and service-account-style automation are
-> documented for architecture planning and are not a supported v0.1 product
-> surface.
-
-Automation uses Agent Principals with registered P-256 public keys. Shared
-secrets and long-lived API keys are not supported.
-
-A Space owner creates an agent with a display name, human sponsor/owners,
-explicit actions, expiry, and public JWK. The agent signs an ES256 client
-assertion to obtain a five-minute opaque DPoP access token. Autonomous access is
-limited to the agent grant. A delegated token additionally records the human
-principal and intersects both permission sets.
-
-Revoke the agent to disable all of its credentials. Agent creation, delegation,
-use and revocation are attributed in the Space audit chain. Agents cannot manage
-membership, ownership, or agents. A Space owner may grant an agent `delete` or
-`share` through a policy, but each supported dangerous mutation still requires
-a human approval object bound to the exact operation and actor credential.
+Agent principals and service-account-style automation remain future design
+material. See [Identity and Access](../../../operate/identity-access.md) for the
+current supported capability boundary.

@@ -1,34 +1,104 @@
 ---
 title: "Identity and Access"
-description: Browser login, CLI device auth, recovery, and membership.
+description: Set up human login, CLI device access, recovery, and Space membership.
 sidebar:
   order: 4
 ---
 
-Identity separates node-local control state from Space authority. Start with the
-[authentication overview](../guide/operate/auth/auth-overview.md), then the
-[service-account and agent reference
-(future)](../guide/operate/auth/service-accounts.md) for scope boundaries.
+Identity separates node-local control state from portable Space authority. A
+Node administrator operates a deployment; a Space owner manages one Space.
+Neither role silently becomes the other.
 
-## Supported in the current boundary
+## Current capability
 
-Passkey and WebAuthn login with opaque sessions, owner-approved Space access
-recovery, Remote CLI device authorization with DPoP-bound credentials,
-recovery-code plus recovery-only TOTP Account Self-Recovery, Space membership
-and ACL enforcement, authenticated MCP access, authorized audit reads, and
-invitation-gated OIDC authentication and account linking.
+The current v0.1 boundary supports:
 
-## Future scope
+- Passkey/WebAuthn browser login with opaque server-side sessions;
+- owner-approved Space access recovery;
+- Remote CLI device authorization with DPoP-bound credentials;
+- recovery codes plus explicitly enrolled recovery-only TOTP for Account
+  Self-Recovery;
+- Space membership and ACL enforcement;
+- authenticated MCP access and authorized audit reads; and
+- invitation-gated OIDC authentication and account linking where configured.
 
-Administrator recovery and agent or service-account principals remain future
-scope. TOTP is recovery-only and is not a normal login method.
+TOTP is recovery-only, not a normal login method. Administrator recovery,
+general-purpose agent principals, and service-account automation are not
+current product procedures.
+
+## First setup
+
+1. Start the server and open the one-use setup URL from its console or
+   container log.
+2. Register the initial Passkey and complete the second Passkey ceremony.
+3. Save the one-time recovery codes in an owner-controlled location.
+4. Sign in again with the registered Passkey and confirm the expected Space
+   membership.
+
+The setup secret is short-lived, one-use, and stored only as a hash. Visiting a
+server does not grant administrator access. Configure the public origin and
+WebAuthn RP ID before this ceremony; see [Configure](configure.md).
+
+## Browser sessions
+
+Browser sessions are opaque server-side Node control records. Restarting with
+the same Node control-store prefix and node secret preserves an otherwise valid
+session. If either recovery input changes, the browser must sign in again.
+
+Credential enrollment, recovery settings, MCP approval, and membership or role
+changes require a recent Passkey. Register more than one Passkey; Ugoite does
+not remove the final credential.
+
+## Remote CLI devices
+
+Run `ugoite auth login` for browser-approved device authorization. The CLI
+creates a fresh key, shows the target Space and requested actions, and stores
+the private key in the OS keychain when available. REST device credentials are
+short-lived, revocable, and DPoP sender-constrained.
+
+Use `ugoite auth login --for mcp` for MCP/Konase pairing. REST and MCP
+credentials have different targets and cannot cross-use. The [CLI
+Reference](../reference/cli.md) explains endpoint modes and points to the
+installed command help for exact options.
+
+## Recovery
+
+### Account Self-Recovery
+
+An account that explicitly enrolled recovery protection can use its exact
+Account ID, one valid offline recovery code, and a valid recovery-only TOTP to
+replace its Passkey. Successful recovery rotates recovery codes, invalidates
+old authentication authority, and creates a new session. Neither the code nor
+TOTP works alone.
+
+### Owner-approved Space access recovery
+
+An active human Space owner with a recent Passkey can issue a one-use,
+short-lived recovery approval for an active member of that Space. The member
+completes the WebAuthn ceremony with that approval. The Space Principal ID,
+membership, role, ACL, ownership, and audit identity remain unchanged; only the
+member's node-local account binding is replaced.
+
+Use the server's REST implementation and `/openapi.json` for exact endpoint
+shapes and error details. Never edit identity or authorization files by hand.
 
 ## What became durable?
 
-Space membership and ACL state. Sessions, device grants, and login challenges
-are node-local control state.
+Space principals, memberships, ACLs, attribution, and authorization audit
+history are portable Space Knowledge. Accounts, bindings, sessions, device
+grants, Passkeys, and login challenges are node-local control state. Preserve
+both according to [Storage and Recovery](storage-recovery.md) when restoring a
+deployment.
+
+## Future boundary
+
+Agent principals and service accounts may become Space principals with explicit
+human sponsorship and grants. They are not shipped login mechanisms, and this
+page does not promise them as current automation.
 
 ## Related
 
-- [Authentication overview](../guide/operate/auth/auth-overview.md)
-- [Troubleshooting](troubleshooting.md) for sign-in symptoms.
+- [REST API and OpenAPI](../reference/rest.md)
+- [Configuration](configure.md)
+- [Troubleshooting](troubleshooting.md)
+- [Current Product and Target State](../vision/current-and-target.md)

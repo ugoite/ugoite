@@ -1,97 +1,104 @@
 ---
 title: "Troubleshooting"
-description: Symptom-first fixes that keep Knowledge safe.
+description: Symptom-first diagnosis that keeps Knowledge safe.
 sidebar:
   order: 8
 ---
 
-Start from the symptom, not the subsystem. Each entry names the symptom, the
-likely cause, the check, the fix, and what remains safe.
+Start from the symptom and preserve the recovery inputs while diagnosing. Do
+not delete Space data, rewrite a Catalog Head, or rotate the node secret as a
+first response.
 
-## I cannot sign in
+## Cannot sign in
 
-**Symptom:** Browser login fails or the session is rejected.
+**Check:** Confirm the public origin and WebAuthn RP ID, then retry with a
+registered Passkey. After a restore, confirm the same Node control-store prefix
+and node secret are present.
 
-**Likely cause:** Passkey not registered, wrong origin, or expired session.
+**Recovery:** Use the supported Account Self-Recovery or owner-approved Space
+access recovery flow when its prerequisites are met. TOTP alone is not a login
+method.
 
-**Check:** confirm the public origin and WebAuthn relying-party ID, then retry
-with a registered Passkey.
+**What remains durable?** Space content, history, membership, and ACL state are
+untouched by a failed login. Node-local sessions and challenges may expire.
 
-**Fix:** complete the one-use setup URL on first start; use the
-[authentication overview](../guide/operate/auth/auth-overview.md) for bootstrap
-and recovery.
+## Cannot open a Space
 
-**What remains safe:** the Space prefix and history are untouched by login
-failures.
+**Check:** Run `ugoite config current`. In core mode use the local Space path;
+in backend/API mode use the immutable Space UID. Confirm the account has Space
+membership and the requested action.
 
-## I cannot see a Space
+**Recovery:** Re-authenticate only after checking the endpoint. Ask the Space
+owner to inspect membership or use the owner-approved recovery flow; re-login
+cannot repair a missing binding or role by itself.
 
-**Symptom:** The expected Space is missing from the switcher or list output.
+**What remains durable?** The complete Space prefix and other Spaces remain
+unchanged even when the current identity lacks access.
 
-**Likely cause:** wrong endpoint mode, Space UID versus local path confusion, or
-missing membership.
+## Entry cannot be saved
 
-**Check:** run `ugoite config current`, confirm local path versus immutable Space
-UID, and list Spaces in the active mode.
+**Check:** Confirm the Form name and typed values. For an update, read the
+  newest revision and pass its parent revision when the command or API requires
+  optimistic concurrency.
 
-**Fix:** switch modes explicitly and request access through owner-approved
-recovery. See [Spaces](../use/spaces.mdx) and
-[unauthorized Spaces](../guide/troubleshoot/troubleshooting-unauthorized-spaces.md).
+**Recovery:** Correct the input and retry. A failed validation or stale-parent
+  request does not overwrite the previous revision.
 
-**What remains safe:** other Spaces and their histories.
+**What remains durable?** Prior Entry revisions and the Form definition remain
+readable; only a successfully committed mutation creates a new revision.
 
-## My Entry was rejected
+## Search does not show a recent change
 
-**Symptom:** Entry create or update returns a validation error.
+**Check:** Confirm the Entry save receipt, Space, and Form. Rerun the keyword or
+structured search, and inspect index status if the authoritative read succeeds.
 
-**Likely cause:** unknown Form name or invalid typed field values.
+**Recovery:** Rebuild the supported derived index after the Space opens. Do not
+delete authoritative Entry or Asset objects to repair search.
 
-**Check:** list Forms and field types, then compare frontmatter.
+**What remains durable?** A committed Entry and its revision history remain
+durable even when a derived search index is stale or missing.
 
-**Fix:** correct the Form name and values, then retry. See
-[Create and Edit Entries](../use/entries.mdx).
+## Revision conflict
 
-**What remains safe:** prior revisions stay readable.
+**Check:** Read Entry history and identify the newest revision.
 
-## I got a revision conflict
+**Recovery:** Reapply the intended edit against that revision. Do not force a
+stale update or rewrite old history.
 
-**Symptom:** An update fails against a stale parent revision.
+**What remains durable?** No prior revision is overwritten; the conflict is an
+explicit protection of append-only history.
 
-**Likely cause:** editing against a stale parent revision.
+## Storage mutation unavailable
 
-**Check:** re-read history for the newest revision.
+**Check:** Verify `/health`, configured storage connectivity, permissions on the
+  mounted path, and whether the complete Space prefix is reachable. For remote
+  mutations, confirm the authenticated identity has the required Space action.
 
-**Fix:** reapply the edit with the newest parent. See
-[Revisions and Recovery](../use/revisions.mdx).
+**Recovery:** Stop writes, preserve the original prefix and node secret, and
+  use [Storage and Recovery](storage-recovery.md) to restore or test a complete
+  backend. Never rebuild a Catalog Head from an object listing.
 
-**What remains safe:** no revision is overwritten; history only appends.
+**What remains durable?** Data already committed in the authoritative Space
+  remains durable. An interrupted mutation must be checked by reading history
+  and the operation receipt before retrying.
 
-## Search does not show my change
+## Server does not start
 
-**Symptom:** A saved Entry does not appear in keyword results.
+**Check:** Run `docker compose ps`, read `docker compose logs ugoite`, and
+  confirm the `/data` mount, required node secret, public origin, and listening
+  port. Use [Health and Diagnostics](health-diagnostics.md) for the smallest
+  readiness check.
 
-**Likely cause:** the Entry did not save, or the query targets the wrong Space
-or Form.
+**Recovery:** Correct the deployment configuration and restart against the same
+  recovery inputs. Do not initialize a new data root just to bypass a startup
+  error.
 
-**Check:** confirm the saved status, then rerun the keyword search.
+**What remains durable?** The original Space, control store, and secret remain
+  recoverable while their complete prefixes are preserved.
 
-**Fix:** save first, then search the same Space. See
-[Search and Query](../use/search.mdx).
+## Related
 
-**What remains safe:** the durable Entry even when the index lags.
-
-## The server does not start
-
-**Symptom:** The Compose service fails to start or accept connections.
-
-**Likely cause:** bad origin or secret configuration, or an unready mount.
-
-**Check:** find the mapped port with `docker compose port ugoite 8000` and read
-the startup logs with redaction.
-
-**Fix:** correct the environment, then restart. See
-[Compose startup troubleshooting](../guide/troubleshoot/troubleshooting-compose-startup.md)
-and [log redaction](../guide/troubleshoot/log-redaction.md).
-
-**What remains safe:** Space content on the configured prefix when the three
-recovery inputs are preserved separately.
+- [Health and Diagnostics](health-diagnostics.md)
+- [Identity and Access](identity-access.md)
+- [Storage and Recovery](storage-recovery.md)
+- [Configure](configure.md)
