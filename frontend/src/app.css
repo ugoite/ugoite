@@ -1159,7 +1159,7 @@ code {
   display: grid;
   gap: 8px;
 }
-.spaceAssetRow {
+.assetRow {
   border: 1px solid var(--line);
   background: #fff;
   border-radius: 14px;
@@ -3182,7 +3182,7 @@ button.assistantPill[aria-expanded="true"] {
   border-top: 1px solid var(--line);
 }
 
-.assetRow {
+.spaceAssetRow {
   display: grid;
   gap: 12px;
   padding: 16px 2px;
