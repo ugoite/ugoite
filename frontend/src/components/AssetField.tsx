@@ -358,8 +358,6 @@ export function AssetField(props: AssetFieldProps) {
       event.preventDefault();
       return;
     }
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
     const currentIndex = focusable.indexOf(
       document.activeElement as HTMLElement,
     );
