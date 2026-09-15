@@ -199,6 +199,27 @@ function formatCsvValues(entry: EntryRecord, headers: string[]) {
 
 export function FormTable(props: FormTableProps) {
   let sortMenuRef: HTMLDivElement | undefined;
+  let filterToggleRef: HTMLButtonElement | undefined;
+
+  const handleFilterToggle = () => {
+    const hiding = showColumnFilters();
+    // Capture focus before toggling: hiding detaches the focused input and
+    // drops focus to the body, so the decision must use the pre-toggle tree.
+    const active = hiding
+      ? (document.activeElement as HTMLElement | null)
+      : null;
+    const inPanels = active?.closest?.(
+      "#form-table-mobile-filters, #form-table-desktop",
+    );
+    const returnFocus = hiding && inPanels && active !== filterToggleRef;
+    setShowColumnFilters((value) => !value);
+    // When the panels close under a focused filter input, return focus to
+    // the toggle so keyboard users are not stranded on detached content.
+    // Removing the unfocused panel never moves focus away again.
+    if (returnFocus) {
+      filterToggleRef?.focus();
+    }
+  };
   // State for filtering and sorting
   const [globalFilter, setGlobalFilter] = createSignal("");
   const [sortField, setSortField] = createSignal<string | null>(null);
@@ -657,6 +678,7 @@ export function FormTable(props: FormTableProps) {
             <input
               type="text"
               placeholder={t("formTable.globalSearch")}
+              aria-label={t("formTable.globalSearch")}
               class="ui-input w-full max-w-md"
               value={globalFilter()}
               onInput={(e) => setGlobalFilter(e.currentTarget.value)}
@@ -729,7 +751,12 @@ export function FormTable(props: FormTableProps) {
                     ? "ui-button-primary"
                     : "ui-button-secondary"
                 }`}
-                onClick={() => setShowColumnFilters((value) => !value)}
+                ref={(el) => {
+                  filterToggleRef = el;
+                }}
+                aria-expanded={showColumnFilters()}
+                aria-controls="form-table-mobile-filters form-table-desktop"
+                onClick={handleFilterToggle}
               >
                 {t("formTable.filter")}
               </button>
@@ -738,7 +765,7 @@ export function FormTable(props: FormTableProps) {
         </div>
 
         <Show when={showColumnFilters()}>
-          <div class="ui-table-mobile-filters">
+          <div class="ui-table-mobile-filters" id="form-table-mobile-filters">
             <For each={["title", ...fields(), "updated_at"]}>
               {(field) => (
                 <label class="ui-table-mobile-filter">
@@ -764,7 +791,10 @@ export function FormTable(props: FormTableProps) {
           </div>
         </Show>
 
-        <div class="ui-table-wrapper ui-table-desktop overflow-x-auto">
+        <div
+          class="ui-table-wrapper ui-table-desktop overflow-x-auto"
+          id="form-table-desktop"
+        >
           <table class="ui-table">
             <thead class="ui-table-head">
               <tr>
@@ -793,6 +823,7 @@ export function FormTable(props: FormTableProps) {
                         type="text"
                         class="ui-input ui-input-sm ui-table-filter text-xs"
                         placeholder={t("formTable.columnFilter")}
+                        aria-label={`${t("formTable.title")} ${t("formTable.columnFilter")}`}
                         value={columnFilters().title || ""}
                         onInput={(e) =>
                           updateColumnFilter("title", e.currentTarget.value)}
@@ -825,6 +856,7 @@ export function FormTable(props: FormTableProps) {
                             type="text"
                             class="ui-input ui-input-sm ui-table-filter text-xs"
                             placeholder={t("formTable.columnFilter")}
+                            aria-label={`${field} ${t("formTable.columnFilter")}`}
                             value={columnFilters()[field] || ""}
                             onInput={(e) =>
                               updateColumnFilter(field, e.currentTarget.value)}
@@ -854,6 +886,7 @@ export function FormTable(props: FormTableProps) {
                         type="text"
                         class="ui-input ui-input-sm ui-table-filter text-xs"
                         placeholder={t("formTable.columnFilter")}
+                        aria-label={`${t("formTable.updated")} ${t("formTable.columnFilter")}`}
                         value={columnFilters().updated_at || ""}
                         onInput={(e) =>
                           updateColumnFilter(

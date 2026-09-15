@@ -1019,6 +1019,25 @@ code {
   padding: 6px;
   background: #fff;
 }
+/* iOS Safari zooms into focused controls below 16px. Keep every text
+   entry control at 16px on all viewports so mobile focus never zooms or
+   shifts layout. Unlayered rules win over utility font sizes. */
+.ui-input,
+.ui-select,
+.ui-textarea,
+.fieldCard input,
+.fieldCard textarea,
+.fieldCard select,
+.settingsMain input,
+.settingsMain textarea,
+.settingsMain select,
+.ui-table-cell-input.ui-table-cell-input,
+.ui-table-filter.ui-table-filter,
+.filterStrip input,
+.filterStrip select,
+textarea {
+  font-size: 16px;
+}
 .filterStrip {
   display: flex;
   gap: 7px;
