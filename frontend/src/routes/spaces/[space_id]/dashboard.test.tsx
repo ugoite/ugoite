@@ -72,6 +72,9 @@ describe("v5 space Home", () => {
     expect(screen.getByRole("heading", { name: "Recent" })).toBeInTheDocument();
     expect(screen.getByText("Forms / Entries")).toBeInTheDocument();
     expect(screen.queryByText(/forms available/i)).not.toBeInTheDocument();
+    expect(document.querySelector(".continueGrid")).toBeInTheDocument();
+    expect(document.querySelector(".continueGrid .card")).toBeNull();
+    expect(document.querySelector(".pinGrid")).toBeInTheDocument();
   });
   it("REQ-FE-058: keeps the dashboard title calm while space metadata resolves", async () => {
     let resolveSpace: (

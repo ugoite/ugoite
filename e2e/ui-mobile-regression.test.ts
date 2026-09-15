@@ -159,6 +159,29 @@ async function runMobileRegression(
       },
     },
     {
+      name: "entries",
+      path: `/spaces/${spaceId}/entries`,
+      ready: ".entriesList",
+      assert: async () => {
+        // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
+        await expect(page.getByRole("heading", { name: "Entries" }))
+          .toBeVisible();
+        await expect(page.getByLabel("Filter entries")).toBeVisible();
+        await expectMobileControlFontSize(page);
+      },
+    },
+    {
+      name: "files",
+      path: `/spaces/${spaceId}/assets`,
+      ready: ".assetInventory",
+      assert: async () => {
+        // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
+        await expect(page.getByRole("heading", { name: "Files" }))
+          .toBeVisible();
+        await expect(page.locator(".assetInventory .ui-card")).toHaveCount(0);
+      },
+    },
+    {
       name: "settings",
       path: `/spaces/${spaceId}/settings`,
       ready: ".settingsNav",
@@ -166,6 +189,16 @@ async function runMobileRegression(
         // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
         await expect(page.locator(".settingsNav")).toBeVisible();
         await expectMobileControlFontSize(page);
+      },
+    },
+    {
+      name: "history",
+      path: `/spaces/${spaceId}/history`,
+      ready: ".screenHead",
+      assert: async () => {
+        // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
+        await expect(page.getByRole("heading", { name: "Space history" }))
+          .toBeVisible();
       },
     },
     {

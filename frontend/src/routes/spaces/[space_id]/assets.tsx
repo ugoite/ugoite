@@ -90,7 +90,7 @@ export default function SpaceAssetsRoute() {
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">{t("assetsPage.eyebrow")}</div>
-          <h1>{t("assetsPage.heading")}</h1>
+          <h1>{t("assetsPage.filesHeading")}</h1>
         </div>
       </div>
 
@@ -128,7 +128,7 @@ export default function SpaceAssetsRoute() {
         <Show
           when={assetGroups().length > 0}
           fallback={
-            <div class="ui-card ui-stack-sm p-6">
+            <div class="assetEmpty ui-stack-sm">
               <h2 class="text-base font-semibold">{t("assetsPage.empty")}</h2>
               <p class="text-sm ui-muted">{t("assetsPage.emptyDescription")}</p>
               <div>
@@ -143,12 +143,12 @@ export default function SpaceAssetsRoute() {
             </div>
           }
         >
-          <div class="grid gap-4 md:grid-cols-2">
+          <div class="assetRows" role="list">
             <For each={assetGroups()}>
               {(asset) => (
-                <article class="ui-card ui-stack-sm p-5">
-                  <div class="flex items-start gap-3">
-                    <span class="ui-icon-tile" aria-hidden="true">
+                <article class="assetRow" role="listitem">
+                  <div class="assetRowHeader">
+                    <span class="assetRowIcon" aria-hidden="true">
                       <UiIcon name="asset" />
                     </span>
                     <div class="min-w-0">
@@ -164,28 +164,31 @@ export default function SpaceAssetsRoute() {
                     </div>
                   </div>
 
-                  <dl class="grid gap-2 text-sm sm:grid-cols-2">
-                    <div>
-                      <dt class="ui-label">{t("assetsPage.id")}</dt>
-                      <dd
-                        class="truncate ui-muted"
-                        title={asset.reference.asset_id}
-                      >
-                        {asset.reference.asset_id}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt class="ui-label">{t("assetsPage.references")}</dt>
-                      <dd class="ui-muted">{asset.occurrences.length}</dd>
-                    </div>
-                  </dl>
+                  <details class="assetRowDetails">
+                    <summary>{t("assetsPage.details")}</summary>
+                    <dl class="assetRowMetaGrid">
+                      <div>
+                        <dt class="ui-label">{t("assetsPage.id")}</dt>
+                        <dd
+                          class="truncate ui-muted"
+                          title={asset.reference.asset_id}
+                        >
+                          {asset.reference.asset_id}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt class="ui-label">{t("assetsPage.references")}</dt>
+                        <dd class="ui-muted">{asset.occurrences.length}</dd>
+                      </div>
+                    </dl>
+                  </details>
 
-                  <div class="ui-stack-sm border-t border-[var(--ui-border)] pt-3">
+                  <div class="assetReferences">
                     <h3 class="ui-label">{t("assetsPage.entryReferences")}</h3>
                     <For each={asset.occurrences}>
                       {(occurrence) => (
                         <A
-                          class="ui-card ui-card-interactive flex items-center justify-between gap-3 p-3 text-sm"
+                          class="assetReferenceRow"
                           href={`/spaces/${spaceId()}/entries/${
                             encodeURIComponent(
                               occurrence.entry.id,

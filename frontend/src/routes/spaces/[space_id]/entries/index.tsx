@@ -97,6 +97,29 @@ export default function SpaceEntriesIndexPane() {
 
   const displayEntries = createMemo(() => displayEntryState().entries);
 
+  type EntrySort = "updated" | "title";
+  const [entryQuery, setEntryQuery] = createSignal("");
+  const [entrySort, setEntrySort] = createSignal<EntrySort>("updated");
+  const visibleEntries = createMemo(() => {
+    const query = entryQuery().trim().toLocaleLowerCase();
+    const filtered = query
+      ? displayEntries().filter((entry) =>
+        [entry.title, entry.form].some((value) =>
+          value?.toLocaleLowerCase().includes(query)
+        )
+      )
+      : displayEntries();
+
+    if (entrySort() === "title") {
+      return [...filtered].sort((left, right) =>
+        (left.title || t("common.untitled")).localeCompare(
+          right.title || t("common.untitled"),
+        )
+      );
+    }
+    return filtered;
+  });
+
   const totalCount = createMemo(() =>
     sessionRows()?.totalCount ?? displayEntries().length
   );
@@ -215,6 +238,48 @@ export default function SpaceEntriesIndexPane() {
           >
             <p class="text-sm ui-muted">{t("entriesPage.noEntries")}</p>
           </Show>
+          <Show
+            when={!sessionId().trim() && !isLoading() && !errorMessage()}
+          >
+            <div class="entriesToolbar" role="search">
+              <label class="entriesSearch">
+                <span class="ui-sr-only">{t("entriesPage.filterLabel")}</span>
+                <span class="entriesSearchIcon" aria-hidden="true">⌕</span>
+                <input
+                  type="search"
+                  aria-label={t("entriesPage.filterLabel")}
+                  class="ui-input"
+                  placeholder={t("entriesPage.filterPlaceholder")}
+                  value={entryQuery()}
+                  onInput={(event) => setEntryQuery(event.currentTarget.value)}
+                />
+              </label>
+              <label class="entriesSort">
+                <span class="ui-sr-only">{t("entriesPage.sortLabel")}</span>
+                <select
+                  class="ui-select"
+                  aria-label={t("entriesPage.sortLabel")}
+                  value={entrySort()}
+                  onChange={(event) =>
+                    setEntrySort(event.currentTarget.value as EntrySort)}
+                >
+                  <option value="updated">
+                    {t("entriesPage.sortUpdated")}
+                  </option>
+                  <option value="title">{t("entriesPage.sortTitle")}</option>
+                </select>
+              </label>
+              <span class="entriesCount ui-muted">
+                {t("entriesPage.count", { count: visibleEntries().length })}
+              </span>
+            </div>
+          </Show>
+          <Show
+            when={!isLoading() && !errorMessage() &&
+              displayEntries().length > 0 && visibleEntries().length === 0}
+          >
+            <p class="text-sm ui-muted">{t("entriesPage.noMatches")}</p>
+          </Show>
           <Show when={needsFirstFormGuidance()}>
             <div class="ui-alert ui-alert-warning mb-4 text-sm ui-stack-sm">
               <div class="ui-stack-sm">
@@ -234,27 +299,28 @@ export default function SpaceEntriesIndexPane() {
               </div>
             </div>
           </Show>
-          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 entriesGrid">
-            <For each={displayEntries()}>
+          <div class="entriesList">
+            <For each={visibleEntries()}>
               {(entry) => (
                 <button
                   type="button"
-                  class="ui-card ui-card-interactive text-left"
+                  class="entryRow"
                   onClick={() => handleSelectEntry(entry.id)}
                 >
-                  <div class="flex items-start justify-between gap-2">
-                    <h2 class="text-base font-semibold">
+                  <span class="entryRowMain">
+                    <span class="entryRowTitle">
                       {entry.title || t("common.untitled")}
-                    </h2>
+                    </span>
                     <Show when={entry.form}>
-                      <span class="ui-pill">{entry.form}</span>
+                      <span class="ui-pill entryRowForm">{entry.form}</span>
                     </Show>
-                  </div>
-                  <p class="mt-2 text-xs ui-muted">
+                  </span>
+                  <span class="entryRowDate ui-muted">
                     {t("common.updatedAt", {
                       date: formatDateLabel(entry.updated_at),
                     })}
-                  </p>
+                  </span>
+                  <span class="entryRowChevron" aria-hidden="true">›</span>
                 </button>
               )}
             </For>

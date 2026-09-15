@@ -74,6 +74,53 @@ describe("/spaces/:space_id/entries", () => {
     expect(screen.queryByTestId("redirect")).not.toBeInTheDocument();
   });
 
+  it("provides a flat list with local filtering and title sorting", async () => {
+    server.use(
+      http.get(
+        testApiUrl("/spaces/default/entries"),
+        () =>
+          HttpResponse.json([
+            {
+              id: "entry-1",
+              title: "Zebra note",
+              form: "Notes",
+              updated_at: "2026-03-02T00:00:00Z",
+              properties: {},
+              tags: [],
+            },
+            {
+              id: "entry-2",
+              title: "Alpha note",
+              form: "Notes",
+              updated_at: "2026-03-01T00:00:00Z",
+              properties: {},
+              tags: [],
+            },
+          ]),
+      ),
+    );
+
+    renderRoute();
+
+    expect(await screen.findByRole("button", { name: /Zebra note/ }))
+      .toBeInTheDocument();
+    const filter = screen.getByRole("search");
+    expect(filter).toBeInTheDocument();
+    fireEvent.input(screen.getByLabelText("Filter entries"), {
+      target: { value: "Alpha" },
+    });
+    expect(screen.queryByRole("button", { name: /Zebra note/ }))
+      .not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Alpha note/ }))
+      .toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Sort entries"), {
+      target: { value: "title" },
+    });
+    expect(document.querySelector(".entryRow")).toBeInTheDocument();
+    expect(document.querySelector(".entryRow .ui-card")).toBeNull();
+  });
+
   it("REQ-FE-054: keeps the dedicated SQL session result route", async () => {
     searchParams.session = "session-1";
     server.use(
