@@ -168,7 +168,7 @@ export function AssetPreview(props: AssetPreviewProps) {
             class="ui-asset-document-preview"
             src={props.url}
             title={props.reference.name}
-            tabindex="0"
+            tabindex="-1"
           />
         </Match>
         <Match when={kind() === "text"}>

@@ -351,7 +351,7 @@ export function AssetField(props: AssetFieldProps) {
 
     const focusable = Array.from(
       previewDialog.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe, audio, video, [tabindex]:not([tabindex="-1"])',
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), audio, video, [tabindex]:not([tabindex="-1"])',
       ),
     );
     if (focusable.length === 0) {
@@ -666,45 +666,49 @@ export function AssetField(props: AssetFieldProps) {
               class="ui-card ui-asset-item"
               aria-busy={item.status === "uploading"}
             >
-              <div class="min-w-0 flex-1">
-                <p class="truncate font-medium">{item.file.name}</p>
-                <p class="text-xs ui-muted">
-                  {formatAssetSize(
-                    item.file.size,
-                    locale() === "ja" ? "ja-JP" : "en-US",
-                  )}
-                </p>
-                <p
-                  class={item.status === "failed"
-                    ? "text-xs ui-text-danger"
-                    : "text-xs ui-muted"}
-                  role="status"
-                  aria-live="polite"
-                >
-                  {item.status === "local"
-                    ? t("assetField.status.local")
-                    : item.status === "uploading"
-                    ? t("assetField.status.uploading")
-                    : item.error ?? t("assetField.error.uploadFailed")}
-                </p>
-              </div>
-              <div class="ui-asset-item-actions flex flex-wrap gap-2">
-                <Show when={item.status === "failed"}>
+              <div class="ui-asset-item-header">
+                <div class="ui-asset-item-info">
+                  <p class="ui-asset-item-name truncate font-medium">
+                    {item.file.name}
+                  </p>
+                  <p class="ui-asset-item-meta text-xs ui-muted">
+                    {formatAssetSize(
+                      item.file.size,
+                      locale() === "ja" ? "ja-JP" : "en-US",
+                    )}
+                  </p>
+                  <p
+                    class={item.status === "failed"
+                      ? "text-xs ui-text-danger"
+                      : "text-xs ui-muted"}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {item.status === "local"
+                      ? t("assetField.status.local")
+                      : item.status === "uploading"
+                      ? t("assetField.status.uploading")
+                      : item.error ?? t("assetField.error.uploadFailed")}
+                  </p>
+                </div>
+                <div class="ui-asset-item-actions flex flex-wrap gap-2">
+                  <Show when={item.status === "failed"}>
+                    <button
+                      type="button"
+                      class="ui-button ui-button-secondary ui-button-sm"
+                      onClick={() => retry(item)}
+                    >
+                      {t("assetField.action.retry")}
+                    </button>
+                  </Show>
                   <button
                     type="button"
                     class="ui-button ui-button-secondary ui-button-sm"
-                    onClick={() => retry(item)}
+                    onClick={() => cancel(item)}
                   >
-                    {t("assetField.action.retry")}
+                    {t("assetField.action.cancel")}
                   </button>
-                </Show>
-                <button
-                  type="button"
-                  class="ui-button ui-button-secondary ui-button-sm"
-                  onClick={() => cancel(item)}
-                >
-                  {t("assetField.action.cancel")}
-                </button>
+                </div>
               </div>
             </div>
           )}
