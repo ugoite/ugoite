@@ -35,6 +35,13 @@ const second: AssetReference = {
   sha256: "b".repeat(64),
 };
 
+const video: AssetReference = {
+  ...first,
+  asset_id: "01900000-0000-7000-8000-000000000003",
+  name: "clip.mp4",
+  media_type: "video/mp4",
+};
+
 const queuedFirst: AssetReference = {
   ...first,
   asset_id: "01900000-0000-7000-8000-000000000011",
@@ -378,6 +385,62 @@ describe("AssetField", () => {
     expect(screen.queryByRole("img", { name: "diagram.svg" })).toBeNull();
   });
 
+  it("opens a cached preview in an accessible dialog", async () => {
+    const state = createAssetFieldState();
+    const encoded = serializeAssetReference(first);
+
+    render(() => (
+      <div id="app">
+        <AssetField
+          fieldId="document"
+          fieldName="document"
+          value={encoded}
+          persistedValue={encoded}
+          multiple={false}
+          spaceId="default"
+          formName="Contracts"
+          entryId="entry-1"
+          state={state}
+          onChange={() => undefined}
+        />
+      </div>
+    ));
+
+    state.setPreviewBlobs(
+      new Map([[first.asset_id, new Blob(["cached"])]]),
+    );
+    state.setPreviewUrls(new Map([[first.asset_id, "blob:cached"]]));
+    state.setPreviewSignatures(
+      new Map([[
+        first.asset_id,
+        `${first.name}\u0000${first.media_type}\u0000text`,
+      ]]),
+    );
+
+    const row = screen.getByText(first.name).closest(".ui-asset-item");
+    expect(row?.querySelector(".ui-asset-preview-panel")).toBeNull();
+    expect(screen.getByText("TXT · 10 bytes")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    const dialog = await screen.findByRole("dialog", { name: first.name });
+    expect(dialog).toBeInTheDocument();
+    expect(dialog.querySelector(".ui-asset-preview-panel")).not.toBeNull();
+    expect(document.getElementById("app")).toHaveAttribute("inert");
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Close" }),
+    );
+
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Close" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.getElementById("app")).not.toHaveAttribute("inert");
+    expect(row?.querySelector(".ui-asset-preview-panel")).toBeNull();
+  });
+
   it("keeps logical metadata visible when persisted bytes are unavailable", async () => {
     (assetApi.read as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error("missing bytes"),
@@ -402,6 +465,45 @@ describe("AssetField", () => {
         .toBeInTheDocument()
     );
     expect(screen.getByText("first.txt")).toBeInTheDocument();
+  });
+
+  it("keeps native media controls in the preview dialog tab order", async () => {
+    const state = createAssetFieldState();
+    const encoded = serializeAssetReference(video);
+    render(() => (
+      <AssetField
+        fieldId="video"
+        fieldName="video"
+        value={encoded}
+        persistedValue={encoded}
+        multiple={false}
+        spaceId="default"
+        formName="Media"
+        entryId="entry-1"
+        state={state}
+        onChange={() => undefined}
+      />
+    ));
+    state.setPreviewBlobs(new Map([[video.asset_id, new Blob(["video"])]]));
+    state.setPreviewUrls(new Map([[video.asset_id, "blob:video"]]));
+    state.setPreviewSignatures(
+      new Map([[
+        video.asset_id,
+        `${video.name}\u0000${video.media_type}\u0000video`,
+      ]]),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    const dialog = await screen.findByRole("dialog", { name: video.name });
+    const close = screen.getByRole("button", { name: "Close" });
+    const media = dialog.querySelector("video");
+    expect(media).not.toBeNull();
+    expect(document.activeElement).toBe(close);
+
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(document.activeElement).toBe(media);
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(document.activeElement).toBe(close);
   });
 
   it("downloads cached preview bytes without issuing a second authorized read", async () => {
