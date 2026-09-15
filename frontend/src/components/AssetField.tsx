@@ -616,9 +616,6 @@ export function AssetField(props: AssetFieldProps) {
                     </p>
                   </div>
                   <button
-                    ref={(element) => {
-                      queueMicrotask(() => element.focus());
-                    }}
                     type="button"
                     class="ui-button ui-button-secondary ui-asset-icon-button"
                     aria-label={t("common.close")}
