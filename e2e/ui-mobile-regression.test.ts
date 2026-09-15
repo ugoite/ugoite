@@ -150,6 +150,10 @@ async function runMobileRegression(
       assert: async () => {
         // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
         await expect(page.getByLabel("Search keywords")).toBeVisible();
+        await expect(page.getByRole("link", { name: "Saved" }))
+          .toHaveAttribute("href", `/spaces/${spaceId}/sql`);
+        await expect(page.getByRole("heading", { name: "Search history" }))
+          .not.toBeAttached();
         await expect(page.locator(".topbarMore")).toHaveCount(0);
         await expectMobileControlFontSize(page);
       },

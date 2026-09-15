@@ -169,13 +169,13 @@ requirements:
                 runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-005: advanced search sends logical criteria without SQL construction" } }
           - id: history-case
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/search.test.tsx
-            selector: { kind: test, name: 'REQ-SRCH-005: saved history entries rerun directly or open variable input when needed' }
+            path: frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
+            selector: { kind: test, name: 'keeps search history in Saved and preserves direct rerun actions' }
             claims:
               - kind: verifies
                 criterion: REQ-SRCH-005#criterion.structured-search-reuse
                 covers: [FEAT-SRCH-001#binding.frontend/target.search-route]
-                runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-005: saved history entries rerun directly or open variable input when needed" } }
+                runner: { runner: frontend-vitest, arguments: { test: "keeps search history in Saved and preserves direct rerun actions" } }
   - id: REQ-SRCH-006
     title: Structured query operation
     description: Users and operators can submit a structured query for a Space and receive the matching results through the supported Ugoite interfaces.
