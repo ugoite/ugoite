@@ -2328,39 +2328,6 @@ code {
 .ui-entry-side-card {
   padding: 16px;
 }
-.ui-entry-secondary-action {
-  border: 1px solid var(--ui-border);
-  border-radius: 15px;
-  background: var(--ui-surface-2);
-}
-.ui-entry-history-action {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 15px 16px;
-  color: var(--ui-foreground);
-}
-.ui-entry-history-label,
-.ui-entry-history-description {
-  display: block;
-}
-.ui-entry-history-label {
-  font-size: 14px;
-}
-.ui-entry-history-description {
-  margin-top: 3px;
-  color: var(--ui-foreground-muted);
-  font-size: 12px;
-  font-weight: 500;
-}
-.ui-entry-history-action:hover {
-  background: var(--ui-surface-3);
-  border-radius: 15px;
-}
-.ui-entry-history-action + .ui-entry-history-action {
-  border-top: 1px solid var(--ui-border);
-}
 .ui-entry-history-meta {
   display: flex;
   flex-wrap: wrap;
@@ -2422,32 +2389,6 @@ code {
 }
 .ui-entry-technical-list {
   margin-top: 10px;
-}
-.ui-entry-action-list {
-  display: grid;
-  gap: 3px;
-  margin-top: 10px;
-}
-.ui-entry-action {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px;
-  border-radius: 10px;
-  color: var(--ui-foreground);
-  font-size: 13px;
-  font-weight: 600;
-  text-align: left;
-}
-.ui-entry-action:hover {
-  background: var(--ui-surface-3);
-}
-.ui-entry-danger-zone {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--ui-border);
 }
 .ui-reference-picker-selection {
   padding: 10px;
@@ -2724,6 +2665,56 @@ button.assistantPill[aria-expanded="true"] {
   border-bottom: 1px solid var(--line);
 }
 
+.ui-entry-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.ui-entry-tool {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ui-entry-tool .icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.ui-entry-tool:hover,
+.ui-entry-tool:focus-visible {
+  border-color: var(--line);
+  background: var(--soft2);
+}
+
+.ui-entry-tool:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ui-entry-tool-danger {
+  margin-left: auto;
+  color: var(--danger);
+}
+
 .ui-entry-workspace {
   grid-template-columns: minmax(0, 1fr) 250px;
   gap: 34px;
@@ -2796,26 +2787,11 @@ button.assistantPill[aria-expanded="true"] {
   padding-left: 20px;
 }
 
-.ui-entry-side-card,
-.ui-entry-secondary-action {
+.ui-entry-side-card {
   border: 0;
   border-radius: 0;
   background: transparent;
   padding: 3px 0 20px;
-}
-
-.ui-entry-secondary-action {
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 18px;
-}
-
-.ui-entry-history-action {
-  padding: 8px 0;
-}
-
-.ui-entry-side-card + .ui-entry-side-card {
-  border-top: 1px solid var(--line);
-  padding-top: 18px;
 }
 
 .assetInventory .ui-card {
