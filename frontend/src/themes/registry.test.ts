@@ -10,7 +10,7 @@ describe("v5 design system", () => {
   it("uses the approved concept palette", () => {
     expect(css).toContain("--bg: #F6F8FC");
     expect(css).toContain("--ink: #10243C");
-    expect(css).toContain("--faint: #8290A3");
+    expect(css).toContain("--faint: #5D6F86");
     expect(css).toContain("--line: #D7E0EA");
     expect(css).toContain("--black: #111");
   });

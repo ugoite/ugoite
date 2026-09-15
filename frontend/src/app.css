@@ -5,7 +5,7 @@
   --panel: #FFFFFF;
   --ink: #10243C;
   --muted: #5D6F86;
-  --faint: #8290A3;
+  --faint: #5D6F86;
   --line: #D7E0EA;
   --line2: #C4D0DE;
   --soft: #EEF2FB;
@@ -2024,6 +2024,10 @@ code {
   .actions {
     justify-content: flex-start;
   }
+  .content, .ui-content {
+    padding-left: 11px;
+    padding-right: 11px;
+  }
   .surface {
     border-radius: 14px;
   }
@@ -2575,8 +2579,10 @@ code {
     grid-template-columns: 1fr;
   }
   .ui-entry-sidebar {
+    border-left: 0;
     position: static;
     grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    padding: 18px 0 0;
   }
 }
 
@@ -2594,8 +2600,11 @@ code {
   .ui-entry-mode-tab {
     flex: 1;
   }
-  .ui-entry-field, .ui-entry-main-header {
-    padding: 16px;
+  .ui-entry-field {
+    padding: 18px 0;
+  }
+  .ui-entry-main-header {
+    padding: 0 0 4px;
   }
   .ui-entry-advanced-note {
     align-items: stretch;
