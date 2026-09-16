@@ -20,6 +20,21 @@ use uuid::Uuid;
 
 pub const DEFAULT_DEVICE_ACTIONS: &str = "read,create,update";
 
+/// Parse the `--space-uid` login scope as an immutable UUIDv7 Space UID.
+///
+/// Backend/api mode addresses a Knowledge authority by its immutable UUIDv7
+/// Space UID only. Slugs, filesystem paths, and non-v7 UUIDs are rejected
+/// here with a CLI usage error so a typo can never silently scope a
+/// credential to another Space.
+fn parse_space_uid_arg(value: &str) -> Result<Uuid, String> {
+    let parsed = Uuid::parse_str(value.trim())
+        .map_err(|_| "backend/api mode requires SPACE_UID (UUIDv7)".to_string())?;
+    if parsed.get_version() != Some(uuid::Version::SortRand) {
+        return Err("backend/api mode requires SPACE_UID (UUIDv7)".to_string());
+    }
+    Ok(parsed)
+}
+
 /// Renders the device-authorization prompt without leaking the one-time
 /// secret into logs.
 ///
@@ -69,7 +84,12 @@ pub enum AuthSubCmd {
     Login {
         #[arg(long, default_value = "Ugoite CLI")]
         device_name: String,
-        #[arg(long)]
+        #[arg(
+            long,
+            value_parser = parse_space_uid_arg,
+            value_name = "SPACE_UID",
+            help = "Immutable Space UID (UUIDv7) to scope the new credential to. A local Space path or slug is never accepted here."
+        )]
         space_uid: Option<Uuid>,
         #[arg(
             long,
@@ -139,6 +159,11 @@ async fn login(
     actions: Vec<String>,
     resource: Option<String>,
 ) -> Result<()> {
+    if let Some(requested) = space_uid {
+        if requested.get_version() != Some(uuid::Version::SortRand) {
+            bail!("backend/api mode requires SPACE_UID (UUIDv7)");
+        }
+    }
     let signing_key = SigningKey::random(&mut OsRng);
     let public_key_jwk = public_jwk(&signing_key);
     let device_payload = oauth_payload(
@@ -473,8 +498,8 @@ fn public_jwk(key: &SigningKey) -> Value {
 mod tests {
     use super::{
         active_session_for, api_base_root, canonical_dpop_htu, device_authorization_prompt,
-        load_auth_session, login, mcp_resource, mcp_target, oauth_payload, public_jwk,
-        save_auth_session,
+        load_auth_session, login, mcp_resource, mcp_target, oauth_payload, parse_space_uid_arg,
+        public_jwk, save_auth_session,
     };
     use base64::Engine as _;
     use p256::pkcs8::EncodePrivateKey;
@@ -566,6 +591,25 @@ mod tests {
     }
 
     #[test]
+    fn login_space_uid_accepts_only_uuid_v7() {
+        assert!(parse_space_uid_arg(&uuid::Uuid::now_v7().to_string()).is_ok());
+        assert!(parse_space_uid_arg("019f1234-5678-7abc-8def-0123456789ab").is_ok());
+        for rejected in [
+            uuid::Uuid::nil().to_string(),
+            "123e4567-e89b-42d3-a456-426614174000".to_string(),
+            "team-notes".to_string(),
+            "/root/spaces/team-notes".to_string(),
+            String::new(),
+        ] {
+            let error = parse_space_uid_arg(&rejected).expect_err("non-v7 Space UID must fail");
+            assert!(
+                error.contains("UUIDv7"),
+                "unexpected validation error for {rejected:?}: {error}"
+            );
+        }
+    }
+
+    #[test]
     fn dpop_htu_excludes_query_and_fragment() {
         assert_eq!(
             canonical_dpop_htu("https://node.example/spaces/demo?cursor=next#ignored").unwrap(),
@@ -619,6 +663,7 @@ mod tests {
 
         let resource = "http://ugoite.example/mcp";
         let credential_id = uuid::Uuid::now_v7();
+        let space_uid = uuid::Uuid::now_v7();
         let (base_url, requests, server) = spawn_http_server(vec![
             ("200 OK", json!({"resource": resource}).to_string()),
             (
@@ -639,7 +684,7 @@ mod tests {
                     "access_token": "mcp-access-token",
                     "refresh_token": "mcp-refresh-token",
                     "expires_in": 300,
-                    "space_uid": uuid::Uuid::nil()
+                    "space_uid": space_uid
                 })
                 .to_string(),
             ),
@@ -654,7 +699,7 @@ mod tests {
             .block_on(login(
                 &base_url,
                 "test-device",
-                Some(uuid::Uuid::nil()),
+                Some(space_uid),
                 vec!["read".to_string()],
                 Some(discovered),
             ))
@@ -738,7 +783,7 @@ mod tests {
             .to_string(),
         )]);
         save_auth_session(&super::AuthSession {
-            credential_id: uuid::Uuid::nil(),
+            credential_id: uuid::Uuid::now_v7(),
             device_name: "mcp-device".to_string(),
             public_key_jwk,
             private_key_pkcs8: Some(private_key),
@@ -747,7 +792,7 @@ mod tests {
             expires_at: 0,
             base_url: base_url.clone(),
             resource: Some(resource.to_string()),
-            space_uid: uuid::Uuid::nil(),
+            space_uid: uuid::Uuid::now_v7(),
         })
         .expect("save expired MCP session");
         let session = tokio::runtime::Runtime::new()

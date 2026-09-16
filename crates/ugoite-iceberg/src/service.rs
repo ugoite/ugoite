@@ -902,6 +902,18 @@ impl UgoiteService {
     /// validation error). No fictitious local account model is introduced;
     /// only the durable outcome is shared with server account-bound retry.
     pub async fn ensure_operator_space(&self, slug: &str) -> Result<SpaceCreateOutcome> {
+        self.ensure_operator_space_with_name(slug, slug).await
+    }
+
+    /// Operator-local idempotent create-or-return with an independent display
+    /// name. The positional slug stays the stable filesystem/lookup key while
+    /// `display_name` only seeds `meta.json:name` on first creation; retries
+    /// converge to the existing durable identity without renaming.
+    pub async fn ensure_operator_space_with_name(
+        &self,
+        slug: &str,
+        display_name: &str,
+    ) -> Result<SpaceCreateOutcome> {
         self.ensure_authoritative_mutation_contract()?;
         validate_storage_id(validate_space_id(slug))?;
         crate::iceberg_store::ensure_mutation_admitted(&self.operator, &format!("spaces/{slug}"))
@@ -976,7 +988,8 @@ impl UgoiteService {
             return Ok(SpaceCreateOutcome::Existing(existing));
         }
         Ok(SpaceCreateOutcome::Created(
-            self.create_new_operator_space(slug).await?,
+            self.create_new_operator_space_with_name(slug, display_name)
+                .await?,
         ))
     }
 
@@ -1008,10 +1021,27 @@ impl UgoiteService {
     }
 
     async fn create_new_operator_space(&self, slug: &str) -> Result<Uuid> {
+        self.create_new_operator_space_with_name(slug, slug).await
+    }
+
+    async fn create_new_operator_space_with_name(
+        &self,
+        slug: &str,
+        display_name: &str,
+    ) -> Result<Uuid> {
         let space_id = Uuid::now_v7();
-        let claim = self.claim_space_slug(slug, &space_id.to_string()).await?;
+        let claim = self
+            .claim_space_slug_with_owner_and_name(slug, &space_id.to_string(), None, display_name)
+            .await?;
         let lease = self.start_space_slug_claim_heartbeat(&claim);
-        space::create_space_with_identity(&self.operator, space_id, slug, &self.root_uri).await?;
+        space::create_space_with_identity_and_name(
+            &self.operator,
+            space_id,
+            slug,
+            display_name,
+            &self.root_uri,
+        )
+        .await?;
         lease.ensure_held()?;
         self.commit_space_slug_claim(slug, &space_id.to_string(), claim.claim_id)
             .await?;

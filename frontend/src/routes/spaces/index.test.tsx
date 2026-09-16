@@ -101,6 +101,33 @@ describe("/spaces", () => {
     });
   });
 
+  it("REQ-FE-002: refuses to navigate when the server omits the Space UID", async () => {
+    (spaceApi.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "legacy-space-id",
+      name: "my-space",
+    });
+
+    render(() => <SpacesIndexRoute />);
+
+    await waitFor(() => {
+      expect(screen.getByText("No spaces available.")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+    fireEvent.input(screen.getByLabelText("Space name"), {
+      target: { value: "My space" },
+    });
+    fireEvent.input(screen.getByLabelText("Space slug"), {
+      target: { value: "my-space" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+
+    await waitFor(() => {
+      expect(navigateMock).not.toHaveBeenCalled();
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+  });
+
   it("REQ-FE-002: labels the create-space field as a Space slug and explains its mutable metadata semantics", async () => {
     render(() => <SpacesIndexRoute />);
 

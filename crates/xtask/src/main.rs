@@ -641,17 +641,32 @@ fn space_compat_check() -> Result<()> {
             None
         }
     };
-    if let Some(current) = &current {
+    // Derive the canonical supported-generation inventory from the fixture
+    // tree instead of hardcoding it here, so code and fixtures cannot drift
+    // apart silently. Fail closed on any drift or malformed inventory.
+    let fixture_versions = match canonical_fixture_space_versions() {
+        Ok(versions) => Some(versions),
+        Err(error) => {
+            violations.push(format!("{error:#}"));
+            None
+        }
+    };
+    if let (Some(current), Some(fixture_versions)) = (&current, &fixture_versions) {
         if current != "0.1" {
             violations.push(format!(
                 "CURRENT_SPACE_VERSION must stay \"0.1\" while Space 0.1 is the frozen compatibility identity, found \"{current}\""
             ));
         }
+        if !fixture_versions.contains(current) {
+            violations.push(format!(
+                "CURRENT_SPACE_VERSION \"{current}\" has no canonical fixture inventory under fixtures/spaces/{current}/"
+            ));
+        }
         match parse_supported_space_versions(&source, current) {
             Ok(supported) => {
-                if supported != vec!["0.1".to_string()] {
+                if supported != *fixture_versions {
                     violations.push(format!(
-                        "SUPPORTED_SPACE_VERSIONS must stay exactly [\"0.1\"], found {supported:?}"
+                        "SUPPORTED_SPACE_VERSIONS must exactly match the canonical fixture inventory {fixture_versions:?}, found {supported:?}"
                     ));
                 }
             }
@@ -661,44 +676,10 @@ fn space_compat_check() -> Result<()> {
     if let Err(error) = check_classify_space_version_body(&source) {
         violations.push(format!("{error:#}"));
     }
-    match fs::read_to_string("fixtures/spaces/0.1/expected.json") {
-        Ok(text) => {
-            if let Err(error) = check_fixture_meta_json(&text, "fixtures/spaces/0.1/expected.json")
-            {
-                violations.push(format!("{error:#}"));
-            }
+    if let Some(fixture_versions) = &fixture_versions {
+        for version in fixture_versions {
+            check_canonical_space_fixture(version, &mut violations);
         }
-        Err(error) => violations.push(format!("read canonical Space fixture: {error:#}")),
-    }
-    match fs::read_dir("fixtures/spaces/0.1/spaces") {
-        Ok(entries) => {
-            let mut fixture_count = 0usize;
-            for entry in entries {
-                let entry = entry.context("read canonical Space fixture entry")?;
-                let meta_path = entry.path().join("meta.json");
-                if !meta_path.is_file() {
-                    continue;
-                }
-                let text = fs::read_to_string(&meta_path)
-                    .with_context(|| format!("read {}", meta_path.to_string_lossy()))?;
-                if let Err(error) = check_fixture_meta_json(&text, &meta_path.to_string_lossy()) {
-                    violations.push(format!("{error:#}"));
-                }
-                fixture_count += 1;
-            }
-            if fixture_count == 0 {
-                violations.push(
-                    "fixtures/spaces/0.1/spaces must contain at least one meta.json bootstrap fixture"
-                        .to_string(),
-                );
-            }
-        }
-        Err(error) => violations.push(format!("read canonical Space fixture: {error:#}")),
-    }
-    if !Path::new("fixtures/spaces/0.1/README.md").is_file() {
-        violations.push(
-            "fixtures/spaces/0.1/README.md must exist as frozen compatibility evidence".to_string(),
-        );
     }
     match fs::read_to_string("crates/ugoite-domain/tests/test_space_version.rs") {
         Ok(regression) => {
@@ -721,6 +702,125 @@ fn space_compat_check() -> Result<()> {
     }
     println!("space compatibility: Space 0.1 identity, fixture, metadata contract, and regression coverage agree");
     Ok(())
+}
+
+/// Scan `fixtures/spaces/*` for canonical Space generation directories and
+/// return them sorted as the supported-generation inventory.
+///
+/// The directory name is the version identity, so it must match the same
+/// canonical `<major>.<generation>` shape enforced by
+/// `parse_space_version` in `crates/ugoite-domain/src/space.rs`
+/// (ASCII digits on both sides, canonical round-trip). Anything else fails
+/// closed instead of being silently skipped, so a stray directory can never
+/// hide drift between code and fixtures.
+fn canonical_fixture_space_versions() -> Result<Vec<String>> {
+    let entries =
+        fs::read_dir("fixtures/spaces").context("read canonical Space fixture inventory")?;
+    let mut versions = Vec::new();
+    for entry in entries {
+        let entry = entry.context("read canonical Space fixture inventory entry")?;
+        if !entry
+            .file_type()
+            .context("stat fixture inventory entry")?
+            .is_dir()
+        {
+            bail!(
+                "fixtures/spaces must contain only canonical version directories, found file {}",
+                entry.path().display()
+            );
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !is_canonical_space_version(&name) {
+            bail!(
+                "fixtures/spaces/{name} is not a canonical <major>.<generation> Space version directory"
+            );
+        }
+        versions.push(name);
+    }
+    if versions.is_empty() {
+        bail!("fixtures/spaces must contain at least one canonical version directory");
+    }
+    versions.sort();
+    versions.dedup();
+    Ok(versions)
+}
+
+fn is_canonical_space_version(value: &str) -> bool {
+    let Some((major, generation)) = value.split_once('.') else {
+        return false;
+    };
+    if major.is_empty()
+        || generation.is_empty()
+        || !major.bytes().all(|byte| byte.is_ascii_digit())
+        || !generation.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return false;
+    }
+    let Ok(major_number): Result<u64, _> = major.parse() else {
+        return false;
+    };
+    let Ok(generation_number): Result<u64, _> = generation.parse() else {
+        return false;
+    };
+    format!("{major_number}.{generation_number}") == value
+}
+
+/// Validate one canonical version fixture: `expected.json` and every
+/// `spaces/*/meta.json` bootstrap fixture must carry exactly that version,
+/// and the frozen compatibility README must exist.
+fn check_canonical_space_fixture(version: &str, violations: &mut Vec<String>) {
+    let base = format!("fixtures/spaces/{version}");
+    let expected_path = format!("{base}/expected.json");
+    match fs::read_to_string(&expected_path) {
+        Ok(text) => {
+            if let Err(error) = check_fixture_meta_json(&text, &expected_path, version) {
+                violations.push(format!("{error:#}"));
+            }
+        }
+        Err(error) => violations.push(format!("read canonical Space fixture: {error:#}")),
+    }
+    match fs::read_dir(format!("{base}/spaces")) {
+        Ok(entries) => {
+            let mut fixture_count = 0usize;
+            for entry in entries {
+                let entry = match entry.context("read canonical Space fixture entry") {
+                    Ok(entry) => entry,
+                    Err(error) => {
+                        violations.push(format!("{error:#}"));
+                        continue;
+                    }
+                };
+                let meta_path = entry.path().join("meta.json");
+                if !meta_path.is_file() {
+                    continue;
+                }
+                match fs::read_to_string(&meta_path) {
+                    Ok(text) => {
+                        if let Err(error) =
+                            check_fixture_meta_json(&text, &meta_path.to_string_lossy(), version)
+                        {
+                            violations.push(format!("{error:#}"));
+                        }
+                    }
+                    Err(error) => {
+                        violations.push(format!("read {}: {error:#}", meta_path.to_string_lossy()))
+                    }
+                }
+                fixture_count += 1;
+            }
+            if fixture_count == 0 {
+                violations.push(format!(
+                    "{base}/spaces must contain at least one meta.json bootstrap fixture"
+                ));
+            }
+        }
+        Err(error) => violations.push(format!("read canonical Space fixture: {error:#}")),
+    }
+    if !Path::new(&format!("{base}/README.md")).is_file() {
+        violations.push(format!(
+            "{base}/README.md must exist as frozen compatibility evidence"
+        ));
+    }
 }
 
 fn parse_current_space_version(source: &str) -> Result<String> {
@@ -807,11 +907,13 @@ fn check_classify_space_version_body(source: &str) -> Result<()> {
     Ok(())
 }
 
-fn check_fixture_meta_json(text: &str, origin: &str) -> Result<()> {
+fn check_fixture_meta_json(text: &str, origin: &str, expected_version: &str) -> Result<()> {
     let value: Value = serde_json::from_str(text).with_context(|| format!("parse {origin}"))?;
     match value.get("space_version").and_then(Value::as_str) {
-        Some("0.1") => Ok(()),
-        Some(other) => bail!("{origin} must carry space_version \"0.1\", found \"{other}\""),
+        Some(version) if version == expected_version => Ok(()),
+        Some(other) => {
+            bail!("{origin} must carry space_version \"{expected_version}\", found \"{other}\"")
+        }
         None => bail!("{origin} must carry a space_version string identity"),
     }
 }
@@ -1353,12 +1455,28 @@ phases:
 
     #[test]
     fn fixture_meta_requires_space_version_identity() {
-        check_fixture_meta_json(r#"{"space_version": "0.1"}"#, "meta.json").expect("0.1 passes");
-        check_fixture_meta_json(r#"{"schema_version": 3}"#, "meta.json")
+        check_fixture_meta_json(r#"{"space_version": "0.1"}"#, "meta.json", "0.1")
+            .expect("0.1 passes");
+        check_fixture_meta_json(r#"{"schema_version": 3}"#, "meta.json", "0.1")
             .expect_err("schema_version-only metadata must fail");
-        check_fixture_meta_json(r#"{"space_version": "0.2"}"#, "meta.json")
+        check_fixture_meta_json(r#"{"space_version": "0.2"}"#, "meta.json", "0.1")
             .expect_err("future version must fail");
-        check_fixture_meta_json(r#"{}"#, "meta.json").expect_err("missing identity must fail");
+        check_fixture_meta_json(r#"{}"#, "meta.json", "0.1")
+            .expect_err("missing identity must fail");
+        check_fixture_meta_json(r#"{"space_version": "0.2"}"#, "meta.json", "0.2")
+            .expect("per-generation fixture matches its own version directory");
+    }
+
+    #[test]
+    fn canonical_fixture_versions_derive_from_version_directories() {
+        assert!(is_canonical_space_version("0.1"));
+        assert!(is_canonical_space_version("10.20"));
+        for invalid in ["", "0", "0.1.0", "v0.1", "01.1", "0.01", "0.x", ".1", "0."] {
+            assert!(
+                !is_canonical_space_version(invalid),
+                "{invalid:?} must not classify as a canonical Space version"
+            );
+        }
     }
 
     #[test]

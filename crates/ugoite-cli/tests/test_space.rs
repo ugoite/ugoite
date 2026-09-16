@@ -248,6 +248,71 @@ fn test_create_space_idempotency() {
     assert_eq!(second["id"], first["id"]);
 }
 
+/// `space create` keeps the positional slug as the lookup key while `--name`
+/// seeds an independent display name in core mode.
+#[test]
+fn test_create_space_with_independent_display_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("cli-config.json");
+    let space_path = dir.path().join("spaces").join("team-notes");
+
+    let output = Command::new(ugoite_bin())
+        .arg("space")
+        .arg("create")
+        .arg(&space_path)
+        .arg("--name")
+        .arg("Team Notes")
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let created: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("create prints JSON");
+    assert_eq!(created["slug"], serde_json::json!("team-notes"));
+    assert_eq!(created["name"], serde_json::json!("Team Notes"));
+
+    let space_dir = created_space_dir(dir.path(), &output);
+    let meta: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(space_dir.join("meta.json")).unwrap()).unwrap();
+    assert_eq!(meta["slug"], serde_json::json!("team-notes"));
+    assert_eq!(meta["name"], serde_json::json!("Team Notes"));
+}
+
+/// `space create` without `--name` keeps the slug as the display name.
+#[test]
+fn test_create_space_defaults_display_name_to_slug() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("cli-config.json");
+    let space_path = dir.path().join("spaces").join("plain-slug");
+
+    let output = Command::new(ugoite_bin())
+        .arg("space")
+        .arg("create")
+        .arg(&space_path)
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let created: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("create prints JSON");
+    assert_eq!(created["slug"], serde_json::json!("plain-slug"));
+    assert_eq!(created["name"], serde_json::json!("plain-slug"));
+
+    let space_dir = created_space_dir(dir.path(), &output);
+    let meta: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(space_dir.join("meta.json")).unwrap()).unwrap();
+    assert_eq!(meta["slug"], serde_json::json!("plain-slug"));
+    assert_eq!(meta["name"], serde_json::json!("plain-slug"));
+}
+
 /// REQ-API-009: Sample space can be created with sample data.
 #[test]
 fn test_create_sample_space_req_api_009() {

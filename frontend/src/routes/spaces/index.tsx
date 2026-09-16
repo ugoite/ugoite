@@ -130,9 +130,16 @@ export default function SpacesIndexRoute() {
 
   const createSpace = async (name: string, slug: string) => {
     const created = await spaceApi.create({ name, slug });
+    // The server-returned Space UID is the authority for all later
+    // operations. Never fall back to the requested slug or another
+    // identifier: navigating by slug could open a different Space.
+    const spaceUid = created.space_uid;
+    if (!spaceUid) {
+      throw new Error("Space creation response omitted space_uid");
+    }
     await refetchSpaces();
     closeCreateForm();
-    navigate(`/spaces/${created.space_uid ?? created.id}/dashboard`);
+    navigate(`/spaces/${spaceUid}/dashboard`);
   };
 
   const handleCreateSpace = async (event: Event) => {
