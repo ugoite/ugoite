@@ -84,6 +84,30 @@ describe("i18n", () => {
       );
   });
 
+  it("renders booleans and never coerces objects to [object Object]", () => {
+    expect(
+      t("dashboard.section.createEntry.formsAvailable", { count: true as never }),
+    ).not.toContain("[object Object]");
+    for (const value of [
+      { value: "hidden" },
+      { outer: { inner: "hidden" } },
+      [{ value: "hidden" }],
+      { entry_id: "entry-1", title: "Alpha" },
+    ]) {
+      expect(
+        t("dashboard.section.createEntry.formsAvailable", {
+          count: value as never,
+        }),
+      ).not.toContain("[object Object]");
+      expect(
+        t("spaceHistory.revertSuccess", { value: value as never }),
+      ).not.toContain("[object Object]");
+    }
+    expect(
+      t("spaceHistory.revertSuccess", { value: { id: "change-1" } as never }),
+    ).toBe(t("spaceHistory.revertSuccess", { value: "" }));
+  });
+
   it("REQ-FE-044: keeps the English and Japanese key sets identical", () => {
     expect(Object.keys(uiDictionary.en).sort()).toEqual(
       Object.keys(uiDictionary.ja).sort(),
