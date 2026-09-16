@@ -14335,6 +14335,136 @@ mod authentication_regression_tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn issue_2314_rest_rejected_dml_preserves_entry_value_history_and_count(
+    ) -> anyhow::Result<()> {
+        let principal_id = Uuid::from_u128(23140);
+        let (client, space_id, _space_uid) =
+            production_rest_fixture("issue-2314-sql-dml-no-mutation", principal_id, true).await?;
+
+        let (forms_status, forms) = client
+            .json(Method::GET, &format!("/spaces/{space_id}/forms"), None)
+            .await?;
+        assert_eq!(forms_status, StatusCode::OK, "{forms}");
+        let relation = forms
+            .as_array()
+            .and_then(|forms| forms.iter().find(|form| form["name"] == "Entry"))
+            .and_then(|form| form["sql_relation"].as_str())
+            .expect("seeded Form SQL relation")
+            .to_owned();
+
+        let seed_markdown = "---\nform: Entry\n---\n# Seeded\n\n## Body\nseeded-value\n";
+        let (create_status, created) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/entries"),
+                Some(json!({"id": "dml-seed", "markdown": seed_markdown})),
+            )
+            .await?;
+        assert_eq!(create_status, StatusCode::CREATED, "{created}");
+
+        let entry_path = format!("/spaces/{space_id}/entries/dml-seed");
+        let history_path = format!("{entry_path}/history");
+        let (entry_status, entry_before) = client.json(Method::GET, &entry_path, None).await?;
+        assert_eq!(entry_status, StatusCode::OK, "{entry_before}");
+        assert!(
+            entry_before["markdown"]
+                .as_str()
+                .is_some_and(|markdown| markdown.contains("seeded-value")),
+            "{entry_before}"
+        );
+        let (history_status, history_before) =
+            client.json(Method::GET, &history_path, None).await?;
+        assert_eq!(history_status, StatusCode::OK, "{history_before}");
+        let history_len_before = history_before["revisions"]
+            .as_array()
+            .map(Vec::len)
+            .expect("entry history revisions");
+        assert_eq!(history_len_before, 1, "{history_before}");
+
+        let (session_status, session) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/sql-sessions"),
+                Some(json!({
+                    "sql": format!("SELECT * FROM \"{relation}\" ORDER BY _ugoite_id")
+                })),
+            )
+            .await?;
+        assert_eq!(session_status, StatusCode::CREATED, "{session}");
+        let session_id = session["id"].as_str().expect("SQL session ID").to_owned();
+        let (count_status, count_before) = client
+            .json(
+                Method::GET,
+                &format!("/spaces/{space_id}/sql-sessions/{session_id}/count"),
+                None,
+            )
+            .await?;
+        assert_eq!(count_status, StatusCode::OK, "{count_before}");
+        assert_eq!(count_before["count"], 1, "{count_before}");
+
+        for sql in [
+            format!("INSERT INTO \"{relation}\" SELECT * FROM \"{relation}\""),
+            format!("UPDATE \"{relation}\" SET field_100 = 'changed'"),
+            format!("DELETE FROM \"{relation}\""),
+        ] {
+            let (status, body) = client
+                .json(
+                    Method::POST,
+                    &format!("/spaces/{space_id}/sql-sessions"),
+                    Some(json!({"sql": sql})),
+                )
+                .await?;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+            assert_eq!(body["code"], "READ_ONLY_SQL_REQUIRED", "{body}");
+        }
+
+        // #2314: a rejected DML statement must leave the seeded Entry field
+        // value, its append-only history, and the row count unchanged.
+        let (entry_status, entry_after) = client.json(Method::GET, &entry_path, None).await?;
+        assert_eq!(entry_status, StatusCode::OK, "{entry_after}");
+        assert!(
+            entry_after["markdown"]
+                .as_str()
+                .is_some_and(|markdown| markdown.contains("seeded-value")),
+            "{entry_after}"
+        );
+        assert!(
+            !entry_after["markdown"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("changed"),
+            "{entry_after}"
+        );
+        let (history_status, history_after) = client.json(Method::GET, &history_path, None).await?;
+        assert_eq!(history_status, StatusCode::OK, "{history_after}");
+        assert_eq!(
+            history_after["revisions"].as_array().map(Vec::len),
+            Some(history_len_before),
+            "{history_after}"
+        );
+        let (count_status, count_after) = client
+            .json(
+                Method::GET,
+                &format!("/spaces/{space_id}/sql-sessions/{session_id}/count"),
+                None,
+            )
+            .await?;
+        assert_eq!(count_status, StatusCode::OK, "{count_after}");
+        assert_eq!(count_after["count"], 1, "{count_after}");
+        let (rows_status, rows_after) = client
+            .json(
+                Method::GET,
+                &format!("/spaces/{space_id}/sql-sessions/{session_id}/rows?offset=0&limit=50"),
+                None,
+            )
+            .await?;
+        assert_eq!(rows_status, StatusCode::OK, "{rows_after}");
+        assert_eq!(rows_after["total_count"], 1, "{rows_after}");
+        assert_eq!(rows_after["rows"].as_array().map(Vec::len), Some(1));
+        Ok(())
+    }
+
     #[test]
     fn issue_2125_read_request_bounds_accept_edges_and_reject_over_limits() {
         let max_rows = ugoite_iceberg::MAX_NORMAL_READ_ROWS;
@@ -14380,6 +14510,147 @@ mod authentication_regression_tests {
                 })
             );
         }
+    }
+
+    #[tokio::test]
+    async fn issue_2746_search_limit_offset_slices_multi_result() -> anyhow::Result<()> {
+        let principal_id = Uuid::from_u128(27460);
+        let (client, space_id, _space_uid) =
+            production_rest_fixture("issue-2746-search-paging", principal_id, true).await?;
+
+        for (entry_id, title) in [
+            ("search-a", "Harvest Alpha"),
+            ("search-b", "Harvest Beta"),
+            ("search-c", "Harvest Gamma"),
+        ] {
+            let markdown =
+                format!("---\nform: Entry\n---\n# {title}\n\n## Body\nharvest {title}\n");
+            let (status, body) = client
+                .json(
+                    Method::POST,
+                    &format!("/spaces/{space_id}/entries"),
+                    Some(json!({"id": entry_id, "markdown": markdown})),
+                )
+                .await?;
+            assert_eq!(status, StatusCode::CREATED, "{body}");
+        }
+
+        // The handler forwards limit/offset to the shared paged search; each
+        // page must slice the same multi-result set instead of repeating it.
+        let (full_status, full) = client
+            .json(
+                Method::GET,
+                &format!("/spaces/{space_id}/search?q=harvest&limit=10&offset=0"),
+                None,
+            )
+            .await?;
+        assert_eq!(full_status, StatusCode::OK, "{full}");
+        assert_eq!(full.as_array().map(Vec::len), Some(3), "{full}");
+
+        let (first_status, first) = client
+            .json(
+                Method::GET,
+                &format!("/spaces/{space_id}/search?q=harvest&limit=1&offset=0"),
+                None,
+            )
+            .await?;
+        assert_eq!(first_status, StatusCode::OK, "{first}");
+        let (second_status, second) = client
+            .json(
+                Method::GET,
+                &format!("/spaces/{space_id}/search?q=harvest&limit=1&offset=1"),
+                None,
+            )
+            .await?;
+        assert_eq!(second_status, StatusCode::OK, "{second}");
+        let (third_status, third) = client
+            .json(
+                Method::GET,
+                &format!("/spaces/{space_id}/search?q=harvest&limit=1&offset=2"),
+                None,
+            )
+            .await?;
+        assert_eq!(third_status, StatusCode::OK, "{third}");
+        assert_eq!(first.as_array().map(Vec::len), Some(1), "{first}");
+        assert_eq!(second.as_array().map(Vec::len), Some(1), "{second}");
+        assert_eq!(third.as_array().map(Vec::len), Some(1), "{third}");
+        assert_ne!(first, second, "offset must slice search results");
+        assert_ne!(second, third, "offset must slice search results");
+        assert_ne!(first, third, "offset must slice search results");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn issue_2746_entry_history_limit_offset_paginates() -> anyhow::Result<()> {
+        let principal_id = Uuid::from_u128(27461);
+        let (client, space_id, _space_uid) =
+            production_rest_fixture("issue-2746-history-paging", principal_id, true).await?;
+
+        let (create_status, created) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/entries"),
+                Some(json!({
+                    "id": "history-seed",
+                    "markdown": "---\nform: Entry\n---\n# History\n\n## Body\nv1\n",
+                })),
+            )
+            .await?;
+        assert_eq!(create_status, StatusCode::CREATED, "{created}");
+        let mut parent_revision = created["revision_id"]
+            .as_str()
+            .expect("create revision")
+            .to_owned();
+        for body in ["v2", "v3"] {
+            let (update_status, updated) = client
+                .json(
+                    Method::PUT,
+                    &format!("/spaces/{space_id}/entries/history-seed"),
+                    Some(json!({
+                        "markdown": format!(
+                            "---\nform: Entry\n---\n# History\n\n## Body\n{body}\n"
+                        ),
+                        "parent_revision_id": parent_revision,
+                    })),
+                )
+                .await?;
+            assert_eq!(update_status, StatusCode::OK, "{updated}");
+            parent_revision = updated["revision_id"]
+                .as_str()
+                .expect("update revision")
+                .to_owned();
+        }
+
+        let entry_path = format!("/spaces/{space_id}/entries/history-seed/history");
+        let (full_status, full) = client.json(Method::GET, &entry_path, None).await?;
+        assert_eq!(full_status, StatusCode::OK, "{full}");
+        assert_eq!(
+            full["revisions"].as_array().map(Vec::len),
+            Some(3),
+            "{full}"
+        );
+
+        // The handler forwards limit/offset to the paged history reader.
+        let mut pages = Vec::new();
+        for offset in [0, 1, 2] {
+            let (status, page) = client
+                .json(
+                    Method::GET,
+                    &format!("{entry_path}?limit=1&offset={offset}"),
+                    None,
+                )
+                .await?;
+            assert_eq!(status, StatusCode::OK, "{page}");
+            assert_eq!(
+                page["revisions"].as_array().map(Vec::len),
+                Some(1),
+                "{page}"
+            );
+            pages.push(page);
+        }
+        assert_ne!(pages[0], pages[1], "history offset must paginate");
+        assert_ne!(pages[1], pages[2], "history offset must paginate");
+        Ok(())
     }
 
     #[test]

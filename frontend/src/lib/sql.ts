@@ -184,7 +184,7 @@ function parseSql(sql: string): ParsedSql {
     }
     return masked.join("");
   };
-  const code = maskRanges(ignoredRanges);
+  const code = maskRanges([...ignoredRanges, ...quotedIdentifierRanges]);
   return {
     code,
     statementForm: statementSummary?.form,
@@ -282,13 +282,20 @@ export function sqlLintDiagnostics(query: string): Diagnostic[] {
   /* v8 ignore start */
   if (lintRules.single_statement_only !== false) {
     /* v8 ignore stop */
-    if (semicolonIndex !== -1 && semicolonIndex < query.length - 1) {
-      diagnostics.push({
-        from: semicolonIndex,
-        to: semicolonIndex + 1,
-        severity: "warning",
-        message: "Only a single statement is supported",
-      });
+    if (semicolonIndex !== -1) {
+      // `code` masks string literals, comments, and quoted identifiers, so a
+      // `;` found here is a real statement delimiter. Trailing trivia
+      // (whitespace and line/block comments, already masked to spaces) after
+      // the final semicolon is not a second statement.
+      const trailing = parsedQuery.code.slice(semicolonIndex + 1).trim();
+      if (trailing.length > 0) {
+        diagnostics.push({
+          from: semicolonIndex,
+          to: semicolonIndex + 1,
+          severity: "warning",
+          message: "Only a single statement is supported",
+        });
+      }
     }
     /* v8 ignore start */
   }
