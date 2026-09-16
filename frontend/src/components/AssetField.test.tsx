@@ -83,8 +83,15 @@ describe("AssetField", () => {
     });
 
     await waitFor(() => expect(value()).toEqual(first));
-    expect(screen.getByText("Uploaded; entry not saved yet"))
-      .toBeInTheDocument();
+    expect(screen.getByText("TXT · 10 bytes")).toBeInTheDocument();
+    expect(screen.queryByText("first.txt")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Preview first.txt" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Download first.txt" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Uploaded; entry not saved yet")).toBeNull();
     expect(screen.getByRole("button", { name: "Remove" })).toBeInTheDocument();
   });
 
@@ -268,10 +275,15 @@ describe("AssetField", () => {
     await waitFor(() => expect(value()).toEqual(first));
     setMode("preview");
     await waitFor(() =>
-      expect(screen.getByText("first.txt"))
-        .toBeInTheDocument()
+      expect(
+        screen.getByRole("button", { name: "Preview first.txt" }),
+      ).toBeInTheDocument()
     );
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(screen.getByText("TXT · 10 bytes")).toBeInTheDocument();
+    expect(screen.queryByText("first.txt")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Preview first.txt" }),
+    );
     expect(assetApi.read).not.toHaveBeenCalled();
     expect(await screen.findByText("data")).toBeInTheDocument();
   });
@@ -344,9 +356,9 @@ describe("AssetField", () => {
     // The second upload remains in flight while both conditional views are
     // remounted and the current list is changed.
     setMode("preview");
-    await screen.findByText("queued-first.txt");
+    await screen.findByRole("button", { name: "Preview queued-first.txt" });
     setMode("fields");
-    await screen.findByText("queued-first.txt");
+    await screen.findByRole("button", { name: "Preview queued-first.txt" });
     fireEvent.click(screen.getAllByRole("button", { name: / up$/ })[1]);
     fireEvent.click(screen.getAllByRole("button", { name: /^Remove$/ })[1]);
     expect(value()).toEqual([queuedFirst]);
@@ -379,9 +391,13 @@ describe("AssetField", () => {
     ));
     state.setPreviewUrls(new Map([[svg.asset_id, "blob:svg"]]));
     await waitFor(() =>
-      expect(screen.getByText("diagram.svg"))
+      expect(screen.getByText("SVG · 10 bytes"))
         .toBeInTheDocument()
     );
+    expect(screen.queryByText("diagram.svg")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Download diagram.svg" }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: "diagram.svg" })).toBeNull();
   });
 
@@ -417,11 +433,19 @@ describe("AssetField", () => {
       ]]),
     );
 
-    const row = screen.getByText(first.name).closest(".ui-asset-item");
+    const row = screen
+      .getByRole("button", { name: "Preview first.txt" })
+      .closest(".ui-asset-item");
     expect(row?.querySelector(".ui-asset-preview-panel")).toBeNull();
     expect(screen.getByText("TXT · 10 bytes")).toBeInTheDocument();
+    expect(screen.queryByText("first.txt")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Download first.txt" }),
+    ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Preview first.txt" }),
+    );
     const dialog = await screen.findByRole("dialog", { name: first.name });
     expect(dialog).toBeInTheDocument();
     expect(dialog.querySelector(".ui-asset-preview-panel")).not.toBeNull();
@@ -459,12 +483,15 @@ describe("AssetField", () => {
         onChange={() => undefined}
       />
     ));
-    fireEvent.click(screen.getByRole("button", { name: "Download" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Download first.txt" }),
+    );
     await waitFor(() =>
       expect(screen.getByText("File bytes unavailable; metadata preserved"))
         .toBeInTheDocument()
     );
-    expect(screen.getByText("first.txt")).toBeInTheDocument();
+    expect(screen.getByText("TXT · 10 bytes")).toBeInTheDocument();
+    expect(screen.queryByText("first.txt")).toBeNull();
   });
 
   it("keeps native media controls in the preview dialog tab order", async () => {
@@ -493,7 +520,7 @@ describe("AssetField", () => {
       ]]),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Preview clip.mp4" }));
     const dialog = await screen.findByRole("dialog", { name: video.name });
     const close = screen.getByRole("button", { name: "Close" });
     const media = dialog.querySelector("video");
@@ -532,7 +559,9 @@ describe("AssetField", () => {
       ]]),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Download" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Download first.txt" }),
+    );
 
     expect(assetApi.read).not.toHaveBeenCalled();
   });
@@ -569,7 +598,9 @@ describe("AssetField", () => {
           onChange={() => undefined}
         />
       ));
-      fireEvent.click(screen.getByRole("button", { name: "Download" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Download page.html" }),
+      );
       await waitFor(() => expect(createObjectURL).toHaveBeenCalled());
     } finally {
       Object.defineProperty(URL, "createObjectURL", {
@@ -607,7 +638,9 @@ describe("AssetField", () => {
           onChange={setValue}
         />
       ));
-      fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Preview first.txt" }),
+      );
       await waitFor(() => expect(assetApi.read).toHaveBeenCalled());
       fireEvent.click(screen.getByRole("button", { name: "Remove" }));
       resolveRead?.(new Blob(["removed"]));
@@ -670,7 +703,9 @@ describe("AssetField", () => {
           />
         </Show>
       ));
-      fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Preview first.txt" }),
+      );
       await waitFor(() => expect(assetApi.read).toHaveBeenCalled());
       setMode("preview");
       resolveRead?.(new Blob(["data"], { type: "text/plain" }));
