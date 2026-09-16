@@ -147,6 +147,11 @@ if [ "$FRONTEND_MODE" = "static" ]; then
   STATIC_DIR="$ROOT_DIR/frontend/.output/public"
 elif [ "$FRONTEND_MODE" = "dev" ]; then
   DEV_BUILD_INFO_PATH="$ROOT_DIR/frontend/public/build-info.json"
+  DEV_BUILD_INFO_BACKUP=""
+  if [ -f "$DEV_BUILD_INFO_PATH" ]; then
+    DEV_BUILD_INFO_BACKUP="$(mktemp)"
+    cp "$DEV_BUILD_INFO_PATH" "$DEV_BUILD_INFO_BACKUP"
+  fi
   echo "Generating development frontend provenance..."
   deno run -A frontend/scripts/generate-build-info.ts "$DEV_BUILD_INFO_PATH"
 fi
@@ -195,7 +200,9 @@ cleanup() {
     kill "$FRONTEND_PID" 2>/dev/null || true
   fi
   wait "${BACKEND_PID:-}" "${FRONTEND_PID:-}" 2>/dev/null || true
-  if [ -n "$DEV_BUILD_INFO_PATH" ]; then
+  if [ -n "${DEV_BUILD_INFO_BACKUP:-}" ] && [ -f "$DEV_BUILD_INFO_BACKUP" ]; then
+    mv "$DEV_BUILD_INFO_BACKUP" "$DEV_BUILD_INFO_PATH"
+  elif [ -n "$DEV_BUILD_INFO_PATH" ]; then
     rm -f "$DEV_BUILD_INFO_PATH"
   fi
   echo "Servers stopped."

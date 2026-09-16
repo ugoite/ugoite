@@ -345,6 +345,7 @@ jobs:
             echo "docker_cache_mode=min"
             echo "docker_cache_from=type=gha,scope=ugoite-runtime"
             echo "docker_cache_to=${docker_cache_to}"
+            echo "ugoite_source_sha=${GITHUB_SHA}"
           } >>"$GITHUB_OUTPUT"
 
       - name: Install Playwright browser dependencies
@@ -356,6 +357,7 @@ jobs:
         env:
           DOCSITE_ORIGIN: ${{ steps.ci-config.outputs.docsite_origin }}
           DOCSITE_BASE: ${{ steps.ci-config.outputs.docsite_base }}
+          UGOITE_SOURCE_SHA: ${{ github.sha }}
           UGOITE_IMAGE_PREBUILT: "true"
           UGOITE_IMAGE_USE_BUILDX: "true"
           UGOITE_IMAGE_CACHE_FROM: ${{ steps.ci-config.outputs.docker_cache_from }}

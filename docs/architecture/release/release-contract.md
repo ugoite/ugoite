@@ -108,7 +108,29 @@ container health, and CLI installer before the mutable aliases are changed. The
 published release manifest lists only GitHub Release assets in `files`; npm and
 Helm package digests are recorded in typed `npm_package` and `helm_chart`
 projections so registry artifacts are not mistaken for Release assets during
-distribution verification.
+distribution verification. The complete Release asset set is also compared
+against the expected set (manifest files plus whitelisted evidence such as
+`candidate-manifest.json`, `candidate-id.txt`, `release-manifest.json`, and
+run-scoped `verification-receipt-*.json`); any unexpected asset fails
+verification.
+
+## Cross-artifact ledger
+
+One machine-readable ledger binds the tag, source commit, digests, and
+published subjects for the CLI archive, npm installer, Helm archive, and
+versioned container. Build it rerunnably from the exact tag with
+`deno run -A tools/distribution.ts build-ledger --tag v<version> ...` and
+verify it with `verify-ledger`; the same tag always yields the same ledger
+because every subject derives from immutable published identities. Publishing
+attestations (CLI/npm build provenance from the candidate workflow) are
+verified with `gh attestation verify` where bundles are present; absence of a
+bundle never fails ledger construction.
+
+Helm-archive vs OCI-descriptor: the ledger records the Helm `.tgz` file
+SHA-256 (the bytes `helm pull` writes to disk). The OCI registry addresses the
+same chart version by descriptor digest over the registry transport. These two
+digests identify the same release through different transports and must never
+be equated as strings; verify them by comparing pulled bytes.
 
 Each publication is idempotent: a missing identity is published, a matching
 identity is verified and skipped, and a different identity aborts. An immutable

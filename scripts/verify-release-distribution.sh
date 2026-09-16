@@ -12,6 +12,8 @@ RELEASE_REPOSITORY_INPUT="${UGOITE_RELEASE_REPOSITORY:-ugoite/ugoite}"
 RELEASE_TOKEN_INPUT="${UGOITE_RELEASE_TOKEN:-}"
 ASSET_BASE_URL_INPUT="${UGOITE_RELEASE_ASSET_BASE_URL:-}"
 INSTALL_DIR_INPUT="${UGOITE_INSTALL_DIR:-}"
+VERIFIER_WORKFLOW_SHA_INPUT="${UGOITE_VERIFIER_WORKFLOW_SHA:-}"
+VERIFICATION_RUN_ID_INPUT="${UGOITE_VERIFICATION_RUN_ID:-${GITHUB_RUN_ID:-}}"
 
 if [ -n "$RELEASE_TOKEN_INPUT" ] && [ -z "${GH_TOKEN:-}" ]; then
   export GH_TOKEN="$RELEASE_TOKEN_INPUT"
@@ -141,72 +143,34 @@ export COMPOSE_CHECKSUM_PATH="$WORK_ROOT/assets/docker-compose.release.yaml.sha2
 export CLI_ARCHIVE_PATH="$WORK_ROOT/assets/$CLI_ARCHIVE"
 export CLI_ARCHIVE_NAME="$CLI_ARCHIVE"
 export RELEASE_TAG_INPUT VERSION_INPUT RELEASE_SHA_INPUT IMAGE_REPOSITORY CANDIDATE_ID_INPUT
-deno eval '
-const fail = (message: string): never => {
-  console.error(`distribution validation failed: ${message}`);
-  Deno.exit(1);
-};
-try {
-  const {
-    candidateIdFromManifestBytes,
-    findPublishedReleaseFile,
-    parseCandidateManifest,
-    parsePublishedReleaseManifest,
-    parseVerificationReceipt,
-    RELEASE_SMOKE_POLICY,
-    sha256Hex,
-    validatePublishedReleaseManifest,
-    validateVerificationReceipt,
-  } = await import("./tools/release_verify.ts");
-  const manifest = parsePublishedReleaseManifest(
-    JSON.parse(await Deno.readTextFile(Deno.env.get("MANIFEST_PATH")!)),
-  );
-  const candidateBytes = await Deno.readFile(Deno.env.get("CANDIDATE_MANIFEST_PATH")!);
-  const candidate = parseCandidateManifest(candidateBytes);
-  const receipt = parseVerificationReceipt(
-    JSON.parse(await Deno.readTextFile(Deno.env.get("VERIFICATION_RECEIPT_PATH")!)),
-  );
-  const candidateId = await candidateIdFromManifestBytes(candidateBytes);
-  validatePublishedReleaseManifest(manifest, {
-    releaseTag: Deno.env.get("RELEASE_TAG_INPUT")!,
-    version: Deno.env.get("VERSION_INPUT")!,
-    sourceSha: Deno.env.get("RELEASE_SHA_INPUT")!,
-    imageRepository: Deno.env.get("IMAGE_REPOSITORY")!,
-    candidateId,
-  });
-  if (candidateId !== Deno.env.get("CANDIDATE_ID_INPUT")) {
-    fail("candidate manifest digest does not match promotion input");
-  }
-  if (candidateId !== (await Deno.readTextFile(Deno.env.get("CANDIDATE_ID_PATH")!)).trim()) {
-    fail("published candidate ID asset differs from candidate manifest");
-  }
-  validateVerificationReceipt(receipt, {
-    candidateId,
-    candidateRunId: candidate.ci_run_id,
-    policy: RELEASE_SMOKE_POLICY,
-  });
-  for (const [name, path] of [
-    ["docker-compose.release.yaml", Deno.env.get("COMPOSE_PATH")!],
-    ["docker-compose.release.yaml.sha256", Deno.env.get("COMPOSE_CHECKSUM_PATH")!],
-    [Deno.env.get("CLI_ARCHIVE_NAME")!, Deno.env.get("CLI_ARCHIVE_PATH")!],
-  ] as const) {
-    const record = findPublishedReleaseFile(manifest, name);
-    const bytes = await Deno.readFile(path);
-    if (record.size !== bytes.byteLength || record.sha256 !== await sha256Hex(bytes)) {
-      fail(`${name} differs from release manifest`);
-    }
-  }
-} catch (error) {
-  fail(error instanceof Error ? error.message : String(error));
-}
-'
+# Stable distribution verification lives in tools/distribution.ts; the shell
+# keeps only Docker/curl/registry orchestration around these calls.
+verify_manifest_args=(
+  verify-manifest
+  --manifest "$MANIFEST_PATH"
+  --candidate-manifest "$CANDIDATE_MANIFEST_PATH"
+  --candidate-id-path "$CANDIDATE_ID_PATH"
+  --receipt "$VERIFICATION_RECEIPT_PATH"
+  --compose-path "$COMPOSE_PATH"
+  --compose-checksum-path "$COMPOSE_CHECKSUM_PATH"
+  --cli-archive-path "$CLI_ARCHIVE_PATH"
+  --cli-archive-name "$CLI_ARCHIVE_NAME"
+  --release-tag "$RELEASE_TAG_INPUT"
+  --version "$VERSION_INPUT"
+  --source-sha "$RELEASE_SHA_INPUT"
+  --image-repository "$IMAGE_REPOSITORY"
+  --candidate-id "$CANDIDATE_ID_INPUT"
+)
+if [ -n "$VERIFIER_WORKFLOW_SHA_INPUT" ]; then
+  verify_manifest_args+=(--verifier-workflow-sha "$VERIFIER_WORKFLOW_SHA_INPUT")
+fi
+if [ -n "$VERIFICATION_RUN_ID_INPUT" ]; then
+  verify_manifest_args+=(--verification-run-id "$VERIFICATION_RUN_ID_INPUT")
+fi
+deno run -A tools/distribution.ts "${verify_manifest_args[@]}"
 
 log "Verifying all published release assets"
-asset_names="$(MANIFEST_PATH="$MANIFEST_PATH" deno eval '
-const { parsePublishedReleaseManifest } = await import("./tools/release_verify.ts");
-const manifest = parsePublishedReleaseManifest(JSON.parse(await Deno.readTextFile(Deno.env.get("MANIFEST_PATH")!)));
-console.log(manifest.files.map((file) => file.name).join("\n"));
-')"
+asset_names="$(deno run -A tools/distribution.ts list-files --manifest "$MANIFEST_PATH")"
 while IFS= read -r asset_name; do
   [ -n "$asset_name" ] || continue
   asset_path="$WORK_ROOT/assets/$asset_name"
@@ -214,22 +178,16 @@ while IFS= read -r asset_name; do
   if [ ! -f "$asset_path" ]; then
     download_asset "$asset_name" "$asset_path"
   fi
-  ASSET_NAME="$asset_name" ASSET_PATH="$asset_path" deno eval '
-const { findPublishedReleaseFile, parsePublishedReleaseManifest, sha256Hex } = await import("./tools/release_verify.ts");
-const manifest = parsePublishedReleaseManifest(JSON.parse(await Deno.readTextFile(Deno.env.get("MANIFEST_PATH")!)));
-const record = findPublishedReleaseFile(manifest, Deno.env.get("ASSET_NAME")!);
-const bytes = await Deno.readFile(Deno.env.get("ASSET_PATH")!);
-if (record.size !== bytes.byteLength || record.sha256 !== await sha256Hex(bytes)) {
-  throw new Error(`${Deno.env.get("ASSET_NAME")} differs from release manifest`);
-}
-'
+  deno run -A tools/distribution.ts verify-file --manifest "$MANIFEST_PATH" --name "$asset_name" --path "$asset_path"
 done <<<"$asset_names"
 
-expected_npm_sha="$(MANIFEST_PATH="$MANIFEST_PATH" deno eval '
-const { parsePublishedReleaseManifest } = await import("./tools/release_verify.ts");
-const manifest = parsePublishedReleaseManifest(JSON.parse(await Deno.readTextFile(Deno.env.get("MANIFEST_PATH")!)));
-console.log(manifest.npm_package.digest);
-')"
+log "Verifying complete release asset set (no missing or unexpected assets)"
+published_asset_names="$(gh release view "$RELEASE_TAG_INPUT" --repo "$RELEASE_REPOSITORY_INPUT" --json assets --jq '.assets[].name')"
+published_asset_file="$WORK_ROOT/published-asset-names.txt"
+printf '%s\n' "$published_asset_names" >"$published_asset_file"
+deno run -A tools/distribution.ts check-asset-set --manifest "$MANIFEST_PATH" --assets "$published_asset_file"
+
+expected_npm_sha="$(deno run -A tools/distribution.ts manifest-digest --manifest "$MANIFEST_PATH" --field npm)"
 npm_url="$(npm view "@ugoite/ugoite@${VERSION_INPUT}" dist.tarball --json | tr -d '"')"
 npm_path="$WORK_ROOT/npm.tgz"
 declare -a npm_curl_args=(-fsSL)
@@ -242,11 +200,7 @@ fi
 curl "${npm_curl_args[@]}" "$npm_url" -o "$npm_path"
 [ "$(sha256_file "$npm_path")" = "$expected_npm_sha" ] || fail "Published npm package differs from candidate"
 
-helm_digest="$(MANIFEST_PATH="$MANIFEST_PATH" deno eval '
-const { parsePublishedReleaseManifest } = await import("./tools/release_verify.ts");
-const manifest = parsePublishedReleaseManifest(JSON.parse(await Deno.readTextFile(Deno.env.get("MANIFEST_PATH")!)));
-console.log(manifest.helm_chart.digest);
-')"
+helm_digest="$(deno run -A tools/distribution.ts manifest-digest --manifest "$MANIFEST_PATH" --field helm)"
 helm_dir="$WORK_ROOT/helm"
 mkdir -p "$helm_dir"
 helm pull oci://ghcr.io/ugoite/charts/ugoite --version "$VERSION_INPUT" --destination "$helm_dir" >/dev/null
@@ -255,7 +209,7 @@ helm_path="$helm_dir/ugoite-${VERSION_INPUT}.tgz"
 log "Verified published npm and Helm artifacts against the candidate"
 
 log "Verifying published image digest and health"
-EXPECTED_IMAGE_DIGEST="$(MANIFEST_PATH="$MANIFEST_PATH" deno eval 'const { parsePublishedReleaseManifest } = await import("./tools/release_verify.ts"); console.log(parsePublishedReleaseManifest(JSON.parse(await Deno.readTextFile(Deno.env.get("MANIFEST_PATH")!))).image.digest)')"
+EXPECTED_IMAGE_DIGEST="$(deno run -A tools/distribution.ts manifest-digest --manifest "$MANIFEST_PATH" --field image)"
 actual_image_digest="$(docker buildx imagetools inspect "${IMAGE_REPOSITORY}:${VERSION_INPUT}" --format '{{json .Manifest.Digest}}' | tr -d '"')"
 [ "$actual_image_digest" = "$EXPECTED_IMAGE_DIGEST" ] || fail "version tag points to ${actual_image_digest}, expected ${EXPECTED_IMAGE_DIGEST}"
 

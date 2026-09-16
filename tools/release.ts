@@ -76,7 +76,11 @@ async function main(): Promise<void> {
           true,
         );
         await readVerificationReceipt(candidate, args);
-        await promote(candidate, verificationReceiptPath(candidate, args));
+        await promote(
+          candidate,
+          verificationReceiptPath(candidate, args),
+          args,
+        );
       }
       break;
     case "promote-aliases":
@@ -592,12 +596,35 @@ async function readVerificationReceipt(
     );
   }
   const receipt = parseVerificationReceipt(value);
+  const binding = expectedVerifierBinding(args);
   validateVerificationReceipt(receipt, {
     candidateId: candidate.candidateId,
     candidateRunId: candidate.manifest.ci_run_id,
     policy: RELEASE_SMOKE_POLICY,
+    ...(binding.verifierWorkflowSha
+      ? { verifierWorkflowSha: binding.verifierWorkflowSha }
+      : {}),
+    ...(binding.verificationRunId
+      ? { verificationRunId: binding.verificationRunId }
+      : {}),
   });
   return receipt;
+}
+
+function expectedVerifierBinding(args: string[] = []): {
+  verifierWorkflowSha?: string;
+  verificationRunId?: string;
+} {
+  const verifierWorkflowSha = flagValue(args, "--verifier-workflow-sha") ??
+    Deno.env.get("UGOITE_VERIFIER_WORKFLOW_SHA") ??
+    Deno.env.get("GITHUB_WORKFLOW_SHA");
+  const verificationRunId = flagValue(args, "--verification-run-id") ??
+    Deno.env.get("UGOITE_VERIFICATION_RUN_ID") ??
+    Deno.env.get("GITHUB_RUN_ID");
+  return {
+    ...(verifierWorkflowSha ? { verifierWorkflowSha } : {}),
+    ...(verificationRunId ? { verificationRunId } : {}),
+  };
 }
 
 async function verifyCandidateAssets(
@@ -828,6 +855,7 @@ async function isSameFile(
 async function promote(
   candidate: VerifiedCandidate,
   receiptPath: string,
+  args: string[] = [],
 ): Promise<void> {
   if (Deno.env.get("UGOITE_PROMOTION_DRY_RUN") === "true") {
     console.log(
@@ -838,7 +866,11 @@ async function promote(
   const version = candidate.manifest.version;
   const stableTag = `v${version}`;
   const draftTag = candidateDraftTag(candidate);
-  const releaseAssets = await prepareReleaseAssets(candidate, receiptPath);
+  const releaseAssets = await prepareReleaseAssets(
+    candidate,
+    receiptPath,
+    args,
+  );
   const releaseFiles = [
     candidate.manifestPath,
     ...releaseAssets,
@@ -1017,6 +1049,7 @@ async function ensureStableRelease(
 async function prepareReleaseAssets(
   candidate: VerifiedCandidate,
   receiptPath: string,
+  args: string[] = [],
 ): Promise<string[]> {
   const directory = dirname(candidate.manifestPath);
   const idPath = pathJoin(directory, "candidate-id.txt");
@@ -1045,10 +1078,17 @@ async function prepareReleaseAssets(
   const receipt = parseVerificationReceipt(
     JSON.parse(await Deno.readTextFile(receiptPath)),
   );
+  const binding = expectedVerifierBinding(args);
   validateVerificationReceipt(receipt, {
     candidateId: candidate.candidateId,
     candidateRunId: candidate.manifest.ci_run_id,
     policy: RELEASE_SMOKE_POLICY,
+    ...(binding.verifierWorkflowSha
+      ? { verifierWorkflowSha: binding.verifierWorkflowSha }
+      : {}),
+    ...(binding.verificationRunId
+      ? { verificationRunId: binding.verificationRunId }
+      : {}),
   });
   const publicManifest = {
     schema_version: 3,

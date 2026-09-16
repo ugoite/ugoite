@@ -26,8 +26,17 @@ mise run test
 ```
 
 Run `mise run e2e:smoke` for a representative browser/container path and `mise run e2e` for the full suite.
-For CLI-only changes, `mise run test:cli` gives a faster package-focused loop before the full workspace tests.
+For CLI-only changes, `mise run test:smoke` gives a faster package-focused loop before the full workspace tests.
 `mise run test:rust` is the canonical Rust test interface: unit and integration tests run with cargo-nextest, while Rust doctests run separately through Cargo.
+
+`mise run test` is the authoritative non-E2E suite and remains the CI
+authority (hosted lanes compose it via `ci:lane:*`; they never invoke the
+low-memory variant directly). On memory-constrained hosts, `mise run
+test:low-memory` runs the same suites sequentially with the same
+assertions/coverage/type/no-skip policy as `test`: `MISE_JOBS=1`,
+`CARGO_BUILD_JOBS=1`, `cargo -j1`, and Vitest single worker with no file
+parallelism for frontend and docsite. Prefer normal `mise run test` when
+memory allows; use `test:low-memory` only as a local fallback.
 
 ## Responsibility boundaries
 

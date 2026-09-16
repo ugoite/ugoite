@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert/equals";
+import { parse } from "yaml";
 
 const root = new URL("../", import.meta.url);
 
@@ -162,7 +163,19 @@ Deno.test("REQ-OPS-044: repository-native release tasks and split workflows are 
     true,
   );
   assertEquals(
-    distributionVerifier.includes("manifest.npm_package.digest"),
+    distributionVerifier.includes("tools/distribution.ts"),
+    true,
+  );
+  assertEquals(
+    distributionVerifier.includes("verify-manifest"),
+    true,
+  );
+  assertEquals(
+    distributionVerifier.includes("check-asset-set"),
+    true,
+  );
+  assertEquals(
+    distributionVerifier.includes("manifest-digest"),
     true,
   );
   assertEquals(
@@ -457,5 +470,162 @@ Deno.test("REQ-OPS-044: candidate writer records every promotion surface", async
   assertEquals(
     new Set(manifest.artifacts.map((artifact) => artifact.kind)),
     new Set(["cli", "npm", "helm", "image", "release"]),
+  );
+});
+
+Deno.test("REQ-OPS-044: release-publish promotion flows through distribution verification to release notes before mutable aliases", async () => {
+  const workflow = parse(
+    await readText(".github/workflows/release-publish.yml"),
+  ) as {
+    jobs?: Record<string, { needs?: string | string[] }>;
+  };
+  const jobs = workflow.jobs ?? {};
+  const needsOf = (job: string): string[] => {
+    const needs = jobs[job]?.needs;
+    if (needs === undefined) return [];
+    return Array.isArray(needs) ? needs : [needs];
+  };
+  for (
+    const job of [
+      "preflight",
+      "promote",
+      "verify-distribution",
+      "publish-channel-release-notes",
+      "promote-aliases",
+    ]
+  ) {
+    assertEquals(job in jobs, true, job);
+  }
+  assertEquals(needsOf("promote").includes("preflight"), true);
+  assertEquals(needsOf("verify-distribution").includes("promote"), true);
+  const notesNeeds = needsOf("publish-channel-release-notes");
+  assertEquals(notesNeeds.includes("promote"), true);
+  assertEquals(notesNeeds.includes("verify-distribution"), true);
+  const aliasNeeds = needsOf("promote-aliases");
+  assertEquals(aliasNeeds.includes("promote"), true);
+  assertEquals(aliasNeeds.includes("verify-distribution"), true);
+  assertEquals(aliasNeeds.includes("publish-channel-release-notes"), true);
+});
+
+Deno.test("REQ-OPS-044: publish preflight proves candidate provenance via the Actions API while the manifest stays authoritative", async () => {
+  const publish = await readText(".github/workflows/release-publish.yml");
+  for (
+    const marker of [
+      "Verify candidate run provenance via Actions API",
+      "actions/runs/",
+      "Release Candidate",
+      ".github/workflows/release-candidate.yml",
+      "head_sha",
+      'test "$run_conclusion" = "success"',
+      "candidate manifest stays the artifact authority",
+    ]
+  ) assertEquals(publish.includes(marker), true, marker);
+});
+
+Deno.test("REQ-OPS-044: cross-artifact ledger is rerunnable from the exact tag with documented Helm vs OCI semantics", async () => {
+  const distribution = await readText("tools/distribution.ts");
+  for (
+    const marker of [
+      "buildCrossArtifactLedger",
+      "verifyCrossArtifactLedger",
+      "build-ledger",
+      "verify-ledger",
+      "gh attestation verify",
+      "helm_oci_note",
+    ]
+  ) assertEquals(distribution.includes(marker), true, marker);
+  const contract = await readText(
+    "docs/architecture/release/release-contract.md",
+  );
+  for (
+    const marker of [
+      "Cross-artifact ledger",
+      "build-ledger",
+      "Helm-archive vs OCI-descriptor",
+      "comparing pulled bytes",
+    ]
+  ) assertEquals(contract.includes(marker), true, marker);
+  // Rerunnable: identical tag inputs yield identical ledger bytes.
+  const first = await new Deno.Command(Deno.execPath(), {
+    args: [
+      "run",
+      "-A",
+      "tools/distribution.ts",
+      "build-ledger",
+      "--tag",
+      "v0.1.0",
+      "--version",
+      "0.1.0",
+      "--source-sha",
+      "a".repeat(40),
+      "--candidate-id",
+      `sha256:${"b".repeat(64)}`,
+      "--cli-name",
+      "ugoite-v0.1.0-x86_64-unknown-linux-gnu.tar.gz",
+      "--cli-sha256",
+      "e".repeat(64),
+      "--cli-size",
+      "3",
+      "--npm-spec",
+      "@ugoite/ugoite@0.1.0",
+      "--npm-sha256",
+      "f".repeat(64),
+      "--helm-name",
+      "ugoite-0.1.0.tgz",
+      "--helm-sha256",
+      "a".repeat(64),
+      "--helm-size",
+      "5",
+      "--image-repository",
+      "ghcr.io/ugoite/ugoite",
+      "--image-digest",
+      `sha256:${"c".repeat(64)}`,
+    ],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  assertEquals(first.success, true, new TextDecoder().decode(first.stderr));
+  const second = await new Deno.Command(Deno.execPath(), {
+    args: [
+      "run",
+      "-A",
+      "tools/distribution.ts",
+      "build-ledger",
+      "--tag",
+      "v0.1.0",
+      "--version",
+      "0.1.0",
+      "--source-sha",
+      "a".repeat(40),
+      "--candidate-id",
+      `sha256:${"b".repeat(64)}`,
+      "--cli-name",
+      "ugoite-v0.1.0-x86_64-unknown-linux-gnu.tar.gz",
+      "--cli-sha256",
+      "e".repeat(64),
+      "--cli-size",
+      "3",
+      "--npm-spec",
+      "@ugoite/ugoite@0.1.0",
+      "--npm-sha256",
+      "f".repeat(64),
+      "--helm-name",
+      "ugoite-0.1.0.tgz",
+      "--helm-sha256",
+      "a".repeat(64),
+      "--helm-size",
+      "5",
+      "--image-repository",
+      "ghcr.io/ugoite/ugoite",
+      "--image-digest",
+      `sha256:${"c".repeat(64)}`,
+    ],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  assertEquals(second.success, true, new TextDecoder().decode(second.stderr));
+  assertEquals(
+    new TextDecoder().decode(first.stdout),
+    new TextDecoder().decode(second.stdout),
   );
 });
