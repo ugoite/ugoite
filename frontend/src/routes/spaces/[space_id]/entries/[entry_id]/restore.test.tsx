@@ -27,9 +27,11 @@ describe("legacy entry restore route", () => {
       "/spaces/default/entries/entry-1/history",
       { replace: true },
     );
-    expect(screen.getByRole("link")).toHaveAttribute(
+    const backLink = screen.getByRole("link", { name: "Back to history" });
+    expect(backLink).toHaveAttribute(
       "href",
       "/spaces/default/entries/entry-1/history",
     );
+    expect(screen.getByRole("status")).toHaveTextContent("Loading history...");
   });
 });

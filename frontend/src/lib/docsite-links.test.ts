@@ -66,6 +66,29 @@ describe("docsite links", () => {
     ).toBe("/docs/guide/operate/storage/space-settings-storage");
   });
 
+  it("REQ-FE-056: browser-first-entry walkthrough honors the local origin during development", () => {
+    expect(
+      getDocsiteHref(
+        "/docs/guide/start/browser-first-entry",
+        "docs/guide/start/browser-first-entry.md",
+        {
+          NODE_ENV: "development",
+        },
+      ),
+    ).toBe("http://localhost:4321/docs/guide/start/browser-first-entry");
+    expect(
+      getDocsiteHref(
+        "/docs/guide/start/browser-first-entry",
+        "docs/guide/start/browser-first-entry.md",
+        {
+          NODE_ENV: "test",
+        },
+      ),
+    ).toBe(
+      "https://ugoite.github.io/ugoite/docs/guide/start/browser-first-entry",
+    );
+  });
+
   it("REQ-FE-056: auth guidance still resolves when process env is unavailable", () => {
     vi.stubGlobal("process", undefined);
     expect(getDocsiteHref("/docs/guide/develop/local-dev-auth-login")).toBe(

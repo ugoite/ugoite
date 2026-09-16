@@ -197,6 +197,58 @@ function formatCsvValues(entry: EntryRecord, headers: string[]) {
 }
 /* v8 ignore stop */
 
+/**
+ * Per-call budget for one `encodeSpreadsheetCsv` WASM request. Mirrors the
+ * 256 KiB JSON protocol input limit enforced by the Rust/WASM bridge, so a
+ * large Form export stays a bounded sequence of small requests instead of a
+ * single oversized one. CSV encoding is row-independent (cells encode alone,
+ * rows join with CRLF), so joining chunk outputs reproduces the single-call
+ * bytes exactly.
+ */
+export const CSV_EXPORT_WASM_JSON_LIMIT_BYTES = 256 * 1024;
+
+const estimateCsvJsonBytes = (rows: readonly (readonly string[])[]): number =>
+  new TextEncoder().encode(JSON.stringify(rows)).length;
+
+/** Split data rows into chunks that each fit one WASM encode request. */
+export function chunkCsvRowsForExport(
+  headers: readonly string[],
+  dataRows: readonly (readonly string[])[],
+  limitBytes: number = CSV_EXPORT_WASM_JSON_LIMIT_BYTES,
+): readonly (readonly string[])[][] {
+  const headerBytes = estimateCsvJsonBytes([headers]);
+  const chunks: readonly (readonly string[])[][] = [];
+  let current: (readonly string[])[] = [];
+  let currentBytes = headerBytes;
+  for (const row of dataRows) {
+    const rowBytes = estimateCsvJsonBytes([row]);
+    if (current.length > 0 && currentBytes + rowBytes > limitBytes) {
+      chunks.push(current);
+      current = [];
+      currentBytes = headerBytes;
+    }
+    current.push(row);
+    currentBytes += rowBytes;
+  }
+  chunks.push(current);
+  return chunks;
+}
+
+/** Encode all rows in bounded WASM requests and join with CRLF. */
+export async function encodeSpreadsheetCsvChunked(
+  headers: readonly string[],
+  dataRows: readonly (readonly string[])[],
+  limitBytes: number = CSV_EXPORT_WASM_JSON_LIMIT_BYTES,
+): Promise<string> {
+  const chunks = chunkCsvRowsForExport(headers, dataRows, limitBytes);
+  const parts: string[] = [];
+  for (const [index, chunk] of chunks.entries()) {
+    const rows = index === 0 ? [headers, ...chunk] : chunk;
+    parts.push(await encodeSpreadsheetCsv(rows));
+  }
+  return parts.join("\r\n");
+}
+
 export function FormTable(props: FormTableProps) {
   let sortMenuRef: HTMLDivElement | undefined;
   let filterToggleRef: HTMLButtonElement | undefined;
@@ -344,11 +396,12 @@ export function FormTable(props: FormTableProps) {
       }));
 
       const headers = ["title", ...fieldNames, "updated_at"];
+      const dataRows = data.map((entry) => formatCsvValues(entry, headers));
       /* v8 ignore start */
-      const csvContent = await encodeSpreadsheetCsv([
+      const csvContent = await encodeSpreadsheetCsvChunked(
         headers,
-        ...data.map((entry) => formatCsvValues(entry, headers)),
-      ]);
+        dataRows,
+      );
       /* v8 ignore stop */
 
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });

@@ -88,6 +88,37 @@ test.describe("Mobile UI regression @screenshot", () => {
     test.setTimeout(120_000);
     await runMobileRegression(page, spaceId, entryId, viewports[1]);
   });
+
+  test("REQ-E2E-003: keeps one Forms workspace list across desktop and mobile viewports", async ({ page }) => {
+    // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/spaces/${spaceId}/forms`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.locator(".formsPage").waitFor({ state: "visible" });
+    await expect(page.getByRole("heading", { name: "Forms" })).toBeVisible();
+    await expect(page.locator(".formRow").first()).toBeVisible();
+    await expect(page.locator(".entriesList")).toBeVisible();
+    await expect(page.locator(".mobileFormPicker")).toHaveCount(0);
+    await expect(page.locator(".desktopFormPicker")).toHaveCount(0);
+    await expect(page.locator(".formsPage select")).toHaveCount(0);
+    await expectNoHorizontalOverflow(page);
+
+    await page.setViewportSize(viewports[0]);
+    await page.goto(`/spaces/${spaceId}/forms`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.locator(".formsPage").waitFor({ state: "visible" });
+    await expect(page.getByRole("heading", { name: "Forms" })).toBeVisible();
+    await expect(page.locator(".formRow").first()).toBeVisible();
+    await expect(page.locator(".entriesList")).toBeVisible();
+    await expect(page.locator(".mobileFormPicker")).toHaveCount(0);
+    await expect(page.locator(".desktopFormPicker")).toHaveCount(0);
+    await expect(page.locator(".bottomNav")).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await expectNoObjectCoercion(page);
+  });
 });
 
 async function runMobileRegression(

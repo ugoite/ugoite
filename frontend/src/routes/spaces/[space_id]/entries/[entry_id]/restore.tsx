@@ -17,6 +17,7 @@ export default function SpaceEntryRestoreRedirectRoute() {
     }/history`;
 
   onMount(() => {
+    if (!params.space_id || !params.entry_id) return;
     navigate(historyPath(), { replace: true });
   });
 
@@ -27,8 +28,9 @@ export default function SpaceEntryRestoreRedirectRoute() {
         <h1>{t("entryHistory.title")}</h1>
       </div>
       <A href={historyPath()} class="btn">
-        {t("entryHistory.backToEntry")}
+        {t("entryRevision.backToHistory")}
       </A>
+      <p class="text-sm ui-muted" role="status">{t("entryHistory.loading")}</p>
     </div>
   );
 }

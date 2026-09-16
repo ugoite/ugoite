@@ -367,4 +367,74 @@ describe("/spaces/:space_id/entries", () => {
     expect(await screen.findByRole("link", { name: "フォームへ戻る" }))
       .toBeInTheDocument();
   });
+
+  it("prefers the SQL session over the route form when both are present", async () => {
+    searchParams.session = "session-1";
+    searchParams.form = "Notes";
+    let formQueried = false;
+    server.use(
+      http.get(
+        testApiUrl("/spaces/default/sql-sessions/session-1"),
+        () =>
+          HttpResponse.json({
+            id: "session-1",
+            space_id: "default",
+            sql_id: "query-1",
+            sql: "SELECT 1",
+            status: "ready",
+            created_at: "2026-03-01T00:00:00Z",
+            expires_at: "2026-03-01T01:00:00Z",
+          }),
+      ),
+      http.get(
+        testApiUrl("/spaces/default/sql-sessions/session-1/rows"),
+        () =>
+          HttpResponse.json({
+            rows: [{
+              _ugoite_id: "session-entry",
+              _ugoite_title: "Session Entry",
+              _ugoite_updated_at: 1772960822.056,
+            }],
+            offset: 0,
+            limit: 24,
+            total_count: 1,
+          }),
+      ),
+      http.post(
+        testApiUrl("/spaces/default/query"),
+        () => {
+          formQueried = true;
+          return HttpResponse.json([]);
+        },
+      ),
+    );
+
+    renderRoute([noteForm]);
+
+    expect(await screen.findByRole("heading", { name: "Query Results" }))
+      .toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Session Entry/ }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Notes" })).not
+      .toBeInTheDocument();
+    expect(formQueried).toBe(false);
+  });
+
+  it("form scope: shows a helpful hint for an unknown form name", async () => {
+    searchParams.form = "Missing";
+    server.use(
+      http.post(
+        testApiUrl("/spaces/default/query"),
+        () => HttpResponse.json([]),
+      ),
+    );
+
+    renderRoute([noteForm]);
+
+    expect(await screen.findByRole("heading", { name: "Missing" }))
+      .toBeInTheDocument();
+    expect(await screen.findByText(/No such form “Missing”/))
+      .toBeInTheDocument();
+    expect(screen.queryByText("No entries found.")).not.toBeInTheDocument();
+  });
 });
