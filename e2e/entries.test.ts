@@ -567,9 +567,15 @@ test.describe("Entries CRUD", () => {
 					buffer: Buffer.from("b"),
 				},
 			]);
-			await expect(
-				page.getByText("Uploaded; entry not saved yet"),
-			).toHaveCount(3, { timeout: 15_000 });
+		await expect(
+			page.getByRole("button", { name: "Preview thumbnail.txt" }),
+		).toBeVisible({ timeout: 15_000 });
+		await expect(
+			page.getByRole("button", { name: "Preview microscope-a.txt" }),
+		).toBeVisible({ timeout: 15_000 });
+		await expect(
+			page.getByRole("button", { name: "Preview microscope-b.txt" }),
+		).toBeVisible({ timeout: 15_000 });
 			const createResponse = page.waitForResponse(
 				(response) =>
 					response.request().method() === "POST" &&
@@ -600,8 +606,10 @@ test.describe("Entries CRUD", () => {
 			expect(mediaEntry.content).toContain('"name":"microscope-a.txt"');
 			expect(mediaEntry.content).toContain('"name":"microscope-b.txt"');
 
-			await page.reload({ waitUntil: "domcontentloaded" });
-			await expect(page.getByText("thumbnail.txt")).toBeVisible();
+		await page.reload({ waitUntil: "domcontentloaded" });
+		await expect(
+			page.getByRole("button", { name: "Preview thumbnail.txt" }),
+		).toBeVisible();
 			const readResponse = page.waitForResponse(
 				(response) => {
 					const requestEvent = response.request();
@@ -613,7 +621,7 @@ test.describe("Entries CRUD", () => {
 				},
 				{ timeout: 15_000 },
 			);
-			await thumbnail.getByRole("button", { name: "Download" }).click();
+			await thumbnail.getByRole("button", { name: "Download thumbnail.txt" }).click();
 			const assetReadResponse = await readResponse;
 			expect(assetReadResponse.status()).toBe(200);
 			expect(await assetReadResponse.body()).toEqual(Buffer.from("thumbnail"));
@@ -629,7 +637,7 @@ test.describe("Entries CRUD", () => {
 				},
 				{ timeout: 15_000 },
 			);
-			await thumbnail.getByRole("button", { name: "Preview" }).click();
+			await thumbnail.getByRole("button", { name: "Preview thumbnail.txt" }).click();
 			expect((await previewResponse).status()).toBe(200);
 			const previewDialog = page.getByRole("dialog", {
 				name: "thumbnail.txt",
@@ -645,9 +653,13 @@ test.describe("Entries CRUD", () => {
 				mimeType: "text/plain",
 				buffer: Buffer.from("replacement"),
 			});
-			await expect(page.getByText("Uploaded; entry not saved yet")).toHaveCount(1, {
-				timeout: 15_000,
-			});
+		await expect(
+			page.getByRole("button", {
+				name: "Preview thumbnail-replaced.txt",
+			}),
+		).toBeVisible({
+			timeout: 15_000,
+		});
 			const replaceResponse = page.waitForResponse(
 				(response) =>
 					response.request().method() === "PUT" &&
@@ -681,10 +693,13 @@ test.describe("Entries CRUD", () => {
 				mediaEntry.content.indexOf('"name":"microscope-b.txt"'),
 			).toBeLessThan(mediaEntry.content.indexOf('"name":"microscope-a.txt"'));
 
-			const removeMicroscopeB = orderedList
-				.locator(".ui-asset-item")
-				.filter({ hasText: "microscope-b.txt" })
-				.getByRole("button", { name: "Remove" });
+		const removeMicroscopeB = orderedList
+			.locator(".ui-asset-item", {
+				has: page.getByRole("button", {
+					name: "Preview microscope-b.txt",
+				}),
+			})
+			.getByRole("button", { name: "Remove" });
 			await expect(removeMicroscopeB).toBeVisible({ timeout: 15_000 });
 			await expect(removeMicroscopeB).toBeEnabled({ timeout: 15_000 });
 			await removeMicroscopeB.click({ timeout: 15_000 });
@@ -726,9 +741,12 @@ test.describe("Entries CRUD", () => {
 				mimeType: "text/csv",
 				buffer: Buffer.from("raw"),
 			});
-			await expect(
-				page.getByText("Uploaded; entry not saved yet"),
-			).toHaveCount(2, { timeout: 15_000 });
+		await expect(
+			page.getByRole("button", { name: "Preview contract.pdf" }),
+		).toBeVisible({ timeout: 15_000 });
+		await expect(
+			page.getByRole("button", { name: "Preview raw-data.csv" }),
+		).toBeVisible({ timeout: 15_000 });
 			const secondCreateResponse = page.waitForResponse(
 				(response) =>
 					response.request().method() === "POST" &&
