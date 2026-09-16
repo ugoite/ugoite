@@ -1,4 +1,9 @@
-import type { Browser, BrowserContext, Page } from "@playwright/test";
+import type {
+  Browser,
+  BrowserContext,
+  CDPSession,
+  Page,
+} from "@playwright/test";
 import {
   addVirtualAuthenticator,
   removeVirtualAuthenticator,
@@ -7,6 +12,14 @@ import {
 export type IsolatedPasskeyPage = {
   target: BrowserContext;
   page: Page;
+  /**
+   * CDP session with WebAuthn enabled, for credential assertions
+   * (`WebAuthn.getCredentials`) on long journeys. The session belongs to
+   * `target`; `close` disables WebAuthn, so callers must not close it.
+   */
+  cdp: CDPSession;
+  /** Virtual authenticator owned by this page; removed by `close`. */
+  authenticatorId: string;
   /** Tears down the authenticator, the WebAuthn session, and the context. */
   close: () => Promise<void>;
 };
@@ -14,12 +27,16 @@ export type IsolatedPasskeyPage = {
 /**
  * Opens a security-ceremony page on fully isolated browser state.
  *
- * Passkey, invitation, and recovery journeys must not inherit authenticator
- * or event-loop state from prior tests: the context starts with empty
- * cookies/origins, gets exactly one virtual authenticator, and `close`
- * removes that authenticator and disables WebAuthn before closing the
- * context, even when the journey itself failed. Teardown steps are
+ * Passkey, invitation, OIDC, and recovery journeys must not inherit
+ * authenticator or event-loop state from prior tests: the context starts
+ * with empty cookies/origins, gets exactly one virtual authenticator, and
+ * `close` removes that authenticator and disables WebAuthn before closing
+ * the context, even when the journey itself failed. Teardown steps are
  * best-effort so one cleanup failure never masks the journey result.
+ *
+ * Long journeys that need credential assertions must use this helper (via
+ * the exposed `cdp`/`authenticatorId`) instead of a hand-rolled context so
+ * every ceremony path gets identical teardown parity.
  */
 export async function openIsolatedPasskeyPage(
   browser: Browser,
@@ -49,7 +66,7 @@ export async function openIsolatedPasskeyPage(
     }
     await target.close();
   };
-  return { target, page, close };
+  return { target, page, cdp, authenticatorId, close };
 }
 
 const ENVIRONMENT_FAILURE_PATTERNS = [

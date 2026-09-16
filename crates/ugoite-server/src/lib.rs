@@ -11176,13 +11176,32 @@ mod oidc_integration_tests {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     use p256::ecdsa::{signature::Signer, SigningKey};
     use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
     use tokio::net::TcpListener;
 
     #[derive(Clone)]
     struct MockIssuer {
         issuer: String,
         signing_key: SigningKey,
+        /// Key that is never advertised via JWKS; signs tokens that must
+        /// fail signature verification.
+        unknown_signing_key: SigningKey,
         subject: String,
+        tamper: MockTokenTamper,
+        /// Authorization codes to the PKCE challenge presented at
+        /// `/authorize`, so `/token` enforces the S256 verifier like a real
+        /// issuer. Entries are single-use.
+        pkce_challenges: Arc<Mutex<HashMap<String, String>>>,
+    }
+
+    /// Tamper knobs for fail-closed negative tests. The default (all `None` /
+    /// `false`) is the happy-path issuer.
+    #[derive(Clone, Default)]
+    struct MockTokenTamper {
+        nonce_override: Option<String>,
+        issuer_override: Option<String>,
+        audience_override: Option<String>,
+        sign_with_unknown_key: bool,
     }
 
     async fn mock_configuration(State(mock): State<MockIssuer>) -> Json<Value> {
@@ -11202,13 +11221,22 @@ mod oidc_integration_tests {
         redirect_uri: String,
         state: String,
         nonce: String,
+        code_challenge: String,
     }
 
-    async fn mock_authorize(Query(query): Query<MockAuthorizeQuery>) -> Redirect {
+    async fn mock_authorize(
+        State(mock): State<MockIssuer>,
+        Query(query): Query<MockAuthorizeQuery>,
+    ) -> Redirect {
         let mut redirect = url::Url::parse(&query.redirect_uri).expect("mock redirect URI");
+        let code = query.nonce.clone();
+        mock.pkce_challenges
+            .lock()
+            .expect("mock PKCE store")
+            .insert(code.clone(), query.code_challenge);
         redirect
             .query_pairs_mut()
-            .append_pair("code", &query.nonce)
+            .append_pair("code", &code)
             .append_pair("state", &query.state);
         Redirect::temporary(redirect.as_str())
     }
@@ -11216,14 +11244,51 @@ mod oidc_integration_tests {
     async fn mock_token(
         State(mock): State<MockIssuer>,
         Form(form): Form<HashMap<String, String>>,
-    ) -> Json<Value> {
-        let nonce = form.get("code").cloned().unwrap_or_default();
+    ) -> (StatusCode, Json<Value>) {
+        let rejected = |detail: &str| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "invalid_grant", "detail": detail})),
+            )
+        };
+        let code = form.get("code").cloned().unwrap_or_default();
+        let verifier = form.get("code_verifier").cloned().unwrap_or_default();
+        let expected_challenge = mock
+            .pkce_challenges
+            .lock()
+            .expect("mock PKCE store")
+            .remove(&code);
+        match expected_challenge {
+            Some(expected) if !verifier.is_empty() => {
+                let digest = Sha256::digest(verifier.as_bytes());
+                if URL_SAFE_NO_PAD.encode(digest) != expected {
+                    return rejected("pkce_verifier does not match the challenge");
+                }
+            }
+            _ => return rejected("unknown code or missing pkce_verifier"),
+        }
+        let nonce = mock.tamper.nonce_override.clone().unwrap_or(code);
+        let issuer = mock
+            .tamper
+            .issuer_override
+            .clone()
+            .unwrap_or(mock.issuer.clone());
+        let audience = mock
+            .tamper
+            .audience_override
+            .clone()
+            .unwrap_or_else(|| "client".to_string());
+        let signing_key = if mock.tamper.sign_with_unknown_key {
+            &mock.unknown_signing_key
+        } else {
+            &mock.signing_key
+        };
         let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"ES256","kid":"mock-key","typ":"JWT"}"#);
         let payload = URL_SAFE_NO_PAD.encode(
             serde_json::to_vec(&json!({
-                "iss": mock.issuer,
+                "iss": issuer,
                 "sub": mock.subject,
-                "aud": "client",
+                "aud": audience,
                 "exp": Utc::now().timestamp() + 300,
                 "iat": Utc::now().timestamp(),
                 "nonce": nonce
@@ -11231,16 +11296,19 @@ mod oidc_integration_tests {
             .expect("mock ID Token claims"),
         );
         let signing_input = format!("{header}.{payload}");
-        let signature: p256::ecdsa::Signature = mock.signing_key.sign(signing_input.as_bytes());
+        let signature: p256::ecdsa::Signature = signing_key.sign(signing_input.as_bytes());
         let token = format!(
             "{signing_input}.{}",
             URL_SAFE_NO_PAD.encode(signature.to_bytes())
         );
-        Json(json!({
-            "access_token": "mock-upstream-access-token",
-            "token_type": "Bearer",
-            "id_token": token
-        }))
+        (
+            StatusCode::OK,
+            Json(json!({
+                "access_token": "mock-upstream-access-token",
+                "token_type": "Bearer",
+                "id_token": token
+            })),
+        )
     }
 
     async fn mock_jwks(State(mock): State<MockIssuer>) -> Json<Value> {
@@ -11261,13 +11329,24 @@ mod oidc_integration_tests {
     async fn start_mock_issuer(
         subject: &str,
     ) -> anyhow::Result<(MockIssuer, tokio::task::JoinHandle<()>)> {
+        start_mock_issuer_with(subject, MockTokenTamper::default()).await
+    }
+
+    async fn start_mock_issuer_with(
+        subject: &str,
+        tamper: MockTokenTamper,
+    ) -> anyhow::Result<(MockIssuer, tokio::task::JoinHandle<()>)> {
         let signing_key = SigningKey::from_bytes((&[7_u8; 32]).into())?;
+        let unknown_signing_key = SigningKey::from_bytes((&[9_u8; 32]).into())?;
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let issuer = format!("http://{}", listener.local_addr()?);
         let mock = MockIssuer {
             issuer,
             signing_key,
+            unknown_signing_key,
             subject: subject.to_string(),
+            tamper,
+            pkce_challenges: Arc::new(Mutex::new(HashMap::new())),
         };
         let router = Router::new()
             .route("/.well-known/openid-configuration", get(mock_configuration))
@@ -11329,15 +11408,23 @@ mod oidc_integration_tests {
             .identity
             .inspect_test_oidc_attempt(&state_token)
             .await?;
-        let authorization = mock_authorize(Query(MockAuthorizeQuery {
-            redirect_uri: url::Url::parse(location)?
+        let authorize_url = url::Url::parse(location)?;
+        let authorize_param = |name: &str| {
+            authorize_url
                 .query_pairs()
-                .find(|(key, _)| key == "redirect_uri")
+                .find(|(key, _)| key == name)
                 .map(|(_, value)| value.into_owned())
-                .expect("OIDC redirect URI"),
-            state: state_token.clone(),
-            nonce: attempt.nonce.clone(),
-        }))
+                .expect("OIDC authorize parameter")
+        };
+        let authorization = mock_authorize(
+            State(mock.clone()),
+            Query(MockAuthorizeQuery {
+                redirect_uri: authorize_param("redirect_uri"),
+                state: state_token.clone(),
+                nonce: attempt.nonce.clone(),
+                code_challenge: authorize_param("code_challenge"),
+            }),
+        )
         .await;
         let authorization_response = authorization.into_response();
         let authorization_location = authorization_response
@@ -11453,6 +11540,457 @@ mod oidc_integration_tests {
             .iter()
             .all(|link| link.get("issuer").and_then(Value::as_str) == Some(mock.issuer.as_str())));
         server.abort();
+        Ok(())
+    }
+
+    struct NegativeOidcSetup {
+        state: AppState,
+        mock: MockIssuer,
+        server: tokio::task::JoinHandle<()>,
+        actor_id: Uuid,
+        invitation_token: String,
+        provider_id: Uuid,
+    }
+
+    struct DrivenOidcCallback {
+        code: String,
+        state: String,
+        state_hash: String,
+    }
+
+    async fn negative_oidc_setup(
+        subject: &str,
+        tamper: MockTokenTamper,
+    ) -> anyhow::Result<NegativeOidcSetup> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-oidc-negative-{subject}-{}",
+            Uuid::now_v7()
+        ))?;
+        state.initialize_node().await?;
+        let actor_id = Uuid::now_v7();
+        state
+            .identity
+            .seed_test_recovery_accounts(&[(actor_id, Uuid::now_v7(), Uuid::now_v7())])
+            .await?;
+        let (_invitation, invitation_token) = state
+            .identity
+            .issue_invitation(actor_id, "Mock invited account", None, None)
+            .await?;
+        let (mock, server) = start_mock_issuer_with(subject, tamper).await?;
+        let provider_id = Uuid::now_v7();
+        state
+            .identity
+            .seed_test_oidc_provider(ugoite_identity::node_identity::OidcProvider {
+                provider_id,
+                issuer: mock.issuer.clone(),
+                client_id: "client".to_string(),
+                client_secret: None,
+                enabled: true,
+                created_at: Utc::now().to_rfc3339(),
+            })
+            .await?;
+        Ok(NegativeOidcSetup {
+            state,
+            mock,
+            server,
+            actor_id,
+            invitation_token,
+            provider_id,
+        })
+    }
+
+    async fn account_and_session_counts(state: &AppState) -> anyhow::Result<(usize, usize)> {
+        let accounts = state.identity.list_accounts().await?;
+        let mut sessions = 0;
+        for account in &accounts {
+            sessions += state
+                .identity
+                .list_sessions(account.account_id)
+                .await?
+                .len();
+        }
+        Ok((accounts.len(), sessions))
+    }
+
+    async fn start_and_drive_authorize(
+        setup: &NegativeOidcSetup,
+        invitation_token: Option<&str>,
+    ) -> anyhow::Result<DrivenOidcCallback> {
+        let (redirect, state_hash) = start_oidc_authorization(
+            &setup.state,
+            setup.provider_id,
+            invitation_token,
+            None,
+            None,
+        )
+        .await
+        .map_err(|error| anyhow::anyhow!("OIDC start failed: {error:?}"))?;
+        let location = redirect
+            .into_response()
+            .headers()
+            .get(header::LOCATION)
+            .expect("OIDC redirect")
+            .to_str()?
+            .to_string();
+        let authorize_url = url::Url::parse(&location)?;
+        let authorize_param = |name: &str| {
+            authorize_url
+                .query_pairs()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value.into_owned())
+                .expect("OIDC authorize parameter")
+        };
+        let state_token = authorize_param("state");
+        let attempt = setup
+            .state
+            .identity
+            .inspect_test_oidc_attempt(&state_token)
+            .await?;
+        let authorization = mock_authorize(
+            State(setup.mock.clone()),
+            Query(MockAuthorizeQuery {
+                redirect_uri: authorize_param("redirect_uri"),
+                state: state_token.clone(),
+                nonce: attempt.nonce.clone(),
+                code_challenge: authorize_param("code_challenge"),
+            }),
+        )
+        .await;
+        let authorization_location = authorization
+            .into_response()
+            .headers()
+            .get(header::LOCATION)
+            .expect("mock authorization callback")
+            .to_str()?
+            .to_string();
+        let callback_url = url::Url::parse(&authorization_location)?;
+        let callback_param = |name: &str| {
+            callback_url
+                .query_pairs()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value.into_owned())
+                .expect("mock authorization callback parameter")
+        };
+        Ok(DrivenOidcCallback {
+            code: callback_param("code"),
+            state: callback_param("state"),
+            state_hash,
+        })
+    }
+
+    fn oidc_callback_headers(state_hash: &str) -> HeaderMap {
+        [(
+            header::COOKIE,
+            HeaderValue::from_str(&format!("{OIDC_STATE_COOKIE}={state_hash}"))
+                .expect("OIDC state cookie"),
+        )]
+        .into_iter()
+        .collect()
+    }
+
+    async fn invoke_driven_callback(
+        setup: &NegativeOidcSetup,
+        driven: &DrivenOidcCallback,
+    ) -> Result<Response, ApiError> {
+        oidc_callback(
+            State(setup.state.clone()),
+            oidc_callback_headers(&driven.state_hash),
+            Query(OidcCallbackQuery {
+                code: Some(driven.code.clone()),
+                state: driven.state.clone(),
+                error: None,
+            }),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn oidc_callback_rejects_pkce_mismatch_without_mutation() -> anyhow::Result<()> {
+        let setup =
+            negative_oidc_setup("pkce-mismatch-subject", MockTokenTamper::default()).await?;
+        let before = account_and_session_counts(&setup.state).await?;
+        let driven = start_and_drive_authorize(&setup, Some(&setup.invitation_token)).await?;
+        // Tamper the stored verifier so the token exchange presents the
+        // wrong PKCE proof for the challenged code.
+        let attempt = setup
+            .state
+            .identity
+            .inspect_test_oidc_attempt(&driven.state)
+            .await?;
+        setup
+            .state
+            .identity
+            .save_oidc_attempt(
+                setup.provider_id,
+                &driven.state,
+                &attempt.nonce,
+                "tampered-verifier",
+                Some(&setup.invitation_token),
+                None,
+            )
+            .await?;
+        assert!(
+            invoke_driven_callback(&setup, &driven).await.is_err(),
+            "PKCE mismatch must fail closed"
+        );
+        assert_eq!(
+            account_and_session_counts(&setup.state).await?,
+            before,
+            "PKCE mismatch must not create accounts or sessions"
+        );
+        assert!(
+            invoke_driven_callback(&setup, &driven).await.is_err(),
+            "consumed attempt must not be replayable"
+        );
+        setup.server.abort();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oidc_callback_rejects_nonce_mismatch_without_mutation() -> anyhow::Result<()> {
+        let setup =
+            negative_oidc_setup("nonce-mismatch-subject", MockTokenTamper::default()).await?;
+        let before = account_and_session_counts(&setup.state).await?;
+        let driven = start_and_drive_authorize(&setup, Some(&setup.invitation_token)).await?;
+        // The issued token carries the original nonce; the stored attempt
+        // now expects a different one.
+        let attempt = setup
+            .state
+            .identity
+            .inspect_test_oidc_attempt(&driven.state)
+            .await?;
+        setup
+            .state
+            .identity
+            .save_oidc_attempt(
+                setup.provider_id,
+                &driven.state,
+                "tampered-nonce",
+                &attempt.pkce_verifier,
+                Some(&setup.invitation_token),
+                None,
+            )
+            .await?;
+        assert!(
+            invoke_driven_callback(&setup, &driven).await.is_err(),
+            "nonce mismatch must fail closed"
+        );
+        assert_eq!(
+            account_and_session_counts(&setup.state).await?,
+            before,
+            "nonce mismatch must not create accounts or sessions"
+        );
+        assert!(
+            invoke_driven_callback(&setup, &driven).await.is_err(),
+            "consumed attempt must not be replayable"
+        );
+        setup.server.abort();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oidc_callback_rejects_unknown_signature_without_mutation() -> anyhow::Result<()> {
+        let setup = negative_oidc_setup(
+            "bad-signature-subject",
+            MockTokenTamper {
+                sign_with_unknown_key: true,
+                ..MockTokenTamper::default()
+            },
+        )
+        .await?;
+        let before = account_and_session_counts(&setup.state).await?;
+        let driven = start_and_drive_authorize(&setup, Some(&setup.invitation_token)).await?;
+        assert!(
+            invoke_driven_callback(&setup, &driven).await.is_err(),
+            "unknown signature must fail closed"
+        );
+        assert_eq!(
+            account_and_session_counts(&setup.state).await?,
+            before,
+            "unknown signature must not create accounts or sessions"
+        );
+        assert!(
+            invoke_driven_callback(&setup, &driven).await.is_err(),
+            "consumed attempt must not be replayable"
+        );
+        setup.server.abort();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oidc_callback_rejects_issuer_mismatch_without_mutation() -> anyhow::Result<()> {
+        let setup = negative_oidc_setup(
+            "issuer-mismatch-subject",
+            MockTokenTamper {
+                issuer_override: Some("https://issuer-mismatch.example".to_string()),
+                ..MockTokenTamper::default()
+            },
+        )
+        .await?;
+        let before = account_and_session_counts(&setup.state).await?;
+        let driven = start_and_drive_authorize(&setup, Some(&setup.invitation_token)).await?;
+        assert!(
+            invoke_driven_callback(&setup, &driven).await.is_err(),
+            "issuer mismatch must fail closed"
+        );
+        assert_eq!(
+            account_and_session_counts(&setup.state).await?,
+            before,
+            "issuer mismatch must not create accounts or sessions"
+        );
+        assert!(
+            invoke_driven_callback(&setup, &driven).await.is_err(),
+            "consumed attempt must not be replayable"
+        );
+        setup.server.abort();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oidc_callback_rejects_audience_mismatch_without_mutation() -> anyhow::Result<()> {
+        let setup = negative_oidc_setup(
+            "audience-mismatch-subject",
+            MockTokenTamper {
+                audience_override: Some("someone-elses-client".to_string()),
+                ..MockTokenTamper::default()
+            },
+        )
+        .await?;
+        let before = account_and_session_counts(&setup.state).await?;
+        let driven = start_and_drive_authorize(&setup, Some(&setup.invitation_token)).await?;
+        assert!(
+            invoke_driven_callback(&setup, &driven).await.is_err(),
+            "audience mismatch must fail closed"
+        );
+        assert_eq!(
+            account_and_session_counts(&setup.state).await?,
+            before,
+            "audience mismatch must not create accounts or sessions"
+        );
+        assert!(
+            invoke_driven_callback(&setup, &driven).await.is_err(),
+            "consumed attempt must not be replayable"
+        );
+        setup.server.abort();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oidc_callback_rejects_disabled_provider_in_flight_without_mutation(
+    ) -> anyhow::Result<()> {
+        let setup =
+            negative_oidc_setup("disabled-inflight-subject", MockTokenTamper::default()).await?;
+        let before = account_and_session_counts(&setup.state).await?;
+        let driven = start_and_drive_authorize(&setup, Some(&setup.invitation_token)).await?;
+        // The provider is disabled after the attempt is in flight but before
+        // the callback arrives; the full callback path must fail closed.
+        setup
+            .state
+            .identity
+            .disable_oidc_provider(setup.actor_id, setup.provider_id)
+            .await?;
+        assert!(
+            invoke_driven_callback(&setup, &driven).await.is_err(),
+            "disabled in-flight provider must fail closed"
+        );
+        assert_eq!(
+            account_and_session_counts(&setup.state).await?,
+            before,
+            "disabled in-flight callback must not create accounts or sessions"
+        );
+        assert!(
+            invoke_driven_callback(&setup, &driven).await.is_err(),
+            "consumed attempt must not be replayable"
+        );
+        setup.server.abort();
+        Ok(())
+    }
+
+    fn driven_session_token(response: &Response) -> anyhow::Result<String> {
+        let cookie = response
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .find_map(|value| {
+                value
+                    .to_str()
+                    .ok()
+                    .filter(|value| value.starts_with("ugoite_session="))
+            })
+            .ok_or_else(|| anyhow::anyhow!("federated session cookie is missing"))?;
+        cookie
+            .strip_prefix("ugoite_session=")
+            .and_then(|value| value.split(';').next())
+            .map(str::to_string)
+            .ok_or_else(|| anyhow::anyhow!("malformed federated session cookie"))
+    }
+
+    #[tokio::test]
+    async fn oidc_invitation_login_then_logout_login_returns_same_account() -> anyhow::Result<()> {
+        // Server-level half of the primary browser journey
+        // (e2e/oidc-invitation-journey.test.ts): invitation OIDC login creates
+        // the HumanAccount with a federated bootstrap session, and a later
+        // login with the same upstream subject returns that same account.
+        // The browser test additionally covers first-Passkey bootstrap and
+        // the Space Principal binding, which need a real WebAuthn ceremony.
+        let setup = negative_oidc_setup("journey-subject", MockTokenTamper::default()).await?;
+        let first = start_and_drive_authorize(&setup, Some(&setup.invitation_token)).await?;
+        let first_response = invoke_driven_callback(&setup, &first)
+            .await
+            .map_err(|error| anyhow::anyhow!("invitation OIDC callback failed: {error:?}"))?;
+        assert_eq!(first_response.status(), StatusCode::SEE_OTHER);
+        let first_token = driven_session_token(&first_response)?;
+        let first_session = setup
+            .state
+            .identity
+            .authenticate_session(&first_token)
+            .await?;
+        assert!(matches!(first_session.assurance, AssuranceLevel::Federated));
+        assert!(first_session.passkey_bootstrap);
+        let account_id = first_session.account.account_id;
+
+        setup.state.identity.revoke_session(&first_token).await?;
+        assert!(
+            setup
+                .state
+                .identity
+                .authenticate_session(&first_token)
+                .await
+                .is_err(),
+            "revoked session must not authenticate"
+        );
+
+        let second = start_and_drive_authorize(&setup, None).await?;
+        let second_response = invoke_driven_callback(&setup, &second)
+            .await
+            .map_err(|error| anyhow::anyhow!("returning OIDC login failed: {error:?}"))?;
+        assert_eq!(second_response.status(), StatusCode::SEE_OTHER);
+        let second_token = driven_session_token(&second_response)?;
+        assert_ne!(second_token, first_token);
+        let second_session = setup
+            .state
+            .identity
+            .authenticate_session(&second_token)
+            .await?;
+        assert_eq!(second_session.account.account_id, account_id);
+        assert!(!second_session.passkey_bootstrap);
+
+        let accounts = setup.state.identity.list_accounts().await?;
+        assert_eq!(
+            accounts
+                .iter()
+                .filter(|account| account.display_name == "Mock invited account")
+                .count(),
+            1,
+            "the journey must not duplicate the HumanAccount"
+        );
+        let links = setup.state.identity.list_oidc_links(account_id).await?;
+        assert_eq!(links.len(), 1);
+        assert_eq!(
+            links[0].get("issuer").and_then(Value::as_str),
+            Some(setup.mock.issuer.as_str())
+        );
+        setup.server.abort();
         Ok(())
     }
 
