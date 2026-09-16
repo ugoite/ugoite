@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { sqlApi, sqlSessionApi } from "~/lib/ugoite-client";
 import { normalizeSqlVariables } from "~/lib/sql";
 import { createResource } from "~/lib/recoverable-resource";
@@ -86,8 +87,9 @@ export default function SpaceQueryVariablesRoute() {
         </div>
       </div>
 
+      {/* Panel-local spinner: loaded variables stay mounted on refetch. */}
       <Show when={entry.loading}>
-        <p class="text-sm ui-muted mt-4">{t("sqlPage.loadingVariables")}</p>
+        <LocalBusyIndicator label={t("sqlPage.loadingVariables")} />
       </Show>
       <Show when={entry.error}>
         <p class="text-sm ui-text-danger mt-4">

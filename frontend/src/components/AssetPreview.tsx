@@ -10,6 +10,7 @@ import {
 import type { JSX } from "solid-js";
 
 import { renderMarkdownPreview } from "~/lib/markdown";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import {
   formatJsonPreview,
   MAX_PREVIEW_BYTES,
@@ -35,9 +36,7 @@ function TextResourcePreview(props: {
   return (
     <Show
       when={!text.loading}
-      fallback={
-        <p class="text-sm ui-muted">{t("assetField.preview.loading")}</p>
-      }
+      fallback={<LocalBusyIndicator label={t("assetField.preview.loading")} />}
     >
       <Show
         when={!text.error}

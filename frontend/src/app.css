@@ -160,6 +160,37 @@ code {
   white-space: nowrap;
   border: 0;
 }
+/* Panel-local busy indicator: spinner only, no visible loading text.
+ * The label is sr-only. Global transitions keep using .loadingBar. */
+.localpending {
+  min-width: 32px;
+  min-height: 32px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+.localpending-sm {
+  min-width: 24px;
+  min-height: 24px;
+}
+.localspinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #d7ddea;
+  border-top-color: var(--focus);
+  border-radius: 50%;
+  animation: ugoite-spin 0.72s linear infinite;
+}
+@keyframes ugoite-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .localspinner {
+    animation-duration: 1.8s;
+  }
+}
 
 /* Workspace shell: values copied from the approved v5 concept. */
 .app, .workspaceApp {

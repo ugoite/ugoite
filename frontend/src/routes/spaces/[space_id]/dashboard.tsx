@@ -1,6 +1,7 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { CreateFormDialog } from "~/components/create-dialogs";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import { createEntryStore } from "~/lib/entry-store";
 import { getDocsiteHref } from "~/lib/docsite-links";
@@ -112,8 +113,15 @@ export default function SpaceDashboardRoute() {
       </Show>
 
       <Show when={formReadiness() === "loading"}>
-        <section class="surface emptyState" role="status" aria-live="polite">
-          {t("dashboard.section.createEntry.loading")}
+        <section
+          class="surface emptyState"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          {/* Spinner only: label is sr-only for assistive technology. */}
+          <LocalBusyIndicator
+            label={t("dashboard.section.createEntry.loading")}
+          />
         </section>
       </Show>
 

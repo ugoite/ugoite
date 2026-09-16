@@ -146,11 +146,41 @@ describe("EntryList", () => {
     it("should show loading state", () => {
       const { entries, loading, setLoading, error } = createControlledProps();
       setLoading(true);
+      const { container } = render(() => (
+        <EntryList entries={entries} loading={loading} error={error} />
+      ));
+
+      // Spinner-only indicator: label is sr-only for assistive technology.
+      const status = screen.getByRole("status");
+      expect(status).toHaveTextContent(/loading/i);
+      expect(container.querySelector(".localspinner")).toBeInTheDocument();
+      expect(container.querySelector(".ui-sr-only")).toHaveTextContent(
+        /loading/i,
+      );
+      expect(container.querySelector(".entry-list-container")).toHaveAttribute(
+        "aria-busy",
+        "true",
+      );
+    });
+
+    it("should keep existing rows mounted while loading", () => {
+      const record: EntryRecord = {
+        id: "kept-entry",
+        title: "Kept Entry",
+        updated_at: "2025-01-01T00:00:00Z",
+        properties: {},
+        tags: [],
+      };
+      const { entries, loading, setLoading, error } = createControlledProps([
+        record,
+      ]);
+      setLoading(true);
       render(() => (
         <EntryList entries={entries} loading={loading} error={error} />
       ));
 
-      expect(screen.getByText(/loading/i)).toBeInTheDocument();
+      expect(screen.getByText("Kept Entry")).toBeInTheDocument();
+      expect(screen.getByRole("status")).toBeInTheDocument();
     });
 
     it("should highlight selected entry", async () => {

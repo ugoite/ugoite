@@ -1,4 +1,5 @@
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { t } from "~/lib/i18n";
 
 export interface SearchBarProps {
@@ -120,8 +121,12 @@ export function SearchBar(props: SearchBarProps) {
 
       {/* Status Messages */}
       <div class="mt-2 text-sm">
+        {/* Spinner only: label is sr-only for assistive technology. */}
         <Show when={props.loading}>
-          <span class="ui-muted">{t("searchBar.searching")}</span>
+          <LocalBusyIndicator
+            size="sm"
+            label={t("searchBar.searching")}
+          />
         </Show>
         <Show when={props.resultsCount !== undefined && !props.loading}>
           <span class="ui-muted">

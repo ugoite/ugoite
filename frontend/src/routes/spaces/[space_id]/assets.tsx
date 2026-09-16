@@ -1,5 +1,6 @@
 import { A, useParams } from "@solidjs/router";
 import { For, Show } from "solid-js";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateLabel } from "~/lib/date-format";
 import { formatAssetSize } from "~/lib/asset-reference";
@@ -86,7 +87,7 @@ export default function SpaceAssetsRoute() {
   const assetGroups = () => groupAssetReferences(entries() ?? []);
 
   return (
-    <div class="assetInventory">
+    <div class="assetInventory" aria-busy={entries.loading || undefined}>
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">{t("assetsPage.eyebrow")}</div>
@@ -98,8 +99,9 @@ export default function SpaceAssetsRoute() {
         {t("assetsPage.description")}
       </p>
 
+      {/* Panel-local spinner alongside the list: rows stay mounted. */}
       <Show when={entries.loading}>
-        <p role="status" class="ui-muted">{t("assetsPage.loading")}</p>
+        <LocalBusyIndicator label={t("assetsPage.loading")} />
       </Show>
 
       <Show when={entries.error}>
@@ -121,26 +123,32 @@ export default function SpaceAssetsRoute() {
         </div>
       </Show>
 
-      <Show when={!entries.loading && !entries.error}>
-        <p role="status" class="mb-4 text-sm ui-muted">
-          {t("assetsPage.complete")}
-        </p>
+      <Show when={!entries.error}>
+        <Show when={!entries.loading}>
+          <p role="status" class="mb-4 text-sm ui-muted">
+            {t("assetsPage.complete")}
+          </p>
+        </Show>
         <Show
           when={assetGroups().length > 0}
           fallback={
-            <div class="assetEmpty ui-stack-sm">
-              <h2 class="text-base font-semibold">{t("assetsPage.empty")}</h2>
-              <p class="text-sm ui-muted">{t("assetsPage.emptyDescription")}</p>
-              <div>
-                <A
-                  class="ui-button ui-button-secondary inline-flex items-center gap-2 text-sm"
-                  href={`/spaces/${spaceId()}/forms`}
-                >
-                  <UiIcon name="forms" />
-                  {t("assetsPage.openForms")}
-                </A>
+            <Show when={!entries.loading}>
+              <div class="assetEmpty ui-stack-sm">
+                <h2 class="text-base font-semibold">{t("assetsPage.empty")}</h2>
+                <p class="text-sm ui-muted">
+                  {t("assetsPage.emptyDescription")}
+                </p>
+                <div>
+                  <A
+                    class="ui-button ui-button-secondary inline-flex items-center gap-2 text-sm"
+                    href={`/spaces/${spaceId()}/forms`}
+                  >
+                    <UiIcon name="forms" />
+                    {t("assetsPage.openForms")}
+                  </A>
+                </div>
               </div>
-            </div>
+            </Show>
           }
         >
           <div class="assetRows" role="list">

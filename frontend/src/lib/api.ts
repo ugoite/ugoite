@@ -92,7 +92,11 @@ export const apiFetch = async (path = "/", options?: ApiFetchOptions) => {
     url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
   }
   /* v8 ignore stop */
-  const shouldTrackLoading = options?.trackLoading ?? true;
+  // Global loading is reserved for true global transitions only: app
+  // bootstrap, auth establishment, and space switch. Local fetches must not
+  // drive the global loading bar, so the default is false. Callers that own
+  // a global transition opt in explicitly via `trackLoading: true`.
+  const shouldTrackLoading = options?.trackLoading ?? false;
   if (shouldTrackLoading) {
     loadingState.start();
   }

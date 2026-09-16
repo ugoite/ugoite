@@ -1,5 +1,6 @@
 import { A, useParams } from "@solidjs/router";
 import { createSignal, For, Show } from "solid-js";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateTimeLabel } from "~/lib/date-format";
 import { changeApi, type SpaceChange } from "~/lib/ugoite-client";
@@ -86,8 +87,9 @@ export default function SpaceHistoryRoute() {
         </A>
       </div>
       <p class="ui-muted">{t("spaceHistory.description")}</p>
+      {/* Panel-local spinner: existing rows stay mounted during refetch. */}
       <Show when={history.loading}>
-        <p class="ui-muted">{t("spaceHistory.loading")}</p>
+        <LocalBusyIndicator label={t("spaceHistory.loading")} />
       </Show>
       <Show when={history.error}>
         <p class="ui-alert ui-alert-error">{t("spaceHistory.loadError")}</p>
@@ -104,7 +106,7 @@ export default function SpaceHistoryRoute() {
             when={data().length > 0}
             fallback={<p class="ui-muted">{t("spaceHistory.empty")}</p>}
           >
-            <div class="historyRows">
+            <div class="historyRows" aria-busy={history.loading || undefined}>
               <For each={data()}>
                 {(change) => (
                   <article class="historyRow">

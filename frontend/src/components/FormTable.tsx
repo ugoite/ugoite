@@ -12,6 +12,7 @@ import { createResource } from "~/lib/recoverable-resource";
 import { encodeSpreadsheetCsv, entryApi, searchApi } from "~/lib/ugoite-client";
 import { replaceFirstH1, updateH2Section } from "~/lib/markdown";
 import { t } from "~/lib/i18n";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { formatDateLabel } from "~/lib/date-format";
 import {
   formatValueForDisplay,
@@ -611,16 +612,24 @@ export function FormTable(props: FormTableProps) {
     >
       <div class="p-4 sm:p-6">
         <div class="formTableToolbar mb-4 sm:mb-6 flex flex-wrap justify-between items-start gap-3">
-          <div>
+          <div
+            class="flex flex-wrap items-center gap-2"
+            aria-busy={entries.loading || undefined}
+          >
             <p class="ui-muted text-sm">
               {entries.error
                 ? t("formTable.recordsError")
-                : entries.loading && !entries()
-                ? t("formTable.loading")
                 : t("formTable.recordsFound", {
                   count: processedEntries().length,
                 })}
             </p>
+            {/* Inline spinner: table rows stay mounted during refetch. */}
+            <Show when={entries.loading}>
+              <LocalBusyIndicator
+                size="sm"
+                label={t("formTable.loading")}
+              />
+            </Show>
           </div>
           <div class="formTableActions flex flex-wrap justify-end gap-2">
             <button

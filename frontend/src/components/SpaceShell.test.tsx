@@ -152,6 +152,22 @@ describe("v5 SpaceShell", () => {
     expect(container.querySelector(".loadingBar")).toBeInTheDocument();
     loadingState.stop();
   });
+  it("keeps shell and children mounted while global loading changes", () => {
+    render(() => (
+      <SpaceShell spaceId="my-space-uid" activeNavigation="home">
+        <p>Child content</p>
+      </SpaceShell>
+    ));
+    expect(screen.getByText("Child content")).toBeInTheDocument();
+
+    loadingState.start();
+    expect(screen.getByText("Child content")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Home" })[0]).toBeInTheDocument();
+
+    loadingState.stop();
+    expect(screen.getByText("Child content")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Home" })[0]).toBeInTheDocument();
+  });
   it("keeps the route space selected when the route changes", () => {
     const [spaceId, setSpaceId] = createSignal("my-space-uid");
     render(() => (

@@ -1,6 +1,7 @@
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { EntryDetailPane } from "~/components/EntryDetailPane";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi, spaceApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
@@ -63,8 +64,9 @@ export default function NewEntryRoute() {
       <Show
         when={!space.loading && !forms.loading}
         fallback={
-          <div class="surface emptyState" role="status">
-            {t("entryPage.loadingForm")}
+          <div class="surface emptyState" aria-busy="true">
+            {/* Spinner only: label is sr-only for assistive technology. */}
+            <LocalBusyIndicator label={t("entryPage.loadingForm")} />
           </div>
         }
       >

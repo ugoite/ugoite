@@ -1,5 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, Show, createSignal } from "solid-js";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { formatDateTimeLabel } from "~/lib/date-format";
 import {
   revisionActor,
@@ -82,15 +83,16 @@ export default function SpaceEntryRevisionRoute() {
         </A>
       </div>
 
+      {/* Panel-local spinner: rendered content stays mounted on refetch. */}
       <Show when={revision.loading}>
-        <p class="ui-muted">{t("entryRevision.loading")}</p>
+        <LocalBusyIndicator label={t("entryRevision.loading")} />
       </Show>
       <Show when={reviewError()}>
         <p class="ui-alert ui-alert-error">{reviewError()}</p>
       </Show>
       <Show when={revision()}>
         {(selected) => (
-          <div class="settingsMain">
+          <div class="settingsMain" aria-busy={revision.loading || undefined}>
             <p class="ui-alert ui-alert-warning">
               {t("entryRevision.restoreNotice")}
             </p>

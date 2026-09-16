@@ -54,8 +54,16 @@ describe("SearchBar", () => {
   });
 
   it("should display loading state", () => {
-    render(() => <SearchBar onSearch={vi.fn()} loading={true} />);
-    expect(screen.getByText(/searching/i)).toBeInTheDocument();
+    const { container } = render(() => (
+      <SearchBar onSearch={vi.fn()} loading={true} />
+    ));
+    // Spinner-only indicator: label is sr-only for assistive technology.
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent(/searching/i);
+    expect(container.querySelector(".localspinner")).toBeInTheDocument();
+    expect(container.querySelector(".ui-sr-only")).toHaveTextContent(
+      /searching/i,
+    );
   });
 
   it("should display search results count", () => {

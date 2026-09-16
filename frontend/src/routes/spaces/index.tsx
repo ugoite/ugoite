@@ -1,5 +1,6 @@
 import { A, useNavigate } from "@solidjs/router";
 import { GlobalShell } from "~/components/GlobalShell";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { getDocsiteHref } from "~/lib/docsite-links";
 import { authApi, spaceApi } from "~/lib/ugoite-client";
@@ -216,7 +217,10 @@ export default function SpacesIndexRoute() {
           </div>
         </div>
 
-        <section class="settingsMain surface">
+        <section
+          class="settingsMain surface"
+          aria-busy={spaces.loading || undefined}
+        >
           <h2 class="text-lg font-semibold mb-3">
             {t("spacesPage.available")}
           </h2>
@@ -297,8 +301,9 @@ export default function SpacesIndexRoute() {
               </div>
             </form>
           </Show>
+          {/* Panel-local spinner: listed spaces stay mounted on refetch. */}
           <Show when={spaces.loading}>
-            <p class="text-sm ui-muted">{t("spacesPage.loading")}</p>
+            <LocalBusyIndicator label={t("spacesPage.loading")} />
           </Show>
           <Show when={spacesError()}>
             <p class="ui-alert ui-alert-error text-sm">

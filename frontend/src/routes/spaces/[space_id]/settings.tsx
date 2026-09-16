@@ -1,5 +1,6 @@
 import { useParams, useSearchParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { SpaceSettings } from "~/components/SpaceSettings";
 import { SpaceAuditLogViewer } from "~/components/AuditLogViewer";
 import { UiIcon } from "~/components/UiIcon";
@@ -107,9 +108,10 @@ export default function SpaceSettingsRoute() {
         </aside>
         <main>
           <h1 class="ui-sr-only">{t("settings.title")}</h1>
+          {/* Panel-local spinner: settings content stays mounted on refetch. */}
           <Show when={space.loading}>
-            <div class="settingsMain surface ui-muted">
-              {t("settings.loadingSpace")}
+            <div class="settingsMain surface" aria-busy="true">
+              <LocalBusyIndicator label={t("settings.loadingSpace")} />
             </div>
           </Show>
           <Show when={space.error}>
@@ -165,7 +167,10 @@ export default function SpaceSettingsRoute() {
           </Show>
 
           <Show when={active() === "members"}>
-            <section class="settingsMain surface">
+            <section
+              class="settingsMain surface"
+              aria-busy={members.loading || undefined}
+            >
               <h2>{t("settings.section.members")}</h2>
               <div class="settingsGrid">
                 <label>
@@ -209,7 +214,7 @@ export default function SpaceSettingsRoute() {
                 <p class="ui-alert ui-alert-error">{memberError()}</p>
               </Show>
               <Show when={members.loading}>
-                <p class="ui-muted">{t("settings.loadingMembers")}</p>
+                <LocalBusyIndicator label={t("settings.loadingMembers")} />
               </Show>
               <Show when={members.error}>
                 <p class="ui-alert ui-alert-error">
