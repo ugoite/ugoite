@@ -412,14 +412,25 @@ export function AssetField(props: AssetFieldProps) {
     return url && blob ? { url, blob } : undefined;
   };
 
-  const statusText = (reference: AssetReference) => {
+  const transientStatus = (reference: AssetReference) => {
     if (unavailableIds().has(reference.asset_id)) {
       return t("assetField.status.unavailable");
     }
-    return persistedIds().has(reference.asset_id)
-      ? t("assetField.status.persisted")
-      : t("assetField.status.uploaded");
+    if (readingIds().has(reference.asset_id)) {
+      return t("assetField.status.reading");
+    }
+    return undefined;
   };
+
+  const previewLabel = (reference: AssetReference) =>
+    readingIds().has(reference.asset_id)
+      ? t("assetField.status.reading")
+      : `${t("assetField.action.preview")} ${reference.name}`;
+
+  const downloadLabel = (reference: AssetReference) =>
+    readingIds().has(reference.asset_id)
+      ? t("assetField.status.reading")
+      : `${t("assetField.action.download")} ${reference.name}`;
 
   return (
     <div
@@ -428,14 +439,6 @@ export function AssetField(props: AssetFieldProps) {
       onDragOver={(event) => event.preventDefault()}
       onDrop={handleDrop}
     >
-      <p class="text-xs ui-muted">
-        {t(
-          props.multiple
-            ? "assetField.description.list"
-            : "assetField.description.scalar",
-        )}
-      </p>
-
       <Show when={parsedValue().issue}>
         <p class="ui-alert ui-alert-error text-sm" role="alert">
           {parsedValue().issue === "duplicate"
@@ -449,30 +452,26 @@ export function AssetField(props: AssetFieldProps) {
           <div class="ui-card ui-asset-item">
             <div class="ui-asset-item-header">
               <div class="ui-asset-item-info">
-                <p
-                  class="ui-asset-item-name truncate font-medium"
-                  title={reference.name}
-                >
-                  {reference.name}
-                </p>
                 <p class="ui-asset-item-meta text-xs ui-muted">
                   {formatAssetSummary(
                     reference,
                     locale() === "ja" ? "ja-JP" : "en-US",
                   )}
                 </p>
-                <p class="text-xs ui-muted" role="status">
-                  {statusText(reference)}
-                </p>
+                <Show when={transientStatus(reference)}>
+                  {(status) => (
+                    <p class="text-xs ui-muted" role="status">
+                      {status()}
+                    </p>
+                  )}
+                </Show>
               </div>
               <div class="ui-asset-item-actions flex flex-wrap items-center justify-end gap-2">
                 <Show when={resolvePreviewKind(reference) !== "unsupported"}>
                   <button
                     type="button"
                     class="ui-button ui-button-secondary ui-button-sm ui-asset-icon-button"
-                    aria-label={readingIds().has(reference.asset_id)
-                      ? t("assetField.status.reading")
-                      : t("assetField.action.preview")}
+                    aria-label={previewLabel(reference)}
                     title={t("assetField.action.preview")}
                     onClick={(event) =>
                       previewReference(reference, event.currentTarget)}
@@ -483,18 +482,14 @@ export function AssetField(props: AssetFieldProps) {
                   >
                     <UiIcon name="preview" />
                     <span class="ui-sr-only">
-                      {readingIds().has(reference.asset_id)
-                        ? t("assetField.status.reading")
-                        : t("assetField.action.preview")}
+                      {previewLabel(reference)}
                     </span>
                   </button>
                 </Show>
                 <button
                   type="button"
                   class="ui-button ui-button-secondary ui-button-sm ui-asset-icon-button"
-                  aria-label={readingIds().has(reference.asset_id)
-                    ? t("assetField.status.reading")
-                    : t("assetField.action.download")}
+                  aria-label={downloadLabel(reference)}
                   title={t("assetField.action.download")}
                   onClick={() => downloadReference(reference)}
                   disabled={readingIds().has(reference.asset_id) ||
@@ -504,9 +499,7 @@ export function AssetField(props: AssetFieldProps) {
                 >
                   <UiIcon name="download" />
                   <span class="ui-sr-only">
-                    {readingIds().has(reference.asset_id)
-                      ? t("assetField.status.reading")
-                      : t("assetField.action.download")}
+                    {downloadLabel(reference)}
                   </span>
                 </button>
                 <Show when={!props.readOnly}>

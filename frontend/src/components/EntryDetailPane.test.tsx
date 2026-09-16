@@ -978,10 +978,16 @@ describe("EntryDetailPane", () => {
     });
 
     await waitFor(() => expect(assetUpload).toHaveBeenCalled());
-    expect(screen.getByText("Uploaded; entry not saved yet"))
-      .toBeInTheDocument();
-
-    expect(screen.getByText("contract.pdf")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Preview contract.pdf" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Download contract.pdf" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Uploaded; entry not saved yet")).toBeNull();
+    // Filename stays out of visible row text; it lives only in the
+    // preview/download accessible names and the preview dialog title.
+    expect(screen.queryByText("contract.pdf")).toBeNull();
     expect(screen.queryByText(JSON.stringify(uploaded))).not
       .toBeInTheDocument();
 
@@ -1060,7 +1066,7 @@ describe("EntryDetailPane", () => {
       },
     });
     await waitFor(() => expect(assetUpload).toHaveBeenCalledTimes(1));
-    await screen.findByText("Uploaded; entry not saved yet");
+    await screen.findByRole("button", { name: "Preview contract.pdf" });
 
     const status = screen.getByLabelText("Status");
     const save = screen.getByRole("button", { name: "Save" });
@@ -1191,7 +1197,9 @@ describe("EntryDetailPane", () => {
     await waitFor(() => expect(assetUpload).toHaveBeenCalledTimes(1));
     resolveUpload?.(uploaded);
 
-    await screen.findByText("pending-preview.pdf");
+    await screen.findByRole("button", {
+      name: "Preview pending-preview.pdf",
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(entryApi.create).toHaveBeenCalledTimes(1));
     expect(entryApi.create).toHaveBeenCalledWith(
