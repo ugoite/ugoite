@@ -1,0 +1,81 @@
+---
+title: "Restore and Undo"
+description: Append recovery revisions, inverse Changes, and Run undos without rewriting history.
+sidebar:
+  order: 9
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Restore, revert, and undo append new history instead of rewriting the past.
+Read current history first in [View History](history.mdx).
+
+## Outcome
+
+A restore, revert, or undo appends new history while every prior revision
+stays readable.
+
+## Before you begin
+
+Read history in [View History](history.mdx) and choose the exact revision,
+Change, or Run ID to recover.
+
+## Steps
+
+<Tabs>
+<TabItem label="Browser">
+
+1. From the Entry detail page, open **History**.
+2. Choose **Restore** for the first revision.
+3. Confirm history now has three revisions with the restored content newest.
+4. From **Space history**, reverting a Change appends a new Change; the
+   notice before confirming says so explicitly.
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+ugoite entry restore /path/to/workspace/spaces/demo meeting-2026-09-12 <revision-id>
+ugoite change revert /path/to/workspace/spaces/demo <change-id>
+ugoite run undo /path/to/workspace/spaces/demo <run-id>
+```
+
+`entry restore` replays one revision as a new revision. `change revert`
+appends the inverse of one Change. `run undo` appends one inverse Change per
+Change correlated to the Run, in reverse publication order. Editing with a
+stale `--parent-revision-id` conflicts instead of overwriting. Take IDs from
+`entry history` and `change list` output; they are never inferred. Run
+`ugoite entry restore --help`, `ugoite change revert --help`, and
+`ugoite run undo --help` for exact flags.
+
+</TabItem>
+</Tabs>
+
+## Verify the result
+
+History is longer by exactly the appended recovery revision or Changes, with
+no rewritten or missing entries.
+
+## What became durable?
+
+The new restore revision or inverse Changes. History views and diffs are
+runtime state.
+
+## If it fails
+
+- Revision conflict: re-read history and retry against the newest revision.
+- Restore of a deleted Entry: history still appends; permanent removal is
+  unavailable.
+- Server step-up required: the canonical step-up error is returned; complete
+  the required human approval or reauthentication and retry the same command.
+
+## Related concepts
+
+- [View History](history.mdx)
+- [Revisions and Recovery](revisions.mdx)
+- [Quickstart](../get-started/quickstart.mdx)
+
+## Reference
+
+- `ugoite entry restore --help`, `ugoite change --help`, and
+  `ugoite run --help` are the command authorities.

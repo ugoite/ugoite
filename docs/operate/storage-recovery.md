@@ -70,6 +70,16 @@ history and restore produces a new append-only revision. Search indexes and SQL
 sessions may be rebuilt; they are not evidence that the authoritative Space is
 intact.
 
+## Test a storage backend before trusting it
+
+Test connectivity with the current binary before pointing a Space at a new
+backend. `space test-connection` takes a storage config JSON document and
+reports whether the backend is reachable; run
+`ugoite space test-connection --help` for the exact JSON shape of the
+installed version. A passing connection test does not validate Space content:
+reopen the Space and complete the verification above before deleting the old
+copy.
+
 ## What remains durable?
 
 Space Catalog Head, reachable publications, Entry and Form history, Asset bytes,

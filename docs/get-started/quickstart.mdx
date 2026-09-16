@@ -168,11 +168,13 @@ on both surfaces.
 
 ```bash
 ugoite entry history /path/to/workspace/spaces/demo meeting-2026-09-12
+ugoite entry restore /path/to/workspace/spaces/demo meeting-2026-09-12 <revision-id>
+ugoite entry history /path/to/workspace/spaces/demo meeting-2026-09-12
 ```
 
-Choose a prior revision and restore it. Restore appends a new revision
-replaying that content instead of destructively rolling back. Run
-`ugoite entry restore --help` for exact flags.
+Take `<revision-id>` from the first `entry history` output. Restore appends
+a new revision replaying that content instead of destructively rolling back.
+Run `ugoite entry restore --help` for exact flags.
 
 </TabItem>
 </Tabs>

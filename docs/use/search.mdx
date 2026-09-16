@@ -1,6 +1,6 @@
 ---
-title: "Search and Query"
-description: Find Knowledge with keyword search, structured fields, and SQL.
+title: "Search and Filter"
+description: Find Knowledge with keyword search and structured field filtering.
 sidebar:
   order: 6
 ---
@@ -8,13 +8,14 @@ sidebar:
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 Search finds durable Entries under identical keyword conditions on every
-surface. Structured fields and SQL read the same Form tables without becoming
-a second authority.
+surface. Structured field conditions narrow the same Entry set without
+becoming a second authority. Saved SQL and expert query live in
+[Saved SQL and expert query](sql.mdx).
 
 ## Outcome
 
-A keyword search returns the updated Entry, and a read-only SQL session reads
-the same Form data.
+A keyword search returns the updated Entry, and a structured field filter
+narrows to the same Entry set on Browser and CLI.
 
 ## Before you begin
 
@@ -30,7 +31,6 @@ Create an Entry in [Create and Edit Entries](entries.mdx).
 3. Switch to **Advanced search**, pick a Form, and add a typed field
    condition such as `Status equals planning`. Results appear inline;
    no SQL is involved.
-4. Open **SQL** for a saved definition over the same Form.
 
 </TabItem>
 <TabItem label="CLI">
@@ -39,50 +39,41 @@ Create an Entry in [Create and Edit Entries](entries.mdx).
 ugoite search keyword /path/to/workspace/spaces/demo planning
 ugoite search query /path/to/workspace/spaces/demo \
   --form Meeting --eq status=planning --limit 20
-ugoite sql lint 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> LIMIT 10'
-ugoite sql saved-list /path/to/workspace/spaces/demo
-ugoite query /path/to/workspace/spaces/demo \
-  --sql 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> LIMIT 10'
 ```
 
 `search query` sends typed field conditions (`--eq`, `--contains`,
 `--lt`, `--lte`, `--gt`, `--gte`) through the shared structured Search
 path, so the browser and the CLI narrow to the same Entry set. Complex
 machine input belongs in `--criteria-file` JSON instead of flags.
-
-`sql lint` checks syntax only; it does not resolve Forms or authorize
-execution. `query` is read-only and rejects DDL and DML without changing the
-Space. Each Form is exposed as the backend-provided `form_<FormId>` relation
-(the Form UUID without dashes, as returned in the `id` field of
-`ugoite form get`) with `field_<FieldId>` columns plus `_ugoite_id`,
-`_ugoite_title`, `_ugoite_created_at`, and `_ugoite_updated_at` columns.
+For saved definitions and read-only SQL, use
+[Saved SQL and expert query](sql.mdx).
 
 </TabItem>
 </Tabs>
 
 ## Verify the result
 
-The updated durable Entry appears in keyword results and the same Form rows
-appear in the SQL session.
+The updated durable Entry appears in keyword results and in the structured
+filter results on both surfaces.
 
 ## What became durable?
 
-Nothing new. Search indexes and SQL sessions are derived and replaceable.
+Nothing new. Search indexes are derived and replaceable.
 
 ## If it fails
 
 - Search missing the change: confirm the Entry saved, then rerun the keyword
   search.
-- SQL rejected: check the `form_<FormId>` relation, `field_<FieldId>` columns,
-  and statement kind; only read-only selects over authorized relations run.
+- Structured filter rejected: check the Form name and logical field names;
+  complex machine input belongs in `--criteria-file` JSON.
 
 ## Related concepts
 
+- [Saved SQL and expert query](sql.mdx)
 - [Core concepts](../vision/core-concepts.md)
 - [Data model overview](../architecture/data-model/overview.md)
 
 ## Reference
 
-- `ugoite search --help`, `ugoite search query --help`,
-  `ugoite sql --help`, and `ugoite query --help` are the command
+- `ugoite search --help` and `ugoite search query --help` are the command
   authorities.

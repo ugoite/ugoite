@@ -7,13 +7,15 @@ sidebar:
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Assets are Space-owned files referenced by Entries. Upload and delete are
-available from core mode and authenticated remote modes; a Form-owned Entry
-reference connects the file to Knowledge.
+Assets are Space-owned files referenced by Entries. Upload stores bytes only
+and never attaches them to an Entry; a Form-owned Entry reference connects
+the file to Knowledge. Upload and delete are available from core mode and
+authenticated remote modes.
 
 ## Outcome
 
-An uploaded file is stored as a Space Asset and can be deleted by ID.
+An uploaded file is stored as a Space Asset, attached through an Entry field,
+and can be deleted by ID.
 
 ## Before you begin
 
@@ -43,7 +45,14 @@ ugoite asset delete 019f1234-5678-7abc-8def-0123456789ab asset-id
 ```
 
 Use `--filename` to choose the logical filename where the selected command
-supports it. Run `ugoite asset --help` for exact flags and mode requirements.
+supports it. There is no dedicated attach flag: to attach, place the
+returned asset object (`asset_id`, `name`, `media_type`, `size_bytes`,
+`sha256`) as the field value through `entry create --fields-file` or
+`entry update --fields-file`; `--field KEY=VALUE` stays a string and cannot
+carry an asset object. An uploaded-but-unreferenced object is not
+Space-visible Knowledge and never appears in `asset list`. Run
+`ugoite asset --help` and `ugoite entry create --help` for exact flags and
+mode requirements.
 
 </TabItem>
 </Tabs>
