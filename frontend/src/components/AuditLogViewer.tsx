@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { authApi, spaceApi } from "~/lib/ugoite-client";
 import { formatDateTimeLabel } from "~/lib/date-format";
 import { t, type TranslationKey } from "~/lib/i18n";
@@ -187,7 +188,7 @@ export function AuditLogViewer(props: AuditLogViewerProps) {
       : "settings.failedAuditLoad";
 
   return (
-    <div class="auditViewer">
+    <div class="auditViewer" aria-busy={loading() || undefined}>
       <Show when={props.source === "node"}>
         <p class="ui-muted">{t("securityPage.auditBoundedNotice")}</p>
       </Show>
@@ -241,18 +242,23 @@ export function AuditLogViewer(props: AuditLogViewerProps) {
           </button>
         </Show>
       </div>
+      {/* Panel-local spinner alongside the table: rows stay mounted. */}
       <Show when={loading()}>
-        <p class="ui-muted" role="status">{t("auditLog.loading")}</p>
+        <LocalBusyIndicator label={t("auditLog.loading")} />
       </Show>
       <Show when={error()}>
         <p class="ui-alert ui-alert-error" role="alert">
           {formatUserFacingError(error(), failureKey())}
         </p>
       </Show>
-      <Show when={!loading() && !error()}>
+      <Show when={!error()}>
         <Show
           when={page()}
-          fallback={<p class="ui-muted">{t("auditLog.empty")}</p>}
+          fallback={
+            <Show when={!loading()}>
+              <p class="ui-muted">{t("auditLog.empty")}</p>
+            </Show>
+          }
         >
           {(currentPage) => (
             <>

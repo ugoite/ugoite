@@ -1,6 +1,7 @@
 import { A, useParams } from "@solidjs/router";
 import { createMemo, Show } from "solid-js";
 import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { formatDateTimeLabel } from "~/lib/date-format";
 import { t } from "~/lib/i18n";
 import { entryApi } from "~/lib/ugoite-client";
@@ -40,8 +41,9 @@ export default function SpaceEntryInfoRoute() {
           {t("entryInfo.backToEntry")}
         </A>
       </div>
+      {/* Panel-local spinner: rendered info stays mounted on refetch. */}
       <Show when={entry.loading}>
-        <p class="ui-muted">{t("entryInfo.loading")}</p>
+        <LocalBusyIndicator label={t("entryInfo.loading")} />
       </Show>
       <Show when={errorMessage()}>
         <p class="ui-alert ui-alert-error">{errorMessage()}</p>
@@ -51,7 +53,10 @@ export default function SpaceEntryInfoRoute() {
       </Show>
       <Show when={entry()}>
         {(loaded) => (
-          <dl class="ui-entry-detail-list ui-entry-info-list">
+          <dl
+            class="ui-entry-detail-list ui-entry-info-list"
+            aria-busy={entry.loading || undefined}
+          >
             <div>
               <dt>{t("entryInfo.entryId")}</dt>
               <dd class="font-mono break-all">{loaded().id}</dd>

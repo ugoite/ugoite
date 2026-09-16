@@ -1,5 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { SqlQueryEditor } from "~/components";
 import { formatDateLabel } from "~/lib/date-format";
 import { buildSqlSchema } from "~/lib/sql";
@@ -83,10 +84,14 @@ export default function SpaceSqlDetailRoute() {
           </Show>
         </div>
       </div>
-      <section class="settingsMain surface">
+      <section
+        class="settingsMain surface"
+        aria-busy={entry.loading || undefined}
+      >
         <Switch>
-          <Match when={entry.loading}>
-            <p class="text-sm ui-muted">{t("sqlPage.loadingQuery")}</p>
+          {/* Panel-local spinner: loaded query stays mounted on refetch. */}
+          <Match when={entry.loading && !entry()}>
+            <LocalBusyIndicator label={t("sqlPage.loadingQuery")} />
           </Match>
           <Match when={entry.error}>
             <div class="ui-stack-sm">
@@ -104,6 +109,12 @@ export default function SpaceSqlDetailRoute() {
           <Match when={entry()}>
             {(data) => (
               <>
+                <Show when={entry.loading}>
+                  <LocalBusyIndicator
+                    size="sm"
+                    label={t("sqlPage.loadingQuery")}
+                  />
+                </Show>
                 <dl class="grid gap-4 text-sm sm:grid-cols-3">
                   <div class="ui-stack-sm">
                     <dt class="font-semibold">{t("sqlPage.updated")}</dt>

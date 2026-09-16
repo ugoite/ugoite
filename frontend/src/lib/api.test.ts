@@ -201,4 +201,32 @@ describe("apiFetch auth forwarding", () => {
 
     expect(getBackendBase()).toBe("http://localhost:3000/api");
   });
+
+  it("does not drive global loading by default; explicit opt-in is preserved", async () => {
+    server.use(
+      http.get(testApiUrl("/auth/config"), () => {
+        return HttpResponse.json(authConfig);
+      }),
+    );
+
+    const { apiFetch } = await import("./api");
+    const { loadingState } = await import("./loading");
+    const start = vi.spyOn(loadingState, "start");
+    const stop = vi.spyOn(loadingState, "stop");
+    try {
+      const untracked = await apiFetch("/auth/config");
+      expect(untracked.status).toBe(200);
+      expect(start).not.toHaveBeenCalled();
+      expect(stop).not.toHaveBeenCalled();
+
+      const tracked = await apiFetch("/auth/config", { trackLoading: true });
+      expect(tracked.status).toBe(200);
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(stop).toHaveBeenCalledTimes(1);
+      expect(loadingState.count()).toBe(0);
+    } finally {
+      start.mockRestore();
+      stop.mockRestore();
+    }
+  });
 });

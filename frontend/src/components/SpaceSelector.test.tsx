@@ -47,7 +47,7 @@ describe("SpaceSelector", () => {
   it("should show loading state", () => {
     const onSelect = vi.fn();
 
-    render(() => (
+    const { container } = render(() => (
       <SpaceSelector
         spaces={[]}
         selectedSpaceId={null}
@@ -57,7 +57,14 @@ describe("SpaceSelector", () => {
       />
     ));
 
-    expect(screen.getByText("Loading...")).toBeInTheDocument();
+    // Spinner-only indicator: label is sr-only, options stay mounted.
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Loading...");
+    expect(container.querySelector(".localspinner")).toBeInTheDocument();
+    expect(container.querySelector(".ui-sr-only")).toHaveTextContent(
+      "Loading...",
+    );
+    expect(screen.getByRole("combobox")).toBeInTheDocument();
   });
 
   it("should show error message", () => {

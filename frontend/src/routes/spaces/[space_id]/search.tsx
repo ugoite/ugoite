@@ -1,5 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Index, Show } from "solid-js";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateLabel } from "~/lib/date-format";
 import { formApi } from "~/lib/ugoite-client";
@@ -827,6 +828,7 @@ export default function SpaceSearchRoute() {
             <section
               class="searchResults"
               aria-labelledby="search-results-title"
+              aria-busy={(keywordLoading() || advancedLoading()) || undefined}
             >
               <div class="searchResultsHead flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -858,13 +860,14 @@ export default function SpaceSearchRoute() {
                 <Show when={actionError()}>
                   <p class="text-sm ui-text-danger">{actionError()}</p>
                 </Show>
+                {/* Query-lane spinner: previous results stay visible. */}
                 <Show
                   when={keywordLoading() ||
                     (mode() === "advanced" && advancedLoading())}
                 >
-                  <p class="text-sm ui-muted">
-                    {t("searchPage.searchingEntries")}
-                  </p>
+                  <LocalBusyIndicator
+                    label={t("searchPage.searchingEntries")}
+                  />
                 </Show>
                 <Show
                   when={mode() === "keyword" && !keywordLoading() &&
@@ -989,10 +992,15 @@ export default function SpaceSearchRoute() {
                         }
                       }}
                     >
-                      {(keywordLoading() || advancedLoading())
-                        ? t("searchPage.loadingMore")
-                        : t("searchPage.loadMore")}
+                      {t("searchPage.loadMore")}
                     </button>
+                    {/* Footer spinner only: existing results stay visible. */}
+                    <Show when={keywordLoading() || advancedLoading()}>
+                      <LocalBusyIndicator
+                        size="sm"
+                        label={t("searchPage.loadingMore")}
+                      />
+                    </Show>
                   </div>
                 </Show>
               </div>

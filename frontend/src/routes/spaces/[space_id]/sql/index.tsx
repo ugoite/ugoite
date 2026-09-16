@@ -1,5 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createSignal, For, Show } from "solid-js";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import { normalizeSqlVariables } from "~/lib/sql";
 import { sqlApi, sqlSessionApi } from "~/lib/ugoite-client";
@@ -80,8 +81,9 @@ export default function SpaceSqlIndexRoute() {
           <UiIcon name="plus" /> {t("sqlPage.createButton")}
         </A>
       </div>
+      {/* Panel-local spinner: saved rows stay mounted during refetch. */}
       <Show when={queries.loading}>
-        <p class="ui-muted">{t("sqlPage.loadingSavedSql")}</p>
+        <LocalBusyIndicator label={t("sqlPage.loadingSavedSql")} />
       </Show>
       <Show when={queries.error}>
         <p class="ui-alert ui-alert-error">
@@ -91,19 +93,21 @@ export default function SpaceSqlIndexRoute() {
           )}
         </p>
       </Show>
-      <Show when={!queries.loading && !queries.error}>
+      <Show when={!queries.error}>
         <Show
           when={savedQueries().length > 0}
           fallback={
-            <div class="rowBtn">
-              <span class="glyph">
-                <UiIcon name="sql" />
-              </span>
-              <span>
-                <b>{t("sqlPage.noSavedSql")}</b>
-                <small>{t("sqlPage.createDescription")}</small>
-              </span>
-            </div>
+            <Show when={!queries.loading}>
+              <div class="rowBtn">
+                <span class="glyph">
+                  <UiIcon name="sql" />
+                </span>
+                <span>
+                  <b>{t("sqlPage.noSavedSql")}</b>
+                  <small>{t("sqlPage.createDescription")}</small>
+                </span>
+              </div>
+            </Show>
           }
         >
           <div class="rowStack sqlRows">

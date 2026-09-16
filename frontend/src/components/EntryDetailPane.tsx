@@ -10,6 +10,7 @@ import {
 import type { Accessor } from "solid-js";
 
 import { AssetField } from "~/components/AssetField";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import {
   type AssetFieldState,
@@ -414,11 +415,11 @@ function EntryRowReferenceField(props: {
         )}
       </Show>
       <Show when={options.loading}>
-        <p class="text-xs ui-muted">
-          {t("createDialog.entry.rowReference.loading", {
+        <LocalBusyIndicator
+          label={t("createDialog.entry.rowReference.loading", {
             form: props.targetForm,
           })}
-        </p>
+        />
       </Show>
       <Show when={!options.loading && options.error}>
         <p class="text-xs ui-text-danger">
@@ -1398,13 +1399,14 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
   /* v8 ignore start */
   return (
-    <div class="ui-entry-page">
-      <Show when={entryLoading()}>
-        <div class="absolute inset-0 ui-backdrop z-50 flex items-center justify-center">
-          <div class="ui-card text-center">
-            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-current mx-auto mb-2" />
-            <p class="ui-muted text-sm">{t("entryDetail.loading")}</p>
-          </div>
+    <div class="ui-entry-page" aria-busy={entryLoading() || undefined}>
+      {
+        /* Panel-local spinner only: fields stay mounted and visible during
+          refetch. No full-screen overlay, no visible loading text. */
+      }
+      <Show when={entryLoading() && !entry()}>
+        <div class="ui-entry-loading">
+          <LocalBusyIndicator label={t("entryDetail.loading")} />
         </div>
       </Show>
 
@@ -1495,6 +1497,13 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 </div>
               </div>
               <div class="ui-entry-save-area">
+                {/* Inline refetch spinner: entry fields stay visible. */}
+                <Show when={entryLoading()}>
+                  <LocalBusyIndicator
+                    size="sm"
+                    label={t("entryDetail.loading")}
+                  />
+                </Show>
                 <span
                   class="text-sm"
                   role="status"

@@ -1,5 +1,6 @@
 import { A, useParams } from "@solidjs/router";
 import { For, Show } from "solid-js";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { formApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
@@ -27,8 +28,9 @@ export default function SpaceFormTypesRoute() {
         </A>
       </div>
 
+      {/* Panel-local spinner: loaded types stay mounted on refetch. */}
       <Show when={types.loading}>
-        <p class="ui-muted">{t("formTypesPage.loading")}</p>
+        <LocalBusyIndicator label={t("formTypesPage.loading")} />
       </Show>
       <Show when={types.error}>
         <p class="ui-alert ui-alert-error">{t("formTypesPage.failedLoad")}</p>

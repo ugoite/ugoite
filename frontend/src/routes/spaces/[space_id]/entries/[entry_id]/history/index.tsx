@@ -1,5 +1,6 @@
 import { A, useParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateTimeLabel } from "~/lib/date-format";
 import {
@@ -86,8 +87,9 @@ export default function SpaceEntryHistoryRoute() {
           {t("entryHistory.viewSpaceHistory")}
         </A>
       </div>
+      {/* Panel-local spinner: existing rows stay mounted during refetch. */}
       <Show when={history.loading}>
-        <p class="ui-muted">{t("entryHistory.loading")}</p>
+        <LocalBusyIndicator label={t("entryHistory.loading")} />
       </Show>
       <Show when={errorMessage()}>
         <p class="ui-alert ui-alert-error">{errorMessage()}</p>
@@ -101,7 +103,7 @@ export default function SpaceEntryHistoryRoute() {
             when={data().revisions.length > 0}
             fallback={<p class="ui-muted">{t("entryHistory.empty")}</p>}
           >
-            <div class="rowStack">
+            <div class="rowStack" aria-busy={history.loading || undefined}>
               <For each={revisions()}>
                 {(revision) => (
                   <A
@@ -150,10 +152,15 @@ export default function SpaceEntryHistoryRoute() {
                   disabled={loadingMore()}
                   onClick={() => void loadMoreHistory()}
                 >
-                  {loadingMore()
-                    ? t("entryHistory.loadingMore")
-                    : t("entryHistory.loadMore")}
+                  {t("entryHistory.loadMore")}
                 </button>
+                {/* Footer spinner only: existing rows stay visible. */}
+                <Show when={loadingMore()}>
+                  <LocalBusyIndicator
+                    size="sm"
+                    label={t("entryHistory.loadingMore")}
+                  />
+                </Show>
               </Show>
             </div>
           </Show>

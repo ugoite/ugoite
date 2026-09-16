@@ -8,6 +8,7 @@ import {
 } from "solid-js";
 import { Portal } from "solid-js/web";
 import { AssetPreview } from "./AssetPreview";
+import { LocalBusyIndicator } from "./LocalBusyIndicator";
 import { UiIcon } from "./UiIcon";
 import { assetApi } from "~/lib/ugoite-client";
 import { locale, t } from "~/lib/i18n";
@@ -629,9 +630,9 @@ export function AssetField(props: AssetFieldProps) {
                           </p>
                         }
                       >
-                        <p class="text-sm ui-muted" role="status">
-                          {t("assetField.preview.loading")}
-                        </p>
+                        <LocalBusyIndicator
+                          label={t("assetField.preview.loading")}
+                        />
                       </Show>
                     }
                   >

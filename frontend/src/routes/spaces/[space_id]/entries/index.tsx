@@ -8,6 +8,7 @@ import {
   Show,
 } from "solid-js";
 import { CreateFormDialog } from "~/components/create-dialogs";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { formatDateLabel } from "~/lib/date-format";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { formApi, searchApi } from "~/lib/ugoite-client";
@@ -270,9 +271,9 @@ export default function SpaceEntriesIndexPane() {
           </div>
         </div>
 
-        <div class="mt-6 entriesBody">
+        <div class="mt-6 entriesBody" aria-busy={isLoading() || undefined}>
           <Show when={sessionId().trim() && session()?.status === "running"}>
-            <p class="text-sm ui-muted">{t("querySession.preparing")}</p>
+            <LocalBusyIndicator label={t("querySession.preparing")} />
           </Show>
           <Show when={session()?.status === "failed"}>
             <p class="text-sm ui-text-danger">
@@ -282,8 +283,9 @@ export default function SpaceEntriesIndexPane() {
           <Show when={session()?.status === "expired"}>
             <p class="text-sm ui-text-danger">{t("querySession.expired")}</p>
           </Show>
+          {/* Panel-local spinner alongside the list: rows stay mounted. */}
           <Show when={isLoading()}>
-            <p class="text-sm ui-muted">{t("listPanel.loadingEntries")}</p>
+            <LocalBusyIndicator label={t("listPanel.loadingEntries")} />
           </Show>
           <Show when={errorMessage()}>
             <p class="text-sm ui-text-danger">{errorMessage()}</p>
@@ -393,10 +395,15 @@ export default function SpaceEntriesIndexPane() {
                 disabled={ctx.entryStore.loadingMore()}
                 onClick={() => void ctx.entryStore.loadMoreEntries()}
               >
-                {ctx.entryStore.loadingMore()
-                  ? t("entriesPage.loadingMore")
-                  : t("entriesPage.loadMore")}
+                {t("entriesPage.loadMore")}
               </button>
+              {/* Footer spinner only: existing rows stay visible. */}
+              <Show when={ctx.entryStore.loadingMore()}>
+                <LocalBusyIndicator
+                  size="sm"
+                  label={t("entriesPage.loadingMore")}
+                />
+              </Show>
             </div>
           </Show>
           <Show when={sessionId().trim() && totalCount() > 0}>

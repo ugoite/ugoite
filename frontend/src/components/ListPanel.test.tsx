@@ -194,7 +194,7 @@ describe("ListPanel", () => {
 
     it("should show loading state", () => {
       const [filterForm, setFilterForm] = createSignal("");
-      render(() => (
+      const { container } = render(() => (
         <ListPanel
           mode="entries"
           forms={mockForms}
@@ -203,7 +203,32 @@ describe("ListPanel", () => {
           loading={true}
         />
       ));
-      expect(screen.getByText("Loading entries...")).toBeInTheDocument();
+      // Spinner-only indicator: label is sr-only for assistive technology.
+      const status = screen.getByRole("status");
+      expect(status).toHaveTextContent("Loading entries...");
+      expect(container.querySelector(".localspinner")).toBeInTheDocument();
+      expect(container.querySelector(".ui-sr-only")).toHaveTextContent(
+        "Loading entries...",
+      );
+      expect(
+        container.querySelector(".entry-list-container"),
+      ).toHaveAttribute("aria-busy", "true");
+    });
+
+    it("should keep existing rows mounted while loading", () => {
+      const [filterForm, setFilterForm] = createSignal("");
+      render(() => (
+        <ListPanel
+          mode="entries"
+          forms={mockForms}
+          filterForm={filterForm}
+          onFilterFormChange={setFilterForm}
+          entries={mockEntries}
+          loading={true}
+        />
+      ));
+      expect(screen.getByText("Test Entry 1")).toBeInTheDocument();
+      expect(screen.getByRole("status")).toBeInTheDocument();
     });
 
     it("should show error state", () => {

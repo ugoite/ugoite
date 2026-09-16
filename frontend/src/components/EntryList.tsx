@@ -5,6 +5,7 @@ import type { EntryRecord } from "~/lib/types";
 import { t } from "~/lib/i18n";
 import { formatDateLabel } from "~/lib/date-format";
 import { formatValueForDisplay } from "~/lib/display-value";
+import { LocalBusyIndicator } from "./LocalBusyIndicator";
 
 /** Props for controlled mode (passing external state) */
 export interface EntryListControlledProps {
@@ -68,33 +69,10 @@ export function EntryList(props: EntryListProps) {
 
   /* v8 ignore start */
   return (
-    <div class="entry-list-container">
+    <div class="entry-list-container" aria-busy={loading() || undefined}>
+      {/* Panel-local spinner alongside the list: rows stay mounted. */}
       <Show when={loading()}>
-        <div class="loading-indicator flex items-center justify-center p-8">
-          <div class="flex flex-col items-center">
-            <svg
-              class="animate-spin h-8 w-8 ui-focus-text mb-2"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                class="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                stroke-width="4"
-              />
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
-            </svg>
-            <span class="ui-muted text-sm">{t("entriesList.loading")}</span>
-          </div>
-        </div>
+        <LocalBusyIndicator label={t("entriesList.loading")} />
       </Show>
 
       <Show when={error()}>
@@ -138,7 +116,7 @@ export function EntryList(props: EntryListProps) {
         </div>
       </Show>
 
-      <Show when={!loading() && entries().length > 0}>
+      <Show when={entries().length > 0}>
         <ul class="space-y-2">
           <For each={entries()}>
             {(entry) => (

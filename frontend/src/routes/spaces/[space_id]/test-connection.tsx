@@ -1,5 +1,6 @@
 import { A, useParams } from "@solidjs/router";
 import { createSignal, Show } from "solid-js";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { spaceApi } from "~/lib/ugoite-client";
 import type { StorageConnectionConfig } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
@@ -63,8 +64,9 @@ export default function SpaceTestConnectionRoute() {
         </A>
       </div>
 
+      {/* Panel-local spinner: the form stays mounted during load. */}
       <Show when={space.loading}>
-        <p class="text-sm ui-muted">Loading space...</p>
+        <LocalBusyIndicator label="Loading space" />
       </Show>
       <Show when={space.error}>
         <p class="ui-alert ui-alert-error text-sm">Failed to load space.</p>

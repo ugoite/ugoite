@@ -4,6 +4,7 @@ import { t } from "~/lib/i18n";
 import { formatDateLabel } from "~/lib/date-format";
 import { formatValueForDisplay } from "~/lib/display-value";
 import type { EntryRecord, Form } from "~/lib/types";
+import { LocalBusyIndicator } from "./LocalBusyIndicator";
 import { SearchBar } from "./SearchBar";
 
 export interface ListPanelProps {
@@ -162,35 +163,10 @@ interface EntryListContentProps {
 
 function EntryListContent(props: EntryListContentProps) {
   return (
-    <div class="entry-list-container">
+    <div class="entry-list-container" aria-busy={props.loading() || undefined}>
+      {/* Panel-local spinner alongside the list: rows stay mounted. */}
       <Show when={props.loading()}>
-        <div class="loading-indicator flex items-center justify-center p-8">
-          <div class="flex flex-col items-center">
-            <svg
-              class="animate-spin h-8 w-8 ui-focus-text mb-2"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                class="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                stroke-width="4"
-              />
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
-            </svg>
-            <span class="ui-muted text-sm">
-              {t("listPanel.loadingEntries")}
-            </span>
-          </div>
-        </div>
+        <LocalBusyIndicator label={t("listPanel.loadingEntries")} />
       </Show>
 
       <Show when={props.error()}>
@@ -248,7 +224,7 @@ function EntryListContent(props: EntryListContentProps) {
         </div>
       </Show>
 
-      <Show when={!props.loading() && props.entries().length > 0}>
+      <Show when={props.entries().length > 0}>
         <ul class="space-y-2">
           <For each={props.entries()}>
             {(entry) => (

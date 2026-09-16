@@ -12,6 +12,7 @@ import {
   buildEntryMarkdownFromFields,
   type EntryInputMode,
 } from "~/lib/entry-input";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { t, type TranslationKey } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import { searchApi } from "~/lib/ugoite-client";
@@ -371,11 +372,11 @@ function RowReferencePicker(props: RowReferencePickerProps) {
         )}
       </Show>
       <Show when={options.loading}>
-        <p class="text-xs ui-muted">
-          {t("createDialog.entry.rowReference.loading", {
+        <LocalBusyIndicator
+          label={t("createDialog.entry.rowReference.loading", {
             form: props.targetForm,
           })}
-        </p>
+        />
       </Show>
       <Show when={!options.loading && options.error}>
         <p class="text-xs ui-text-danger">

@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { Show } from "solid-js";
 import { EntryDetailPane } from "~/components/EntryDetailPane";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { t } from "~/lib/i18n";
 import { spaceRoute } from "~/lib/space-shell-route";
@@ -21,12 +22,12 @@ export default function SpaceEntryDetailRoute() {
         <Show
           when={!ctx.loadingForms() && !ctx.formsError?.()}
           fallback={
-            <div class="ui-entry-page">
+            <div class="ui-entry-page" aria-busy="true">
               <Show
                 when={ctx.formsError?.()}
                 fallback={
                   <div class="ui-card text-center">
-                    <p class="ui-muted text-sm">{t("entryDetail.loading")}</p>
+                    <LocalBusyIndicator label={t("entryDetail.loading")} />
                   </div>
                 }
               >
