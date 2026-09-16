@@ -6,14 +6,20 @@ sidebar:
 ---
 
 The server implementation in `crates/ugoite-server` and the generated contract
-at `/openapi.json` are authoritative. The checked-in snapshot is generated and
-drift-checked; do not copy endpoints or schemas into prose.
+at `/openapi.json` are authoritative. The checked-in snapshot at
+`crates/ugoite-server/src/openapi.json` is generated and drift-checked; do not
+copy endpoints or schemas into prose and do not maintain a second protocol
+registry here.
 
 ## Start here
 
 Read the [REST overview](../architecture/api/rest.md) for admission,
 storage-boundary, and authentication surfaces. Use `/openapi.json` from a
-running server for exact paths, methods, and schemas.
+running server for exact paths, methods, and schemas. Examples of contract
+paths (not a registry: verify against the generated document) include
+`/health`, `/spaces`, `/spaces/{space_id}/entries`,
+`/spaces/{space_id}/entries/{entry_id}/history`, and
+`/spaces/{space_id}/search`.
 
 ## Auth model
 
