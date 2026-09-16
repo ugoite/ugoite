@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createMemo, createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
@@ -7,6 +7,7 @@ import { EntriesRouteContext } from "~/lib/entries-route-context";
 import { createEntryStore } from "~/lib/entry-store";
 import { createSpaceStore } from "~/lib/space-store";
 import { setLocale } from "~/lib/i18n";
+import type { Form } from "~/lib/types";
 import { server } from "~/test/mocks/server";
 import { testApiUrl } from "~/test/http-origin";
 import SpaceEntriesIndexPane from "./index";
@@ -22,9 +23,9 @@ vi.mock("@solidjs/router", () => ({
   ),
 }));
 
-function renderRoute() {
+function renderRoute(formsList: Form[] = []) {
   render(() => {
-    const [forms] = createSignal([]);
+    const [forms] = createSignal(formsList);
     return (
       <EntriesRouteContext.Provider
         value={{
@@ -42,6 +43,15 @@ function renderRoute() {
     );
   });
 }
+
+const noteForm: Form = {
+  name: "Notes",
+  version: 1,
+  template: "",
+  fields: {
+    title: { type: "string", required: true },
+  },
+};
 
 describe("/spaces/:space_id/entries", () => {
   beforeEach(() => {
@@ -216,8 +226,7 @@ describe("/spaces/:space_id/entries", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it("returns to the Forms workspace when clearing SQL results", async () => {
-    searchParams.session = "session-1";
+  it("returns to the Forms workspace when clearing SQL results", async () => {    searchParams.session = "session-1";
     server.use(
       http.get(
         testApiUrl("/spaces/default/sql-sessions/session-1"),
@@ -249,5 +258,113 @@ describe("/spaces/:space_id/entries", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear query" }));
 
     expect(navigate).toHaveBeenCalledWith("/spaces/default/forms");
+  });
+
+  it("form scope: uses the Form name as heading with a back link and preselected New Entry", async () => {
+    searchParams.form = "Notes";
+    let queryBody: { filter?: Record<string, unknown> } | undefined;
+    server.use(
+      http.get(
+        testApiUrl("/spaces/default/entries"),
+        () =>
+          HttpResponse.json([{
+            id: "other-1",
+            title: "Other form entry",
+            form: "Projects",
+            updated_at: "2026-03-01T00:00:00Z",
+            properties: {},
+            tags: [],
+          }]),
+      ),
+      http.post(
+        testApiUrl("/spaces/default/query"),
+        async ({ request }) => {
+          queryBody = await request.json() as {
+            filter?: Record<string, unknown>;
+          };
+          return HttpResponse.json([{
+            id: "scoped-1",
+            title: "Scoped note",
+            form: "Notes",
+            updated_at: "2026-03-01T00:00:00Z",
+            properties: {},
+            tags: [],
+          }]);
+        },
+      ),
+    );
+
+    renderRoute([noteForm]);
+
+    expect(await screen.findByRole("heading", { name: "Notes" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to Forms" }))
+      .toHaveAttribute("href", "/spaces/default/forms");
+    expect(await screen.findByRole("button", { name: /Scoped note/ }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Other form entry/ })).not
+      .toBeInTheDocument();
+    expect(queryBody?.filter).toMatchObject({ form: "Notes" });
+
+    fireEvent.click(screen.getByRole("button", { name: "New entry" }));
+    expect(navigate).toHaveBeenCalledWith(
+      "/spaces/default/entries/new?form=Notes",
+    );
+  });
+
+  it("form scope: hides New Entry for reserved metadata Forms", async () => {
+    searchParams.form = "SQL";
+    server.use(
+      http.post(
+        testApiUrl("/spaces/default/query"),
+        () => HttpResponse.json([]),
+      ),
+    );
+
+    renderRoute([]);
+
+    expect(await screen.findByRole("heading", { name: "SQL" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to Forms" }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New entry" })).not
+      .toBeInTheDocument();
+    expect(await screen.findByText("No entries found.")).toBeInTheDocument();
+  });
+
+  it("form scope: shows server query failures instead of entries", async () => {
+    searchParams.form = "Notes";
+    server.use(
+      http.post(
+        testApiUrl("/spaces/default/query"),
+        () => HttpResponse.json({ detail: "Error" }, { status: 500 }),
+      ),
+    );
+
+    renderRoute([noteForm]);
+
+    expect(await screen.findByRole("heading", { name: "Notes" }))
+      .toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.querySelector(".ui-text-danger")).toBeInTheDocument()
+    );
+    expect(screen.queryByRole("button", { name: /Scoped note/ })).not
+      .toBeInTheDocument();
+  });
+
+  it("form scope: localizes the back link in Japanese", async () => {
+    setLocale("ja");
+    searchParams.form = "Notes";
+    server.use(
+      http.post(
+        testApiUrl("/spaces/default/query"),
+        () => HttpResponse.json([]),
+      ),
+    );
+
+    renderRoute([noteForm]);
+
+    expect(await screen.findByRole("link", { name: "フォームへ戻る" }))
+      .toBeInTheDocument();
   });
 });

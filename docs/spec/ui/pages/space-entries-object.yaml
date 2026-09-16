@@ -13,6 +13,10 @@ components:
     - id: plain-entry-list
       type: list
       description: The plain Entries route loads the Space's Entry list as border-separated rows, exposes local filtering and sorting, and keeps the first-entry flow without redirecting to Forms.
+    - id: form-scoped-entry-list
+      type: list
+      condition: form query parameter is present
+      description: With a form query parameter the Entries route shows only that Form's Entries from a form-scoped server query, uses the Form name as heading, links back to Forms, opens New Entry with that Form preselected, and hides New Entry for reserved metadata Forms.
     - id: sql-session-results
       type: query-results
       condition: session query parameter is present

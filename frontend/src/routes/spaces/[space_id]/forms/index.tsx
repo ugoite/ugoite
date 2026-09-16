@@ -1,7 +1,6 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { CreateFormDialog, EditFormDialog } from "~/components/create-dialogs";
-import { FormTable } from "~/components/FormTable";
 import { UiIcon } from "~/components/UiIcon";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { t } from "~/lib/i18n";
@@ -10,7 +9,7 @@ import {
   isReservedMetadataForm,
 } from "~/lib/metadata-forms";
 import { formApi } from "~/lib/ugoite-client";
-import type { FormCreatePayload } from "~/lib/types";
+import type { Form, FormCreatePayload } from "~/lib/types";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "forms" });
@@ -18,26 +17,31 @@ export const route = spaceRoute({ navigation: "forms" });
 export default function SpaceFormsIndexPane() {
   const ctx = useEntriesRouteContext();
   const navigate = useNavigate();
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
   const [query, setQuery] = createSignal("");
   const [showFormDialog, setShowFormDialog] = createSignal(false);
-  const [showEditDialog, setShowEditDialog] = createSignal(false);
+  const [editingForm, setEditingForm] = createSignal<Form | null>(null);
   const [showMetadata, setShowMetadata] = createSignal(false);
+  const [redirectedLegacy, setRedirectedLegacy] = createSignal(false);
   const forms = createMemo(() =>
     showMetadata() ? ctx.forms() : filterCreatableEntryForms(ctx.forms())
-  );
-  const selectedName = createMemo(() => String(params.form || ""));
-  const selectedForm = createMemo(() =>
-    forms().find((form) => form.name === selectedName())
   );
   const filteredForms = createMemo(() =>
     forms().filter((form) =>
       form.name.toLowerCase().includes(query().trim().toLowerCase())
     )
   );
+
+  // Graceful legacy support: /forms?form=X navigates to the form-scoped
+  // Entry list. The Forms page itself stays list-only.
   createEffect(() => {
-    if (!selectedForm() && forms()[0]) {
-      setParams({ form: forms()[0].name, tab: undefined }, { replace: true });
+    const legacy = String(params.form || "");
+    if (legacy && !redirectedLegacy()) {
+      setRedirectedLegacy(true);
+      navigate(
+        `/spaces/${ctx.spaceId()}/entries?form=${encodeURIComponent(legacy)}`,
+        { replace: true },
+      );
     }
   });
 
@@ -45,11 +49,13 @@ export default function SpaceFormsIndexPane() {
     await formApi.create(ctx.spaceId(), payload);
     setShowFormDialog(false);
     await ctx.refetchForms();
-    setParams({ form: payload.name, tab: undefined });
+    navigate(
+      `/spaces/${ctx.spaceId()}/entries?form=${encodeURIComponent(payload.name)}`,
+    );
   };
   const updateForm = async (payload: FormCreatePayload) => {
     await formApi.create(ctx.spaceId(), payload);
-    setShowEditDialog(false);
+    setEditingForm(null);
     await ctx.refetchForms();
   };
 
@@ -70,47 +76,35 @@ export default function SpaceFormsIndexPane() {
           </div>
         }
       >
-        <div class="split">
-          <div class="mobileFormPicker surface">
-            <div class="mobileFormPickerSummary">
-              <div class="min-w-0">
-                <p class="eyebrow">{t("formsPage.formPicker")}</p>
-                <strong class="mobileFormPickerValue">
-                  {selectedForm()?.name ?? t("formsPage.selectPlaceholder")}
-                </strong>
-              </div>
-              <label class="mobileFormPickerControl">
-                <span class="ui-sr-only">{t("formsPage.selectForm")}</span>
-                <select
-                  class="ui-select"
-                  aria-label={t("formsPage.selectForm")}
-                  value={selectedName()}
-                  onChange={(event) =>
-                    setParams({
-                      form: event.currentTarget.value,
-                      tab: undefined,
-                    })}
-                >
-                  <For each={filteredForms()}>
-                    {(form) => <option value={form.name}>{form.name}</option>}
-                  </For>
-                </select>
+        <div class="mx-auto max-w-6xl formsPage">
+          <div class="flex flex-wrap items-center justify-between gap-3 entriesHeader">
+            <h1 class="ui-page-title">{t("formsPage.heading")}</h1>
+            <button
+              class="ui-button ui-button-primary text-sm"
+              type="button"
+              aria-label={t("formsPage.newFormAria")}
+              onClick={() => setShowFormDialog(true)}
+            >
+              {t("formsPage.newButton")}
+            </button>
+          </div>
+
+          <div class="mt-6">
+            <div class="entriesToolbar" role="search">
+              <label class="entriesSearch">
+                <span class="ui-sr-only">{t("formsPage.find")}</span>
+                <span class="entriesSearchIcon" aria-hidden="true">
+                  <UiIcon name="search" />
+                </span>
+                <input
+                  type="search"
+                  aria-label={t("formsPage.find")}
+                  class="ui-input"
+                  placeholder={t("formsPage.find")}
+                  value={query()}
+                  onInput={(event) => setQuery(event.currentTarget.value)}
+                />
               </label>
-            </div>
-            <label class="miniSearch mobileFormPickerSearch">
-              <UiIcon name="search" />
-              <input
-                value={query()}
-                onInput={(event) => setQuery(event.currentTarget.value)}
-                placeholder={t("formsPage.find")}
-              />
-            </label>
-            <Show when={filteredForms().length === 0}>
-              <div class="ui-muted mobileFormPickerEmpty">
-                {t("formsPage.noForms")}
-              </div>
-            </Show>
-            <div class="mobileFormPickerActions">
               <label class="formVisibilityToggle">
                 <span>{t("formsPage.showMetadata")}</span>
                 <input
@@ -121,151 +115,60 @@ export default function SpaceFormsIndexPane() {
                 />
                 <span class="formVisibilityTrack" aria-hidden="true" />
               </label>
-              <button
-                class="btn iconBtn"
-                type="button"
-                aria-label={t("formsPage.newFormAria")}
-                onClick={() => setShowFormDialog(true)}
-              >
-                <UiIcon name="plus" />
-              </button>
+            </div>
+            <Show when={filteredForms().length === 0}>
+              <p class="text-sm ui-muted">{t("formsPage.noForms")}</p>
+            </Show>
+            <div
+              class="entriesList"
+              role="list"
+              aria-label={t("formsPage.heading")}
+            >
+              <For each={filteredForms()}>
+                {(form) => (
+                  <div class="formRow" role="listitem">
+                    <button
+                      type="button"
+                      class="formRowMain"
+                      onClick={() =>
+                        navigate(
+                          `/spaces/${ctx.spaceId()}/entries?form=${
+                            encodeURIComponent(form.name)
+                          }`,
+                        )}
+                    >
+                      <span class="glyph" aria-hidden="true">
+                        {form.name.slice(0, 1).toUpperCase()}
+                      </span>
+                      <span class="formRowName">{form.name}</span>
+                      <Show when={isReservedMetadataForm(form.name)}>
+                        <span
+                          class="systemFormIcon"
+                          aria-label={t("formsPage.systemForm")}
+                          title={t("formsPage.systemForm")}
+                        >
+                          <UiIcon name="storage" />
+                        </span>
+                      </Show>
+                      <span class="entryRowChevron" aria-hidden="true">
+                        ›
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      class="ui-button ui-button-secondary ui-button-sm formRowEdit"
+                      aria-label={t("formsPage.editFormAria", {
+                        name: form.name,
+                      })}
+                      onClick={() => setEditingForm(form)}
+                    >
+                      <UiIcon name="settings" />
+                    </button>
+                  </div>
+                )}
+              </For>
             </div>
           </div>
-          <aside
-            class="listPane surface desktopFormPicker"
-            aria-label={t("formsPage.formPicker")}
-          >
-            <div class="paneHead">
-              <span class="ui-sr-only">{t("formsPage.formPicker")}</span>
-              <button
-                class="btn iconBtn"
-                type="button"
-                aria-label={t("formsPage.newFormAria")}
-                onClick={() => setShowFormDialog(true)}
-              >
-                <UiIcon name="plus" />
-              </button>
-            </div>
-            <label class="formVisibilityToggle">
-              <span>{t("formsPage.showMetadata")}</span>
-              <input
-                type="checkbox"
-                checked={showMetadata()}
-                onChange={(event) =>
-                  setShowMetadata(event.currentTarget.checked)}
-              />
-              <span class="formVisibilityTrack" aria-hidden="true" />
-            </label>
-            <label class="miniSearch">
-              <UiIcon name="search" />
-              <input
-                value={query()}
-                onInput={(event) => setQuery(event.currentTarget.value)}
-                placeholder={t("formsPage.find")}
-              />
-            </label>
-            <For
-              each={filteredForms()}
-              fallback={
-                <div class="ui-muted p-3">{t("formsPage.noForms")}</div>
-              }
-            >
-              {(form) => (
-                <button
-                  class="formItem"
-                  classList={{ active: selectedName() === form.name }}
-                  type="button"
-                  onClick={() => setParams({ form: form.name, tab: undefined })}
-                >
-                  <span
-                    class="glyph"
-                    classList={{ active: selectedName() === form.name }}
-                  >
-                    {form.name.slice(0, 1).toUpperCase()}
-                  </span>
-                  <span>
-                    <b>{form.name}</b>
-                    <Show when={isReservedMetadataForm(form.name)}>
-                      <span
-                        class="systemFormIcon"
-                        aria-label={t("formsPage.systemForm")}
-                        title={t("formsPage.systemForm")}
-                      >
-                        <UiIcon name="storage" />
-                      </span>
-                    </Show>
-                  </span>
-                  <span class="chev">›</span>
-                </button>
-              )}
-            </For>
-          </aside>
-          <main class="detailPane">
-            <Show
-              when={selectedForm()}
-              fallback={
-                <div class="surface settingsMain ui-muted">
-                  {t("formsPage.selectForm")}
-                </div>
-              }
-            >
-              {(form) => (
-                <>
-                  <div class="formWorkspaceHead surface">
-                    <div class="actions">
-                      <button
-                        class="btn"
-                        type="button"
-                        onClick={() => setShowEditDialog(true)}
-                      >
-                        <UiIcon name="settings" /> {t("formsPage.editForm")}
-                      </button>
-                      <Show when={!isReservedMetadataForm(form().name)}>
-                        <button
-                          class="btn primary"
-                          type="button"
-                          onClick={() =>
-                            navigate(
-                              `/spaces/${ctx.spaceId()}/entries/new?form=${
-                                encodeURIComponent(form().name)
-                              }`,
-                            )}
-                        >
-                          <UiIcon name="plus" /> {t("formsPage.newEntry")}
-                        </button>
-                      </Show>
-                    </div>
-                  </div>
-                  <FormTable
-                    spaceId={ctx.spaceId()}
-                    entryForm={form()}
-                    onAddRow={isReservedMetadataForm(form().name)
-                      ? undefined
-                      : () =>
-                        navigate(
-                          `/spaces/${ctx.spaceId()}/entries/new?form=${
-                            encodeURIComponent(form().name)
-                          }&returnTo=forms`,
-                        )}
-                    onEntryClick={(id) =>
-                      navigate(
-                        `/spaces/${ctx.spaceId()}/entries/${
-                          encodeURIComponent(id)
-                        }`,
-                      )}
-                  />
-                  <EditFormDialog
-                    open={showEditDialog()}
-                    entryForm={form()}
-                    columnTypes={ctx.columnTypes()}
-                    formNames={ctx.forms().map((candidate) => candidate.name)}
-                    onClose={() => setShowEditDialog(false)}
-                    onSubmit={updateForm}
-                  />
-                </>
-              )}
-            </Show>
-          </main>
         </div>
         <CreateFormDialog
           open={showFormDialog()}
@@ -274,6 +177,18 @@ export default function SpaceFormsIndexPane() {
           onClose={() => setShowFormDialog(false)}
           onSubmit={createForm}
         />
+        <Show when={editingForm()}>
+          {(form) => (
+            <EditFormDialog
+              open={true}
+              entryForm={form()}
+              columnTypes={ctx.columnTypes()}
+              formNames={ctx.forms().map((candidate) => candidate.name)}
+              onClose={() => setEditingForm(null)}
+              onSubmit={updateForm}
+            />
+          )}
+        </Show>
       </Show>
     </>
   );

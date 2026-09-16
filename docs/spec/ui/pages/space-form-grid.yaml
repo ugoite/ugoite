@@ -1,8 +1,8 @@
 version: "0.2"
-updated: "2026-09-11"
+updated: "2026-09-16"
 page:
   id: space-form-grid
-  title: Forms Workspace
+  title: Forms List
   route: /spaces/{space_id}/forms
   implementation: implemented
 components:
@@ -11,20 +11,18 @@ components:
       type: persistent-workspace-navigation
       reference: ../components/space-shell.yaml
   body:
-    - id: form-picker
-      type: searchable-master-list
+    - id: form-list
+      type: list
+      description: The Forms route is list-only. Selecting a Form navigates to its form-scoped Entry list at the Entries route with a form query parameter; legacy /forms?form= URLs redirect there. One shared list DOM serves desktop and mobile with border-separated rows, and per-row edit stays on a small button that does not steal the navigation click.
       items:
         - form-name
       actions:
         - create-form
-    - id: selected-form-entries
-      type: data-grid
-      description: The selected Form's Entries are shown directly without a second Entries view or nested view tabs. On small viewports the same records use a primary card/stack representation so the first fields remain visible without horizontal table scrolling.
-      actions:
         - edit-form
-        - create-entry
-        - open-entry
-        - export-csv
+        - open-form-entries
+    - id: system-form-visibility
+      type: filter-button
+      description: Reserved system Forms stay hidden until the compact visibility toggle is enabled.
 responsive:
-  desktop: split-master-detail
-  mobile: selected-form-first-with-card-list
+  desktop: border-separated-list
+  mobile: stacked-border-separated-list

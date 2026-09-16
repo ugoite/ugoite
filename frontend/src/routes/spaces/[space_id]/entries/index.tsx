@@ -1,4 +1,4 @@
-import { useNavigate, useSearchParams } from "@solidjs/router";
+import { A, useNavigate, useSearchParams } from "@solidjs/router";
 import {
   createEffect,
   createMemo,
@@ -10,10 +10,13 @@ import {
 import { CreateFormDialog } from "~/components/create-dialogs";
 import { formatDateLabel } from "~/lib/date-format";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
-import { formApi } from "~/lib/ugoite-client";
+import { formApi, searchApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
-import { filterCreatableEntryForms } from "~/lib/metadata-forms";
+import {
+  filterCreatableEntryForms,
+  isReservedMetadataForm,
+} from "~/lib/metadata-forms";
 import { sqlSessionApi, sqlSessionRowToEntryRecord } from "~/lib/ugoite-client";
 import type { EntryRecord, FormCreatePayload } from "~/lib/types";
 import { formatUserFacingError } from "~/lib/user-facing-error";
@@ -35,6 +38,12 @@ export default function SpaceEntriesIndexPane() {
   const sessionId = createMemo(
     () => (searchParams.session ? String(searchParams.session) : ""),
   );
+  const formName = createMemo(
+    () => (searchParams.form ? String(searchParams.form).trim() : ""),
+  );
+  const isReservedForm = createMemo(
+    () => formName() !== "" && isReservedMetadataForm(formName()),
+  );
   const [page, setPage] = createSignal(1);
   const [pageSize] = createSignal(24);
 
@@ -53,8 +62,18 @@ export default function SpaceEntriesIndexPane() {
       sqlSessionApi.rows(spaceId(), id, offset, limit),
   );
 
+  // Form-scoped Entry list: server-side query, never a client-side filter
+  // over the unpaginated entry store.
+  const [formEntries] = createResource(
+    () => {
+      if (sessionId().trim() || !formName()) return null;
+      return { id: spaceId(), form: formName() };
+    },
+    async ({ id, form }) => await searchApi.query(id, { form }),
+  );
+
   createEffect(() => {
-    if (spaceId() && !sessionId().trim()) {
+    if (spaceId() && !sessionId().trim() && !formName()) {
       ctx.entryStore.loadEntries();
     }
   });
@@ -80,6 +99,9 @@ export default function SpaceEntriesIndexPane() {
     entries: EntryRecord[];
     error: Error | null;
   }>(() => {
+    if (!sessionId().trim() && formName()) {
+      return { entries: formEntries() ?? [], error: null };
+    }
     if (!sessionId().trim()) {
       return { entries: ctx.entryStore.entries() || [], error: null };
     }
@@ -141,6 +163,9 @@ export default function SpaceEntriesIndexPane() {
     if (sessionId().trim()) {
       return session.loading || sessionRows.loading;
     }
+    if (formName()) {
+      return formEntries.loading;
+    }
     return ctx.entryStore.loading();
   });
 
@@ -148,12 +173,18 @@ export default function SpaceEntriesIndexPane() {
     if (sessionId().trim()) {
       return session.error || sessionRows.error || displayEntryState().error;
     }
+    if (formName()) {
+      return formEntries.error || displayEntryState().error;
+    }
     return ctx.entryStore.errorCause();
   });
 
   const errorMessage = createMemo(() => {
     const err = error();
     if (!err) return null;
+    if (formName() && !sessionId().trim()) {
+      return formatUserFacingError(err, "formTable.recordsError", "search.query");
+    }
     return formatUserFacingError(
       err,
       "formTable.recordsError",
@@ -163,6 +194,7 @@ export default function SpaceEntriesIndexPane() {
   const needsFirstFormGuidance = createMemo(
     () =>
       !sessionId().trim() &&
+      !formName() &&
       !isLoading() &&
       !ctx.loadingForms() &&
       displayEntries().length === 0 &&
@@ -188,12 +220,20 @@ export default function SpaceEntriesIndexPane() {
             <h1 class="ui-page-title">
               {sessionId().trim()
                 ? t("querySession.heading")
-                : t("entriesPage.heading")}
+                : formName() || t("entriesPage.heading")}
             </h1>
             <Show when={sessionId().trim()}>
               <p class="text-sm ui-muted">
                 {t("entriesPage.queryDescription")}
               </p>
+            </Show>
+            <Show when={!sessionId().trim() && formName()}>
+              <A
+                class="text-sm ui-focus-text"
+                href={`/spaces/${spaceId()}/forms`}
+              >
+                {t("entriesPage.formBack")}
+              </A>
             </Show>
           </div>
           <div class="flex items-center gap-2">
@@ -206,18 +246,27 @@ export default function SpaceEntriesIndexPane() {
                 {t("querySession.clear")}
               </button>
             </Show>
-            <button
-              type="button"
-              class="ui-button text-sm"
-              classList={{
-                "ui-button-primary": hasCreatableForms(),
-                "ui-button-secondary": !hasCreatableForms(),
-              }}
-              disabled={!hasCreatableForms()}
-              onClick={() => navigate(`/spaces/${spaceId()}/entries/new`)}
-            >
-              {t("entriesPage.newButton")}
-            </button>
+            <Show when={!formName() || !isReservedForm()}>
+              <button
+                type="button"
+                class="ui-button text-sm"
+                classList={{
+                  "ui-button-primary": hasCreatableForms(),
+                  "ui-button-secondary": !hasCreatableForms(),
+                }}
+                disabled={!hasCreatableForms()}
+                onClick={() =>
+                  navigate(
+                    formName()
+                      ? `/spaces/${spaceId()}/entries/new?form=${
+                        encodeURIComponent(formName())
+                      }`
+                      : `/spaces/${spaceId()}/entries/new`,
+                  )}
+              >
+                {t("entriesPage.newButton")}
+              </button>
+            </Show>
           </div>
         </div>
 
@@ -334,7 +383,9 @@ export default function SpaceEntriesIndexPane() {
               )}
             </For>
           </div>
-          <Show when={!sessionId().trim() && ctx.entryStore.hasMore()}>
+          <Show
+            when={!sessionId().trim() && !formName() && ctx.entryStore.hasMore()}
+          >
             <div class="mt-6 flex justify-center">
               <button
                 type="button"
