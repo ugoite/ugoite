@@ -9,7 +9,8 @@ type Dictionary = typeof uiDictionary;
 
 export type Locale = Extract<keyof Dictionary, string>;
 export type TranslationKey = Extract<keyof Dictionary["en"], string>;
-export type TranslationParams = Record<string, string | number>;
+export type TranslationParam = string | number | boolean;
+export type TranslationParams = Record<string, TranslationParam>;
 
 const availableLocales = new Set<Locale>(Object.keys(uiDictionary) as Locale[]);
 
@@ -60,6 +61,16 @@ export const setLocale = localeStore.setLocale;
 export const intlLocale = (value: Locale = locale()): string =>
   value === "ja" ? "ja-JP" : "en-US";
 
+const formatTranslationParam = (value: unknown): string => {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  // Never coerce objects/arrays/functions/symbols/bigints to
+  // "[object Object]"; unknown shapes render as empty instead.
+  return "";
+};
+
 export const t = (key: TranslationKey, params?: TranslationParams): string => {
   const currentLocale = locale();
   /* v8 ignore start */
@@ -67,7 +78,8 @@ export const t = (key: TranslationKey, params?: TranslationParams): string => {
   const template = currentDict[key] ?? uiDictionary.en[key] ?? key;
   if (!params) return template;
   return Object.entries(params).reduce(
-    (message, [name, value]) => message.replaceAll(`{${name}}`, String(value)),
+    (message, [name, value]) =>
+      message.replaceAll(`{${name}}`, formatTranslationParam(value)),
     template,
   );
   /* v8 ignore stop */
