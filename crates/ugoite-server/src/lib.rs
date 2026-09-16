@@ -11765,7 +11765,9 @@ mod oidc_integration_tests {
             .save_oidc_attempt(
                 setup.provider_id,
                 &driven.state,
-                "tampered-nonce",
+                // Derive from the runtime nonce so the mismatch is real but
+                // no cryptographic value is hard-coded (CodeQL).
+                &format!("{}-tampered", attempt.nonce),
                 &attempt.pkce_verifier,
                 Some(&setup.invitation_token),
                 None,
