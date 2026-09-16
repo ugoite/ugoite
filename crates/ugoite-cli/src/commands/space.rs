@@ -167,11 +167,11 @@ pub enum SpaceSubCmd {
         )]
         space_path: String,
     },
-    /// Audit events (backend/api mode only)
+    /// List Space audit events (append-only evidence: event/change/revision/actor only, never paths or secrets)
     AuditEvents {
         #[arg(
-            value_name = "SPACE_UID",
-            help = "Immutable Space UID in backend/api mode."
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
         #[arg(long, default_value_t = 0)]
@@ -210,6 +210,37 @@ fn resolve_sample_owner_display_name(owner: Option<String>) -> Option<String> {
 fn validate_patch_settings(settings: &serde_json::Value) -> Result<()> {
     let patch = serde_json::json!({ "settings": settings });
     validate_public_space_patch(&patch).map_err(|error| anyhow::anyhow!(error.to_string()))
+}
+
+/// Concise TTY projection for Space audit event rows. Piped output keeps
+/// full JSON. Only identity fields are projected; paths and secrets never
+/// enter audit events by construction.
+fn audit_rows_table(rows: &[serde_json::Value]) -> Vec<serde_json::Value> {
+    rows.iter()
+        .map(|row| {
+            let metadata = row.get("metadata");
+            let actor = row
+                .get("actor_principal_id")
+                .or_else(|| row.get("subject_principal_id"))
+                .and_then(|value| value.as_str())
+                .unwrap_or_default();
+            let target_type = row
+                .get("target_type")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default();
+            let target_id = row
+                .get("target_id")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default();
+            serde_json::json!({
+                "event_id": row.get("event_id").and_then(|value| value.as_str()).unwrap_or_default(),
+                "action": row.get("action").and_then(|value| value.as_str()).unwrap_or_default(),
+                "actor": actor,
+                "target": if target_type.is_empty() { target_id.to_owned() } else { format!("{target_type}:{target_id}") },
+                "revision_id": metadata.and_then(|meta| meta.get("revision_id")).and_then(|value| value.as_str()).unwrap_or_default(),
+            })
+        })
+        .collect()
 }
 
 pub async fn create_space_cmd(
@@ -483,12 +514,59 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             offset,
             limit,
         } => {
-            let space_id = resolve_backend_space_uid(&space_path, "space audit-events")?;
-            if validated_base_url(&config)?.is_some() {
-                bail!("space audit-events is not available in backend/api mode in this release");
+            let (root, space_id) =
+                resolve_space_reference(&config, &space_path, "space audit-events")?;
+            if let Some(base) = validated_base_url(&config)? {
+                let result = http::execute(
+                    &base,
+                    "space.audit",
+                    serde_json::json!({"space_id": space_id, "offset": offset, "limit": limit}),
+                    None,
+                )
+                .await?;
+                if fmt != Format::Json {
+                    if let Some(rows) = result.get("items").and_then(|value| value.as_array()) {
+                        let table = audit_rows_table(rows);
+                        print_json_table(
+                            &table,
+                            &[
+                                ("EVENT_ID", "event_id"),
+                                ("ACTION", "action"),
+                                ("ACTOR", "actor"),
+                                ("TARGET", "target"),
+                                ("REVISION", "revision_id"),
+                            ],
+                        );
+                        return Ok(());
+                    }
+                }
+                print_json(&result);
+                return Ok(());
             }
-            let _ = (space_id, offset, limit);
-            bail!("{}", backend_api_mode_error(&config, "audit-events"));
+            let service = UgoiteService::new_without_background_refresh(&root)?;
+            // Open hook heals crash-missing evidence; the list itself is a
+            // light read of committed evidence.
+            service.open_space(&space_id).await?;
+            let result = service
+                .list_space_audit(&space_id, offset as usize, limit as usize)
+                .await?;
+            if fmt != Format::Json {
+                if let Some(rows) = result.get("items").and_then(|value| value.as_array()) {
+                    let table = audit_rows_table(rows);
+                    print_json_table(
+                        &table,
+                        &[
+                            ("EVENT_ID", "event_id"),
+                            ("ACTION", "action"),
+                            ("ACTOR", "actor"),
+                            ("TARGET", "target"),
+                            ("REVISION", "revision_id"),
+                        ],
+                    );
+                    return Ok(());
+                }
+            }
+            print_json(&result);
         }
     }
     Ok(())

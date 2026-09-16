@@ -424,12 +424,11 @@ pub(crate) async fn read_sql_row_for_audit(
 ) -> Result<Option<(String, Option<String>, bool, String)>> {
     // Read-only presence check: reconciliation must never bootstrap the SQL
     // form as a side effect. A missing form means no row was ever committed.
+    // Typed missing-target only; corrupt Forms and storage failures
+    // propagate fail-closed.
     match crate::form::read_form_definition(op, ws_path, SQL_FORM_NAME).await {
         Ok(_) => {}
-        Err(error)
-            if error.to_string().to_lowercase().contains("not found")
-                || error.to_string().contains("was not found") =>
-        {
+        Err(error) if crate::audit::is_missing_audit_target(&error) => {
             return Ok(None);
         }
         Err(error) => return Err(error),
@@ -440,7 +439,7 @@ pub(crate) async fn read_sql_row_for_audit(
             if error
                 .downcast_ref::<AppError>()
                 .is_some_and(|app| app.code() == ErrorCode::EntryNotFound)
-                || error.to_string().contains("not found") =>
+                || crate::audit::is_missing_audit_target(&error) =>
         {
             return Ok(None);
         }
