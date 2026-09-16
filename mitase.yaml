@@ -340,6 +340,12 @@ validation:
         - criterion: REQ-FORM-002#criterion.preserve-physical-fields
           level: verifiable
     limits: { max_ownership_scope_units: 64 }
+  # PR11 (#2422) migration changed-scope policy: no validator exemption.
+  # A migrated criterion satisfies changed-scope only when at least one
+  # canonically-owned artifact is in the change scope (canonical spec
+  # artifact when the semantic definition migrated). Never fake-change
+  # retired legacy implementation/tests as "migration".
+  # See docs/spec/migration.md. Readiness stays strict/traceable.
   changed:
     baseline: { strategy: parent }
     require_owned_changes: false

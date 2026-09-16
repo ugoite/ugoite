@@ -64,3 +64,28 @@ schema, not a second product authority. As legacy registry machinery and
 unmigrated domains are retired, their corresponding `docs/spec` records may be
 removed after the equivalent canonical records, evidence, and scoped ownership
 rules have been reviewed.
+
+## Migration changed-scope rule (PR11 #2422)
+
+Source of truth: `AGENTS.md` Specification contract. Mitase validates declared
+specification relationships and evidence; it does not execute Ugoite tests, own
+repository delivery, or become a second Knowledge authority.
+
+- There is no Ugoite-specific exemption in the Mitase validator for
+  migrated-criterion changed-scope validation, and none may be added.
+  Baseline-aware changed-scope diagnostics for a migrated criterion are
+  satisfied the same way as any other criterion.
+- A migration PR satisfies the changed-scope rule by changing at least one
+  canonically-owned artifact of that criterion. When the semantic definition has
+  migrated, the canonical spec artifact (under `docs/mitase`) is in the change
+  scope.
+- Never fake-change a retired legacy implementation or test surface as
+  "migration". Unchanged implementation/test artifacts remain acceptable exactly
+  when a canonical spec artifact changed; changing only legacy-owned surfaces
+  does not satisfy the rule.
+- This policy does not weaken the repository-wide `mitase check .` readiness
+  gate (`validation.preset: strict`, `validation.readiness.target: traceable`).
+  The `changed` baseline stays `parent` with no exemption keys.
+- Mitase stays pinned to an immutable `0.1.x` release via
+  `tools/mitase.lock.toml` and `scripts/mitase` (`#2530` stays open). Migration
+  work never pins Mitase HEAD or a mutable branch.
