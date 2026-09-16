@@ -14,6 +14,10 @@ type RecoveryFixture = {
 };
 
 test.describe("Account Self-Recovery", () => {
+  // Ceremony-heavy group: stays serial even if the shared Playwright worker
+  // count ever changes, and always runs on isolated contexts with their own
+  // virtual authenticators (see openIsolatedPasskeyPage).
+  test.describe.configure({ mode: "serial" });
   test.beforeAll(async ({ request }) => await waitForServers(request));
 
   test("replaces the credential generation and preserves the HumanAccount", async ({ browser, request }) => {

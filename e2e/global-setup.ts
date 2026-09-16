@@ -1,4 +1,5 @@
 import { chromium, expect, type FullConfig } from "@playwright/test";
+import { gotoWithOneEnvironmentRetry } from "./lib/navigation-retry.ts";
 import {
   addVirtualAuthenticator,
   removeVirtualAuthenticator,
@@ -79,8 +80,15 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   if (!baseURL) throw new Error("Playwright baseURL is required");
 
   const browser = await chromium.launch();
-  const context = await browser.newContext();
-  const page = await context.newPage();
+  // The initial setup navigation tolerates exactly one browser-level
+  // environment failure (ERR_NETWORK_CHANGED and kin) via a single context
+  // rebuild. Non-OK responses and every later ceremony step still throw on
+  // the first attempt: product verdicts are never retried.
+  const { target: context, page } = await gotoWithOneEnvironmentRetry(
+    browser,
+    `${baseURL}/setup#secret=${encodeURIComponent(setupSecret)}`,
+    { label: "global setup", requireOkResponse: true },
+  );
   const browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
   page.on("console", (message) => {
@@ -93,16 +101,6 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 
   try {
     await assertBuildProvenance(page, baseURL);
-    const setupResponse = await page.goto(
-      `${baseURL}/setup#secret=${encodeURIComponent(setupSecret)}`,
-    );
-    if (!setupResponse?.ok()) {
-      throw new Error(
-        `setup page returned ${setupResponse?.status()}: ${
-          (await setupResponse?.text())?.slice(0, 2000)
-        }`,
-      );
-    }
     const displayName = page.getByLabel("Display name");
     await waitForSetupState(page, displayName, "setup form", browserErrors);
     await displayName.fill("E2E owner");

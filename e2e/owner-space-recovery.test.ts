@@ -1,11 +1,15 @@
 import { type Browser, expect, test } from "@playwright/test";
 import { getBackendUrl, waitForServers } from "./lib/client.ts";
+import {
+  installLongtaskObserver,
+  logCeremonyStep,
+  reportLongtasks,
+} from "./lib/ceremony-log.ts";
 import { startMockOidcServer } from "./lib/mock-oidc.ts";
 import {
   describeFailure,
   openIsolatedPasskeyPage,
 } from "./lib/security-context.ts";
-import { addVirtualAuthenticator } from "./lib/webauthn.ts";
 
 type Member = {
   principal: {
@@ -28,6 +32,12 @@ async function members(
 }
 
 test.describe("Owner-approved Space access recovery", () => {
+  // Ceremony-heavy group: stays serial with a journey-first order even if the
+  // shared Playwright worker count ever changes. Every test below runs on a
+  // fresh browser context with its own virtual authenticator; with workers:1
+  // (playwright.config.ts) same-file order already cannot change the ceremony
+  // outcome, and this makes that requirement explicit.
+  test.describe.configure({ mode: "serial" });
   test.beforeAll(async ({ request }) => await waitForServers(request));
 
   // The supported journey below runs first on pristine backend state; the
@@ -60,11 +70,12 @@ test.describe("Owner-approved Space access recovery", () => {
       .invitation_url;
   }
 
-  // Each path-separated test below uses a fresh browser context with its own
+  // Every ceremony path below uses a fresh browser context with its own
   // virtual authenticator so recovery paths cannot leak credentials or
   // sessions into each other. Teardown removes the authenticator and the
-  // WebAuthn session before closing the context. The long supported journey
-  // keeps its flow untouched.
+  // WebAuthn session before closing the context, including for the long
+  // supported journey. The journey-first ordering is load-bearing for
+  // backend-state determinism (see #2583) and must be preserved.
   async function newPasskeyPage(browser: Browser) {
     return await openIsolatedPasskeyPage(browser);
   }
@@ -81,6 +92,32 @@ test.describe("Owner-approved Space access recovery", () => {
     } catch (error) {
       throw describeFailure(error, "invitation accept");
     }
+  }
+
+  // Drives the owner-approval ceremony to its 201 finish and asserts the UI
+  // advances only after the correlated finish response, so a slow
+  // authenticator can never make the heading assertion race the server.
+  async function completeOwnerRecovery(
+    page: import("@playwright/test").Page,
+    ownerApprovalToken: string,
+  ) {
+    await page.goto(
+      `/recover?owner_approval_token=${encodeURIComponent(ownerApprovalToken)}`,
+    );
+    const finishResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/auth/recovery/owner/finish") &&
+        response.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "Continue" }).click();
+    try {
+      expect((await finishResponse).status()).toBe(201);
+    } catch (error) {
+      throw describeFailure(error, "owner-approved recovery finish");
+    }
+    await expect(
+      page.getByRole("heading", { name: "Save your new recovery codes" }),
+    ).toBeVisible();
   }
 
   test("req_sec_012_013_owner_space_access_recovery_supported_journey", async ({ browser, request }) => {
@@ -111,15 +148,16 @@ test.describe("Owner-approved Space access recovery", () => {
     }
 
     const mockOidc = await startMockOidcServer("space-recovery-subject");
-    const target = await browser.newContext({
-      storageState: { cookies: [], origins: [] },
-    });
-    const page = await target.newPage();
-    const cdp = await target.newCDPSession(page);
-    await cdp.send("WebAuthn.enable");
-    const authenticatorId = await addVirtualAuthenticator(cdp);
+    // Fresh isolated ceremony context with full teardown parity
+    // (authenticator removal + WebAuthn.disable + close); the exposed
+    // `cdp`/`authenticatorId` back the credential assertions below.
+    const { target, page, cdp, authenticatorId, close } =
+      await openIsolatedPasskeyPage(browser);
+    await installLongtaskObserver(page);
+    const ceremony = "owner-space-recovery";
 
     try {
+      logCeremonyStep(ceremony, "configuring OIDC provider");
       const configuredProvider = await request.post(
         getBackendUrl("/auth/oidc/providers"),
         { data: { issuer: mockOidc.issuer, client_id: "e2e-client" } },
@@ -132,6 +170,7 @@ test.describe("Owner-approved Space access recovery", () => {
 
       // The first invitation creates the target's original HumanAccount and
       // binding; the second binds that same account to another Space.
+      logCeremonyStep(ceremony, "accepting invitations");
       await page.goto(invitations[0]);
       await page.getByRole("button", { name: "Accept invitation" }).click();
       await expect(page).toHaveURL(/\/spaces$/);
@@ -210,17 +249,9 @@ test.describe("Owner-approved Space access recovery", () => {
         owner_approval_token: string;
       };
 
-      await page.goto(
-        `/recover?owner_approval_token=${
-          encodeURIComponent(
-            approvalBody.owner_approval_token,
-          )
-        }`,
-      );
-      await page.getByRole("button", { name: "Continue" }).click();
-      await expect(
-        page.getByRole("heading", { name: "Save your new recovery codes" }),
-      ).toBeVisible();
+      logCeremonyStep(ceremony, "completing owner-approved recovery");
+      await completeOwnerRecovery(page, approvalBody.owner_approval_token);
+      await reportLongtasks(page, ceremony, "owner recovery finish");
 
       const freshSession = await target.request.get(
         getBackendUrl("/auth/session"),
@@ -264,6 +295,7 @@ test.describe("Owner-approved Space access recovery", () => {
 
       // The old session and its unrelated Space binding survive, while the
       // recovered Space binding is intentionally no longer available to it.
+      logCeremonyStep(ceremony, "verifying unrelated credential preservation");
       await target.clearCookies();
       await target.addCookies([oldCookie!]);
       const afterOidcLinksResponse = await target.request.get(
@@ -322,6 +354,7 @@ test.describe("Owner-approved Space access recovery", () => {
       }
       await target.clearCookies();
       await page.goto("/login");
+      logCeremonyStep(ceremony, "verifying old passkey still signs in");
       await page.getByRole("button", { name: "Sign in with a passkey" })
         .click();
       await expect(page).toHaveURL(/\/spaces$/);
@@ -331,9 +364,99 @@ test.describe("Owner-approved Space access recovery", () => {
       expect((await passkeySession.json()).account.account_id).toBe(
         oldAccountId,
       );
+      logCeremonyStep(ceremony, "journey complete");
     } finally {
-      await target.close();
+      await close();
       mockOidc.close();
+    }
+  });
+
+  test("unknown owner approval token stays terminal without a session", async ({ browser }) => {
+    const { target, page, close } = await newPasskeyPage(browser);
+    try {
+      await page.goto(
+        `/recover?owner_approval_token=${
+          encodeURIComponent("not-a-real-approval")
+        }`,
+      );
+      await page.getByRole("button", { name: "Continue" }).click();
+      await expect(page.getByRole("alert")).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: "Save your new recovery codes" }),
+      ).toBeHidden();
+      await expect(page).toHaveURL(/\/recover/);
+      const session = await target.request.get(
+        getBackendUrl("/auth/session"),
+      );
+      expect(session.ok()).toBeTruthy();
+      await expect(session.json()).resolves.toMatchObject({
+        authenticated: false,
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  test("consumed owner approval token cannot complete twice", async ({ browser, request }) => {
+    const spaceId = await createSpace(
+      request,
+      `e2e-recovery-reuse-${Date.now()}`,
+    );
+    const invitationUrl = await createInvitation(
+      request,
+      spaceId,
+      "Reuse target",
+    );
+    const primer = await newPasskeyPage(browser);
+    try {
+      await acceptInvitation(primer.page, invitationUrl);
+    } finally {
+      await primer.close();
+    }
+    const targetMember = (await members(request, spaceId)).find((member) =>
+      member.principal.display_name === "Reuse target"
+    );
+    expect(targetMember).toBeDefined();
+    const approval = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/admin/recovery/force-reset`),
+      { data: { principal_id: targetMember!.principal.principal_id } },
+    );
+    expect(approval.status()).toBe(201);
+    const approvalBody = await approval.json() as {
+      owner_approval_token: string;
+    };
+
+    const first = await newPasskeyPage(browser);
+    try {
+      await completeOwnerRecovery(
+        first.page,
+        approvalBody.owner_approval_token,
+      );
+    } finally {
+      await first.close();
+    }
+    const afterFirst = await members(request, spaceId);
+
+    // The first completion moved the credential authority; the consumed
+    // approval is now stale and the second attempt must fail closed without
+    // touching membership.
+    const second = await newPasskeyPage(browser);
+    try {
+      await second.page.goto(
+        `/recover?owner_approval_token=${
+          encodeURIComponent(approvalBody.owner_approval_token)
+        }`,
+      );
+      await second.page.getByRole("button", { name: "Continue" }).click();
+      await expect(second.page.getByRole("alert")).toBeVisible();
+      await expect(
+        second.page.getByRole("heading", {
+          name: "Save your new recovery codes",
+        }),
+      ).toBeHidden();
+      expect(await members(request, spaceId)).toEqual(afterFirst);
+    } finally {
+      await second.close();
     }
   });
 

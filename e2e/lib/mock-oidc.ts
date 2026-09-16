@@ -44,7 +44,10 @@ export async function startMockOidcServer(
     kid: "e2e-key",
     use: "sig",
   };
-  const authorizationCodes = new Map<string, string>();
+  const authorizationCodes = new Map<
+    string,
+    { nonce: string; challenge: string; method: string }
+  >();
   let issuer = "";
 
   const advertisedHost = Deno.env.get("E2E_OIDC_MOCK_HOST")?.trim() ||
@@ -82,8 +85,16 @@ export async function startMockOidcServer(
             error: "invalid_request",
           }, 400);
         }
+        // Minimal PKCE fidelity with the server (which always sends an S256
+        // challenge): remember the challenge per code so /token can enforce
+        // the verifier. Codes without a challenge stay lenient for
+        // non-PKCE callers.
         const code = crypto.randomUUID();
-        authorizationCodes.set(code, nonce);
+        authorizationCodes.set(code, {
+          nonce,
+          challenge: url.searchParams.get("code_challenge") ?? "",
+          method: url.searchParams.get("code_challenge_method") ?? "S256",
+        });
         const callback = new URL(redirectUri);
         callback.searchParams.set("code", code);
         callback.searchParams.set("state", state);
@@ -92,14 +103,27 @@ export async function startMockOidcServer(
       if (request.method === "POST" && url.pathname === "/token") {
         const form = new URLSearchParams(await request.text());
         const code = form.get("code");
-        const nonce = code ? authorizationCodes.get(code) : undefined;
-        if (!code || !nonce) {
+        const pending = code ? authorizationCodes.get(code) : undefined;
+        if (!code || !pending) {
           return jsonResponse(
             { error: "invalid_grant" },
             400,
           );
         }
         authorizationCodes.delete(code);
+        if (pending.challenge) {
+          const verifier = form.get("code_verifier") ?? "";
+          if (!verifier || pending.method !== "S256") {
+            return jsonResponse({ error: "invalid_grant" }, 400);
+          }
+          const digest = new Uint8Array(
+            await crypto.subtle.digest("SHA-256", encoder.encode(verifier)),
+          );
+          if (base64Url(digest) !== pending.challenge) {
+            return jsonResponse({ error: "invalid_grant" }, 400);
+          }
+        }
+        const nonce = pending.nonce;
         const header = encodedJson({
           alg: "ES256",
           kid: "e2e-key",
