@@ -93,7 +93,10 @@ export default function SpaceEntryRevisionRoute() {
               {t("entryRevision.restoreNotice")}
             </p>
             <div class="ui-entry-history-review">
-              <section class="ui-card">
+              <section
+                class="ui-entry-history-section"
+                aria-label={t("entryRevision.currentValue")}
+              >
                 <h2>{t("entryRevision.currentValue")}</h2>
                 <Show
                   when={currentEntry()}
@@ -122,7 +125,12 @@ export default function SpaceEntryRevisionRoute() {
                 </Show>
               </section>
 
-              <section class="ui-card">
+              <hr class="ui-entry-history-divider" aria-hidden="true" />
+
+              <section
+                class="ui-entry-history-section"
+                aria-label={t("entryRevision.selectedValue")}
+              >
                 <h2>{t("entryRevision.selectedValue")}</h2>
                 <dl class="ui-entry-detail-list">
                   <div>
@@ -157,7 +165,7 @@ export default function SpaceEntryRevisionRoute() {
 
             <button
               type="button"
-              class="btn primary"
+              class="btn primary ui-entry-history-restore"
               onClick={handleRestore}
               disabled={isRestoring()}
             >
