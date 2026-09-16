@@ -224,7 +224,7 @@ fn test_cli_req_ops_015_auth_session_helpers_cover_unreadable_and_error_paths() 
     std::env::set_var("UGOITE_CLI_CONFIG_PATH", &nested_config_path);
 
     let session = AuthSession {
-        credential_id: uuid::Uuid::nil(),
+        credential_id: uuid::Uuid::now_v7(),
         device_name: "test-device".to_string(),
         public_key_jwk: serde_json::json!({}),
         private_key_pkcs8: Some("private-key".to_string()),
@@ -233,7 +233,7 @@ fn test_cli_req_ops_015_auth_session_helpers_cover_unreadable_and_error_paths() 
         expires_at: 1_900_000_000,
         base_url: "https://example.test".to_string(),
         resource: None,
-        space_uid: uuid::Uuid::nil(),
+        space_uid: uuid::Uuid::now_v7(),
     };
     let session_path = auth_session_path();
     let saved_path = save_auth_session(&session).expect("save auth session");
@@ -292,7 +292,7 @@ fn test_cli_req_sec_012_auth_session_target_is_explicit() {
     std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
     let resource = "https://ugoite.example/mcp".to_string();
     save_auth_session(&AuthSession {
-        credential_id: uuid::Uuid::nil(),
+        credential_id: uuid::Uuid::now_v7(),
         device_name: "mcp-device".to_string(),
         public_key_jwk: serde_json::json!({}),
         private_key_pkcs8: Some("private-key".to_string()),
@@ -301,7 +301,7 @@ fn test_cli_req_sec_012_auth_session_target_is_explicit() {
         expires_at: i64::MAX,
         base_url: "https://example.test".to_string(),
         resource: Some(resource.clone()),
-        space_uid: uuid::Uuid::nil(),
+        space_uid: uuid::Uuid::now_v7(),
     })
     .expect("save MCP auth session");
 

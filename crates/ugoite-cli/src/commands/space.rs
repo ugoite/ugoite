@@ -31,7 +31,7 @@ pub struct SpaceCmd {
 pub enum SpaceSubCmd {
     /// Create a new space
     #[command(
-        long_about = "Create a new space.\n\nRun `ugoite config current` to check whether you are in core, backend, or api mode. The positional value is a local Space path in core mode or the new human-readable Space slug in backend/api mode. A server-generated Space UID is returned after creation.\n\nExamples:\n  # Core mode (full local Space path)\n  ugoite space create /root/spaces/my-space\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space create team-notes"
+        long_about = "Create a new space.\n\nRun `ugoite config current` to check whether you are in core, backend, or api mode. The positional value is a local Space path in core mode or the new human-readable Space slug in backend/api mode. A server-generated Space UID is returned after creation and is the authority for all later operations; the requested slug is never a UID.\n\nExamples:\n  # Core mode (full local Space path, optional display name)\n  ugoite space create /root/spaces/my-space --name \"My Space\"\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space create team-notes --name \"Team Notes\""
     )]
     Create {
         #[arg(
@@ -39,6 +39,12 @@ pub enum SpaceSubCmd {
             help = "New Space slug in backend/api mode, or a local Space path in core mode."
         )]
         space_path: String,
+        #[arg(
+            long,
+            value_name = "DISPLAY_NAME",
+            help = "Display name for the new Space; defaults to the requested slug."
+        )]
+        name: Option<String>,
     },
     /// List spaces
     #[command(
@@ -211,7 +217,22 @@ pub async fn create_space_cmd(
     space_id: &str,
     command_name: &str,
 ) -> Result<()> {
+    create_space_cmd_with_name(root_path, space_id, None, command_name).await
+}
+
+pub async fn create_space_cmd_with_name(
+    root_path: Option<&str>,
+    space_id: &str,
+    display_name: Option<&str>,
+    command_name: &str,
+) -> Result<()> {
     let config = load_config()?;
+    let requested_slug = parse_space_path(space_id).1;
+    let resolved_name = display_name
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or(&requested_slug)
+        .to_string();
     if let Some(base) = validated_base_url(&config)? {
         // Remote Space creation may require fresh human presence; the
         // step-up handoff (browser approval, one automatic retry) keeps the
@@ -220,7 +241,7 @@ pub async fn create_space_cmd(
             &base,
             "space.create",
             serde_json::json!({}),
-            Some(serde_json::json!({"slug": space_id, "name": space_id})),
+            Some(serde_json::json!({"slug": requested_slug, "name": resolved_name})),
             None,
         )
         .await?;
@@ -229,9 +250,11 @@ pub async fn create_space_cmd(
     }
     let root_path = require_local_root(root_path, command_name)?;
     let service = UgoiteService::new_without_background_refresh(root_path)?;
-    let outcome = service.ensure_operator_space(space_id).await?;
+    let outcome = service
+        .ensure_operator_space_with_name(&requested_slug, &resolved_name)
+        .await?;
     print_json(
-        &serde_json::json!({"created": outcome.created(), "id": outcome.space_id(), "slug": space_id}),
+        &serde_json::json!({"created": outcome.created(), "id": outcome.space_id(), "slug": requested_slug, "name": resolved_name}),
     );
     Ok(())
 }
@@ -240,18 +263,24 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
     let config = load_config()?;
     let fmt = effective_format(cmd.format);
     match cmd.sub {
-        SpaceSubCmd::Create { space_path } => {
+        SpaceSubCmd::Create { space_path, name } => {
             if let Some(base) = validated_base_url(&config)? {
                 // Backend/api creation takes a new human-readable slug; the
                 // server-generated Space UID in the response is the authority
                 // for all later operations. Never treat the requested slug as
                 // a UID and never fall back to another Space.
                 let requested_slug = parse_space_path(&space_path).1;
+                let resolved_name = name
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|display| !display.is_empty())
+                    .unwrap_or(&requested_slug)
+                    .to_string();
                 let result = step_up::execute_with_step_up(
                     &base,
                     "space.create",
                     serde_json::json!({}),
-                    Some(serde_json::json!({"slug": requested_slug, "name": requested_slug})),
+                    Some(serde_json::json!({"slug": requested_slug, "name": resolved_name})),
                     None,
                 )
                 .await?;
@@ -259,11 +288,19 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 return Ok(());
             }
             let requested_slug = parse_space_path(&space_path).1;
+            let resolved_name = name
+                .as_deref()
+                .map(str::trim)
+                .filter(|display| !display.is_empty())
+                .unwrap_or(&requested_slug)
+                .to_string();
             let (root, _) = resolve_space_reference(&config, &space_path, "space create")?;
             let service = UgoiteService::new_without_background_refresh(&root)?;
-            let outcome = service.ensure_operator_space(&requested_slug).await?;
+            let outcome = service
+                .ensure_operator_space_with_name(&requested_slug, &resolved_name)
+                .await?;
             print_json(
-                &serde_json::json!({"created": outcome.created(), "id": outcome.space_id(), "slug": requested_slug}),
+                &serde_json::json!({"created": outcome.created(), "id": outcome.space_id(), "slug": requested_slug, "name": resolved_name}),
             );
         }
         SpaceSubCmd::List { root_path } => {

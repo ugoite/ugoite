@@ -90,6 +90,12 @@ enum Commands {
             help = "New Space slug (alphanumeric + hyphens, e.g. 'my-project')"
         )]
         space_id: String,
+        #[arg(
+            long,
+            value_name = "DISPLAY_NAME",
+            help = "Display name for the new Space; defaults to the requested slug."
+        )]
+        name: Option<String>,
     },
     /// Query the index using SQL
     ///
@@ -155,8 +161,15 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::CreateSpace {
             root_path,
             space_id,
+            name,
         } => {
-            commands::space::create_space_cmd(root_path.as_deref(), &space_id, "create-space").await
+            commands::space::create_space_cmd_with_name(
+                root_path.as_deref(),
+                &space_id,
+                name.as_deref(),
+                "create-space",
+            )
+            .await
         }
         Commands::Query { space_path, sql } => commands::index::query_cmd(&space_path, &sql).await,
     }

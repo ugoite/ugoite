@@ -409,6 +409,59 @@ fn test_create_space_req_api_001_routes_to_api_post_spaces() {
     assert_eq!(body["name"].as_str(), Some("api-space"));
 }
 
+/// Space create keeps the positional slug as the lookup key while `--name`
+/// carries an independent display name, for both `space create` and the
+/// legacy `create-space` alias in backend mode.
+#[test]
+fn test_space_create_sends_independent_display_name() {
+    for args in [
+        vec!["space", "create", "team-notes", "--name", "Team Notes"],
+        vec!["create-space", "team-notes", "--name", "Team Notes"],
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.json");
+        let (base_url, request_rx, server_handle) = spawn_recording_server(
+            "HTTP/1.1 201 Created",
+            r#"{"id":"team-notes","slug":"team-notes","name":"Team Notes"}"#,
+        );
+
+        let set_output = Command::new(ugoite_bin())
+            .args([
+                "config",
+                "set",
+                "--mode",
+                "backend",
+                "--backend-url",
+                &base_url,
+            ])
+            .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+            .output()
+            .expect("failed to execute");
+        assert!(set_output.status.success());
+
+        let output = Command::new(ugoite_bin())
+            .args(&args)
+            .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+            .output()
+            .expect("failed to execute");
+        server_handle.join().unwrap();
+        let request = request_rx.recv().unwrap();
+
+        assert!(
+            output.status.success(),
+            "args {args:?} stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            request.starts_with("POST /spaces HTTP/1.1\r\n"),
+            "{request}"
+        );
+        let body = request_json_body(&request);
+        assert_eq!(body["slug"].as_str(), Some("team-notes"), "{args:?}");
+        assert_eq!(body["name"].as_str(), Some("Team Notes"), "{args:?}");
+    }
+}
+
 /// REQ-API-002: entry create routes to POST /spaces/{space_id}/entries in backend mode.
 #[test]
 fn test_entry_create_req_api_002_routes_to_backend_post_entries() {
@@ -722,6 +775,57 @@ fn test_space_list_req_sto_010_accepts_backend_mode_without_local_root() {
     assert_eq!(value[0]["id"].as_str(), Some("remote-space"));
 }
 
+/// `auth login --space-uid` accepts only UUIDv7 and fails during argument
+/// validation, before any device-authorization request is sent.
+#[test]
+fn test_auth_login_space_uid_rejects_non_v7_before_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+
+    let set_output = Command::new(ugoite_bin())
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            "http://127.0.0.1:1",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    for invalid in [
+        "00000000-0000-0000-0000-000000000000",
+        "123e4567-e89b-42d3-a456-426614174000",
+        "team-notes",
+    ] {
+        let output = Command::new(ugoite_bin())
+            .args(["auth", "login", "--space-uid", invalid])
+            .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+            .output()
+            .expect("failed to execute");
+        assert!(
+            !output.status.success(),
+            "--space-uid {invalid} must be rejected"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("UUIDv7"),
+            "--space-uid {invalid} stderr must name the UUIDv7 requirement: {stderr}"
+        );
+    }
+
+    let help = Command::new(ugoite_bin())
+        .args(["auth", "login", "--help"])
+        .output()
+        .expect("failed to execute");
+    assert!(help.status.success());
+    let stdout = String::from_utf8_lossy(&help.stdout);
+    assert!(stdout.contains("SPACE_UID"), "{stdout}");
+}
+
 /// REQ-STO-010: CLI help must explain local Space paths versus immutable UIDs.
 #[test]
 fn test_cli_help_req_sto_010_describes_space_uid_or_path_routing() {
@@ -756,6 +860,10 @@ fn test_cli_help_req_sto_010_describes_space_uid_or_path_routing() {
     );
     assert!(!create_stdout.contains("SPACE_PATH"), "{create_stdout}");
     assert!(create_stdout.contains("/root/spaces/"), "{create_stdout}");
+    assert!(
+        create_stdout.contains("--name"),
+        "space create help must document the independent display-name option: {create_stdout}"
+    );
 
     for args in [
         &["space", "--help"][..],

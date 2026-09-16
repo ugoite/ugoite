@@ -16565,6 +16565,134 @@ mod authentication_regression_tests {
         Ok(())
     }
 
+    /// GET /spaces fails closed with a typed, sanitized Space discovery
+    /// diagnostic when a Space directory is corrupt, instead of skipping it
+    /// and reporting only the healthy Spaces. No storage paths, credential
+    /// material, or Space IDs may leak into the diagnostic.
+    #[tokio::test]
+    async fn space_listing_fails_closed_for_corrupt_space_directory() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-space-discovery-corrupt-space-{}",
+            Uuid::now_v7()
+        ))?;
+        state.initialize_node().await?;
+        let account_id = Uuid::now_v7();
+        let _created = create_space(
+            State(state.clone()),
+            Extension(passkey_identity(account_id)),
+            Json(SpaceCreate {
+                slug: "healthy-space".to_string(),
+                name: "Healthy space".to_string(),
+            }),
+        )
+        .await
+        .expect("healthy Space creation should succeed");
+
+        // Seed a corrupt Space directory with no metadata, so discovery
+        // cannot classify it.
+        state
+            .service
+            .operator()
+            .create_dir("spaces/corrupt-space/")
+            .await?;
+
+        let error = list_spaces(State(state), Extension(passkey_identity(account_id)))
+            .await
+            .expect_err("corrupt Space must fail GET /spaces closed, never skip-and-report");
+        assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(error.detail["code"], "SPACE_DISCOVERY_FAILED");
+        // The diagnostic names the undecodable discovery key (a slug, not a
+        // path/credential/immutable ID) with a fixed safe reason. Pin the
+        // exact sanitized vocabulary so backend details can never leak back.
+        assert_eq!(
+            error.detail["message"],
+            "Space discovery failed for corrupt-space: Space metadata is missing"
+        );
+        assert_eq!(
+            error.detail["detail"],
+            serde_json::json!({
+                "space_id": "corrupt-space",
+                "diagnostic": "space_metadata_missing",
+                "cause_code": "UNCLASSIFIED",
+            })
+        );
+        Ok(())
+    }
+
+    /// GET /spaces fails closed with a typed, sanitized Form diagnostic when
+    /// an authoritative Form definition is corrupt. The corrupt Form is never
+    /// skipped, and storage paths, Space IDs, or credential material never
+    /// leak into the diagnostic.
+    #[tokio::test]
+    async fn space_listing_fails_closed_for_corrupt_form_definition() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-space-discovery-corrupt-form-{}",
+            Uuid::now_v7()
+        ))?;
+        state.initialize_node().await?;
+        let account_id = Uuid::now_v7();
+        let created = create_space(
+            State(state.clone()),
+            Extension(passkey_identity(account_id)),
+            Json(SpaceCreate {
+                slug: "form-space".to_string(),
+                name: "Form space".to_string(),
+            }),
+        )
+        .await
+        .expect("Space creation should succeed before Form corruption");
+        let Json(created_body) = created.1;
+        let space_uid = created_body["space_uid"]
+            .as_str()
+            .expect("created Space must expose space_uid")
+            .to_string();
+
+        // Corrupt the starter Form's Iceberg table metadata behind the
+        // intact catalog, so discovery reads a corrupt authoritative Form.
+        let operator = state.service.operator().clone();
+        let mut metadata_path = None;
+        for table_dir in operator.list(&format!("spaces/{space_uid}/forms/")).await? {
+            if !table_dir.metadata().is_dir() {
+                continue;
+            }
+            for child in operator.list(table_dir.path()).await? {
+                if !child.metadata().is_dir() || !child.path().ends_with("/metadata/") {
+                    continue;
+                }
+                for file in operator.list(child.path()).await? {
+                    if !file.metadata().is_dir() && file.path().ends_with(".metadata.json") {
+                        metadata_path = Some(file.path().to_string());
+                    }
+                }
+            }
+        }
+        let metadata_path =
+            metadata_path.expect("starter Form table metadata must exist before corruption");
+        operator
+            .write(&metadata_path, b"{corrupt iceberg table metadata".to_vec())
+            .await?;
+
+        let error = list_spaces(State(state), Extension(passkey_identity(account_id)))
+            .await
+            .expect_err("corrupt Form must fail GET /spaces closed, never skip-and-report");
+        assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(error.detail["code"], "FORM_DEFINITION_READ_FAILED");
+        // The diagnostic carries a fixed safe reason with no Form, table,
+        // storage-path, Space-ID, or credential detail. Pin the exact
+        // sanitized vocabulary so backend details can never leak back.
+        assert_eq!(
+            error.detail["message"],
+            "authoritative Form definition could not be read"
+        );
+        assert_eq!(
+            error.detail["detail"],
+            serde_json::json!({
+                "diagnostic": "authoritative_form_definition_read",
+            })
+        );
+        Ok(())
+    }
+
     #[tokio::test]
     async fn non_local_space_creation_rejects_before_recovery_or_binding() -> anyhow::Result<()> {
         let state = AppState::new_for_tests("s3://ugoite-test-bucket/server-space")?;
