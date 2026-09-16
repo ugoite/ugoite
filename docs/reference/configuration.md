@@ -44,9 +44,15 @@ variables but builds the image locally. Both mount the configured data root at
 ## Frontend and CLI variables
 
 `BACKEND_URL` selects the frontend's server proxy target during development.
-The CLI stores its endpoint configuration separately; use
-`ugoite config current` and `ugoite config set --help` rather than treating
-server environment variables as CLI flags.
+The CLI stores its endpoint configuration separately at, in order,
+`$UGOITE_CLI_CONFIG_PATH`, `$UGOITE_CONFIG_HOME/ugoite/cli-endpoints.json`,
+`$XDG_CONFIG_HOME/ugoite/cli-endpoints.json`, then
+`~/.ugoite/cli-endpoints.json`; use `ugoite config current` and
+`ugoite config set --help` rather than treating server environment variables
+as CLI flags. An invalid saved CLI config fails closed with the reported path
+and cause; recover with an explicit valid config and confirm with
+`ugoite config current` before requests, never with a silent fallback. See
+[invalid saved CLI config recovery](../operate/troubleshooting.md#invalid-saved-cli-config).
 
 Model-assisted local Work may use `UGOITE_MODEL_API_KEY`,
 `UGOITE_MODEL_BASE_URL`, `UGOITE_MODEL_NAME`, and

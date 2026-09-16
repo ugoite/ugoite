@@ -1,0 +1,88 @@
+---
+title: "Saved SQL and Expert Query"
+description: Reuse saved read-only SQL definitions and run expert queries over Form relations.
+sidebar:
+  order: 7
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Saved SQL definitions are durable Space content. Sessions, indexes, and result
+previews are derived and replaceable. Every execution path is read-only:
+write and DDL input is rejected before execution.
+
+## Outcome
+
+A saved read-only definition exists in the Space and an expert query reads
+the same Form data on Browser and CLI.
+
+## Before you begin
+
+Create an Entry in [Create and Edit Entries](entries.mdx) and confirm the
+Form name with `ugoite form get`. Each Form is exposed as the
+backend-provided `form_<FormId>` relation (the Form UUID without dashes, as
+returned in the `id` field of `ugoite form get`) with `field_<FieldId>`
+columns plus `_ugoite_id`, `_ugoite_title`, `_ugoite_created_at`, and
+`_ugoite_updated_at` columns.
+
+## Steps
+
+<Tabs>
+<TabItem label="Browser">
+
+1. Open **SQL** for a saved definition over the same Form used in
+   [Search and Filter](search.mdx).
+2. Save the definition so it reopens with identical text.
+3. Run it and confirm the same Form rows appear.
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+ugoite sql lint 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> LIMIT 10'
+ugoite sql saved-list /path/to/workspace/spaces/demo
+ugoite sql saved-create /path/to/workspace/spaces/demo \
+  --name planning --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10'
+ugoite sql saved-get /path/to/workspace/spaces/demo <sql-id>
+ugoite sql saved-execute /path/to/workspace/spaces/demo <sql-id> --limit 20
+ugoite query /path/to/workspace/spaces/demo \
+  --sql 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> LIMIT 10'
+```
+
+`sql lint` checks syntax only; it does not resolve Forms or authorize
+execution. `sql saved-*` manages durable definitions; `sql session-create`,
+`sql session-get`, `sql session-count`, and `sql session-rows` page one
+bounded read-only result set. `query` is read-only and rejects DDL and DML
+without changing the Space. Take `<sql-id>` from `sql saved-list` output.
+Run `ugoite sql --help` and `ugoite query --help` for exact flags.
+
+</TabItem>
+</Tabs>
+
+## Verify the result
+
+The saved definition reads back with identical text, and the expert query
+returns the same Form rows that the Browser SQL view shows.
+
+## What became durable?
+
+The saved SQL definition. Sessions, result pages, and previews are derived
+runtime state.
+
+## If it fails
+
+- SQL rejected: check the `form_<FormId>` relation, `field_<FieldId>` columns,
+  and statement kind; only read-only selects over authorized relations run.
+- Unknown saved ID: list definitions again and use the exact ID from
+  `sql saved-list` output.
+
+## Related concepts
+
+- [Search and Filter](search.mdx)
+- [Data model overview](../architecture/data-model/overview.md)
+
+## Reference
+
+- `ugoite sql --help` and `ugoite query --help` are the command authorities.
+- REST shapes live in `crates/ugoite-server` and `/openapi.json`; see
+  [REST API and OpenAPI](../reference/rest.md).

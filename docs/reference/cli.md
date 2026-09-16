@@ -93,12 +93,23 @@ Start with the task page for the outcome, then use the matching command help:
 | Define a Form | [Create a Form](../use/forms.mdx) | `ugoite form --help` |
 | Create or edit an Entry | [Create and Edit Entries](../use/entries.mdx) | `ugoite entry --help` |
 | Add an Asset | [Add an Asset](../use/assets.mdx) | `ugoite asset --help` |
-| Search and query | [Search and Query](../use/search.mdx) | `ugoite search --help`, `ugoite query --help` |
-| Restore or undo | [Revisions and Recovery](../use/revisions.mdx) | `ugoite entry history --help`, `ugoite change --help`, `ugoite run --help` |
+| Search and structured filter | [Search and Filter](../use/search.mdx) | `ugoite search --help` |
+| Saved SQL and expert query | [Saved SQL and expert query](../use/sql.mdx) | `ugoite sql --help`, `ugoite query --help` |
+| View history | [View History](../use/history.mdx) | `ugoite entry history --help`, `ugoite change --help` |
+| Restore or undo | [Restore and Undo](../use/restore.mdx) | `ugoite entry restore --help`, `ugoite change --help`, `ugoite run --help` |
 
 Use the command's subcommand help for exact required arguments, mode
 availability, JSON fields, and exit behavior. The reference intentionally does
 not duplicate every flag from the executable.
+
+## Authorities
+
+- CLI behavior is authoritative in the current binary (Clap):
+  `ugoite <command> --help` wins over prose.
+- REST behavior is authoritative in `crates/ugoite-server` and the
+  server-generated `/openapi.json`.
+- Requirements and evidence are authoritative in Mitase declarations; docs
+  explain and never create a second protocol registry.
 
 ## Related reference
 

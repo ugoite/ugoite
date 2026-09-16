@@ -1,28 +1,37 @@
 ---
-title: "Use Ugoite"
+title: "Knowledge tasks"
 description: Everyday Knowledge tasks that work the same across Browser, CLI, and REST.
 sidebar:
   label: "Overview"
   order: 1
 ---
 
-Use Ugoite describes what to do with Knowledge once a Space exists. The same
-operation is explained once, with Browser and CLI variations on the same page.
-No separate Browser, CLI, or REST hierarchy is maintained here.
+Knowledge tasks describes what to do with Knowledge once a Space exists. The
+same operation is explained once, with Browser and CLI variations on the same
+page. No separate Browser, CLI, or REST hierarchy is maintained here.
 
 ## Task pages
 
-- [Spaces](spaces.mdx): create, open, and switch the Space.
-- [Create a Form](forms.mdx): define typed fields for Entries.
-- [Create and Edit Entries](entries.mdx): write content with append-only
-  revisions.
-- [Add an Asset](assets.mdx): attach files in core mode.
-- [Search and Query](search.mdx): keyword search, structured fields, and
-  read-only SQL.
-- [Revisions and Recovery](revisions.mdx): history, conflicts, and restore.
+- [Spaces](spaces.mdx): create and open the Space.
+- [Create a Form](forms.mdx): create and understand the Form.
+- [Create and Edit Entries](entries.mdx): create and edit Entries.
+- [Add an Asset](assets.mdx): attach an Asset.
+- [Search and Query](search.mdx): search and structured filtering.
+- [Saved SQL and expert query](sql.mdx): saved SQL and expert query.
+- [View History](history.mdx): view Entry and Space history.
+- [Restore and Undo](restore.mdx): restore, revert, and undo.
+- [Revisions and Recovery](revisions.mdx): history, conflicts, and restore
+  overview linking the two focused pages above.
+- Auth, device, and step-up: [Identity and Access](../operate/identity-access.md).
+- Storage config and test: [Configure](../operate/configure.md) and
+  [Storage and Recovery](../operate/storage-recovery.md).
+- Backup and recovery: [Storage and Recovery](../operate/storage-recovery.md).
+- Troubleshooting: [Troubleshooting](../operate/troubleshooting.md), including
+  [invalid saved CLI config recovery](../operate/troubleshooting.md#invalid-saved-cli-config).
 
 Start with the [Quickstart](../get-started/quickstart.mdx) for one end-to-end
-pass, then use these pages as focused references.
+golden-journey pass (Space, Form, Entry, Search, History, Restore), then use
+these pages as focused references.
 
 ## What became durable?
 

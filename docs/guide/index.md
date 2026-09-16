@@ -9,8 +9,12 @@ The documentation has moved to a task-first information architecture. Use the
 canonical sections for current guidance:
 
 - [Get started](../get-started/index.md)
-- [Use Ugoite](../use/index.md)
-- [Operate Ugoite](../operate/index.md)
-- [Develop Ugoite](../develop/index.md)
+- [Knowledge tasks](../use/index.md)
+- [Operations](../operate/index.md)
 - [Reference](../reference/index.md)
-- [Vision & Concepts](../vision/index.md)
+- [Development](../develop/index.md)
+- [Architecture & Specification](../spec/index.md)
+
+The legacy `docs/guide/` tree below is not a second Browser/CLI/REST hierarchy.
+Task pages keep Browser and CLI on the same page; authorities remain the
+current binary (`ugoite <command> --help`), `/openapi.json`, and Mitase.

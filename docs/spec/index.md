@@ -1,6 +1,6 @@
 ---
-title: "Ugoite specification index"
-description: Executable specifications, requirements, interfaces, and implementation references for Ugoite.
+title: "Architecture & Specification"
+description: Architecture, vision, requirements, policies, and evidence for Ugoite.
 sidebar:
   order: 1
 ---
@@ -37,12 +37,11 @@ derived or disposable.
   [user stories](stories/index.md).
 - [Features and implementation bindings](features/index.md).
 - [Policies](policies/index.md) for governance traceability.
-- [Architecture contracts](../architecture/contracts/overview.md) for decisions,
-  stack, future-proofing, and the Space catalog.
-- [Verification evidence](../architecture/testing/strategy.md): testing and CI,
-  [quality](../architecture/quality/error-handling.md), and
-  [product metrics](../architecture/product/success-metrics.md).
-- [Migration status](migration.md) for which domains are canonical in Mitase.
+- [Architecture](../architecture/index.md) for boundaries, contracts,
+  data model, security, and testing.
+- [Vision](../vision/index.md) for the product promise and the
+  [Current Product and Target State](../vision/current-and-target.md) that
+  keeps Current, Planned, and North Star apart.
 
 The specification is organized by the question it answers. Behavior changes ship
 with implementation and verification evidence; incomplete evidence stays an

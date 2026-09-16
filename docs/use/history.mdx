@@ -1,0 +1,71 @@
+---
+title: "View History"
+description: Read Entry revisions and the Space Change timeline without changing Knowledge.
+sidebar:
+  order: 8
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+History is append-only and observable. Viewing history never mutates the
+Space. Recovery actions live in [Restore and Undo](restore.mdx).
+
+## Outcome
+
+Entry revisions and Space Changes read back in order on Browser and CLI.
+
+## Before you begin
+
+Create and edit an Entry in [Create and Edit Entries](entries.mdx).
+
+## Steps
+
+<Tabs>
+<TabItem label="Browser">
+
+1. Open the Entry and choose **History**.
+2. Compare revisions to see create and edit without rewritten content.
+3. Open **Space history** from the Entry history page to see every Change
+   in the Space timeline.
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+ugoite entry history /path/to/workspace/spaces/demo meeting-2026-09-12
+ugoite entry revision /path/to/workspace/spaces/demo meeting-2026-09-12 <revision-id>
+ugoite change list /path/to/workspace/spaces/demo
+```
+
+Take `<revision-id>`, Change IDs, and Run IDs from the list output. Run
+`ugoite entry history --help` and `ugoite change --help` for exact flags.
+
+</TabItem>
+</Tabs>
+
+## Verify the result
+
+History contains create and edit revisions in order with no rewritten or
+missing entries, and the Space timeline lists the same Changes.
+
+## What became durable?
+
+Nothing new. History views and diffs are runtime state over durable
+revisions.
+
+## If it fails
+
+- Revision conflict on a later edit: re-read history and retry against the
+  newest revision.
+- Unknown ID: list again and use the exact ID from the output.
+
+## Related concepts
+
+- [Restore and Undo](restore.mdx)
+- [Knowledge, Work, and Experience](../vision/knowledge-work-experience.md)
+- [Quickstart](../get-started/quickstart.mdx)
+
+## Reference
+
+- `ugoite entry history --help` and `ugoite change --help` are the command
+  authorities.

@@ -51,25 +51,19 @@ export default defineConfig({
           ],
         },
         {
-          label: "Use Ugoite",
+          label: "Knowledge tasks",
           items: [
             { autogenerate: { directory: docsSidebarDirectory("use") } },
           ],
         },
         {
-          label: "Operate Ugoite",
+          label: "Operations",
           items: [
             { autogenerate: { directory: docsSidebarDirectory("operate") } },
           ],
         },
         {
-          label: "Vision & Concepts",
-          items: [
-            { autogenerate: { directory: docsSidebarDirectory("vision") } },
-          ],
-        },
-        {
-          label: "Develop Ugoite",
+          label: "Development",
           items: [
             { autogenerate: { directory: docsSidebarDirectory("develop") } },
           ],
@@ -81,10 +75,16 @@ export default defineConfig({
           ],
         },
         {
-          label: "Specification",
+          label: "Architecture & Specification",
           items: [
             {
               autogenerate: { directory: docsSidebarDirectory("spec") },
+            },
+            {
+              autogenerate: { directory: docsSidebarDirectory("architecture") },
+            },
+            {
+              autogenerate: { directory: docsSidebarDirectory("vision") },
             },
           ],
         },

@@ -66,7 +66,7 @@ test.describe("Docsite navigation smoke", () => {
     await page.goto(buildDocsiteUrl(homepagePath), {
       waitUntil: "networkidle",
     });
-    await page.getByRole("link", { name: "Specification", exact: true })
+    await page.getByRole("link", { name: "Architecture & Specification", exact: true })
       .first()
       .click();
     await expect(page).toHaveURL(/\/docs\/spec\/?$/);
@@ -75,12 +75,11 @@ test.describe("Docsite navigation smoke", () => {
 
 const canonicalPaths = [
   ["Get started", "/docs/get-started"],
-  ["Use Ugoite", "/docs/use"],
-  ["Operate Ugoite", "/docs/operate"],
-  ["Vision & Concepts", "/docs/vision"],
-  ["Develop Ugoite", "/docs/develop"],
+  ["Knowledge tasks", "/docs/use"],
+  ["Operations", "/docs/operate"],
+  ["Development", "/docs/develop"],
   ["Reference", "/docs/reference"],
-  ["Specification", "/docs/spec"],
+  ["Architecture & Specification", "/docs/spec"],
 ] as const;
 
 function buildDocsiteUrl(path: string): string {

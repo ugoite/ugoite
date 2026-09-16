@@ -22,8 +22,12 @@ its authority instead of copying every flag, endpoint, or schema into prose.
 
 ## Authorities
 
-- CLI behavior: `ugoite <command> --help` with the mode and task context in the
-  [CLI reference](cli.md).
-- REST behavior: `crates/ugoite-server` and `/openapi.json`, introduced in the
-  [REST overview](../architecture/api/rest.md).
+- CLI behavior: the current binary via `ugoite <command> --help` (Clap),
+  with the mode and task context in the [CLI reference](cli.md).
+- REST behavior: `crates/ugoite-server` and the server-generated
+  `/openapi.json`, introduced in the [REST overview](../architecture/api/rest.md).
+- Requirements and evidence: Mitase declarations under
+  [Architecture & Specification](../spec/index.md).
+- Docs explain; they do not duplicate protocol semantics or create a second
+  protocol registry.
 - MCP behavior: the [MCP surface](../architecture/api/mcp.md).
