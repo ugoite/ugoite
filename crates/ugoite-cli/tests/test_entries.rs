@@ -773,6 +773,92 @@ fn test_structured_update_preserves_tags_and_extra_attributes_without_merging_fi
     assert_eq!(current["extra_attributes"]["Extra"], "keep");
 }
 
+/// Structured update: an explicit --field value replaces a preserved extra
+/// attribute with the same key instead of tripping the shared duplicate-key
+/// diagnostic. The caller resolves overlap explicitly; the Rust boundary
+/// never prefers a side silently.
+#[test]
+fn test_structured_update_field_replaces_preserved_extra_attribute() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.json");
+    let space_path = format!("{root}/spaces/overlap-space");
+
+    let create_space = Command::new(ugoite_bin())
+        .args(["create-space", "--root", &root, "overlap-space"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    assert!(create_space.status.success());
+
+    let form_file = dir.path().join("overlap-form.json");
+    std::fs::write(
+        &form_file,
+        r#"{"name":"Entry","allow_extra_attributes":"allow_columns","fields":{"Body":{"type":"markdown"}}}"#,
+    )
+    .unwrap();
+    let create_form = Command::new(ugoite_bin())
+        .args(["form", "update", &space_path, form_file.to_str().unwrap()])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    assert!(
+        create_form.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&create_form.stderr)
+    );
+
+    let markdown = "---\nform: Entry\n---\n# Original\n\n## Body\nv1\n\n## Extra\nkeep\n";
+    let create = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "create",
+            "--content",
+            markdown,
+            &space_path,
+            "overlap-entry",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    assert!(
+        create.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&create.stderr)
+    );
+
+    let update = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "update",
+            &space_path,
+            "overlap-entry",
+            "--field",
+            "Body=v2",
+            "--field",
+            "Extra=explicit",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    assert!(
+        update.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&update.stderr)
+    );
+
+    let current = Command::new(ugoite_bin())
+        .args(["entry", "get", &space_path, "overlap-entry"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .unwrap();
+    assert!(current.status.success());
+    let current: serde_json::Value = serde_json::from_slice(&current.stdout).unwrap();
+    assert_eq!(current["sections"]["Body"], "v2");
+    assert_eq!(current["sections"]["Extra"], "explicit");
+    assert_eq!(current["extra_attributes"]["Extra"], "explicit");
+}
+
 /// Lane1 PR8: structured update appends one revision and keeps history.
 #[test]
 fn test_structured_update_appends_revision() {

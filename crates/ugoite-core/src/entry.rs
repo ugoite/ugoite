@@ -173,6 +173,22 @@ pub fn markdown_frontmatter_has_tags(markdown: &str) -> bool {
 /// null markers. Failures use the existing `AppError` taxonomy
 /// (`UnknownFormFields` / `FormValidationFailed`) so persistence adapters do
 /// not need their own error shapes.
+///
+/// Empty-section semantics: an absent field is "not provided" (a required
+/// field warns `missing_field`); an explicit empty string is also "not
+/// provided" for required fields, matching the long-standing Markdown
+/// compatibility rule where an empty `## Section` means "not provided".
+/// For optional fields the empty value flows through normal coercion and a
+/// typed error surfaces when the value cannot coerce.
+///
+/// Duplicate keys across `fields` and `extra_attributes` are a caller
+/// contract violation, never a precedence question: concurrent authors must
+/// not silently win, so the shared boundary rejects with an `InvalidInput`
+/// diagnostic naming the duplicate keys instead of preferring either side.
+/// Transports resolve overlap explicitly before calling (CLI `--field` /
+/// `--fields-file` values replace preserved extras; CLI duplicate inputs
+/// are a usage error; Markdown duplicate `##` sections are a
+/// `MarkdownConversionLoss` diagnostic).
 pub fn normalize_and_validate_draft(
     form: &FormDefinition,
     draft: &StructuredEntryDraft,
@@ -196,6 +212,25 @@ pub fn normalize_and_validate_draft(
         .iter()
         .map(|field| (field.name.as_str(), field))
         .collect();
+    // A key supplied in both `fields` and `extra_attributes`, or an explicit
+    // extra that shadows a real field name, has no silent precedence:
+    // reject deterministically before any coercion runs so concurrent
+    // authors never silently win and stale extras are never silently
+    // dropped. Callers resolve overlap explicitly before calling.
+    let mut duplicates: Vec<String> = draft
+        .extra_attributes
+        .keys()
+        .filter(|key| draft.fields.contains_key(*key) || by_name.contains_key(key.as_str()))
+        .cloned()
+        .collect();
+    duplicates.sort();
+    if !duplicates.is_empty() {
+        return Err(AppError::invalid_input_with_detail(
+            ErrorCode::InvalidInput,
+            "Entry fields and extra_attributes must not contain the same key",
+            serde_json::json!({"duplicate_fields": duplicates}),
+        ));
+    }
 
     for field in &form.fields {
         let raw = draft.fields.get(&field.name);
@@ -298,7 +333,9 @@ pub fn normalize_and_validate_draft(
         }
     }
 
-    // Unknown field names are extra-attribute candidates.
+    // Unknown field names are extra-attribute candidates. Duplicate keys
+    // across `fields`/`extra_attributes` and extras shadowing real field
+    // names were already rejected above, so no precedence applies here.
     let mut extras: BTreeMap<String, Value> = BTreeMap::new();
     for (key, value) in &draft.fields {
         if !by_name.contains_key(key.as_str()) {
@@ -307,11 +344,6 @@ pub fn normalize_and_validate_draft(
     }
     for (key, value) in &draft.extra_attributes {
         extras.insert(key.clone(), value.clone());
-    }
-    // Explicit extras that duplicate a real field name are a caller bug, not
-    // an unknown field. Prefer the typed field value.
-    for field in &form.fields {
-        extras.remove(&field.name);
     }
 
     if !extras.is_empty() && !form.allow_extra_attributes {
@@ -1378,6 +1410,36 @@ mod tests {
         );
         let error = normalize_and_validate_draft(&form, &draft).expect_err("missing Body");
         assert_eq!(error.code(), ErrorCode::FormValidationFailed);
+    }
+
+    #[test]
+    fn duplicate_keys_across_fields_and_extras_are_invalid_input() {
+        let form = test_form();
+        let draft = structured_fields_to_draft(
+            "T",
+            Some("Note"),
+            Vec::new(),
+            BTreeMap::from([("Body".to_string(), Value::String("x".to_string()))]),
+            BTreeMap::from([("Body".to_string(), Value::String("shadow".to_string()))]),
+        );
+        let error = normalize_and_validate_draft(&form, &draft).expect_err("overlap");
+        assert_eq!(error.code(), ErrorCode::InvalidInput);
+        assert_eq!(
+            error.detail().expect("detail")["duplicate_fields"],
+            serde_json::json!(["Body"])
+        );
+
+        // An explicit extra shadowing a real field is the same caller bug
+        // even when `fields` does not claim the key.
+        let shadow = structured_fields_to_draft(
+            "T",
+            Some("Note"),
+            Vec::new(),
+            BTreeMap::new(),
+            BTreeMap::from([("Count".to_string(), Value::Number(1.into()))]),
+        );
+        let error = normalize_and_validate_draft(&form, &shadow).expect_err("shadow");
+        assert_eq!(error.code(), ErrorCode::InvalidInput);
     }
 
     #[test]

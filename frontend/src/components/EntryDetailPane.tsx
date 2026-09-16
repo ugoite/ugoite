@@ -502,6 +502,15 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   >(null);
   const [assetEditorGeneration, setAssetEditorGeneration] = createSignal(0);
   const [showAdvancedSource, setShowAdvancedSource] = createSignal(false);
+  // Compat diagnostics block saving, so auto-open the Advanced source
+  // disclosure while they are present: the blocking Markdown stays visible
+  // for review. One-way latch — the user can still close it manually
+  // afterwards without forcing it back open.
+  createEffect(() => {
+    if (compatibilityDiagnostics().length > 0) {
+      setShowAdvancedSource(true);
+    }
+  });
   const [hasUserEdited, setHasUserEdited] = createSignal(false);
   const [createdEntry, setCreatedEntry] = createSignal<
     {
