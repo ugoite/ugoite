@@ -16,6 +16,7 @@ import {
 	getFrontendUrl,
 	waitForServers,
 } from "./lib/client.ts";
+import { expectNoObjectCoercion } from "./lib/ui-safety.ts";
 
 async function settleUiLoading(page: Page): Promise<void> {
 	await page.waitForTimeout(150);
@@ -783,6 +784,7 @@ test.describe("Entries CRUD", () => {
 		const html = await page.content();
 		expect(html).not.toContain("Visit solidjs.com");
 		expect(html).not.toContain("NOT FOUND");
+		await expectNoObjectCoercion(page);
 
 		await request.delete(
 			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),

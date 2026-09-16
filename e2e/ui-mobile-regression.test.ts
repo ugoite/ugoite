@@ -7,6 +7,10 @@ import {
   getDefaultSpaceId,
   waitForServers,
 } from "./lib/client.ts";
+import {
+  expectMobileControlFontSize,
+  expectNoObjectCoercion,
+} from "./lib/ui-safety.ts";
 
 const screenshotDir = path.resolve(
   process.cwd(),
@@ -41,28 +45,6 @@ async function expectMobileTouchTargets(page: Page): Promise<void> {
   for (const size of sizes) {
     expect(size.width).toBeGreaterThanOrEqual(44);
     expect(size.height).toBeGreaterThanOrEqual(44);
-  }
-}
-
-async function expectMobileControlFontSize(page: Page): Promise<void> {
-  const sizes = await page.locator(
-    "input:not([type='hidden']), select, textarea",
-  ).evaluateAll((elements) =>
-    elements
-      .map((element) => {
-        const rect = element.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0
-          ? Number.parseFloat(getComputedStyle(element).fontSize)
-          : null;
-      })
-      .filter((size): size is number => size !== null)
-  );
-
-  // Some responsive screens intentionally have no form controls. The zoom
-  // guard applies to controls when present, not to the screen as a whole.
-  if (sizes.length === 0) return;
-  for (const size of sizes) {
-    expect(size).toBeGreaterThanOrEqual(16);
   }
 }
 
@@ -226,6 +208,7 @@ async function runMobileRegression(
     await page.goto(item.path, { waitUntil: "domcontentloaded" });
     await page.locator(item.ready).waitFor({ state: "visible" });
     await item.assert();
+    await expectNoObjectCoercion(page);
     await expect(page.locator(".desktopSidebar")).toBeHidden();
     await expect(page.locator(".bottomNav")).toBeVisible();
     await expectNoHorizontalOverflow(page);

@@ -3372,9 +3372,11 @@ button.assistantPill[aria-expanded="true"] {
     overflow-x: hidden;
   }
 
-  /* iOS Safari zooms focused controls smaller than 16px. */
-  button,
-  input,
+  /* iOS Safari zooms focused text-entry controls smaller than 16px.
+   * Single base rule covers every text input/select/textarea (login,
+   * setup, settings, search, forms, entries); component rules keep only
+   * density/padding. Non-text inputs never trigger auto-zoom. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]):not([hidden]),
   select,
   textarea {
     font-size: 16px;

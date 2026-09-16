@@ -6,6 +6,7 @@ import {
 	getFrontendUrl,
 	waitForServers,
 } from "./lib/client.ts";
+import { expectNoObjectCoercion } from "./lib/ui-safety.ts";
 
 test.describe("Search UI", () => {
 	let spaceId = "";
@@ -35,6 +36,7 @@ test.describe("Search UI", () => {
 			.not.toBeAttached();
 		await expect(page.getByRole("heading", { name: "Search history" }))
 			.not.toBeAttached();
+		await expectNoObjectCoercion(page);
 	});
 
 	test("REQ-SRCH-004: search page starts with direct keyword search", async ({ page, request }) => {
@@ -58,6 +60,7 @@ test.describe("Search UI", () => {
 			await page.getByLabel("Search keywords").fill("keyword-first");
 			await page.getByRole("button", { name: "Search entries" }).click();
 			await expect(page.getByRole("button", { name: new RegExp(entryTitle) })).toBeVisible();
+			await expectNoObjectCoercion(page);
 		} finally {
 			if (entryId) {
 				await request.delete(getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`));
