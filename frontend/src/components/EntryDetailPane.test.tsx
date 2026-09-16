@@ -289,7 +289,6 @@ describe("EntryDetailPane", () => {
     expect(
       await screen.findByPlaceholderText("Start writing in Markdown..."),
     ).toBeInTheDocument();
-
     const toolbar = screen.getByRole("toolbar", { name: "Entry actions" });
     const tools = toolbar.querySelectorAll(".ui-entry-tool");
     expect(tools).toHaveLength(4);
@@ -308,6 +307,10 @@ describe("EntryDetailPane", () => {
       .toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Restore a version/ }))
       .not.toBeInTheDocument();
+    // History-only flow: no legacy /restore href remains in the editor.
+    expect(
+      document.querySelector('a[href$="/entries/entry-layout/restore"]'),
+    ).not.toBeInTheDocument();
 
     // Header → toolbar → fields order.
     const page = document.querySelector(".ui-entry-page")!;

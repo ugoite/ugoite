@@ -61,16 +61,25 @@ describe("entry revision review route", () => {
   });
 
   it("reviews current versus historical values and restores to the Entry route", async () => {
-    render(() => <SpaceEntryRevisionRoute />);
+    const { container } = render(() => <SpaceEntryRevisionRoute />);
 
     expect(await screen.findByText("Current value")).toBeInTheDocument();
     expect(await screen.findByText("Selected historical revision"))
       .toBeInTheDocument();
+    // Card reduction: current/selected render as plain sections with a
+    // divider, not .ui-card helpers.
+    expect(container.querySelector(".ui-card")).not.toBeInTheDocument();
+    const sections = container.querySelectorAll(".ui-entry-history-section");
+    expect(sections).toHaveLength(2);
+    expect(
+      container.querySelector(".ui-entry-history-divider"),
+    ).toBeInTheDocument();
+    // Destructive-restore warning stays visible as an alert.
+    expect(await screen.findByText(/Restore appends a new current revision/))
+      .toBeInTheDocument();
     expect(await screen.findByText("Current title")).toBeInTheDocument();
     expect(await screen.findByText("Historical title")).toBeInTheDocument();
     expect(await screen.findByText(/Original$/)).toBeInTheDocument();
-    expect(await screen.findByText(/Restore appends a new current revision/))
-      .toBeInTheDocument();
 
     fireEvent.click(
       await screen.findByRole("button", { name: "Restore this revision" }),

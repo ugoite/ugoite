@@ -38,4 +38,27 @@ describe("entry history route", () => {
     expect(await screen.findByText(formatDateTimeLabel(timestamp)))
       .toBeInTheDocument();
   });
+
+  it("routes revisions through the single History path with no /restore links", async () => {
+    vi.mocked(entryApi.history).mockResolvedValue({
+      revisions: [{
+        revision_id: "rev-1",
+        timestamp: 1767225600,
+        checksum: "checksum",
+      }],
+    });
+
+    const { container } = render(() => <SpaceEntryHistoryRoute />);
+
+    const revisionLink = await screen.findByRole("link", {
+      name: /rev-1/,
+    });
+    expect(revisionLink).toHaveAttribute(
+      "href",
+      "/spaces/default/entries/entry-1/history/rev-1",
+    );
+    expect(
+      container.querySelector('a[href$="/restore"]'),
+    ).not.toBeInTheDocument();
+  });
 });
