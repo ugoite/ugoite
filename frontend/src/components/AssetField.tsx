@@ -422,14 +422,17 @@ export function AssetField(props: AssetFieldProps) {
     return undefined;
   };
 
+  const readingLabel = (action: string, reference: AssetReference) =>
+    `${t("assetField.status.reading")} ${action} ${reference.name}`;
+
   const previewLabel = (reference: AssetReference) =>
     readingIds().has(reference.asset_id)
-      ? t("assetField.status.reading")
+      ? readingLabel(t("assetField.action.preview"), reference)
       : `${t("assetField.action.preview")} ${reference.name}`;
 
   const downloadLabel = (reference: AssetReference) =>
     readingIds().has(reference.asset_id)
-      ? t("assetField.status.reading")
+      ? readingLabel(t("assetField.action.download"), reference)
       : `${t("assetField.action.download")} ${reference.name}`;
 
   return (
@@ -472,7 +475,7 @@ export function AssetField(props: AssetFieldProps) {
                     type="button"
                     class="ui-button ui-button-secondary ui-button-sm ui-asset-icon-button"
                     aria-label={previewLabel(reference)}
-                    title={t("assetField.action.preview")}
+                    title={previewLabel(reference)}
                     onClick={(event) =>
                       previewReference(reference, event.currentTarget)}
                     disabled={readingIds().has(reference.asset_id) ||
@@ -490,7 +493,7 @@ export function AssetField(props: AssetFieldProps) {
                   type="button"
                   class="ui-button ui-button-secondary ui-button-sm ui-asset-icon-button"
                   aria-label={downloadLabel(reference)}
-                  title={t("assetField.action.download")}
+                  title={downloadLabel(reference)}
                   onClick={() => downloadReference(reference)}
                   disabled={readingIds().has(reference.asset_id) ||
                     (!localFiles().has(reference.asset_id) &&

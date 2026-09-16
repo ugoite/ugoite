@@ -86,7 +86,19 @@ describe("i18n", () => {
 
   it("renders booleans and never coerces objects to [object Object]", () => {
     expect(
-      t("dashboard.section.createEntry.formsAvailable", { count: true as never }),
+      t("dashboard.section.createEntry.formsAvailable", {
+        count: true as never,
+      }),
+    ).toBe("true forms available");
+    expect(
+      t("dashboard.section.createEntry.formsAvailable", {
+        count: false as never,
+      }),
+    ).toBe("false forms available");
+    expect(
+      t("dashboard.section.createEntry.formsAvailable", {
+        count: true as never,
+      }),
     ).not.toContain("[object Object]");
     for (const value of [
       { value: "hidden" },

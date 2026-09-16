@@ -231,6 +231,44 @@ describe("AssetField", () => {
     expect(assetApi.upload).toHaveBeenCalledTimes(2);
   });
 
+  it("surfaces transient local/uploading/failed upload counts", async () => {
+    (assetApi.upload as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockImplementationOnce(() => new Promise<AssetReference>(() => {}));
+    const [value, setValue] = createSignal("");
+
+    render(() => (
+      <AssetField
+        fieldId="documents"
+        fieldName="documents"
+        value={value()}
+        persistedValue=""
+        multiple={true}
+        spaceId="default"
+        onChange={setValue}
+      />
+    ));
+
+    fireEvent.change(screen.getByLabelText("Choose file"), {
+      target: {
+        files: [
+          new File(["a"], "a.txt", { type: "text/plain" }),
+          new File(["b"], "b.txt", { type: "text/plain" }),
+        ],
+      },
+    });
+
+    await waitFor(() => expect(screen.getByText("boom")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("Uploading…")).toBeInTheDocument()
+    );
+    expect(screen.getAllByText("Uploading…")).toHaveLength(1);
+    expect(screen.getByText("a.txt")).toBeInTheDocument();
+    expect(screen.getByText("b.txt")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry upload" }))
+      .toBeInTheDocument();
+  });
+
   it("keeps provisional local bytes across the Fields to Preview mount boundary", async () => {
     (assetApi.upload as ReturnType<typeof vi.fn>).mockResolvedValue(first);
     const [value, setValue] = createSignal("");
@@ -492,6 +530,37 @@ describe("AssetField", () => {
     );
     expect(screen.getByText("TXT · 10 bytes")).toBeInTheDocument();
     expect(screen.queryByText("first.txt")).toBeNull();
+  });
+
+  it("keeps action and filename in busy reading button names", () => {
+    const state = createAssetFieldState();
+    const encoded = serializeAssetReference(first);
+    render(() => (
+      <AssetField
+        fieldId="document"
+        fieldName="document"
+        value={encoded}
+        persistedValue={encoded}
+        multiple={false}
+        spaceId="default"
+        formName="Contracts"
+        entryId="entry-1"
+        state={state}
+        onChange={() => undefined}
+      />
+    ));
+    state.setReadingIds(new Set([first.asset_id]));
+
+    const preview = screen.getByRole("button", {
+      name: "Reading… Preview first.txt",
+    });
+    const download = screen.getByRole("button", {
+      name: "Reading… Download first.txt",
+    });
+    expect(preview).toBeDisabled();
+    expect(download).toBeDisabled();
+    expect(preview).toHaveAttribute("title", "Reading… Preview first.txt");
+    expect(download).toHaveAttribute("title", "Reading… Download first.txt");
   });
 
   it("keeps native media controls in the preview dialog tab order", async () => {

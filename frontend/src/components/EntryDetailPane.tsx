@@ -1655,6 +1655,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                       onInput={(event) =>
                         handleContentChange(event.currentTarget.value)}
                       onKeyDown={handleEditorKeyDown}
+                      aria-label={t("entryDetail.sourcePlaceholder")}
                       placeholder={t("entryDetail.sourcePlaceholder")}
                       spellcheck={false}
                     />
@@ -1860,6 +1861,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                             onInput={(event) =>
                               handleContentChange(event.currentTarget.value)}
                             onKeyDown={handleEditorKeyDown}
+                            aria-label={t(
+                              "entryDetail.advancedSourcePlaceholder",
+                            )}
                             placeholder={t("entryDetail.sourcePlaceholder")}
                             spellcheck={false}
                           />

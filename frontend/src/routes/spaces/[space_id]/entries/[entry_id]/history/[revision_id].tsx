@@ -24,7 +24,9 @@ export default function SpaceEntryRevisionRoute() {
   const entryId = () => params.entry_id;
   const revisionId = () => params.revision_id;
   const entryPath = () =>
-    `/spaces/${spaceId()}/entries/${encodeURIComponent(entryId())}`;
+    `/spaces/${encodeURIComponent(spaceId())}/entries/${
+      encodeURIComponent(entryId())
+    }`;
 
   const [currentEntry] = createResource(() =>
     entryApi.get(spaceId(), entryId())

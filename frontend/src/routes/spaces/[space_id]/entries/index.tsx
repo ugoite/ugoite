@@ -191,6 +191,12 @@ export default function SpaceEntriesIndexPane() {
       sessionId().trim() ? "sql_session.rows" : undefined,
     );
   });
+  const isUnknownForm = createMemo(() => {
+    const name = formName();
+    if (!name || sessionId().trim() || ctx.loadingForms()) return false;
+    if (isReservedMetadataForm(name)) return false;
+    return !ctx.forms().some((form) => form.name === name);
+  });
   const needsFirstFormGuidance = createMemo(
     () =>
       !sessionId().trim() &&
@@ -294,7 +300,16 @@ export default function SpaceEntriesIndexPane() {
               displayEntries().length === 0 &&
               !errorMessage()}
           >
-            <p class="text-sm ui-muted">{t("entriesPage.noEntries")}</p>
+            <Show
+              when={isUnknownForm()}
+              fallback={
+                <p class="text-sm ui-muted">{t("entriesPage.noEntries")}</p>
+              }
+            >
+              <p class="text-sm ui-muted">
+                {t("entriesPage.unknownFormHint", { form: formName() })}
+              </p>
+            </Show>
           </Show>
           <Show
             when={!sessionId().trim() && !isLoading() && !errorMessage()}

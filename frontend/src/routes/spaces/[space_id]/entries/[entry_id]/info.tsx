@@ -14,9 +14,10 @@ export default function SpaceEntryInfoRoute() {
   const params = useParams<{ space_id: string; entry_id: string }>();
   const spaceId = () => params.space_id;
   const entryId = () => params.entry_id;
+  const encodedSpaceId = () => encodeURIComponent(spaceId());
   const encodedEntryId = () => encodeURIComponent(entryId());
   const entryPath = () =>
-    `/spaces/${spaceId()}/entries/${encodedEntryId()}`;
+    `/spaces/${encodedSpaceId()}/entries/${encodedEntryId()}`;
 
   const [entry] = createResource(
     () => spaceId() && entryId() ? `${spaceId()}/${entryId()}` : null,
@@ -29,11 +30,30 @@ export default function SpaceEntryInfoRoute() {
       : null
   );
 
+  const copyEntryId = async () => {
+    try {
+      await navigator.clipboard.writeText(entryId());
+    } catch {
+      // Clipboard is a progressive enhancement; the ID stays visible.
+    }
+  };
+
   return (
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow">{entryId()}</div>
+          <div class="eyebrow break-all">
+            {entryId()}
+            <button
+              type="button"
+              class="ui-button ui-button-secondary ui-button-sm ml-2"
+              aria-label={`${t("common.copy")} ${entryId()}`}
+              title={t("common.copy")}
+              onClick={() => void copyEntryId()}
+            >
+              {t("common.copy")}
+            </button>
+          </div>
           <h1>{t("entryInfo.title")}</h1>
         </div>
         <A href={entryPath()} class="btn">

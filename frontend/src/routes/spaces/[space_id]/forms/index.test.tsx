@@ -214,6 +214,27 @@ describe("Forms list", () => {
       { replace: true },
     );
   });
+  it("does not navigate legacy /forms?form= URLs without a Space id", () => {
+    search.form = "Notes";
+    const [list] = createSignal([noteForm]);
+    render(() => (
+      <EntriesRouteContext.Provider
+        value={{
+          spaceId: () => "",
+          forms: list,
+          loadingForms: () => false,
+          formsError: () => undefined,
+          columnTypes: () => [],
+          refetchForms,
+          entryStore: {} as never,
+          spaceStore: {} as never,
+        }}
+      >
+        <SpaceFormsIndexPane />
+      </EntriesRouteContext.Provider>
+    ));
+    expect(navigate).not.toHaveBeenCalled();
+  });
   it("shows the empty state and Japanese copy", () => {
     setLocale("ja");
     renderPage([]);

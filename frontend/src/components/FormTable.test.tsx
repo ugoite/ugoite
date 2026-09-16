@@ -1,8 +1,18 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, waitFor, within } from "@solidjs/testing-library";
-import { FormTable } from "./FormTable";
-import { entryApi } from "~/lib/ugoite-client";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
+import {
+  chunkCsvRowsForExport,
+  encodeSpreadsheetCsvChunked,
+  FormTable,
+} from "./FormTable";
+import { encodeSpreadsheetCsv, entryApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
 import { setLocale } from "~/lib/i18n";
 
@@ -358,6 +368,111 @@ describe("FormTable", () => {
       '"Keep Me","100","2026-01-01T00:00:00.000Z"',
     );
     expect(csvContent).not.toContain("Drop Me");
+  });
+
+  it("exports formula/control-prefixed values as literal text with CRLF endings", async () => {
+    const entryForm = {
+      name: "Test",
+      fields: { code: { type: "string" } },
+    } as any;
+    const entries = [
+      {
+        id: "1",
+        title: "=SUM(A1:A2)",
+        properties: { code: "+1" },
+        updated_at: "2026-01-01",
+      },
+      {
+        id: "2",
+        title: "-discount",
+        properties: { code: "@user" },
+        updated_at: "2026-01-02",
+      },
+      {
+        id: "3",
+        title: "plain",
+        properties: { code: "\u0001=CMD" },
+        updated_at: "2026-01-03",
+      },
+    ];
+    const snapshot = JSON.parse(JSON.stringify(entries));
+
+    vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+
+    let exportedBlob: Blob | undefined;
+    global.URL.createObjectURL = vi.fn().mockImplementation((blob: Blob) => {
+      exportedBlob = blob;
+      return "blob:test";
+    });
+    global.URL.revokeObjectURL = vi.fn();
+    const linkClickSpy = vi.fn();
+    // Bind the prototype original: an earlier test in this file already
+    // spies on document.createElement, so capturing document.createElement
+    // here would recurse into that mock.
+    const originalCreateElement = Document.prototype.createElement.bind(
+      document,
+    );
+    vi.spyOn(document, "createElement").mockImplementation(
+      ((tag: string) => {
+        const el = originalCreateElement(tag);
+        if (tag === "a") {
+          (el as any).click = linkClickSpy;
+        }
+        return el;
+      }) as typeof document.createElement,
+    );
+
+    render(() => (
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(desktopTable().getByText("plain")).toBeInTheDocument()
+    );
+    fireEvent.click(screen.getByText("Export CSV"));
+
+    await waitFor(() => {
+      expect(linkClickSpy).toHaveBeenCalled();
+      expect(exportedBlob).toBeInstanceOf(Blob);
+    });
+    const csvContent = await exportedBlob!.text();
+    expect(csvContent).toBe(
+      '"title","code","updated_at"\r\n' +
+        '"\'=SUM(A1:A2)","\'+\u0031","2026-01-01T00:00:00.000Z"\r\n' +
+        '"\'-discount","\'@user","2026-01-02T00:00:00.000Z"\r\n' +
+        '"plain","\'\u0001=CMD","2026-01-03T00:00:00.000Z"',
+    );
+    // The export is a derived representation: durable Entry values are unchanged.
+    expect(entries).toEqual(snapshot);
+    expect(desktopTable().getByText("=SUM(A1:A2)")).toBeInTheDocument();
+    expect(desktopTable().getByText("-discount")).toBeInTheDocument();
+    vi.mocked(document.createElement).mockRestore();
+  });
+
+  it("splits CSV exports into bounded WASM requests without changing bytes", async () => {
+    const headers = ["title"];
+    const rows = [["a"], ["b"], ["c"]];
+    const singleRowBytes = new TextEncoder().encode(
+      JSON.stringify([headers, rows[0]]),
+    ).length;
+
+    const chunks = chunkCsvRowsForExport(headers, rows, singleRowBytes);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.flat()).toEqual(rows);
+    for (const chunk of chunks) {
+      expect(
+        new TextEncoder().encode(JSON.stringify([headers, ...chunk])).length,
+      ).toBeLessThanOrEqual(singleRowBytes);
+    }
+
+    await expect(
+      encodeSpreadsheetCsvChunked(headers, rows, singleRowBytes),
+    ).resolves.toBe(await encodeSpreadsheetCsv([headers, ...rows]));
   });
 
   it("REQ-FE-030: Add Row button opens the canonical entry editor", async () => {

@@ -204,10 +204,15 @@ describe("EntryDetailPane source compat bridge", () => {
     ), { target: { value: lossy } });
 
     await waitFor(() => {
-      expect(screen.getByText("Review Markdown conversion before saving"))
-        .toBeInTheDocument();
+      expect(
+        screen.getByText("Review Markdown conversion before saving"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("Review Markdown conversion before saving"),
+      ).toBeVisible();
     });
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeVisible();
     expect(updateMock).not.toHaveBeenCalled();
 
     fireEvent.click(

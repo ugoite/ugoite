@@ -51,6 +51,9 @@ describe("entry info route", () => {
     expect(screen.getByText("rev-9")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to Entry" }))
       .toHaveAttribute("href", "/spaces/default/entries/entry-1");
+    expect(screen.getByRole("button", { name: "Copy entry-1" }))
+      .toBeInTheDocument();
+    expect(document.querySelector(".eyebrow")).toHaveClass("break-all");
     // Info action on the detail page targets this route.
     expect(screen.queryByText(/Markdown/)).not.toBeInTheDocument();
   });

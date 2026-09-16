@@ -2986,6 +2986,7 @@ button.assistantPill[aria-expanded="true"] {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-height: 44px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -3010,6 +3011,8 @@ button.assistantPill[aria-expanded="true"] {
 
 .formRowEdit {
   flex: 0 0 auto;
+  min-height: 44px;
+  min-width: 44px;
 }
 
 .historyRows {

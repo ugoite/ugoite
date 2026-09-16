@@ -37,9 +37,11 @@ export default function SpaceFormsIndexPane() {
   createEffect(() => {
     const legacy = String(params.form || "");
     if (legacy && !redirectedLegacy()) {
+      const spaceId = ctx.spaceId();
+      if (!spaceId) return;
       setRedirectedLegacy(true);
       navigate(
-        `/spaces/${ctx.spaceId()}/entries?form=${encodeURIComponent(legacy)}`,
+        `/spaces/${spaceId}/entries?form=${encodeURIComponent(legacy)}`,
         { replace: true },
       );
     }
