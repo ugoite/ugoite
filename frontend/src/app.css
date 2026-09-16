@@ -2574,6 +2574,18 @@ textarea {
 .ui-entry-detail-list dd {
   font-size: 13px;
 }
+.ui-entry-info-list {
+  gap: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.ui-entry-info-list div {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--ui-border);
+}
+.ui-entry-info-list div:last-child {
+  border-bottom: 0;
+}
 .ui-entry-technical-details {
   margin-top: 16px;
   padding-top: 12px;

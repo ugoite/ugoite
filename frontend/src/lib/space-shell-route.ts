@@ -5,6 +5,7 @@ export type SpaceShellTitle =
   | "asset"
   | "assets"
   | "entryHistory"
+  | "entryInfo"
   | "newEntry"
   | "restore"
   | "revision"
