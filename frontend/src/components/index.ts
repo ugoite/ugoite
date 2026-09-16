@@ -1,4 +1,7 @@
 // Component exports
+export { ActionIconBar } from "./ActionIconBar";
+export { IconButton } from "./IconButton";
+export { UiIcon } from "./UiIcon";
 export { EntryList } from "./EntryList";
 export { LocalBusyIndicator } from "./LocalBusyIndicator";
 export { MarkdownEditor } from "./MarkdownEditor";

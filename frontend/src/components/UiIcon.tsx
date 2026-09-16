@@ -35,10 +35,8 @@ const paths: Record<UiIconName, () => JSX.Element> = {
   ),
   forms: () => (
     <>
-      <path d="M4 5h16" />
-      <path d="M4 12h16" />
-      <path d="M4 19h16" />
-      <path d="M7 5v14" />
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <path d="M8 9h8M8 12h8M8 15h5" />
     </>
   ),
   search: () => (
@@ -50,18 +48,14 @@ const paths: Record<UiIconName, () => JSX.Element> = {
   settings: () => (
     <>
       <circle cx="12" cy="12" r="3" />
-      <path
-        d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1-2 3.4-.2-.1a1.8 1.8 0 0 0-1.9-.1 8 8 0 0 1-1.4.6 1.7 1.7 0 0 0-1.2 1.5v.2H9v-.2a1.7 1.7 0 0 0-1.2-1.5 8 8 0 0 1-1.4-.6 1.8 1.8 0 0 0-1.9.1l-.2.1-2-3.4.1-.1a1.7 1.7 0 0 0 .3-1.8A8 8 0 0 1 2.4 13 1.7 1.7 0 0 0 1 11.5H.8V7.6H1a1.7 1.7 0 0 0 1.4-1.5A8 8 0 0 1 2.7 5a1.7 1.7 0 0 0-.3-1.8l-.1-.1 2-3.4.2.1a1.8 1.8 0 0 0 1.9.1 8 8 0 0 1 1.4-.6A1.7 1.7 0 0 0 9 .2V0h3.9v.2a1.7 1.7 0 0 0 1.2 1.5 8 8 0 0 1 1.4.6 1.8 1.8 0 0 0 1.9-.1l.2-.1 2 3.4-.1.1a1.7 1.7 0 0 0-.3 1.8c.2.5.4 1 .4 1.6a1.7 1.7 0 0 0 1.4 1.5h.2v3.9H21a1.7 1.7 0 0 0-1.6 1.6Z"
-        transform="translate(1.5 1.5) scale(.88)"
-      />
+      <path d="M12 3.5l1.2 2.4 2.7.4 1.8-1.7 1.8 1.8-1.7 1.8.4 2.7 2.3 1.1v2l-2.3 1.1-.4 2.7 1.7 1.8-1.8 1.8-1.8-1.7-2.7.4L12 20.5l-1.2-2.4-2.7-.4-1.8 1.7-1.8-1.8 1.7-1.8-.4-2.7L3.5 12V10l2.3-1.1.4-2.7-1.7-1.8 1.8-1.8 1.8 1.7 2.7-.4z" />
     </>
   ),
   spaces: () => (
     <>
-      <path d="M4 5h16" />
-      <path d="M4 12h16" />
-      <path d="M4 19h16" />
-      <path d="M7 5v14" />
+      <path d="M4 7.5 12 4l8 3.5-8 3.5-8-3.5z" />
+      <path d="M4 12.5 12 16l8-3.5" />
+      <path d="M4 17 12 20l8-3" />
     </>
   ),
   about: () => (
@@ -127,16 +121,16 @@ const paths: Record<UiIconName, () => JSX.Element> = {
   ),
   appearance: () => (
     <>
-      <path d="M4 5h16" />
-      <path d="M4 12h16" />
-      <path d="M4 19h16" />
-      <path d="M7 5v14" />
+      <path d="M4 8h10M18 8h2M4 16h4M12 16h8" />
+      <circle cx="16" cy="8" r="2" />
+      <circle cx="10" cy="16" r="2" />
     </>
   ),
   history: () => (
     <>
-      <path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5" />
-      <path d="M4 4v4.5h4.5M12 8v5l3 2" />
+      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M12 7v5l3 2" />
     </>
   ),
   refresh: () => (
@@ -186,9 +180,10 @@ export function UiIcon(props: { name: UiIconName; class?: string }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      stroke-width="1.8"
+      stroke-width="1.9"
       stroke-linecap="round"
       stroke-linejoin="round"
+      vector-effect="non-scaling-stroke"
       aria-hidden="true"
     >
       {paths[props.name]()}

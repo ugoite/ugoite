@@ -130,15 +130,14 @@ export function SpaceShell(props: SpaceShellProps) {
           <div class="topbarTools">
             <div class="crumbTop ui-sr-only">{crumb()}</div>
             <button
-              class="assistantPill"
+              class="pill iconpill"
               type="button"
               aria-label={t("konase.title")}
               aria-expanded={konaseOpen()}
               onClick={() => setKonaseOpen((open) => !open)}
             >
               <span class="assistantDot" aria-hidden="true" />
-              <span>{t("konase.title")}</span>
-              <span class="assistantState">{t("konase.ready")}</span>
+              <span class="ui-sr-only">{t("konase.title")}</span>
             </button>
             <AccountMenu
               settingsHref={`/spaces/${props.spaceId}/settings?section=credentials`}
