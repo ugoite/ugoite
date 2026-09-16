@@ -229,8 +229,6 @@ describe("EntryDetailPane", () => {
     const notes = screen.getByLabelText("Notes");
     fireEvent.input(notes, { target: { value: "hello \n" } });
     expect(notes).toHaveValue("hello \n");
-    fireEvent.click(screen.getByText("Advanced"));
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
 
     const source = await screen.findByPlaceholderText(
       "Start writing in Markdown...",
@@ -240,7 +238,7 @@ describe("EntryDetailPane", () => {
     );
   });
 
-  it("keeps advanced source and technical details behind progressive disclosure", async () => {
+  it("renders header, a four-action toolbar, then fields with source in disclosure", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-layout",
       title: "Layout Entry",
@@ -273,47 +271,83 @@ describe("EntryDetailPane", () => {
 
     await screen.findByLabelText("Summary");
 
+    // Form-bound entries render fields directly with no tab chrome.
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(screen.queryByText("Entry fields preview")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Summary")).toHaveValue("hello");
+    // No helper copy under the heading or mode descriptions.
+    expect(screen.queryByText(/Edit this entry as a form/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/familiar form controls/)).not.toBeInTheDocument();
+    // Sidebar metadata moved to the Info route.
+    expect(document.querySelector("#entry-details")).toBeNull();
+    expect(document.querySelector(".ui-entry-side-card")).toBeNull();
+
+    // Source editing stays available as an advanced secondary action.
     const advanced = screen.getByText("Advanced");
-    const source = screen.getByRole("button", { name: "Source" });
-    const sourceDisclosure = source.closest("details");
-    expect(sourceDisclosure).not.toHaveAttribute("open");
-    fireEvent.click(advanced);
-    expect(sourceDisclosure).toHaveAttribute("open");
-
-    fireEvent.click(source);
-    expect(source).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("tabpanel", { name: "Source" }))
-      .toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("tab", { name: "Preview" }));
-    expect(screen.getByRole("region", { name: "Entry fields preview" }))
-      .toBeInTheDocument();
-    expect(screen.getByText("Summary")).toBeInTheDocument();
-    expect(screen.getByText("review")).toBeInTheDocument();
-
-    const technical = screen.getByText("Technical details").closest("details");
-    expect(technical).not.toHaveAttribute("open");
+    expect(advanced.closest("details")).not.toHaveAttribute("open");
     expect(
-      screen.getByRole("toolbar", { name: "Entry actions" }),
+      await screen.findByPlaceholderText("Start writing in Markdown..."),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Info" })).toHaveAttribute(
-      "href",
-      "#entry-details",
-    );
-    expect(screen.queryByRole("heading", { name: "Manage" }))
-      .not.toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: /History & recovery/ }),
-    ).toHaveAttribute(
-      "href",
-      "/spaces/default/entries/entry-layout/history",
-    );
-    expect(screen.getByRole("link", { name: /Restore a version/ }))
+
+    const toolbar = screen.getByRole("toolbar", { name: "Entry actions" });
+    const tools = toolbar.querySelectorAll(".ui-entry-tool");
+    expect(tools).toHaveLength(4);
+    expect(screen.getByRole("button", { name: "Reload latest version" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /History & recovery/ }))
       .toHaveAttribute(
         "href",
-        "/spaces/default/entries/entry-layout/restore",
+        "/spaces/default/entries/entry-layout/history",
       );
+    expect(screen.getByRole("link", { name: "Info" })).toHaveAttribute(
+      "href",
+      "/spaces/default/entries/entry-layout/info",
+    );
+    expect(screen.getByRole("button", { name: "Delete entry" }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Restore a version/ }))
+      .not.toBeInTheDocument();
+
+    // Header → toolbar → fields order.
+    const page = document.querySelector(".ui-entry-page")!;
+    const header = page.querySelector(".ui-entry-header")!;
+    const fields = await screen.findByLabelText("Notes");
+    expect(
+      header.compareDocumentPosition(toolbar) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      toolbar.compareDocumentPosition(fields) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(screen.getByRole("status")).toHaveTextContent("All changes saved");
+  });
+
+  it("renders formless document entries with the source editor directly", async () => {
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-doc",
+      title: "Doc",
+      form: null,
+      content: "# Doc",
+      revision_id: "rev-doc",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-doc"}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const source = await screen.findByPlaceholderText(
+      "Start writing in Markdown...",
+    );
+    expect(source).toHaveValue("# Doc");
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(document.querySelector("#entry-source-panel")).not.toBeNull();
   });
 
   it("uses the shared form-first editor to create a new entry", async () => {
@@ -944,7 +978,6 @@ describe("EntryDetailPane", () => {
     expect(screen.getByText("Uploaded; entry not saved yet"))
       .toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Preview" }));
     expect(screen.getByText("contract.pdf")).toBeInTheDocument();
     expect(screen.queryByText(JSON.stringify(uploaded))).not
       .toBeInTheDocument();
@@ -1108,7 +1141,7 @@ describe("EntryDetailPane", () => {
     });
   });
 
-  it("saves from Preview when an upload completes after the Fields view unmounts", async () => {
+  it("saves after an upload completes while editing fields", async () => {
     const uploaded = {
       asset_id: "01900000-0000-7000-8000-000000000013",
       name: "pending-preview.pdf",
@@ -1153,7 +1186,6 @@ describe("EntryDetailPane", () => {
       },
     });
     await waitFor(() => expect(assetUpload).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole("tab", { name: "Preview" }));
     resolveUpload?.(uploaded);
 
     await screen.findByText("pending-preview.pdf");
@@ -1310,8 +1342,6 @@ describe("EntryDetailPane", () => {
     expect(notes).toHaveValue("hello");
 
     fireEvent.input(notes, { target: { value: "updated" } });
-    fireEvent.click(screen.getByText("Advanced"));
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
 
     const source = await screen.findByPlaceholderText(
       "Start writing in Markdown...",
@@ -1526,15 +1556,12 @@ describe("EntryDetailPane", () => {
       />
     ));
 
-    expect(await screen.findByRole("tab", { name: "項目" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    expect(screen.getByText("見慣れたフォーム項目からエントリを編集します。"))
-      .toBeInTheDocument();
-    expect(screen.getByLabelText("Summary")).toHaveValue("hello");
-    expect(screen.queryByRole("tab", { name: "Fields" })).not
-      .toBeInTheDocument();
+    expect(await screen.findByLabelText("Summary")).toHaveValue("hello");
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(screen.queryByText("見慣れたフォーム項目からエントリを編集します。"))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText("項目")).not.toBeInTheDocument();
   });
 
   it("REQ-FE-033: entry detail returns to its Form workspace", async () => {

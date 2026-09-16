@@ -1,0 +1,34 @@
+version: "0.1"
+updated: "2026-09-16"
+page:
+  id: space-entry-info
+  title: Entry Info
+  route: /spaces/{space_id}/entries/{entry_id}/info
+  implementation: implemented
+components:
+  shared:
+    - id: space-shell
+      type: persistent-workspace-navigation
+      reference: ../components/space-shell.yaml
+  body:
+    - id: entry-info-header
+      type: page-header
+      items:
+        - id: back-to-entry
+          type: link
+          target_page: space-entry-detail
+        - id: entry-info-title
+          type: heading
+          text: "Entry info"
+    - id: entry-info-metadata
+      type: list
+      items:
+        - entry_id
+        - form
+        - updated_at
+        - created_at
+        - current_revision_id
+    - id: entry-info-sharing
+      type: settings-panel
+      items:
+        - access-policy-editor

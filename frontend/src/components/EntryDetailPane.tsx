@@ -9,7 +9,6 @@ import {
 } from "solid-js";
 import type { Accessor } from "solid-js";
 
-import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
 import { AssetField } from "~/components/AssetField";
 import { UiIcon } from "~/components/UiIcon";
 import {
@@ -18,8 +17,7 @@ import {
 } from "~/lib/asset-field-state";
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
-import { formatDateTimeLabel } from "~/lib/date-format";
-import { parseMarkdownH2Sections, renderMarkdownPreview } from "~/lib/markdown";
+import { parseMarkdownH2Sections } from "~/lib/markdown";
 import {
   buildEntryMarkdownFromFields,
   parseEntryMarkdownPresentation,
@@ -70,8 +68,6 @@ export interface EntryDetailPaneProps {
   onCreated?: (result: { id: string; revision_id: string }) => void;
   onAfterSave?: () => void;
 }
-
-type EntryViewMode = "fields" | "preview" | "source";
 
 type RowReferenceOption = {
   id: string;
@@ -173,22 +169,6 @@ function isMissingRequiredValue(fieldDef: FormField, content: string) {
   return false;
 }
 
-function markdownWithoutAssetSections(
-  markdown: string,
-  assetFieldNames: Set<string>,
-) {
-  const output: string[] = [];
-  let omitSection = false;
-  for (const line of markdown.split(/\r?\n/)) {
-    const heading = line.match(/^##\s+(.+)$/);
-    if (heading) {
-      omitSection = assetFieldNames.has(normalizeFieldName(heading[1]));
-    }
-    if (!omitSection) output.push(line);
-  }
-  return output.join("\n");
-}
-
 function buildEditorGuidance(form: Form | null, markdown: string) {
   // Presentation hints only. Saveability and canonical errors come from the
   // shared Rust boundary (`entry.validate_draft` + server mutation). When a
@@ -283,10 +263,6 @@ function createFieldInputId(fieldName: string, index: number) {
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
   return `entry-field-${index}-${normalized || "field"}`;
-}
-
-function formatEntryDate(value: string | undefined) {
-  return formatDateTimeLabel(value);
 }
 
 class EntryLoadTimeoutError extends Error {
@@ -497,7 +473,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   const [lastSavedContent, setLastSavedContent] = createSignal("");
   const [isDirty, setIsDirty] = createSignal(false);
   const [isSaving, setIsSaving] = createSignal(false);
-  const [viewMode, setViewMode] = createSignal<EntryViewMode>("source");
   const [conflictMessage, setConflictMessage] = createSignal<string | null>(
     null,
   );
@@ -518,9 +493,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   );
   const [lastLoadedResourceRevisionId, setLastLoadedResourceRevisionId] =
     createSignal<string | null>(null);
-  const [defaultedViewEntryId, setDefaultedViewEntryId] = createSignal<
-    string | null
-  >(null);
   const [entryError, setEntryError] = createSignal<string | null>(null);
   const [compatibilityDiagnostics, setCompatibilityDiagnostics] = createSignal<
     MarkdownConversionDiagnostic[]
@@ -528,8 +500,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   const [pendingCanonicalDraft, setPendingCanonicalDraft] = createSignal<
     CompatDraft | null
   >(null);
-  const [showAccessPolicy, setShowAccessPolicy] = createSignal(false);
   const [assetEditorGeneration, setAssetEditorGeneration] = createSignal(0);
+  const [showAdvancedSource, setShowAdvancedSource] = createSignal(false);
   const [hasUserEdited, setHasUserEdited] = createSignal(false);
   const [createdEntry, setCreatedEntry] = createSignal<
     {
@@ -544,9 +516,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   );
   const draftSession = getCreateEntryDraftSession(draftSessionKey());
 
-  // Asset upload/read state belongs to this Entry draft. Fields and Preview
-  // are separate conditional subtrees, so keeping this map in either child
-  // would lose provisional Files and read state on a tab switch.
+  // Asset upload/read state belongs to this Entry draft. The fields view and
+  // the advanced source disclosure are separate conditional subtrees, so
+  // keeping this map in either child would lose provisional Files and read
+  // state when a subtree unmounts.
   const assetFieldStates = new Map<string, AssetFieldState>();
 
   // Pending Rust compat reconciliations (source<->draft). Saves settle them
@@ -723,16 +696,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
   const loadedForms = () => props.forms?.() ?? [];
 
-  const parsedSections = createMemo(() => {
-    const map = new Map<string, string>();
-    for (const section of parseMarkdownH2Sections(editorContent())) {
-      map.set(normalizeFieldName(section.title), section.content);
-    }
-    return map;
-  });
-
-  // Structured draft is the authority; `parsedSections` remains for
-  // persisted-content comparisons only. Empty stays empty so the heading
+  // Structured draft is the authority; empty stays empty so the heading
   // shows Untitled as presentation only (never saved as "Untitled").
   const editorTitle = createMemo(() => draftTitle());
   const editorGuidance = createMemo(() =>
@@ -743,14 +707,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
   const focusFirstMissingRequiredField = () => {
     if (typeof document === "undefined") return;
-    const wasFieldsView = viewMode() === "fields";
-    setViewMode("fields");
-    const focus = () => {
-      // Rust diagnostics drive aria-invalid; focus the first invalid field.
-      document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
-    };
-    if (wasFieldsView) focus();
-    else queueMicrotask(focus);
+    // Rust diagnostics drive aria-invalid; focus the first invalid field.
+    document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
   };
 
   const showRustValidationFailure = (
@@ -774,41 +732,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
   const fieldValue = (fieldName: string): string =>
     draftValueToDisplayString(draftFields()[fieldName]);
-
-  const previewAssetFields = createMemo(() =>
-    Object.entries(currentForm()?.fields || {}).filter(([, fieldDef]) =>
-      fieldDef.type === "asset_reference" || isAssetReferenceListField(fieldDef)
-    )
-  );
-
-  const previewContent = createMemo(() => {
-    const assetFieldNames = new Set(
-      previewAssetFields().map(([fieldName]) => normalizeFieldName(fieldName)),
-    );
-    return markdownWithoutAssetSections(editorContent(), assetFieldNames);
-  });
-
-  const previewFieldEntries = createMemo(() =>
-    Object.entries(currentForm()?.fields || {}).filter(
-      ([, fieldDef]) =>
-        fieldDef.type !== "asset_reference" &&
-        !isAssetReferenceListField(fieldDef),
-    )
-  );
-
-  const additionalPreviewContent = createMemo(() => {
-    const form = currentForm();
-    if (!form) return "";
-    const knownFieldNames = new Set(
-      Object.keys(form.fields || {}).map(normalizeFieldName),
-    );
-    return parseMarkdownH2Sections(editorContent())
-      .filter((section) =>
-        !knownFieldNames.has(normalizeFieldName(section.title))
-      )
-      .map((section) => `## ${section.title}\n${section.content}`)
-      .join("\n\n");
-  });
 
   const persistedFieldValue = (fieldName: string) => {
     const sections = new Map<string, string>();
@@ -866,7 +789,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setInvalidFields([]);
     setCompatibilityDiagnostics([]);
     setPendingCanonicalDraft(null);
-    setDefaultedViewEntryId(null);
     // Reconcile the immediate parse through the Rust bridge (authority).
     // Guard on the loaded buffer so late reconciliation never wipes user
     // edits made after load.
@@ -897,14 +819,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         () => {},
       ),
     );
-  });
-
-  createEffect(() => {
-    const loadedEntry = entry();
-    if (!loadedEntry || defaultedViewEntryId() === loadedEntry.id) return;
-    if (loadedEntry.form && props.forms && props.forms().length === 0) return;
-    setViewMode(currentForm() ? "fields" : "source");
-    setDefaultedViewEntryId(loadedEntry.id);
   });
 
   const syncEditorFromDraft = (title: string, fields: DraftFields) => {
@@ -1334,39 +1248,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     }
   };
 
-  const handleDiscard = () => {
-    /* v8 ignore start */
-    if (isDirty() && !confirm(t("entryDetail.confirmDiscard"))) return;
-    /* v8 ignore stop */
-    const content = lastSavedContent();
-    const discardTitle = entry()?.title || "";
-    const draft = parseEntryMarkdownPresentation(content);
-    const tags = readEntryTagsPresentation(content) ?? [];
-    setDraftTitle(draft.title || discardTitle);
-    setDraftFields(draft.fields);
-    setDraftTags(tags);
-    // Reconcile the restored buffer through the Rust bridge (authority).
-    trackCompat(
-      parseSourceToDraftViaWasm(content, discardTitle).then(
-        (canonical) => {
-          if (editorContent() !== content) return;
-          setDraftTitle(canonical.title || discardTitle);
-          setDraftFields(canonical.fields);
-          setDraftTags(canonical.tags);
-        },
-        () => {},
-      ),
-    );
-    setEditorContent(content);
-    setAssetEditorGeneration((generation) => generation + 1);
-    setIsDirty(false);
-    setConflictMessage(null);
-    setValidationError(null);
-    setInvalidFields([]);
-    setCompatibilityDiagnostics([]);
-    setPendingCanonicalDraft(null);
-  };
-
   const handleRefresh = async () => {
     /* v8 ignore start */
     if (isDirty() && !confirm(t("entryDetail.confirmRefresh"))) return;
@@ -1603,11 +1484,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                     </select>
                   </Show>
                 </div>
-                <p class="ui-page-subtitle mt-1">
-                  {currentForm()
-                    ? t("entryDetail.formFirstDescription")
-                    : t("entryDetail.documentDescription")}
-                </p>
               </div>
               <div class="ui-entry-save-area">
                 <span
@@ -1668,42 +1544,13 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 <A
                   href={`/spaces/${props.spaceId()}/entries/${
                     encodeURIComponent(props.entryId?.() ?? "")
-                  }/restore`}
-                  class="ui-entry-tool"
-                  title={t("entryDetail.restore")}
-                >
-                  <UiIcon name="history" />
-                  <span>{t("entryDetail.restore")}</span>
-                </A>
-                <a
-                  href="#entry-details"
+                  }/info`}
                   class="ui-entry-tool"
                   title={t("entryDetail.info")}
                 >
                   <UiIcon name="info" />
                   <span>{t("entryDetail.info")}</span>
-                </a>
-                <button
-                  type="button"
-                  class="ui-entry-tool"
-                  onClick={handleDiscard}
-                  disabled={!isDirty()}
-                >
-                  <UiIcon name="close" />
-                  <span>{t("entryDetail.discard")}</span>
-                </button>
-                <button
-                  type="button"
-                  class="ui-entry-tool"
-                  onClick={() => setShowAccessPolicy((value) => !value)}
-                >
-                  <UiIcon name="members" />
-                  <span>
-                    {showAccessPolicy()
-                      ? t("entryDetail.closeSharing")
-                      : t("entryDetail.sharing")}
-                  </span>
-                </button>
+                </A>
                 <button
                   type="button"
                   class="ui-entry-tool ui-entry-tool-danger"
@@ -1757,82 +1604,56 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
             <div class="ui-entry-workspace">
               <main class="ui-entry-main">
-                <div class="ui-entry-main-header">
-                  <div>
-                    <h2 class="text-lg font-semibold">
-                      {viewMode() === "fields"
-                        ? t("entryDetail.mode.fields")
-                        : viewMode() === "preview"
-                        ? t("entryDetail.mode.preview")
-                        : t("entryDetail.mode.source")}
-                    </h2>
-                    <p class="mt-1 text-sm ui-muted">
-                      {viewMode() === "fields"
-                        ? t("entryDetail.fieldsDescription")
-                        : viewMode() === "preview"
-                        ? t("entryDetail.previewDescription")
-                        : t("entryDetail.sourceDescription")}
-                    </p>
-                  </div>
-                  <div class="ui-entry-view-controls">
-                    <div
-                      class="ui-entry-mode-tabs"
-                      role="tablist"
-                      aria-label={t("entryDetail.viewModes")}
-                    >
-                      <Show when={currentForm()}>
-                        <button
-                          type="button"
-                          role="tab"
-                          aria-selected={viewMode() === "fields"}
-                          aria-controls="entry-fields-panel"
-                          class="ui-entry-mode-tab"
-                          classList={{
-                            "ui-entry-mode-tab-active": viewMode() === "fields",
-                          }}
-                          onClick={() => setViewMode("fields")}
-                        >
-                          {t("entryDetail.mode.fields")}
-                        </button>
-                      </Show>
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={viewMode() === "preview"}
-                        aria-controls="entry-preview-panel"
-                        class="ui-entry-mode-tab"
-                        classList={{
-                          "ui-entry-mode-tab-active": viewMode() === "preview",
-                        }}
-                        onClick={() => setViewMode("preview")}
+                <Show when={currentForm()} fallback={
+                  <div
+                    id="entry-source-panel"
+                    class="ui-entry-source-body"
+                  >
+                    <Show when={compatibilityDiagnostics().length > 0}>
+                      <div
+                        class="ui-alert ui-alert-warning text-sm mb-3"
+                        role="alert"
                       >
-                        {t("entryDetail.mode.preview")}
-                      </button>
-                    </div>
-                    <details
-                      class="ui-entry-source-disclosure"
-                      open={viewMode() === "source"}
-                    >
-                      <summary>{t("entryDetail.advanced")}</summary>
-                      <button
-                        type="button"
-                        aria-pressed={viewMode() === "source"}
-                        aria-controls="entry-source-panel"
-                        class="ui-entry-source-trigger"
-                        onClick={() => setViewMode("source")}
-                      >
-                        {t("entryDetail.mode.source")}
-                      </button>
-                    </details>
+                        <p class="font-semibold">
+                          {t("entryDetail.compatibilityLossTitle")}
+                        </p>
+                        <ul class="mt-2 list-disc pl-5 space-y-1">
+                          <For each={compatibilityDiagnostics()}>
+                            {(diagnostic) => (
+                              <li>
+                                {formatMarkdownConversionDiagnostic(diagnostic)}
+                              </li>
+                            )}
+                          </For>
+                        </ul>
+                        <p class="mt-2">
+                          {t("entryDetail.compatibilityLossDescription")}
+                        </p>
+                        <Show when={pendingCanonicalDraft()}>
+                          <button
+                            type="button"
+                            class="ui-button ui-button-secondary mt-3"
+                            onClick={acceptCanonicalDraft}
+                          >
+                            {t("entryDetail.acceptCanonicalVersion")}
+                          </button>
+                        </Show>
+                      </div>
+                    </Show>
+                    <textarea
+                      class="ui-editor ui-entry-source-editor"
+                      value={editorContent()}
+                      onInput={(event) =>
+                        handleContentChange(event.currentTarget.value)}
+                      onKeyDown={handleEditorKeyDown}
+                      placeholder={t("entryDetail.sourcePlaceholder")}
+                      spellcheck={false}
+                    />
                   </div>
-                </div>
-
-                <Show when={viewMode() === "fields" && currentForm()}>
+                }>
                   {(entryForm) => (
                     <div
                       id="entry-fields-panel"
-                      role="tabpanel"
-                      aria-label={t("entryDetail.mode.fields")}
                       class="ui-entry-form-body"
                     >
                       <div class="ui-entry-field ui-entry-title-field">
@@ -1861,13 +1682,12 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                             <p class="font-medium">
                               {t("entryDetail.noFields")}
                             </p>
-                            <p class="mt-1 text-sm ui-muted">
-                              {t("entryDetail.noFieldsDescription")}
-                            </p>
                             <button
                               type="button"
                               class="ui-button ui-button-secondary mt-4"
-                              onClick={() => setViewMode("source")}
+                              onClick={() => setShowAdvancedSource((value) => !value)}
+                              aria-expanded={showAdvancedSource()}
+                              aria-controls="entry-source-panel-advanced"
                             >
                               {t("entryDetail.openSource")}
                             </button>
@@ -1973,230 +1793,74 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                           <button
                             type="button"
                             class="ui-button ui-button-secondary ui-button-sm text-xs"
-                            onClick={() => setViewMode("source")}
+                            onClick={() => setShowAdvancedSource((value) => !value)}
+                            aria-expanded={showAdvancedSource()}
+                            aria-controls="entry-source-panel-advanced"
                           >
                             {t("entryDetail.reviewSource")}
                           </button>
                         </div>
                       </Show>
+                      <details
+                        class="ui-entry-source-disclosure"
+                        open={showAdvancedSource()}
+                        onToggle={(event) =>
+                          setShowAdvancedSource(event.currentTarget.open)}
+                      >
+                        <summary>{t("entryDetail.advanced")}</summary>
+                        <div
+                          id="entry-source-panel-advanced"
+                          class="ui-entry-source-body"
+                        >
+                          <Show when={compatibilityDiagnostics().length > 0}>
+                            <div
+                              class="ui-alert ui-alert-warning text-sm mb-3"
+                              role="alert"
+                            >
+                              <p class="font-semibold">
+                                {t("entryDetail.compatibilityLossTitle")}
+                              </p>
+                              <ul class="mt-2 list-disc pl-5 space-y-1">
+                                <For each={compatibilityDiagnostics()}>
+                                  {(diagnostic) => (
+                                    <li>
+                                      {formatMarkdownConversionDiagnostic(
+                                        diagnostic,
+                                      )}
+                                    </li>
+                                  )}
+                                </For>
+                              </ul>
+                              <p class="mt-2">
+                                {t("entryDetail.compatibilityLossDescription")}
+                              </p>
+                              <Show when={pendingCanonicalDraft()}>
+                                <button
+                                  type="button"
+                                  class="ui-button ui-button-secondary mt-3"
+                                  onClick={acceptCanonicalDraft}
+                                >
+                                  {t("entryDetail.acceptCanonicalVersion")}
+                                </button>
+                              </Show>
+                            </div>
+                          </Show>
+                          <textarea
+                            class="ui-editor ui-entry-source-editor"
+                            value={editorContent()}
+                            onInput={(event) =>
+                              handleContentChange(event.currentTarget.value)}
+                            onKeyDown={handleEditorKeyDown}
+                            placeholder={t("entryDetail.sourcePlaceholder")}
+                            spellcheck={false}
+                          />
+                        </div>
+                      </details>
                     </div>
                   )}
                 </Show>
-
-                <Show when={viewMode() === "preview"}>
-                  <div
-                    id="entry-preview-panel"
-                    role="tabpanel"
-                    aria-label={t("entryDetail.mode.preview")}
-                    class="ui-stack-lg"
-                  >
-                    <Show
-                      when={currentForm()}
-                      fallback={
-                        <div
-                          role="region"
-                          aria-label={t("entryDetail.mode.preview")}
-                          class="ui-preview ui-entry-preview"
-                          innerHTML={renderMarkdownPreview(previewContent())}
-                        />
-                      }
-                    >
-                      {() => (
-                        <div
-                          role="region"
-                          aria-label={t("entryDetail.previewFieldsHeading")}
-                          class="ui-entry-preview ui-entry-preview-fields"
-                        >
-                          <h3 class="ui-entry-preview-title">
-                            {editorTitle() || t("common.untitled")}
-                          </h3>
-                          <div class="ui-entry-preview-field-list">
-                            <For each={previewFieldEntries()}>
-                              {([fieldName]) => (
-                                <section class="ui-entry-preview-field">
-                                  <h4 class="ui-entry-preview-field-name">
-                                    {fieldName}
-                                  </h4>
-                                  <div
-                                    class="ui-preview ui-entry-preview-field-value"
-                                    innerHTML={renderMarkdownPreview(
-                                      fieldValue(fieldName).trim() ||
-                                        t("entryDetail.emptyField"),
-                                    )}
-                                  />
-                                </section>
-                              )}
-                            </For>
-                            <Show when={previewFieldEntries().length === 0}>
-                              <p class="ui-muted">
-                                {t("entryDetail.noFields")}
-                              </p>
-                            </Show>
-                          </div>
-                          <Show when={additionalPreviewContent()}>
-                            <details class="ui-entry-preview-additional">
-                              <summary>
-                                {t("entryDetail.additionalContent")}
-                              </summary>
-                              <div
-                                class="ui-preview mt-3"
-                                innerHTML={renderMarkdownPreview(
-                                  additionalPreviewContent(),
-                                )}
-                              />
-                            </details>
-                          </Show>
-                        </div>
-                      )}
-                    </Show>
-                    <Show when={previewAssetFields().length > 0}>
-                      <div
-                        class="ui-stack-md"
-                        aria-label={t("entryDetail.assetFieldsHeading")}
-                      >
-                        <For each={previewAssetFields()}>
-                          {([fieldName, fieldDef], index) => (
-                            <section class="ui-entry-preview-asset-field">
-                              <h3 class="text-sm font-semibold">{fieldName}</h3>
-                              <AssetField
-                                fieldId={`preview-asset-${index()}`}
-                                fieldName={fieldName}
-                                value={fieldValue(fieldName)}
-                                persistedValue={persistedFieldValue(fieldName)}
-                                multiple={isAssetReferenceListField(fieldDef)}
-                                spaceId={props.spaceId()}
-                                state={assetFieldState(
-                                  fieldName,
-                                  isAssetReferenceListField(fieldDef),
-                                )}
-                                formName={entry()?.form ?? currentForm()?.name}
-                                entryId={isCreateMode()
-                                  ? undefined
-                                  : entry()?.id}
-                                generation={assetEditorGeneration()}
-                                readOnly={true}
-                                onChange={() => undefined}
-                              />
-                            </section>
-                          )}
-                        </For>
-                      </div>
-                    </Show>
-                  </div>
-                </Show>
-
-                <Show when={viewMode() === "source"}>
-                  <div
-                    id="entry-source-panel"
-                    role="tabpanel"
-                    aria-label={t("entryDetail.mode.source")}
-                    class="ui-entry-source-body"
-                  >
-                    <Show when={compatibilityDiagnostics().length > 0}>
-                      <div
-                        class="ui-alert ui-alert-warning text-sm mb-3"
-                        role="alert"
-                      >
-                        <p class="font-semibold">
-                          {t("entryDetail.compatibilityLossTitle")}
-                        </p>
-                        <ul class="mt-2 list-disc pl-5 space-y-1">
-                          <For each={compatibilityDiagnostics()}>
-                            {(diagnostic) => (
-                              <li>
-                                {formatMarkdownConversionDiagnostic(diagnostic)}
-                              </li>
-                            )}
-                          </For>
-                        </ul>
-                        <p class="mt-2">
-                          {t("entryDetail.compatibilityLossDescription")}
-                        </p>
-                        <Show when={pendingCanonicalDraft()}>
-                          <button
-                            type="button"
-                            class="ui-button ui-button-secondary mt-3"
-                            onClick={acceptCanonicalDraft}
-                          >
-                            {t("entryDetail.acceptCanonicalVersion")}
-                          </button>
-                        </Show>
-                      </div>
-                    </Show>
-                    <textarea
-                      class="ui-editor ui-entry-source-editor"
-                      value={editorContent()}
-                      onInput={(event) =>
-                        handleContentChange(event.currentTarget.value)}
-                      onKeyDown={handleEditorKeyDown}
-                      placeholder={t("entryDetail.sourcePlaceholder")}
-                      spellcheck={false}
-                    />
-                    <div class="ui-entry-source-footer">
-                      <p class="text-xs ui-muted">
-                        {t("entryDetail.sourceHelp")}
-                      </p>
-                    </div>
-                  </div>
-                </Show>
               </main>
-
-              <aside class="ui-entry-sidebar">
-                <section class="ui-entry-side-card" id="entry-details">
-                  <h2 class="ui-entry-side-heading">
-                    {t("entryDetail.detailsHeading")}
-                  </h2>
-                  <dl class="ui-entry-detail-list">
-                    <Show when={currentEntry().form}>
-                      <div>
-                        <dt>{t("common.form")}</dt>
-                        <dd>
-                          <A
-                            href={`/spaces/${props.spaceId()}/forms?form=${
-                              encodeURIComponent(
-                                currentEntry().form || "",
-                              )
-                            }&tab=entries`}
-                            class="ui-link"
-                          >
-                            {currentEntry().form}
-                          </A>
-                        </dd>
-                      </div>
-                    </Show>
-                    <Show when={!isCreateMode()}>
-                      <div>
-                        <dt>{t("common.updated")}</dt>
-                        <dd>{formatEntryDate(currentEntry().updated_at)}</dd>
-                      </div>
-                    </Show>
-                  </dl>
-                  <Show when={!isCreateMode()}>
-                    <details class="ui-entry-technical-details">
-                      <summary>{t("entryDetail.technicalDetails")}</summary>
-                      <dl class="ui-entry-detail-list ui-entry-technical-list">
-                        <div>
-                          <dt>{t("entryDetail.entryId")}</dt>
-                          <dd class="font-mono break-all">
-                            {currentEntry().id}
-                          </dd>
-                        </div>
-                      </dl>
-                    </details>
-                  </Show>
-                </section>
-              </aside>
             </div>
-
-            <Show when={showAccessPolicy()}>
-              <div class="mt-4">
-                <AccessPolicyEditor
-                  spaceId={props.spaceId()}
-                  kind="entry"
-                  resourceId={props.entryId?.() ?? ""}
-                />
-              </div>
-            </Show>
           </>
         )}
       </Show>

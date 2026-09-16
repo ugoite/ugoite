@@ -18,6 +18,7 @@ const titleKeys: Record<
   asset: "spaceShell.title.asset",
   assets: "spaceShell.title.assets",
   entryHistory: "spaceShell.title.entryHistory",
+  entryInfo: "spaceShell.title.entryInfo",
   newEntry: "spaceShell.title.newEntry",
   restore: "spaceShell.title.restore",
   revision: "spaceShell.title.revision",

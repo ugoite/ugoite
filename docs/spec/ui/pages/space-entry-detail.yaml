@@ -1,5 +1,5 @@
-version: "0.2"
-updated: "2026-09-12"
+version: "0.3"
+updated: "2026-09-16"
 page:
   id: space-entry-detail
   title: Entry Detail
@@ -28,63 +28,42 @@ components:
             - saving
         - id: save-entry
           type: primary-button
-    - id: entry-workspace
-      type: two-column-workspace
-      primary:
-        - id: entry-edit-modes
-          type: workspace-view-switcher
-          default: fields-when-form-exists
-          tabs:
-            - id: fields
-              label: Fields
-              visibility: form-defined-entry
-              description: Form-first editing for non-technical users.
-            - id: preview
-              label: Preview
-              description: Rendered read-only entry preview.
+    - id: entry-action-bar
+      type: toolbar
+      actions:
+        - refresh
+        - history
+        - id: info
+          type: link
+          target_page: space-entry-info
+        - delete
+    - id: entry-fields-editor
+      type: form
+      visibility: form-defined-entry
+      items:
+        - title
+        - typed-form-fields
+      field_controls:
+        boolean: free-form-text-input
+        date: native-date-input
+        list: multiline-input
+        markdown: multiline-input
+        row_reference: searchable-entry-picker
+        scalar: free-form-text-input
+      validation: inline
+      advanced:
         - id: entry-source-disclosure
-          type: advanced-disclosure
           label: Advanced
           content:
             - id: source
               label: Source
               description: Full Markdown editing for advanced changes.
             - id: entry-source-editor
-              type: markdown-editor
               mode: edit
-        - id: entry-fields-editor
-          type: form-editor
-          items:
-            - title
-            - typed-form-fields
-          field_controls:
-            boolean: free-form-text-input
-            date: native-date-input
-            list: multiline-input
-            markdown: multiline-input
-            row_reference: searchable-entry-picker
-            scalar: free-form-text-input
-          validation: inline
-        - id: entry-preview
-          type: field-level-preview
-      secondary:
-        - id: entry-details
-          type: list
-          items:
-            - form
-            - updated_at
-            - technical-details:
-                - entry_id
-    - id: entry-action-bar
-      type: toolbar
-      actions:
-        - refresh
-        - history
-        - restore
-        - info
-        - discard-draft
-        - sharing
-        - delete
+    - id: entry-source-editor
+      type: markdown-editor
+      mode: edit
+      visibility: formless-entry
 responsive:
-  desktop: two-column
+  desktop: single-column
   mobile: stacked-primary-first

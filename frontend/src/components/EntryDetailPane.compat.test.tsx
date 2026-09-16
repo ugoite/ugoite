@@ -117,18 +117,15 @@ describe("EntryDetailPane source compat bridge", () => {
       />
     ));
 
-    fireEvent.click(await screen.findByRole("button", { name: "Source" }));
-    const source = await screen.findByPlaceholderText(
+    fireEvent.input(await screen.findByPlaceholderText(
       "Start writing in Markdown...",
-    );
-    fireEvent.input(source, {
+    ), {
       target: {
         value: "---\nform: Note\n---\n# Note\n\n## Body\nedited via source\n",
       },
     });
 
-    // Fields view reconciles through the Rust bridge.
-    fireEvent.click(screen.getByRole("tab", { name: "Fields" }));
+    // Fields stay visible and reconcile through the Rust bridge.
     await waitFor(() =>
       expect(screen.getByLabelText("Body")).toHaveValue("edited via source")
     );
@@ -158,7 +155,6 @@ describe("EntryDetailPane source compat bridge", () => {
       />
     ));
 
-    fireEvent.click(await screen.findByRole("button", { name: "Source" }));
     const source = await screen.findByPlaceholderText(
       "Start writing in Markdown...",
     );
@@ -172,7 +168,6 @@ describe("EntryDetailPane source compat bridge", () => {
         value: "---\nform: Note\n---\n# Note\n\n## Body\nbridge wins\n",
       },
     });
-    fireEvent.click(screen.getByRole("tab", { name: "Fields" }));
     await waitFor(() =>
       expect(screen.getByLabelText("Body")).toHaveValue("bridge wins")
     );
@@ -203,12 +198,10 @@ describe("EntryDetailPane source compat bridge", () => {
       />
     ));
 
-    fireEvent.click(await screen.findByRole("button", { name: "Source" }));
-    const source = await screen.findByPlaceholderText(
-      "Start writing in Markdown...",
-    );
     const lossy = "---\nform: Note\n---\n# Note\n\nPreamble\n\n## Body\nkept\n";
-    fireEvent.input(source, { target: { value: lossy } });
+    fireEvent.input(await screen.findByPlaceholderText(
+      "Start writing in Markdown...",
+    ), { target: { value: lossy } });
 
     await waitFor(() => {
       expect(screen.getByText("Review Markdown conversion before saving"))
@@ -223,7 +216,9 @@ describe("EntryDetailPane source compat bridge", () => {
     await waitFor(() => {
       expect(screen.queryByText("Review Markdown conversion before saving"))
         .not.toBeInTheDocument();
-      expect(source).not.toHaveValue(lossy);
+      expect(
+        screen.getByPlaceholderText("Start writing in Markdown..."),
+      ).not.toHaveValue(lossy);
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
