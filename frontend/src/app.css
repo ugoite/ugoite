@@ -2932,6 +2932,47 @@ button.assistantPill[aria-expanded="true"] {
   line-height: 1;
 }
 
+.formRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+.formRowMain {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.formRowMain:hover .formRowName,
+.formRowMain:focus-visible .formRowName {
+  text-decoration: underline;
+}
+
+.formRowName {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.formRowEdit {
+  flex: 0 0 auto;
+}
+
 .historyRows {
   border-top: 1px solid var(--line);
 }

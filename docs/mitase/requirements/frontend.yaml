@@ -1881,14 +1881,18 @@ requirements:
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/components/GlobalShell.navigation.test.tsx", test: "exposes only Spaces and About in global navigation" } }
 
   - id: REQ-FE-067
-    title: Unified Form and Entry Workspace
-    description: The Forms route presents one ordinary Form selector and the selected Form Entry grid, the plain Entries route remains a portable-client compatibility surface without redirecting to Forms, SQL-session results remain dedicated, and Form/Entry dialogs retain usable action layout and visible icon affordances.
+    title: Form List Navigation and Form-Scoped Entries
+    description: The Forms route presents a list-only Form list where selecting a Form navigates to its form-scoped Entry list, the plain Entries route remains a portable-client compatibility surface without redirecting to Forms, SQL-session results remain dedicated, and Form/Entry dialogs retain usable action layout and visible icon affordances.
     priority: high
     status: implemented
     criteria:
       - id: form-grid
         kind: behavior
-        statement: The Forms route presents one Form selector and the selected Form Entry grid without a second Entries view or nested view tabs.
+        statement: The Forms route presents a list-only Form list without a same-screen Entry grid or nested view tabs; selecting a Form navigates to the form-scoped Entry list at the Entries route, and legacy /forms?form= URLs redirect there.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: form-scoped-entries
+        kind: behavior
+        statement: The Entries route with a form query parameter shows that Form's Entries from a form-scoped server query, links back to Forms, opens New Entry with that Form preselected, and hides New Entry for reserved metadata Forms.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
       - id: plain-entry-workspace
         kind: behavior
@@ -1910,30 +1914,66 @@ requirements:
       - id: unified-workspace-verification
         role: verification
         facet: verification
-        responsibility: Verify the single Form workspace, plain Entries compatibility route, dedicated SQL-session result surface, dialog layout, and visible action icons through exact frontend tests.
+        responsibility: Verify the list-only Form list, form-scoped Entries, plain Entries compatibility route, dedicated SQL-session result surface, dialog layout, and visible action icons through exact frontend tests.
         targets:
           - id: form-workspace
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
-            selector: { kind: test, name: "renders one Form workspace without duplicate view tabs" }
+            selector: { kind: test, name: "renders a list-only heading with a create action" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-067#criterion.form-grid
                 covers: [FEAT-FE-010#binding.frontend/target.forms-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "renders one Form workspace without duplicate view tabs" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "renders a list-only heading with a create action" } }
               - kind: verifies
                 criterion: REQ-FE-067#criterion.icon-actions
                 covers: [FEAT-FE-010#binding.frontend/target.forms-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "renders one Form workspace without duplicate view tabs" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "renders a list-only heading with a create action" } }
+          - id: form-navigation
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
+            selector: { kind: test, name: "navigates to the form-scoped Entry list on row click" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.form-grid
+                covers: [FEAT-FE-010#binding.frontend/target.forms-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "navigates to the form-scoped Entry list on row click" } }
+          - id: form-legacy-redirect
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
+            selector: { kind: test, name: "redirects legacy /forms?form= URLs to the Entry list" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.form-grid
+                covers: [FEAT-FE-010#binding.frontend/target.forms-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "redirects legacy /forms?form= URLs to the Entry list" } }
           - id: form-edit-workspace
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
-            selector: { kind: test, name: "opens and submits the edit Form dialog" }
+            selector: { kind: test, name: "keeps edit on a small per-row button that does not navigate" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-067#criterion.dialog-workspace
                 covers: [FEAT-FE-010#binding.frontend/target.forms-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "opens and submits the edit Form dialog" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "keeps edit on a small per-row button that does not navigate" } }
+          - id: form-scoped-entries
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/index.test.tsx"
+            selector: { kind: test, name: "form scope: uses the Form name as heading with a back link and preselected New Entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.form-scoped-entries
+                covers: [FEAT-FE-002#binding.frontend/target.entries-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "form scope: uses the Form name as heading with a back link and preselected New Entry" } }
+          - id: form-scoped-reserved
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/index.test.tsx"
+            selector: { kind: test, name: "form scope: hides New Entry for reserved metadata Forms" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.form-scoped-entries
+                covers: [FEAT-FE-002#binding.frontend/target.entries-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "form scope: hides New Entry for reserved metadata Forms" } }
           - id: dialog-action-layout
             adapter: typescript
             path: frontend/src/components/create-dialogs.test.tsx
