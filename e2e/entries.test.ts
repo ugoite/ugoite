@@ -695,7 +695,7 @@ test.describe("Entries CRUD", () => {
 
 		const removeMicroscopeB = orderedList
 			.locator(".ui-asset-item", {
-				has: orderedList.getByRole("button", {
+				has: page.getByRole("button", {
 					name: "Preview microscope-b.txt",
 				}),
 			})
