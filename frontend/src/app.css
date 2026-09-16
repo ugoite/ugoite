@@ -1204,6 +1204,28 @@ textarea {
 :root[data-color-mode="dark"] .auditOutcome-error {
   color: #ffaaa4;
 }
+/* Space members table: same ui-table row density and border rhythm as the
+   audit log. Only the table wrapper scrolls horizontally on narrow screens;
+   the name and principal cells wrap instead of truncating harshly. */
+.membersTable .membersNameCell,
+.membersTable .membersIdCell {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 9rem;
+}
+.membersTable .membersIdCell code {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.membersTable .btn,
+.membersTable select {
+  min-height: 44px;
+}
+/* Invitation URLs and error details on settings pages must wrap so they
+   never force page-level horizontal scrolling on narrow screens. */
+.settingsMain .ui-alert {
+  overflow-wrap: anywhere;
+}
 
 /* Entry composer */
 .newEntryLayout {
@@ -2444,6 +2466,20 @@ textarea {
   height: 36rem;
   border: 0;
   background: white;
+}
+.ui-asset-pdf-fallback {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  justify-items: start;
+}
+.ui-asset-pdf-fallback .ui-button {
+  min-height: 44px;
+}
+.ui-asset-pdf-name {
+  margin: 0;
+  font-weight: 650;
+  overflow-wrap: anywhere;
 }
 .ui-asset-text-preview {
   max-height: 34rem;

@@ -11,6 +11,7 @@ import type { JSX } from "solid-js";
 
 import { renderMarkdownPreview } from "~/lib/markdown";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import { formatAssetSize } from "~/lib/asset-reference";
 import {
   formatJsonPreview,
   MAX_PREVIEW_BYTES,
@@ -18,13 +19,14 @@ import {
   readPreviewText,
   resolvePreviewKind,
 } from "~/lib/asset-preview";
-import { t } from "~/lib/i18n";
+import { locale, t } from "~/lib/i18n";
 import type { AssetReference } from "~/lib/types";
 
 export interface AssetPreviewProps {
   reference: AssetReference;
   blob: Blob;
   url: string;
+  onDownload?: () => void;
 }
 
 function TextResourcePreview(props: {
@@ -107,6 +109,74 @@ function DelimitedPreview(props: { blob: Blob; delimiter: "," | "\t" }) {
   );
 }
 
+/** Browser-native PDF embed with a readable fallback.
+ *
+ *  The `image` branch never receives PDF references (resolvePreviewKind
+ *  gates on extension), so a PDF can never render through `<img>`, which
+ *  would stay blank. When the embed itself fails, the fallback keeps the
+ *  file usable via name, size, and download instead of a blank frame. */
+function PdfPreview(props: {
+  reference: AssetReference;
+  blob: Blob;
+  url: string;
+  onDownload?: () => void;
+}) {
+  const [failed, setFailed] = createSignal(false);
+
+  return (
+    <Show
+      when={!failed()}
+      fallback={
+        <div class="ui-asset-pdf-fallback">
+          <p
+            class="ui-asset-pdf-name"
+            title={props.reference.name}
+          >
+            {props.reference.name}
+          </p>
+          <p class="text-xs ui-muted">
+            {formatAssetSize(
+              props.blob.size,
+              locale() === "ja" ? "ja-JP" : "en-US",
+            )}
+          </p>
+          <p class="text-sm ui-muted">{t("assetField.preview.failed")}</p>
+          <Show
+            when={props.onDownload}
+            fallback={
+              <a
+                class="ui-button ui-button-secondary"
+                href={props.url}
+                download={props.reference.name}
+              >
+                {t("assetField.action.download")}
+              </a>
+            }
+          >
+            {(download) => (
+              <button
+                type="button"
+                class="ui-button ui-button-secondary"
+                onClick={() => download()()}
+              >
+                {t("assetField.action.download")}
+              </button>
+            )}
+          </Show>
+        </div>
+      }
+    >
+      <iframe
+        class="ui-asset-document-preview"
+        src={props.url}
+        title={props.reference.name}
+        tabindex="-1"
+        onError={() => setFailed(true)}
+      />
+    </Show>
+  );
+}
+
 function NativeMediaPreview(props: {
   kind: "audio" | "video";
   url: string;
@@ -163,11 +233,11 @@ export function AssetPreview(props: AssetPreviewProps) {
           />
         </Match>
         <Match when={kind() === "pdf"}>
-          <iframe
-            class="ui-asset-document-preview"
-            src={props.url}
-            title={props.reference.name}
-            tabindex="-1"
+          <PdfPreview
+            reference={props.reference}
+            blob={props.blob}
+            url={props.url}
+            onDownload={props.onDownload}
           />
         </Match>
         <Match when={kind() === "text"}>

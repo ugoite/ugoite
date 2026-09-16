@@ -644,6 +644,7 @@ export function AssetField(props: AssetFieldProps) {
                         reference={reference()}
                         blob={preview().blob}
                         url={preview().url}
+                        onDownload={() => downloadReference(reference())}
                       />
                     )}
                   </Show>

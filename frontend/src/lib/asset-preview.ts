@@ -125,6 +125,16 @@ const isTextMediaType = (mediaType: string) =>
 const isGenericMediaType = (mediaType: string) =>
   mediaType === "application/octet-stream";
 
+/** A `.pdf` name stays a PDF preview even when storage reports a generic,
+ *  missing, or plain-text MIME type; only an explicit conflicting type
+ *  (e.g. `application/pdf` on a `.png`) falls through to unsupported. */
+const isPdfPreview = (extension: string, mediaType: string) =>
+  extension === "pdf" &&
+  (mediaType === "application/pdf" ||
+    mediaType === "" ||
+    mediaType === "text/plain" ||
+    isGenericMediaType(mediaType));
+
 /**
  * Select only formats that can be rendered safely with browser primitives.
  * The extension gate prevents a misleading MIME type from turning HTML or
@@ -147,10 +157,7 @@ export function resolvePreviewKind(
   ) {
     return "unsupported";
   }
-  if (
-    extension === "pdf" &&
-    (mediaType === "application/pdf" || isGenericMediaType(mediaType))
-  ) return "pdf";
+  if (isPdfPreview(extension, mediaType)) return "pdf";
   if (
     IMAGE_EXTENSIONS.has(extension) &&
     (mediaType.startsWith("image/") || isGenericMediaType(mediaType))
@@ -202,9 +209,13 @@ export function previewMediaType(
   reference: Pick<AssetReference, "name" | "media_type">,
 ) {
   const mediaType = normalizedMediaType(reference.media_type);
+  const extension = extensionOf(reference.name);
+  // The blob type drives the browser embed: a PDF reference must produce
+  // `application/pdf` even when the stored type is generic or missing,
+  // otherwise the document frame renders blank.
+  if (isPdfPreview(extension, mediaType)) return "application/pdf";
   if (mediaType !== "application/octet-stream") return reference.media_type;
 
-  const extension = extensionOf(reference.name);
   const kind = resolvePreviewKind(reference);
   if (kind === "pdf") return "application/pdf";
   if (kind === "json") return "application/json";

@@ -223,57 +223,96 @@ export default function SpaceSettingsRoute() {
                   })}
                 </p>
               </Show>
-              <div class="rowStack">
-                <For
-                  each={members() ?? []}
-                  fallback={
-                    <Show when={!members.loading && !members.error}>
-                      <p class="ui-muted">{t("settings.noMembers")}</p>
-                    </Show>
-                  }
-                >
-                  {(member: SpaceMember) => (
-                    <div class="rowBtn">
-                      <span class="glyph">
-                        <UiIcon name="members" />
-                      </span>
-                      <span>
-                        <b>{member.principal.display_name}</b>
-                        <small>{member.principal.state}</small>
-                      </span>
-                      <span class="actions">
-                        <select
-                          value={member.role}
-                          disabled={member.role === "owner"}
-                          onChange={(e) =>
-                            void updateRole(
-                              member.principal.principal_id,
-                              e.currentTarget.value as ManagedRole,
-                            )}
-                        >
-                          <For each={managedRoles}>
-                            {(role) => (
-                              <option value={role}>
-                                {role} —{" "}
-                                {t(`settings.role.${role}` as TranslationKey)}
-                              </option>
-                            )}
-                          </For>
-                        </select>
-                        <button
-                          class="btn danger"
-                          type="button"
-                          disabled={member.role === "owner"}
-                          onClick={() =>
-                            void revokeMember(member.principal.principal_id)}
-                        >
-                          {t("settings.revoke")}
-                        </button>
-                      </span>
-                    </div>
-                  )}
-                </For>
-              </div>
+              <Show
+                when={(members() ?? []).length > 0}
+                fallback={
+                  <Show when={!members.loading && !members.error}>
+                    <p class="ui-muted">{t("settings.noMembers")}</p>
+                  </Show>
+                }
+              >
+                <div class="ui-table-wrapper overflow-x-auto">
+                  <table class="ui-table membersTable">
+                    <thead class="ui-table-head">
+                      <tr>
+                        <th class="ui-table-header-cell" scope="col">
+                          {t("settings.memberName")}
+                        </th>
+                        <th class="ui-table-header-cell" scope="col">
+                          {t("settings.memberEmail")}
+                        </th>
+                        <th class="ui-table-header-cell" scope="col">
+                          {t("settings.role")}
+                        </th>
+                        <th class="ui-table-header-cell" scope="col">
+                          {t("settings.memberState")}
+                        </th>
+                        <th class="ui-table-header-cell" scope="col">
+                          {t("formTable.actions")}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody class="ui-table-body">
+                      <For each={members() ?? []}>
+                        {(member: SpaceMember) => (
+                          <tr class="ui-table-row">
+                            <td
+                              class="ui-table-cell membersNameCell"
+                              title={member.principal.display_name}
+                            >
+                              {member.principal.display_name}
+                            </td>
+                            <td
+                              class="ui-table-cell membersIdCell"
+                              title={member.principal.principal_id}
+                            >
+                              <code>{member.principal.principal_id}</code>
+                            </td>
+                            <td class="ui-table-cell">
+                              <select
+                                value={member.role}
+                                disabled={member.role === "owner"}
+                                aria-label={t("settings.role")}
+                                onChange={(e) =>
+                                  void updateRole(
+                                    member.principal.principal_id,
+                                    e.currentTarget.value as ManagedRole,
+                                  )}
+                              >
+                                <For each={managedRoles}>
+                                  {(role) => (
+                                    <option value={role}>
+                                      {role} — {t(
+                                        `settings.role.${role}` as TranslationKey,
+                                      )}
+                                    </option>
+                                  )}
+                                </For>
+                              </select>
+                            </td>
+                            <td class="ui-table-cell">
+                              {member.principal.state}
+                            </td>
+                            <td class="ui-table-cell">
+                              <button
+                                class="btn danger"
+                                type="button"
+                                disabled={member.role === "owner"}
+                                onClick={() =>
+                                  void revokeMember(
+                                    member.principal.principal_id,
+                                  )}
+                              >
+                                {t("settings.revoke")}
+                              </button>
+                            </td>
+                          </tr>
+                        )}
+                      </For>
+                    </tbody>
+                  </table>
+                </div>
+              </Show>
             </section>
           </Show>
 
