@@ -178,4 +178,82 @@ describe("sql helpers", () => {
       "SELECT * FROM form_entry LIMIT {{page_size}}",
     )).toHaveLength(0);
   });
+
+  it("pins #2318: SELECT then INSERT warns once without re-classifying later statements", () => {
+    // Browser lint stays advisory and first-statement-only: the read-only
+    // verdict comes from the first statement, and later statements are never
+    // classified or enforced here. The server remains authoritative.
+    const diagnostics = sqlLintDiagnostics(
+      'SELECT * FROM "form_00000000000000000000000000000001"; INSERT INTO entries SELECT * FROM source',
+    );
+    expect(diagnostics.map((diagnostic) => diagnostic.message)).toEqual([
+      "Only a single statement is supported",
+    ]);
+    expect(diagnostics[0]?.severity).toBe("warning");
+  });
+
+  it("ignores trailing semicolon trivia instead of a second statement (#2319)", () => {
+    const base = 'SELECT * FROM "form_00000000000000000000000000000001"';
+    for (
+      const query of [
+        `${base};`,
+        `${base};   `,
+        `${base}; -- trailing comment`,
+        `${base}; /* trailing comment */`,
+        `${base};   \n  -- trailing comment\n  /* block */  `,
+      ]
+    ) {
+      const diagnostics = sqlLintDiagnostics(query);
+      expect(
+        diagnostics.some((diagnostic) =>
+          diagnostic.message.includes("single statement")
+        ),
+        query,
+      ).toBe(false);
+      expect(diagnostics, query).toHaveLength(0);
+    }
+  });
+
+  it("ignores leading comments when classifying the first statement (#2319)", () => {
+    expect(sqlLintDiagnostics(
+      '-- leading comment\n/* block lead */ SELECT * FROM "form_00000000000000000000000000000001"',
+    )).toHaveLength(0);
+  });
+
+  it("ignores semicolons and keywords inside string literals (#2319)", () => {
+    const diagnostics = sqlLintDiagnostics(
+      'SELECT * FROM "form_00000000000000000000000000000001" WHERE title = \'; DROP TABLE x; INSERT INTO y SELECT * FROM z\'',
+    );
+    expect(
+      diagnostics.some((diagnostic) =>
+        diagnostic.message.includes("single statement")
+      ),
+    ).toBe(false);
+    expect(diagnostics).toHaveLength(0);
+  });
+
+  it("masks quoted identifiers for the single-statement scan (#2319)", () => {
+    // `;` and SQL keywords inside "quoted identifiers" must not create a
+    // second-statement warning nor change the first-statement SELECT verdict.
+    for (
+      const query of [
+        'SELECT "select; insert" FROM "form_00000000000000000000000000000001"',
+        'SELECT * FROM "form_00000000000000000000000000000001" WHERE "weird;col" = \'x\'',
+      ]
+    ) {
+      const diagnostics = sqlLintDiagnostics(query);
+      expect(
+        diagnostics.some((diagnostic) =>
+          diagnostic.message.includes("single statement")
+        ),
+        query,
+      ).toBe(false);
+      expect(
+        diagnostics.some((diagnostic) =>
+          diagnostic.message.includes("must start with SELECT")
+        ),
+        query,
+      ).toBe(false);
+    }
+  });
 });

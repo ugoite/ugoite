@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 
-use arrow_array::Int64Array;
+use arrow_array::{Int64Array, StringArray};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
 };
@@ -162,6 +162,8 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
 
     // Syntax lint accepts parser-valid DML, but the authorized execution
     // boundary must reject each statement before it can mutate the Space.
+    // #2314: assert the seeded Entry field VALUE plus history and row count,
+    // not just the row count, so a silent in-place mutation cannot pass.
     for sql in [
         "INSERT INTO tasks SELECT * FROM tasks",
         "UPDATE tasks SET field_100 = 'changed'",
@@ -178,6 +180,35 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
             batches.iter().map(|batch| batch.num_rows()).sum::<usize>(),
             1,
             "rejected DML must not mutate the authorized query source: {sql}"
+        );
+        let value_batches = context.execute("SELECT field_100 FROM tasks").await?;
+        let row_count: usize = value_batches.iter().map(|batch| batch.num_rows()).sum();
+        assert_eq!(row_count, 1, "rejected DML must preserve row count: {sql}");
+        let value = value_batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("field_100 returns UTF-8")
+            .value(0);
+        assert_eq!(
+            value, "allowed",
+            "rejected DML must preserve the seeded Entry field value: {sql}"
+        );
+        let revisions = workspace.read_revisions(tasks.id).await?;
+        assert_eq!(
+            revisions.len(),
+            2,
+            "rejected DML must preserve Entry history: {sql}"
+        );
+        let seeded = revisions
+            .iter()
+            .find(|revision| revision.entry_id == EntryId::from(Uuid::from_u128(10)))
+            .expect("seeded Entry revision");
+        let field_id = FieldId::new(100).unwrap();
+        assert_eq!(
+            seeded.values.get(&field_id),
+            Some(&FieldValue::String("allowed".to_string())),
+            "rejected DML must preserve the seeded revision payload: {sql}"
         );
     }
 
