@@ -34,4 +34,30 @@ describe("display-value", () => {
     expect(formatValueForInput(["one", "two"])).toBe("one, two");
     expect(formatValueForInput({ value: "hidden" })).toBe("");
   });
+
+  it("never renders [object Object] for object-like values", () => {
+    const nested = { outer: { inner: "hidden" } };
+    const relationLike = { entry_id: "entry-1", title: "Alpha" };
+    const arrayOfObjects = [{ value: "one" }, { value: "two" }];
+    for (const value of [
+      { value: "hidden" },
+      nested,
+      arrayOfObjects,
+      relationLike,
+      asset,
+      [asset, { value: "hidden" }],
+    ]) {
+      expect(formatValueForDisplay(value)).not.toContain("[object Object]");
+      expect(formatValueForInput(value)).not.toContain("[object Object]");
+      expect(safeText(value)).not.toContain("[object Object]");
+    }
+    expect(formatValueForDisplay(nested)).toBe("-");
+    expect(formatValueForDisplay(relationLike)).toBe("-");
+    expect(formatValueForDisplay(arrayOfObjects)).toBe("-");
+    expect(formatValueForInput(nested)).toBe("");
+    expect(formatValueForInput(arrayOfObjects)).toBe("");
+    // Asset objects keep their type/size summary instead of coercion.
+    expect(formatValueForDisplay(asset)).not.toContain("[object Object]");
+    expect(formatValueForDisplay([asset])).not.toContain("[object Object]");
+  });
 });
