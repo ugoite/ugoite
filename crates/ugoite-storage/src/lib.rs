@@ -4676,9 +4676,26 @@ fn catalog_serializer(operator: &Operator, space_root: &str) -> Arc<AsyncMutex<(
     if let Some(serializer) = serializers.get(&key).and_then(Weak::upgrade) {
         return serializer;
     }
+    // Bound registry memory: drop dead weak entries left behind by relation
+    // keys whose strong owners were released. Runs while holding only the
+    // short-lived registry lock; relation-local serialization and backend
+    // CAS semantics are unchanged.
+    serializers.retain(|_, weak| weak.upgrade().is_some());
     let serializer = Arc::new(AsyncMutex::new(()));
     serializers.insert(key, Arc::downgrade(&serializer));
     serializer
+}
+
+#[cfg(test)]
+pub(crate) fn catalog_serializer_registry_len_for_prefix(prefix_fragment: &str) -> usize {
+    let serializers = CATALOG_SERIALIZERS.get_or_init(|| Mutex::new(HashMap::new()));
+    let serializers = serializers
+        .lock()
+        .expect("catalog serializer registry poisoned");
+    serializers
+        .keys()
+        .filter(|key| key.contains(prefix_fragment))
+        .count()
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageEntry {
@@ -6476,6 +6493,33 @@ mod tests {
         .await;
         assert_eq!(results.len(), 8);
         assert_eq!(maximum.load(Ordering::SeqCst), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn catalog_serializer_registry_bounds_temporary_relation_keys() -> Result<()> {
+        let operator = Operator::new(Memory::default())?;
+        let scope = format!("spaces/pr12-bounded-{}", Uuid::now_v7());
+        let temporary = 256;
+        let mut owners = Vec::with_capacity(temporary);
+        for index in 0..temporary {
+            owners.push(super::catalog_serializer(
+                &operator,
+                &format!("{scope}/derived/relation-{index}"),
+            ));
+        }
+        assert_eq!(
+            super::catalog_serializer_registry_len_for_prefix(&scope),
+            temporary
+        );
+        drop(owners);
+        // The next insert prunes dead weak entries left by the dropped owners.
+        let live = super::catalog_serializer(&operator, &format!("{scope}/derived/live"));
+        assert_eq!(super::catalog_serializer_registry_len_for_prefix(&scope), 1);
+        // Same-key lookup still shares one serializer while strongly owned.
+        let again = super::catalog_serializer(&operator, &format!("{scope}/derived/live"));
+        assert!(Arc::ptr_eq(&live, &again));
+        assert_eq!(super::catalog_serializer_registry_len_for_prefix(&scope), 1);
         Ok(())
     }
 }
