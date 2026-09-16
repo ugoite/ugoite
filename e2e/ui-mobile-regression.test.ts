@@ -214,7 +214,8 @@ async function runMobileRegression(
         expect(columns).toHaveLength(1);
         await expect(page.locator(".ui-entry-action-bar")).toBeVisible();
         await expect(page.getByRole("link", { name: "Info" }))
-          .toHaveAttribute("href", "#entry-details");
+          .toHaveAttribute("href", `/spaces/${spaceId}/entries/${entryId}/info`);
+        await expect(page.locator(".ui-entry-mode-tabs")).toHaveCount(0);
         await expectMobileTouchTargets(page);
       },
     },

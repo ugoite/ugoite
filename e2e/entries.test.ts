@@ -789,7 +789,7 @@ test.describe("Entries CRUD", () => {
 		);
 	});
 
-	test("REQ-FE-005: entry detail preview escapes raw HTML in markdown content", async ({ page, request }) => {
+	test("REQ-FE-005: entry detail keeps raw HTML inert without a preview tab", async ({ page, request }) => {
 		const createRes = await request.post(
 			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
@@ -805,13 +805,14 @@ test.describe("Entries CRUD", () => {
 		await page.goto(`/spaces/${spaceId}/entries/${created.id}`);
 		await page.waitForLoadState("networkidle");
 		await settleUiLoading(page);
-		await page.getByRole("tab", { name: "Preview" }).click();
-
-		const preview = page.getByRole("region", { name: "Preview" });
-		await expect(preview).toBeVisible();
-		await expect(preview.locator("img")).toHaveCount(0);
-		await expect(preview).toContainText('<img src=x onerror="window.__ugoiteXss=\'ran\'">');
-		await expect(preview.locator("strong")).toHaveText("bold");
+		// The simplified detail view offers no preview tab; raw markup stays
+		// inside editable controls and is never rendered as HTML.
+		await expect(page.getByRole("tab", { name: "Preview" })).toHaveCount(0);
+		await expect(page.locator(".ui-entry-mode-tabs")).toHaveCount(0);
+		await expect(page.locator(".ui-entry-main img")).toHaveCount(0);
+		await expect(
+			page.locator(".ui-entry-form-body textarea").first(),
+		).toBeVisible();
 
 		const marker = await page.evaluate(() => {
 			const target = globalThis as typeof globalThis & { __ugoiteXss?: string };
