@@ -18,8 +18,21 @@ import {
 } from "~/lib/create-entry-draft-session";
 
 vi.mock("@solidjs/router", () => ({
-  A: (props: { href: string; class?: string; children: unknown }) => (
-    <a href={props.href} class={props.class}>
+  A: (
+    props: {
+      href: string;
+      class?: string;
+      title?: string;
+      "aria-label"?: string;
+      children: unknown;
+    },
+  ) => (
+    <a
+      href={props.href}
+      class={props.class}
+      title={props.title}
+      aria-label={props["aria-label"]}
+    >
       {props.children}
     </a>
   ),
@@ -277,8 +290,10 @@ describe("EntryDetailPane", () => {
     expect(screen.queryByText("Entry fields preview")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Summary")).toHaveValue("hello");
     // No helper copy under the heading or mode descriptions.
-    expect(screen.queryByText(/Edit this entry as a form/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/familiar form controls/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Edit this entry as a form/)).not
+      .toBeInTheDocument();
+    expect(screen.queryByText(/familiar form controls/)).not
+      .toBeInTheDocument();
     // Sidebar metadata moved to the Info route.
     expect(document.querySelector("#entry-details")).toBeNull();
     expect(document.querySelector(".ui-entry-side-card")).toBeNull();
@@ -321,7 +336,8 @@ describe("EntryDetailPane", () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      toolbar.compareDocumentPosition(fields) & Node.DOCUMENT_POSITION_FOLLOWING,
+      toolbar.compareDocumentPosition(fields) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(screen.getByRole("status")).toHaveTextContent("All changes saved");
   });
@@ -2020,6 +2036,89 @@ describe("EntryDetailPane", () => {
       );
     });
     vi.unstubAllGlobals();
+  });
+
+  it("PR3: uses the shared compact action bar and entry fields", async () => {
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-pr3",
+      title: "PR3 Entry",
+      form: "Meeting",
+      content:
+        "---\nform: Meeting\n---\n\n# PR3 Entry\n\n## Summary\nhello\n\n## Notes\n**review**",
+      revision_id: "rev-pr3",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-pr3"}
+        forms={() => [
+          {
+            name: "Meeting",
+            version: 1,
+            template: "# Meeting\n\n## Summary\n\n## Notes\n",
+            fields: {
+              Summary: { type: "string", required: false },
+              Notes: { type: "markdown", required: false },
+            },
+          },
+        ]}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    await screen.findByLabelText("Summary");
+
+    // Shared compact bar with short visible labels; the long i18n strings
+    // stay as accessible names so no key is deleted or added.
+    const bar = document.querySelector(".actionbar.compact-actions");
+    expect(bar).not.toBeNull();
+    expect(bar?.getAttribute("role")).toBe("toolbar");
+    expect(bar?.querySelectorAll(".tool")).toHaveLength(4);
+    for (const short of ["更新", "履歴", "情報", "削除"]) {
+      expect(bar?.textContent).toContain(short);
+    }
+    expect(screen.getByRole("button", { name: "Reload latest version" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /History & recovery/ }))
+      .toHaveAttribute(
+        "href",
+        "/spaces/default/entries/entry-pr3/history",
+      );
+    expect(screen.getByRole("link", { name: "Info" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete entry" }))
+      .toBeInTheDocument();
+
+    // Header row: back link + title + form chip + primary save, in order.
+    const page = document.querySelector(".ui-entry-page")!;
+    const header = page.querySelector(".ui-entry-header")!;
+    const backLink = header.querySelector('a[href*="/forms"]')!;
+    const title = header.querySelector("h1")!;
+    const chip = header.querySelector(".ui-pill")!;
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(header.contains(backLink)).toBe(true);
+    expect(title).toHaveTextContent("PR3 Entry");
+    expect(chip).toHaveTextContent("Meeting");
+    expect(
+      backLink.compareDocumentPosition(title) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      title.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    // Save state is a subtle badge, not a noisy alert.
+    const status = screen.getByRole("status");
+    expect(status).toHaveClass("ui-save-state");
+    expect(status).toHaveTextContent("All changes saved");
+
+    // Shared entry fields with consistent spacing hooks.
+    const fields = document.querySelector(".form.entry-fields")!;
+    expect(fields).not.toBeNull();
+    expect(fields.querySelectorAll(".field").length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByLabelText("Notes")).toHaveValue("**review**");
   });
 
   it("calls onDeleted after successful delete", async () => {

@@ -12,8 +12,21 @@ import {
 } from "~/lib/create-entry-draft-session";
 
 vi.mock("@solidjs/router", () => ({
-  A: (props: { href: string; class?: string; children: unknown }) => (
-    <a href={props.href} class={props.class}>
+  A: (
+    props: {
+      href: string;
+      class?: string;
+      title?: string;
+      "aria-label"?: string;
+      children: unknown;
+    },
+  ) => (
+    <a
+      href={props.href}
+      class={props.class}
+      title={props.title}
+      aria-label={props["aria-label"]}
+    >
       {props.children}
     </a>
   ),

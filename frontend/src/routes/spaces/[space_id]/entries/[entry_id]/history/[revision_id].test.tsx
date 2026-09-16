@@ -60,30 +60,51 @@ describe("entry revision review route", () => {
     });
   });
 
-  it("reviews current versus historical values and restores to the Entry route", async () => {
+  it("PR3: reviews the revision read-only and restores to the Entry route", async () => {
     const { container } = render(() => <SpaceEntryRevisionRoute />);
 
-    expect(await screen.findByText("Current value")).toBeInTheDocument();
-    expect(await screen.findByText("Selected historical revision"))
-      .toBeInTheDocument();
-    // Card reduction: current/selected render as plain sections with a
-    // divider, not .ui-card helpers.
-    expect(container.querySelector(".ui-card")).not.toBeInTheDocument();
-    const sections = container.querySelectorAll(".ui-entry-history-section");
-    expect(sections).toHaveLength(2);
+    // Subtitle stamp plus a fixed read-only marker.
+    const subtitle = await screen.findByText(
+      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} · 読み取り専用$/,
+    );
+    expect(subtitle).toHaveClass("revision-subtitle");
+
+    // Shared read-only fields: every control disabled, wrapper marked.
+    const fields = container.querySelector(".form.entry-fields.readonly");
+    expect(fields).not.toBeNull();
+    expect(await screen.findByLabelText("Title")).toBeDisabled();
+    expect(await screen.findByLabelText("Body")).toBeDisabled();
+    expect(screen.getByLabelText("Title")).toHaveValue("Historical title");
+    expect(screen.getByLabelText("Body")).toHaveValue("Original");
+
+    // No two-column compare, no raw dump, no heavy metadata.
+    expect(
+      container.querySelector(".ui-entry-history-section"),
+    ).not.toBeInTheDocument();
     expect(
       container.querySelector(".ui-entry-history-divider"),
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
+    expect(container.querySelector("pre.code")).not.toBeInTheDocument();
+    expect(container.querySelector(".ui-card")).not.toBeInTheDocument();
+    expect(screen.queryByText("Current value")).not.toBeInTheDocument();
+    expect(screen.queryByText("Selected historical revision"))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText("Current title")).not.toBeInTheDocument();
+    expect(screen.queryByText(/rev-old/)).toBeNull();
+
     // Destructive-restore warning stays visible as an alert.
     expect(await screen.findByText(/Restore appends a new current revision/))
       .toBeInTheDocument();
-    expect(await screen.findByText("Current title")).toBeInTheDocument();
-    expect(await screen.findByText("Historical title")).toBeInTheDocument();
-    expect(await screen.findByText(/Original$/)).toBeInTheDocument();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Restore this revision" }),
-    );
+    // Primary action is restore only.
+    const buttons = container.querySelectorAll('button[type="button"]');
+    expect(buttons).toHaveLength(1);
+    const restore = await screen.findByRole("button", {
+      name: "Restore this revision",
+    });
+    expect(restore).toHaveTextContent("復元");
+
+    fireEvent.click(restore);
 
     expect(entryApi.restore).toHaveBeenCalledWith(
       "default",
