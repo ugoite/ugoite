@@ -10,8 +10,13 @@ import {
 import type { Accessor } from "solid-js";
 
 import { AssetField } from "~/components/AssetField";
+import { ActionIconBar } from "~/components/ActionIconBar";
+import {
+  createEntryFieldInputId,
+  type EntryFieldDescriptor,
+  EntryFields,
+} from "~/components/EntryFields";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
-import { UiIcon } from "~/components/UiIcon";
 import {
   type AssetFieldState,
   createAssetFieldState,
@@ -255,15 +260,6 @@ function resolveInputMode(field: FormField): "decimal" | undefined {
 
 function resolveInputType(field: FormField): "date" | "text" {
   return field.type === "date" ? "date" : "text";
-}
-
-function createFieldInputId(fieldName: string, index: number) {
-  const normalized = fieldName
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return `entry-field-${index}-${normalized || "field"}`;
 }
 
 class EntryLoadTimeoutError extends Error {
@@ -755,6 +751,24 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     editorGuidance().typeIssues.find((issue) =>
       issue.startsWith(`${fieldName}:`)
     );
+
+  // Shared EntryFields descriptors: title/body/other fields share one
+  // spacing contract. Structure only, memoized per form so row identities
+  // stay stable across keystrokes (values flow through live bindings, never
+  // snapshots); a new form still rebuilds rows for its own fields.
+  const entryFieldDescriptors = createMemo((): EntryFieldDescriptor[] => {
+    const form = currentForm() ?? props.createForm?.();
+    if (!form) return [];
+    return Object.entries(form.fields || {}).map(
+      ([fieldName, fieldDef], index) => ({
+        name: fieldName,
+        type: fieldDef.type,
+        targetForm: fieldDef.target_form,
+        required: isActiveRequiredField(fieldDef),
+        fieldId: createEntryFieldInputId(fieldName, index),
+      }),
+    );
+  });
 
   createEffect(() => {
     const loadedEntry = entry();
@@ -1313,7 +1327,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     fieldDef: FormField,
     fieldId: string,
     invalid: () => boolean,
-    describedBy: string,
+    describedBy: () => string | undefined,
   ) => {
     const value = () => fieldValue(fieldName);
 
@@ -1329,7 +1343,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           targetForm={targetFormName}
           value={value()}
           invalid={invalid()}
-          describedBy={invalid() ? describedBy : undefined}
+          describedBy={invalid() ? describedBy() : undefined}
           onChange={(nextValue) => handleFieldChange(fieldName, nextValue)}
         />
       );
@@ -1351,7 +1365,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
             isAssetReferenceListField(fieldDef),
           )}
           invalid={invalid()}
-          describedBy={invalid() ? describedBy : undefined}
+          describedBy={invalid() ? describedBy() : undefined}
           formName={entry()?.form ?? currentForm()?.name}
           entryId={isCreateMode() ? undefined : entry()?.id}
           generation={assetEditorGeneration()}
@@ -1371,7 +1385,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           class="ui-input ui-textarea"
           value={value()}
           aria-invalid={invalid() ? "true" : undefined}
-          aria-describedby={invalid() ? describedBy : undefined}
+          aria-describedby={invalid() ? describedBy() : undefined}
           placeholder={fieldDef.type === "list"
             ? t("entryDetail.listPlaceholder")
             : t("entryDetail.fieldPlaceholder")}
@@ -1389,7 +1403,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         inputmode={resolveInputMode(fieldDef)}
         value={value()}
         aria-invalid={invalid() ? "true" : undefined}
-        aria-describedby={invalid() ? describedBy : undefined}
+        aria-describedby={invalid() ? describedBy() : undefined}
         placeholder={t("entryDetail.fieldPlaceholder")}
         onInput={(event) =>
           handleFieldChange(fieldName, event.currentTarget.value)}
@@ -1505,7 +1519,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                   />
                 </Show>
                 <span
-                  class="text-sm"
+                  class="text-sm ui-save-state"
                   role="status"
                   aria-live="polite"
                   classList={{
@@ -1533,69 +1547,69 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
             </header>
 
             <Show when={!isCreateMode()}>
-              <div
+              <ActionIconBar
+                label={t("entryDetail.actionBarLabel")}
                 class="ui-entry-action-bar"
-                role="toolbar"
-                aria-label={t("entryDetail.actionBarLabel")}
-              >
-                <button
-                  type="button"
-                  class="ui-entry-tool"
-                  title={t("entryDetail.refresh")}
-                  onClick={() => {
-                    void handleRefresh();
-                  }}
-                >
-                  <UiIcon name="refresh" />
-                  <span>{t("entryDetail.refresh")}</span>
-                </button>
-                <A
-                  href={`/spaces/${props.spaceId()}/entries/${
-                    encodeURIComponent(props.entryId?.() ?? "")
-                  }/history`}
-                  class="ui-entry-tool"
-                  title={t("entryDetail.history")}
-                >
-                  <UiIcon name="history" />
-                  <span>{t("entryDetail.history")}</span>
-                </A>
-                <A
-                  href={`/spaces/${props.spaceId()}/entries/${
-                    encodeURIComponent(props.entryId?.() ?? "")
-                  }/info`}
-                  class="ui-entry-tool"
-                  title={t("entryDetail.info")}
-                >
-                  <UiIcon name="info" />
-                  <span>{t("entryDetail.info")}</span>
-                </A>
-                <button
-                  type="button"
-                  class="ui-entry-tool ui-entry-tool-danger"
-                  title={t("entryDetail.delete")}
-                  aria-label={t("entryDetail.delete")}
-                  onClick={handleDelete}
-                >
-                  <UiIcon name="trash" />
-                  <span>{t("entryDetail.delete")}</span>
-                </button>
-              </div>
+                items={[
+                  {
+                    key: "refresh",
+                    // Short visible label; the long i18n string stays as the
+                    // accessible name so no key is deleted or added.
+                    label: "更新",
+                    accessibleName: t("entryDetail.refresh"),
+                    icon: "refresh",
+                    class: "ui-entry-tool",
+                    onClick: () => {
+                      void handleRefresh();
+                    },
+                  },
+                  {
+                    key: "history",
+                    label: "履歴",
+                    accessibleName: t("entryDetail.history"),
+                    icon: "history",
+                    class: "ui-entry-tool",
+                    href: `/spaces/${props.spaceId()}/entries/${
+                      encodeURIComponent(props.entryId?.() ?? "")
+                    }/history`,
+                  },
+                  {
+                    key: "info",
+                    label: "情報",
+                    accessibleName: t("entryDetail.info"),
+                    icon: "info",
+                    class: "ui-entry-tool",
+                    href: `/spaces/${props.spaceId()}/entries/${
+                      encodeURIComponent(props.entryId?.() ?? "")
+                    }/info`,
+                  },
+                  {
+                    key: "delete",
+                    label: "削除",
+                    accessibleName: t("entryDetail.delete"),
+                    icon: "trash",
+                    danger: true,
+                    class: "ui-entry-tool ui-entry-tool-danger",
+                    onClick: handleDelete,
+                  },
+                ]}
+              />
             </Show>
             <Show when={isCreateMode()}>
-              <div
+              <ActionIconBar
+                label={t("entryDetail.actionBarLabel")}
                 class="ui-entry-action-bar"
-                role="toolbar"
-                aria-label={t("entryDetail.actionBarLabel")}
-              >
-                <button
-                  type="button"
-                  class="ui-entry-tool"
-                  onClick={handleCancel}
-                >
-                  <UiIcon name="close" />
-                  <span>{t("entryDetail.back")}</span>
-                </button>
-              </div>
+                items={[
+                  {
+                    key: "back",
+                    label: "戻る",
+                    accessibleName: t("entryDetail.back"),
+                    icon: "close",
+                    class: "ui-entry-tool",
+                    onClick: handleCancel,
+                  },
+                ]}
+              />
             </Show>
 
             <Show when={validationError()}>
@@ -1622,180 +1636,145 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
             <div class="ui-entry-workspace">
               <main class="ui-entry-main">
-                <Show when={currentForm()} fallback={
-                  <div
-                    id="entry-source-panel"
-                    class="ui-entry-source-body"
-                  >
-                    <Show when={compatibilityDiagnostics().length > 0}>
-                      <div
-                        class="ui-alert ui-alert-warning text-sm mb-3"
-                        role="alert"
-                      >
-                        <p class="font-semibold">
-                          {t("entryDetail.compatibilityLossTitle")}
-                        </p>
-                        <ul class="mt-2 list-disc pl-5 space-y-1">
-                          <For each={compatibilityDiagnostics()}>
-                            {(diagnostic) => (
-                              <li>
-                                {formatMarkdownConversionDiagnostic(diagnostic)}
-                              </li>
-                            )}
-                          </For>
-                        </ul>
-                        <p class="mt-2">
-                          {t("entryDetail.compatibilityLossDescription")}
-                        </p>
-                        <Show when={pendingCanonicalDraft()}>
-                          <button
-                            type="button"
-                            class="ui-button ui-button-secondary mt-3"
-                            onClick={acceptCanonicalDraft}
-                          >
-                            {t("entryDetail.acceptCanonicalVersion")}
-                          </button>
-                        </Show>
-                      </div>
-                    </Show>
-                    <textarea
-                      class="ui-editor ui-entry-source-editor"
-                      value={editorContent()}
-                      onInput={(event) =>
-                        handleContentChange(event.currentTarget.value)}
-                      onKeyDown={handleEditorKeyDown}
-                      aria-label={t("entryDetail.sourcePlaceholder")}
-                      placeholder={t("entryDetail.sourcePlaceholder")}
-                      spellcheck={false}
-                    />
-                  </div>
-                }>
+                <Show
+                  when={currentForm()}
+                  fallback={
+                    <div
+                      id="entry-source-panel"
+                      class="ui-entry-source-body"
+                    >
+                      <Show when={compatibilityDiagnostics().length > 0}>
+                        <div
+                          class="ui-alert ui-alert-warning text-sm mb-3"
+                          role="alert"
+                        >
+                          <p class="font-semibold">
+                            {t("entryDetail.compatibilityLossTitle")}
+                          </p>
+                          <ul class="mt-2 list-disc pl-5 space-y-1">
+                            <For each={compatibilityDiagnostics()}>
+                              {(diagnostic) => (
+                                <li>
+                                  {formatMarkdownConversionDiagnostic(
+                                    diagnostic,
+                                  )}
+                                </li>
+                              )}
+                            </For>
+                          </ul>
+                          <p class="mt-2">
+                            {t("entryDetail.compatibilityLossDescription")}
+                          </p>
+                          <Show when={pendingCanonicalDraft()}>
+                            <button
+                              type="button"
+                              class="ui-button ui-button-secondary mt-3"
+                              onClick={acceptCanonicalDraft}
+                            >
+                              {t("entryDetail.acceptCanonicalVersion")}
+                            </button>
+                          </Show>
+                        </div>
+                      </Show>
+                      <textarea
+                        class="ui-editor ui-entry-source-editor"
+                        value={editorContent()}
+                        onInput={(event) =>
+                          handleContentChange(event.currentTarget.value)}
+                        onKeyDown={handleEditorKeyDown}
+                        aria-label={t("entryDetail.sourcePlaceholder")}
+                        placeholder={t("entryDetail.sourcePlaceholder")}
+                        spellcheck={false}
+                      />
+                    </div>
+                  }
+                >
                   {(entryForm) => (
                     <div
                       id="entry-fields-panel"
                       class="ui-entry-form-body"
                     >
-                      <div class="ui-entry-field ui-entry-title-field">
-                        <div class="ui-entry-field-heading">
-                          <label class="ui-label" for="entry-title-editor">
-                            {t("common.title")}
-                          </label>
-                          <span class="ui-pill">
-                            {t("entryDetail.optional")}
-                          </span>
-                        </div>
-                        <input
-                          id="entry-title-editor"
-                          class="ui-input ui-entry-title-input"
-                          value={editorTitle()}
-                          placeholder={t("common.untitled")}
-                          onInput={(event) =>
-                            handleTitleChange(event.currentTarget.value)}
-                        />
-                      </div>
+                      <EntryFields
+                        titleValue={editorTitle()}
+                        onTitleChange={handleTitleChange}
+                        fields={entryFieldDescriptors()}
+                        getValue={fieldValue}
+                        isInvalid={(fieldName) =>
+                          invalidFields().includes(fieldName)}
+                        describedBy={requiredFieldErrorId}
+                        renderControl={(field, getHelpers) => {
+                          const fieldDef =
+                            (entryForm().fields || {})[field.name];
+                          // Descriptors always derive from this form, so this
+                          // guard is dead code for type narrowing only.
+                          if (!fieldDef) return null;
+                          // Helpers stay lazy accessors: reading them here
+                          // would subscribe this field expression to
+                          // validation state and re-create the control on
+                          // every keystroke.
+                          return renderFieldControl(
+                            field.name,
+                            fieldDef,
+                            field.fieldId,
+                            () => getHelpers().invalid,
+                            () => getHelpers().describedBy ??
+                              requiredFieldErrorId(field.fieldId),
+                          );
+                        }}
+                        belowField={(below) => (
+                          <>
+                            <Show
+                              when={!invalidFields().includes(below.name) &&
+                                editorGuidance().missingRequired.includes(
+                                  below.name,
+                                )}
+                            >
+                              <p class="text-xs ui-muted">
+                                {t("entryDetail.requiredMessage")}
+                              </p>
+                            </Show>
+                            <Show
+                              when={invalidFields().includes(below.name)}
+                            >
+                              <p
+                                class="text-xs ui-text-danger"
+                                role="alert"
+                              >
+                                {validationError()?.items.find((item) =>
+                                  item.startsWith(`${below.name}:`) ||
+                                  item.includes(below.name)
+                                ) ?? t("entryDetail.requiredMessage")}
+                              </p>
+                            </Show>
+                            <Show when={fieldIssue(below.name)}>
+                              {(issue) => (
+                                <p class="text-xs ui-muted">
+                                  {issue()}
+                                </p>
+                              )}
+                            </Show>
+                          </>
+                        )}
+                      />
 
                       <Show
-                        when={Object.keys(entryForm().fields || {}).length > 0}
-                        fallback={
-                          <div class="ui-entry-no-fields">
-                            <p class="font-medium">
-                              {t("entryDetail.noFields")}
-                            </p>
-                            <button
-                              type="button"
-                              class="ui-button ui-button-secondary mt-4"
-                              onClick={() => setShowAdvancedSource((value) => !value)}
-                              aria-expanded={showAdvancedSource()}
-                              aria-controls="entry-source-panel-advanced"
-                            >
-                              {t("entryDetail.openSource")}
-                            </button>
-                          </div>
-                        }
+                        when={Object.keys(entryForm().fields || {}).length ===
+                          0}
                       >
-                        <div class="ui-entry-field-list">
-                          <For each={Object.entries(entryForm().fields || {})}>
-                            {([fieldName, fieldDef], index) => {
-                              const fieldId = createFieldInputId(
-                                fieldName,
-                                index(),
-                              );
-                              // Rust diagnostics are the save authority and
-                              // the sole driver of aria-invalid/error styling.
-                              // TypeScript required guidance stays as an
-                              // immediate muted hint only.
-                              const isInvalid = () =>
-                                invalidFields().includes(fieldName);
-                              const isMissingHint = () =>
-                                !invalidFields().includes(fieldName) &&
-                                editorGuidance().missingRequired.includes(
-                                  fieldName,
-                                );
-                              return (
-                                <div
-                                  class="ui-entry-field"
-                                  classList={{
-                                    "ui-entry-field-error": isInvalid(),
-                                  }}
-                                >
-                                  <div class="ui-entry-field-heading">
-                                    <div class="min-w-0">
-                                      <label class="ui-label" for={fieldId}>
-                                        {fieldName}
-                                      </label>
-                                      <p class="mt-0.5 text-xs ui-muted">
-                                        {fieldDef.type}
-                                        <Show when={fieldDef.target_form}>
-                                          {` · ${fieldDef.target_form}`}
-                                        </Show>
-                                      </p>
-                                    </div>
-                                    <span
-                                      class={isActiveRequiredField(fieldDef)
-                                        ? "ui-entry-required"
-                                        : "ui-pill"}
-                                    >
-                                      {isActiveRequiredField(fieldDef)
-                                        ? t("entryDetail.required")
-                                        : t("entryDetail.optional")}
-                                    </span>
-                                  </div>
-                                  {renderFieldControl(
-                                    fieldName,
-                                    fieldDef,
-                                    fieldId,
-                                    isInvalid,
-                                    requiredFieldErrorId(fieldId),
-                                  )}
-                                  <Show when={isMissingHint()}>
-                                    <p class="text-xs ui-muted">
-                                      {t("entryDetail.requiredMessage")}
-                                    </p>
-                                  </Show>
-                                  <Show
-                                    when={invalidFields().includes(fieldName)}
-                                  >
-                                    <p
-                                      class="text-xs ui-text-danger"
-                                      role="alert"
-                                    >
-                                      {validationError()?.items.find((item) =>
-                                        item.startsWith(`${fieldName}:`) ||
-                                        item.includes(fieldName)
-                                      ) ?? t("entryDetail.requiredMessage")}
-                                    </p>
-                                  </Show>
-                                  <Show when={fieldIssue(fieldName)}>
-                                    {(issue) => (
-                                      <p class="text-xs ui-muted">
-                                        {issue()}
-                                      </p>
-                                    )}
-                                  </Show>
-                                </div>
-                              );
-                            }}
-                          </For>
+                        <div class="ui-entry-no-fields">
+                          <p class="font-medium">
+                            {t("entryDetail.noFields")}
+                          </p>
+                          <button
+                            type="button"
+                            class="ui-button ui-button-secondary mt-4"
+                            onClick={() =>
+                              setShowAdvancedSource((value) => !value)}
+                            aria-expanded={showAdvancedSource()}
+                            aria-controls="entry-source-panel-advanced"
+                          >
+                            {t("entryDetail.openSource")}
+                          </button>
                         </div>
                       </Show>
 
@@ -1812,7 +1791,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                           <button
                             type="button"
                             class="ui-button ui-button-secondary ui-button-sm text-xs"
-                            onClick={() => setShowAdvancedSource((value) => !value)}
+                            onClick={() =>
+                              setShowAdvancedSource((value) => !value)}
                             aria-expanded={showAdvancedSource()}
                             aria-controls="entry-source-panel-advanced"
                           >

@@ -1,13 +1,8 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
-import { createMemo, Show, createSignal } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
+import { createEntryFieldInputId, EntryFields } from "~/components/EntryFields";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
-import { formatDateTimeLabel } from "~/lib/date-format";
-import {
-  revisionActor,
-  revisionForm,
-  revisionOperationLabel,
-  revisionTitle,
-} from "~/lib/entry-history";
+import { parseEntryMarkdownPresentation } from "~/lib/entry-input";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { t } from "~/lib/i18n";
 import { entryApi } from "~/lib/ugoite-client";
@@ -15,6 +10,37 @@ import { createResource } from "~/lib/recoverable-resource";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "forms", title: "revision" });
+
+function toRevisionDate(
+  value: string | number | null | undefined,
+): Date | null {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    const millis = Math.abs(value) < 1_000_000_000_000 ? value * 1000 : value;
+    const date = new Date(millis);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const date = new Date(value.trim());
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  return null;
+}
+
+/** Subtitle stamp: `YYYY-MM-DD HH:mm` plus a fixed read-only marker. */
+export function formatRevisionSubtitle(
+  value: string | number | null | undefined,
+): string {
+  const date = toRevisionDate(value);
+  if (!date) return `— · 読み取り専用`;
+  const pad = (part: number) => String(part).padStart(2, "0");
+  const stamp = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${
+    pad(
+      date.getDate(),
+    )
+  } ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return `${stamp} · 読み取り専用`;
+}
 
 export default function SpaceEntryRevisionRoute() {
   const navigate = useNavigate();
@@ -29,9 +55,6 @@ export default function SpaceEntryRevisionRoute() {
       encodeURIComponent(entryId())
     }`;
 
-  const [currentEntry] = createResource(() =>
-    entryApi.get(spaceId(), entryId())
-  );
   const [revision] = createResource(() =>
     entryApi.getRevision(spaceId(), entryId(), revisionId())
   );
@@ -45,6 +68,26 @@ export default function SpaceEntryRevisionRoute() {
         "entry.revision",
       )
       : null
+  );
+
+  // The stored Markdown is the revision content authority; the shared
+  // EntryFields renderer shows it read-only (every control disabled).
+  const parsedRevision = createMemo(() => {
+    const markdown = revision()?.markdown ?? "";
+    try {
+      return parseEntryMarkdownPresentation(markdown);
+    } catch {
+      return { title: "", fields: {} as Record<string, string> };
+    }
+  });
+  const revisionTitleValue = createMemo(() =>
+    parsedRevision().title || revision()?.title || ""
+  );
+  const revisionFields = createMemo(() =>
+    Object.keys(parsedRevision().fields).map((name, index) => ({
+      name,
+      fieldId: createEntryFieldInputId(name, index),
+    }))
   );
 
   const handleRestore = async () => {
@@ -77,6 +120,13 @@ export default function SpaceEntryRevisionRoute() {
             {t("entryRevision.eyebrow")} · {entryId()}
           </div>
           <h1>{t("entryRevision.title")}</h1>
+          <Show when={revision()}>
+            {(selected) => (
+              <p class="ui-page-subtitle revision-subtitle">
+                {formatRevisionSubtitle(selected().timestamp)}
+              </p>
+            )}
+          </Show>
         </div>
         <A href={`${entryPath()}/history`} class="btn">
           {t("entryRevision.backToHistory")}
@@ -91,97 +141,38 @@ export default function SpaceEntryRevisionRoute() {
         <p class="ui-alert ui-alert-error">{reviewError()}</p>
       </Show>
       <Show when={revision()}>
-        {(selected) => (
-          <div class="settingsMain" aria-busy={revision.loading || undefined}>
-            <p class="ui-alert ui-alert-warning">
-              {t("entryRevision.restoreNotice")}
-            </p>
-            <div class="ui-entry-history-review">
-              <section
-                class="ui-entry-history-section"
-                aria-label={t("entryRevision.currentValue")}
-              >
-                <h2>{t("entryRevision.currentValue")}</h2>
-                <Show
-                  when={currentEntry()}
-                  fallback={
-                    <p class="ui-muted">
-                      {t("entryRevision.currentUnavailable")}
-                    </p>
-                  }
-                >
-                  {(current) => (
-                    <>
-                      <dl class="ui-entry-detail-list">
-                        <div>
-                          <dt>{t("common.title")}</dt>
-                          <dd>{current().title || t("common.untitled")}</dd>
-                        </div>
-                        <div>
-                          <dt>{t("common.form")}</dt>
-                          <dd>{current().form || t("entryHistory.unknownValue")}</dd>
-                        </div>
-                      </dl>
-                      <h3>{t("entryRevision.source")}</h3>
-                      <pre class="code">{current().content}</pre>
-                    </>
-                  )}
-                </Show>
-              </section>
+        <div class="settingsMain" aria-busy={revision.loading || undefined}>
+          <p class="ui-alert ui-alert-warning">
+            {t("entryRevision.restoreNotice")}
+          </p>
+          <EntryFields
+            titleValue={revisionTitleValue()}
+            fields={revisionFields()}
+            getValue={(name) => parsedRevision().fields[name] ?? ""}
+            readOnly
+          />
 
-              <hr class="ui-entry-history-divider" aria-hidden="true" />
-
-              <section
-                class="ui-entry-history-section"
-                aria-label={t("entryRevision.selectedValue")}
-              >
-                <h2>{t("entryRevision.selectedValue")}</h2>
-                <dl class="ui-entry-detail-list">
-                  <div>
-                    <dt>{t("common.title")}</dt>
-                    <dd>{revisionTitle(selected())}</dd>
-                  </div>
-                  <div>
-                    <dt>{t("common.form")}</dt>
-                    <dd>{revisionForm(selected())}</dd>
-                  </div>
-                  <div>
-                    <dt>{t("entryRevision.operation")}</dt>
-                    <dd>{revisionOperationLabel(selected())}</dd>
-                  </div>
-                  <div>
-                    <dt>{t("entryRevision.actor")}</dt>
-                    <dd>{revisionActor(selected())}</dd>
-                  </div>
-                  <div>
-                    <dt>{t("entryRevision.timestamp")}</dt>
-                    <dd>{formatDateTimeLabel(selected().timestamp)}</dd>
-                  </div>
-                  <div>
-                    <dt>{t("entryRevision.revisionId")}</dt>
-                    <dd>{selected().revision_id}</dd>
-                  </div>
-                </dl>
-                <h3>{t("entryRevision.source")}</h3>
-                <pre class="code">{selected().markdown}</pre>
-              </section>
-            </div>
-
+          <div class="revision-restore-row">
             <button
               type="button"
               class="btn primary ui-entry-history-restore"
+              aria-label={t("entryRevision.restore")}
               onClick={handleRestore}
               disabled={isRestoring()}
             >
-              {isRestoring()
-                ? t("entryRevision.restoring")
-                : t("entryRevision.restore")}
+              復元
             </button>
-            <Show when={restoreError()}>
-              <p class="ui-alert ui-alert-error">{restoreError()}</p>
+            <Show when={isRestoring()}>
+              <LocalBusyIndicator
+                size="sm"
+                label={t("entryRevision.restoring")}
+              />
             </Show>
           </div>
-        )}
+          <Show when={restoreError()}>
+            <p class="ui-alert ui-alert-error">{restoreError()}</p>
+          </Show>
+        </div>
       </Show>
     </>
   );

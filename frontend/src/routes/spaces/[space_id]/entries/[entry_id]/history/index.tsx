@@ -1,15 +1,8 @@
 import { A, useParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
-import { UiIcon } from "~/components/UiIcon";
 import { formatDateTimeLabel } from "~/lib/date-format";
-import {
-  revisionActor,
-  revisionForm,
-  revisionOperationLabel,
-  revisionSummary,
-  revisionTitle,
-} from "~/lib/entry-history";
+import { revisionActor, revisionOperationLabel } from "~/lib/entry-history";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { t } from "~/lib/i18n";
 import { entryApi } from "~/lib/ugoite-client";
@@ -66,7 +59,11 @@ export default function SpaceEntryHistoryRoute() {
   };
   const errorMessage = createMemo(() =>
     history.error
-      ? formatUserFacingError(history.error, "entryHistory.loadError", "entry.history")
+      ? formatUserFacingError(
+        history.error,
+        "entryHistory.loadError",
+        "entry.history",
+      )
       : null
   );
 
@@ -87,7 +84,10 @@ export default function SpaceEntryHistoryRoute() {
           {t("entryHistory.viewSpaceHistory")}
         </A>
       </div>
-      {/* Panel-local spinner: existing rows stay mounted during refetch. */}
+      {
+        /* Panel-local spinner only: existing rows stay mounted during refetch,
+          no visible loading text. */
+      }
       <Show when={history.loading}>
         <LocalBusyIndicator label={t("entryHistory.loading")} />
       </Show>
@@ -103,66 +103,68 @@ export default function SpaceEntryHistoryRoute() {
             when={data().revisions.length > 0}
             fallback={<p class="ui-muted">{t("entryHistory.empty")}</p>}
           >
-            <div class="rowStack" aria-busy={history.loading || undefined}>
-              <For each={revisions()}>
-                {(revision) => (
-                  <A
-                    class="rowBtn"
-                    href={`/spaces/${spaceId()}/entries/${encodedEntryId()}/history/${
-                      encodeURIComponent(revision.revision_id)
-                    }`}
-                  >
-                    <span class="glyph active">
-                      <UiIcon name="history" />
-                    </span>
-                    <span class="ui-stack-sm">
-                      <span>
-                        <strong>{revisionOperationLabel(revision)}</strong>
-                        <span class="ui-muted"> · {revisionSummary(revision)}</span>
-                      </span>
-                      <span class="ui-entry-history-meta">
-                        <span>
-                          <b>{t("entryHistory.actor")}:</b> {revisionActor(revision)}
-                        </span>
-                        <span>
-                          <b>{t("entryHistory.timestamp")}:</b>{" "}
+            {
+              /* Only this wrapper scrolls horizontally; the page itself never
+                does. Three columns only: operation / actor / timestamp plus
+                a chevron. Revision id, title, form, and summary stay hidden
+                (the revision route owns that detail). */
+            }
+            <div class="tablewrap" aria-busy={history.loading || undefined}>
+              <table class="table entry-history-table">
+                <thead>
+                  <tr>
+                    <th scope="col">{t("entryHistory.operation")}</th>
+                    <th scope="col">{t("entryHistory.actor")}</th>
+                    <th scope="col">{t("entryHistory.timestamp")}</th>
+                    <th scope="col">
+                      <span class="ui-sr-only">{t("entryHistory.title")}</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <For each={revisions()}>
+                    {(revision) => (
+                      <tr>
+                        <td>
+                          <A
+                            class="table-link"
+                            href={`/spaces/${spaceId()}/entries/${encodedEntryId()}/history/${
+                              encodeURIComponent(revision.revision_id)
+                            }`}
+                          >
+                            {revisionOperationLabel(revision)}
+                          </A>
+                        </td>
+                        <td class="ui-muted">{revisionActor(revision)}</td>
+                        <td class="ui-muted">
                           {formatDateTimeLabel(revision.timestamp)}
-                        </span>
-                      </span>
-                      <span class="ui-entry-history-meta">
-                        <span>
-                          <b>{t("common.title")}:</b> {revisionTitle(revision)}
-                        </span>
-                        <span>
-                          <b>{t("common.form")}:</b> {revisionForm(revision)}
-                        </span>
-                      </span>
-                      <small class="ui-muted">
-                        {t("entryHistory.revisionId")}: {revision.revision_id}
-                      </small>
-                    </span>
-                    <span aria-hidden="true">›</span>
-                  </A>
-                )}
-              </For>
-              <Show when={hasMore()}>
-                <button
-                  type="button"
-                  class="ui-button ui-button-secondary"
-                  disabled={loadingMore()}
-                  onClick={() => void loadMoreHistory()}
-                >
-                  {t("entryHistory.loadMore")}
-                </button>
-                {/* Footer spinner only: existing rows stay visible. */}
-                <Show when={loadingMore()}>
-                  <LocalBusyIndicator
-                    size="sm"
-                    label={t("entryHistory.loadingMore")}
-                  />
-                </Show>
-              </Show>
+                        </td>
+                        <td aria-hidden="true">
+                          <span class="chev">›</span>
+                        </td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
             </div>
+            <Show when={hasMore()}>
+              <button
+                type="button"
+                class="ui-button ui-button-secondary"
+                disabled={loadingMore()}
+                onClick={() => void loadMoreHistory()}
+              >
+                {t("entryHistory.loadMore")}
+              </button>
+              {/* Footer spinner only: existing rows stay visible. */}
+              <Show when={loadingMore()}>
+                <LocalBusyIndicator
+                  size="sm"
+                  label={t("entryHistory.loadingMore")}
+                />
+              </Show>
+            </Show>
           </Show>
         )}
       </Show>
