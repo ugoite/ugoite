@@ -1,12 +1,12 @@
 ---
-title: "Operate Ugoite"
+title: "Operations"
 description: Install, configure, secure, recover, and troubleshoot a Ugoite deployment.
 sidebar:
   label: "Overview"
   order: 1
 ---
 
-Operate Ugoite is for people who keep a deployment running. It collects install,
+Operations is for people who keep a deployment running. It collects install,
 configuration, identity, storage, diagnostics, upgrade, and troubleshooting
 procedures without requiring Architecture docs first.
 
@@ -14,14 +14,15 @@ procedures without requiring Architecture docs first.
 
 - [Install and Deploy](install-deploy.md): choose the runtime shape.
 - [Configure](configure.md): environment variables and entry points.
-- [Identity and Access](identity-access.md): login, device auth, recovery, and
+- [Identity and Access](identity-access.md): auth, device pairing, step-up, and
   membership.
-- [Storage and Recovery](storage-recovery.md): moves, verification, and the
-  three recovery inputs.
+- [Storage and Recovery](storage-recovery.md): storage config, connection test,
+  backup, moves, verification, and the three recovery inputs.
 - [Health and Diagnostics](health-diagnostics.md): health checks and safe logs.
 - [Upgrade and Compatibility](upgrade-compatibility.md): upgrades without
   breaking portable Spaces.
-- [Troubleshooting](troubleshooting.md): symptom-first fixes.
+- [Troubleshooting](troubleshooting.md): symptom-first fixes, including
+  [invalid saved CLI config recovery](troubleshooting.md#invalid-saved-cli-config).
 
 ## Recovery inputs
 

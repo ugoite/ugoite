@@ -56,17 +56,20 @@ application builder or arbitrary code runtime is shipped. :::
 
 ## Choose a path
 
+Task pages cover every surface together: the same task page shows the Browser
+and CLI steps for one outcome. No separate Browser, CLI, or REST trees are
+maintained.
+
 - [Get started](get-started/index.md): understand the model and complete a
   first durable workflow.
-- [Use Ugoite](use/index.md): create, edit, search, and recover Knowledge.
-- [Operate Ugoite](operate/index.md): install, configure, secure, and recover a
+- [Knowledge tasks](use/index.md): create, edit, search, and recover Knowledge.
+- [Operations](operate/index.md): install, configure, secure, and recover a
   deployment.
-- [Vision & Concepts](vision/index.md): understand why Knowledge, Work, and
-  Experience are separate.
-- [Develop Ugoite](develop/index.md): build and extend the repository.
 - [Reference](reference/index.md): find exact CLI, REST, MCP, configuration,
   and compatibility authorities.
-- [Specification](spec/index.md): inspect requirements, policies, and evidence.
+- [Development](develop/index.md): build and extend the repository.
+- [Architecture & Specification](spec/index.md): inspect architecture, vision,
+  requirements, policies, and evidence.
 
 ## Current product boundary
 
@@ -90,9 +93,11 @@ remain planned work. :::
 ## Source-of-truth rules
 
 1. Product and engineering prose lives under `docs/` and is rendered directly by
-   Starlight.
-2. Runtime behavior is authoritative in the Rust and frontend implementation;
-   specs link to those source and test paths.
-3. The server-generated OpenAPI document is authoritative; the checked-in
-   snapshot is generated and drift-checked.
+   Starlight. Docs explain; they do not duplicate protocol semantics.
+2. CLI behavior is authoritative in the current binary: `ugoite <command>
+   --help` (Clap). REST behavior is authoritative in `crates/ugoite-server`
+   and the server-generated `/openapi.json`.
+3. Requirements and evidence are authoritative in Mitase-declared relationships
+   under `docs/spec` and `docs/mitase`. No second protocol registry is
+   maintained in prose.
 4. `README.md` is an entry point, not a second manual.
