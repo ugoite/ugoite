@@ -62,6 +62,27 @@ jobs:
             echo "source_sha=${source_sha}"
           } >>"${GITHUB_OUTPUT}"
 
+      - name: Verify candidate run provenance via Actions API
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SOURCE_SHA: ${{ steps.resolve.outputs.source_sha }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+        run: |
+          set -euo pipefail
+          # The candidate manifest stays the artifact authority; this preflight
+          # refuses promotion when the Actions run metadata disagrees with it.
+          run_json="$(gh api "repos/${{ github.repository }}/actions/runs/${CANDIDATE_RUN_ID}")"
+          workflow_name="$(echo "$run_json" | jq -r '.name')"
+          workflow_path="$(echo "$run_json" | jq -r '.path')"
+          head_sha="$(echo "$run_json" | jq -r '.head_sha')"
+          run_status="$(echo "$run_json" | jq -r '.status')"
+          run_conclusion="$(echo "$run_json" | jq -r '.conclusion')"
+          test "$workflow_name" = "Release Candidate"
+          test "$workflow_path" = ".github/workflows/release-candidate.yml"
+          test "$head_sha" = "$EXPECTED_SOURCE_SHA"
+          test "$run_status" = "completed"
+          test "$run_conclusion" = "success"
+
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
@@ -154,7 +175,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NODE_AUTH_TOKEN: ${{ github.token }}
           UGOITE_CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
-        run: mise run release:promote -- --candidate target/artifacts/candidate-manifest.json --candidate-run-id "${{ inputs.candidate_run_id }}" --verification-receipt "target/artifacts/verification-receipt-${{ github.run_id }}.json"
+          UGOITE_VERIFIER_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          UGOITE_VERIFICATION_RUN_ID: ${{ github.run_id }}
+        run: mise run release:promote -- --candidate target/artifacts/candidate-manifest.json --candidate-run-id "${{ inputs.candidate_run_id }}" --verification-receipt "target/artifacts/verification-receipt-${{ github.run_id }}.json" --verifier-workflow-sha "${{ github.workflow_sha }}" --verification-run-id "${{ github.run_id }}"
 
       - name: Record candidate state
         run: echo 'state=versioned-published' >>"${GITHUB_STEP_SUMMARY}"
@@ -201,6 +224,8 @@ jobs:
           UGOITE_RELEASE_TAG: v${{ needs.promote.outputs.version }}
           UGOITE_VERSION: ${{ needs.promote.outputs.version }}
           UGOITE_CANDIDATE_ID: ${{ needs.promote.outputs.candidate_id }}
+          UGOITE_VERIFIER_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          UGOITE_VERIFICATION_RUN_ID: ${{ github.run_id }}
           NODE_AUTH_TOKEN: ${{ github.token }}
         run: bash scripts/verify-release-distribution.sh
 

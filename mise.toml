@@ -111,7 +111,7 @@ run = "bash scripts/activate-ugoite-wasm.sh debug"
 
 [tasks."build:frontend"]
 description = "Build the production frontend using the release WASM adapter"
-depends = ["build:wasm:release"]
+depends = ["build:wasm:release", "prepare:frontend:inputs"]
 sources = [
   "deno.json",
   "deno.lock",
@@ -125,6 +125,7 @@ sources = [
   "frontend/src/**/*",
   "shared/**/*",
   "scripts/activate-ugoite-wasm.sh",
+  "target/build-metadata/frontend-source-sha.txt",
 ]
 outputs = [
   "frontend/.output/public/index.html",
@@ -164,6 +165,13 @@ run = [
   "tmpfile=\"$(mktemp)\" && printf 'DOCSITE_ORIGIN=%s\\nDOCSITE_BASE=%s\\n' \"${DOCSITE_ORIGIN:-http://localhost:4321}\" \"${DOCSITE_BASE:-/}\" > \"$tmpfile\" && if ! cmp -s \"$tmpfile\" target/build-metadata/docsite-inputs.txt 2>/dev/null; then mv \"$tmpfile\" target/build-metadata/docsite-inputs.txt; else rm -f \"$tmpfile\"; fi",
 ]
 
+[tasks."prepare:frontend:inputs"]
+description = "Record frontend build identity inputs including the source SHA for cache correctness"
+run = [
+  "mkdir -p target/build-metadata",
+  "tmpfile=\"$(mktemp)\" && printf 'UGOITE_SOURCE_SHA=%s\\n' \"${UGOITE_SOURCE_SHA:-$(git rev-parse HEAD)}\" > \"$tmpfile\" && if ! cmp -s \"$tmpfile\" target/build-metadata/frontend-source-sha.txt 2>/dev/null; then mv \"$tmpfile\" target/build-metadata/frontend-source-sha.txt; else rm -f \"$tmpfile\"; fi",
+]
+
 [tasks."build:rust:release"]
 description = "Build supported release binaries"
 sources = [
@@ -187,6 +195,12 @@ run = "cargo build -p ugoite-server -p ugoite-cli --release --locked"
 
 [tasks."build:image"]
 description = "Build the runtime image once for E2E and packaging"
+depends = ["prepare:frontend:inputs"]
+sources = [
+  "Dockerfile",
+  "docker-compose.e2e.yml",
+  "target/build-metadata/frontend-source-sha.txt",
+]
 run = """bash -lc 'set -euo pipefail
 tag="${UGOITE_IMAGE_TAG:-ugoite:e2e}"
 prebuilt=false
@@ -313,6 +327,19 @@ run = "deno task docsite:e2e:navigation"
 depends = ["build:wasm:debug"]
 description = "Run the authoritative non-E2E test suite"
 run = [{ tasks = ["test:rust", "test:tools", "test:frontend:coverage", "test:docsite"] }]
+
+[tasks."test:low-memory"]
+depends = ["build:wasm:debug"]
+description = "Sequential low-memory variant of the authoritative non-E2E test suite with the same assertions, coverage, type, and no-skip policy as test"
+env = { MISE_JOBS = "1", CARGO_BUILD_JOBS = "1" }
+run = [
+  "cargo -j1 nextest run --workspace --locked",
+  "cargo -j1 test --workspace --doc --locked",
+  "deno test -A tools/*_test.ts",
+  "bash scripts/activate-ugoite-wasm.sh debug",
+  "bash -lc 'cd frontend && deno run -A npm:vitest run --coverage --maxWorkers=1 --no-file-parallelism'",
+  "bash -lc 'cd docsite && deno run -A npm:vitest@4.1.8 run --maxWorkers=1 --no-file-parallelism'",
+]
 
 [tasks."test:e2e"]
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:full"

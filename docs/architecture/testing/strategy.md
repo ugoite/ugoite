@@ -44,5 +44,5 @@ Changes that can affect Space ownership, authority, publication reachability,
 history reconstruction, or adapter authority must also carry the Knowledge
 Compatibility Review required by the v0.1 compatibility floor.
 
-For CLI-only work, start with `mise run test:cli` so you can iterate on
+For CLI-only work, start with `mise run test:smoke` so you can iterate on
 `ugoite-cli` without running the full workspace suite.

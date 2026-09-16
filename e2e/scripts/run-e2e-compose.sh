@@ -124,6 +124,15 @@ ensure_playwright_browsers() {
 
 ensure_playwright_browsers
 
+# Never clobber a pre-existing dev provenance file: back it up around any dev
+# E2E generation and restore it on exit (mirrors run-e2e.sh dev handling).
+DEV_BUILD_INFO_PATH="$ROOT_DIR/frontend/public/build-info.json"
+DEV_BUILD_INFO_BACKUP=""
+if [ -f "$DEV_BUILD_INFO_PATH" ]; then
+  DEV_BUILD_INFO_BACKUP="$(mktemp)"
+  cp "$DEV_BUILD_INFO_PATH" "$DEV_BUILD_INFO_BACKUP"
+fi
+
 backend_start_timeout="${E2E_BACKEND_START_TIMEOUT_SECONDS:-120}"
 export PLAYWRIGHT_CI_REPORTER=junit
 export PLAYWRIGHT_JUNIT_OUTPUT_FILE="${PLAYWRIGHT_JUNIT_OUTPUT_FILE:-test-results/junit.xml}"
@@ -134,6 +143,9 @@ cleanup() {
   echo ""
   echo "Stopping services..."
   "${compose_cmd[@]}" down -v 2>/dev/null || true
+  if [ -n "${DEV_BUILD_INFO_BACKUP:-}" ] && [ -f "$DEV_BUILD_INFO_BACKUP" ]; then
+    mv "$DEV_BUILD_INFO_BACKUP" "$DEV_BUILD_INFO_PATH"
+  fi
   echo "Services stopped."
 }
 trap cleanup EXIT INT TERM
