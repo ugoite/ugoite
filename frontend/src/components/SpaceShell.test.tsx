@@ -123,6 +123,30 @@ describe("v5 SpaceShell", () => {
     fireEvent.click(utility);
     expect(screen.getByLabelText("Model API key")).toHaveValue("test-key");
   });
+  it("keeps the topbar assistant icon-only with no visible Konase text", () => {
+    const { container } = render(() => (
+      <SpaceShell spaceId="my-space-uid" activeNavigation="home">
+        <p>Content</p>
+      </SpaceShell>
+    ));
+
+    const topbar = container.querySelector(".topbar");
+    expect(topbar).toBeInTheDocument();
+    const assistant = topbar!.querySelector("button.pill.iconpill");
+    expect(assistant).toBeInTheDocument();
+    expect(assistant).toHaveAttribute("aria-label", "Konase");
+    expect(assistant!.querySelector(".assistantDot")).toBeInTheDocument();
+    const visibleKonase = [...topbar!.querySelectorAll("span")].filter(
+      (el) =>
+        !el.classList.contains("ui-sr-only") &&
+        el.textContent?.includes("Konase"),
+    );
+    expect(visibleKonase).toHaveLength(0);
+    // Account menu stays visible next to the icon-only assistant.
+    expect(
+      screen.getByRole("button", { name: "Account" }),
+    ).toBeInTheDocument();
+  });
   it("does not render a decorative topbar overflow control", () => {
     const { container } = render(() => (
       <SpaceShell spaceId="my-space-uid" activeNavigation="home">
@@ -162,11 +186,13 @@ describe("v5 SpaceShell", () => {
 
     loadingState.start();
     expect(screen.getByText("Child content")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Home" })[0]).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Home" })[0])
+      .toBeInTheDocument();
 
     loadingState.stop();
     expect(screen.getByText("Child content")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Home" })[0]).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Home" })[0])
+      .toBeInTheDocument();
   });
   it("keeps the route space selected when the route changes", () => {
     const [spaceId, setSpaceId] = createSignal("my-space-uid");

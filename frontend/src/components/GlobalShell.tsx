@@ -58,10 +58,9 @@ export function GlobalShell(
           </a>
           <div class="topbarTools">
             <div class="crumbTop ui-sr-only">{props.title}</div>
-            <span class="assistantPill">
+            <span class="pill iconpill" aria-label={t("konase.title")}>
               <span class="assistantDot" aria-hidden="true" />
-              <span>{t("konase.title")}</span>
-              <span class="assistantState">{t("konase.disconnected")}</span>
+              <span class="ui-sr-only">{t("konase.title")}</span>
             </span>
             <Show
               when={props.authenticated !== false}

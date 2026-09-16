@@ -129,13 +129,27 @@ code {
   background: var(--soft2);
 }
 .icon {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
+  flex: none;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.8;
+  stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+.icon path,
+.icon circle,
+.icon rect,
+.icon ellipse,
+.icon line,
+.icon polyline,
+.icon polygon {
+  vector-effect: non-scaling-stroke;
+}
+.bottomNav .icon {
+  width: 19px;
+  height: 19px;
 }
 .muted, .ui-muted {
   color: var(--muted);
@@ -2729,6 +2743,97 @@ button.assistantPill[aria-expanded="true"] {
 .assistantState {
   color: var(--muted);
   font-size: 11px;
+}
+
+/* PR2 icon-system contract: square icon slot, icon-only pill, compact grid. */
+.pill.iconpill {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 0 12px;
+}
+button.pill.iconpill:hover,
+button.pill.iconpill[aria-expanded="true"] {
+  border-color: var(--line2);
+  background: #fff;
+}
+.icononly {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+}
+a.pill.iconpill {
+  text-decoration: none;
+}
+.actionbar.compact-actions {
+  min-width: 0;
+  max-width: 100%;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 72px));
+  gap: 8px;
+  align-items: stretch;
+  justify-content: start;
+  margin-bottom: 18px;
+  overflow-x: hidden;
+}
+.tool {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 6px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+a.tool {
+  color: inherit;
+}
+.tool:hover,
+.tool:focus-visible {
+  border-color: var(--line);
+  background: var(--soft2);
+}
+.tool:disabled,
+.tool[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.tool .icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+.toolLabel {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-danger {
+  color: var(--danger);
+}
+
+@media (max-width: 560px) {
+  .actionbar.compact-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .konasePopover {
