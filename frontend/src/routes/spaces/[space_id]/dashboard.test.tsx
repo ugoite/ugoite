@@ -76,6 +76,24 @@ describe("v5 space Home", () => {
     expect(document.querySelector(".continueGrid .card")).toBeNull();
     expect(document.querySelector(".pinGrid")).toBeInTheDocument();
   });
+  it("PR4: keeps only the space name and new-entry action above Continue", async () => {
+    vi.mocked(formApi.list).mockResolvedValue([{
+      name: "Notes",
+      version: 1,
+      template: "",
+      fields: { body: { type: "markdown", required: false } },
+    }]);
+    render(() => <SpaceDashboardRoute />);
+    await screen.findByRole("heading", { name: "Continue" });
+    expect(document.querySelector(".homehead")).toBeInTheDocument();
+    expect(document.querySelector(".dashboardIntro")).toBeNull();
+    expect(document.querySelector(".workInline")).toBeNull();
+    expect(screen.queryByText("Knowledge space")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Stable Knowledge, quiet surfaces/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Konase is available/)).not.toBeInTheDocument();
+  });
   it("REQ-FE-058: keeps the dashboard title calm while space metadata resolves", async () => {
     let resolveSpace: (
       space: { id: string; name: string; created_at: string },

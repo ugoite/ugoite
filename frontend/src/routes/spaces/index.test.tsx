@@ -21,8 +21,17 @@ const navigateMock = vi.fn();
 vi.mock("@solidjs/router", () => ({
   useNavigate: () => navigateMock,
   useParams: () => ({}),
-  A: (props: { href: string; class?: string; children: unknown }) => (
-    <a href={props.href} class={props.class}>
+  A: (props: {
+    href: string;
+    class?: string;
+    children: unknown;
+    ["aria-label"]?: string;
+  }) => (
+    <a
+      href={props.href}
+      class={props.class}
+      aria-label={props["aria-label"]}
+    >
       {props.children}
     </a>
   ),
@@ -242,7 +251,8 @@ describe("/spaces", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Available Spaces")).toBeInTheDocument();
-      expect(screen.getByText("Open Space")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Open Space" }))
+        .toBeInTheDocument();
     });
 
     expect(screen.queryByRole("heading", { name: "Authentication" })).not
@@ -271,18 +281,71 @@ describe("/spaces", () => {
     render(() => <SpacesIndexRoute />);
 
     await waitFor(() => {
-      expect(screen.getByRole("list", { name: "Spaces" }))
+      expect(screen.getByRole("table", { name: "Spaces" }))
         .toBeInTheDocument();
     });
 
-    const spacesList = screen.getByRole("list", { name: "Spaces" });
-    expect(within(spacesList).getByText("default")).toBeInTheDocument();
-    expect(within(spacesList).getByText("Operations")).toBeInTheDocument();
-    expect(within(spacesList).getAllByRole("link", { name: "Open Space" })[0])
+    const spacesTable = screen.getByRole("table", { name: "Spaces" });
+    expect(within(spacesTable).getByText("default")).toBeInTheDocument();
+    expect(within(spacesTable).getByText("Operations")).toBeInTheDocument();
+    expect(within(spacesTable).getAllByRole("link", { name: "Open Space" })[0])
       .toHaveAttribute(
         "href",
         "/spaces/default/dashboard",
       );
+  });
+
+  it("PR4: renders spaces as a table with icon-only actions", async () => {
+    (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: "default",
+        name: "Default",
+        slug: "default",
+        created_at: "2025-01-01T00:00:00Z",
+      },
+    ]);
+
+    render(() => <SpacesIndexRoute />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("table", { name: "Spaces" }))
+        .toBeInTheDocument();
+    });
+
+    const spacesTable = screen.getByRole("table", { name: "Spaces" });
+    expect(
+      within(spacesTable).getByRole("columnheader", { name: "Space name" }),
+    ).toBeInTheDocument();
+    expect(
+      within(spacesTable).getByRole("columnheader", { name: "Forms" }),
+    ).toBeInTheDocument();
+    expect(
+      within(spacesTable).getByRole("columnheader", { name: "Settings" }),
+    ).toBeInTheDocument();
+    expect(
+      within(spacesTable).getByRole("columnheader", { name: "Open" }),
+    ).toBeInTheDocument();
+    // Single name only: no slug second line.
+    expect(within(spacesTable).getByText("Default")).toBeInTheDocument();
+    expect(spacesTable.querySelector("small")).toBeNull();
+    expect(within(spacesTable).queryByText("default", { selector: "small" }))
+      .not.toBeInTheDocument();
+    // Form counts are unknown for the Space payload: placeholder kept.
+    expect(within(spacesTable).getByText("—")).toBeInTheDocument();
+    // Icon-only actions keep their accessible names.
+    expect(
+      within(spacesTable).getByRole("link", { name: "Settings" }),
+    ).toHaveAttribute("href", "/spaces/default/settings");
+    const open = within(spacesTable).getByRole("link", {
+      name: "Open Space",
+    });
+    expect(open).toHaveAttribute("href", "/spaces/default/dashboard");
+    expect(open.textContent).toContain("›");
+    // Only the wrapper scrolls; the selector page has no Home back link.
+    expect(document.querySelector(".tablewrap")).toBeInTheDocument();
+    expect(document.querySelector(".tablewrap table")).toBe(spacesTable);
+    expect(screen.queryByRole("link", { name: "Back to Home" })).not
+      .toBeInTheDocument();
   });
 
   it("REQ-FE-002: treats any authorized Space as selectable content", async () => {
@@ -297,7 +360,7 @@ describe("/spaces", () => {
     render(() => <SpacesIndexRoute />);
 
     await waitFor(() => {
-      expect(screen.getByRole("list", { name: "Spaces" }))
+      expect(screen.getByRole("table", { name: "Spaces" }))
         .toBeInTheDocument();
     });
     expect(screen.queryByText("No spaces available.")).not.toBeInTheDocument();
