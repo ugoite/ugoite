@@ -129,17 +129,15 @@ async function runMobileRegression(
     },
     {
       name: "forms",
-      path: `/spaces/${spaceId}/forms?form=Entry`,
-      ready: ".mobileFormPicker",
+      path: `/spaces/${spaceId}/forms`,
+      ready: ".formsPage",
       assert: async () => {
         // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
-        await expect(page.locator(".mobileFormPicker")).toBeVisible();
-        await expect(page.locator(".desktopFormPicker")).toBeHidden();
-        await expect(page.locator(".ui-table-mobile-list")).toBeVisible();
-        await expect(page.locator(".formTableActions")).toHaveCSS(
-          "flex-wrap",
-          "wrap",
-        );
+        await expect(page.getByRole("heading", { name: "Forms" }))
+          .toBeVisible();
+        await expect(page.locator(".formRow").first()).toBeVisible();
+        await expect(page.locator(".mobileFormPicker")).toHaveCount(0);
+        await expect(page.locator(".desktopFormPicker")).toHaveCount(0);
         await expectMobileControlFontSize(page);
       },
     },
