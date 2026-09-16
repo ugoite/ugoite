@@ -55,6 +55,10 @@ test.describe("Dashboard starter-entry onboarding", () => {
 
 		await page.getByRole("button", { name: "Entry", exact: true }).click();
 
+		await expect(page).toHaveURL(
+			new RegExp(`/spaces/${createdSpaceId}/entries/new$`),
+			{ timeout: 10_000 },
+		);
 		await expect(
 			page.getByRole("heading", { name: "Create New Entry" }),
 		).toBeVisible({

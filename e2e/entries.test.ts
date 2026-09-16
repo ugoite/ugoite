@@ -247,12 +247,29 @@ test.describe("Entries CRUD", () => {
 		).toHaveCount(0);
 
 		await page.getByRole("button", { name: "New entry" }).click();
+		await expect(page).toHaveURL(
+			new RegExp(`/spaces/${spaceId}/entries/new$`),
+			{ timeout: 10_000 },
+		);
 		await expect(
 			page.getByRole("heading", { name: "Create New Entry" }),
 		).toBeVisible({
 			timeout: 10_000,
 		});
 		await expect(page.locator("#entry-form-selector")).toHaveValue("Entry");
+		await page.getByLabel("Title").fill(
+			`Starter entry from Entries ${Date.now()}`,
+		);
+		await page.getByRole("button", { name: "Save" }).click();
+		await page.waitForURL(new RegExp(`/spaces/${spaceId}/entries/[^/]+$`), {
+			timeout: 10_000,
+		});
+		await expect(
+			page.getByRole("heading", {
+				name: /Starter entry from Entries/,
+				level: 1,
+			}),
+		).toBeVisible();
 	});
 
 	test("REQ-ENTRY-1872: form entry creation is one POST and one clean revision", async ({

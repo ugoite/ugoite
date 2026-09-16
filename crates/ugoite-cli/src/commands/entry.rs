@@ -105,7 +105,7 @@ pub enum EntrySubCmd {
     },
     /// Update an entry
     #[command(
-        long_about = "Update an entry in a space.\n\nExamples:\n  # Core mode\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated'\n\n  # Core mode - read content from a file\n  ugoite entry update /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode with optimistic concurrency\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated' --parent-revision-id rev-1\n\n  # Backend mode (immutable Space UID)\n  ugoite entry update 019f1234-5678-7abc-8def-0123456789ab my-note --markdown '# Updated'\n\nWhen --parent-revision-id is omitted, the CLI reads the current Entry immediately before the update and uses its revision ID for optimistic concurrency.\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface. --field/--fields-file values are the complete post-update field map: omitted fields are cleared, never patched. Tags and extra attributes are preserved because they are not editable through this CLI command.\n\nExamples:\n  # Core mode - structured update without Markdown\n  ugoite entry update /root/spaces/my-space task-01 --title 'New title' --fields-file entry-fields.json --parent-revision-id rev-1"
+        long_about = "Update an entry in a space.\n\nExamples:\n  # Core mode\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated'\n\n  # Core mode - read content from a file\n  ugoite entry update /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode with optimistic concurrency\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated' --parent-revision-id rev-1\n\n  # Backend mode (immutable Space UID)\n  ugoite entry update 019f1234-5678-7abc-8def-0123456789ab my-note --markdown '# Updated'\n\nWhen --parent-revision-id is omitted, the CLI reads the current Entry immediately before the update and uses its revision ID for optimistic concurrency.\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface. --field/--fields-file values are the complete post-update field map: omitted fields are cleared, never patched. Tags and extra attributes are preserved because they are not editable through this CLI command; an explicit --field/--fields-file value replaces a preserved extra attribute with the same key.\n\nExamples:\n  # Core mode - structured update without Markdown\n  ugoite entry update /root/spaces/my-space task-01 --title 'New title' --fields-file entry-fields.json --parent-revision-id rev-1"
     )]
     Update {
         #[arg(
@@ -497,7 +497,14 @@ async fn update_structured_entry(
             None,
         )
         .await?;
-        let extra_attributes = entry_object_map(&current, "extra_attributes")?;
+        let mut extra_attributes = entry_object_map(&current, "extra_attributes")?;
+        // Explicit structured inputs are the complete post-update field map:
+        // they replace preserved extra_attributes on key overlap. The shared
+        // Rust boundary rejects overlap instead of preferring a side, so the
+        // caller resolves it here, explicitly, before sending.
+        for key in fields.keys() {
+            extra_attributes.remove(key);
+        }
         let parent_revision_id = match parent_revision_id {
             Some(parent_revision_id) => parent_revision_id,
             None => current_entry_revision_id(&current)?,
@@ -540,7 +547,14 @@ async fn update_structured_entry(
     }
     let service = UgoiteService::new_without_background_refresh(&root)?;
     let current = service.get_entry(&space_id, &entry_id).await?;
-    let extra_attributes = entry_object_map(&current, "extra_attributes")?;
+    let mut extra_attributes = entry_object_map(&current, "extra_attributes")?;
+    // Explicit structured inputs are the complete post-update field map:
+    // they replace preserved extra_attributes on key overlap. The shared
+    // Rust boundary rejects overlap instead of preferring a side, so the
+    // caller resolves it here, explicitly, before sending.
+    for key in fields.keys() {
+        extra_attributes.remove(key);
+    }
     let parent_revision_id = match parent_revision_id {
         Some(parent_revision_id) => parent_revision_id,
         None => current_entry_revision_id(&current)?,

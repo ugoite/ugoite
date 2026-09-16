@@ -231,6 +231,47 @@ describe("EntryDetailPane source compat bridge", () => {
     });
   });
 
+  it("auto-opens the Advanced source disclosure while saves are blocked", async () => {
+    setLocale("en");
+    vi.resetAllMocks();
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-1",
+      title: "Note",
+      form: "Note",
+      content: "---\nform: Note\n---\n# Note\n\n## Body\nhello\n",
+      revision_id: "rev-1",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    const { container } = render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-1"}
+        forms={() => [form]}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const lossy = "---\nform: Note\n---\n# Note\n\nPreamble\n\n## Body\nkept\n";
+    fireEvent.input(await screen.findByPlaceholderText(
+      "Start writing in Markdown...",
+    ), { target: { value: lossy } });
+
+    // Save stays blocked and the blocking source stays visible for review.
+    await waitFor(() => {
+      expect(screen.getByText("Review Markdown conversion before saving"))
+        .toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    });
+    await waitFor(() => {
+      const disclosure = container.querySelector(
+        "details.ui-entry-source-disclosure",
+      ) as HTMLDetailsElement | null;
+      expect(disclosure?.open).toBe(true);
+    });
+  });
+
   it("keeps the saved row_reference ID when the display label changes", async () => {
     setLocale("en");
     vi.resetAllMocks();

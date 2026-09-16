@@ -2390,6 +2390,16 @@ impl UgoiteService {
         Ok(result)
     }
 
+    /// Create a Form-backed Entry without regenerating Markdown.
+    ///
+    /// Structured create converges on the same shared draft path as raw
+    /// Markdown: the Change/Run grouping context flows through the entry
+    /// boundary untouched (no separate mutation implementation). `fields`
+    /// is the complete initial field map; there is no metadata-only patch
+    /// variant. Unknown keys are preserved as extra attributes only when
+    /// the Form allows them, otherwise `UnknownFormFields` rejects
+    /// pre-persistence. A key in both `fields` and `extra_attributes` is
+    /// an `InvalidInput` diagnostic, never a silent precedence.
     #[allow(clippy::too_many_arguments)]
     pub async fn create_structured_entry_authorized_for_principals(
         &self,
@@ -2402,6 +2412,42 @@ impl UgoiteService {
         extra_attributes: std::collections::BTreeMap<String, Value>,
         author: &str,
         principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        self.create_structured_entry_authorized_for_principals_with_change(
+            space_id,
+            entry_id,
+            title,
+            form_name,
+            tags,
+            fields,
+            extra_attributes,
+            author,
+            principal_ids,
+            None,
+        )
+        .await
+    }
+
+    /// Create a Form-backed Entry carrying an existing mutation/Change
+    /// context (Change ID propagation and Run grouping). This is the
+    /// structured counterpart to
+    /// [`Self::create_entry_authorized_for_principals_with_change`]:
+    /// admission, authorization, and audit are identical, and the `change`
+    /// is forwarded to the same shared entry boundary the raw Markdown
+    /// path uses.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_structured_entry_authorized_for_principals_with_change(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        title: Option<String>,
+        form_name: String,
+        tags: Vec<String>,
+        fields: std::collections::BTreeMap<String, Value>,
+        extra_attributes: std::collections::BTreeMap<String, Value>,
+        author: &str,
+        principal_ids: &[Uuid],
+        change: Option<ChangeCommand>,
     ) -> Result<Value> {
         require_nonempty_authorized_principals(principal_ids)?;
         self.ensure_mutation_admitted(space_id).await?;
@@ -2439,7 +2485,7 @@ impl UgoiteService {
             author,
             &integrity,
             Some(&scopes),
-            None,
+            change,
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
@@ -2595,10 +2641,15 @@ impl UgoiteService {
 
     /// Update a Form-backed Entry in core (local filesystem) mode without
     /// regenerating Markdown. `fields` is the complete post-update field map;
-    /// omitted fields are intentionally cleared. `extra_attributes` is carried
-    /// through unchanged because the CLI has no extra-attribute editing
-    /// surface. Form identity is immutable; mismatches surface the canonical
-    /// InvalidInput error from the shared boundary.
+    /// omitted fields are intentionally cleared. Callers do read → modify →
+    /// full update; there is no metadata-only patch variant. `title`/`tags`
+    /// fall back to stored values when `None`, and `extra_attributes` is
+    /// carried through unchanged because the CLI has no extra-attribute
+    /// editing surface (an explicit field value replaces a preserved extra
+    /// with the same key before calling). Form identity is immutable;
+    /// mismatches surface the canonical InvalidInput error from the shared
+    /// boundary. A key in both `fields` and `extra_attributes` is an
+    /// `InvalidInput` diagnostic, never a silent precedence.
     #[allow(clippy::too_many_arguments)]
     pub async fn update_structured_entry(
         &self,
@@ -2735,6 +2786,12 @@ impl UgoiteService {
         Ok(result)
     }
 
+    /// Update a Form-backed Entry without regenerating Markdown. `fields`
+    /// is the complete post-update field map (full replacement: omitted
+    /// fields clear, never patch); `title`/`tags` fall back to stored values
+    /// when `None`. Form identity is immutable. A key in both `fields` and
+    /// `extra_attributes` is an `InvalidInput` diagnostic, never a silent
+    /// precedence.
     #[allow(clippy::too_many_arguments)]
     pub async fn update_structured_entry_authorized_for_principals(
         &self,
@@ -2748,6 +2805,44 @@ impl UgoiteService {
         parent_revision_id: Option<&str>,
         author: &str,
         principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        self.update_structured_entry_authorized_for_principals_with_change(
+            space_id,
+            entry_id,
+            title,
+            form_name,
+            tags,
+            fields,
+            extra_attributes,
+            parent_revision_id,
+            author,
+            principal_ids,
+            None,
+        )
+        .await
+    }
+
+    /// Update a Form-backed Entry carrying an existing mutation/Change
+    /// context (Change ID propagation, revision parentage, Run grouping).
+    /// This is the structured counterpart to
+    /// [`Self::update_entry_authorized_for_principals_with_change`]:
+    /// admission, authorization, and audit are identical, and the `change`
+    /// is forwarded to the same shared entry boundary the raw Markdown
+    /// path uses (no separate mutation implementation).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_structured_entry_authorized_for_principals_with_change(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        title: Option<String>,
+        form_name: Option<String>,
+        tags: Option<Vec<String>>,
+        fields: std::collections::BTreeMap<String, Value>,
+        extra_attributes: std::collections::BTreeMap<String, Value>,
+        parent_revision_id: Option<&str>,
+        author: &str,
+        principal_ids: &[Uuid],
+        change: Option<ChangeCommand>,
     ) -> Result<Value> {
         require_nonempty_authorized_principals(principal_ids)?;
         self.ensure_mutation_admitted(space_id).await?;
@@ -2795,7 +2890,7 @@ impl UgoiteService {
             author,
             &integrity,
             scopes.as_ref(),
-            None,
+            change,
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
