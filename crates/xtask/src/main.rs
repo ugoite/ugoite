@@ -6,12 +6,13 @@ use std::{env, fs, path::Path, process::Command};
 fn main() -> Result<()> {
     let mut args = env::args().skip(1);
     let Some(command) = args.next() else {
-        println!("usage: cargo run -p xtask -- <openapi-generate|openapi-check|architecture-check|space-compat-check|release-authority-check|docs-current-stack-check|supported-check|legacy-auth-check>");
+        println!("usage: cargo run -p xtask -- <openapi-generate|openapi-check|operation-registry-check|architecture-check|space-compat-check|release-authority-check|docs-current-stack-check|supported-check|legacy-auth-check>");
         return Ok(());
     };
     match command.as_str() {
         "openapi-generate" => openapi_generate(),
         "openapi-check" => openapi_check(),
+        "operation-registry-check" => operation_registry_check(),
         "architecture-check" => architecture_check(),
         "space-compat-check" => space_compat_check(),
         "release-authority-check" => release_authority_check(),
@@ -1297,6 +1298,199 @@ fn normalize_newlines(value: &str) -> String {
     value.replace("\r\n", "\n")
 }
 
+/// Operation registry check (#2005): the portable operation manifest must
+/// stay in sync across every surface that names it.
+///
+/// - `SUPPORTED_OPERATIONS` in `crates/ugoite-api-client/src/lib.rs` is the
+///   Rust authority (also exposed through the WASM `operations` action).
+/// - `UGOITE_API_OPERATIONS` in `frontend/src/lib/ugoite-client/protocol.ts`
+///   is the TypeScript mirror used by `protocolFetch`.
+/// - `GET /auth/config` must exist in `openapi.json` with a GET operation
+///   while `auth.get_config` names it in both manifests.
+/// - `OPENAPI_PATHS` in `frontend/src/lib/generated/openapi-types.ts` must
+///   exactly match the snapshot paths (the same drift `openapi-check`
+///   guards), and every step-up operation path must be present.
+/// - The WASM adapter must delegate the protocol surface to
+///   `ugoite_api_client` (no forked operation table) and `protocol.ts` must
+///   reach it through the `operations` function-pointer action.
+///
+/// Any drift fails closed with the file and entry that diverged.
+fn operation_registry_check() -> Result<()> {
+    let mut violations = Vec::new();
+
+    let api_client = fs::read_to_string("crates/ugoite-api-client/src/lib.rs")
+        .context("read portable operation authority")?;
+    let supported = parse_string_list_const(&api_client, "SUPPORTED_OPERATIONS", &mut violations);
+
+    let protocol = fs::read_to_string("frontend/src/lib/ugoite-client/protocol.ts")
+        .context("read frontend operation mirror")?;
+    let mirrored = parse_string_list_const(&protocol, "UGOITE_API_OPERATIONS", &mut violations);
+
+    if supported != mirrored {
+        let only_supported: Vec<&str> = supported
+            .iter()
+            .filter(|item| !mirrored.contains(item))
+            .map(String::as_str)
+            .collect();
+        let only_mirrored: Vec<&str> = mirrored
+            .iter()
+            .filter(|item| !supported.contains(item))
+            .map(String::as_str)
+            .collect();
+        violations.push(format!(
+            "SUPPORTED_OPERATIONS drifts from UGOITE_API_OPERATIONS (only in Rust: {only_supported:?}; only in TypeScript: {only_mirrored:?})"
+        ));
+    }
+
+    // Step-up ceremony operations must be named on both sides of the bridge.
+    for operation in [
+        "auth.step_up.start",
+        "auth.step_up.status",
+        "auth.step_up.approve",
+    ] {
+        if !supported.contains(&operation.to_string()) {
+            violations.push(format!(
+                "SUPPORTED_OPERATIONS is missing step-up operation {operation}"
+            ));
+        }
+        if !mirrored.contains(&operation.to_string()) {
+            violations.push(format!(
+                "UGOITE_API_OPERATIONS is missing step-up operation {operation}"
+            ));
+        }
+    }
+
+    // GET /auth/config surface: the REST path, its GET operation, and the
+    // portable `auth.get_config` name must all exist together.
+    let openapi_text = fs::read_to_string("crates/ugoite-server/src/openapi.json")
+        .context("read server OpenAPI snapshot")?;
+    let openapi: Value =
+        serde_json::from_str(&openapi_text).context("parse server OpenAPI snapshot")?;
+    let config_get = openapi.pointer("/paths/~1auth~1config/get").is_some();
+    if !config_get {
+        violations.push("openapi.json must expose GET /auth/config".to_string());
+    }
+    if !supported.contains(&"auth.get_config".to_string()) {
+        violations.push("SUPPORTED_OPERATIONS must name auth.get_config".to_string());
+    }
+    if !mirrored.contains(&"auth.get_config".to_string()) {
+        violations.push("UGOITE_API_OPERATIONS must name auth.get_config".to_string());
+    }
+
+    // OPENAPI_PATHS mirror must match the snapshot path inventory exactly.
+    let generated = fs::read_to_string("frontend/src/lib/generated/openapi-types.ts")
+        .context("read frontend OpenAPI metadata")?;
+    let generated_paths = parse_string_list_const(&generated, "OPENAPI_PATHS", &mut violations);
+    let snapshot_paths: Vec<String> = openapi
+        .get("paths")
+        .and_then(Value::as_object)
+        .map(|paths| {
+            let mut names: Vec<String> = paths.keys().cloned().collect();
+            names.sort();
+            names
+        })
+        .unwrap_or_default();
+    let mut generated_sorted = generated_paths.clone();
+    generated_sorted.sort();
+    if generated_sorted != snapshot_paths {
+        violations.push(
+            "OPENAPI_PATHS drifts from crates/ugoite-server/src/openapi.json paths; run `cargo run -p xtask -- openapi-generate`"
+                .to_string(),
+        );
+    }
+    for path in [
+        "/auth/step-up/start",
+        "/auth/step-up/status",
+        "/auth/step-up/approve",
+    ] {
+        if !generated_sorted.contains(&path.to_string()) {
+            violations.push(format!("OPENAPI_PATHS is missing step-up path {path}"));
+        }
+    }
+
+    // WASM function-pointer table: the adapter must serve the `operations`
+    // action from the shared Rust authority instead of a forked table, and
+    // TypeScript must query that same entry point.
+    let wasm = fs::read_to_string("crates/ugoite-wasm/src/lib.rs").context("read WASM adapter")?;
+    if !wasm.contains("ugoite_api_client::invoke_json") {
+        violations.push(
+            "crates/ugoite-wasm/src/lib.rs must delegate the protocol surface to ugoite_api_client::invoke_json"
+                .to_string(),
+        );
+    }
+    // A forked table defines its own operation list; qualified references
+    // to the shared authority (`ugoite_api_client::SUPPORTED_OPERATIONS`)
+    // are the in-sync path, not drift.
+    let wasm_without_shared_refs = wasm
+        .replace("ugoite_api_client::SUPPORTED_OPERATIONS", "")
+        .replace("api_client::SUPPORTED_OPERATIONS", "");
+    if wasm_without_shared_refs.contains("SUPPORTED_OPERATIONS") {
+        violations.push(
+            "crates/ugoite-wasm/src/lib.rs must not fork SUPPORTED_OPERATIONS; serve the shared ugoite_api_client authority"
+                .to_string(),
+        );
+    }
+    if !protocol.contains(r#"action: "operations""#)
+        && !protocol.contains(r#"{ action: "operations" }"#)
+    {
+        violations.push(
+            "frontend/src/lib/ugoite-client/protocol.ts must query the WASM operations function-pointer action"
+                .to_string(),
+        );
+    }
+
+    if !violations.is_empty() {
+        bail!("{}", violations.join("\n"));
+    }
+    println!(
+        "operation registry: {} operations, {} paths, and the WASM function table agree",
+        supported.len(),
+        snapshot_paths.len()
+    );
+    Ok(())
+}
+
+/// Extracts the ordered string literals of a `CONST: &[&str] = &[...]` or
+/// `CONST = [...] as const` list. Pushes a violation and returns what was
+/// found so the caller can still report drift precisely.
+fn parse_string_list_const(source: &str, name: &str, violations: &mut Vec<String>) -> Vec<String> {
+    let Some(start) = source.find(name) else {
+        violations.push(format!("{name} is missing from its registry file"));
+        return Vec::new();
+    };
+    let rest = &source[start..];
+    // Start the list at the assignment value, skipping a Rust `&[&str]`
+    // type ascription: find `=` first, then the `[` that opens the literal.
+    // TypeScript mirrors (`= [...] as const`) work the same way.
+    let Some(open) = rest
+        .find('=')
+        .and_then(|eq| rest[eq..].find('[').map(|bracket| eq + bracket))
+    else {
+        violations.push(format!("{name} has no list literal"));
+        return Vec::new();
+    };
+    let Some(close) = rest[open..].find(']').map(|index| open + index) else {
+        violations.push(format!("{name} has an unterminated list literal"));
+        return Vec::new();
+    };
+    let mut items = Vec::new();
+    for chunk in rest[open + 1..close].split(',') {
+        let chunk = chunk.trim();
+        if chunk.is_empty() {
+            continue;
+        }
+        if chunk.starts_with('"') && chunk.ends_with('"') && chunk.len() >= 2 {
+            items.push(chunk[1..chunk.len() - 1].to_string());
+        } else {
+            violations.push(format!("{name} contains a non-string entry: {chunk}"));
+        }
+    }
+    if items.is_empty() {
+        violations.push(format!("{name} must name at least one operation"));
+    }
+    items
+}
+
 #[cfg(test)]
 mod gate_contract_tests {
     use super::*;
@@ -1401,6 +1595,29 @@ phases:
         let mut violations = Vec::new();
         check(&mut violations);
         violations
+    }
+
+    #[test]
+    fn operation_list_const_parses_ordered_strings() {
+        let mut violations = Vec::new();
+        let items = parse_string_list_const(
+            "pub const SUPPORTED_OPERATIONS: &[&str] = &[\"a.b\", \"c.d\",];",
+            "SUPPORTED_OPERATIONS",
+            &mut violations,
+        );
+        assert!(violations.is_empty());
+        assert_eq!(items, vec!["a.b".to_string(), "c.d".to_string()]);
+    }
+
+    #[test]
+    fn operation_list_const_rejects_drift_entries() {
+        let mut violations = Vec::new();
+        parse_string_list_const(
+            "export const UGOITE_API_OPERATIONS = [\"a.b\", 42,] as const;",
+            "UGOITE_API_OPERATIONS",
+            &mut violations,
+        );
+        assert!(!violations.is_empty());
     }
 
     #[test]

@@ -64,7 +64,7 @@ use ugoite_iceberg::{
 use ugoite_identity::{
     node_identity::{
         AccountInvitation, ActiveCredentialKind, NodeAuditInput, NodeIdentityService,
-        OidcAttemptPurpose, OwnerRecoveryContext, RecoveryBindingSnapshot,
+        OidcAttemptPurpose, OwnerRecoveryContext, RecoveryBindingSnapshot, StepUpError,
         TotpEnrollmentFinishError,
     },
     oauth::{self, AccessTokenClaims, Confirmation},
@@ -1663,50 +1663,55 @@ struct StepUpBinding {
     space_id: Option<String>,
 }
 
-/// Fresh-human-presence gate for remote mutations: either a recent
-/// phishing-resistant ceremony, or a single-use browser-approved step-up
-/// challenge for the exact bound intent presented via `x-ugoite-step-up`.
-///
-/// Consuming a challenge replaces only the freshness check. Authorization
-/// itself is always re-evaluated by the caller afterwards. Human approval
-/// and recent Passkey remain distinct concepts: this never accepts a
-/// human-approval token and never weakens the ceremony policy.
-async fn require_recent_passkey_or_step_up(
-    state: &AppState,
-    identity: &RequestIdentityContext,
-    binding: &StepUpBinding,
-) -> ApiResult<()> {
-    if let Some(challenge_id) = identity.step_up_challenge_id.as_deref() {
-        let challenge_id = challenge_id.trim().parse::<Uuid>().map_err(|_| {
+/// Parses the `x-ugoite-step-up` header without consuming. Returns `None`
+/// when no challenge was presented; fails closed with `STEP_UP_INVALID` on
+/// malformed UUIDs. Callers use this upfront to decide whether freshness can
+/// be enforced now (no challenge) or must be deferred until inside the
+/// authorized mutation (challenge present).
+fn step_up_challenge_uuid(identity: &RequestIdentityContext) -> ApiResult<Option<Uuid>> {
+    match identity.step_up_challenge_id.as_deref() {
+        None => Ok(None),
+        Some(raw) if raw.trim().is_empty() => Ok(None),
+        Some(raw) => raw.trim().parse::<Uuid>().map(Some).map_err(|_| {
             ApiError::new(
                 StatusCode::FORBIDDEN,
                 json!({"code":"STEP_UP_INVALID","message":"step-up challenge is not valid for this mutation"}),
             )
-        })?;
-        state
-            .identity
-            .consume_step_up_challenge(
-                identity.account_id,
-                identity.credential_id,
-                challenge_id,
-                binding.operation,
-                binding.space_id.as_deref(),
-            )
-            .await
-            .map_err(|error| {
-                let message = error.to_string();
-                let (status, code) = if message.contains("expired") {
-                    (StatusCode::GONE, "STEP_UP_EXPIRED")
-                } else if message.contains("not approved") {
-                    (StatusCode::FORBIDDEN, "STEP_UP_NOT_APPROVED")
-                } else {
-                    (StatusCode::FORBIDDEN, "STEP_UP_INVALID")
-                };
-                ApiError::new(status, json!({"code": code, "message": message}))
-            })?;
-        return Ok(());
+        }),
     }
-    require_recent_passkey(identity)
+}
+
+/// Consumes one bound step-up challenge. Must be called inside the
+/// `with_authorized_*` closure after authorization passes, just before the
+/// mutation write, so denied mutations never burn the single-use challenge.
+async fn consume_step_up_binding(
+    state: &AppState,
+    identity: &RequestIdentityContext,
+    binding: &StepUpBinding,
+    challenge_id: Uuid,
+) -> ApiResult<()> {
+    state
+        .identity
+        .consume_step_up_challenge(
+            identity.account_id,
+            identity.credential_id,
+            challenge_id,
+            binding.operation,
+            binding.space_id.as_deref(),
+        )
+        .await
+        .map_err(|error| {
+            let message = error.to_string();
+            let (status, code) = if message.contains("expired") {
+                (StatusCode::GONE, "STEP_UP_EXPIRED")
+            } else if message.contains("not approved") {
+                (StatusCode::FORBIDDEN, "STEP_UP_NOT_APPROVED")
+            } else {
+                (StatusCode::FORBIDDEN, "STEP_UP_INVALID")
+            };
+            ApiError::new(status, json!({"code": code, "message": message}))
+        })?;
+    Ok(())
 }
 
 async fn auth_config(State(state): State<AppState>) -> ApiResult<Json<Value>> {
@@ -5291,13 +5296,50 @@ async fn oauth_device_pending(
 /// Maps step-up lifecycle failures to stable codes. Unknown challenges are
 /// 404; everything else stays 403/410 so callers can distinguish retryable
 /// (start a new challenge) from terminal states without parsing messages.
+/// Typed identity errors carry their own `STEP_UP_*` code: the pending cap is
+/// 429, intent validation is 422, and inactive accounts are 403.
 fn step_up_error(error: anyhow::Error) -> ApiError {
+    if let Some(typed) = error.downcast_ref::<StepUpError>() {
+        let message = error.to_string();
+        let (status, code) = match typed {
+            StepUpError::TooManyPending { .. } => (StatusCode::TOO_MANY_REQUESTS, typed.code()),
+            StepUpError::OperationNotEligible { .. }
+            | StepUpError::SpaceRequired { .. }
+            | StepUpError::SpaceUnexpected
+            | StepUpError::SpaceInvalid { .. } => (StatusCode::UNPROCESSABLE_ENTITY, typed.code()),
+            StepUpError::AccountInactive | StepUpError::CredentialNotBound => {
+                (StatusCode::FORBIDDEN, typed.code())
+            }
+        };
+        return ApiError::new(status, json!({"code": code, "message": message}));
+    }
     let message = error.to_string();
     if message.contains("unknown step-up challenge") {
         return ApiError::new(
             StatusCode::NOT_FOUND,
             json!({"code": "STEP_UP_NOT_FOUND", "message": message}),
         );
+    }
+    // Typed cap errors also surface through their Display code prefix when
+    // the anyhow chain has been re-wrapped without type retention.
+    if message.contains("STEP_UP_RATE_LIMITED") {
+        return ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            json!({"code": "STEP_UP_RATE_LIMITED", "message": message}),
+        );
+    }
+    for code in [
+        "STEP_UP_OPERATION_NOT_ELIGIBLE",
+        "STEP_UP_SPACE_REQUIRED",
+        "STEP_UP_SPACE_UNEXPECTED",
+        "STEP_UP_SPACE_INVALID",
+    ] {
+        if message.contains(code) {
+            return ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({"code": code, "message": message}),
+            );
+        }
     }
     let (status, code) = if message.contains("expired") {
         (StatusCode::GONE, "STEP_UP_EXPIRED")
@@ -8175,15 +8217,8 @@ async fn create_space(
     Authorizer::new(state.service.operator().clone())
         .ensure_authoritative_mutation_contract()
         .map_err(ApiError::from_core)?;
-    require_recent_passkey_or_step_up(
-        &state,
-        &identity,
-        &StepUpBinding {
-            operation: "space.create",
-            space_id: None,
-        },
-    )
-    .await?;
+    // Authorize before consuming: validation and the node-admin gate run
+    // first so a denied create leaves a presented challenge consumable.
     validate_id(&payload.slug, "space_id")?;
     if payload.name.trim().is_empty() {
         return Err(ApiError::new(
@@ -8196,6 +8231,15 @@ async fn create_space(
             StatusCode::FORBIDDEN,
             "node admin role is required to create a Space",
         ));
+    }
+    let binding = StepUpBinding {
+        operation: "space.create",
+        space_id: None,
+    };
+    if let Some(challenge_id) = step_up_challenge_uuid(&identity)? {
+        consume_step_up_binding(&state, &identity, &binding, challenge_id).await?;
+    } else {
+        require_recent_passkey(&identity)?;
     }
     let (space_uid, created) = ensure_local_space_owner_binding_with_name(
         &state,
@@ -8411,16 +8455,19 @@ async fn patch_space(
     Path(space_id): Path<String>,
     Json(payload): Json<Value>,
 ) -> ApiResult<Json<Value>> {
-    require_recent_passkey_or_step_up(
-        &state,
-        &identity,
-        &StepUpBinding {
-            operation: "space.patch",
-            space_id: Some(space_id.clone()),
-        },
-    )
-    .await?;
+    // Authorize before consuming: the format is validated now, but the
+    // single-use challenge is consumed inside the authorized closure just
+    // before the write, so a denied patch leaves it consumable. Callers
+    // without a challenge still need recent Passkey upfront to preserve the
+    // existing freshness-before-authz error precedence.
+    let step_up = step_up_challenge_uuid(&identity)?;
+    if step_up.is_none() {
+        require_recent_passkey(&identity)?;
+    }
     let service = state.service.clone();
+    let state_for_step_up = state.clone();
+    let identity_for_step_up = identity.clone();
+    let binding_space = space_id.clone();
     let mutation_space_id = space_id.clone();
     let value = with_authorized_mutation(
         &state,
@@ -8428,12 +8475,32 @@ async fn patch_space(
         &identity,
         Action::Share,
         None,
-        move |_principal_id, _principals| async move {
-            service
-                .patch_space(&mutation_space_id, &payload)
-                .await
-                .map(sanitize_space_response)
-                .map_err(ApiError::from_core)
+        move |_principal_id, _principals| {
+            let service = service.clone();
+            let payload = payload.clone();
+            let state_for_step_up = state_for_step_up.clone();
+            let identity_for_step_up = identity_for_step_up.clone();
+            let binding_space = binding_space.clone();
+            let mutation_space_id = mutation_space_id.clone();
+            async move {
+                if let Some(challenge_id) = step_up {
+                    consume_step_up_binding(
+                        &state_for_step_up,
+                        &identity_for_step_up,
+                        &StepUpBinding {
+                            operation: "space.patch",
+                            space_id: Some(binding_space),
+                        },
+                        challenge_id,
+                    )
+                    .await?;
+                }
+                service
+                    .patch_space(&mutation_space_id, &payload)
+                    .await
+                    .map(sanitize_space_response)
+                    .map_err(ApiError::from_core)
+            }
         },
     )
     .await?;
@@ -8569,15 +8636,13 @@ async fn invite_member(
     Json(payload): Json<MemberInvite>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     reconcile_recovery_fences_api(&state, &space_id).await?;
-    require_recent_passkey_or_step_up(
-        &state,
-        &identity,
-        &StepUpBinding {
-            operation: "space.members.invite",
-            space_id: Some(space_id.clone()),
-        },
-    )
-    .await?;
+    // Authorize before consuming: validate the payload and resolve the Space
+    // UID first; the single-use challenge is consumed inside the authorized
+    // closure just before issuing the invitation.
+    let step_up = step_up_challenge_uuid(&identity)?;
+    if step_up.is_none() {
+        require_recent_passkey(&identity)?;
+    }
     parse_space_role(&payload.role)?;
     let space_uid = state
         .service
@@ -8588,17 +8653,40 @@ async fn invite_member(
     let role = payload.role;
     let identity_service = state.identity.clone();
     let account_id = identity.account_id;
+    let state_for_step_up = state.clone();
+    let identity_for_step_up = identity.clone();
+    let binding_space = space_id.clone();
     let (invitation, token) = with_authorized_mutation(
         &state,
         &space_id,
         &identity,
         Action::Share,
         None,
-        move |_principal_id, _principals| async move {
-            identity_service
-                .issue_invitation(account_id, &label, Some(space_uid), Some(role))
-                .await
-                .map_err(recovery_aware_auth_error)
+        move |_principal_id, _principals| {
+            let identity_service = identity_service.clone();
+            let label = label.clone();
+            let role = role.clone();
+            let state_for_step_up = state_for_step_up.clone();
+            let identity_for_step_up = identity_for_step_up.clone();
+            let binding_space = binding_space.clone();
+            async move {
+                if let Some(challenge_id) = step_up {
+                    consume_step_up_binding(
+                        &state_for_step_up,
+                        &identity_for_step_up,
+                        &StepUpBinding {
+                            operation: "space.members.invite",
+                            space_id: Some(binding_space),
+                        },
+                        challenge_id,
+                    )
+                    .await?;
+                }
+                identity_service
+                    .issue_invitation(account_id, &label, Some(space_uid), Some(role))
+                    .await
+                    .map_err(recovery_aware_auth_error)
+            }
         },
     )
     .await?;
@@ -8625,19 +8713,20 @@ async fn update_member_role(
     Json(payload): Json<MemberRoleUpdate>,
 ) -> ApiResult<Json<Value>> {
     reconcile_recovery_fences_api(&state, &space_id).await?;
-    require_recent_passkey_or_step_up(
-        &state,
-        &identity,
-        &StepUpBinding {
-            operation: "space.members.update_role",
-            space_id: Some(space_id.clone()),
-        },
-    )
-    .await?;
+    // Authorize before consuming: the role parses first, then the lease
+    // wrapper checks Share; the challenge is consumed inside the lease just
+    // before the role change.
+    let step_up = step_up_challenge_uuid(&identity)?;
+    if step_up.is_none() {
+        require_recent_passkey(&identity)?;
+    }
     let role = parse_space_role(&payload.role)?;
     let operator = state.service.operator().clone();
     let space_id_for_mutation = space_id.clone();
     let role_for_mutation = role.clone();
+    let state_for_step_up = state.clone();
+    let identity_for_step_up = identity.clone();
+    let binding_space = space_id.clone();
     with_authorized_mutation_with_lease(
         &state,
         &space_id,
@@ -8645,7 +8734,25 @@ async fn update_member_role(
         Action::Share,
         None,
         move |lease, actor, _principals| {
+            let operator = operator.clone();
+            let space_id_for_mutation = space_id_for_mutation.clone();
+            let role_for_mutation = role_for_mutation.clone();
+            let state_for_step_up = state_for_step_up.clone();
+            let identity_for_step_up = identity_for_step_up.clone();
+            let binding_space = binding_space.clone();
             Box::pin(async move {
+                if let Some(challenge_id) = step_up {
+                    consume_step_up_binding(
+                        &state_for_step_up,
+                        &identity_for_step_up,
+                        &StepUpBinding {
+                            operation: "space.members.update_role",
+                            space_id: Some(binding_space),
+                        },
+                        challenge_id,
+                    )
+                    .await?;
+                }
                 Authorizer::new(operator)
                     .change_role_with_lease(
                         &space_id_for_mutation,
@@ -8669,17 +8776,15 @@ async fn revoke_member(
     Path((space_id, principal_id)): Path<(String, Uuid)>,
 ) -> ApiResult<Json<Value>> {
     reconcile_recovery_fences_api(&state, &space_id).await?;
-    require_recent_passkey_or_step_up(
-        &state,
-        &identity,
-        &StepUpBinding {
-            operation: "space.members.revoke",
-            space_id: Some(space_id.clone()),
-        },
-    )
-    .await?;
+    let step_up = step_up_challenge_uuid(&identity)?;
+    if step_up.is_none() {
+        require_recent_passkey(&identity)?;
+    }
     let operator = state.service.operator().clone();
     let space_id_for_mutation = space_id.clone();
+    let state_for_step_up = state.clone();
+    let identity_for_step_up = identity.clone();
+    let binding_space = space_id.clone();
     with_authorized_mutation_with_lease(
         &state,
         &space_id,
@@ -8687,7 +8792,24 @@ async fn revoke_member(
         Action::Share,
         None,
         move |lease, actor, _principals| {
+            let operator = operator.clone();
+            let space_id_for_mutation = space_id_for_mutation.clone();
+            let state_for_step_up = state_for_step_up.clone();
+            let identity_for_step_up = identity_for_step_up.clone();
+            let binding_space = binding_space.clone();
             Box::pin(async move {
+                if let Some(challenge_id) = step_up {
+                    consume_step_up_binding(
+                        &state_for_step_up,
+                        &identity_for_step_up,
+                        &StepUpBinding {
+                            operation: "space.members.revoke",
+                            space_id: Some(binding_space),
+                        },
+                        challenge_id,
+                    )
+                    .await?;
+                }
                 Authorizer::new(operator)
                     .revoke_principal_with_lease(&space_id_for_mutation, actor, principal_id, lease)
                     .await
@@ -9337,35 +9459,57 @@ async fn create_pin(
     headers: HeaderMap,
     Json(payload): Json<PinCreate>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    require_recent_passkey_or_step_up(
-        &state,
-        &identity,
-        &StepUpBinding {
-            operation: "pin.create",
-            space_id: Some(space_id.clone()),
-        },
-    )
-    .await?;
+    // Authorize before consuming: the idempotency key parses first, then the
+    // service wrapper checks Share; the challenge is consumed inside just
+    // before the pin write.
+    let step_up = step_up_challenge_uuid(&identity)?;
+    if step_up.is_none() {
+        require_recent_passkey(&identity)?;
+    }
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
     let name = payload.name.clone();
     let command_id = publication_command_id(&headers, "pin-create", identity.request_id)?;
+    let state_for_step_up = state.clone();
+    let identity_for_step_up = identity.clone();
+    let binding_space = space_id.clone();
     let pin = with_authorized_service_mutation(
         &state,
         &space_id,
         &identity,
         Action::Share,
         None,
-        move |principal_id, _principals| async move {
-            service
-                .create_pin(
-                    &space_id_for_write,
-                    &name,
-                    &principal_id.to_string(),
-                    &command_id,
-                )
-                .await
-                .map_err(ApiError::from_core)
+        move |principal_id, _principals| {
+            let service = service.clone();
+            let space_id_for_write = space_id_for_write.clone();
+            let name = name.clone();
+            let command_id = command_id.clone();
+            let state_for_step_up = state_for_step_up.clone();
+            let identity_for_step_up = identity_for_step_up.clone();
+            let binding_space = binding_space.clone();
+            async move {
+                if let Some(challenge_id) = step_up {
+                    consume_step_up_binding(
+                        &state_for_step_up,
+                        &identity_for_step_up,
+                        &StepUpBinding {
+                            operation: "pin.create",
+                            space_id: Some(binding_space),
+                        },
+                        challenge_id,
+                    )
+                    .await?;
+                }
+                service
+                    .create_pin(
+                        &space_id_for_write,
+                        &name,
+                        &principal_id.to_string(),
+                        &command_id,
+                    )
+                    .await
+                    .map_err(ApiError::from_core)
+            }
         },
     )
     .await?;
@@ -9378,30 +9522,49 @@ async fn delete_pin(
     Path((space_id, pin_name)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Value>> {
-    require_recent_passkey_or_step_up(
-        &state,
-        &identity,
-        &StepUpBinding {
-            operation: "pin.delete",
-            space_id: Some(space_id.clone()),
-        },
-    )
-    .await?;
+    let step_up = step_up_challenge_uuid(&identity)?;
+    if step_up.is_none() {
+        require_recent_passkey(&identity)?;
+    }
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
     let pin_name_for_write = pin_name.clone();
     let command_id = publication_command_id(&headers, "pin-delete", identity.request_id)?;
+    let state_for_step_up = state.clone();
+    let identity_for_step_up = identity.clone();
+    let binding_space = space_id.clone();
     with_authorized_service_mutation(
         &state,
         &space_id,
         &identity,
         Action::Share,
         None,
-        move |_principal_id, _principals| async move {
-            service
-                .delete_pin(&space_id_for_write, &pin_name_for_write, &command_id)
-                .await
-                .map_err(ApiError::from_core)
+        move |_principal_id, _principals| {
+            let service = service.clone();
+            let space_id_for_write = space_id_for_write.clone();
+            let pin_name_for_write = pin_name_for_write.clone();
+            let command_id = command_id.clone();
+            let state_for_step_up = state_for_step_up.clone();
+            let identity_for_step_up = identity_for_step_up.clone();
+            let binding_space = binding_space.clone();
+            async move {
+                if let Some(challenge_id) = step_up {
+                    consume_step_up_binding(
+                        &state_for_step_up,
+                        &identity_for_step_up,
+                        &StepUpBinding {
+                            operation: "pin.delete",
+                            space_id: Some(binding_space),
+                        },
+                        challenge_id,
+                    )
+                    .await?;
+                }
+                service
+                    .delete_pin(&space_id_for_write, &pin_name_for_write, &command_id)
+                    .await
+                    .map_err(ApiError::from_core)
+            }
         },
     )
     .await?;
@@ -12524,6 +12687,61 @@ mod authentication_regression_tests {
             .await?;
         assert_eq!(status, StatusCode::FORBIDDEN, "{replayed}");
         assert_eq!(replayed["code"], "STEP_UP_INVALID", "{replayed}");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn step_up_denied_mutation_does_not_burn_challenge() -> anyhow::Result<()> {
+        let principal_id = Uuid::from_u128(25112);
+        let (client, state, _space_id, _credential_id, account_id) =
+            step_up_production_fixture("step-up-denied", principal_id).await?;
+
+        // Device tokens are never node admins, so space creation is denied
+        // even with a valid challenge. Authorization runs before consumption.
+        let (status, started) = client
+            .json(
+                Method::POST,
+                "/auth/step-up/start",
+                Some(json!({"operation": "space.create"})),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::CREATED, "{started}");
+        let challenge_id = started["challenge_id"]
+            .as_str()
+            .expect("challenge id")
+            .to_string();
+        state
+            .identity
+            .approve_step_up_challenge(account_id, challenge_id.parse()?)
+            .await?;
+
+        let (status, denied) = client
+            .json_with_headers(
+                Method::POST,
+                "/spaces",
+                Some(json!({"slug": "denied-space", "name": "Denied"})),
+                &[("x-ugoite-step-up", &challenge_id)],
+            )
+            .await?;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{denied}");
+        assert!(
+            denied["code"] != "STEP_UP_INVALID"
+                && denied["code"] != "STEP_UP_NOT_FOUND"
+                && denied["code"] != "STEP_UP_EXPIRED",
+            "denial must be authorization, not step-up consumption: {denied}"
+        );
+
+        // The denied mutation left the challenge consumable: it still
+        // reports approved instead of unknown/consumed.
+        let (status, pending) = client
+            .json(
+                Method::GET,
+                &format!("/auth/step-up/status?challenge_id={challenge_id}"),
+                None,
+            )
+            .await?;
+        assert_eq!(status, StatusCode::OK, "{pending}");
+        assert_eq!(pending["status"], "approved", "{pending}");
         Ok(())
     }
 
