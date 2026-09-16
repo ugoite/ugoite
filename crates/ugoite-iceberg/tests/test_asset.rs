@@ -921,6 +921,92 @@ async fn asset_text_search_finds_an_authorized_match_after_ten_thousand_entries(
 }
 
 #[tokio::test]
+async fn structured_update_appending_second_attachment_preserves_first() -> anyhow::Result<()> {
+    // PR7 remainder: structured update is full replacement, so appending a
+    // second Attachments[] element must resupply the first. The read step
+    // anchors the update on the current revision; both references survive and
+    // history grows append-only.
+    let service = UgoiteService::new("memory://asset-multi-attachment")?;
+    let owner = Uuid::now_v7();
+    let space_id = service
+        .create_space_for_principal("asset-multi-attachment", owner, "Owner")
+        .await?
+        .to_string();
+    service
+        .upsert_form(
+            &space_id,
+            &serde_json::json!({
+                "name": "Album",
+                "fields": {
+                    "Attachments": {
+                        "type": "list",
+                        "items": {"type": "asset_reference"}
+                    }
+                }
+            }),
+        )
+        .await?;
+    let first = service.save_asset(&space_id, "first.txt", b"first").await?;
+    let second = service
+        .save_asset(&space_id, "second.txt", b"second")
+        .await?;
+    let first_json = serde_json::to_value(&first)?;
+    let second_json = serde_json::to_value(&second)?;
+
+    let (created, _) = service
+        .create_structured_entry_with_receipt(
+            &space_id,
+            "album-1",
+            None,
+            "Album".to_string(),
+            Vec::new(),
+            BTreeMap::from([(
+                "Attachments".to_string(),
+                serde_json::json!([first_json.clone()]),
+            )]),
+            BTreeMap::new(),
+            "owner",
+        )
+        .await?;
+    let revision = created["revision_id"]
+        .as_str()
+        .expect("created revision")
+        .to_string();
+
+    let current = service.get_entry(&space_id, "album-1").await?;
+    assert_eq!(current["revision_id"], revision);
+
+    service
+        .update_structured_entry(
+            &space_id,
+            "album-1",
+            None,
+            None,
+            BTreeMap::from([(
+                "Attachments".to_string(),
+                serde_json::json!([first_json, second_json]),
+            )]),
+            BTreeMap::new(),
+            Some(&revision),
+            "owner",
+        )
+        .await?;
+
+    let listed = service.list_assets(&space_id).await?;
+    assert_eq!(listed.len(), 2);
+    let ids: BTreeSet<&str> = listed
+        .iter()
+        .filter_map(|item| item.get("asset_id").and_then(serde_json::Value::as_str))
+        .collect();
+    assert!(ids.contains(first.asset_id.as_str()));
+    assert!(ids.contains(second.asset_id.as_str()));
+
+    let updated = service.get_entry(&space_id, "album-1").await?;
+    assert_ne!(updated["revision_id"], revision);
+    Ok(())
+}
+
+#[tokio::test]
 async fn deleted_asset_blob_is_retained_after_logical_deletion() -> anyhow::Result<()> {
     let op = setup_operator()?;
     let service = UgoiteService::from_operator(op.clone(), "memory://asset-retention");

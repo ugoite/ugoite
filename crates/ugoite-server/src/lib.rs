@@ -400,6 +400,49 @@ mod remote_asset_upload_tests {
             .await
             .expect("create test Space");
 
+        // Seed one referenced asset so the no-partial assertion below is
+        // nontrivial: counts and bytes must be identical after rejection.
+        let space_id = space_uid.to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Media",
+                    "fields": {"Attachment": {"type": "asset_reference"}}
+                }),
+            )
+            .await
+            .expect("seed form");
+        let seed = state
+            .service
+            .save_asset(&space_id, "seed.txt", b"seed")
+            .await
+            .expect("seed asset");
+        let seed_json = serde_json::to_string(&seed).expect("seed reference");
+        state
+            .service
+            .create_entry(
+                &space_id,
+                "seed-entry",
+                &format!("---\nform: Media\nAttachment: {seed_json}\n---\n# Seed"),
+                "owner",
+            )
+            .await
+            .expect("seed entry");
+        let assets_before = state
+            .service
+            .list_assets(&space_id)
+            .await
+            .expect("list assets before");
+        let entries_before = state
+            .service
+            .list_entries(&space_id)
+            .await
+            .expect("list entries before");
+        assert_eq!(assets_before.len(), 1);
+        assert_eq!(entries_before.len(), 1);
+
         let wrong_field = upload_status(
             state.clone(),
             space_uid,
@@ -411,7 +454,7 @@ mod remote_asset_upload_tests {
         assert_eq!(wrong_field, StatusCode::BAD_REQUEST);
 
         let additional_field = upload_status(
-            state,
+            state.clone(),
             space_uid,
             principal_id,
             "additional-field-boundary",
@@ -422,6 +465,36 @@ mod remote_asset_upload_tests {
         )
         .await;
         assert_eq!(additional_field, StatusCode::BAD_REQUEST);
+
+        // Malformed frames validate before mutation: no asset or entry
+        // partial state exists, and the seeded bytes stay readable.
+        assert_eq!(
+            state
+                .service
+                .list_assets(&space_id)
+                .await
+                .expect("list assets after")
+                .len(),
+            assets_before.len()
+        );
+        assert_eq!(
+            state
+                .service
+                .list_entries(&space_id)
+                .await
+                .expect("list entries after")
+                .len(),
+            entries_before.len()
+        );
+        assert_eq!(
+            state
+                .service
+                .read_asset(&space_id, &seed.asset_id)
+                .await
+                .expect("seed bytes")
+                .bytes,
+            b"seed"
+        );
     }
 }
 
@@ -15776,18 +15849,23 @@ mod authentication_regression_tests {
             .layer(Extension(content_identity(principal_id, space_uid)))
             .with_state(state);
 
-        let response = route
-            .oneshot(
-                Request::get(format!("/spaces/{space_id}/assets/asset-id")).body(Body::empty())?,
-            )
-            .await?;
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
-        let body: Value = serde_json::from_slice(&body)?;
-        assert_eq!(
-            body["detail"],
-            "asset reads require a containing Form and Entry context"
-        );
+        // The missing-context rejection is one stable fail-closed surface:
+        // every partial query combination returns the same 403 detail.
+        const MISSING_CONTEXT: &str = "asset reads require a containing Form and Entry context";
+        for uri in [
+            format!("/spaces/{space_id}/assets/asset-id"),
+            format!("/spaces/{space_id}/assets/asset-id?entry_id=some-entry"),
+            format!("/spaces/{space_id}/assets/asset-id?form=Doc"),
+        ] {
+            let response = route
+                .clone()
+                .oneshot(Request::get(uri).body(Body::empty())?)
+                .await?;
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+            let body: Value = serde_json::from_slice(&body)?;
+            assert_eq!(body["detail"], MISSING_CONTEXT);
+        }
         Ok(())
     }
 
