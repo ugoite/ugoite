@@ -1,5 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SpaceSettingsRoute from "./settings";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
@@ -115,6 +121,105 @@ describe("SpaceSettingsRoute", () => {
       .toBeInTheDocument();
 
     expect(screen.queryByText("No agents found.")).toBeNull();
+  });
+
+  it("renders members as an audit-style table with readable principal detail", async () => {
+    searchParams.section = "members";
+    vi.mocked(spaceApi.listMembers).mockResolvedValue([
+      {
+        principal: {
+          principal_id: "principal-1",
+          display_name: "Alice Example",
+          kind: "human",
+          state: "active",
+          created_at: "2026-01-01T00:00:00Z",
+        },
+        role: "owner",
+        created_at: "2026-01-01T00:00:00Z",
+      },
+      {
+        principal: {
+          principal_id: "principal-2",
+          display_name: "Bob",
+          kind: "human",
+          state: "invited",
+          created_at: "2026-01-02T00:00:00Z",
+        },
+        role: "editor",
+        created_at: "2026-01-02T00:00:00Z",
+      },
+    ]);
+    const { container } = render(() => <SpaceSettingsRoute />);
+
+    for (const name of ["Name", "Email", "Role", "State", "Actions"]) {
+      expect(await screen.findByRole("columnheader", { name }))
+        .toBeInTheDocument();
+    }
+    expect(container.querySelector(".ui-table-wrapper .ui-table.membersTable"))
+      .toBeInTheDocument();
+    expect(container.querySelector(".rowStack")).toBeNull();
+
+    const nameCell = screen.getByText("Alice Example");
+    expect(nameCell.tagName).toBe("TD");
+    expect(nameCell).toHaveAttribute("title", "Alice Example");
+
+    const idCell = screen.getByText("principal-2").closest("td");
+    expect(idCell).toHaveAttribute("title", "principal-2");
+    expect(screen.getByText("invited")).toBeInTheDocument();
+
+    const ownerRow = screen.getByText("Alice Example").closest("tr")!;
+    const ownerRole = ownerRow.querySelector("select")!;
+    expect(ownerRole).toBeDisabled();
+    expect(ownerRow.querySelector("button")).toBeDisabled();
+
+    const editorRow = screen.getByText("Bob").closest("tr")!;
+    expect(editorRow.querySelector("select")).not.toBeDisabled();
+    expect(editorRow.querySelector("button")).not.toBeDisabled();
+  });
+
+  it("keeps role updates and revokes working from the members table", async () => {
+    searchParams.section = "members";
+    vi.mocked(spaceApi.listMembers).mockResolvedValue([{
+      principal: {
+        principal_id: "principal-2",
+        display_name: "Bob",
+        kind: "human",
+        state: "active",
+        created_at: "2026-01-02T00:00:00Z",
+      },
+      role: "editor",
+      created_at: "2026-01-02T00:00:00Z",
+    }]);
+    vi.mocked(spaceApi.updateMemberRole).mockResolvedValue({
+      principal_id: "principal-2",
+      role: "viewer",
+    });
+    vi.mocked(spaceApi.revokeMember).mockResolvedValue({
+      principal_id: "principal-2",
+      state: "revoked",
+    });
+    render(() => <SpaceSettingsRoute />);
+    await screen.findByText("Bob");
+    const row = screen.getByText("Bob").closest("tr")!;
+
+    fireEvent.change(row.querySelector("select")!, {
+      target: { value: "viewer" },
+    });
+    await waitFor(() => {
+      expect(spaceApi.updateMemberRole).toHaveBeenCalledWith(
+        "space-1",
+        "principal-2",
+        { role: "viewer" },
+      );
+    });
+
+    fireEvent.click(row.querySelector("button")!);
+    await waitFor(() => {
+      expect(spaceApi.revokeMember).toHaveBeenCalledWith(
+        "space-1",
+        "principal-2",
+      );
+    });
   });
 
   it("renders localized known errors with unknown details for a section route", async () => {

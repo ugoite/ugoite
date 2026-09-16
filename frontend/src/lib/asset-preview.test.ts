@@ -77,6 +77,40 @@ describe("asset preview resolution", () => {
     )
       .toBe("unsupported");
   });
+
+  it("keeps a .pdf name on the PDF branch for generic, missing, or plain MIME types", () => {
+    expect(resolvePreviewKind(reference("report.pdf", ""))).toBe("pdf");
+    expect(resolvePreviewKind(reference("report.pdf", "text/plain"))).toBe(
+      "pdf",
+    );
+    expect(
+      resolvePreviewKind(reference("report.pdf", "text/plain; charset=utf-8")),
+    ).toBe("pdf");
+    expect(resolvePreviewKind(reference("REPORT.PDF", ""))).toBe("pdf");
+    expect(
+      resolvePreviewKind(
+        reference("docs/report.pdf", "application/octet-stream"),
+      ),
+    ).toBe("pdf");
+    expect(previewMediaType(reference("report.pdf", ""))).toBe(
+      "application/pdf",
+    );
+    expect(previewMediaType(reference("report.pdf", "text/plain"))).toBe(
+      "application/pdf",
+    );
+  });
+
+  it("still rejects conflicting or active types for .pdf names", () => {
+    expect(resolvePreviewKind(reference("report.pdf", "text/html"))).toBe(
+      "unsupported",
+    );
+    expect(resolvePreviewKind(reference("report.pdf", "image/png"))).toBe(
+      "unsupported",
+    );
+    expect(resolvePreviewKind(reference("photo.png", ""))).toBe(
+      "unsupported",
+    );
+  });
 });
 
 describe("bounded asset preview helpers", () => {
