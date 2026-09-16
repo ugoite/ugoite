@@ -717,12 +717,10 @@ pub(crate) async fn form_revision_rows_for_audit(
 ) -> Result<Vec<RevisionRow>> {
     match revision_rows_for_form(op, ws_path, form_name).await {
         Ok((_, _, rows)) => Ok(rows),
-        Err(error)
-            if error.to_string().to_lowercase().contains("not found")
-                || error.to_string().contains("was not found") =>
-        {
-            Ok(Vec::new())
-        }
+        // A missing Form means no row was ever committed: empty evidence,
+        // never a bootstrapped Form. Typed missing-target only; corrupt
+        // Forms and storage failures propagate fail-closed.
+        Err(error) if crate::audit::is_missing_audit_target(&error) => Ok(Vec::new()),
         Err(error) => Err(error),
     }
 }

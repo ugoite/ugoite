@@ -12,6 +12,7 @@ use std::{
     path::Path,
 };
 use tokio::sync::Mutex;
+use ugoite_core::error::{AppError, ErrorCode};
 
 const DEFAULT_AUDIT_LIMIT: usize = 100;
 const MAX_AUDIT_LIMIT: usize = 500;
@@ -700,11 +701,40 @@ fn validate_safe_metadata(value: &Value) -> Result<()> {
     Ok(())
 }
 
+/// Typed missing-target check for audit enumeration and reconciliation.
+///
+/// Returns true when the error chain carries a typed "absent" signal:
+/// an [`AppError`] with a `FormNotFound`, `EntryNotFound`, or
+/// `RevisionNotFound` code, or an OpenDAL `NotFound`. Anything else
+/// (corrupt Forms, storage failures, permission errors) is not missing
+/// and must propagate fail-closed. String matching on error text is
+/// deliberately not used here: it over-matches unrelated failures and
+/// hides them as empty evidence.
+pub(crate) fn is_missing_audit_target(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        if let Some(app) = cause.downcast_ref::<AppError>() {
+            return matches!(
+                app.code(),
+                ErrorCode::FormNotFound | ErrorCode::EntryNotFound | ErrorCode::RevisionNotFound
+            );
+        }
+        if let Some(opendal) = cause.downcast_ref::<opendal::Error>() {
+            return opendal.kind() == opendal::ErrorKind::NotFound;
+        }
+        false
+    })
+}
+
 pub async fn list_audit_events(
     op: &Operator,
     space_id: &str,
     options: AuditListOptions,
 ) -> Result<Value> {
+    // Light read by contract: reports committed evidence only (read plus
+    // hash-chain verification). It never repairs, reconciles, or appends:
+    // crash-missing evidence heals via the server startup hook and the
+    // core `open_space` hook, plus the bounded pre-read converge on the
+    // server audit route for same-process commit→delivery gaps.
     let safe_space_id = validate_space_id(space_id)?;
     let lock = space_lock(&safe_space_id).await;
     let _guard = lock.lock().await;
@@ -1006,5 +1036,36 @@ mod tests {
             json!(issuer_credential_id)
         );
         Ok(())
+    }
+
+    #[test]
+    fn missing_audit_target_uses_typed_signals_not_message_text() {
+        use ugoite_core::error::ErrorCode;
+        // Typed domain absent signals converge to missing.
+        for code in [
+            ErrorCode::FormNotFound,
+            ErrorCode::EntryNotFound,
+            ErrorCode::RevisionNotFound,
+        ] {
+            let error: anyhow::Error = AppError::not_found(code, "gone").into();
+            assert!(
+                is_missing_audit_target(&error),
+                "typed {code:?} must count as missing"
+            );
+            // Context wrapping must not hide the typed signal.
+            let wrapped = error.context("audit enumerate");
+            assert!(is_missing_audit_target(&wrapped));
+        }
+        let opendal_missing: anyhow::Error =
+            opendal::Error::new(opendal::ErrorKind::NotFound, "no such file").into();
+        assert!(is_missing_audit_target(&opendal_missing));
+        // Unrelated failures must stay fail-closed, even when their text
+        // happens to mention absence.
+        let misleading: anyhow::Error =
+            anyhow::anyhow!("authorization store not found the expected quorum");
+        assert!(!is_missing_audit_target(&misleading));
+        let forbidden: anyhow::Error =
+            AppError::forbidden("resource is not authorized for this action").into();
+        assert!(!is_missing_audit_target(&forbidden));
     }
 }

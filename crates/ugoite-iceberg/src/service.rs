@@ -1846,6 +1846,50 @@ impl UgoiteService {
         Ok(serde_json::to_value(workspace.list_changes().await?)?)
     }
 
+    /// Reopen hook: converge commit-coupled audit evidence after a Space is
+    /// (re)opened in this process.
+    ///
+    /// Crash windows between a Knowledge commit and its audit append leave
+    /// committed revisions without evidence. The server startup hook covers
+    /// restarts; this covers core-mode reopen. Failures propagate
+    /// fail-closed instead of hiding as success. Reads
+    /// ([`Self::list_space_audit`]) stay light: they report committed
+    /// evidence only and never repair.
+    pub async fn open_space(&self, space_id: &str) -> Result<Value> {
+        self.validate_complete_space(space_id).await?;
+        let converged = self.reconcile_space_audit(space_id).await?;
+        Ok(json!({
+            "space_id": space_id,
+            "audit_targets_converged": converged,
+        }))
+    }
+
+    /// Light audit read: reports committed evidence only, never repairs.
+    ///
+    /// Crash-missing evidence heals via the server startup hook or
+    /// [`Self::open_space`], plus the bounded pre-read converge on the
+    /// server audit route for same-process commit→delivery gaps.
+    pub async fn list_space_audit(
+        &self,
+        space_id: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Value> {
+        self.validate_complete_space(space_id).await?;
+        crate::audit::list_audit_events(
+            &self.operator,
+            space_id,
+            crate::audit::AuditListOptions {
+                offset,
+                limit,
+                action: None,
+                actor_principal_id: None,
+                outcome: None,
+            },
+        )
+        .await
+    }
+
     pub async fn revert_change(
         &self,
         space_id: &str,
@@ -1940,6 +1984,28 @@ impl UgoiteService {
     /// Apply a portable batch using the same entry mutation use cases as the
     /// individual REST operations. Each operation remains an append-only
     /// Change; cross-Form atomicity is deliberately not promised in v1.
+    ///
+    /// Batch safety: `operations` is fully pre-validated (non-empty, entry
+    /// IDs, version tokens, destructive-mix) before the first write, so a
+    /// rejected batch leaves no partial mutation. Semantic failures
+    /// mid-batch (stale version token, missing target) still leave the
+    /// committed prefix by design: there is no cross-operation rollback.
+    ///
+    /// Authorization: Create/Update arms run through the authorized
+    /// principal-gated use cases, so `principal_ids` must be non-empty.
+    /// The Remove arm threads the same `principal_ids` to audit delivery
+    /// but performs no service-level authorization itself: a batch Remove
+    /// always arrives adapter-authorized (the dangerous-action approval
+    /// bound to the exact Entry, or the resource-scoped Delete wrapper),
+    /// and it may execute under an already-held human-approval lease that
+    /// must not be re-acquired (the process lease is not reentrant).
+    /// There is intentionally no operator-local (core CLI) batch path: a
+    /// thin core batch cannot reuse this shared op without inventing a
+    /// parallel mutation implementation, which the architecture forbids.
+    /// `run_id` is grouping metadata only, not an idempotency key:
+    /// repeating a batch appends new Changes under the same Run, and the
+    /// idempotent path for a repeated Run is [`Self::undo_run`], which
+    /// resumes (second call reverts zero Changes).
     pub async fn apply_operations(
         &self,
         space_id: &str,
@@ -1955,6 +2021,40 @@ impl UgoiteService {
                 "operations must not be empty",
             )
             .into());
+        }
+        // Mirror the server destructive-mix guard pre-persistence: a Remove
+        // must be submitted alone so its human approval stays bound to the
+        // exact Entry. Rejecting here (like the server 422 INVALID_INPUT)
+        // leaves no partial mutation.
+        if operations.len() > 1
+            && operations
+                .iter()
+                .any(|operation| matches!(operation, ApplyOperation::Remove { .. }))
+        {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "apply remove must be submitted as one operation so its human approval is bound to the exact Entry",
+            )
+            .into());
+        }
+        // Pre-validate every operation's identifiers before the first write.
+        for operation in &operations {
+            match operation {
+                ApplyOperation::Create { id, .. } => {
+                    if let Some(id) = id {
+                        validate_storage_id(validate_entry_id(id))?;
+                    }
+                }
+                ApplyOperation::Update {
+                    id, version_token, ..
+                } => {
+                    validate_storage_id(validate_entry_id(id))?;
+                    validate_storage_id(validate_revision_id(version_token))?;
+                }
+                ApplyOperation::Remove { id } => {
+                    validate_storage_id(validate_entry_id(id))?;
+                }
+            }
         }
         let run_id = run_id
             .map(RunId::new)
@@ -2035,12 +2135,18 @@ impl UgoiteService {
                         reverts_change_id: None,
                         created_at_micros: Utc::now().timestamp_micros(),
                     };
+                    // Adapter-authorized Remove: Delete on the exact Entry
+                    // was established by the request adapter (dangerous-action
+                    // approval or resource-scoped wrapper), which may hold the
+                    // authorization lease across this call. Principals still
+                    // thread to audit delivery below.
                     let value = self
-                        .delete_entry_with_change_receipt(
+                        .delete_entry_with_change_receipt_for_principals(
                             space_id,
                             &id,
                             false,
                             actor_principal_id,
+                            principal_ids,
                             Some(change),
                         )
                         .await?;
@@ -2984,6 +3090,141 @@ impl UgoiteService {
         .await?;
         self.schedule_asset_text_refresh(space_id);
         self.record_committed_entry_delete(space_id, entry_id, &[], actor)
+            .await;
+        let mut result = json!({"deleted": true});
+        if let Some(receipt) = receipt {
+            result["change_id"] = json!(receipt.command_id);
+            if let Some(revision_id) = receipt.committed_revision_ids.first() {
+                result["revision_id"] = json!(revision_id.to_string());
+            }
+        }
+        Ok(result)
+    }
+
+    /// Operator-local authorized delete is intentionally absent: deletes
+    /// with caller identity go through the principal-gated variants below,
+    /// like creates and updates. The operator-local path above keeps `&[]`
+    /// delivery attribution with the author fallback; the variants below
+    /// deliver with the caller principals.
+    pub async fn delete_entry_authorized_for_principals(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        hard_delete: bool,
+        author: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        self.delete_entry_authorized_for_principals_with_change(
+            space_id,
+            entry_id,
+            hard_delete,
+            author,
+            principal_ids,
+            None,
+        )
+        .await
+    }
+
+    /// Delete an Entry carrying an existing mutation/Change context (Change
+    /// ID propagation and Run grouping). This is the delete counterpart to
+    /// [`Self::create_entry_authorized_for_principals_with_change`]:
+    /// admission, authorization (`Delete` on the Entry resource), and audit
+    /// are identical, and the `change` is forwarded to the same shared
+    /// entry boundary the operator-local path uses (no separate mutation
+    /// implementation).
+    ///
+    /// `hard_delete` is accepted for API compatibility but the store always
+    /// appends a tombstone revision: history is append-only, so a delete
+    /// never removes evidence and reconcile still converges `entry.deleted`.
+    pub async fn delete_entry_authorized_for_principals_with_change(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        hard_delete: bool,
+        author: &str,
+        principal_ids: &[Uuid],
+        change: Option<ChangeCommand>,
+    ) -> Result<Value> {
+        self.delete_entry_authorized_for_principals_with_change_receipt(
+            space_id,
+            entry_id,
+            hard_delete,
+            author,
+            principal_ids,
+            change,
+        )
+        .await
+    }
+
+    pub async fn delete_entry_authorized_for_principals_with_change_receipt(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        hard_delete: bool,
+        author: &str,
+        principal_ids: &[Uuid],
+        change: Option<ChangeCommand>,
+    ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.ensure_mutation_admitted(space_id).await?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        let _authorization_lease = {
+            let (state, lease) = Authorizer::new(self.operator.clone())
+                .acquire_state_lease(space_id)
+                .await?;
+            self.require_action_for_principals_in_state(
+                &state,
+                entry_id,
+                ResourceKind::Entry,
+                Action::Delete,
+                principal_ids,
+            )?;
+            lease
+        };
+        self.delete_entry_with_change_receipt_for_principals(
+            space_id,
+            entry_id,
+            hard_delete,
+            author,
+            principal_ids,
+            change,
+        )
+        .await
+    }
+
+    /// Principal-threaded delete for adapter-authorized callers only.
+    ///
+    /// Performs admission, identifier validation, the shared entry delete,
+    /// and audit delivery attributed to `principal_ids` — but no
+    /// authorization check and no lease acquisition. The batch Remove arm
+    /// uses this because Delete on the exact Entry was already established
+    /// by the request adapter, which may hold the (non-reentrant)
+    /// authorization lease across the call. Direct callers must use
+    /// [`Self::delete_entry_authorized_for_principals_with_change_receipt`].
+    pub async fn delete_entry_with_change_receipt_for_principals(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        hard_delete: bool,
+        author: &str,
+        principal_ids: &[Uuid],
+        change: Option<ChangeCommand>,
+    ) -> Result<Value> {
+        self.ensure_mutation_admitted(space_id).await?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        let receipt = entry::delete_entry_with_change_receipt(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            hard_delete,
+            author,
+            change,
+        )
+        .await?;
+        self.schedule_asset_text_refresh(space_id);
+        self.record_committed_entry_delete(space_id, entry_id, principal_ids, author)
             .await;
         let mut result = json!({"deleted": true});
         if let Some(receipt) = receipt {
@@ -6273,6 +6514,164 @@ mod tests {
                 .expect("typed conflict")
                 .code_str(),
             "SPACE_ALREADY_EXISTS"
+        );
+        Ok(())
+    }
+
+    const BATCH_MARKDOWN: &str = "---\nform: Entry\n---\n# hello\n\n## Body\ncontent";
+
+    async fn batch_test_space(slug_suffix: &str) -> anyhow::Result<(UgoiteService, String, Uuid)> {
+        let service = UgoiteService::new(format!("memory://batch-safety-{slug_suffix}"))?;
+        let principal = Uuid::now_v7();
+        let space_id = service
+            .create_space_for_principal(&format!("batch-{slug_suffix}"), principal, "Owner")
+            .await?
+            .to_string();
+        Ok((service, space_id, principal))
+    }
+
+    #[tokio::test]
+    async fn batch_rejects_mixed_remove_before_first_write() -> anyhow::Result<()> {
+        let (service, space_id, principal) = batch_test_space("mixed-remove").await?;
+        // A Remove mixed with any other operation is rejected pre-persistence
+        // (mirrors the server 422 INVALID_INPUT), so no partial mutation.
+        let error = service
+            .apply_operations(
+                &space_id,
+                vec![
+                    ApplyOperation::Create {
+                        id: Some("batch-entry-1".to_string()),
+                        markdown: BATCH_MARKDOWN.to_string(),
+                    },
+                    ApplyOperation::Remove {
+                        id: "batch-entry-1".to_string(),
+                    },
+                ],
+                &principal.to_string(),
+                &[principal],
+                Some("run-mixed-remove"),
+                None,
+            )
+            .await
+            .expect_err("mixed remove must be rejected pre-persistence");
+        assert_eq!(
+            error
+                .downcast_ref::<AppError>()
+                .expect("typed reject")
+                .code(),
+            ErrorCode::InvalidInput
+        );
+        let missing = service
+            .entry_history(&space_id, "batch-entry-1")
+            .await
+            .expect_err("rejected batch must leave no partial mutation");
+        assert_eq!(
+            missing
+                .downcast_ref::<AppError>()
+                .expect("typed missing")
+                .code(),
+            ErrorCode::EntryNotFound
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn batch_rejects_empty_and_bad_version_token_pre_write() -> anyhow::Result<()> {
+        let (service, space_id, principal) = batch_test_space("pre-validate").await?;
+        let error = service
+            .apply_operations(
+                &space_id,
+                vec![],
+                &principal.to_string(),
+                &[principal],
+                Some("run-empty"),
+                None,
+            )
+            .await
+            .expect_err("empty batch must be rejected");
+        assert_eq!(
+            error
+                .downcast_ref::<AppError>()
+                .expect("typed reject")
+                .code(),
+            ErrorCode::InvalidInput
+        );
+        // A blank version token fails identifier pre-validation before the
+        // leading Create writes, so the batch leaves nothing behind.
+        let error = service
+            .apply_operations(
+                &space_id,
+                vec![
+                    ApplyOperation::Create {
+                        id: Some("batch-entry-2".to_string()),
+                        markdown: BATCH_MARKDOWN.to_string(),
+                    },
+                    ApplyOperation::Update {
+                        id: "batch-entry-2".to_string(),
+                        version_token: String::new(),
+                        markdown: BATCH_MARKDOWN.to_string(),
+                    },
+                ],
+                &principal.to_string(),
+                &[principal],
+                Some("run-bad-token"),
+                None,
+            )
+            .await
+            .expect_err("bad version token must be rejected pre-persistence");
+        assert!(
+            error.downcast_ref::<AppError>().is_some(),
+            "reject stays typed: {error:#}"
+        );
+        let missing = service
+            .entry_history(&space_id, "batch-entry-2")
+            .await
+            .expect_err("rejected batch must leave no partial mutation");
+        assert_eq!(
+            missing
+                .downcast_ref::<AppError>()
+                .expect("typed missing")
+                .code(),
+            ErrorCode::EntryNotFound
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn batch_run_id_groups_and_undo_run_resumes_idempotently() -> anyhow::Result<()> {
+        // run_id is grouping metadata, not an idempotency key: repeating a
+        // batch appends new Changes under the same Run. The idempotent path
+        // for a repeated Run is undo_run, which resumes (second call reverts
+        // zero Changes).
+        let (service, space_id, principal) = batch_test_space("run-group").await?;
+        for entry_id in ["batch-a", "batch-b"] {
+            service
+                .apply_operations(
+                    &space_id,
+                    vec![ApplyOperation::Create {
+                        id: Some(entry_id.to_string()),
+                        markdown: BATCH_MARKDOWN.to_string(),
+                    }],
+                    &principal.to_string(),
+                    &[principal],
+                    Some("run-batch-undo"),
+                    Some("batch message"),
+                )
+                .await?;
+        }
+        let undone = service
+            .undo_run(&space_id, "run-batch-undo", &principal.to_string())
+            .await?;
+        assert_eq!(
+            undone.get("reverted_change_count").and_then(Value::as_u64),
+            Some(2)
+        );
+        let resumed = service
+            .undo_run(&space_id, "run-batch-undo", &principal.to_string())
+            .await?;
+        assert_eq!(
+            resumed.get("reverted_change_count").and_then(Value::as_u64),
+            Some(0)
         );
         Ok(())
     }

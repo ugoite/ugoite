@@ -573,12 +573,10 @@ impl UgoiteService {
         let mut entry_ids = BTreeSet::new();
         let form_names = match crate::entry::list_form_names(self.operator(), &workspace).await {
             Ok(names) => names,
-            Err(error)
-                if error.to_string().contains("not found")
-                    || error.to_string().contains("NotFound") =>
-            {
-                Vec::new()
-            }
+            // No committed Forms yet means no committed revisions to
+            // converge. Typed missing-target only; corrupt catalogs and
+            // storage failures propagate fail-closed.
+            Err(error) if crate::audit::is_missing_audit_target(&error) => Vec::new(),
             Err(error) => return Err(error),
         };
         for form_name in form_names {
@@ -1206,6 +1204,166 @@ mod tests {
             .expect_err("secret material must be rejected");
         assert!(error.to_string().contains("secret"));
         assert_eq!(audit_total(&service, &space_id).await?, 0);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn authorized_hard_delete_tombstone_reconciles_with_change() -> anyhow::Result<()> {
+        use ugoite_domain::change::{ChangeCommand, RunId};
+        // Authorized delete with an explicit ChangeCommand and hard_delete:
+        // history stays append-only (tombstone, never removal) and the
+        // delete evidence carries the Change ID plus caller principal
+        // attribution from live delivery through reconcile.
+        let service = UgoiteService::new("memory://mutation-audit-hard-delete")?;
+        let principal = Uuid::now_v7();
+        let space_id = service
+            .create_space_for_principal("audit-hard-delete", principal, "Owner")
+            .await?
+            .to_string();
+        service
+            .create_entry_authorized_for_principals(
+                &space_id,
+                "entry-1",
+                ENTRY_MARKDOWN,
+                &principal.to_string(),
+                &[principal],
+            )
+            .await?;
+        let delete_change = ChangeCommand {
+            change_id: Uuid::now_v7().to_string(),
+            run_id: Some(RunId::new("run-hard-delete")?),
+            actor_principal_id: principal.to_string(),
+            message: Some("authorized hard delete".to_string()),
+            reverts_change_id: None,
+            created_at_micros: chrono::Utc::now().timestamp_micros(),
+        };
+        let deleted = service
+            .delete_entry_authorized_for_principals_with_change(
+                &space_id,
+                "entry-1",
+                true,
+                &principal.to_string(),
+                &[principal],
+                Some(delete_change.clone()),
+            )
+            .await?;
+        assert_eq!(
+            deleted.get("change_id").and_then(Value::as_str),
+            Some(delete_change.change_id.as_str())
+        );
+        // Append-only: the tombstone revision is still reachable history.
+        let history = crate::entry::get_entry_history(
+            service.operator(),
+            &service.workspace_path(&space_id),
+            "entry-1",
+        )
+        .await?;
+        let revisions = history
+            .get("revisions")
+            .and_then(Value::as_array)
+            .expect("revisions");
+        assert_eq!(revisions.len(), 2);
+        assert_eq!(revisions[1]["operation"], json!("delete"));
+        assert_eq!(
+            revisions[1]["change_id"],
+            json!(delete_change.change_id.as_str())
+        );
+        // Live delivery left entry.deleted evidence attributed to the
+        // caller principal; reconcile converges instead of duplicating.
+        assert_eq!(audit_total(&service, &space_id).await?, 2);
+        service
+            .reconcile_entry_audit(&space_id, "entry-1", &[principal], &principal.to_string())
+            .await?;
+        assert_eq!(audit_total(&service, &space_id).await?, 2);
+        let listed = crate::audit::list_audit_events(
+            service.operator(),
+            &space_id,
+            crate::audit::AuditListOptions::default(),
+        )
+        .await?;
+        let deleted_event = listed["items"]
+            .as_array()
+            .expect("items")
+            .iter()
+            .find(|item| item["action"] == json!(ENTRY_DELETED_ACTION))
+            .expect("entry.deleted evidence");
+        assert_eq!(
+            deleted_event["metadata"]["change_id"],
+            json!(delete_change.change_id.as_str())
+        );
+        assert_eq!(
+            deleted_event["subject_principal_id"],
+            json!(principal.to_string())
+        );
+        assert_eq!(
+            deleted_event["actor_principal_id"],
+            json!(principal.to_string())
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn open_space_heals_crash_gap_without_explicit_reconcile() -> anyhow::Result<()> {
+        let (service, space_id) = audit_test_space("open-heal").await?;
+        // Simulate commit-without-delivery through the low-level entry
+        // layer, bypassing the audited service method.
+        let integrity =
+            crate::integrity::RealIntegrityProvider::from_space(service.operator(), &space_id)
+                .await?;
+        crate::entry::create_entry(
+            service.operator(),
+            &service.workspace_path(&space_id),
+            "entry-1",
+            ENTRY_MARKDOWN,
+            "author",
+            &integrity,
+        )
+        .await?;
+        assert_eq!(audit_total(&service, &space_id).await?, 0);
+        // Reopen the Space and run only the open hook: no explicit
+        // reconcile call anywhere in this test.
+        let root_uri = service.root_uri().to_string();
+        let service2 = UgoiteService::from_operator(service.operator().clone(), root_uri);
+        let opened = service2.open_space(&space_id).await?;
+        assert_eq!(
+            opened
+                .get("audit_targets_converged")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(audit_total(&service2, &space_id).await?, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn audit_list_read_never_mutates_evidence() -> anyhow::Result<()> {
+        let (service, space_id) = audit_test_space("light-read").await?;
+        // Crash-gap space: committed revision, no evidence. Repeated light
+        // reads report the gap without healing it.
+        let integrity =
+            crate::integrity::RealIntegrityProvider::from_space(service.operator(), &space_id)
+                .await?;
+        crate::entry::create_entry(
+            service.operator(),
+            &service.workspace_path(&space_id),
+            "entry-1",
+            ENTRY_MARKDOWN,
+            "author",
+            &integrity,
+        )
+        .await?;
+        for _ in 0..2 {
+            let listed = service.list_space_audit(&space_id, 0, 100).await?;
+            assert_eq!(listed.get("total").and_then(Value::as_u64), Some(0));
+        }
+        assert_eq!(audit_total(&service, &space_id).await?, 0);
+        // After the open hook heals, repeated reads stay stable too.
+        service.open_space(&space_id).await?;
+        for _ in 0..2 {
+            let listed = service.list_space_audit(&space_id, 0, 100).await?;
+            assert_eq!(listed.get("total").and_then(Value::as_u64), Some(1));
+        }
+        assert_eq!(audit_total(&service, &space_id).await?, 1);
         Ok(())
     }
 }

@@ -8530,9 +8530,14 @@ async fn list_audit_events(
 ) -> ApiResult<Json<Value>> {
     let principal_id = require_space_action(&state, &space_id, &identity, Action::Share).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
-    // Converge un-delivered commit evidence before reading: listing must
-    // reflect every committed revision, not only deliveries that happened
-    // to succeed inline.
+    // Bounded synchronous converge before reading: the underlying
+    // `audit::list_audit_events` read itself is light (committed evidence
+    // only, never repairs). This pre-read converge only covers the
+    // same-process commit→delivery gap when best-effort live delivery
+    // failed without a restart. Restart gaps are covered by the startup
+    // hook and the core `open_space` hook; without this bounded path a
+    // live gap would stay invisible until the next reopen, so it is kept
+    // deliberately and documented here.
     state
         .service
         .reconcile_space_audit(&space_id)
