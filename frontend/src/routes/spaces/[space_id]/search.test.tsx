@@ -7,7 +7,7 @@ import {
   waitFor,
   within,
 } from "@solidjs/testing-library";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import SpaceSearchRoute from "./search";
 import { resetMockData, seedForm, seedSpace } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
@@ -422,6 +422,65 @@ describe("/spaces/:space_id/search", () => {
       .not.toBeInTheDocument();
   });
 
+  it("PR4: keeps previous results and the count visible during re-search", async () => {
+    const alpha: KeywordSearchResult = {
+      id: "entry-1",
+      title: "Alpha Entry",
+      created_at: "2025-01-01T00:00:00Z",
+      updated_at: "2025-01-02T00:00:00Z",
+    };
+    const beta: KeywordSearchResult = {
+      id: "entry-2",
+      title: "Beta Entry",
+      created_at: "2025-01-01T00:00:00Z",
+      updated_at: "2025-01-03T00:00:00Z",
+    };
+    let calls = 0;
+    server.use(
+      http.get(testApiUrl("/spaces/default/search"), async () => {
+        calls += 1;
+        if (calls === 1) return HttpResponse.json([alpha]);
+        await delay(150);
+        return HttpResponse.json([beta]);
+      }),
+    );
+
+    render(() => <SpaceSearchRoute />);
+
+    fireEvent.input(screen.getByLabelText("Search keywords"), {
+      target: { value: "first" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search entries" }));
+    expect(await screen.findByRole("button", { name: /Alpha Entry/ }))
+      .toBeInTheDocument();
+    expect(screen.getByText("1 result")).toBeInTheDocument();
+
+    fireEvent.input(screen.getByLabelText("Search keywords"), {
+      target: { value: "second" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search entries" }));
+
+    // Previous results and the count stay mounted while reloading; only
+    // spinner indicators (role=status, sr-only label) signal the reload.
+    expect(screen.getByRole("button", { name: /Alpha Entry/ }))
+      .toBeInTheDocument();
+    expect(screen.getByText("1 result")).toBeInTheDocument();
+    // No visible loading copy: the submit button keeps its static label and
+    // every "Searching entries..." string is sr-only inside a status spinner.
+    expect(
+      screen.getByRole("button", { name: "Search entries" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Searching..." })).not
+      .toBeInTheDocument();
+    for (
+      const node of screen.getAllByText("Searching entries...")
+    ) {
+      expect(node).toHaveClass("ui-sr-only");
+    }
+
+    expect(await screen.findByRole("button", { name: /Beta Entry/ }))
+      .toBeInTheDocument();
+  });
   it("REQ-FE-044: keeps search controls and state messages in Japanese", () => {
     setLocale("ja");
 
@@ -436,7 +495,11 @@ describe("/spaces/:space_id/search", () => {
       "placeholder",
       "タイトル、フィールド、タグ、本文からエントリを検索",
     );
-    expect(screen.getByText("キーワード検索結果")).toBeInTheDocument();
+    // PR4: the visible label and result headings are removed; the label
+    // association and sr-only headings remain for assistive technology.
+    expect(document.querySelector('label[for="search-keywords"]'))
+      .toHaveClass("ui-sr-only");
+    expect(screen.getByText("キーワード検索結果")).toHaveClass("ui-sr-only");
     expect(screen.queryByText("検索履歴")).not.toBeInTheDocument();
     expect(screen.queryByText("Search")).not.toBeInTheDocument();
   });

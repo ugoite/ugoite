@@ -79,12 +79,8 @@ export default function SpaceDashboardRoute() {
 
   return (
     <>
-      <div class="dashboardIntro heroLine">
-        <span class="heroPill">{t("dashboard.heroTag")}</span>
-        <p>{t("dashboard.heroDescription")}</p>
-        <h1 class="ui-sr-only">{t("dashboard.home")}</h1>
-      </div>
-      <div class="actionbar">
+      <h1 class="ui-sr-only">{t("dashboard.home")}</h1>
+      <div class="homehead">
         <div class="actionLead">
           <span class="eyebrow">{spaceName()}</span>
         </div>
@@ -96,11 +92,6 @@ export default function SpaceDashboardRoute() {
         >
           <UiIcon name="plus" /> {t("dashboard.newEntry")}
         </button>
-      </div>
-
-      <div class="workInline">
-        <span class="workInlineMark" aria-hidden="true" />
-        <span>{t("dashboard.konaseDescription")}</span>
       </div>
 
       <Show when={forms.error}>

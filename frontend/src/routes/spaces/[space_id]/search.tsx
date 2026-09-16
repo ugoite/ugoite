@@ -547,7 +547,7 @@ export default function SpaceSearchRoute() {
                   }}
                 >
                   <div class="flex-1">
-                    <label class="ui-label" for="search-keywords">
+                    <label class="ui-sr-only" for="search-keywords">
                       {t("searchPage.searchKeywords")}
                     </label>
                     <div class="searchBox">
@@ -563,15 +563,20 @@ export default function SpaceSearchRoute() {
                       />
                     </div>
                   </div>
-                  <div class="sm:self-end">
+                  <div class="sm:self-end queryLane">
+                    {/* Query-lane spinner: previous results stay visible. */}
+                    <Show when={keywordLoading()}>
+                      <LocalBusyIndicator
+                        size="sm"
+                        label={t("searchPage.searchingEntries")}
+                      />
+                    </Show>
                     <button
                       type="submit"
                       class="ui-button ui-button-primary text-sm"
                       disabled={keywordLoading()}
                     >
-                      {keywordLoading()
-                        ? t("searchBar.searching")
-                        : t("searchPage.searchEntries")}
+                      {t("searchPage.searchEntries")}
                     </button>
                   </div>
                 </form>
@@ -809,16 +814,21 @@ export default function SpaceSearchRoute() {
                     </Index>
                   </div>
 
-                  <div class="mt-6 flex justify-end">
+                  <div class="mt-6 flex justify-end queryLane">
+                    {/* Query-lane spinner: previous results stay visible. */}
+                    <Show when={advancedLoading()}>
+                      <LocalBusyIndicator
+                        size="sm"
+                        label={t("searchPage.searchingEntries")}
+                      />
+                    </Show>
                     <button
                       type="button"
                       class="ui-button ui-button-primary text-sm"
                       disabled={advancedLoading()}
                       onClick={() => void handleAdvancedSearch()}
                     >
-                      {advancedLoading()
-                        ? t("searchPage.running")
-                        : t("searchPage.runAdvancedSearch")}
+                      {t("searchPage.runAdvancedSearch")}
                     </button>
                   </div>
                 </div>
@@ -832,14 +842,16 @@ export default function SpaceSearchRoute() {
             >
               <div class="searchResultsHead flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 class="text-lg font-semibold" id="search-results-title">
+                  <h2
+                    class="ui-sr-only"
+                    id="search-results-title"
+                  >
                     {mode() === "advanced"
                       ? t("searchPage.advancedResults")
                       : t("searchPage.keywordResults")}
                   </h2>
                   <Show
-                    when={mode() === "keyword" && keywordSearchPerformed() &&
-                      !keywordLoading()}
+                    when={mode() === "keyword" && keywordSearchPerformed()}
                   >
                     <p class="mt-1 text-sm ui-muted">
                       {keywordResultCountLabel()}
@@ -847,27 +859,28 @@ export default function SpaceSearchRoute() {
                   </Show>
                   <Show
                     when={mode() === "advanced" &&
-                      advancedSearchPerformed() && !advancedLoading()}
+                      advancedSearchPerformed()}
                   >
                     <p class="mt-1 text-sm ui-muted">
                       {advancedResultCountLabel()}
                     </p>
                   </Show>
                 </div>
-              </div>
-
-              <div class="mt-4 ui-stack-sm">
-                <Show when={actionError()}>
-                  <p class="text-sm ui-text-danger">{actionError()}</p>
-                </Show>
-                {/* Query-lane spinner: previous results stay visible. */}
+                {/* Result-header spinner: previous results stay visible. */}
                 <Show
                   when={keywordLoading() ||
                     (mode() === "advanced" && advancedLoading())}
                 >
                   <LocalBusyIndicator
+                    size="sm"
                     label={t("searchPage.searchingEntries")}
                   />
+                </Show>
+              </div>
+
+              <div class="mt-4 ui-stack-sm">
+                <Show when={actionError()}>
+                  <p class="text-sm ui-text-danger">{actionError()}</p>
                 </Show>
                 <Show
                   when={mode() === "keyword" && !keywordLoading() &&
@@ -994,13 +1007,6 @@ export default function SpaceSearchRoute() {
                     >
                       {t("searchPage.loadMore")}
                     </button>
-                    {/* Footer spinner only: existing results stay visible. */}
-                    <Show when={keywordLoading() || advancedLoading()}>
-                      <LocalBusyIndicator
-                        size="sm"
-                        label={t("searchPage.loadingMore")}
-                      />
-                    </Show>
                   </div>
                 </Show>
               </div>

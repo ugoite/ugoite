@@ -1,6 +1,7 @@
 import { A, useNavigate } from "@solidjs/router";
 import { GlobalShell } from "~/components/GlobalShell";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import { UiIcon } from "~/components/UiIcon";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { getDocsiteHref } from "~/lib/docsite-links";
 import { authApi, spaceApi } from "~/lib/ugoite-client";
@@ -38,38 +39,65 @@ const isForbiddenError = (value: unknown): boolean =>
   value instanceof UgoiteApiError &&
   (value.status === 403 || value.code === "FORBIDDEN");
 
-function SpaceCards(props: { label: string; spaces: readonly Space[] }) {
+function SpaceTable(props: { label: string; spaces: readonly Space[] }) {
   return (
-    <ul aria-label={props.label} class="rowStack">
-      <For each={props.spaces}>
-        {(space) => (
-          <li class="rowBtn">
-            <span class="glyph active">
-              {(space.name || space.slug || spaceUid(space)).slice(0, 1)
-                .toUpperCase()}
-            </span>
-            <span>
-              <b>{space.name || space.slug || spaceUid(space)}</b>
-              <small>{t("spacesPage.spaceSlug")}: {space.slug || "—"}</small>
-            </span>
-            <div class="flex flex-wrap gap-2">
-              <A
-                href={`/spaces/${spaceUid(space)}/settings`}
-                class="ui-button ui-button-secondary text-sm"
-              >
-                {t("spacesPage.openSettings")}
-              </A>
-              <A
-                href={`/spaces/${spaceUid(space)}/dashboard`}
-                class="ui-button ui-button-primary text-sm"
-              >
-                {t("spacesPage.openSpace")}
-              </A>
-            </div>
-          </li>
-        )}
-      </For>
-    </ul>
+    <div class="tablewrap">
+      <table class="table spacesTable" aria-label={props.label}>
+        <thead>
+          <tr>
+            <th scope="col">{t("spacesPage.columnName")}</th>
+            <th scope="col">{t("spacesPage.columnFormCount")}</th>
+            <th scope="col">{t("spacesPage.columnSettings")}</th>
+            <th scope="col">{t("spacesPage.columnOpen")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <For each={props.spaces}>
+            {(space) => (
+              <tr>
+                <td>
+                  <span class="spacesName">
+                    {space.name || space.slug || spaceUid(space)}
+                  </span>
+                </td>
+                {
+                  /* Form counts are not part of the Space payload; keep the
+                    column with an explicit unknown placeholder. */
+                }
+                <td class="spacesCount">
+                  <span aria-hidden="true">—</span>
+                  <span class="ui-sr-only">
+                    {t("spacesPage.formCountUnknown")}
+                  </span>
+                </td>
+                <td>
+                  <div class="spacesActions">
+                    <A
+                      href={`/spaces/${spaceUid(space)}/settings`}
+                      class="btn iconBtn"
+                      aria-label={t("spacesPage.openSettings")}
+                    >
+                      <UiIcon name="settings" />
+                    </A>
+                  </div>
+                </td>
+                <td>
+                  <div class="spacesActions">
+                    <A
+                      href={`/spaces/${spaceUid(space)}/dashboard`}
+                      class="btn iconBtn spacesOpen"
+                      aria-label={t("spacesPage.openSpace")}
+                    >
+                      <span aria-hidden="true">›</span>
+                    </A>
+                  </div>
+                </td>
+              </tr>
+            )}
+          </For>
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -211,9 +239,6 @@ export default function SpacesIndexRoute() {
                 {t("spacesPage.create")}
               </button>
             </Show>
-            <A href="/" class="ui-muted text-sm">
-              {t("spacesPage.backHome")}
-            </A>
           </div>
         </div>
 
@@ -353,7 +378,7 @@ export default function SpacesIndexRoute() {
             </div>
           </Show>
           <Show when={listedSpaces().length > 0}>
-            <SpaceCards label={t("spacesPage.title")} spaces={listedSpaces()} />
+            <SpaceTable label={t("spacesPage.title")} spaces={listedSpaces()} />
           </Show>
         </section>
       </div>

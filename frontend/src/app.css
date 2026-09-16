@@ -2861,6 +2861,72 @@ a.tool {
   margin-bottom: 18px;
 }
 
+/* PR4 home header: space name + new-entry button only. */
+.homehead {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+/* PR4 query lane: submit button with a small panel-local spinner. */
+.queryLane {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* PR4 spaces table: only the wrapper scrolls horizontally so the page
+   never overflows at 390px. */
+.tablewrap {
+  overflow-x: auto;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.spacesTable {
+  min-width: 280px;
+}
+.spacesTable th,
+.spacesTable td {
+  border-bottom: 1px solid var(--line);
+  padding: 10px 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+.spacesTable thead th {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.spacesTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+.spacesName {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+.spacesCount {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.spacesActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.spacesOpen {
+  font-size: 20px;
+  line-height: 1;
+}
+
 .heroLine {
   display: flex;
   align-items: center;
