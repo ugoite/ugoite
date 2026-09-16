@@ -72,6 +72,14 @@ pub async fn execute_with_step_up(
     .context("start step-up challenge for the remote mutation")?;
     let challenge_id = step_up_string(&started["challenge_id"], "challenge_id")?;
     let verification_uri = step_up_string(&started["verification_uri"], "verification_uri")?;
+    // The server returns both `verification_uri` and
+    // `verification_uri_complete`; prefer the complete handoff URI and fall
+    // back to the plain URI when the server omits it.
+    let verification_uri_complete = started["verification_uri_complete"]
+        .as_str()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(&verification_uri)
+        .to_string();
     let expires_in = started["expires_in"].as_u64().unwrap_or(600);
     let interval = started["interval"].as_u64().unwrap_or(5).clamp(1, 60);
 
@@ -82,17 +90,18 @@ pub async fn execute_with_step_up(
                 "code": "STEP_UP_REQUIRED",
                 "operation": operation,
                 "verification_uri": verification_uri,
+                "verification_uri_complete": verification_uri_complete,
                 "expires_in": expires_in,
                 "challenge_id": challenge_id,
             })
         );
         bail!(
-            "remote mutation requires a fresh Passkey ceremony (STEP_UP_REQUIRED): open {verification_uri} in a signed-in browser within {expires_in}s, approve the step-up, then retry"
+            "remote mutation requires a fresh Passkey ceremony (STEP_UP_REQUIRED): open {verification_uri_complete} in a signed-in browser within {expires_in}s, approve the step-up, then retry"
         );
     }
 
     eprintln!("Remote mutation needs a fresh Passkey ceremony to continue.");
-    eprintln!("Open {verification_uri} in a signed-in browser and approve the step-up,");
+    eprintln!("Open {verification_uri_complete} in a signed-in browser and approve the step-up,");
     eprintln!("then return here: this command retries the identical mutation once.");
     let deadline = Instant::now() + Duration::from_secs(expires_in.min(600));
     loop {

@@ -43,19 +43,30 @@ fn parse_space_uid_arg(value: &str) -> Result<Uuid, String> {
 /// never emitted as a plain log line. Non-interactive output (CI, pipes)
 /// omits the secret entirely and reports machine-readable ceremony state:
 /// the verification URL plus the fact that a code is required.
+///
+/// When the server provides `verification_uri_complete` (which embeds the
+/// one-time code), interactive terminals show that complete URI so the human
+/// can open it directly; the code is still shown for manual entry. Machine
+/// JSON emits `verification_uri_complete` (falling back to
+/// `verification_uri`) and never the raw `user_code`.
 pub fn device_authorization_prompt(
     user_code: &str,
     verification_uri: &str,
+    verification_uri_complete: Option<&str>,
     stderr_is_terminal: bool,
 ) -> String {
+    let complete = verification_uri_complete
+        .filter(|uri| !uri.trim().is_empty())
+        .unwrap_or(verification_uri);
     if stderr_is_terminal {
         format!(
-            "Open {verification_uri} on any signed-in device.\nEnter this one-time code now: {user_code}\n(The code is shown only here; it is never logged.)"
+            "Open {complete} on any signed-in device.\nEnter this one-time code now: {user_code}\n(The code is shown only here; it is never logged.)"
         )
     } else {
         serde_json::to_string(&json!({
             "code": "DEVICE_AUTHORIZATION_REQUIRED",
             "verification_uri": verification_uri,
+            "verification_uri_complete": complete,
             "user_code_required": true,
         }))
         .expect("device ceremony state serializes")
@@ -195,9 +206,15 @@ async fn login(
     let verification_uri = device["verification_uri"]
         .as_str()
         .ok_or_else(|| anyhow!("server omitted verification_uri"))?;
+    let verification_uri_complete = device["verification_uri_complete"].as_str();
     eprintln!(
         "{}",
-        device_authorization_prompt(user_code, verification_uri, std::io::stderr().is_terminal())
+        device_authorization_prompt(
+            user_code,
+            verification_uri,
+            verification_uri_complete,
+            std::io::stderr().is_terminal()
+        )
     );
     let device_code = device["device_code"]
         .as_str()
@@ -575,19 +592,52 @@ mod tests {
 
     #[test]
     fn device_prompt_marks_the_secret_for_interactive_entry_only() {
-        let interactive =
-            device_authorization_prompt("ABCD-EFGH", "https://node.example/device", true);
+        let interactive = device_authorization_prompt(
+            "ABCD-EFGH",
+            "https://node.example/device",
+            Some("https://node.example/device?user_code=ABCD-EFGH"),
+            true,
+        );
         assert!(interactive.contains("ABCD-EFGH"));
+        assert!(interactive.contains("https://node.example/device?user_code=ABCD-EFGH"));
         assert!(interactive.contains("one-time code"));
         assert!(interactive.contains("never logged"));
 
-        let machine =
-            device_authorization_prompt("ABCD-EFGH", "https://node.example/device", false);
-        assert!(!machine.contains("ABCD-EFGH"));
+        // Without a complete URI the interactive prompt falls back to the
+        // plain verification URI.
+        let fallback =
+            device_authorization_prompt("ABCD-EFGH", "https://node.example/device", None, true);
+        assert!(fallback.contains("https://node.example/device"));
+
+        let machine = device_authorization_prompt(
+            "ABCD-EFGH",
+            "https://node.example/device",
+            Some("https://node.example/device?user_code=ABCD-EFGH"),
+            false,
+        );
         let state: serde_json::Value = serde_json::from_str(&machine).expect("machine JSON");
         assert_eq!(state["code"], "DEVICE_AUTHORIZATION_REQUIRED");
         assert_eq!(state["verification_uri"], "https://node.example/device");
+        assert_eq!(
+            state["verification_uri_complete"],
+            "https://node.example/device?user_code=ABCD-EFGH"
+        );
         assert_eq!(state["user_code_required"], true);
+        // The bare one-time secret is never a JSON field; the complete URI
+        // is the server-provided handoff and may embed it for direct open.
+        assert!(state.get("user_code").is_none());
+
+        // Machine JSON falls back to verification_uri when the server omits
+        // the complete URI, and never leaks the code.
+        let fallback_machine =
+            device_authorization_prompt("ABCD-EFGH", "https://node.example/device", None, false);
+        let fallback_state: serde_json::Value =
+            serde_json::from_str(&fallback_machine).expect("machine JSON");
+        assert_eq!(
+            fallback_state["verification_uri_complete"],
+            "https://node.example/device"
+        );
+        assert!(fallback_state.get("user_code").is_none());
     }
 
     #[test]

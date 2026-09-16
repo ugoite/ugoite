@@ -749,8 +749,90 @@ pub struct StepUpChallenge {
     pub created_at: String,
     pub expires_at: String,
     pub approved_at: Option<String>,
-    pub consumed_at: Option<String>,
 }
+
+/// Typed step-up failures with stable `STEP_UP_*` codes. The `Display`
+/// message always carries the code prefix so `anyhow` string matching keeps
+/// working, while callers that need fail-closed mapping can downcast to
+/// this type instead of parsing messages.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StepUpError {
+    AccountInactive,
+    OperationNotEligible { operation: String },
+    SpaceRequired { operation: String },
+    SpaceUnexpected,
+    SpaceInvalid { detail: String },
+    CredentialNotBound,
+    TooManyPending { pending: usize, max: usize },
+}
+
+impl StepUpError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::AccountInactive => "STEP_UP_ACCOUNT_INACTIVE",
+            Self::OperationNotEligible { .. } => "STEP_UP_OPERATION_NOT_ELIGIBLE",
+            Self::SpaceRequired { .. } => "STEP_UP_SPACE_REQUIRED",
+            Self::SpaceUnexpected => "STEP_UP_SPACE_UNEXPECTED",
+            Self::SpaceInvalid { .. } => "STEP_UP_SPACE_INVALID",
+            Self::CredentialNotBound => "STEP_UP_INVALID",
+            Self::TooManyPending { .. } => "STEP_UP_RATE_LIMITED",
+        }
+    }
+}
+
+impl std::fmt::Display for StepUpError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AccountInactive => {
+                write!(formatter, "{}: step-up account is not active", self.code())
+            }
+            Self::OperationNotEligible { operation } => write!(
+                formatter,
+                "{}: step-up is not available for operation {operation}",
+                self.code()
+            ),
+            Self::SpaceRequired { operation } => write!(
+                formatter,
+                "{}: step-up for {operation} requires a space_id",
+                self.code()
+            ),
+            Self::SpaceUnexpected => write!(
+                formatter,
+                "{}: step-up for space creation takes no space_id",
+                self.code()
+            ),
+            Self::SpaceInvalid { detail } => {
+                write!(formatter, "{}: {detail}", self.code())
+            }
+            Self::CredentialNotBound => write!(
+                formatter,
+                "{}: step-up credential is not bound to this account",
+                self.code()
+            ),
+            Self::TooManyPending { pending, max } => write!(
+                formatter,
+                "{}: too many pending step-up challenges for this account ({pending}/{max}); approve, consume, or wait for expiry before starting another",
+                self.code()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for StepUpError {}
+
+/// Operations a browser-approved step-up challenge may satisfy. Mirrors the
+/// server `STEP_UP_ELIGIBLE_OPERATIONS` allow-list; the identity layer owns
+/// this copy so a challenge can never bind an out-of-scope intent even when
+/// the REST boundary is bypassed in tests.
+pub const STEP_UP_ELIGIBLE_OPERATIONS: &[&str] = &[
+    "space.create",
+    "space.patch",
+    "space.members.invite",
+    "space.members.update_role",
+    "space.members.revoke",
+    "pin.create",
+    "pin.delete",
+];
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AuthorizationCodeGrant {
@@ -6049,30 +6131,86 @@ impl NodeIdentityService {
     ) -> Result<serde_json::Value> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
-        state
+        let account = state
             .accounts
             .get(&account_id)
             .filter(|account| matches!(account.status, AccountStatus::Active))
-            .ok_or_else(|| anyhow!("step-up account is not active"))?;
+            .cloned()
+            .ok_or(StepUpError::AccountInactive)?;
+        // Identity-layer intent validation mirrors the server allow-list so a
+        // challenge can never bind an out-of-scope operation, a missing or
+        // unexpected Space target, or a non-UUIDv7 Space identifier even when
+        // the REST boundary is bypassed.
+        if !STEP_UP_ELIGIBLE_OPERATIONS.contains(&operation) {
+            return Err(StepUpError::OperationNotEligible {
+                operation: operation.to_string(),
+            }
+            .into());
+        }
+        let normalized_space = space_id.map(str::trim).filter(|value| !value.is_empty());
+        if operation != "space.create" && normalized_space.is_none() {
+            return Err(StepUpError::SpaceRequired {
+                operation: operation.to_string(),
+            }
+            .into());
+        }
+        if operation == "space.create" && normalized_space.is_some() {
+            return Err(StepUpError::SpaceUnexpected.into());
+        }
+        if let Some(space) = normalized_space {
+            let parsed = space
+                .parse::<Uuid>()
+                .map_err(|_| StepUpError::SpaceInvalid {
+                    detail: "step-up space_id must be an immutable Space UID (UUIDv7)".to_string(),
+                })?;
+            if parsed.get_version() != Some(uuid::Version::SortRand) {
+                return Err(StepUpError::SpaceInvalid {
+                    detail: "step-up space_id must be an immutable Space UID (UUIDv7)".to_string(),
+                }
+                .into());
+            }
+        }
+        // Actor ownership: the starting credential, when known, must be bound
+        // to the account (device credential, Passkey, or linked OIDC
+        // identity). Unknown or foreign credentials fail closed.
+        if let Some(credential) = credential_id {
+            let bound = state
+                .device_credentials
+                .get(&credential)
+                .is_some_and(|stored| {
+                    stored.account_id == account_id
+                        && stored.revoked_at.is_none()
+                        && stored.credential_generation == account.credential_generation
+                })
+                || state.passkeys.values().any(|passkey| {
+                    passkey.account_id == account_id && passkey.method_id == credential
+                })
+                || state.authentication_methods.values().any(|method| {
+                    method.account_id == account_id && method.method_id == credential
+                });
+            if !bound {
+                return Err(StepUpError::CredentialNotBound.into());
+            }
+        }
         // Bound the pending set: expired challenges can never be consumed.
         state.step_up_challenges.retain(|_, challenge| {
             parse_timestamp(&challenge.expires_at).is_ok_and(|ts| ts > Utc::now())
         });
         // Per-account pending cap: one account cannot accumulate unbounded
         // unapproved challenges. Expired entries were pruned just above, so
-        // only live pending/approved-but-unconsumed challenges count.
+        // every remaining entry counts.
         const MAX_PENDING_STEP_UP_CHALLENGES_PER_ACCOUNT: usize = 10;
         let pending_for_account = state
             .step_up_challenges
             .values()
-            .filter(|challenge| {
-                challenge.account_id == account_id && challenge.consumed_at.is_none()
-            })
+            .filter(|challenge| challenge.account_id == account_id)
             .count();
         if pending_for_account >= MAX_PENDING_STEP_UP_CHALLENGES_PER_ACCOUNT {
-            anyhow::bail!(
-                "too many pending step-up challenges for this account; approve, consume, or wait for expiry before starting another"
-            );
+            return Err(StepUpError::TooManyPending {
+                pending: pending_for_account,
+                max: MAX_PENDING_STEP_UP_CHALLENGES_PER_ACCOUNT,
+            }
+            .into());
         }
         let challenge_id = Uuid::now_v7();
         let now = Utc::now();
@@ -6089,7 +6227,6 @@ impl NodeIdentityService {
                 created_at: timestamp(now),
                 expires_at: expires_at.clone(),
                 approved_at: None,
-                consumed_at: None,
             },
         );
         self.write_state(&state).await?;
@@ -6116,9 +6253,6 @@ impl NodeIdentityService {
             .get(&challenge_id)
             .filter(|challenge| challenge.account_id == account_id)
             .ok_or_else(|| anyhow!("unknown step-up challenge"))?;
-        if challenge.consumed_at.is_some() {
-            return Ok(serde_json::json!({"status": "consumed"}));
-        }
         if parse_timestamp(&challenge.expires_at).is_ok_and(|ts| ts <= Utc::now()) {
             return Ok(serde_json::json!({"status": "expired"}));
         }
@@ -6147,9 +6281,6 @@ impl NodeIdentityService {
             .filter(|challenge| challenge.account_id == account_id)
             .ok_or_else(|| anyhow!("unknown step-up challenge"))?;
         validate_expiry(&challenge.expires_at, "step-up challenge")?;
-        if challenge.consumed_at.is_some() {
-            bail!("step-up challenge was already consumed");
-        }
         if challenge.status != StepUpStatus::Pending {
             bail!("step-up challenge is not pending");
         }
@@ -10904,9 +11035,26 @@ mod tests {
                 account_id,
                 display_name: "Step-up test".to_string(),
                 status: AccountStatus::Active,
-                created_at: now,
+                created_at: now.clone(),
                 node_roles: std::collections::BTreeSet::new(),
                 credential_generation: 0,
+            },
+        );
+        // Bind the starting credential so actor-ownership validation passes:
+        // a device credential owned by the account with a matching
+        // generation.
+        state.device_credentials.insert(
+            credential_id,
+            DeviceCredential {
+                credential_id,
+                device_name: "Step-up test device".to_string(),
+                public_key_jwk: serde_json::json!({"kty": "EC", "crv": "P-256"}),
+                account_id,
+                credential_generation: 0,
+                created_at: now,
+                last_used_at: None,
+                expires_at: None,
+                revoked_at: None,
             },
         );
         service.write_state(&state).await?;
@@ -10988,12 +11136,64 @@ mod tests {
         let (account_id, credential_id) = step_up_test_account(&service).await?;
         let other_account = Uuid::now_v7();
         let other_credential = Uuid::now_v7();
-        let started = service
+        let bound_space = Uuid::now_v7().to_string();
+        // Non-UUIDv7 Space bindings are rejected at start time.
+        assert!(service
             .start_step_up_challenge(
                 account_id,
                 Some(credential_id),
                 "space.patch",
                 Some("space-1"),
+            )
+            .await
+            .expect_err("non-UUIDv7 space_id must be rejected")
+            .to_string()
+            .contains("STEP_UP_SPACE_INVALID"));
+        assert!(service
+            .start_step_up_challenge(
+                account_id,
+                Some(credential_id),
+                "entry.delete",
+                Some(&bound_space),
+            )
+            .await
+            .expect_err("ineligible operation must be rejected")
+            .to_string()
+            .contains("STEP_UP_OPERATION_NOT_ELIGIBLE"));
+        assert!(service
+            .start_step_up_challenge(account_id, Some(credential_id), "space.patch", None)
+            .await
+            .expect_err("missing space_id must be rejected")
+            .to_string()
+            .contains("STEP_UP_SPACE_REQUIRED"));
+        assert!(service
+            .start_step_up_challenge(
+                account_id,
+                Some(credential_id),
+                "space.create",
+                Some(&bound_space),
+            )
+            .await
+            .expect_err("unexpected space_id must be rejected")
+            .to_string()
+            .contains("STEP_UP_SPACE_UNEXPECTED"));
+        assert!(service
+            .start_step_up_challenge(
+                account_id,
+                Some(other_credential),
+                "space.patch",
+                Some(&bound_space),
+            )
+            .await
+            .expect_err("unbound credential must be rejected")
+            .to_string()
+            .contains("STEP_UP_INVALID"));
+        let started = service
+            .start_step_up_challenge(
+                account_id,
+                Some(credential_id),
+                "space.patch",
+                Some(&bound_space),
             )
             .await?;
         let challenge_id = step_up_challenge_id(&started);
@@ -11009,11 +11209,24 @@ mod tests {
         service
             .approve_step_up_challenge(account_id, challenge_id)
             .await?;
+        let other_space = Uuid::now_v7().to_string();
         for (credential, operation, space) in [
-            (Some(other_credential), "space.patch", Some("space-1")),
-            (Some(credential_id), "space.create", Some("space-1")),
-            (Some(credential_id), "space.patch", Some("space-2")),
-            (None, "space.patch", Some("space-1")),
+            (
+                Some(other_credential),
+                "space.patch",
+                Some(bound_space.as_str()),
+            ),
+            (
+                Some(credential_id),
+                "space.create",
+                Some(bound_space.as_str()),
+            ),
+            (
+                Some(credential_id),
+                "space.patch",
+                Some(other_space.as_str()),
+            ),
+            (None, "space.patch", Some(bound_space.as_str())),
         ] {
             assert!(service
                 .consume_step_up_challenge(account_id, credential, challenge_id, operation, space,)
@@ -11027,7 +11240,7 @@ mod tests {
                 Some(credential_id),
                 challenge_id,
                 "space.patch",
-                Some("space-1"),
+                Some(&bound_space),
             )
             .await?;
         // Expired challenges report expired and cannot be approved.
@@ -11071,9 +11284,17 @@ mod tests {
             .start_step_up_challenge(account_id, Some(credential_id), "space.create", None)
             .await
             .expect_err("eleventh pending challenge must be rejected");
-        assert!(capped
-            .to_string()
-            .contains("too many pending step-up challenges"));
+        assert!(
+            capped
+                .downcast_ref::<StepUpError>()
+                .is_some_and(|error| *error
+                    == StepUpError::TooManyPending {
+                        pending: 10,
+                        max: 10
+                    }),
+            "cap must be a typed STEP_UP_RATE_LIMITED error, got {capped:?}"
+        );
+        assert!(capped.to_string().contains("STEP_UP_RATE_LIMITED"));
         // Expiring one challenge frees the slot: expiry is pruned, never counted.
         let mut state = service.read_state().await?;
         let oldest = *state.step_up_challenges.keys().next().expect("pending");
