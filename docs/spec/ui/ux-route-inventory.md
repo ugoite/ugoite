@@ -2,6 +2,9 @@
 title: 'UX Route Inventory (PR-1 baseline)'
 ---
 
+This page records the PR-1 baseline inventory of every frontend route surface
+covered by the UX improvement plan. It changes no UI behavior.
+
 ## Overview
 
 PR-1 baseline route inventory (docs-only).
