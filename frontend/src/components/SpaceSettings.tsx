@@ -95,16 +95,17 @@ export function SpaceSettings(props: SpaceSettingsProps) {
       <Show
         when={section() === "general"}
         fallback={
-          <div class="settingsSection">
+          <div class="settingsSection ui-stack-sm">
             <h2>{t("spaceSettings.storage")}</h2>
-            <section class="ui-card ui-stack-sm">
-              <h3>{t("spaceSettings.storageTopology")}</h3>
-              <p class="ui-muted">{storageSummary().description}</p>
+            <p class="ui-muted">{storageSummary().description}</p>
+            <p>
               <span class="ui-pill">{storageSummary().label}</span>
-              <Show when={storageSummary().uri}>
+            </p>
+            <Show when={storageSummary().uri}>
+              <p class="ui-muted">
                 <code>{storageSummary().uri}</code>
-              </Show>
-            </section>
+              </p>
+            </Show>
             <p class="ui-alert ui-alert-warning">
               {t("spaceSettings.storageWarning")}
             </p>
@@ -119,23 +120,28 @@ export function SpaceSettings(props: SpaceSettingsProps) {
                   required
                 />
               </label>
-              <label>
-                {t("spaceSettings.endpoint")}
-                <input
-                  id="storage-endpoint"
-                  value={endpoint()}
-                  onInput={(e) => setEndpoint(e.currentTarget.value)}
-                  placeholder="https://s3.example.com"
-                />
-              </label>
-              <label>
-                {t("spaceSettings.status")}
-                <input
-                  value={t("spaceSettings.configured")}
-                  readOnly
-                />
-              </label>
             </div>
+            <details class="settingsAdvanced">
+              <summary>{t("settings.advancedDetails")}</summary>
+              <div class="settingsGrid">
+                <label>
+                  {t("spaceSettings.endpoint")}
+                  <input
+                    id="storage-endpoint"
+                    value={endpoint()}
+                    onInput={(e) => setEndpoint(e.currentTarget.value)}
+                    placeholder="https://s3.example.com"
+                  />
+                </label>
+                <label>
+                  {t("spaceSettings.status")}
+                  <input
+                    value={t("spaceSettings.configured")}
+                    readOnly
+                  />
+                </label>
+              </div>
+            </details>
             <div class="actions">
               <button
                 class="btn"

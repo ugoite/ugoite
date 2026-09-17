@@ -10,6 +10,7 @@ describe("Space settings coverage", () => {
       "credentials",
       "storage",
       "audit",
+      "history",
     ]);
     expect(t("settings.language")).toBe("Language");
   });

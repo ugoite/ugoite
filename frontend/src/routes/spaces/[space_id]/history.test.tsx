@@ -3,24 +3,39 @@ import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { formatDateTimeLabel } from "~/lib/date-format";
-import { changeApi } from "~/lib/ugoite-client";
+import { changeApi, spaceApi } from "~/lib/ugoite-client";
 import SpaceHistoryRoute from "./history";
 
 vi.mock("@solidjs/router", () => ({
-  A: (props: { href: string; class?: string; children: unknown }) => (
-    <a href={props.href} class={props.class}>{props.children}</a>
+  A: (props: {
+    href: string;
+    class?: string;
+    children: unknown;
+    "aria-label"?: string;
+    title?: string;
+  }) => (
+    <a
+      href={props.href}
+      class={props.class}
+      aria-label={props["aria-label"]}
+      title={props.title}
+    >
+      {props.children}
+    </a>
   ),
   useParams: () => ({ space_id: "default" }),
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
   changeApi: { list: vi.fn(), revert: vi.fn(), undoRun: vi.fn() },
+  spaceApi: { listMembers: vi.fn() },
 }));
 
 describe("space history route", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     setLocale("en");
+    vi.mocked(spaceApi.listMembers).mockResolvedValue([]);
   });
 
   it("renders the append-only timeline without inventing targets", async () => {
@@ -50,8 +65,11 @@ describe("space history route", () => {
 
     expect(await screen.findByText("Space history")).toBeInTheDocument();
     // Revert rows are labeled; the reverted Change is kept, not rewritten.
-    expect(await screen.findByText("Revert")).toBeInTheDocument();
-    expect(await screen.findByText("Change")).toBeInTheDocument();
+    expect(await screen.findByRole("columnheader", { name: "Change" }))
+      .toBeInTheDocument();
+    expect(await screen.findByRole("columnheader", { name: "Actor" }))
+      .toBeInTheDocument();
+    expect((await screen.findAllByText("Revert")).length).toBeGreaterThan(0);
     expect(await screen.findByText("Restore entry")).toBeInTheDocument();
     expect(await screen.findByText("human:owner")).toBeInTheDocument();
     expect(await screen.findByText("human:editor")).toBeInTheDocument();
@@ -60,12 +78,58 @@ describe("space history route", () => {
         formatDateTimeLabel(createdAtMicros / 1000),
       ),
     ).toBeInTheDocument();
-    // Advanced detail, shown as-is.
-    expect(await screen.findByText("Change change-2")).toBeInTheDocument();
-    expect(await screen.findByText("Run run-7")).toBeInTheDocument();
-    expect(document.querySelector(".historyRow")).toBeInTheDocument();
-    expect(document.querySelector(".historyRow.ui-card")).toBeNull();
+    // Exact IDs stay advanced-only inside the row disclosure.
+    expect(screen.getByText("change-2").closest("details")).not.toBeNull();
+    const disclosures = await screen.findAllByText("View details");
+    expect(disclosures).toHaveLength(2);
+    expect(document.querySelector(".historyTable")).toBeInTheDocument();
+    expect(document.querySelector(".historyTable.ui-card")).toBeNull();
     expect(changeApi.list).toHaveBeenCalledWith("default");
+  });
+
+  it("PR6: reaches space history from Settings and backs to Settings only", async () => {
+    vi.mocked(changeApi.list).mockResolvedValue([]);
+
+    render(() => <SpaceHistoryRoute />);
+
+    const back = await screen.findByRole("link", { name: "Back to Settings" });
+    expect(back).toHaveAttribute("href", "/spaces/default/settings");
+    expect(screen.getAllByRole("link", { name: "Back to Settings" }))
+      .toHaveLength(1);
+    expect(screen.queryByRole("link", { name: "Back to Space" }))
+      .not.toBeInTheDocument();
+  });
+
+  it("PR6: resolves actor IDs to member display names without raw UUIDs in rows", async () => {
+    vi.mocked(changeApi.list).mockResolvedValue([
+      {
+        change_id: "change-9",
+        generation: 9,
+        actor_principal_id: "01900000-0000-7000-8000-000000000042",
+        message: null,
+        reverts_change_id: null,
+        run_id: null,
+        created_at_micros: 1767225600000000,
+      },
+    ]);
+    vi.mocked(spaceApi.listMembers).mockResolvedValue([
+      {
+        principal: {
+          principal_id: "01900000-0000-7000-8000-000000000042",
+          display_name: "Ada Example",
+          kind: "human",
+          state: "active",
+        },
+        role: "owner",
+      },
+    ]);
+
+    render(() => <SpaceHistoryRoute />);
+
+    expect(await screen.findByText("Ada Example")).toBeInTheDocument();
+    expect(
+      screen.queryByText("01900000-0000-7000-8000-000000000042"),
+    ).toBeNull();
   });
 
   it("renders the empty state when no changes exist", async () => {

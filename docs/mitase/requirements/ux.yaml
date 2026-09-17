@@ -56,13 +56,40 @@ requirements:
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx", test: "REQ-UX-NAV-001: exposes exactly one back control to the entry" } }
           - id: revision-single-back
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].test.tsx
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].test.tsx"
             selector: { kind: test, name: "REQ-UX-NAV-001: exposes exactly one back control to history" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
                 covers: [FEAT-UX-007#binding.back-control-implementation/target.entry-revision-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].test.tsx", test: "REQ-UX-NAV-001: exposes exactly one back control to history" } }
+          - id: space-history-settings-back
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/history.test.tsx
+            selector: { kind: test, name: "PR6: reaches space history from Settings and backs to Settings only" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.back-link-control]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "PR6: reaches space history from Settings and backs to Settings only" } }
+          - id: sql-new-single-back
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/queries/new.test.tsx
+            selector: { kind: test, name: "PR6: backs to Saved SQL once and reports diagnostics with line and column" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.back-link-control]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/queries/new.test.tsx", test: "PR6: backs to Saved SQL once and reports diagnostics with line and column" } }
+          - id: sql-variables-single-back
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/queries/[query_id]/variables.test.tsx"
+            selector: { kind: test, name: "PR6: backs to the saved query once with typed variable inputs" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.back-link-control]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/queries/[query_id]/variables.test.tsx", test: "PR6: backs to the saved query once with typed variable inputs" } }
       - id: shell-ownership-verification
         role: verification
         facet: verification
@@ -275,6 +302,74 @@ requirements:
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-history.test.ts, test: "REQ-UX-ENTRY-002: keeps the raw actor identity available for event detail" } }
+      - id: pr6-row-migration-verification
+        role: verification
+        facet: verification
+        responsibility: Verify PR-6 settings/search/saved-query/asset row migrations render through RowList with full-row activation and keep raw identifiers in advanced disclosure only through exact Vitest cases.
+        targets:
+          - id: pr6-settings-row-nav
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/settings.route.test.tsx
+            selector: { kind: test, name: "PR6: navigates settings as flat rows with History reaching space history" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.full-row-activation
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/settings.route.test.tsx", test: "PR6: navigates settings as flat rows with History reaching space history" } }
+          - id: pr6-search-one-experience
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/search.test.tsx
+            selector: { kind: test, name: "PR6: keeps one search experience with progressive filters and related links" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.full-row-activation
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/search.test.tsx", test: "PR6: keeps one search experience with progressive filters and related links" } }
+          - id: pr6-search-result-rows
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/search.test.tsx
+            selector: { kind: test, name: "PR6: renders result rows through RowList with full-row activation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.full-row-activation
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/search.test.tsx", test: "PR6: renders result rows through RowList with full-row activation" } }
+          - id: pr6-saved-query-rows
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
+            selector: { kind: test, name: "PR6: renders saved queries through RowList with full-row activation and no boxed chevrons" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.full-row-activation
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/index.test.tsx", test: "PR6: renders saved queries through RowList with full-row activation and no boxed chevrons" } }
+          - id: pr6-space-history-actor-display
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/history.test.tsx
+            selector: { kind: test, name: "PR6: resolves actor IDs to member display names without raw UUIDs in rows" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "PR6: resolves actor IDs to member display names without raw UUIDs in rows" } }
+          - id: pr6-audit-actor-display
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.test.tsx
+            selector: { kind: test, name: "PR6: resolves space actor IDs to member display names with raw IDs advanced-only" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: "PR6: resolves space actor IDs to member display names with raw IDs advanced-only" } }
+          - id: pr6-asset-detail-rows
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/assets/[asset_id].test.tsx"
+            selector: { kind: test, name: "PR6: shows type/size meta with download/delete actions and entry references" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/assets/[asset_id].test.tsx", test: "PR6: shows type/size meta with download/delete actions and entry references" } }
   - id: REQ-UX-LIST-002
     title: One-Row Action Bar at 390px
     description: Primary list and workspace action bars remain in a single row without wrapping or horizontal scrolling at a 390px viewport.

@@ -1,0 +1,28 @@
+version: "0.1"
+updated: "2026-09-17"
+page:
+  id: space-asset-detail
+  title: Asset Detail
+  route: /spaces/{space_id}/assets/{asset_id}
+  implementation: implemented
+components:
+  shared:
+    - id: space-shell
+      type: persistent-workspace-navigation
+      reference: ../components/space-shell.yaml
+  body:
+    - id: asset-detail-header
+      type: page-header
+      description: Names the asset with type/size meta and exposes the single Back control to the asset inventory.
+      target_page: space-assets
+    - id: asset-download-delete-actions
+      type: toolbar
+      description: Offers Download and Delete Asset as one-row actions with busy states; delete returns to the inventory after the server confirms.
+      source: asset.read
+    - id: asset-entry-references
+      type: list
+      description: Lists every current Entry referencing the asset as full-row links to entry detail; the exact asset ID stays in advanced disclosure.
+      source: asset.list
+responsive:
+  desktop: border-separated-list
+  mobile: stacked-border-separated-list

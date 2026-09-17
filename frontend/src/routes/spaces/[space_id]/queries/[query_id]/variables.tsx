@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
+import { BackLink } from "~/components/BackLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { sqlApi, sqlSessionApi } from "~/lib/ugoite-client";
 import { normalizeSqlVariables } from "~/lib/sql";
@@ -85,6 +86,12 @@ export default function SpaceQueryVariablesRoute() {
           <div class="eyebrow">{t("sqlPage.searchSavedSql")}</div>
           <h1>{t("sqlPage.queryVariables")}</h1>
         </div>
+        <BackLink
+          href={`/spaces/${encodeURIComponent(spaceId())}/sql/${
+            encodeURIComponent(queryId())
+          }`}
+          label={t("sqlPage.backToSavedSql")}
+        />
       </div>
 
       {/* Panel-local spinner: loaded variables stay mounted on refetch. */}

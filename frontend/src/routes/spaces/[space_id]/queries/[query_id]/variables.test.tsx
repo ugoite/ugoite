@@ -10,6 +10,22 @@ const { navigateMock, sqlGetMock, sessionCreateMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@solidjs/router", () => ({
+  A: (props: {
+    href: string;
+    class?: string;
+    children: unknown;
+    "aria-label"?: string;
+    title?: string;
+  }) => (
+    <a
+      href={props.href}
+      class={props.class}
+      aria-label={props["aria-label"]}
+      title={props.title}
+    >
+      {props.children}
+    </a>
+  ),
   useNavigate: () => navigateMock,
   useParams: () => ({ space_id: "default", query_id: "saved-vars" }),
 }));
@@ -95,5 +111,20 @@ describe("/spaces/:space_id/queries/:query_id/variables", () => {
         "/spaces/default/entries?session=variable-session",
       );
     });
+  });
+
+  it("PR6: backs to the saved query once with typed variable inputs", async () => {
+    render(() => <SpaceQueryVariablesRoute />);
+
+    const back = await screen.findByRole("link", { name: "Back to Saved SQL" });
+    expect(back).toHaveAttribute(
+      "href",
+      "/spaces/default/sql/saved-vars",
+    );
+    expect(screen.getAllByRole("link", { name: "Back to Saved SQL" }))
+      .toHaveLength(1);
+    // Typed variables stay on the normal path without raw JSON.
+    expect(await screen.findByLabelText(/title/)).toBeInTheDocument();
+    expect(screen.queryByText("{")).not.toBeInTheDocument();
   });
 });

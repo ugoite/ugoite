@@ -1,10 +1,14 @@
 import { useParams, useSearchParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import {
+  RowList,
+  RowListButton,
+  RowListItem,
+  RowListLink,
+} from "~/components/RowList";
 import { SpaceSettings } from "~/components/SpaceSettings";
 import { SpaceAuditLogViewer } from "~/components/AuditLogViewer";
-import { UiIcon } from "~/components/UiIcon";
-import { CredentialSettings } from "~/routes/settings/security";
 import { locale, t, type TranslationKey } from "~/lib/i18n";
 import { setLocalePreference } from "~/lib/preferences-store";
 import { spaceApi } from "~/lib/ugoite-client";
@@ -92,20 +96,35 @@ export default function SpaceSettingsRoute() {
   return (
     <>
       <div class="settingsLayout settingsWorkspace">
-        <aside class="settingsNav surface">
-          <For each={settingsSections}>
-            {(section) => (
-              <button
-                type="button"
-                classList={{ active: active() === section.id }}
-                onClick={() => setSearch({ section: section.id })}
-              >
-                <UiIcon name={section.icon} />
-                <span>{label(section)}</span>
-              </button>
-            )}
-          </For>
-        </aside>
+        <nav aria-label={t("settings.title")}>
+          <RowList label={t("settings.title")}>
+            <For each={settingsSections}>
+              {(section) => (
+                <RowListItem
+                  main={section.id === "history"
+                    ? (
+                      <RowListLink
+                        href={`/spaces/${
+                          encodeURIComponent(spaceId())
+                        }/history`}
+                        primary={label(section)}
+                        secondary={t("settings.historyDescription")}
+                        chevron
+                      />
+                    )
+                    : (
+                      <RowListButton
+                        primary={label(section)}
+                        chevron
+                        ariaLabel={label(section)}
+                        onActivate={() => setSearch({ section: section.id })}
+                      />
+                    )}
+                />
+              )}
+            </For>
+          </RowList>
+        </nav>
         <main>
           <h1 class="ui-sr-only">{t("settings.title")}</h1>
           {/* Panel-local spinner: settings content stays mounted on refetch. */}
@@ -135,9 +154,10 @@ export default function SpaceSettingsRoute() {
                     <section class="settingsMain surface">
                       <h2>{t("settings.language")}</h2>
                       <label>
-                        {t("settings.language")}
+                        <span class="ui-sr-only">{t("settings.language")}</span>
                         <select
                           value={locale()}
+                          aria-label={t("settings.language")}
                           onChange={(event) =>
                             void setLocalePreference(
                               event.currentTarget.value as "en" | "ja",
@@ -152,6 +172,11 @@ export default function SpaceSettingsRoute() {
                         </select>
                       </label>
                     </section>
+                    <Show when={current().space_version}>
+                      <p class="ui-muted">
+                        <small>{current().space_version}</small>
+                      </p>
+                    </Show>
                   </div>
                 </Show>
                 <Show when={active() === "storage"}>
@@ -252,65 +277,54 @@ export default function SpaceSettingsRoute() {
                     <tbody class="ui-table-body">
                       <For each={members() ?? []}>
                         {(member: SpaceMember) => {
-                          const displayName =
-                            member.principal.display_name?.trim();
+                          const displayName = member.principal.display_name
+                            ?.trim();
                           return (
                             <tr class="ui-table-row">
-                              <td
-                                class="ui-table-cell membersNameCell"
-                                title={displayName ||
-                                  member.principal.principal_id}
-                              >
+                              <td class="ui-table-cell membersNameCell">
                                 <span class="membersPrimary">
                                   {displayName ||
-                                    member.principal.principal_id}
+                                    t("common.untitled")}
                                 </span>
-                                {displayName
-                                  ? (
-                                    <code class="membersSecondary">
-                                      {member.principal.principal_id}
-                                    </code>
-                                  )
-                                  : null}
                               </td>
-                            <td class="ui-table-cell">
-                              <select
-                                value={member.role}
-                                disabled={member.role === "owner"}
-                                aria-label={t("settings.role")}
-                                onChange={(e) =>
-                                  void updateRole(
-                                    member.principal.principal_id,
-                                    e.currentTarget.value as ManagedRole,
-                                  )}
-                              >
-                                <For each={managedRoles}>
-                                  {(role) => (
-                                    <option value={role}>
-                                      {role} — {t(
-                                        `settings.role.${role}` as TranslationKey,
-                                      )}
-                                    </option>
-                                  )}
-                                </For>
-                              </select>
-                            </td>
-                            <td class="ui-table-cell">
-                              {member.principal.state}
-                            </td>
-                            <td class="ui-table-cell">
-                              <button
-                                class="btn danger"
-                                type="button"
-                                disabled={member.role === "owner"}
-                                onClick={() =>
-                                  void revokeMember(
-                                    member.principal.principal_id,
-                                  )}
-                              >
-                                {t("settings.revoke")}
-                              </button>
-                            </td>
+                              <td class="ui-table-cell">
+                                <select
+                                  value={member.role}
+                                  disabled={member.role === "owner"}
+                                  aria-label={t("settings.role")}
+                                  onChange={(e) =>
+                                    void updateRole(
+                                      member.principal.principal_id,
+                                      e.currentTarget.value as ManagedRole,
+                                    )}
+                                >
+                                  <For each={managedRoles}>
+                                    {(role) => (
+                                      <option value={role}>
+                                        {role} — {t(
+                                          `settings.role.${role}` as TranslationKey,
+                                        )}
+                                      </option>
+                                    )}
+                                  </For>
+                                </select>
+                              </td>
+                              <td class="ui-table-cell">
+                                {member.principal.state}
+                              </td>
+                              <td class="ui-table-cell">
+                                <button
+                                  class="btn danger"
+                                  type="button"
+                                  disabled={member.role === "owner"}
+                                  onClick={() =>
+                                    void revokeMember(
+                                      member.principal.principal_id,
+                                    )}
+                                >
+                                  {t("settings.revoke")}
+                                </button>
+                              </td>
                             </tr>
                           );
                         }}
@@ -318,6 +332,27 @@ export default function SpaceSettingsRoute() {
                     </tbody>
                   </table>
                 </div>
+                <details class="settingsAdvanced">
+                  <summary>{t("settings.advancedDetails")}</summary>
+                  <dl class="ui-stack-sm">
+                    <For each={members() ?? []}>
+                      {(member: SpaceMember) => (
+                        <div>
+                          <dt class="ui-label">
+                            {member.principal.display_name?.trim() ||
+                              t("common.untitled")}
+                          </dt>
+                          <dd class="ui-muted">
+                            <span class="ui-sr-only">
+                              {t("settings.memberId")}:{" "}
+                            </span>
+                            <code>{member.principal.principal_id}</code>
+                          </dd>
+                        </div>
+                      )}
+                    </For>
+                  </dl>
+                </details>
               </Show>
             </section>
           </Show>
@@ -331,6 +366,18 @@ export default function SpaceSettingsRoute() {
             <section class="settingsMain surface">
               <h2>{t("settings.section.audit")}</h2>
               <SpaceAuditLogViewer spaceId={spaceId()} />
+            </section>
+          </Show>
+          <Show when={active() === "history"}>
+            <section class="settingsMain surface">
+              <h2>{t("settings.section.history")}</h2>
+              <p class="ui-muted">{t("settings.historyDescription")}</p>
+              <a
+                class="btn primary"
+                href={`/spaces/${encodeURIComponent(spaceId())}/history`}
+              >
+                {t("settings.section.history")}
+              </a>
             </section>
           </Show>
         </main>
