@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { formatDateTimeLabel } from "~/lib/date-format";
-import { entryApi } from "~/lib/ugoite-client";
+import { entryApi, spaceApi } from "~/lib/ugoite-client";
 import SpaceEntryHistoryRoute from "./index";
 
 vi.mock("@solidjs/router", () => ({
@@ -28,12 +28,14 @@ vi.mock("@solidjs/router", () => ({
 
 vi.mock("~/lib/ugoite-client", () => ({
   entryApi: { history: vi.fn() },
+  spaceApi: { listMembers: vi.fn() },
 }));
 
 describe("entry history route", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     setLocale("en");
+    vi.mocked(spaceApi.listMembers).mockResolvedValue([]);
   });
 
   it("renders the backend revision timestamp", async () => {
@@ -82,7 +84,7 @@ describe("entry history route", () => {
     const { container } = render(() => <SpaceEntryHistoryRoute />);
 
     const revisionLink = await screen.findByRole("link", {
-      name: "Changed",
+      name: /^Changed ·/,
     });
     expect(revisionLink).toHaveAttribute(
       "href",
@@ -93,7 +95,7 @@ describe("entry history route", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("PR3: renders a 3-column history table with chevron only", async () => {
+  it("PR4: renders history rows through RowList with full-row activation", async () => {
     vi.mocked(entryApi.history).mockResolvedValue({
       revisions: [{
         revision_id: "rev-1",
@@ -109,27 +111,19 @@ describe("entry history route", () => {
 
     const { container } = render(() => <SpaceEntryHistoryRoute />);
 
-    const table = await screen.findByRole("table");
-    expect(table).toHaveClass("dataTable");
-    expect(table).toHaveClass("entry-history-table");
-    expect(table.closest(".tablewrap")).not.toBeNull();
+    const list = await screen.findByRole("list", { name: "Entry history" });
+    expect(list).toHaveClass("rowList");
 
-    const headers = [...table.querySelectorAll("thead th")].map((th) =>
-      th.textContent?.trim()
-    );
-    expect(headers.slice(0, 3)).toEqual([
-      "Operation",
-      "Actor",
-      "Timestamp",
-    ]);
-
-    // One row link (the operation) routes to the revision; revision id,
-    // title, form, and summary stay out of the table.
-    const rowLink = await screen.findByRole("link", { name: "Updated" });
+    // One row link (operation primary, actor secondary, timestamp meta)
+    // routes to the revision; revision id, title, and form stay out of rows.
+    const rowLink = await screen.findByRole("link", {
+      name: /Updated · alice ·/,
+    });
     expect(rowLink).toHaveAttribute(
       "href",
       "/spaces/default/entries/entry-1/history/rev-1",
     );
+    expect(rowLink).toHaveClass("rowListMain");
     expect(screen.getByText("alice")).toBeInTheDocument();
     expect(
       await screen.findByText(formatDateTimeLabel(1767225600)),
@@ -137,7 +131,67 @@ describe("entry history route", () => {
     expect(screen.queryByText(/rev-1/)).toBeNull();
     expect(screen.queryByText("Hidden title")).toBeNull();
     expect(screen.queryByText("Hidden form")).toBeNull();
-    expect(container.querySelector("tbody .chev")).toHaveTextContent("›");
+    expect(
+      container.querySelector(".rowListItem .rowListChevron"),
+    ).toHaveTextContent("›");
+    // Native link activation covers click and keyboard Enter.
+    expect(rowLink.tagName).toBe("A");
+  });
+
+  it("REQ-UX-ENTRY-002: resolves actor UUIDs to member display names and never shows raw UUIDs in rows", async () => {
+    const actorId = "123e4567-e89b-12d3-a456-426614174000";
+    vi.mocked(spaceApi.listMembers).mockResolvedValue([
+      {
+        principal: {
+          principal_id: actorId,
+          kind: "human",
+          display_name: "Ada Example",
+          state: "active",
+          created_at: "2026-01-01T00:00:00Z",
+        },
+        role: "editor",
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    vi.mocked(entryApi.history).mockResolvedValue({
+      revisions: [{
+        revision_id: "rev-9",
+        timestamp: 1767225600,
+        checksum: "checksum",
+        operation: "upsert",
+        entry_version: 2,
+        actor: actorId,
+      }],
+    });
+
+    const { container } = render(() => <SpaceEntryHistoryRoute />);
+
+    // The UUID fixture resolves to the member display name; the raw UUID
+    // appears nowhere in list rows (actor UUID=0 in normal rows).
+    expect(await screen.findByText("Ada Example")).toBeInTheDocument();
+    expect(container.textContent).not.toContain(actorId);
+    expect(container.textContent).not.toContain("123e4567-e89b");
+  });
+
+  it("REQ-UX-ENTRY-002: falls back to a stable short actor form when the directory cannot resolve", async () => {
+    const actorId = "123e4567-e89b-12d3-a456-426614174000";
+    vi.mocked(spaceApi.listMembers).mockRejectedValue(new Error("denied"));
+    vi.mocked(entryApi.history).mockResolvedValue({
+      revisions: [{
+        revision_id: "rev-9",
+        timestamp: 1767225600,
+        checksum: "checksum",
+        operation: "upsert",
+        entry_version: 2,
+        actor: actorId,
+      }],
+    });
+
+    const { container } = render(() => <SpaceEntryHistoryRoute />);
+
+    // Deterministic short fallback, still no raw UUID in rows.
+    expect(await screen.findByText("123e4567")).toBeInTheDocument();
+    expect(container.textContent).not.toContain(actorId);
   });
 
   it("PR3: pagination keeps rows with a footer spinner while loading more", async () => {
@@ -160,8 +214,8 @@ describe("entry history route", () => {
 
     const { container } = render(() => <SpaceEntryHistoryRoute />);
 
-    await screen.findByRole("table");
-    expect(container.querySelectorAll("tbody tr")).toHaveLength(50);
+    await screen.findByRole("list", { name: "Entry history" });
+    expect(container.querySelectorAll(".rowListItem")).toHaveLength(50);
 
     const loadMore = await screen.findByRole("button", {
       name: "Load more history",
@@ -175,7 +229,7 @@ describe("entry history route", () => {
         container.querySelector('.localpending-sm[role="status"]'),
       ).not.toBeNull();
     });
-    expect(container.querySelectorAll("tbody tr")).toHaveLength(50);
+    expect(container.querySelectorAll(".rowListItem")).toHaveLength(50);
     const footerStatus = container.querySelector(
       '.localpending-sm[role="status"]',
     )!;
@@ -188,6 +242,6 @@ describe("entry history route", () => {
         screen.queryByRole("button", { name: "Load more history" }),
       ).not.toBeInTheDocument();
     });
-    expect(container.querySelectorAll("tbody tr")).toHaveLength(50);
+    expect(container.querySelectorAll(".rowListItem")).toHaveLength(50);
   });
 });

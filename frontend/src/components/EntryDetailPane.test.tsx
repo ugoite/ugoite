@@ -158,47 +158,6 @@ describe("EntryDetailPane", () => {
     await waitFor(() => expect(textarea).toHaveValue("# Second Entry"));
   });
 
-  it("REQ-FE-011: reloads content when the user explicitly refreshes", async () => {
-    vi.stubGlobal("confirm", () => true);
-    (entryApi.get as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({
-        id: "entry-1",
-        title: "First Entry",
-        form: null,
-        content: "# First Entry",
-        revision_id: "rev-1",
-        created_at: "2026-01-01T00:00:00Z",
-        updated_at: "2026-01-01T00:00:00Z",
-      })
-      .mockResolvedValueOnce({
-        id: "entry-1",
-        title: "Refreshed Entry",
-        form: null,
-        content: "# Refreshed Entry",
-        revision_id: "rev-2",
-        created_at: "2026-01-01T00:00:00Z",
-        updated_at: "2026-01-01T00:00:00Z",
-      });
-
-    render(() => (
-      <EntryDetailPane
-        spaceId={() => "default"}
-        entryId={() => "entry-1"}
-        onDeleted={vi.fn()}
-      />
-    ));
-
-    const textarea = await screen.findByPlaceholderText(
-      "Start writing in Markdown...",
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Reload latest version" }),
-    );
-
-    await waitFor(() => expect(entryApi.get).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(textarea).toHaveValue("# Refreshed Entry"));
-  });
-
   it("REQ-FE-052: edits form fields without requiring Markdown knowledge", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-1",
@@ -307,8 +266,12 @@ describe("EntryDetailPane", () => {
     const toolbar = screen.getByRole("toolbar", { name: "Entry actions" });
     const tools = toolbar.querySelectorAll(".ui-entry-tool");
     expect(tools).toHaveLength(4);
-    expect(screen.getByRole("button", { name: "Reload latest version" }))
-      .toBeInTheDocument();
+    // PR4: the single action bar carries save/history/info/delete. Save is
+    // weak and disabled while the editor is clean.
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(toolbar.contains(save)).toBe(true);
+    expect(save).toBeDisabled();
+    expect(save.classList.contains("ui-entry-tool-primary")).toBe(false);
     expect(screen.getByRole("link", { name: /History & recovery/ }))
       .toHaveAttribute(
         "href",
@@ -339,7 +302,12 @@ describe("EntryDetailPane", () => {
       toolbar.compareDocumentPosition(fields) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(screen.getByRole("status")).toHaveTextContent("All changes saved");
+    // PR4: no permanent saved chip in the detail view; success announces
+    // once through a transient toast, so no live region is rendered while
+    // idle.
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByText("All changes saved")).not.toBeInTheDocument();
+    expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
   });
 
   it("renders formless document entries with the source editor directly", async () => {
@@ -520,7 +488,8 @@ describe("EntryDetailPane", () => {
       expect(screen.getByLabelText("Body")).toHaveValue("typed while saving")
     );
     expect(onCreated).not.toHaveBeenCalled();
-    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+    // PR4: the bound draft still reads as dirty work through the save tool.
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
@@ -1826,8 +1795,13 @@ describe("EntryDetailPane", () => {
     finishSave?.({ revision_id: "rev-2" });
 
     await waitFor(() => {
-      expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+      // PR4: dirtiness surfaces through the strong enabled save tool; the
+      // permanent unsaved chip is gone.
+      const pendingSave = screen.getByRole("button", { name: "Save" });
+      expect(pendingSave).toBeEnabled();
+      expect(pendingSave.classList.contains("ui-entry-tool-primary")).toBe(
+        true,
+      );
     });
   });
 
@@ -2095,7 +2069,7 @@ describe("EntryDetailPane", () => {
     vi.unstubAllGlobals();
   });
 
-  it("PR3: uses the shared compact action bar and entry fields", async () => {
+  it("PR4: keeps a single one-row action bar with save/history/info/delete", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-pr3",
       title: "PR3 Entry",
@@ -2128,17 +2102,21 @@ describe("EntryDetailPane", () => {
 
     await screen.findByLabelText("Summary");
 
-    // Shared compact bar with short visible labels; the long i18n strings
-    // stay as accessible names.
+    // Single toolbar, four tools: save rides in the bar (weak and disabled
+    // while clean), then history/info/delete. No separate header save area,
+    // no refresh tool.
     const bar = document.querySelector(".actionbar.compact-actions");
     expect(bar).not.toBeNull();
     expect(bar?.getAttribute("role")).toBe("toolbar");
     expect(bar?.querySelectorAll(".tool")).toHaveLength(4);
-    for (const short of ["Refresh", "History", "Info", "Delete"]) {
+    for (const short of ["Save", "History", "Info", "Delete"]) {
       expect(bar?.textContent).toContain(short);
     }
-    expect(screen.getByRole("button", { name: "Reload latest version" }))
-      .toBeInTheDocument();
+    expect(bar?.textContent).not.toContain("Refresh");
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(bar?.contains(save)).toBe(true);
+    expect(save).toBeDisabled();
+    expect(save.classList.contains("ui-entry-tool-primary")).toBe(false);
     expect(screen.getByRole("link", { name: /History & recovery/ }))
       .toHaveAttribute(
         "href",
@@ -2148,34 +2126,97 @@ describe("EntryDetailPane", () => {
     expect(screen.getByRole("button", { name: "Delete entry" }))
       .toBeInTheDocument();
 
-    // Header row: back link + title + form chip + primary save, in order.
+    // Header row: shared back link + title + form chip, in order. Save lives
+    // in the bar below the header, not in a separate header save area.
     const page = document.querySelector(".ui-entry-page")!;
     const header = page.querySelector(".ui-entry-header")!;
     const backLink = header.querySelector('a[href*="/forms"]')!;
     const title = header.querySelector("h1")!;
     const chip = header.querySelector(".ui-pill")!;
-    const save = screen.getByRole("button", { name: "Save" });
     expect(header.contains(backLink)).toBe(true);
     expect(title).toHaveTextContent("PR3 Entry");
     expect(chip).toHaveTextContent("Meeting");
+    expect(header.querySelector(".ui-entry-save-area")).toBeNull();
     expect(
       backLink.compareDocumentPosition(title) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      title.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING,
+      header.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
 
-    // Save state is a subtle badge, not a noisy alert.
-    const status = screen.getByRole("status");
-    expect(status).toHaveClass("ui-save-state");
-    expect(status).toHaveTextContent("All changes saved");
+    // No permanent saved chip in the detail view: no live region while idle.
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByText("All changes saved")).not.toBeInTheDocument();
+
+    // Dirty editing turns save strong; the markdown type label stays out of
+    // normal field rendering (the textarea control expresses it).
+    const notes = screen.getByLabelText("Notes");
+    fireEvent.input(notes, { target: { value: "**review**!" } });
+    await waitFor(() => expect(save).toBeEnabled());
+    expect(save.classList.contains("ui-entry-tool-primary")).toBe(true);
+    expect(screen.queryByText("markdown")).not.toBeInTheDocument();
 
     // Shared entry fields with consistent spacing hooks.
     const fields = document.querySelector(".form.entry-fields")!;
     expect(fields).not.toBeNull();
     expect(fields.querySelectorAll(".field").length).toBeGreaterThanOrEqual(3);
-    expect(screen.getByLabelText("Notes")).toHaveValue("**review**");
+    expect(screen.getByLabelText("Notes")).toHaveValue("**review**!");
+  });
+
+  it("PR4: announces saving without layout shift and toasts success transiently", async () => {
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-1",
+      title: "Test Entry",
+      form: null,
+      content: "# Test Entry",
+      revision_id: "rev-1",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    let finishSave: ((value: { revision_id: string }) => void) | undefined;
+    (entryApi.update as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSave = resolve;
+        }),
+    );
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-1"}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const textarea = await screen.findByPlaceholderText(
+      "Start writing in Markdown...",
+    );
+    fireEvent.input(textarea, { target: { value: "# Edited" } });
+    const save = screen.getByRole("button", { name: "Save" });
+    // Same box before and during the save: the label never swaps text.
+    const before = save.getBoundingClientRect();
+    fireEvent.click(save);
+
+    await waitFor(() => expect(entryApi.update).toHaveBeenCalledTimes(1));
+    const busySave = screen.getByRole("button", { name: "Save" });
+    expect(busySave).toHaveAttribute("aria-busy", "true");
+    expect(busySave.textContent).toContain("Save");
+    expect(busySave.textContent).not.toContain("Saving...");
+    const during = busySave.getBoundingClientRect();
+    expect(during.width).toBe(before.width);
+    expect(during.height).toBe(before.height);
+    // The accessible announcement carries the saving state.
+    expect(screen.getByRole("status")).toHaveTextContent("Saving...");
+
+    finishSave?.({ revision_id: "rev-2" });
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "All changes saved",
+      )
+    );
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
   it("calls onDeleted after successful delete", async () => {

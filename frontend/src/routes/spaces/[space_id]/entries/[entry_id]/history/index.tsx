@@ -1,12 +1,18 @@
-import { A, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import { RowList, RowListItem, RowListLink } from "~/components/RowList";
 import { formatDateTimeLabel } from "~/lib/date-format";
-import { revisionActor, revisionOperationLabel } from "~/lib/entry-history";
+import {
+  actorDisplayNameLookup,
+  resolveActorDisplayName,
+  revisionOperationLabel,
+} from "~/lib/entry-history";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { t } from "~/lib/i18n";
-import { entryApi } from "~/lib/ugoite-client";
+import { entryApi, spaceApi } from "~/lib/ugoite-client";
+import type { SpaceMember } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { spaceRoute } from "~/lib/space-shell-route";
 import { pageFromArray } from "~/lib/pagination";
@@ -25,6 +31,31 @@ export default function SpaceEntryHistoryRoute() {
   const [history] = createResource(() =>
     entryApi.history(spaceId(), entryId(), undefined, HISTORY_PAGE_SIZE + 1)
   );
+  // Best-effort member directory for actor display names. The API carries
+  // only opaque actor identity strings on revisions; when the directory is
+  // unavailable (or the actor left), rows fall back to the stable short
+  // form — never a raw UUID.
+  const [members] = createResource(
+    () => spaceId(),
+    async (id): Promise<SpaceMember[]> => {
+      try {
+        return await spaceApi.listMembers(id);
+      } catch {
+        return [];
+      }
+    },
+    { initialValue: [] as SpaceMember[] },
+  );
+  const actorLookup = createMemo(() =>
+    actorDisplayNameLookup(
+      (members() ?? []).map((member) => ({
+        principal_id: member.principal.principal_id,
+        display_name: member.principal.display_name,
+      })),
+    )
+  );
+  const actorName = (revision: EntryRevision) =>
+    resolveActorDisplayName(revision, actorLookup());
   const [revisions, setRevisions] = createSignal<EntryRevision[]>([]);
   const [hasMore, setHasMore] = createSignal(false);
   const [loadingMore, setLoadingMore] = createSignal(false);
@@ -73,7 +104,6 @@ export default function SpaceEntryHistoryRoute() {
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow">{entryId()}</div>
           <h1>{t("entryHistory.title")}</h1>
         </div>
         <BackLink
@@ -100,50 +130,44 @@ export default function SpaceEntryHistoryRoute() {
             when={data().revisions.length > 0}
             fallback={<p class="ui-muted">{t("entryHistory.empty")}</p>}
           >
-            {
-              /* Only this wrapper scrolls horizontally; the page itself never
-                does. Three columns only: operation / actor / timestamp plus
-                a chevron. Revision id, title, form, and summary stay hidden
-                (the revision route owns that detail). */
-            }
-            <div class="tablewrap" aria-busy={history.loading || undefined}>
-              <table class="dataTable entry-history-table">
-                <thead>
-                  <tr>
-                    <th scope="col">{t("entryHistory.operation")}</th>
-                    <th scope="col">{t("entryHistory.actor")}</th>
-                    <th scope="col">{t("entryHistory.timestamp")}</th>
-                    <th scope="col">
-                      <span class="ui-sr-only">{t("entryHistory.title")}</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <For each={revisions()}>
-                    {(revision) => (
-                      <tr>
-                        <td>
-                          <A
-                            class="table-link"
+            {/*
+              RowList rows (PR4): the full row activates to the revision
+              review (click or Enter on the native link). Primary is the
+              operation, secondary the actor display name, meta the compact
+              timestamp, plus an unboxed chevron. Revision id, title, form,
+              and raw actor UUIDs stay out of rows (the revision route owns
+              that detail).
+            */}
+            <div aria-busy={history.loading || undefined}>
+              <RowList label={t("entryHistory.title")}>
+                <For each={revisions()}>
+                  {(revision) => {
+                    const operation = () => revisionOperationLabel(revision);
+                    const name = () => actorName(revision);
+                    const when = () =>
+                      formatDateTimeLabel(revision.timestamp);
+                    const rowLabel = () =>
+                      `${operation()} · ${name()} · ${when()}`;
+                    return (
+                      <RowListItem
+                        main={
+                          <RowListLink
                             href={`/spaces/${encodedSpaceId()}/entries/${encodedEntryId()}/history/${
                               encodeURIComponent(revision.revision_id)
                             }`}
-                          >
-                            {revisionOperationLabel(revision)}
-                          </A>
-                        </td>
-                        <td class="ui-muted">{revisionActor(revision)}</td>
-                        <td class="ui-muted">
-                          {formatDateTimeLabel(revision.timestamp)}
-                        </td>
-                        <td aria-hidden="true">
-                          <span class="chev">›</span>
-                        </td>
-                      </tr>
-                    )}
-                  </For>
-                </tbody>
-              </table>
+                            primary={operation()}
+                            secondary={name()}
+                            meta={when()}
+                            chevron
+                            ariaLabel={rowLabel()}
+                            title={rowLabel()}
+                          />
+                        }
+                      />
+                    );
+                  }}
+                </For>
+              </RowList>
             </div>
             <Show when={hasMore()}>
               <button

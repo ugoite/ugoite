@@ -613,15 +613,11 @@ requirements:
                 criterion: REQ-FE-011#criterion.selection-and-refresh-sync
                 covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "REQ-FE-011: synchronizes editor content when the selected entry changes" } }
-          - id: explicit-refresh
-            adapter: typescript
-            path: frontend/src/components/EntryDetailPane.test.tsx
-            selector: { kind: test, name: "REQ-FE-011: reloads content when the user explicitly refreshes" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-011#criterion.selection-and-refresh-sync
-                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "REQ-FE-011: reloads content when the user explicitly refreshes" } }
+          # PR4 (UX #2866) removed the explicit Refresh action: the single
+          # detail action bar carries save/history/info/delete only. The
+          # selection-sync target above still verifies the criterion's
+          # selection half; refresh coverage is an explicit evidence gap
+          # until the requirement is migrated.
   - id: REQ-FE-012
     title: Consecutive Save Support
     description: Multiple consecutive saves on the same Entry use the revision returned by each successful save as the parent revision for the next update.

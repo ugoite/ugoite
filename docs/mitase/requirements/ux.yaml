@@ -96,6 +96,20 @@ requirements:
                 criterion: REQ-UX-ENTRY-001#criterion.no-decorative-cards
                 covers: [FEAT-UX-008#binding.row-list-implementation/target.entries-index-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "REQ-UX-ENTRY-001: renders form-scoped entries with a positional back link and list-adjacent create action" } }
+      - id: entry-save-state-verification
+        role: verification
+        facet: verification
+        responsibility: Verify PR-4 entry detail save states announce without layout shift and confirm transiently (no permanent saved chip) through exact Vitest cases.
+        targets:
+          - id: entry-save-announcement
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.test.tsx
+            selector: { kind: test, name: "PR4: announces saving without layout shift and toasts success transiently" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-001#criterion.explicit-async-states
+                covers: [FEAT-UX-002#binding.entry-baseline/target.entry-detail-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "PR4: announces saving without layout shift and toasts success transiently" } }
   - id: REQ-UX-LIST-001
     title: List Rows With Full-Row Activation and Advanced-Only Identifiers
     description: Selectable list rows activate across the full row without a separate boxed chevron, and raw UUIDs or internal identifiers appear only inside explicitly advanced or diagnostic disclosure while primary rows show human-meaningful names.
@@ -161,6 +175,83 @@ requirements:
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-008#binding.row-list-implementation/target.entries-index-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "REQ-UX-LIST-001: renders entry rows without type chips and with compact right-meta dates" } }
+      - id: history-row-verification
+        role: verification
+        facet: verification
+        responsibility: Verify PR-4 entry-history rows render through RowList with full-row activation and actor display names (raw UUIDs only in advanced disclosure) through exact Vitest cases.
+        targets:
+          - id: history-rows-rowlist
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx"
+            selector: { kind: test, name: "PR4: renders history rows through RowList with full-row activation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.full-row-activation
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx", test: "PR4: renders history rows through RowList with full-row activation" } }
+          - id: history-actor-display
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx"
+            selector: { kind: test, name: "REQ-UX-ENTRY-002: resolves actor UUIDs to member display names and never shows raw UUIDs in rows" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx", test: "REQ-UX-ENTRY-002: resolves actor UUIDs to member display names and never shows raw UUIDs in rows" } }
+          - id: history-actor-fallback
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx"
+            selector: { kind: test, name: "REQ-UX-ENTRY-002: falls back to a stable short actor form when the directory cannot resolve" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx", test: "REQ-UX-ENTRY-002: falls back to a stable short actor form when the directory cannot resolve" } }
+          - id: actor-view-model-display
+            adapter: typescript
+            path: frontend/src/lib/entry-history.test.ts
+            selector: { kind: test, name: "REQ-UX-ENTRY-002: resolves an actor UUID fixture to the member display name" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-history.test.ts, test: "REQ-UX-ENTRY-002: resolves an actor UUID fixture to the member display name" } }
+          - id: actor-view-model-short
+            adapter: typescript
+            path: frontend/src/lib/entry-history.test.ts
+            selector: { kind: test, name: "REQ-UX-ENTRY-002: keeps short human-meaningful actor values as-is" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-history.test.ts, test: "REQ-UX-ENTRY-002: keeps short human-meaningful actor values as-is" } }
+          - id: actor-view-model-fallback
+            adapter: typescript
+            path: frontend/src/lib/entry-history.test.ts
+            selector: { kind: test, name: "REQ-UX-ENTRY-002: falls back to a stable short form for unresolvable UUIDs" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-history.test.ts, test: "REQ-UX-ENTRY-002: falls back to a stable short form for unresolvable UUIDs" } }
+          - id: actor-view-model-unknown
+            adapter: typescript
+            path: frontend/src/lib/entry-history.test.ts
+            selector: { kind: test, name: "REQ-UX-ENTRY-002: reports unknown actors without inventing identity" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-history.test.ts, test: "REQ-UX-ENTRY-002: reports unknown actors without inventing identity" } }
+          - id: actor-view-model-raw
+            adapter: typescript
+            path: frontend/src/lib/entry-history.test.ts
+            selector: { kind: test, name: "REQ-UX-ENTRY-002: keeps the raw actor identity available for event detail" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-history.test.ts, test: "REQ-UX-ENTRY-002: keeps the raw actor identity available for event detail" } }
   - id: REQ-UX-LIST-002
     title: One-Row Action Bar at 390px
     description: Primary list and workspace action bars remain in a single row without wrapping or horizontal scrolling at a 390px viewport.
@@ -186,6 +277,20 @@ requirements:
                 criterion: REQ-UX-LIST-002#criterion.one-row-action-bar
                 covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/RowList.test.tsx, test: "REQ-UX-LIST-002: keeps each row in a single flex row with ellipsis and nowrap meta" } }
+      - id: entry-action-bar-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the PR-4 entry detail single one-row action bar (save/history/info/delete with dirty-gated strong save) through exact Vitest cases.
+        targets:
+          - id: entry-action-bar-single-row
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.test.tsx
+            selector: { kind: test, name: "PR4: keeps a single one-row action bar with save/history/info/delete" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-002#criterion.one-row-action-bar
+                covers: [FEAT-UX-003#binding.list-baseline/target.action-bar-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "PR4: keeps a single one-row action bar with save/history/info/delete" } }
   - id: REQ-UX-I18N-001
     title: Dictionary Copy Without Legacy Strings
     description: User-facing copy resolves through the shared English and Japanese locale dictionaries with identical key sets, and legacy hardcoded Japanese strings outside the dictionary are absent from shipped surfaces.
@@ -228,3 +333,18 @@ requirements:
         kind: behavior
         statement: Restore appends a new revision derived from the selected historical revision and never shortens, reorders, or rewrites existing history.
         governed_by: [POL-UI-008#rule.governance]
+    bindings:
+      - id: restore-dialog-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the PR-4 restore confirmation dialog sends no mutation until confirmed and keeps the revision review on cancel through exact Vitest cases.
+        targets:
+          - id: restore-dialog-cancel
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].test.tsx"
+            selector: { kind: test, name: "PR4: cancelling the restore dialog sends nothing and keeps the review" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-002#criterion.append-only-restore
+                covers: [FEAT-UX-006#binding.restore-baseline/target.history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].test.tsx", test: "PR4: cancelling the restore dialog sends nothing and keeps the review" } }

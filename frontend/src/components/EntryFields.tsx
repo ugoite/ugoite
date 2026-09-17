@@ -44,6 +44,12 @@ export interface EntryFieldsProps {
     helpers: () => EntryFieldsControlHelpers,
   ) => JSX.Element;
   /**
+   * Show the raw field-type line under each field name. Normal editing hides
+   * it (PR4: the control itself expresses the type); advanced and detail
+   * surfaces (e.g. revision review) opt in explicitly.
+   */
+  showFieldTypes?: boolean;
+  /**
    * Extra content below a field (hints, validation messages). Rendered
    * through a `Dynamic` boundary so its inline `Show`s keep granular
    * subscriptions instead of re-creating row content.
@@ -168,7 +174,7 @@ export function EntryFields(props: EntryFieldsProps) {
                     <label class="ui-label" for={field.fieldId}>
                       {field.name}
                     </label>
-                    <Show when={field.type}>
+                    <Show when={props.showFieldTypes && field.type}>
                       <p class="mt-0.5 text-xs ui-muted">
                         {field.type}
                         <Show when={field.targetForm}>
