@@ -7,8 +7,7 @@ import { RowList, RowListItem, RowListLink } from "~/components/RowList";
 import { formatAssetSize } from "~/lib/asset-reference";
 import { intlLocale, t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
-import { assetApi } from "~/lib/ugoite-client";
-import type { AssetListItem } from "~/lib/asset-api";
+import { assetApi, type AssetListItem } from "~/lib/ugoite-client";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 
