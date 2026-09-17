@@ -59,3 +59,19 @@ philosophies:
       - id: coding-guideline
         statement: Enforce strict typed contracts, CI gates, policy-linked specifications, and trusted toolchains for AI-assisted changes. Do not bypass validation paths or introduce silent fallbacks that hide risk.
         applies_to: [implementation, verification]
+  - id: PHIL-INTERACTION-001
+    title: Structure Before Explanation
+    summary: Interaction surfaces present structure first and add explanation only where it resolves ambiguity.
+    principles:
+      - id: structure-before-explanation
+        statement: Present the operative structure before explanatory copy; explanation appears only where it resolves ambiguity about what the user can do next.
+        applies_to: [product, specification, implementation]
+      - id: single-control
+        statement: Each navigation or mutation intent has exactly one operative control per surface; back chains, actions, and selection affordances are not duplicated.
+        applies_to: [product, specification, implementation, verification]
+      - id: no-decoration
+        statement: Visual elements that carry no navigation, selection, or state meaning are removed rather than styled; identifiers and metadata stay progressive and out of the primary path.
+        applies_to: [product, specification, implementation]
+      - id: verifiable-interaction
+        statement: Interaction claims remain continuously verifiable through declared routes, components, dictionaries, and tests rather than prose assertions alone.
+        applies_to: [specification, implementation, verification]

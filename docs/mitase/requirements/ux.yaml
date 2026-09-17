@@ -1,0 +1,107 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ux
+category: Interaction structure, list, localization, responsive, and restore baselines (PR-1, no UI change)
+requirements:
+  - id: REQ-UX-NAV-001
+    title: Single Back Control With Single Context and Single Shell
+    description: Surfaces expose exactly one operative back control in the back chain, state their Space, Form, or Entry context once, and inherit navigation from the designated global and Space shells without parallel route-level navigation chrome.
+    priority: high
+    status: planned
+    criteria:
+      - id: single-back-control
+        kind: behavior
+        statement: Each surface exposes exactly one operative back control in its back chain; the same back intent is not duplicated across links or buttons on the same surface.
+        governed_by: [POL-UI-001#rule.governance]
+      - id: no-duplicate-context
+        kind: behavior
+        statement: A surface states its Space, Form, or Entry context once and does not repeat the same identity in a competing header or subtitle on the same surface.
+        governed_by: [POL-UI-002#rule.governance]
+      - id: single-shell-ownership
+        kind: behavior
+        statement: Navigation controls live in the designated global and Space shells; routes do not add parallel navigation chrome duplicating shell destinations.
+        governed_by: [POL-UI-011#rule.governance]
+  - id: REQ-UX-ENTRY-001
+    title: Entry Workspace Without Decoration
+    description: The Entry workspace uses plain structure for explanation and metadata, reserves card containers for actionable or selectable groupings, renders explicit async states, and derives editor guidance from the active Form without inventing field headings.
+    priority: high
+    status: planned
+    criteria:
+      - id: no-decorative-cards
+        kind: behavior
+        statement: Card containers appear only when they group an operative action or a distinct selectable record; static explanation or metadata uses plain structure without card chrome.
+        governed_by: [POL-UI-003#rule.governance]
+      - id: explicit-async-states
+        kind: behavior
+        statement: Asynchronous Entry list and detail surfaces render explicit loading, empty, and error states instead of silent blank output.
+        governed_by: [POL-UI-009#rule.governance]
+      - id: form-derived-guidance
+        kind: behavior
+        statement: Editor guidance derives from the active Form fields and explains unstructured Forms without fabricating field headings or examples.
+        governed_by: [POL-UI-010#rule.guidance]
+  - id: REQ-UX-LIST-001
+    title: List Rows With Full-Row Activation and Advanced-Only Identifiers
+    description: Selectable list rows activate across the full row without a separate boxed chevron, and raw UUIDs or internal identifiers appear only inside explicitly advanced or diagnostic disclosure while primary rows show human-meaningful names.
+    priority: high
+    status: planned
+    criteria:
+      - id: full-row-activation
+        kind: behavior
+        statement: Selectable rows activate across the full row and do not add a separate boxed chevron control duplicating the row activation.
+        governed_by: [POL-UI-006#rule.governance]
+      - id: uuids-advanced-only
+        kind: behavior
+        statement: Primary rows show human-meaningful names while raw UUIDs and internal identifiers appear only inside explicitly advanced or diagnostic disclosure.
+        governed_by: [POL-UI-005#rule.governance]
+  - id: REQ-UX-LIST-002
+    title: One-Row Action Bar at 390px
+    description: Primary list and workspace action bars remain in a single row without wrapping or horizontal scrolling at a 390px viewport.
+    priority: high
+    status: planned
+    criteria:
+      - id: one-row-action-bar
+        kind: behavior
+        statement: Primary list and workspace action bars remain in a single row without wrapping or horizontal scrolling at a 390px viewport.
+        governed_by: [POL-UI-004#rule.governance]
+  - id: REQ-UX-I18N-001
+    title: Dictionary Copy Without Legacy Strings
+    description: User-facing copy resolves through the shared English and Japanese locale dictionaries with identical key sets, and legacy hardcoded Japanese strings outside the dictionary are absent from shipped surfaces.
+    priority: high
+    status: planned
+    criteria:
+      - id: dictionary-copy
+        kind: behavior
+        statement: User-facing copy resolves through the shared locale dictionary with identical English and Japanese key sets.
+        governed_by: [POL-I18N-001#rule.governance]
+      - id: no-legacy-jp-strings
+        kind: behavior
+        statement: Legacy hardcoded Japanese strings outside the shared locale dictionary are absent from shipped surfaces.
+        governed_by: [POL-I18N-001#rule.governance]
+  - id: REQ-UX-RESP-001
+    title: Responsive Surfaces With Accessible Names, Focus, and Fixed Tokens
+    description: Surfaces stay usable at narrow widths, expose accessible names with a visible orderly focus path, and style surfaces with the fixed palette tokens instead of inline or ad hoc colors.
+    priority: high
+    status: planned
+    criteria:
+      - id: responsive-narrow-layout
+        kind: quality
+        statement: Surfaces remain usable at a 390px viewport with reachable primary actions, one-column workspace layout, and touch-sized controls.
+        governed_by: [POL-UI-004#rule.governance]
+      - id: a11y-names-focus
+        kind: behavior
+        statement: Interactive controls expose accessible names and keep a visible, orderly focus path across the surface.
+        governed_by: [POL-UI-007#rule.governance]
+      - id: fixed-surface-tokens
+        kind: behavior
+        statement: Surface-aware components use the fixed surface palette tokens and do not add inline color styles or ad hoc color utilities.
+        governed_by: [POL-UI-012#rule.governance]
+  - id: REQ-UX-ENTRY-002
+    title: Append-Only Restore
+    description: Entry restore appends a new revision derived from the selected historical revision while existing revision history remains intact and append-only.
+    priority: high
+    status: planned
+    criteria:
+      - id: append-only-restore
+        kind: behavior
+        statement: Restore appends a new revision derived from the selected historical revision and never shortens, reorders, or rewrites existing history.
+        governed_by: [POL-UI-008#rule.governance]

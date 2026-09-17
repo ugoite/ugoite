@@ -1,0 +1,225 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: ux
+category: Interaction structure, list, localization, responsive, and restore baselines (PR-1, no UI change)
+features:
+  - id: FEAT-UX-001
+    title: Navigation structure baseline
+    summary: Record the shipped shell, back-chain, context, and route-inventory surfaces satisfying the navigation criteria without changing UI behavior.
+    status: planned
+    bindings:
+      - id: navigation-baseline
+        role: implementation
+        facet: frontend
+        responsibility: Keep the navigation baseline connected to the shipped shells and the route inventory record.
+        targets:
+          - id: global-shell-surface
+            adapter: typescript
+            path: frontend/src/components/GlobalShell.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-shell-ownership
+          - id: space-shell-surface
+            adapter: typescript
+            path: frontend/src/components/SpaceShell.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-shell-ownership
+          - id: route-inventory-record
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-shell-ownership
+  - id: FEAT-UX-002
+    title: Entry workspace baseline
+    summary: Record the shipped entry workspace and list panel surfaces satisfying the decoration, async-state, and guidance criteria without changing UI behavior.
+    status: planned
+    bindings:
+      - id: entry-baseline
+        role: implementation
+        facet: frontend
+        responsibility: Keep the entry workspace baseline connected to the shipped detail and list surfaces plus the route inventory record.
+        targets:
+          - id: entry-detail-surface
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-001#criterion.no-decorative-cards
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-001#criterion.form-derived-guidance
+          - id: entry-list-surface
+            adapter: typescript
+            path: frontend/src/components/EntryList.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-001#criterion.no-decorative-cards
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-001#criterion.explicit-async-states
+          - id: route-inventory-record
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-001#criterion.no-decorative-cards
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-001#criterion.explicit-async-states
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-001#criterion.form-derived-guidance
+  - id: FEAT-UX-003
+    title: List interaction baseline
+    summary: Record the shipped list, action-bar, and search surfaces satisfying the row activation, identifier disclosure, and one-row action bar criteria without changing UI behavior.
+    status: planned
+    bindings:
+      - id: list-baseline
+        role: implementation
+        facet: frontend
+        responsibility: Keep the list interaction baseline connected to the shipped list surfaces plus the route inventory record.
+        targets:
+          - id: entry-list-surface
+            adapter: typescript
+            path: frontend/src/components/EntryList.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-LIST-001#criterion.full-row-activation
+              - kind: satisfies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+          - id: list-panel-surface
+            adapter: typescript
+            path: frontend/src/components/ListPanel.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+          - id: action-bar-surface
+            adapter: typescript
+            path: frontend/src/components/ActionIconBar.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-LIST-002#criterion.one-row-action-bar
+          - id: route-inventory-record
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-LIST-001#criterion.full-row-activation
+              - kind: satisfies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+              - kind: satisfies
+                criterion: REQ-UX-LIST-002#criterion.one-row-action-bar
+  - id: FEAT-UX-004
+    title: Localization baseline
+    summary: Record the shared locale dictionary satisfying the dictionary-copy criteria without changing UI behavior.
+    status: planned
+    bindings:
+      - id: locale-baseline
+        role: implementation
+        facet: frontend
+        responsibility: Keep the localization baseline connected to the shipped locale dictionary plus the route inventory record.
+        targets:
+          - id: locale-dictionary
+            adapter: typescript
+            path: frontend/src/lib/i18n.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-I18N-001#criterion.dictionary-copy
+              - kind: satisfies
+                criterion: REQ-UX-I18N-001#criterion.no-legacy-jp-strings
+          - id: route-inventory-record
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-I18N-001#criterion.dictionary-copy
+              - kind: satisfies
+                criterion: REQ-UX-I18N-001#criterion.no-legacy-jp-strings
+  - id: FEAT-UX-005
+    title: Responsive and accessibility baseline
+    summary: Record the shipped shell, search, and action-bar surfaces satisfying the responsive, focus, and surface-token criteria without changing UI behavior.
+    status: planned
+    bindings:
+      - id: responsive-baseline
+        role: implementation
+        facet: frontend
+        responsibility: Keep the responsive baseline connected to the shipped shell and control surfaces plus the route inventory record.
+        targets:
+          - id: global-shell-surface
+            adapter: typescript
+            path: frontend/src/components/GlobalShell.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-RESP-001#criterion.a11y-names-focus
+              - kind: satisfies
+                criterion: REQ-UX-RESP-001#criterion.responsive-narrow-layout
+          - id: search-bar-surface
+            adapter: typescript
+            path: frontend/src/components/SearchBar.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-RESP-001#criterion.fixed-surface-tokens
+          - id: route-inventory-record
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-RESP-001#criterion.responsive-narrow-layout
+              - kind: satisfies
+                criterion: REQ-UX-RESP-001#criterion.a11y-names-focus
+              - kind: satisfies
+                criterion: REQ-UX-RESP-001#criterion.fixed-surface-tokens
+  - id: FEAT-UX-006
+    title: Append-only restore baseline
+    summary: Record the shipped restore and history routes satisfying the append-only restore criterion without changing UI behavior.
+    status: planned
+    bindings:
+      - id: restore-baseline
+        role: implementation
+        facet: frontend
+        responsibility: Keep the restore baseline connected to the shipped restore and history routes plus the route inventory record.
+        targets:
+          - id: restore-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/restore.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-002#criterion.append-only-restore
+          - id: history-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-002#criterion.append-only-restore
+          - id: route-inventory-record
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-002#criterion.append-only-restore
