@@ -73,7 +73,7 @@ export function SpaceShell(props: SpaceShellProps) {
   const switchSpace = (spaceId: string) => {
     if (!spaceId || spaceId === props.spaceId) return;
     spaceStore.selectSpace(spaceId);
-    navigate(`/spaces/${spaceId}/${activePath()}`);
+    navigate(`/spaces/${encodeURIComponent(spaceId)}/${activePath()}`);
   };
 
   const navigation = (mobile = false) => (
@@ -83,7 +83,7 @@ export function SpaceShell(props: SpaceShellProps) {
     >
       {navItems.map((item) => (
         <A
-          href={`/spaces/${props.spaceId}/${item.path}`}
+          href={`/spaces/${encodeURIComponent(props.spaceId)}/${item.path}`}
           class={mobile ? "" : "navItem"}
           classList={{ active: active() === item.id }}
           aria-current={active() === item.id ? "page" : undefined}
@@ -131,7 +131,7 @@ export function SpaceShell(props: SpaceShellProps) {
               <span class="ui-sr-only">{t("konase.title")}</span>
             </button>
             <AccountMenu
-              settingsHref={`/spaces/${props.spaceId}/settings?section=credentials`}
+              settingsHref={`/spaces/${encodeURIComponent(props.spaceId)}/settings?section=credentials`}
             />
           </div>
         </header>
@@ -147,7 +147,7 @@ export function SpaceShell(props: SpaceShellProps) {
   function sidebar() {
     return (
       <aside class="sidebar">
-        <A class="brand" href={`/spaces/${props.spaceId}/dashboard`}>
+        <A class="brand" href={`/spaces/${encodeURIComponent(props.spaceId)}/dashboard`}>
           <img
             class="brandMark"
             src="/brand/ugoite-mark.svg"

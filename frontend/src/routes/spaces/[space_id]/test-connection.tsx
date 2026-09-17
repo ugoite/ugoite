@@ -59,7 +59,7 @@ export default function SpaceTestConnectionRoute() {
           <div class="eyebrow">Settings / Storage</div>
           <h1>Test Connection</h1>
         </div>
-        <A href={`/spaces/${spaceId()}/settings?section=storage`} class="btn">
+        <A href={`/spaces/${encodeURIComponent(spaceId())}/settings?section=storage`} class="btn">
           Back to Settings
         </A>
       </div>

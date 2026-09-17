@@ -56,7 +56,7 @@ export default function NewEntryRoute() {
   const formsHref = () => {
     const formName = selectedFormName() ?? selectedForm()?.name;
     const query = formName ? `?form=${encodeURIComponent(formName)}` : "";
-    return `/spaces/${spaceId()}/forms${query}`;
+    return `/spaces/${encodeURIComponent(spaceId())}/forms${query}`;
   };
 
   return (
@@ -96,7 +96,7 @@ export default function NewEntryRoute() {
                 <button
                   class="btn"
                   type="button"
-                  onClick={() => navigate(`/spaces/${spaceId()}/forms`)}
+                  onClick={() => navigate(`/spaces/${encodeURIComponent(spaceId())}/forms`)}
                 >
                   {t("entryPage.backToForms")}
                 </button>
@@ -113,7 +113,7 @@ export default function NewEntryRoute() {
                   navigate(
                     returnToForms()
                       ? formsHref()
-                      : `/spaces/${spaceId()}/forms`,
+                      : `/spaces/${encodeURIComponent(spaceId())}/forms`,
                   )}
                 onCreated={({ id: entryId }) => {
                   if (returnToForms()) {
@@ -121,7 +121,7 @@ export default function NewEntryRoute() {
                     return;
                   }
                   navigate(
-                    `/spaces/${spaceId()}/entries/${
+                    `/spaces/${encodeURIComponent(spaceId())}/entries/${
                       encodeURIComponent(entryId)
                     }`,
                     { replace: true },

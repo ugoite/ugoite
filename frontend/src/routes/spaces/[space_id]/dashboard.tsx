@@ -71,7 +71,7 @@ export default function SpaceDashboardRoute() {
   const startNewEntry = () => {
     if (!formsAvailable()) return;
     if (entryForms().length) {
-      navigate(`/spaces/${spaceId()}/entries/new`);
+      navigate(`/spaces/${encodeURIComponent(spaceId())}/entries/new`);
     } else {
       setShowFormDialog(true);
     }
@@ -172,7 +172,7 @@ export default function SpaceDashboardRoute() {
             {(entry) => (
               <A
                 class="continueItem"
-                href={`/spaces/${spaceId()}/entries/${
+                href={`/spaces/${encodeURIComponent(spaceId())}/entries/${
                   encodeURIComponent(entry().id)
                 }`}
               >
@@ -187,7 +187,7 @@ export default function SpaceDashboardRoute() {
               </A>
             )}
           </Show>
-          <A class="continueItem" href={`/spaces/${spaceId()}/forms`}>
+          <A class="continueItem" href={`/spaces/${encodeURIComponent(spaceId())}/forms`}>
             <span class="glyph">
               {entryForms()[0]?.name?.slice(0, 1).toUpperCase() || "F"}
             </span>
@@ -197,7 +197,7 @@ export default function SpaceDashboardRoute() {
             </span>
             <span class="chev">›</span>
           </A>
-          <A class="continueItem" href={`/spaces/${spaceId()}/search`}>
+          <A class="continueItem" href={`/spaces/${encodeURIComponent(spaceId())}/search`}>
             <span class="glyph">
               <UiIcon name="search" />
             </span>
@@ -219,7 +219,7 @@ export default function SpaceDashboardRoute() {
             {(form) => (
               <A
                 class="pinItem"
-                href={`/spaces/${spaceId()}/forms?form=${
+                href={`/spaces/${encodeURIComponent(spaceId())}/forms?form=${
                   encodeURIComponent(form.name)
                 }`}
               >
@@ -231,7 +231,7 @@ export default function SpaceDashboardRoute() {
               </A>
             )}
           </For>
-          <A class="pinItem" href={`/spaces/${spaceId()}/sql`}>
+          <A class="pinItem" href={`/spaces/${encodeURIComponent(spaceId())}/sql`}>
             <span class="glyph">
               <UiIcon name="sql" />
             </span>
@@ -265,7 +265,7 @@ export default function SpaceDashboardRoute() {
             {(entry) => (
               <A
                 class="rowBtn"
-                href={`/spaces/${spaceId()}/entries/${
+                href={`/spaces/${encodeURIComponent(spaceId())}/entries/${
                   encodeURIComponent(entry.id)
                 }`}
               >

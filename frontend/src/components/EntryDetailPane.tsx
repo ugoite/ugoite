@@ -701,7 +701,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   });
   const formWorkspaceHref = createMemo(() => {
     const formName = entry()?.form?.trim();
-    const base = `/spaces/${props.spaceId()}/forms`;
+    const base = `/spaces/${encodeURIComponent(props.spaceId())}/forms`;
     return formName ? `${base}?form=${encodeURIComponent(formName)}` : base;
   });
 
@@ -1576,7 +1576,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                     accessibleName: t("entryDetail.history"),
                     icon: "history",
                     class: "ui-entry-tool",
-                    href: `/spaces/${props.spaceId()}/entries/${
+                    href: `/spaces/${encodeURIComponent(props.spaceId())}/entries/${
                       encodeURIComponent(props.entryId?.() ?? "")
                     }/history`,
                   },
@@ -1586,7 +1586,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                     accessibleName: t("entryDetail.info"),
                     icon: "info",
                     class: "ui-entry-tool",
-                    href: `/spaces/${props.spaceId()}/entries/${
+                    href: `/spaces/${encodeURIComponent(props.spaceId())}/entries/${
                       encodeURIComponent(props.entryId?.() ?? "")
                     }/info`,
                   },

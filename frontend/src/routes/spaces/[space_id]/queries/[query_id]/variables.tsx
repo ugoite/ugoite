@@ -69,7 +69,7 @@ export default function SpaceQueryVariablesRoute() {
         parameterTypes,
       );
       navigate(
-        `/spaces/${spaceId()}/entries?session=${
+        `/spaces/${encodeURIComponent(spaceId())}/entries?session=${
           encodeURIComponent(session.id)
         }`,
       );

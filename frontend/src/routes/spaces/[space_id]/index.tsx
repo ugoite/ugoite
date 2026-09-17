@@ -8,7 +8,7 @@ export default function SpaceDetailRoute() {
 
   onMount(() => {
     if (spaceId()) {
-      navigate(`/spaces/${spaceId()}/dashboard`, { replace: true });
+      navigate(`/spaces/${encodeURIComponent(spaceId())}/dashboard`, { replace: true });
     }
   });
 

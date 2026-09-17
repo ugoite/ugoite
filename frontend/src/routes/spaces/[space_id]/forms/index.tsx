@@ -41,7 +41,7 @@ export default function SpaceFormsIndexPane() {
       if (!spaceId) return;
       setRedirectedLegacy(true);
       navigate(
-        `/spaces/${spaceId}/entries?form=${encodeURIComponent(legacy)}`,
+        `/spaces/${encodeURIComponent(spaceId)}/entries?form=${encodeURIComponent(legacy)}`,
         { replace: true },
       );
     }
@@ -52,7 +52,7 @@ export default function SpaceFormsIndexPane() {
     setShowFormDialog(false);
     await ctx.refetchForms();
     navigate(
-      `/spaces/${ctx.spaceId()}/entries?form=${encodeURIComponent(payload.name)}`,
+      `/spaces/${encodeURIComponent(ctx.spaceId())}/entries?form=${encodeURIComponent(payload.name)}`,
     );
   };
   const updateForm = async (payload: FormCreatePayload) => {
@@ -134,7 +134,7 @@ export default function SpaceFormsIndexPane() {
                       class="formRowMain"
                       onClick={() =>
                         navigate(
-                          `/spaces/${ctx.spaceId()}/entries?form=${
+                          `/spaces/${encodeURIComponent(ctx.spaceId())}/entries?form=${
                             encodeURIComponent(form.name)
                           }`,
                         )}

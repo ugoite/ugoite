@@ -23,7 +23,7 @@ export default function SpaceFormTypesRoute() {
           <div class="eyebrow">{t("spaceShell.bottom.grid")}</div>
           <h1>{t("formTypesPage.heading")}</h1>
         </div>
-        <A href={`/spaces/${spaceId()}/forms`} class="btn">
+        <A href={`/spaces/${encodeURIComponent(spaceId())}/forms`} class="btn">
           {t("formTypesPage.back")}
         </A>
       </div>
