@@ -59,6 +59,88 @@ Run `ugoite sql --help` and `ugoite query --help` for exact flags.
 </TabItem>
 </Tabs>
 
+## Read a result page
+
+`sql session-create` returns the session handle; `sql session-count` and
+`sql session-rows` read from it. Sessions are throwaway pagination state,
+not durable Knowledge.
+
+```bash
+ugoite sql session-create /path/to/workspace/spaces/demo \
+  --sql 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> ORDER BY _ugoite_id'
+```
+
+```json
+{
+  "id": "<session-id>",
+  "pagination": {
+    "default_limit": 50,
+    "max_limit": 1000,
+    "max_offset": 999,
+    "strategy": "offset"
+  },
+  "space_id": "<space-id>",
+  "sql": "SELECT _ugoite_id, _ugoite_title FROM form_<FormId> ORDER BY _ugoite_id",
+  "status": "ready"
+}
+```
+
+`sql session-count` returns the total row count for the session:
+
+```bash
+ugoite sql session-count /path/to/workspace/spaces/demo <session-id>
+```
+
+```json
+{
+  "count": 2,
+  "session_id": "<session-id>",
+  "total_count": 2
+}
+```
+
+`sql session-rows` returns one bounded page. Every row page carries the
+same envelope: `rows` (this page), `result` (alias of `rows`), `count`
+(rows in this page), `total_count` (rows in the whole result), `offset`,
+and `limit`, plus the `session_id` continuation handle. Pages default to
+`--limit 50`; `--offset`/`--limit` must stay within the `max_limit` window
+above.
+
+```bash
+ugoite sql session-rows /path/to/workspace/spaces/demo <session-id> --offset 0 --limit 1
+```
+
+```json
+{
+  "count": 1,
+  "limit": 1,
+  "offset": 0,
+  "result": [{ "_ugoite_id": "task-a", "_ugoite_title": "Alpha" }],
+  "rows": [{ "_ugoite_id": "task-a", "_ugoite_title": "Alpha" }],
+  "session_id": "<session-id>",
+  "total_count": 2
+}
+```
+
+`sql saved-execute` returns the same page envelope with `sql_id` for the
+executed definition:
+
+```bash
+ugoite sql saved-execute /path/to/workspace/spaces/demo <sql-id> --limit 1
+```
+
+```json
+{
+  "count": 1,
+  "limit": 1,
+  "offset": 0,
+  "result": [{ "_ugoite_id": "task-a", "_ugoite_title": "Alpha" }],
+  "rows": [{ "_ugoite_id": "task-a", "_ugoite_title": "Alpha" }],
+  "sql_id": "<sql-id>",
+  "total_count": 2
+}
+```
+
 ## Verify the result
 
 The saved definition reads back with identical text, and the expert query

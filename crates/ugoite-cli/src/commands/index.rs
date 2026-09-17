@@ -103,7 +103,7 @@ pub async fn query_cmd(space_path: &str, sql: &str) -> Result<()> {
             .get("id")
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| anyhow::anyhow!("SQL session response did not include an id"))?;
-        let rows = http::execute(
+        let payload = http::execute(
             &base,
             "sql_session.rows",
             serde_json::json!({
@@ -115,7 +115,10 @@ pub async fn query_cmd(space_path: &str, sql: &str) -> Result<()> {
             None,
         )
         .await?;
-        print_json(&rows);
+        // Fail loudly on protocol drift without changing valid stdout:
+        // the server envelope prints verbatim only after strict validation.
+        super::sql::decode_remote_rows(&payload, "sql_session.rows")?;
+        print_json(&payload);
         return Ok(());
     }
     let service = UgoiteService::new_without_background_refresh(&root)?;
