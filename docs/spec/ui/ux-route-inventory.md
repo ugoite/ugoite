@@ -1,3 +1,7 @@
+---
+title: 'UX Route Inventory (PR-1 baseline)'
+---
+
 # UX Route Inventory (PR-1 baseline, docs-only)
 
 Source: `find frontend/src/routes -type f | sort` at PR-1 HEAD. No UI behavior
