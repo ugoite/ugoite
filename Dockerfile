@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM denoland/deno:2.9.6 AS frontend-build
+FROM denoland/deno:2.9.7 AS frontend-build
 WORKDIR /repo
 ARG UGOITE_SOURCE_SHA=unknown
 ENV UGOITE_SOURCE_SHA=${UGOITE_SOURCE_SHA}
