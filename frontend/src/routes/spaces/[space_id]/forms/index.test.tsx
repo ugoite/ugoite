@@ -87,12 +87,12 @@ const metadataForm: Form = {
   template: "",
   fields: {},
 };
-function renderPage(forms: Form[], formsError?: unknown) {
+function renderPage(forms: Form[], formsError?: unknown, spaceId = "default") {
   const [list] = createSignal(forms);
   render(() => (
     <EntriesRouteContext.Provider
       value={{
-        spaceId: () => "default",
+        spaceId: () => spaceId,
         forms: list,
         loadingForms: () => false,
         formsError: () => formsError,
@@ -137,6 +137,29 @@ describe("Forms list", () => {
     fireEvent.click(document.querySelector(".formRowMain")!);
     expect(navigate).toHaveBeenCalledWith(
       "/spaces/default/entries?form=My%20Form",
+    );
+  });
+  it("encodes Space path segments when navigating to the Entry list", () => {
+    renderPage([noteForm], undefined, "space/with space");
+    fireEvent.click(document.querySelector(".formRowMain")!);
+    expect(navigate).toHaveBeenCalledWith(
+      "/spaces/space%2Fwith%20space/entries?form=Notes",
+    );
+  });
+  it("passes the logical Space ID to the API after an encoded navigation", async () => {
+    vi.mocked(formApi.create).mockResolvedValue(noteForm);
+    renderPage([noteForm], undefined, "space/with space");
+    fireEvent.click(screen.getByRole("button", { name: "Form" }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit new form" }));
+    await waitFor(() =>
+      expect(formApi.create).toHaveBeenCalledWith("space/with space", {
+        name: "Projects",
+      })
+    );
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith(
+        "/spaces/space%2Fwith%20space/entries?form=Projects",
+      )
     );
   });
   it("shares one list DOM between mobile and desktop", () => {
@@ -211,6 +234,14 @@ describe("Forms list", () => {
     renderPage([noteForm]);
     expect(navigate).toHaveBeenCalledWith(
       "/spaces/default/entries?form=Notes",
+      { replace: true },
+    );
+  });
+  it("encodes Space path segments in the legacy redirect", () => {
+    search.form = "Notes";
+    renderPage([noteForm], undefined, "space/with space");
+    expect(navigate).toHaveBeenCalledWith(
+      "/spaces/space%2Fwith%20space/entries?form=Notes",
       { replace: true },
     );
   });

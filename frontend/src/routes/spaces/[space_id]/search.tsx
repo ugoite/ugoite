@@ -530,10 +530,10 @@ export default function SpaceSearchRoute() {
           >
             {t("searchPage.mode.advanced")}
           </button>
-          <A href={`/spaces/${spaceId()}/assets`}>
+          <A href={`/spaces/${encodeURIComponent(spaceId())}/assets`}>
             {t("searchPage.nav.files")}
           </A>
-          <A href={`/spaces/${spaceId()}/sql`}>
+          <A href={`/spaces/${encodeURIComponent(spaceId())}/sql`}>
             {t("searchPage.nav.saved")}
           </A>
         </nav>
@@ -940,7 +940,7 @@ export default function SpaceSearchRoute() {
                           class="searchResultRow"
                           onClick={() =>
                             navigate(
-                              `/spaces/${spaceId()}/entries/${
+                              `/spaces/${encodeURIComponent(spaceId())}/entries/${
                                 encodeURIComponent(entry.id)
                               }`,
                             )}
@@ -973,7 +973,7 @@ export default function SpaceSearchRoute() {
                           class="searchResultRow"
                           onClick={() =>
                             navigate(
-                              `/spaces/${spaceId()}/entries/${
+                              `/spaces/${encodeURIComponent(spaceId())}/entries/${
                                 encodeURIComponent(entry.id)
                               }`,
                             )}

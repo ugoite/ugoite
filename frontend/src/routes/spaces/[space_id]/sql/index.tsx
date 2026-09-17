@@ -34,7 +34,7 @@ export default function SpaceSqlIndexRoute() {
     if (runningQueryId() !== null) return;
     if (query.variables.length > 0) {
       navigate(
-        `/spaces/${spaceId()}/queries/${
+        `/spaces/${encodeURIComponent(spaceId())}/queries/${
           encodeURIComponent(query.id)
         }/variables`,
       );
@@ -59,7 +59,7 @@ export default function SpaceSqlIndexRoute() {
         return;
       }
       navigate(
-        `/spaces/${spaceId()}/entries?session=${
+        `/spaces/${encodeURIComponent(spaceId())}/entries?session=${
           encodeURIComponent(session.id)
         }`,
       );
@@ -79,7 +79,7 @@ export default function SpaceSqlIndexRoute() {
           <div class="eyebrow">{t("searchPage.title")}</div>
           <h1>{t("sqlPage.savedSql")}</h1>
         </div>
-        <A class="btn primary" href={`/spaces/${spaceId()}/queries/new`}>
+        <A class="btn primary" href={`/spaces/${encodeURIComponent(spaceId())}/queries/new`}>
           <UiIcon name="plus" /> {t("sqlPage.createButton")}
         </A>
       </div>
@@ -117,7 +117,7 @@ export default function SpaceSqlIndexRoute() {
               {(query) => (
                 <A
                   class="rowBtn"
-                  href={`/spaces/${spaceId()}/sql/${
+                  href={`/spaces/${encodeURIComponent(spaceId())}/sql/${
                     encodeURIComponent(query.id)
                   }`}
                 >
@@ -167,7 +167,7 @@ export default function SpaceSqlIndexRoute() {
                 <div class="sqlHistoryRow">
                   <A
                     class="sqlRowLink"
-                    href={`/spaces/${spaceId()}/sql/${
+                    href={`/spaces/${encodeURIComponent(spaceId())}/sql/${
                       encodeURIComponent(query.id)
                     }`}
                   >

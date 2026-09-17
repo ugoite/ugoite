@@ -210,7 +210,7 @@ export default function SpaceEntriesIndexPane() {
   );
 
   const handleSelectEntry = (entryId: string) => {
-    navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(entryId)}`);
+    navigate(`/spaces/${encodeURIComponent(spaceId())}/entries/${encodeURIComponent(entryId)}`);
   };
 
   const handleCreateForm = async (payload: FormCreatePayload) => {
@@ -237,7 +237,7 @@ export default function SpaceEntriesIndexPane() {
             <Show when={!sessionId().trim() && formName()}>
               <A
                 class="text-sm ui-focus-text"
-                href={`/spaces/${spaceId()}/forms`}
+                href={`/spaces/${encodeURIComponent(spaceId())}/forms`}
               >
                 {t("entriesPage.formBack")}
               </A>
@@ -248,7 +248,7 @@ export default function SpaceEntriesIndexPane() {
               <button
                 type="button"
                 class="ui-button ui-button-secondary text-sm"
-                onClick={() => navigate(`/spaces/${spaceId()}/forms`)}
+                onClick={() => navigate(`/spaces/${encodeURIComponent(spaceId())}/forms`)}
               >
                 {t("querySession.clear")}
               </button>
@@ -265,10 +265,10 @@ export default function SpaceEntriesIndexPane() {
                 onClick={() =>
                   navigate(
                     formName()
-                      ? `/spaces/${spaceId()}/entries/new?form=${
+                      ? `/spaces/${encodeURIComponent(spaceId())}/entries/new?form=${
                         encodeURIComponent(formName())
                       }`
-                      : `/spaces/${spaceId()}/entries/new`,
+                      : `/spaces/${encodeURIComponent(spaceId())}/entries/new`,
                   )}
               >
                 {t("entriesPage.newButton")}

@@ -63,7 +63,7 @@ function SpaceTable(props: { label: string; spaces: readonly Space[] }) {
                 <td>
                   <div class="spacesActions">
                     <A
-                      href={`/spaces/${spaceUid(space)}/settings`}
+                      href={`/spaces/${encodeURIComponent(spaceUid(space))}/settings`}
                       class="btn iconBtn"
                       aria-label={t("spacesPage.openSettings")}
                     >
@@ -74,7 +74,7 @@ function SpaceTable(props: { label: string; spaces: readonly Space[] }) {
                 <td>
                   <div class="spacesActions">
                     <A
-                      href={`/spaces/${spaceUid(space)}/dashboard`}
+                      href={`/spaces/${encodeURIComponent(spaceUid(space))}/dashboard`}
                       class="btn iconBtn spacesOpen"
                       aria-label={t("spacesPage.openSpace")}
                     >
@@ -164,7 +164,7 @@ export default function SpacesIndexRoute() {
     }
     await refetchSpaces();
     closeCreateForm();
-    navigate(`/spaces/${spaceUid}/dashboard`);
+    navigate(`/spaces/${encodeURIComponent(spaceUid)}/dashboard`);
   };
 
   const handleCreateSpace = async (event: Event) => {

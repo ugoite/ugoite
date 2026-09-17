@@ -31,7 +31,7 @@ export default function SpaceSqlDetailRoute() {
   const [forms] = createResource(async () => formApi.list(spaceId()));
   const variableCount = createMemo(() => entry()?.variables.length ?? 0);
   const queryVariablesHref = () =>
-    `/spaces/${spaceId()}/queries/${encodeURIComponent(sqlId())}/variables`;
+    `/spaces/${encodeURIComponent(spaceId())}/queries/${encodeURIComponent(sqlId())}/variables`;
 
   const handleRun = async () => {
     const current = entry();
@@ -54,7 +54,7 @@ export default function SpaceSqlDetailRoute() {
         return;
       }
       navigate(
-        `/spaces/${spaceId()}/entries?session=${
+        `/spaces/${encodeURIComponent(spaceId())}/entries?session=${
           encodeURIComponent(session.id)
         }`,
       );
@@ -215,19 +215,19 @@ export default function SpaceSqlDetailRoute() {
             </A>
           </Show>
           <A
-            href={`/spaces/${spaceId()}/sql`}
+            href={`/spaces/${encodeURIComponent(spaceId())}/sql`}
             class="btn"
           >
             {t("sqlPage.backToSavedSql")}
           </A>
           <A
-            href={`/spaces/${spaceId()}/search`}
+            href={`/spaces/${encodeURIComponent(spaceId())}/search`}
             class="btn"
           >
             {t("sqlPage.openSearch")}
           </A>
           <A
-            href={`/spaces/${spaceId()}/dashboard`}
+            href={`/spaces/${encodeURIComponent(spaceId())}/dashboard`}
             class="btn"
           >
             {t("sqlPage.backToDashboard")}

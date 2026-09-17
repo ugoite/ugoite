@@ -141,7 +141,7 @@ export default function SpaceAssetsRoute() {
                 <div>
                   <A
                     class="ui-button ui-button-secondary inline-flex items-center gap-2 text-sm"
-                    href={`/spaces/${spaceId()}/forms`}
+                    href={`/spaces/${encodeURIComponent(spaceId())}/forms`}
                   >
                     <UiIcon name="forms" />
                     {t("assetsPage.openForms")}
@@ -197,7 +197,7 @@ export default function SpaceAssetsRoute() {
                       {(occurrence) => (
                         <A
                           class="assetReferenceRow"
-                          href={`/spaces/${spaceId()}/entries/${
+                          href={`/spaces/${encodeURIComponent(spaceId())}/entries/${
                             encodeURIComponent(
                               occurrence.entry.id,
                             )

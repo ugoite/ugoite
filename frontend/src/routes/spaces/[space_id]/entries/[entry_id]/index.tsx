@@ -52,7 +52,7 @@ export default function SpaceEntryDetailRoute() {
             entryId={entryId}
             forms={ctx.forms}
             onDeleted={() => {
-              navigate(`/spaces/${spaceId()}/forms`, { replace: true });
+              navigate(`/spaces/${encodeURIComponent(spaceId())}/forms`, { replace: true });
             }}
           />
         </Show>

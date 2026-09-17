@@ -23,18 +23,18 @@ vi.mock("@solidjs/router", () => ({
   ),
 }));
 
-function renderRoute(formsList: Form[] = []) {
+function renderRoute(formsList: Form[] = [], spaceId = "default") {
   render(() => {
     const [forms] = createSignal(formsList);
     return (
       <EntriesRouteContext.Provider
         value={{
-          spaceId: () => "default",
+          spaceId: () => spaceId,
           forms: createMemo(forms),
           loadingForms: () => false,
           columnTypes: () => [],
           refetchForms: vi.fn(),
-          entryStore: createEntryStore(() => "default"),
+          entryStore: createEntryStore(() => spaceId),
           spaceStore: createSpaceStore(),
         }}
       >
@@ -436,5 +436,59 @@ describe("/spaces/:space_id/entries", () => {
     expect(await screen.findByText(/No such form “Missing”/))
       .toBeInTheDocument();
     expect(screen.queryByText("No entries found.")).not.toBeInTheDocument();
+  });
+
+  it("encodes Space path segments in Entry navigation targets", async () => {
+    const spaceId = "space/with space";
+    let requestedPath = "";
+    server.use(
+      http.get(
+        testApiUrl("/spaces/:spaceId/entries"),
+        ({ request }) => {
+          requestedPath = new URL(request.url).pathname;
+          return HttpResponse.json([{
+            id: "entry-1",
+            title: "Entry one",
+            updated_at: "2026-03-01T00:00:00Z",
+            properties: {},
+            tags: [],
+          }]);
+        },
+      ),
+    );
+
+    renderRoute([], spaceId);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Entry one/ }));
+    expect(navigate).toHaveBeenCalledWith(
+      "/spaces/space%2Fwith%20space/entries/entry-1",
+    );
+    // The store keeps the logical Space ID: the API client applies its own
+    // single path encoding, so the request path carries exactly one level
+    // of encoding and never the navigation-encoded string verbatim twice.
+    expect(requestedPath).toContain("/spaces/space%2Fwith%20space/entries");
+    expect(requestedPath).not.toContain("%25");
+  });
+
+  it("encodes Space path segments in the Forms back link and New Entry target", async () => {
+    searchParams.form = "My Form";
+    server.use(
+      http.post(
+        testApiUrl("/spaces/:spaceId/query"),
+        () => HttpResponse.json([]),
+      ),
+    );
+
+    renderRoute([noteForm], "space/with space");
+
+    expect(await screen.findByRole("heading", { name: "My Form" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to Forms" }))
+      .toHaveAttribute("href", "/spaces/space%2Fwith%20space/forms");
+
+    fireEvent.click(screen.getByRole("button", { name: "New entry" }));
+    expect(navigate).toHaveBeenCalledWith(
+      "/spaces/space%2Fwith%20space/entries/new?form=My%20Form",
+    );
   });
 });

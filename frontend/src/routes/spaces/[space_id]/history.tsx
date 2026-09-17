@@ -83,7 +83,7 @@ export default function SpaceHistoryRoute() {
           <div class="eyebrow">{spaceId()}</div>
           <h1>{t("spaceHistory.title")}</h1>
         </div>
-        <A href={`/spaces/${spaceId()}/dashboard`} class="btn">
+        <A href={`/spaces/${encodeURIComponent(spaceId())}/dashboard`} class="btn">
           {t("spaceHistory.backToSpace")}
         </A>
       </div>

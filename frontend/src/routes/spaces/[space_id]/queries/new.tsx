@@ -64,7 +64,7 @@ export default function SpaceQueryCreateRoute() {
         sql: normalized.sql,
         variables: normalized.variables,
       });
-      navigate(`/spaces/${spaceId()}/search`);
+      navigate(`/spaces/${encodeURIComponent(spaceId())}/search`);
     } catch (err) {
       setError(formatUserFacingError(err, "sqlPage.failedSave"));
     } finally {
