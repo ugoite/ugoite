@@ -1,6 +1,7 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
+import { BackLink } from "~/components/BackLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { SqlQueryEditor } from "~/components";
 import { formatDateLabel } from "~/lib/date-format";
@@ -214,24 +215,10 @@ export default function SpaceSqlDetailRoute() {
               {t("sqlPage.openVariables")}
             </A>
           </Show>
-          <A
+          <BackLink
             href={`/spaces/${encodeURIComponent(spaceId())}/sql`}
-            class="btn"
-          >
-            {t("sqlPage.backToSavedSql")}
-          </A>
-          <A
-            href={`/spaces/${encodeURIComponent(spaceId())}/search`}
-            class="btn"
-          >
-            {t("sqlPage.openSearch")}
-          </A>
-          <A
-            href={`/spaces/${encodeURIComponent(spaceId())}/dashboard`}
-            class="btn"
-          >
-            {t("sqlPage.backToDashboard")}
-          </A>
+            label={t("sqlPage.backToSavedSql")}
+          />
         </div>
       </section>
     </>

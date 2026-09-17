@@ -7,8 +7,21 @@ import { entryApi } from "~/lib/ugoite-client";
 import SpaceEntryInfoRoute from "./info";
 
 vi.mock("@solidjs/router", () => ({
-  A: (props: { href: string; class?: string; children: unknown }) => (
-    <a href={props.href} class={props.class}>{props.children}</a>
+  A: (props: {
+    href: string;
+    class?: string;
+    children: unknown;
+    "aria-label"?: string;
+    title?: string;
+  }) => (
+    <a
+      href={props.href}
+      class={props.class}
+      aria-label={props["aria-label"]}
+      title={props.title}
+    >
+      {props.children}
+    </a>
   ),
   useParams: () => ({ space_id: "default", entry_id: "entry-1" }),
 }));
@@ -49,8 +62,12 @@ describe("entry info route", () => {
       screen.getByText(formatDateTimeLabel("2026-01-01T00:00:00Z")),
     ).toBeInTheDocument();
     expect(screen.getByText("rev-9")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back to Entry" }))
+    const backLink = screen.getByRole("link", { name: "Back to Entry" });
+    expect(backLink)
       .toHaveAttribute("href", "/spaces/default/entries/entry-1");
+    expect(backLink).toHaveAttribute("title", "Back to Entry");
+    expect(screen.getAllByRole("link", { name: "Back to Entry" }))
+      .toHaveLength(1);
     expect(screen.getByRole("button", { name: "Copy entry-1" }))
       .toBeInTheDocument();
     expect(document.querySelector(".eyebrow")).toHaveClass("break-all");

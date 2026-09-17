@@ -1,5 +1,6 @@
 import { A, useParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { BackLink } from "~/components/BackLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { formatDateTimeLabel } from "~/lib/date-format";
 import { revisionActor, revisionOperationLabel } from "~/lib/entry-history";
@@ -75,15 +76,10 @@ export default function SpaceEntryHistoryRoute() {
           <div class="eyebrow">{entryId()}</div>
           <h1>{t("entryHistory.title")}</h1>
         </div>
-        <A
+        <BackLink
           href={`/spaces/${encodedSpaceId()}/entries/${encodedEntryId()}`}
-          class="btn"
-        >
-          {t("entryHistory.backToEntry")}
-        </A>
-        <A href={`/spaces/${encodedSpaceId()}/history`} class="btn">
-          {t("entryHistory.viewSpaceHistory")}
-        </A>
+          label={t("entryHistory.backToEntry")}
+        />
       </div>
       {
         /* Panel-local spinner only: existing rows stay mounted during refetch,

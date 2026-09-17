@@ -8,8 +8,21 @@ import SpaceEntryRevisionRoute from "./[revision_id]";
 const navigate = vi.fn();
 
 vi.mock("@solidjs/router", () => ({
-  A: (props: { href: string; class?: string; children: unknown }) => (
-    <a href={props.href} class={props.class}>{props.children}</a>
+  A: (props: {
+    href: string;
+    class?: string;
+    children: unknown;
+    "aria-label"?: string;
+    title?: string;
+  }) => (
+    <a
+      href={props.href}
+      class={props.class}
+      aria-label={props["aria-label"]}
+      title={props.title}
+    >
+      {props.children}
+    </a>
   ),
   useNavigate: () => navigate,
   useParams: () => ({
@@ -113,5 +126,20 @@ describe("entry revision review route", () => {
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith("/spaces/default/entries/entry-1")
     );
+  });
+
+  it("REQ-UX-NAV-001: exposes exactly one back control to history", async () => {
+    render(() => <SpaceEntryRevisionRoute />);
+
+    const back = await screen.findByRole("link", {
+      name: "Back to history",
+    });
+    expect(back).toHaveAttribute(
+      "href",
+      "/spaces/default/entries/entry-1/history",
+    );
+    expect(back).toHaveAttribute("title", "Back to history");
+    expect(screen.getAllByRole("link", { name: "Back to history" }))
+      .toHaveLength(1);
   });
 });

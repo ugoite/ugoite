@@ -223,3 +223,34 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-ENTRY-002#criterion.append-only-restore
+  - id: FEAT-UX-007
+    title: Shared positional back control
+    summary: Provide the shared BackLink rendered by nested Entry and SQL surfaces so each surface exposes exactly one positional back control to its hierarchical parent without destination prose or shell-duplicating shortcuts.
+    status: planned
+    bindings:
+      - id: back-control-implementation
+        role: implementation
+        facet: frontend
+        responsibility: Keep the shared back control connected to the nested surfaces that render it.
+        targets:
+          - id: back-link-control
+            adapter: typescript
+            path: frontend/src/components/BackLink.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+          - id: entry-history-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+          - id: entry-revision-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control

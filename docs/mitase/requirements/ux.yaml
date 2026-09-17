@@ -21,6 +21,48 @@ requirements:
         kind: behavior
         statement: Navigation controls live in the designated global and Space shells; routes do not add parallel navigation chrome duplicating shell destinations.
         governed_by: [POL-UI-011#rule.governance]
+    bindings:
+      - id: back-control-verification
+        role: verification
+        facet: verification
+        responsibility: Verify each nested surface exposes exactly one positional back control through exact Vitest cases.
+        targets:
+          - id: back-link-label
+            adapter: typescript
+            path: frontend/src/components/BackLink.test.tsx
+            selector: { kind: test, name: "REQ-UX-NAV-001: renders a positional back label with the destination as accessible name and tooltip" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.back-link-control]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/BackLink.test.tsx, test: "REQ-UX-NAV-001: renders a positional back label with the destination as accessible name and tooltip" } }
+          - id: back-link-ja-label
+            adapter: typescript
+            path: frontend/src/components/BackLink.test.tsx
+            selector: { kind: test, name: "REQ-UX-NAV-001: uses the Japanese short label" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.back-link-control]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/BackLink.test.tsx, test: "REQ-UX-NAV-001: uses the Japanese short label" } }
+          - id: history-single-back
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx
+            selector: { kind: test, name: "REQ-UX-NAV-001: exposes exactly one back control to the entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.entry-history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx", test: "REQ-UX-NAV-001: exposes exactly one back control to the entry" } }
+          - id: revision-single-back
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].test.tsx
+            selector: { kind: test, name: "REQ-UX-NAV-001: exposes exactly one back control to history" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.entry-revision-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].test.tsx", test: "REQ-UX-NAV-001: exposes exactly one back control to history" } }
   - id: REQ-UX-ENTRY-001
     title: Entry Workspace Without Decoration
     description: The Entry workspace uses plain structure for explanation and metadata, reserves card containers for actionable or selectable groupings, renders explicit async states, and derives editor guidance from the active Form without inventing field headings.
