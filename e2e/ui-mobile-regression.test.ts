@@ -195,10 +195,11 @@ async function runMobileRegression(
     {
       name: "settings",
       path: `/spaces/${spaceId}/settings`,
-      ready: ".settingsNav",
+      ready: ".rowList",
       assert: async () => {
         // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
-        await expect(page.locator(".settingsNav")).toBeVisible();
+        await expect(page.getByRole("list", { name: "Settings" }))
+          .toBeVisible();
         await expectMobileControlFontSize(page);
       },
     },
