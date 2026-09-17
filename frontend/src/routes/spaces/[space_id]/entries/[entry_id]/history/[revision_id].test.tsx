@@ -63,11 +63,10 @@ describe("entry revision review route", () => {
   it("PR3: reviews the revision read-only and restores to the Entry route", async () => {
     const { container } = render(() => <SpaceEntryRevisionRoute />);
 
-    // Subtitle stamp plus a fixed read-only marker.
-    const subtitle = await screen.findByText(
-      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} · 読み取り専用$/,
-    );
+    // Shared locale-aware subtitle plus a localized read-only marker.
+    const subtitle = await screen.findByText(/Read-only$/);
     expect(subtitle).toHaveClass("revision-subtitle");
+    expect(subtitle.textContent).toContain("·");
 
     // Shared read-only fields: every control disabled, wrapper marked.
     const fields = container.querySelector(".form.entry-fields.readonly");
@@ -102,7 +101,7 @@ describe("entry revision review route", () => {
     const restore = await screen.findByRole("button", {
       name: "Restore this revision",
     });
-    expect(restore).toHaveTextContent("復元");
+    expect(restore).toHaveTextContent("Restore");
 
     fireEvent.click(restore);
 

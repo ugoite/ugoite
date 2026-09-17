@@ -151,7 +151,7 @@ describe("SpaceSettingsRoute", () => {
     ]);
     const { container } = render(() => <SpaceSettingsRoute />);
 
-    for (const name of ["Name", "Email", "Role", "State", "Actions"]) {
+    for (const name of ["Member", "Role", "State", "Actions"]) {
       expect(await screen.findByRole("columnheader", { name }))
         .toBeInTheDocument();
     }
@@ -160,11 +160,12 @@ describe("SpaceSettingsRoute", () => {
     expect(container.querySelector(".rowStack")).toBeNull();
 
     const nameCell = screen.getByText("Alice Example");
-    expect(nameCell.tagName).toBe("TD");
-    expect(nameCell).toHaveAttribute("title", "Alice Example");
+    expect(nameCell).toHaveClass("membersPrimary");
+    expect(nameCell.closest("td")).toHaveAttribute("title", "Alice Example");
 
     const idCell = screen.getByText("principal-2").closest("td");
-    expect(idCell).toHaveAttribute("title", "principal-2");
+    expect(idCell).toHaveAttribute("title", "Bob");
+    expect(screen.getByText("principal-2")).toHaveClass("membersSecondary");
     expect(screen.getByText("invited")).toBeInTheDocument();
 
     const ownerRow = screen.getByText("Alice Example").closest("tr")!;
@@ -220,6 +221,48 @@ describe("SpaceSettingsRoute", () => {
         "principal-2",
       );
     });
+  });
+
+  it("shows the principal ID once when the display name is missing", async () => {
+    searchParams.section = "members";
+    vi.mocked(spaceApi.listMembers).mockResolvedValue([{
+      principal: {
+        principal_id: "principal-9",
+        display_name: "",
+        kind: "human",
+        state: "active",
+        created_at: "2026-01-03T00:00:00Z",
+      },
+      role: "viewer",
+      created_at: "2026-01-03T00:00:00Z",
+    }]);
+    const { container } = render(() => <SpaceSettingsRoute />);
+    await screen.findByText("principal-9");
+
+    const cell = screen.getByText("principal-9").closest("td")!;
+    expect(cell).toHaveClass("membersNameCell");
+    // No duplicate: the ID appears once as primary, no secondary code.
+    expect(cell.querySelectorAll("code").length).toBe(0);
+    expect(container.querySelector(".membersSecondary")).toBeNull();
+  });
+
+  it("localizes the Member heading in Japanese", async () => {
+    setLocale("ja");
+    searchParams.section = "members";
+    vi.mocked(spaceApi.listMembers).mockResolvedValue([{
+      principal: {
+        principal_id: "principal-1",
+        display_name: "Alice",
+        kind: "human",
+        state: "active",
+        created_at: "2026-01-01T00:00:00Z",
+      },
+      role: "owner",
+      created_at: "2026-01-01T00:00:00Z",
+    }]);
+    render(() => <SpaceSettingsRoute />);
+    expect(await screen.findByRole("columnheader", { name: "メンバー" }))
+      .toBeInTheDocument();
   });
 
   it("renders localized known errors with unknown details for a section route", async () => {

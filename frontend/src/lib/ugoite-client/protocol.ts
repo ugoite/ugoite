@@ -201,14 +201,24 @@ export const validateAssetReference = async (
     value,
   });
 
+/** Exact protocol envelope for one spreadsheet-CSV encode request. */
+export const buildSpreadsheetCsvRequest = (
+  rows: readonly (readonly string[])[],
+): { action: "domain.encode_spreadsheet_csv"; value: readonly (readonly string[])[] } => ({
+  action: "domain.encode_spreadsheet_csv",
+  value: rows,
+});
+
+/** Exact byte size of one encode request on the Rust/WASM bridge. */
+export const spreadsheetCsvRequestBytes = (
+  rows: readonly (readonly string[])[],
+): number => textEncoder.encode(JSON.stringify(buildSpreadsheetCsvRequest(rows))).length;
+
 /** Encode derived CSV output with the shared spreadsheet-safety rule. */
 export const encodeSpreadsheetCsv = async (
   rows: readonly (readonly string[])[],
 ): Promise<string> =>
-  await invokeProtocol<string>({
-    action: "domain.encode_spreadsheet_csv",
-    value: rows,
-  });
+  await invokeProtocol<string>(buildSpreadsheetCsvRequest(rows));
 
 /** Validate a structured Entry draft with the shared Rust boundary (PR1/PR2). */
 export const validateEntryDraft = async (
@@ -358,8 +368,7 @@ const executeProtocolRequest = async (
  *
  * Rust/WASM owns HTTP method, encoded path/query, JSON serialization, and
  * response/error decoding. TypeScript owns the environment-specific fetch,
- * SSR auth forwarding, cookies, loading state, AbortSignal, and multipart
- * objects.
+ * SSR auth forwarding, cookies, AbortSignal, and multipart objects.
  */
 export const protocolFetch = async <T>(
   operation: UgoiteApiOperation,

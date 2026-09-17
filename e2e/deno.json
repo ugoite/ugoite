@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "install:browsers": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 install --with-deps chromium",
+    "install:browsers": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 install --with-deps chromium webkit",
     "docsite:navigation:raw": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test docsite-mobile-nav.test.ts docsite-links.test.ts",
     "docsite:navigation": "bash scripts/run-docsite-navigation.sh",
     "smoke": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test smoke.test.ts",

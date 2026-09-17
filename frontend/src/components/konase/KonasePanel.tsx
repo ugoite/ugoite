@@ -1,5 +1,7 @@
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { t } from "~/lib/i18n";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import {
   KonaseHost,
@@ -94,7 +96,13 @@ export function KonasePanel(props: KonasePanelProps) {
       const space = await spaceApi.get(requestedSpaceId);
       const spaceUid = space.space_uid?.trim();
       if (!spaceUid) {
-        throw new Error("Current Space metadata did not include a Space UID");
+        throw new UgoiteApiError({
+          kind: "invalid_arguments",
+          code: "INVALID_INPUT",
+          operation: "space.get",
+          message: "Current Space metadata did not include a Space UID",
+          detail: { kind: "space_identity", space_id: requestedSpaceId },
+        });
       }
       const credential = await authorizeBrowserMcp({
         spaceUid,
@@ -159,7 +167,9 @@ export function KonasePanel(props: KonasePanelProps) {
   const undo = async () => {
     const host = activeHost();
     const current = turn();
-    if (!host || !current || !current.undoAvailable || undone()) return;
+    if (!host || !current || !current.undoAvailable || undone() || undoing()) {
+      return;
+    }
     setError(undefined);
     setUndoing(true);
     const undoLifetime = captureLifetime();
@@ -198,8 +208,12 @@ export function KonasePanel(props: KonasePanelProps) {
               class="btn"
               type="submit"
               disabled={connecting() || !modelApiKey().trim()}
+              aria-busy={connecting() || undefined}
             >
-              {connecting() ? t("konase.connecting") : t("konase.connect")}
+              <Show when={connecting()}>
+                <ButtonSpinner />
+              </Show>
+              {t("konase.connect")}
             </button>
             <Show when={approvalUrl()}>
               {(url) => (
@@ -231,8 +245,12 @@ export function KonasePanel(props: KonasePanelProps) {
             class="btn primary"
             type="submit"
             disabled={running() || !prompt().trim()}
+            aria-busy={running() || undefined}
           >
-            {running() ? t("konase.running") : t("konase.submit")}
+            <Show when={running()}>
+              <ButtonSpinner />
+            </Show>
+            {t("konase.submit")}
           </button>
         </form>
       </Show>
@@ -259,9 +277,13 @@ export function KonasePanel(props: KonasePanelProps) {
                 class="btn"
                 type="button"
                 disabled={undoing()}
+                aria-busy={undoing() || undefined}
                 onClick={() => void undo()}
               >
-                {undoing() ? t("konase.undoing") : t("konase.undo")}
+                <Show when={undoing()}>
+                  <ButtonSpinner />
+                </Show>
+                {t("konase.undo")}
               </button>
             </Show>
             <Show when={undone()}>

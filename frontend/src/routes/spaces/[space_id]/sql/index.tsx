@@ -1,5 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createSignal, For, Show } from "solid-js";
+import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import { normalizeSqlVariables } from "~/lib/sql";
@@ -30,6 +31,7 @@ export default function SpaceSqlIndexRoute() {
     (queries() ?? []).filter((query) => query.kind === "search-history");
 
   const runSavedQuery = async (query: SqlEntry) => {
+    if (runningQueryId() !== null) return;
     if (query.variables.length > 0) {
       navigate(
         `/spaces/${spaceId()}/queries/${
@@ -186,11 +188,13 @@ export default function SpaceSqlIndexRoute() {
                         : t("searchPage.runAgain")
                     }: ${displaySqlName(query)}`}
                     disabled={runningQueryId() !== null}
+                    aria-busy={runningQueryId() === query.id || undefined}
                     onClick={() => void runSavedQuery(query)}
                   >
-                    {runningQueryId() === query.id
-                      ? t("searchPage.runningSaved")
-                      : query.variables.length > 0
+                    <Show when={runningQueryId() === query.id}>
+                      <ButtonSpinner />
+                    </Show>
+                    {query.variables.length > 0
                       ? t("searchPage.variables")
                       : t("searchPage.runAgain")}
                   </button>

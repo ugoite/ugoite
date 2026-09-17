@@ -1831,6 +1831,63 @@ describe("EntryDetailPane", () => {
     });
   });
 
+  it("keeps the stable Save label with a spinner and blocks double-submit", async () => {
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-1",
+      title: "Test Entry",
+      form: null,
+      content: "# Test Entry",
+      revision_id: "rev-1",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    let finishSave: ((value: { revision_id: string }) => void) | undefined;
+    const updateMock = entryApi.update as ReturnType<typeof vi.fn>;
+    updateMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSave = resolve;
+        }),
+    );
+
+    const { container } = render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-1"}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const textarea = await screen.findByPlaceholderText(
+      "Start writing in Markdown...",
+    );
+    fireEvent.input(textarea, { target: { value: "# Edited" } });
+    const save = screen.getByRole("button", { name: "Save" });
+    fireEvent.click(save);
+
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
+    // Busy Save retains its accessible name, disables, and shows a spinner
+    // instead of swapping to Saving...; previous content stays visible.
+    const busySave = screen.getByRole("button", { name: "Save" });
+    expect(busySave).toBeDisabled();
+    expect(busySave).toHaveAttribute("aria-busy", "true");
+    expect(busySave.textContent).toContain("Save");
+    expect(busySave.textContent).not.toContain("Saving...");
+    expect(container.querySelector(".btnSpinner")).toBeInTheDocument();
+    expect(textarea).toHaveValue("# Edited");
+
+    // No double-submit while busy.
+    fireEvent.click(busySave);
+    expect(updateMock).toHaveBeenCalledTimes(1);
+
+    finishSave?.({ revision_id: "rev-2" });
+    await waitFor(() => {
+      const saved = screen.getByRole("button", { name: "Save" });
+      expect(saved).not.toHaveAttribute("aria-busy");
+      expect(saved.closest("button")?.querySelector(".btnSpinner")).toBeNull();
+    });
+  });
+
   it("shows unknown fields warning from save error", async () => {
     setLocale("ja");
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -2072,12 +2129,12 @@ describe("EntryDetailPane", () => {
     await screen.findByLabelText("Summary");
 
     // Shared compact bar with short visible labels; the long i18n strings
-    // stay as accessible names so no key is deleted or added.
+    // stay as accessible names.
     const bar = document.querySelector(".actionbar.compact-actions");
     expect(bar).not.toBeNull();
     expect(bar?.getAttribute("role")).toBe("toolbar");
     expect(bar?.querySelectorAll(".tool")).toHaveLength(4);
-    for (const short of ["更新", "履歴", "情報", "削除"]) {
+    for (const short of ["Refresh", "History", "Info", "Delete"]) {
       expect(bar?.textContent).toContain(short);
     }
     expect(screen.getByRole("button", { name: "Reload latest version" }))

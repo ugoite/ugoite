@@ -19,6 +19,7 @@ export default function SpaceEntryHistoryRoute() {
   const params = useParams<{ space_id: string; entry_id: string }>();
   const spaceId = () => params.space_id;
   const entryId = () => params.entry_id;
+  const encodedSpaceId = () => encodeURIComponent(spaceId());
   const encodedEntryId = () => encodeURIComponent(entryId());
   const [history] = createResource(() =>
     entryApi.history(spaceId(), entryId(), undefined, HISTORY_PAGE_SIZE + 1)
@@ -75,12 +76,12 @@ export default function SpaceEntryHistoryRoute() {
           <h1>{t("entryHistory.title")}</h1>
         </div>
         <A
-          href={`/spaces/${spaceId()}/entries/${encodedEntryId()}`}
+          href={`/spaces/${encodedSpaceId()}/entries/${encodedEntryId()}`}
           class="btn"
         >
           {t("entryHistory.backToEntry")}
         </A>
-        <A href={`/spaces/${spaceId()}/history`} class="btn">
+        <A href={`/spaces/${encodedSpaceId()}/history`} class="btn">
           {t("entryHistory.viewSpaceHistory")}
         </A>
       </div>
@@ -110,7 +111,7 @@ export default function SpaceEntryHistoryRoute() {
                 (the revision route owns that detail). */
             }
             <div class="tablewrap" aria-busy={history.loading || undefined}>
-              <table class="table entry-history-table">
+              <table class="dataTable entry-history-table">
                 <thead>
                   <tr>
                     <th scope="col">{t("entryHistory.operation")}</th>
@@ -128,7 +129,7 @@ export default function SpaceEntryHistoryRoute() {
                         <td>
                           <A
                             class="table-link"
-                            href={`/spaces/${spaceId()}/entries/${encodedEntryId()}/history/${
+                            href={`/spaces/${encodedSpaceId()}/entries/${encodedEntryId()}/history/${
                               encodeURIComponent(revision.revision_id)
                             }`}
                           >

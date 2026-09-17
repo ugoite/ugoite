@@ -7,7 +7,7 @@ export interface ActionItem {
   id?: string;
   key?: string;
   icon?: UiIconName;
-  /** Short visible label only (e.g. 1-8 chars). Free-form sentences are rejected. */
+  /** Short visible label. */
   label: string;
   /** Long accessible name (existing i18n string). Falls back to `label`. */
   accessibleName?: string;
@@ -38,24 +38,15 @@ export interface ActionIconBarProps {
   class?: string;
 }
 
-const MAX_SHORT_LABEL = 12;
-
 /**
- * Shared compact action strip (PR2 contract, PR3 capabilities).
- * Primary actions stay in the page header; secondary actions live here with
- * short visible labels, 44px targets, and long accessible names. Desktop is
- * governed by `.actionbar.compact-actions` in app.css; mobile collapses to
- * an even 2-column grid.
+ * Shared compact action strip. Primary actions stay in the page header;
+ * secondary actions live here with short visible labels, 44px targets, and
+ * long accessible names. The bar never wraps; only table wrappers scroll.
+ * A nav target that is unavailable is omitted (never a disabled `<a>`);
+ * a disabled action renders a true disabled `<button>`.
  */
 export function ActionIconBar(props: ActionIconBarProps) {
   const list = () => props.items ?? props.actions ?? [];
-  for (const action of list()) {
-    if (action.label.length > MAX_SHORT_LABEL) {
-      console.warn(
-        `[ActionIconBar] label "${action.label}" exceeds ${MAX_SHORT_LABEL} chars; use a short fixed term.`,
-      );
-    }
-  }
   const barClass = () =>
     `actionbar compact-actions${props.class ? ` ${props.class}` : ""}`;
   return (
@@ -85,6 +76,8 @@ function ActionTile(props: { action: ActionItem }) {
     </>
   );
   if (props.action.href !== undefined) {
+    // Nav target unavailable: omit rather than rendering a disabled link.
+    if (props.action.disabled) return null;
     return (
       <a
         class={cls()}
@@ -92,7 +85,6 @@ function ActionTile(props: { action: ActionItem }) {
         href={props.action.href}
         title={accessibleName()}
         aria-label={accessibleName()}
-        aria-disabled={props.action.disabled}
         onClick={props.action.onClick as JSX.EventHandlerUnion<
           HTMLAnchorElement,
           MouseEvent

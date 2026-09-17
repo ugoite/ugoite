@@ -207,9 +207,12 @@ describe("KonasePanel Space authority", () => {
     fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
 
     await waitFor(() => expect(authorizeMock).not.toHaveBeenCalled());
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Konase could not complete the Work.",
+    // Typed INVALID_INPUT routes through the shared localizer with Space
+    // identity detail, not a generic error.
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(/request is invalid/i)
     );
+    expect(screen.getByRole("alert")).toHaveTextContent(/space_identity/);
   });
 
   it("shows an unchanged Knowledge outcome when the model only answers", async () => {
@@ -334,10 +337,11 @@ describe("KonasePanel Space authority", () => {
     spaceAHost.emitProgress({ kind: "complete", summary: "old completion" });
     spaceAHost.submitDeferreds[0].resolve(fakeTurn("old completion"));
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Working..." }))
-        .toBeInTheDocument()
-    );
+    await waitFor(() => {
+      const run = screen.getByRole("button", { name: "Run" });
+      expect(run).toBeInTheDocument();
+      expect(run).toHaveAttribute("aria-busy", "true");
+    });
     expect(screen.getByPlaceholderText(/Ask Konase/)).toHaveValue(
       "Ask Space B",
     );

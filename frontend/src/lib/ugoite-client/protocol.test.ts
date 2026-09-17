@@ -1,11 +1,13 @@
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import {
+  buildSpreadsheetCsvRequest,
   getWasmSupportedOperations,
   encodeSpreadsheetCsv,
   prepareApiRequest,
   protocolFetch,
   protocolFetchResponse,
+  spreadsheetCsvRequestBytes,
   UGOITE_API_OPERATIONS,
   UGOITE_WASM_PROTOCOL_VERSION,
   UgoiteApiError,
@@ -29,6 +31,22 @@ describe("portable Ugoite API protocol WASM", () => {
     ).resolves.toBe(
       "\"'=SUM(A1:A2)\",\"a,b\",\"line\nbreak\",\"日本語\"",
     );
+  });
+
+  it("measures the exact CSV request envelope without a guessed margin", () => {
+    const rows = [["a", "日本語"]];
+    const expected = new TextEncoder().encode(
+      JSON.stringify({
+        action: "domain.encode_spreadsheet_csv",
+        value: rows,
+      }),
+    ).length;
+    expect(buildSpreadsheetCsvRequest(rows)).toEqual({
+      action: "domain.encode_spreadsheet_csv",
+      value: rows,
+    });
+    expect(spreadsheetCsvRequestBytes(rows)).toBe(expected);
+    expect(spreadsheetCsvRequestBytes(rows)).toBeLessThanOrEqual(256 * 1024);
   });
 
   it("uses the Rust domain contract for AssetReference validation", async () => {
@@ -185,7 +203,7 @@ describe("portable Ugoite API protocol WASM", () => {
         "space.get",
         { space_id: "demo" },
         undefined,
-        { headers: { "x-test-header": "kept" }, trackLoading: false },
+        { headers: { "x-test-header": "kept" } },
       ),
     ).resolves.toEqual({ id: "demo", name: "Demo" });
 
@@ -194,7 +212,6 @@ describe("portable Ugoite API protocol WASM", () => {
         "entry.create",
         { space_id: "demo" },
         { id: "entry-1" },
-        { trackLoading: false },
       ),
     ).resolves.toEqual({ id: "entry-1", revision_id: "rev-1" });
   });
@@ -220,7 +237,7 @@ describe("portable Ugoite API protocol WASM", () => {
         "asset.upload",
         { space_id: "demo" },
         undefined,
-        { body: form, trackLoading: false },
+        { body: form },
       ),
     ).resolves.toEqual({ status: "uploaded" });
 
@@ -229,7 +246,7 @@ describe("portable Ugoite API protocol WASM", () => {
       asset_id: "asset-1",
       form: "Note",
       entry_id: "entry-1",
-    }, { trackLoading: false });
+    });
     await expect(response.text()).resolves.toBe("asset bytes");
   });
 
@@ -270,9 +287,7 @@ describe("portable Ugoite API protocol WASM", () => {
     );
 
     await expect(
-      protocolFetch("space.get", { space_id: "missing" }, undefined, {
-        trackLoading: false,
-      }),
+      protocolFetch("space.get", { space_id: "missing" }),
     ).rejects.toMatchObject({
       name: "UgoiteApiError",
       code: "space_missing",
@@ -295,7 +310,7 @@ describe("portable Ugoite API protocol WASM", () => {
         asset_id: "asset-1",
         form: "Note",
         entry_id: "entry-1",
-      }, { trackLoading: false }),
+      }),
     ).rejects.toMatchObject({ name: "UgoiteApiError", status: 404 });
   });
 });

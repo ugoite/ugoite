@@ -57,7 +57,7 @@ describe("AssetPreview", () => {
 
     expect(container.querySelector('img[src="blob:image"]'))
       .toBeInTheDocument();
-    expect(container.querySelector('iframe[src="blob:pdf"]'))
+    expect(container.querySelector('object[data="blob:pdf"]'))
       .toBeInTheDocument();
     expect(container.querySelector('audio[src="blob:audio"]'))
       .toBeInTheDocument();
@@ -118,7 +118,7 @@ describe("AssetPreview", () => {
       .toHaveLength(2);
   });
 
-  it("renders PDFs through a titled embed, never an image element", () => {
+  it("renders PDFs through a titled object, never an image element", () => {
     const { container } = render(() => (
       <AssetPreview
         reference={asset("report.pdf", "")}
@@ -127,26 +127,29 @@ describe("AssetPreview", () => {
       />
     ));
 
-    const frame = container.querySelector('iframe[src="blob:pdf-empty-media"]');
+    const frame = container.querySelector(
+      'object[data="blob:pdf-empty-media"]',
+    );
     expect(frame).toBeInTheDocument();
     expect(frame).toHaveAttribute("title", "report.pdf");
+    expect(frame).toHaveAttribute("type", "application/pdf");
     expect(container.querySelector("img")).toBeNull();
   });
 
-  it("falls back to name, size, and download when the PDF embed fails", () => {
+  it("keeps the PDF fallback in the DOM even on success", () => {
     const onDownload = vi.fn();
     const { container } = render(() => (
       <AssetPreview
         reference={asset("report.pdf", "application/pdf")}
         blob={new Blob(["pdf"])}
-        url="blob:pdf-broken"
+        url="blob:pdf-ok"
         onDownload={onDownload}
       />
     ));
 
-    fireEvent.error(container.querySelector("iframe")!);
-
-    expect(container.querySelector("iframe")).toBeNull();
+    const frame = container.querySelector('object[data="blob:pdf-ok"]');
+    expect(frame).toBeInTheDocument();
+    // Fallback children stay in the DOM so the file stays usable.
     expect(container.querySelector(".ui-asset-pdf-fallback"))
       .toBeInTheDocument();
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
@@ -156,7 +159,7 @@ describe("AssetPreview", () => {
     expect(onDownload).toHaveBeenCalledTimes(1);
   });
 
-  it("offers a direct download link when the PDF embed fails without a handler", () => {
+  it("offers a direct download link inside the object fallback without a handler", () => {
     const { container } = render(() => (
       <AssetPreview
         reference={asset("report.pdf", "application/pdf")}
@@ -165,8 +168,10 @@ describe("AssetPreview", () => {
       />
     ));
 
-    fireEvent.error(container.querySelector("iframe")!);
-
+    const frame = container.querySelector(
+      'object[data="blob:pdf-no-handler"]',
+    );
+    expect(frame).toBeInTheDocument();
     const link = container.querySelector('a[download="report.pdf"]');
     expect(link).toBeInTheDocument();
     expect(link).toHaveAttribute("href", "blob:pdf-no-handler");

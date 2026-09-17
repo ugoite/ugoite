@@ -1,5 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Index, Show } from "solid-js";
+import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateLabel } from "~/lib/date-format";
@@ -362,6 +363,7 @@ export default function SpaceSearchRoute() {
   };
 
   const handleKeywordSearch = async () => {
+    if (keywordLoading()) return;
     const query = keywordQuery().trim();
     if (!query) {
       setKeywordSearchPerformed(false);
@@ -422,6 +424,7 @@ export default function SpaceSearchRoute() {
   };
 
   const handleAdvancedSearch = async () => {
+    if (advancedLoading()) return;
     const criteria = advancedCriteria();
     let transport: StructuredTransportCriteria | null;
     try {
@@ -575,7 +578,11 @@ export default function SpaceSearchRoute() {
                       type="submit"
                       class="ui-button ui-button-primary text-sm"
                       disabled={keywordLoading()}
+                      aria-busy={keywordLoading() || undefined}
                     >
+                      <Show when={keywordLoading()}>
+                        <ButtonSpinner />
+                      </Show>
                       {t("searchPage.searchEntries")}
                     </button>
                   </div>
@@ -826,8 +833,12 @@ export default function SpaceSearchRoute() {
                       type="button"
                       class="ui-button ui-button-primary text-sm"
                       disabled={advancedLoading()}
+                      aria-busy={advancedLoading() || undefined}
                       onClick={() => void handleAdvancedSearch()}
                     >
+                      <Show when={advancedLoading()}>
+                        <ButtonSpinner />
+                      </Show>
                       {t("searchPage.runAdvancedSearch")}
                     </button>
                   </div>

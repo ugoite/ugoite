@@ -317,8 +317,8 @@ describe("/spaces", () => {
       within(spacesTable).getByRole("columnheader", { name: "Space name" }),
     ).toBeInTheDocument();
     expect(
-      within(spacesTable).getByRole("columnheader", { name: "Forms" }),
-    ).toBeInTheDocument();
+      within(spacesTable).queryByRole("columnheader", { name: "Forms" }),
+    ).toBeNull();
     expect(
       within(spacesTable).getByRole("columnheader", { name: "Settings" }),
     ).toBeInTheDocument();
@@ -330,8 +330,8 @@ describe("/spaces", () => {
     expect(spacesTable.querySelector("small")).toBeNull();
     expect(within(spacesTable).queryByText("default", { selector: "small" }))
       .not.toBeInTheDocument();
-    // Form counts are unknown for the Space payload: placeholder kept.
-    expect(within(spacesTable).getByText("—")).toBeInTheDocument();
+    // No placeholder form-count column: only real data and actions remain.
+    expect(within(spacesTable).queryByText("—")).toBeNull();
     // Icon-only actions keep their accessible names.
     expect(
       within(spacesTable).getByRole("link", { name: "Settings" }),

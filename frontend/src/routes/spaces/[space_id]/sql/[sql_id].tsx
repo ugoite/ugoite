@@ -1,5 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
+import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { SqlQueryEditor } from "~/components";
 import { formatDateLabel } from "~/lib/date-format";
@@ -195,10 +196,14 @@ export default function SpaceSqlDetailRoute() {
             <button
               type="button"
               class="btn primary"
-              onClick={handleRun}
+              onClick={() => void handleRun()}
               disabled={running()}
+              aria-busy={running() || undefined}
             >
-              {running() ? t("sqlPage.running") : t("sqlPage.runQuery")}
+              <Show when={running()}>
+                <ButtonSpinner />
+              </Show>
+              {t("sqlPage.runQuery")}
             </button>
           </Show>
           <Show when={entry() && variableCount() > 0}>

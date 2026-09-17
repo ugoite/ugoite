@@ -9,7 +9,12 @@ import {
 } from "solid-js";
 import type { EntryRecord, Form } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
-import { encodeSpreadsheetCsv, entryApi, searchApi } from "~/lib/ugoite-client";
+import {
+  encodeSpreadsheetCsv,
+  entryApi,
+  searchApi,
+  spreadsheetCsvRequestBytes,
+} from "~/lib/ugoite-client";
 import { replaceFirstH1, updateH2Section } from "~/lib/markdown";
 import { t } from "~/lib/i18n";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
@@ -204,12 +209,10 @@ function formatCsvValues(entry: EntryRecord, headers: string[]) {
  * large Form export stays a bounded sequence of small requests instead of a
  * single oversized one. CSV encoding is row-independent (cells encode alone,
  * rows join with CRLF), so joining chunk outputs reproduces the single-call
- * bytes exactly.
+ * bytes exactly. Size checks measure the exact serialized protocol request
+ * envelope; no guessed margin is subtracted.
  */
 export const CSV_EXPORT_WASM_JSON_LIMIT_BYTES = 256 * 1024;
-
-const estimateCsvJsonBytes = (rows: readonly (readonly string[])[]): number =>
-  new TextEncoder().encode(JSON.stringify(rows)).length;
 
 /** Split data rows into chunks that each fit one WASM encode request. */
 export function chunkCsvRowsForExport(
@@ -217,19 +220,24 @@ export function chunkCsvRowsForExport(
   dataRows: readonly (readonly string[])[],
   limitBytes: number = CSV_EXPORT_WASM_JSON_LIMIT_BYTES,
 ): readonly (readonly string[])[][] {
-  const headerBytes = estimateCsvJsonBytes([headers]);
   const chunks: readonly (readonly string[])[][] = [];
   let current: (readonly string[])[] = [];
-  let currentBytes = headerBytes;
   for (const row of dataRows) {
-    const rowBytes = estimateCsvJsonBytes([row]);
-    if (current.length > 0 && currentBytes + rowBytes > limitBytes) {
+    const candidate = [...current, row];
+    // First invocation carries headers; later ones carry data rows only.
+    // Measure the exact envelope that will be sent for this chunk.
+    const invocationRows = chunks.length === 0
+      ? [headers, ...candidate]
+      : candidate;
+    if (
+      current.length > 0 &&
+      spreadsheetCsvRequestBytes(invocationRows) > limitBytes
+    ) {
       chunks.push(current);
-      current = [];
-      currentBytes = headerBytes;
+      current = [row];
+      continue;
     }
-    current.push(row);
-    currentBytes += rowBytes;
+    current = candidate;
   }
   chunks.push(current);
   return chunks;

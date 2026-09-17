@@ -79,7 +79,8 @@ describe("entry history route", () => {
     const { container } = render(() => <SpaceEntryHistoryRoute />);
 
     const table = await screen.findByRole("table");
-    expect(table).toHaveClass("table");
+    expect(table).toHaveClass("dataTable");
+    expect(table).toHaveClass("entry-history-table");
     expect(table.closest(".tablewrap")).not.toBeNull();
 
     const headers = [...table.querySelectorAll("thead th")].map((th) =>

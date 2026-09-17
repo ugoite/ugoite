@@ -3,7 +3,6 @@ import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
-import { loadingState } from "~/lib/loading";
 import { SpaceShell } from "./SpaceShell";
 
 vi.mock("@solidjs/router", () => ({
@@ -166,33 +165,17 @@ describe("v5 SpaceShell", () => {
     expect(screen.getAllByRole("link", { name: "ホーム" }).length)
       .toBeGreaterThan(0);
   });
-  it("shows the v5 loading indicator", () => {
-    loadingState.start();
+  it("keeps shell and children mounted without a global loading bar", () => {
     const { container } = render(() => (
-      <SpaceShell spaceId="my-space-uid" activeNavigation="home">
-        <p>Content</p>
-      </SpaceShell>
-    ));
-    expect(container.querySelector(".loadingBar")).toBeInTheDocument();
-    loadingState.stop();
-  });
-  it("keeps shell and children mounted while global loading changes", () => {
-    render(() => (
       <SpaceShell spaceId="my-space-uid" activeNavigation="home">
         <p>Child content</p>
       </SpaceShell>
     ));
     expect(screen.getByText("Child content")).toBeInTheDocument();
-
-    loadingState.start();
-    expect(screen.getByText("Child content")).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Home" })[0])
       .toBeInTheDocument();
-
-    loadingState.stop();
-    expect(screen.getByText("Child content")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Home" })[0])
-      .toBeInTheDocument();
+    expect(container.querySelector(".loadingBar")).toBeNull();
+    expect(container.querySelector(".ui-loading-bar")).toBeNull();
   });
   it("keeps the route space selected when the route changes", () => {
     const [spaceId, setSpaceId] = createSignal("my-space-uid");

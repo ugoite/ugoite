@@ -1,6 +1,8 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, Show } from "solid-js";
+import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { createEntryFieldInputId, EntryFields } from "~/components/EntryFields";
+import { formatDateTimeLabel } from "~/lib/date-format";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { parseEntryMarkdownPresentation } from "~/lib/entry-input";
 import { formatUserFacingError } from "~/lib/user-facing-error";
@@ -11,35 +13,14 @@ import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "forms", title: "revision" });
 
-function toRevisionDate(
-  value: string | number | null | undefined,
-): Date | null {
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) return null;
-    const millis = Math.abs(value) < 1_000_000_000_000 ? value * 1000 : value;
-    const date = new Date(millis);
-    return Number.isNaN(date.getTime()) ? null : date;
-  }
-  if (typeof value === "string" && value.trim()) {
-    const date = new Date(value.trim());
-    return Number.isNaN(date.getTime()) ? null : date;
-  }
-  return null;
-}
-
-/** Subtitle stamp: `YYYY-MM-DD HH:mm` plus a fixed read-only marker. */
+/** Revision subtitle: shared locale-aware date plus a localized marker. */
 export function formatRevisionSubtitle(
   value: string | number | null | undefined,
 ): string {
-  const date = toRevisionDate(value);
-  if (!date) return `— · 読み取り専用`;
-  const pad = (part: number) => String(part).padStart(2, "0");
-  const stamp = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${
-    pad(
-      date.getDate(),
-    )
-  } ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  return `${stamp} · 読み取り専用`;
+  return t("entryRevision.subtitle", {
+    date: formatDateTimeLabel(value),
+    marker: t("entryRevision.readOnly"),
+  });
 }
 
 export default function SpaceEntryRevisionRoute() {
@@ -91,7 +72,7 @@ export default function SpaceEntryRevisionRoute() {
   );
 
   const handleRestore = async () => {
-    if (!revision()) return;
+    if (!revision() || isRestoring()) return;
     setIsRestoring(true);
     setRestoreError(null);
     try {
@@ -157,17 +138,15 @@ export default function SpaceEntryRevisionRoute() {
               type="button"
               class="btn primary ui-entry-history-restore"
               aria-label={t("entryRevision.restore")}
-              onClick={handleRestore}
+              aria-busy={isRestoring() || undefined}
+              onClick={() => void handleRestore()}
               disabled={isRestoring()}
             >
-              復元
+              <Show when={isRestoring()}>
+                <ButtonSpinner />
+              </Show>
+              {t("entryRevision.restoreShort")}
             </button>
-            <Show when={isRestoring()}>
-              <LocalBusyIndicator
-                size="sm"
-                label={t("entryRevision.restoring")}
-              />
-            </Show>
           </div>
           <Show when={restoreError()}>
             <p class="ui-alert ui-alert-error">{restoreError()}</p>

@@ -8,6 +8,7 @@ import {
 } from "solid-js";
 import { Portal } from "solid-js/web";
 import { AssetPreview } from "./AssetPreview";
+import { ButtonSpinner } from "./ButtonSpinner";
 import { LocalBusyIndicator } from "./LocalBusyIndicator";
 import { UiIcon } from "./UiIcon";
 import { assetApi } from "~/lib/ugoite-client";
@@ -423,18 +424,11 @@ export function AssetField(props: AssetFieldProps) {
     return undefined;
   };
 
-  const readingLabel = (action: string, reference: AssetReference) =>
-    `${t("assetField.status.reading")} ${action} ${reference.name}`;
-
   const previewLabel = (reference: AssetReference) =>
-    readingIds().has(reference.asset_id)
-      ? readingLabel(t("assetField.action.preview"), reference)
-      : `${t("assetField.action.preview")} ${reference.name}`;
+    `${t("assetField.action.preview")} ${reference.name}`;
 
   const downloadLabel = (reference: AssetReference) =>
-    readingIds().has(reference.asset_id)
-      ? readingLabel(t("assetField.action.download"), reference)
-      : `${t("assetField.action.download")} ${reference.name}`;
+    `${t("assetField.action.download")} ${reference.name}`;
 
   return (
     <div
@@ -477,6 +471,8 @@ export function AssetField(props: AssetFieldProps) {
                     class="ui-button ui-button-secondary ui-button-sm ui-asset-icon-button"
                     aria-label={previewLabel(reference)}
                     title={previewLabel(reference)}
+                    aria-busy={readingIds().has(reference.asset_id) ||
+                      undefined}
                     onClick={(event) =>
                       previewReference(reference, event.currentTarget)}
                     disabled={readingIds().has(reference.asset_id) ||
@@ -484,7 +480,12 @@ export function AssetField(props: AssetFieldProps) {
                         (!persistedIds().has(reference.asset_id) ||
                           !props.formName?.trim() || !props.entryId?.trim()))}
                   >
-                    <UiIcon name="preview" />
+                    <Show
+                      when={readingIds().has(reference.asset_id)}
+                      fallback={<UiIcon name="preview" />}
+                    >
+                      <ButtonSpinner />
+                    </Show>
                     <span class="ui-sr-only">
                       {previewLabel(reference)}
                     </span>
@@ -495,13 +496,20 @@ export function AssetField(props: AssetFieldProps) {
                   class="ui-button ui-button-secondary ui-button-sm ui-asset-icon-button"
                   aria-label={downloadLabel(reference)}
                   title={downloadLabel(reference)}
+                  aria-busy={readingIds().has(reference.asset_id) ||
+                    undefined}
                   onClick={() => downloadReference(reference)}
                   disabled={readingIds().has(reference.asset_id) ||
                     (!localFiles().has(reference.asset_id) &&
                       (!persistedIds().has(reference.asset_id) ||
                         !props.formName?.trim() || !props.entryId?.trim()))}
                 >
-                  <UiIcon name="download" />
+                  <Show
+                    when={readingIds().has(reference.asset_id)}
+                    fallback={<UiIcon name="download" />}
+                  >
+                    <ButtonSpinner />
+                  </Show>
                   <span class="ui-sr-only">
                     {downloadLabel(reference)}
                   </span>

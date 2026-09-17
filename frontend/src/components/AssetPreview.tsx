@@ -109,71 +109,68 @@ function DelimitedPreview(props: { blob: Blob; delimiter: "," | "\t" }) {
   );
 }
 
-/** Browser-native PDF embed with a readable fallback.
+/** Browser-native PDF embed with an in-DOM fallback.
  *
  *  The `image` branch never receives PDF references (resolvePreviewKind
  *  gates on extension), so a PDF can never render through `<img>`, which
- *  would stay blank. When the embed itself fails, the fallback keeps the
- *  file usable via name, size, and download instead of a blank frame. */
+ *  would stay blank. The fallback lives inside `<object>` so it stays in
+ *  the DOM even on success and the browser shows it automatically when the
+ *  embed cannot render. Blob URL lifetime stays with the AssetField draft
+ *  state, which revokes URLs on invalidate/reset/dispose. */
 function PdfPreview(props: {
   reference: AssetReference;
   blob: Blob;
   url: string;
   onDownload?: () => void;
 }) {
-  const [failed, setFailed] = createSignal(false);
-
   return (
-    <Show
-      when={!failed()}
-      fallback={
-        <div class="ui-asset-pdf-fallback">
-          <p
-            class="ui-asset-pdf-name"
-            title={props.reference.name}
-          >
-            {props.reference.name}
-          </p>
-          <p class="text-xs ui-muted">
-            {formatAssetSize(
-              props.blob.size,
-              locale() === "ja" ? "ja-JP" : "en-US",
-            )}
-          </p>
-          <p class="text-sm ui-muted">{t("assetField.preview.failed")}</p>
-          <Show
-            when={props.onDownload}
-            fallback={
-              <a
-                class="ui-button ui-button-secondary"
-                href={props.url}
-                download={props.reference.name}
-              >
-                {t("assetField.action.download")}
-              </a>
-            }
-          >
-            {(download) => (
-              <button
-                type="button"
-                class="ui-button ui-button-secondary"
-                onClick={() => download()()}
-              >
-                {t("assetField.action.download")}
-              </button>
-            )}
-          </Show>
-        </div>
-      }
+    <object
+      class="ui-asset-document-preview"
+      data={props.url}
+      type="application/pdf"
+      title={props.reference.name}
+      tabindex="-1"
     >
-      <iframe
-        class="ui-asset-document-preview"
-        src={props.url}
-        title={props.reference.name}
-        tabindex="-1"
-        onError={() => setFailed(true)}
-      />
-    </Show>
+      <div class="ui-asset-pdf-fallback">
+        <p
+          class="ui-asset-pdf-name"
+          title={props.reference.name}
+        >
+          {props.reference.name}
+        </p>
+        <p class="text-xs ui-muted">
+          {formatAssetSize(
+            props.blob.size,
+            locale() === "ja" ? "ja-JP" : "en-US",
+          )}
+        </p>
+        <p class="text-sm ui-muted">
+          {t("assetField.preview.unsupported")}
+        </p>
+        <Show
+          when={props.onDownload}
+          fallback={
+            <a
+              class="ui-button ui-button-secondary"
+              href={props.url}
+              download={props.reference.name}
+            >
+              {t("assetField.action.download")}
+            </a>
+          }
+        >
+          {(download) => (
+            <button
+              type="button"
+              class="ui-button ui-button-secondary"
+              onClick={() => download()()}
+            >
+              {t("assetField.action.download")}
+            </button>
+          )}
+        </Show>
+      </div>
+    </object>
   );
 }
 

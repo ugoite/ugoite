@@ -12,7 +12,7 @@ export default function SpaceEntryRestoreRedirectRoute() {
   const navigate = useNavigate();
   const params = useParams<{ space_id: string; entry_id: string }>();
   const historyPath = () =>
-    `/spaces/${params.space_id}/entries/${
+    `/spaces/${encodeURIComponent(params.space_id ?? "")}/entries/${
       encodeURIComponent(params.entry_id ?? "")
     }/history`;
 

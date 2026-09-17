@@ -1,6 +1,7 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import type { Diagnostic } from "@codemirror/lint";
 import { createEffect, createSignal, For, Show } from "solid-js";
+import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { SqlQueryEditor } from "~/components";
 import { formApi } from "~/lib/ugoite-client";
 import {
@@ -44,6 +45,7 @@ export default function SpaceQueryCreateRoute() {
   const schema = () => buildSqlSchema((forms() || []) as Form[]);
 
   const handleSave = async () => {
+    if (isSaving()) return;
     setError(null);
     const name = queryName().trim();
     const sql = sqlInput().trim();
@@ -121,10 +123,14 @@ export default function SpaceQueryCreateRoute() {
         <button
           type="button"
           class="btn primary"
-          onClick={handleSave}
+          onClick={() => void handleSave()}
           disabled={isSaving()}
+          aria-busy={isSaving() || undefined}
         >
-          {isSaving() ? t("sqlPage.saving") : t("common.save")}
+          <Show when={isSaving()}>
+            <ButtonSpinner />
+          </Show>
+          {t("common.save")}
         </button>
       </div>
     </>

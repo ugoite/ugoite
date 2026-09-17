@@ -1,23 +1,22 @@
 import type { JSX } from "solid-js";
 import { UiIcon, type UiIconName } from "~/components/UiIcon";
 
-interface IconButtonProps {
+interface IconLinkProps {
   icon: UiIconName;
   /** Accessible name. Required so icon-only controls stay labelled. */
   label: string;
-  disabled?: boolean;
+  href: string;
   active?: boolean;
   class?: string;
-  onClick?: JSX.EventHandlerUnion<HTMLButtonElement, MouseEvent>;
-  type?: "button" | "submit" | "reset";
+  onClick?: JSX.EventHandlerUnion<HTMLAnchorElement, MouseEvent>;
 }
 
 /**
- * Shared 44px icon-only button. Button-only: navigation uses `IconLink`.
- * The visible content is the icon slot only; `label` is exposed via
- * `aria-label` on the button itself (no wrapper aria-label).
+ * Shared 44px icon-only link. Link-only: actions use `IconButton`.
+ * If the nav target is unavailable, callers omit this element entirely
+ * (never a disabled `<a>`). The accessible name lives on the link itself.
  */
-export function IconButton(props: IconButtonProps) {
+export function IconLink(props: IconLinkProps) {
   const cls = () =>
     [
       "pill",
@@ -29,16 +28,15 @@ export function IconButton(props: IconButtonProps) {
       .filter(Boolean)
       .join(" ");
   return (
-    <button
+    <a
       class={cls()}
-      type={props.type ?? "button"}
+      href={props.href}
       aria-label={props.label}
-      aria-pressed={props.active}
-      disabled={props.disabled}
+      aria-current={props.active ? "page" : undefined}
       onClick={props.onClick}
     >
       <UiIcon name={props.icon} />
       <span class="ui-sr-only">{props.label}</span>
-    </button>
+    </a>
   );
 }

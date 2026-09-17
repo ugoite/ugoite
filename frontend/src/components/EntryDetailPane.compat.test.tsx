@@ -290,6 +290,135 @@ describe("EntryDetailPane source compat bridge", () => {
     });
   });
 
+  it("keeps Advanced open after the diagnostic clears; closes only on user close", async () => {
+    setLocale("en");
+    vi.resetAllMocks();
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-1",
+      title: "Note",
+      form: "Note",
+      content: "---\nform: Note\n---\n# Note\n\n## Body\nhello\n",
+      revision_id: "rev-1",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    const { container } = render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-1"}
+        forms={() => [form]}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const lossy = "---\nform: Note\n---\n# Note\n\nPreamble\n\n## Body\nkept\n";
+    fireEvent.input(await screen.findByPlaceholderText(
+      "Start writing in Markdown...",
+    ), { target: { value: lossy } });
+    await waitFor(() => {
+      expect(screen.getByText("Review Markdown conversion before saving"))
+        .toBeInTheDocument();
+    });
+    await waitFor(() => {
+      const disclosure = container.querySelector(
+        "details.ui-entry-source-disclosure",
+      ) as HTMLDetailsElement | null;
+      expect(disclosure?.open).toBe(true);
+    });
+
+    // Accept the canonical version: diagnostic clears but disclosure stays.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Use canonical version" }),
+    );
+    await waitFor(() => {
+      expect(
+        screen.queryByText("Review Markdown conversion before saving"),
+      ).toBeNull();
+    });
+    const afterClear = container.querySelector(
+      "details.ui-entry-source-disclosure",
+    ) as HTMLDetailsElement | null;
+    expect(afterClear?.open).toBe(true);
+
+    // User closes: it stays closed while no diagnostic is present.
+    afterClear!.open = false;
+    fireEvent(afterClear!, new Event("toggle", { bubbles: true }));
+    await waitFor(() => {
+      const disclosure = container.querySelector(
+        "details.ui-entry-source-disclosure",
+      ) as HTMLDetailsElement | null;
+      expect(disclosure?.open).toBe(false);
+    });
+  });
+
+  it("auto-opens Advanced again on a later diagnostic after user close", async () => {
+    setLocale("en");
+    vi.resetAllMocks();
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-1",
+      title: "Note",
+      form: "Note",
+      content: "---\nform: Note\n---\n# Note\n\n## Body\nhello\n",
+      revision_id: "rev-1",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    const { container } = render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-1"}
+        forms={() => [form]}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const source = await screen.findByPlaceholderText(
+      "Start writing in Markdown...",
+    );
+    const lossy = "---\nform: Note\n---\n# Note\n\nPreamble\n\n## Body\nkept\n";
+    fireEvent.input(source, { target: { value: lossy } });
+    await waitFor(() => {
+      expect(screen.getByText("Review Markdown conversion before saving"))
+        .toBeInTheDocument();
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Use canonical version" }),
+    );
+    await waitFor(() => {
+      expect(
+        screen.queryByText("Review Markdown conversion before saving"),
+      ).toBeNull();
+    });
+    const disclosure = container.querySelector(
+      "details.ui-entry-source-disclosure",
+    ) as HTMLDetailsElement | null;
+    disclosure!.open = false;
+    fireEvent(disclosure!, new Event("toggle", { bubbles: true }));
+    await waitFor(() => {
+      expect(
+        (container.querySelector(
+          "details.ui-entry-source-disclosure",
+        ) as HTMLDetailsElement | null)?.open,
+      ).toBe(false);
+    });
+
+    // Later diagnostic episode auto-opens again.
+    fireEvent.input(source, { target: { value: lossy } });
+    await waitFor(() => {
+      expect(screen.getByText("Review Markdown conversion before saving"))
+        .toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(
+        (container.querySelector(
+          "details.ui-entry-source-disclosure",
+        ) as HTMLDetailsElement | null)?.open,
+      ).toBe(true);
+    });
+  });
+
   it("keeps the saved row_reference ID when the display label changes", async () => {
     setLocale("en");
     vi.resetAllMocks();

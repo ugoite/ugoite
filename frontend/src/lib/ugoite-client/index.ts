@@ -24,6 +24,7 @@ export {
 } from "../sql-session-api";
 export { RevisionConflictError } from "../entry-api";
 export {
+  buildSpreadsheetCsvRequest,
   getWasmSupportedOperations,
   invokeKonase,
   type KonaseProtocolAction,
@@ -31,6 +32,7 @@ export {
   protocolFetch,
   type ProtocolFetchOptions,
   protocolFetchResponse,
+  spreadsheetCsvRequestBytes,
   UGOITE_API_OPERATIONS,
   UGOITE_WASM_PROTOCOL_VERSION,
   UgoiteApiError,
