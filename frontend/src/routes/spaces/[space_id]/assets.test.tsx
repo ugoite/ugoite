@@ -2,9 +2,9 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
-import { entryApi } from "~/lib/ugoite-client";
-import type { EntryRecord } from "~/lib/types";
-import SpaceAssetsRoute from "./assets";
+import { assetApi } from "~/lib/ugoite-client";
+import type { AssetListItem } from "~/lib/asset-api";
+import SpaceAssetsIndexRoute from "./assets/index";
 
 vi.mock("@solidjs/router", () => ({
   A: (props: { href: string; class?: string; children: unknown }) => (
@@ -14,21 +14,7 @@ vi.mock("@solidjs/router", () => ({
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
-  entryApi: { list: vi.fn() },
-}));
-
-vi.mock("~/lib/asset-reference", () => ({
-  formatAssetSize: (size: number) => `${size.toLocaleString("en-US")} bytes`,
-  isAssetReference: (value: unknown) =>
-    !!value && typeof value === "object" &&
-    "asset_id" in value && "name" in value && "media_type" in value &&
-    "size_bytes" in value && "sha256" in value,
-  isAssetReferenceListField: (
-    field: { type?: string; items?: { type?: string } },
-  ) => field.type === "list" && field.items?.type === "asset_reference",
-  hasDuplicateAssetReferences: (references: Array<{ asset_id: string }>) =>
-    new Set(references.map((reference) => reference.asset_id)).size !==
-      references.length,
+  assetApi: { list: vi.fn(), read: vi.fn(), delete: vi.fn() },
 }));
 
 vi.mock("~/lib/user-facing-error", () => ({
@@ -36,118 +22,80 @@ vi.mock("~/lib/user-facing-error", () => ({
     fallback === "assetsPage.failedLoad" ? "Failed to load assets." : fallback,
 }));
 
-const reference = {
+const item = (
+  overrides: Partial<AssetListItem> = {},
+): AssetListItem => ({
   asset_id: "01900000-0000-7000-8000-000000000001",
   name: "report.pdf",
   media_type: "application/pdf",
   size_bytes: 2048,
   sha256: "a".repeat(64),
-};
-
-const entry = (
-  properties: Record<string, unknown>,
-  id = "entry-1",
-): EntryRecord => ({
-  id,
-  title: "Quarterly report",
   form: "Reports",
-  updated_at: "2026-08-10T00:00:00Z",
-  properties,
-  tags: [],
+  entry_id: "entry-1",
+  field: "Attachments",
+  ...overrides,
 });
 
 describe("/spaces/:space_id/assets", () => {
   beforeEach(() => {
     setLocale("en");
-    vi.mocked(entryApi.list).mockReset();
+    vi.mocked(assetApi.list).mockReset();
   });
 
-  it("renders loading and then the Form-owned asset reference with its Entry", async () => {
-    let resolveEntries: ((value: EntryRecord[]) => void) | undefined;
-    vi.mocked(entryApi.list).mockReturnValue(
-      new Promise((resolve) => resolveEntries = resolve),
+  it("renders loading and then asset rows with type/size meta", async () => {
+    let resolveItems: ((value: AssetListItem[]) => void) | undefined;
+    vi.mocked(assetApi.list).mockReturnValue(
+      new Promise((resolve) => resolveItems = resolve),
     );
 
-    render(() => <SpaceAssetsRoute />);
+    const { container } = render(() => <SpaceAssetsIndexRoute />);
     expect(screen.getByRole("status")).toHaveTextContent(
       "Loading asset references...",
     );
 
-    resolveEntries?.([entry({ Attachments: [reference] })]);
+    resolveItems?.([item()]);
 
-    expect(await screen.findByRole("heading", { name: "report.pdf" }))
-      .toBeInTheDocument();
-    expect(entryApi.list).toHaveBeenCalledWith("default", 1_000);
-    expect(screen.getByText("application/pdf · 2,048 bytes"))
-      .toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /report\.pdf/ }))
+      .toHaveAttribute(
+        "href",
+        "/spaces/default/assets/01900000-0000-7000-8000-000000000001",
+      );
+    expect(assetApi.list).toHaveBeenCalledWith("default");
+    expect(screen.getByText(/application\/pdf/)).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(
       "All current Entry asset references are shown.",
     );
-    expect(screen.getByRole("link", { name: /Quarterly report/ }))
-      .toHaveAttribute("href", "/spaces/default/entries/entry-1");
-    expect(document.querySelector(".spaceAssetRow")).toBeInTheDocument();
-    expect(document.querySelector(".spaceAssetRow.ui-card")).toBeNull();
-    expect(document.querySelector(".assetReferenceRow.ui-card")).toBeNull();
+    // RowList rows: full-row activation, no raw IDs in rows.
+    expect(container.querySelector(".rowList")).toBeInTheDocument();
+    expect(container.querySelector(".spaceAssetRow")).toBeNull();
+    expect(screen.queryByText("01900000-0000-7000-8000-000000000001"))
+      .toBeNull();
   });
 
-  it("loads all pages when the asset inventory crosses a read boundary", async () => {
-    const firstPage = Array.from(
-      { length: 1_000 },
-      (_, index) =>
-        entry(
-          index === 0 ? { Attachments: [reference] } : {},
-          `entry-${index}`,
-        ),
-    );
-    const laterReference = {
-      ...reference,
-      asset_id: "01900000-0000-7000-8000-000000000002",
-      name: "later-report.pdf",
-    };
-    vi.mocked(entryApi.list)
-      .mockResolvedValueOnce(firstPage)
-      .mockResolvedValueOnce([
-        entry({ Attachments: [laterReference] }, "entry-1000"),
-      ]);
+  it("exposes an Upload action where bytes enter through asset fields", async () => {
+    vi.mocked(assetApi.list).mockResolvedValue([]);
 
-    render(() => <SpaceAssetsRoute />);
-
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Loading asset references...",
-    );
-    expect(await screen.findByRole("heading", { name: "later-report.pdf" }))
-      .toBeInTheDocument();
-    expect(entryApi.list).toHaveBeenNthCalledWith(1, "default", 1_000);
-    expect(entryApi.list).toHaveBeenNthCalledWith(2, "default", 1_000, 1_000);
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "All current Entry asset references are shown.",
-    );
-  });
-
-  it("renders the honest empty state when no current Entry owns an asset", async () => {
-    vi.mocked(entryApi.list).mockResolvedValue([]);
-
-    render(() => <SpaceAssetsRoute />);
+    render(() => <SpaceAssetsIndexRoute />);
 
     expect(await screen.findByText("No saved Asset references yet."))
       .toBeInTheDocument();
-    expect(screen.getByText(/Upload an asset in a Form-owned asset field/))
-      .toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Open Forms/ }))
+    expect(screen.getByRole("link", { name: "+Upload" }))
       .toHaveAttribute("href", "/spaces/default/forms");
+    expect(screen.getByText(/never creates a second asset catalog/))
+      .toBeInTheDocument();
   });
 
   it("renders an error with a retry action", async () => {
-    vi.mocked(entryApi.list)
+    vi.mocked(assetApi.list)
       .mockRejectedValueOnce(new Error("request failed"))
       .mockResolvedValueOnce([]);
 
-    render(() => <SpaceAssetsRoute />);
+    render(() => <SpaceAssetsIndexRoute />);
 
     expect(await screen.findByText("Failed to load assets."))
       .toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    await waitFor(() => expect(entryApi.list).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(assetApi.list).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("No saved Asset references yet."))
       .toBeInTheDocument();
   });

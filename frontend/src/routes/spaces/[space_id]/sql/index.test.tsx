@@ -51,10 +51,32 @@ describe("/spaces/:space_id/sql", () => {
       }),
     )
       .toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "SQL" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "+Query" })).toHaveAttribute(
       "href",
       "/spaces/default/queries/new",
     );
+  });
+
+  it("PR6: renders saved queries through RowList with full-row activation and no boxed chevrons", async () => {
+    vi.mocked(sqlApi.list).mockResolvedValueOnce([{
+      id: "saved/query",
+      name: "Row Query",
+      kind: "user-query",
+      metadata: null,
+      sql: "SELECT 1",
+      variables: [],
+      created_at: "2026-03-01T00:00:00Z",
+      updated_at: "2026-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    }]);
+
+    const { container } = render(() => <SpaceSqlRoute />);
+
+    const row = await screen.findByRole("link", { name: /Row Query/ });
+    expect(row).toHaveClass("rowListMain");
+    expect(container.querySelector(".rowList")).toBeInTheDocument();
+    expect(container.querySelector(".rowStack")).toBeNull();
+    expect(container.querySelector(".rowBtn")).toBeNull();
   });
 
   it("REQ-FE-061: saved SQL route shows a canonical load error", async () => {

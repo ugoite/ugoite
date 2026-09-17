@@ -2,6 +2,12 @@ import { A, useNavigate, useParams } from "@solidjs/router";
 import { createSignal, For, Show } from "solid-js";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import {
+  RowList,
+  RowListButton,
+  RowListItem,
+  RowListLink,
+} from "~/components/RowList";
 import { UiIcon } from "~/components/UiIcon";
 import { normalizeSqlVariables } from "~/lib/sql";
 import { sqlApi, sqlSessionApi } from "~/lib/ugoite-client";
@@ -79,8 +85,11 @@ export default function SpaceSqlIndexRoute() {
           <div class="eyebrow">{t("searchPage.title")}</div>
           <h1>{t("sqlPage.savedSql")}</h1>
         </div>
-        <A class="btn primary" href={`/spaces/${encodeURIComponent(spaceId())}/queries/new`}>
-          <UiIcon name="plus" /> {t("sqlPage.createButton")}
+        <A
+          class="btn primary"
+          href={`/spaces/${encodeURIComponent(spaceId())}/queries/new`}
+        >
+          {t("sqlPage.createQuery")}
         </A>
       </div>
       {/* Panel-local spinner: saved rows stay mounted during refetch. */}
@@ -112,27 +121,56 @@ export default function SpaceSqlIndexRoute() {
             </Show>
           }
         >
-          <div class="rowStack sqlRows">
+          <RowList label={t("sqlPage.savedSql")}>
             <For each={savedQueries()}>
               {(query) => (
-                <A
-                  class="rowBtn"
-                  href={`/spaces/${encodeURIComponent(spaceId())}/sql/${
-                    encodeURIComponent(query.id)
-                  }`}
-                >
-                  <span class="glyph active">
-                    <UiIcon name="sql" />
-                  </span>
-                  <span>
-                    <b>{displaySqlName(query)}</b>
-                    <small>{formatDateLabel(query.updated_at)}</small>
-                  </span>
-                  <span>›</span>
-                </A>
+                <RowListItem
+                  main={
+                    <RowListLink
+                      href={`/spaces/${encodeURIComponent(spaceId())}/sql/${
+                        encodeURIComponent(query.id)
+                      }`}
+                      primary={displaySqlName(query)}
+                      secondary={query.variables.length > 0
+                        ? t("searchPage.variables")
+                        : undefined}
+                      meta={formatDateLabel(query.updated_at)}
+                      chevron
+                    />
+                  }
+                  actions={query.variables.length > 0
+                    ? (
+                      <RowListButton
+                        primary={t("searchPage.variables")}
+                        onActivate={() =>
+                          navigate(
+                            `/spaces/${encodeURIComponent(spaceId())}/queries/${
+                              encodeURIComponent(query.id)
+                            }/variables`,
+                          )}
+                      />
+                    )
+                    : (
+                      <button
+                        type="button"
+                        class="rowListAction"
+                        aria-label={`${t("searchPage.runAgain")}: ${
+                          displaySqlName(query)
+                        }`}
+                        disabled={runningQueryId() !== null}
+                        aria-busy={runningQueryId() === query.id || undefined}
+                        onClick={() => void runSavedQuery(query)}
+                      >
+                        <Show when={runningQueryId() === query.id}>
+                          <ButtonSpinner />
+                        </Show>
+                        {t("searchPage.runAgain")}
+                      </button>
+                    )}
+                />
               )}
             </For>
-          </div>
+          </RowList>
         </Show>
 
         <section class="sqlHistoryGroup" aria-labelledby="sql-history-title">
@@ -149,56 +187,59 @@ export default function SpaceSqlIndexRoute() {
           <Show when={runError()}>
             <p class="mt-3 text-sm ui-text-danger">{runError()}</p>
           </Show>
-          <div class="rowStack sqlHistoryRows">
+          <div
+            class="rowList sqlHistoryRows"
+            role="list"
+            aria-label={t("searchPage.searchHistory")}
+          >
             <For
               each={searchHistory()}
               fallback={
-                <div class="rowBtn">
-                  <span class="glyph">
-                    <UiIcon name="history" />
-                  </span>
-                  <span>
-                    <b>{t("searchPage.noSearchHistory")}</b>
+                <div class="rowListItem" role="listitem">
+                  <span class="rowListMain">
+                    <span class="rowListText">
+                      <span class="rowListPrimary">
+                        {t("searchPage.noSearchHistory")}
+                      </span>
+                    </span>
                   </span>
                 </div>
               }
             >
               {(query) => (
-                <div class="sqlHistoryRow">
-                  <A
-                    class="sqlRowLink"
-                    href={`/spaces/${encodeURIComponent(spaceId())}/sql/${
-                      encodeURIComponent(query.id)
-                    }`}
-                  >
-                    <span class="glyph active">
-                      <UiIcon name="history" />
-                    </span>
-                    <span>
-                      <b>{displaySqlName(query)}</b>
-                      <small>{formatDateLabel(query.updated_at)}</small>
-                    </span>
-                  </A>
-                  <button
-                    type="button"
-                    class="sqlRowAction"
-                    aria-label={`${
-                      query.variables.length > 0
+                <RowListItem
+                  main={
+                    <RowListLink
+                      href={`/spaces/${encodeURIComponent(spaceId())}/sql/${
+                        encodeURIComponent(query.id)
+                      }`}
+                      primary={displaySqlName(query)}
+                      meta={formatDateLabel(query.updated_at)}
+                      chevron
+                    />
+                  }
+                  actions={
+                    <button
+                      type="button"
+                      class="rowListAction"
+                      aria-label={`${
+                        query.variables.length > 0
+                          ? t("searchPage.variables")
+                          : t("searchPage.runAgain")
+                      }: ${displaySqlName(query)}`}
+                      disabled={runningQueryId() !== null}
+                      aria-busy={runningQueryId() === query.id || undefined}
+                      onClick={() => void runSavedQuery(query)}
+                    >
+                      <Show when={runningQueryId() === query.id}>
+                        <ButtonSpinner />
+                      </Show>
+                      {query.variables.length > 0
                         ? t("searchPage.variables")
-                        : t("searchPage.runAgain")
-                    }: ${displaySqlName(query)}`}
-                    disabled={runningQueryId() !== null}
-                    aria-busy={runningQueryId() === query.id || undefined}
-                    onClick={() => void runSavedQuery(query)}
-                  >
-                    <Show when={runningQueryId() === query.id}>
-                      <ButtonSpinner />
-                    </Show>
-                    {query.variables.length > 0
-                      ? t("searchPage.variables")
-                      : t("searchPage.runAgain")}
-                  </button>
-                </div>
+                        : t("searchPage.runAgain")}
+                    </button>
+                  }
+                />
               )}
             </For>
           </div>

@@ -16,6 +16,22 @@ const searchParams: Record<string, string> = {};
 const setSearchParams = vi.fn();
 
 vi.mock("@solidjs/router", () => ({
+  A: (props: {
+    href: string;
+    class?: string;
+    children: unknown;
+    "aria-label"?: string;
+    title?: string;
+  }) => (
+    <a
+      href={props.href}
+      class={props.class}
+      aria-label={props["aria-label"]}
+      title={props.title}
+    >
+      {props.children}
+    </a>
+  ),
   useParams: () => ({ space_id: "space-1" }),
   useSearchParams: () => [searchParams, setSearchParams],
 }));
@@ -105,6 +121,25 @@ describe("SpaceSettingsRoute", () => {
     expect(screen.getByText("Audit viewer")).toBeInTheDocument();
   });
 
+  it("PR6: navigates settings as flat rows with History reaching space history", async () => {
+    const { container } = render(() => <SpaceSettingsRoute />);
+    await screen.findByRole("heading", { name: "General" });
+
+    const nav = container.querySelector('nav[aria-label="Settings"]');
+    expect(nav).not.toBeNull();
+    expect(nav!.querySelector(".rowList")).not.toBeNull();
+    expect(container.querySelector(".settingsNav")).toBeNull();
+    expect(screen.getByRole("button", { name: "Members" })).toBeInTheDocument();
+    const historyLink = screen.getByRole("link", { name: /History/ });
+    expect(historyLink).toHaveAttribute("href", "/spaces/space-1/history");
+
+    cleanup();
+    searchParams.section = "history";
+    render(() => <SpaceSettingsRoute />);
+    expect(await screen.findByRole("heading", { name: "History" }))
+      .toBeInTheDocument();
+  });
+
   it("keeps protocol role tokens visible on the route", async () => {
     searchParams.section = "members";
     vi.mocked(spaceApi.listMembers).mockResolvedValue([{
@@ -123,7 +158,7 @@ describe("SpaceSettingsRoute", () => {
     expect(screen.queryByText("No agents found.")).toBeNull();
   });
 
-  it("renders members as an audit-style table with readable principal detail", async () => {
+  it("renders members with display names while exact IDs stay advanced-only", async () => {
     searchParams.section = "members";
     vi.mocked(spaceApi.listMembers).mockResolvedValue([
       {
@@ -159,21 +194,29 @@ describe("SpaceSettingsRoute", () => {
       .toBeInTheDocument();
     expect(container.querySelector(".rowStack")).toBeNull();
 
-    const nameCell = screen.getByText("Alice Example");
+    const nameCells = await screen.findAllByText("Alice Example");
+    // Row + advanced disclosure.
+    expect(nameCells).toHaveLength(2);
+    const nameCell = nameCells[0];
     expect(nameCell).toHaveClass("membersPrimary");
-    expect(nameCell.closest("td")).toHaveAttribute("title", "Alice Example");
-
-    const idCell = screen.getByText("principal-2").closest("td");
-    expect(idCell).toHaveAttribute("title", "Bob");
-    expect(screen.getByText("principal-2")).toHaveClass("membersSecondary");
+    // No UUID list: rows never show raw principal IDs; exact IDs live in
+    // the advanced disclosure only.
+    for (const id of ["principal-1", "principal-2"]) {
+      const node = screen.getByText(id);
+      expect(node.closest("details")).not.toBeNull();
+      expect(node.closest("tr")).toBeNull();
+    }
+    expect(container.querySelector(".membersSecondary")).toBeNull();
     expect(screen.getByText("invited")).toBeInTheDocument();
+    // Exact IDs live in the advanced disclosure only.
+    expect(screen.getByText("principal-2").closest("details")).not.toBeNull();
 
-    const ownerRow = screen.getByText("Alice Example").closest("tr")!;
+    const ownerRow = screen.getAllByText("Alice Example")[0].closest("tr")!;
     const ownerRole = ownerRow.querySelector("select")!;
     expect(ownerRole).toBeDisabled();
     expect(ownerRow.querySelector("button")).toBeDisabled();
 
-    const editorRow = screen.getByText("Bob").closest("tr")!;
+    const editorRow = screen.getAllByText("Bob")[0].closest("tr")!;
     expect(editorRow.querySelector("select")).not.toBeDisabled();
     expect(editorRow.querySelector("button")).not.toBeDisabled();
   });
@@ -200,8 +243,8 @@ describe("SpaceSettingsRoute", () => {
       state: "revoked",
     });
     render(() => <SpaceSettingsRoute />);
-    await screen.findByText("Bob");
-    const row = screen.getByText("Bob").closest("tr")!;
+    await screen.findAllByText("Bob");
+    const row = screen.getAllByText("Bob")[0].closest("tr")!;
 
     fireEvent.change(row.querySelector("select")!, {
       target: { value: "viewer" },
@@ -223,7 +266,7 @@ describe("SpaceSettingsRoute", () => {
     });
   });
 
-  it("shows the principal ID once when the display name is missing", async () => {
+  it("shows a fallback name when the display name is missing with the ID advanced-only", async () => {
     searchParams.section = "members";
     vi.mocked(spaceApi.listMembers).mockResolvedValue([{
       principal: {
@@ -237,13 +280,16 @@ describe("SpaceSettingsRoute", () => {
       created_at: "2026-01-03T00:00:00Z",
     }]);
     const { container } = render(() => <SpaceSettingsRoute />);
-    await screen.findByText("principal-9");
+    const untitled = await screen.findAllByText("Untitled");
+    // Row + advanced disclosure.
+    expect(untitled).toHaveLength(2);
 
-    const cell = screen.getByText("principal-9").closest("td")!;
-    expect(cell).toHaveClass("membersNameCell");
-    // No duplicate: the ID appears once as primary, no secondary code.
-    expect(cell.querySelectorAll("code").length).toBe(0);
+    // No duplicate: the row shows the fallback name, no secondary code.
     expect(container.querySelector(".membersSecondary")).toBeNull();
+    // The exact ID stays available in the advanced disclosure.
+    const idNode = screen.getByText("principal-9");
+    expect(idNode.closest("details")).not.toBeNull();
+    expect(idNode.closest("tr")).toBeNull();
   });
 
   it("localizes the Member heading in Japanese", async () => {

@@ -2,6 +2,7 @@ import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Index, Show } from "solid-js";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import { RowList, RowListButton, RowListItem } from "~/components/RowList";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateLabel } from "~/lib/date-format";
 import { formApi } from "~/lib/ugoite-client";
@@ -225,6 +226,7 @@ export default function SpaceSearchRoute() {
   });
 
   const [mode, setMode] = createSignal<SearchMode>("keyword");
+  const [showFilters, setShowFilters] = createSignal(false);
   const [keywordQuery, setKeywordQuery] = createSignal("");
   const [keywordSearchQuery, setKeywordSearchQuery] = createSignal("");
   const [keywordResults, setKeywordResults] = createSignal<
@@ -507,90 +509,83 @@ export default function SpaceSearchRoute() {
         <h1 class="ui-sr-only" id="search-page-title">
           {t("searchPage.title")}
         </h1>
-        <nav
-          class="searchModeNav"
-          aria-label={t("searchPage.title")}
-          aria-labelledby="search-page-title"
-        >
-          <button
-            type="button"
-            aria-label={t("searchPage.quickSearch")}
-            aria-pressed={mode() === "keyword"}
-            classList={{ active: mode() === "keyword" }}
-            onClick={() => setMode("keyword")}
-          >
-            {t("searchPage.mode.quick")}
-          </button>
-          <button
-            type="button"
-            aria-label={t("searchPage.advancedSearch")}
-            aria-pressed={mode() === "advanced"}
-            classList={{ active: mode() === "advanced" }}
-            onClick={() => setMode("advanced")}
-          >
-            {t("searchPage.mode.advanced")}
-          </button>
+        <p class="ui-muted">
           <A href={`/spaces/${encodeURIComponent(spaceId())}/assets`}>
             {t("searchPage.nav.files")}
           </A>
+          {" · "}
           <A href={`/spaces/${encodeURIComponent(spaceId())}/sql`}>
             {t("searchPage.nav.saved")}
           </A>
-        </nav>
+        </p>
 
         <div class="searchPage">
           <main>
             <section class="searchControls" aria-labelledby="search-page-title">
-              <Show when={mode() === "keyword"}>
-                <form
-                  class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void handleKeywordSearch();
-                  }}
-                >
-                  <div class="flex-1">
-                    <label class="ui-sr-only" for="search-keywords">
-                      {t("searchPage.searchKeywords")}
-                    </label>
-                    <div class="searchBox">
-                      <UiIcon name="search" />
-                      <input
-                        id="search-keywords"
-                        type="text"
-                        class=""
-                        placeholder={t("searchPage.keywordPlaceholder")}
-                        value={keywordQuery()}
-                        onInput={(event) =>
-                          setKeywordQuery(event.currentTarget.value)}
-                      />
-                    </div>
+              <form
+                class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleKeywordSearch();
+                }}
+              >
+                <div class="flex-1">
+                  <label class="ui-sr-only" for="search-keywords">
+                    {t("searchPage.searchKeywords")}
+                  </label>
+                  <div class="searchBox">
+                    <UiIcon name="search" />
+                    <input
+                      id="search-keywords"
+                      type="text"
+                      class=""
+                      placeholder={t("searchPage.keywordPlaceholder")}
+                      value={keywordQuery()}
+                      onInput={(event) =>
+                        setKeywordQuery(event.currentTarget.value)}
+                    />
                   </div>
-                  <div class="sm:self-end queryLane">
-                    {/* Query-lane spinner: previous results stay visible. */}
+                </div>
+                <div class="sm:self-end queryLane">
+                  {/* Query-lane spinner: previous results stay visible. */}
+                  <Show when={keywordLoading()}>
+                    <LocalBusyIndicator
+                      size="sm"
+                      label={t("searchPage.searchingEntries")}
+                    />
+                  </Show>
+                  <button
+                    type="submit"
+                    class="ui-button ui-button-primary text-sm"
+                    disabled={keywordLoading()}
+                    aria-busy={keywordLoading() || undefined}
+                  >
                     <Show when={keywordLoading()}>
-                      <LocalBusyIndicator
-                        size="sm"
-                        label={t("searchPage.searchingEntries")}
-                      />
+                      <ButtonSpinner />
                     </Show>
-                    <button
-                      type="submit"
-                      class="ui-button ui-button-primary text-sm"
-                      disabled={keywordLoading()}
-                      aria-busy={keywordLoading() || undefined}
-                    >
-                      <Show when={keywordLoading()}>
-                        <ButtonSpinner />
-                      </Show>
-                      {t("searchPage.searchEntries")}
-                    </button>
-                  </div>
-                </form>
-              </Show>
+                    {t("searchPage.searchEntries")}
+                  </button>
+                </div>
+              </form>
+              <div class="mt-4">
+                <button
+                  type="button"
+                  class="ui-button ui-button-secondary text-sm"
+                  aria-expanded={showFilters()}
+                  aria-controls="search-filters"
+                  onClick={() => setShowFilters((visible) => !visible)}
+                >
+                  {showFilters()
+                    ? t("searchPage.hideFilters")
+                    : t("searchPage.showFilters")}
+                </button>
+              </div>
 
-              <Show when={mode() === "advanced"}>
-                <div class="mt-5 ui-stack-sm">
+              <Show when={showFilters()}>
+                <div class="mt-5 ui-stack-sm" id="search-filters">
+                  <p class="text-sm ui-muted">
+                    {t("searchPage.filtersDescription")}
+                  </p>
                   <div class="grid gap-4 md:grid-cols-2">
                     <div>
                       <label class="ui-label" for="advanced-form">
@@ -931,74 +926,52 @@ export default function SpaceSearchRoute() {
                     {t("searchPage.initialHelp")}
                   </p>
                 </Show>
-                <div class="searchResultList">
+                <RowList label={t("searchPage.title")}>
                   <Show when={mode() === "keyword"}>
                     <For each={keywordResults()}>
                       {(entry) => (
-                        <button
-                          type="button"
-                          class="searchResultRow"
-                          onClick={() =>
-                            navigate(
-                              `/spaces/${encodeURIComponent(spaceId())}/entries/${
-                                encodeURIComponent(entry.id)
-                              }`,
-                            )}
-                        >
-                          <div class="searchResultContent">
-                            <h3 class="text-base font-semibold">
-                              {entry.title || t("common.untitled")}
-                            </h3>
-                            <Show when={entry.form}>
-                              <span class="ui-pill">{entry.form}</span>
-                            </Show>
-                            <p class="mt-2 text-xs ui-muted">
-                              {t("common.updatedAt", {
-                                date: formatDateLabel(entry.updated_at),
-                              })}
-                            </p>
-                          </div>
-                          <span class="searchResultChevron" aria-hidden="true">
-                            ›
-                          </span>
-                        </button>
+                        <RowListItem
+                          main={
+                            <RowListButton
+                              primary={entry.title || t("common.untitled")}
+                              secondary={entry.form}
+                              meta={formatDateLabel(entry.updated_at)}
+                              chevron
+                              onActivate={() =>
+                                navigate(
+                                  `/spaces/${
+                                    encodeURIComponent(spaceId())
+                                  }/entries/${encodeURIComponent(entry.id)}`,
+                                )}
+                            />
+                          }
+                        />
                       )}
                     </For>
                   </Show>
                   <Show when={mode() === "advanced"}>
                     <For each={advancedResults()}>
                       {(entry) => (
-                        <button
-                          type="button"
-                          class="searchResultRow"
-                          onClick={() =>
-                            navigate(
-                              `/spaces/${encodeURIComponent(spaceId())}/entries/${
-                                encodeURIComponent(entry.id)
-                              }`,
-                            )}
-                        >
-                          <div class="searchResultContent">
-                            <h3 class="text-base font-semibold">
-                              {entry.title || t("common.untitled")}
-                            </h3>
-                            <Show when={entry.form}>
-                              <span class="ui-pill">{entry.form}</span>
-                            </Show>
-                            <p class="mt-2 text-xs ui-muted">
-                              {t("common.updatedAt", {
-                                date: formatDateLabel(entry.updated_at),
-                              })}
-                            </p>
-                          </div>
-                          <span class="searchResultChevron" aria-hidden="true">
-                            ›
-                          </span>
-                        </button>
+                        <RowListItem
+                          main={
+                            <RowListButton
+                              primary={entry.title || t("common.untitled")}
+                              secondary={entry.form}
+                              meta={formatDateLabel(entry.updated_at)}
+                              chevron
+                              onActivate={() =>
+                                navigate(
+                                  `/spaces/${
+                                    encodeURIComponent(spaceId())
+                                  }/entries/${encodeURIComponent(entry.id)}`,
+                                )}
+                            />
+                          }
+                        />
                       )}
                     </For>
                   </Show>
-                </div>
+                </RowList>
                 <Show
                   when={mode() === "keyword" && keywordHasMore() ||
                     mode() === "advanced" && advancedHasMore()}

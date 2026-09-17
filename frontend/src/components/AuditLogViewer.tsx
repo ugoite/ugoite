@@ -1,7 +1,18 @@
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { authApi, spaceApi } from "~/lib/ugoite-client";
 import { formatDateTimeLabel } from "~/lib/date-format";
+import {
+  actorDisplayNameLookup,
+  shortActorFallback,
+} from "~/lib/entry-history";
 import { t, type TranslationKey } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import type {
@@ -37,6 +48,12 @@ type AuditLoader = (query: AuditQuery) => Promise<AuditPage>;
 type AuditLogViewerProps = {
   source: "node" | "space";
   load: AuditLoader;
+  /**
+   * Best-effort member directory for actor display names. Rows show the
+   * display name (or the stable short fallback) — never a raw UUID; the
+   * exact identity stays in the row disclosure.
+   */
+  actorDirectory?: Array<{ principal_id: string; display_name: string }>;
 };
 
 const isNodeEvent = (event: AuditEvent): event is NodeAuditEvent =>
@@ -187,6 +204,15 @@ export function AuditLogViewer(props: AuditLogViewerProps) {
       ? "securityPage.auditFailedLoad"
       : "settings.failedAuditLoad";
 
+  const actorLookup = createMemo(() =>
+    actorDisplayNameLookup(props.actorDirectory ?? [])
+  );
+  const actorLabel = (event: AuditEvent): string => {
+    const raw = eventActor(event)?.trim();
+    if (!raw) return "—";
+    return actorLookup()?.(raw)?.trim() || shortActorFallback(raw);
+  };
+
   return (
     <div class="auditViewer" aria-busy={loading() || undefined}>
       <Show when={props.source === "node"}>
@@ -305,7 +331,7 @@ export function AuditLogViewer(props: AuditLogViewerProps) {
                               <code>{event.action}</code>
                             </td>
                             <td class="ui-table-cell">
-                              {eventActor(event) ?? "—"}
+                              {actorLabel(event)}
                             </td>
                             <td class="ui-table-cell">
                               <span
@@ -342,6 +368,12 @@ export function AuditLogViewer(props: AuditLogViewerProps) {
                                     </dd>
                                   </div>
                                   <div>
+                                    <dt>{t("auditLog.actor")}</dt>
+                                    <dd>
+                                      <code>{eventActor(event) ?? "—"}</code>
+                                    </dd>
+                                  </div>
+                                  <div>
                                     <dt>{t("auditLog.subject")}</dt>
                                     <dd>{eventSubject(event) ?? "—"}</dd>
                                   </div>
@@ -360,19 +392,21 @@ export function AuditLogViewer(props: AuditLogViewerProps) {
                                     <dd>{event.request_id ?? "—"}</dd>
                                   </div>
                                   <Show
-                                    when={
-                                      eventRequestMethod(event) ||
-                                      eventRequestPath(event)
-                                    }
+                                    when={eventRequestMethod(event) ||
+                                      eventRequestPath(event)}
                                   >
                                     <div>
                                       <dt>{t("auditLog.requestMethod")}</dt>
-                                      <dd>{eventRequestMethod(event) ?? "—"}</dd>
+                                      <dd>
+                                        {eventRequestMethod(event) ?? "—"}
+                                      </dd>
                                     </div>
                                     <div>
                                       <dt>{t("auditLog.requestPath")}</dt>
                                       <dd>
-                                        <code>{eventRequestPath(event) ?? "—"}</code>
+                                        <code>
+                                          {eventRequestPath(event) ?? "—"}
+                                        </code>
                                       </dd>
                                     </div>
                                   </Show>
@@ -450,5 +484,35 @@ export function NodeAuditLogViewer() {
 
 export function SpaceAuditLogViewer(props: { spaceId: string }) {
   const load = createMemo(() => loadSpacePage(props.spaceId));
-  return <AuditLogViewer source="space" load={load()} />;
+  const [directory, setDirectory] = createSignal<
+    Array<{ principal_id: string; display_name: string }>
+  >([]);
+  createEffect(() => {
+    const id = props.spaceId;
+    let cancelled = false;
+    spaceApi.listMembers(id).then(
+      (members) => {
+        if (cancelled) return;
+        setDirectory(
+          members.map((member) => ({
+            principal_id: member.principal.principal_id,
+            display_name: member.principal.display_name,
+          })),
+        );
+      },
+      () => {
+        if (!cancelled) setDirectory([]);
+      },
+    );
+    onCleanup(() => {
+      cancelled = true;
+    });
+  });
+  return (
+    <AuditLogViewer
+      source="space"
+      load={load()}
+      actorDirectory={directory()}
+    />
+  );
 }

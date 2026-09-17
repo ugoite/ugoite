@@ -52,12 +52,15 @@ describe("v5 SpaceSettings", () => {
         onSave={save}
       />
     ));
-    expect(screen.getByText("Storage topology")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Storage topology" }))
+      .not.toBeInTheDocument();
     expect(screen.getByText("Local filesystem")).toBeInTheDocument();
     expect(screen.getByText("file:///var/lib/ugoite/demo")).toBeInTheDocument();
     expect(screen.getByText(/saved configuration metadata only/i))
       .toBeInTheDocument();
     expect(screen.getByDisplayValue("s3://bucket/demo")).toBeInTheDocument();
+    // Endpoint and status stay collapsible advanced details.
+    expect(screen.getByText("Advanced details")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(save).toHaveBeenCalledWith({
@@ -118,9 +121,10 @@ describe("v5 SpaceSettings", () => {
 
     expect(screen.getByRole("heading", { name: "ストレージ" }))
       .toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "保存トポロジ" }))
-      .toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "保存トポロジ" }))
+      .not.toBeInTheDocument();
     expect(screen.getByLabelText("URI")).toBeInTheDocument();
+    expect(screen.getByText("詳細情報")).toBeInTheDocument();
     expect(screen.getByLabelText("エンドポイント")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "接続をテスト" }))
       .toBeInTheDocument();

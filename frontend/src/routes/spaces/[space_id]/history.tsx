@@ -1,16 +1,25 @@
-import { A, useParams } from "@solidjs/router";
-import { createSignal, For, Show } from "solid-js";
+import { useParams } from "@solidjs/router";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
+import { BackLink } from "~/components/BackLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateTimeLabel } from "~/lib/date-format";
-import { changeApi, type SpaceChange } from "~/lib/ugoite-client";
+import {
+  actorDisplayNameLookup,
+  shortActorFallback,
+} from "~/lib/entry-history";
+import { changeApi, spaceApi, type SpaceChange } from "~/lib/ugoite-client";
+import type { SpaceMember } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "home", title: "spaceHistory" });
+export const route = spaceRoute({
+  navigation: "settings",
+  title: "spaceHistory",
+});
 
 const changeKind = (change: SpaceChange): string =>
   change.reverts_change_id
@@ -27,6 +36,34 @@ export default function SpaceHistoryRoute() {
   const [history, { refetch }] = createResource(() =>
     changeApi.list(spaceId())
   );
+  // Best-effort member directory for actor display names. The Change API
+  // carries only opaque actor principal IDs; when the directory is
+  // unavailable (or the actor left), rows fall back to the stable short
+  // form — never a raw UUID.
+  const [members] = createResource(
+    () => spaceId(),
+    async (id): Promise<SpaceMember[]> => {
+      try {
+        return await spaceApi.listMembers(id);
+      } catch {
+        return [];
+      }
+    },
+    { initialValue: [] as SpaceMember[] },
+  );
+  const actorLookup = createMemo(() =>
+    actorDisplayNameLookup(
+      (members() ?? []).map((member) => ({
+        principal_id: member.principal.principal_id,
+        display_name: member.principal.display_name,
+      })),
+    )
+  );
+  const actorName = (actorId: string): string => {
+    const raw = actorId.trim();
+    if (!raw) return t("entryHistory.unknownActor");
+    return actorLookup()?.(raw)?.trim() || shortActorFallback(raw);
+  };
   const [pending, setPending] = createSignal<PendingRecovery | null>(null);
   const [message, setMessage] = createSignal("");
   const [working, setWorking] = createSignal(false);
@@ -80,12 +117,12 @@ export default function SpaceHistoryRoute() {
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow">{spaceId()}</div>
           <h1>{t("spaceHistory.title")}</h1>
         </div>
-        <A href={`/spaces/${encodeURIComponent(spaceId())}/dashboard`} class="btn">
-          {t("spaceHistory.backToSpace")}
-        </A>
+        <BackLink
+          href={`/spaces/${encodeURIComponent(spaceId())}/settings`}
+          label={t("spaceHistory.backToSettings")}
+        />
       </div>
       <p class="ui-muted">{t("spaceHistory.description")}</p>
       {/* Panel-local spinner: existing rows stay mounted during refetch. */}
@@ -107,111 +144,148 @@ export default function SpaceHistoryRoute() {
             when={data().length > 0}
             fallback={<p class="ui-muted">{t("spaceHistory.empty")}</p>}
           >
-            <div class="historyRows" aria-busy={history.loading || undefined}>
-              <For each={data()}>
-                {(change) => (
-                  <article class="historyRow">
-                    <span class="historyRowIcon glyph active">
-                      <UiIcon name="history" />
-                    </span>
-                    <div class="historyRowBody">
-                      <b>{changeKind(change)}</b>
-                      <Show when={change.message}>
-                        <span>{change.message}</span>
-                      </Show>
-                      <small>
-                        {formatDateTimeLabel(change.created_at_micros / 1000)}
-                      </small>
-                      <small>{change.actor_principal_id}</small>
-                      <small>
-                        {t("spaceHistory.changeId", {
-                          value: change.change_id,
-                        })}
-                      </small>
-                      <Show when={change.run_id}>
-                        <small>
-                          {t("spaceHistory.runId", {
-                            value: change.run_id ?? "",
-                          })}
-                        </small>
-                      </Show>
-                      <span class="mt-2 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          class="ui-button ui-button-secondary text-sm"
-                          disabled={working()}
-                          onClick={() => {
-                            setNotice(null);
-                            setFailure(null);
-                            setPending({ kind: "revert", change });
-                          }}
-                        >
-                          {t("spaceHistory.revertAction")}
-                        </button>
-                        <Show when={change.run_id}>
-                          <button
-                            type="button"
-                            class="ui-button ui-button-secondary text-sm"
-                            disabled={working()}
-                            onClick={() => {
-                              setNotice(null);
-                              setFailure(null);
-                              setPending({ kind: "undo", change });
-                            }}
-                          >
-                            {t("spaceHistory.undoRunAction")}
-                          </button>
-                        </Show>
-                      </span>
-                      <Show
-                        when={pending()?.change.change_id === change.change_id}
-                      >
-                        <span class="mt-2 ui-stack-sm">
-                          <small>{t("spaceHistory.appendOnlyNotice")}</small>
-                          <Show when={pending()?.kind === "revert"}>
-                            <label
-                              class="ui-label"
-                              for={`revert-message-${change.change_id}`}
-                            >
-                              {t("spaceHistory.messageLabel")}
-                            </label>
-                            <input
-                              id={`revert-message-${change.change_id}`}
-                              type="text"
-                              class="ui-input mt-2 w-full"
-                              value={message()}
-                              onInput={(event) =>
-                                setMessage(event.currentTarget.value)}
-                            />
+            <div class="ui-table-wrapper overflow-x-auto">
+              <table
+                class="ui-table historyTable"
+                aria-busy={history.loading || undefined}
+              >
+                <thead class="ui-table-head">
+                  <tr>
+                    <th class="ui-table-header-cell" scope="col">
+                      {t("spaceHistory.change")}
+                    </th>
+                    <th class="ui-table-header-cell" scope="col">
+                      {t("spaceHistory.actor")}
+                    </th>
+                    <th class="ui-table-header-cell" scope="col">
+                      {t("auditLog.timestamp")}
+                    </th>
+                    <th class="ui-table-header-cell" scope="col">
+                      {t("auditLog.details")}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody class="ui-table-body">
+                  <For each={data()}>
+                    {(change) => (
+                      <tr class="ui-table-row">
+                        <td class="ui-table-cell">
+                          <span class="historyRowIcon glyph active">
+                            <UiIcon name="history" />
+                          </span>
+                          <b>{changeKind(change)}</b>
+                          <Show when={change.message}>
+                            <span>{change.message}</span>
                           </Show>
                           <span class="mt-2 flex flex-wrap gap-2">
                             <button
                               type="button"
-                              class="ui-button ui-button-primary text-sm"
-                              disabled={working()}
-                              aria-busy={working() || undefined}
-                              onClick={() => void confirmRecovery()}
-                            >
-                              <Show when={working()}>
-                                <ButtonSpinner />
-                              </Show>
-                              {t("spaceHistory.confirmAppend")}
-                            </button>
-                            <button
-                              type="button"
                               class="ui-button ui-button-secondary text-sm"
                               disabled={working()}
-                              onClick={closeConfirm}
+                              onClick={() => {
+                                setNotice(null);
+                                setFailure(null);
+                                setPending({ kind: "revert", change });
+                              }}
                             >
-                              {t("common.cancel")}
+                              {t("spaceHistory.revertAction")}
                             </button>
+                            <Show when={change.run_id}>
+                              <button
+                                type="button"
+                                class="ui-button ui-button-secondary text-sm"
+                                disabled={working()}
+                                onClick={() => {
+                                  setNotice(null);
+                                  setFailure(null);
+                                  setPending({ kind: "undo", change });
+                                }}
+                              >
+                                {t("spaceHistory.undoRunAction")}
+                              </button>
+                            </Show>
                           </span>
-                        </span>
-                      </Show>
-                    </div>
-                  </article>
-                )}
-              </For>
+                          <Show
+                            when={pending()?.change.change_id ===
+                              change.change_id}
+                          >
+                            <span class="mt-2 ui-stack-sm">
+                              <small>
+                                {t("spaceHistory.appendOnlyNotice")}
+                              </small>
+                              <Show when={pending()?.kind === "revert"}>
+                                <label
+                                  class="ui-label"
+                                  for={`revert-message-${change.change_id}`}
+                                >
+                                  {t("spaceHistory.messageLabel")}
+                                </label>
+                                <input
+                                  id={`revert-message-${change.change_id}`}
+                                  type="text"
+                                  class="ui-input mt-2 w-full"
+                                  value={message()}
+                                  onInput={(event) =>
+                                    setMessage(event.currentTarget.value)}
+                                />
+                              </Show>
+                              <span class="mt-2 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  class="ui-button ui-button-primary text-sm"
+                                  disabled={working()}
+                                  aria-busy={working() || undefined}
+                                  onClick={() => void confirmRecovery()}
+                                >
+                                  <Show when={working()}>
+                                    <ButtonSpinner />
+                                  </Show>
+                                  {t("spaceHistory.confirmAppend")}
+                                </button>
+                                <button
+                                  type="button"
+                                  class="ui-button ui-button-secondary text-sm"
+                                  disabled={working()}
+                                  onClick={closeConfirm}
+                                >
+                                  {t("common.cancel")}
+                                </button>
+                              </span>
+                            </span>
+                          </Show>
+                        </td>
+                        <td class="ui-table-cell">
+                          {actorName(change.actor_principal_id)}
+                        </td>
+                        <td class="ui-table-cell">
+                          {formatDateTimeLabel(change.created_at_micros / 1000)}
+                        </td>
+                        <td class="ui-table-cell">
+                          <details>
+                            <summary>{t("auditLog.viewDetails")}</summary>
+                            <dl class="auditDetails">
+                              <div>
+                                <dt>{t("spaceHistory.change")}</dt>
+                                <dd>
+                                  <code>{change.change_id}</code>
+                                </dd>
+                              </div>
+                              <Show when={change.run_id}>
+                                <div>
+                                  <dt>Run</dt>
+                                  <dd>
+                                    <code>{change.run_id}</code>
+                                  </dd>
+                                </div>
+                              </Show>
+                            </dl>
+                          </details>
+                        </td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
             </div>
           </Show>
         )}

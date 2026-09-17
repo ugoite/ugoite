@@ -10,6 +10,22 @@ const { navigateMock, formApiListMock, sqlCreateMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@solidjs/router", () => ({
+  A: (props: {
+    href: string;
+    class?: string;
+    children: unknown;
+    "aria-label"?: string;
+    title?: string;
+  }) => (
+    <a
+      href={props.href}
+      class={props.class}
+      aria-label={props["aria-label"]}
+      title={props.title}
+    >
+      {props.children}
+    </a>
+  ),
   useNavigate: () => navigateMock,
   useParams: () => ({ space_id: "default" }),
 }));
@@ -169,7 +185,7 @@ describe("/spaces/:space_id/queries/new", () => {
     fireEvent.input(editor, {
       target: { value: "SELECT * FROM missing_relation LIMIT $page_size" },
     });
-    expect(await screen.findByText("Backend rejected the relation"))
+    expect(await screen.findByText(/Backend rejected the relation/))
       .toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -182,5 +198,21 @@ describe("/spaces/:space_id/queries/new", () => {
         variables: [{ type: "string", name: "page_size", description: "" }],
       });
     });
+  });
+
+  it("PR6: backs to Saved SQL once and reports diagnostics with line and column", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+
+    const back = await screen.findByRole("link", { name: "Back to Saved SQL" });
+    expect(back).toHaveAttribute("href", "/spaces/default/sql");
+    expect(screen.getAllByRole("link", { name: "Back to Saved SQL" }))
+      .toHaveLength(1);
+
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    fireEvent.input(editor, {
+      target: { value: "SELECT * FROM missing_relation LIMIT $page_size" },
+    });
+    expect(await screen.findByText(/Line 1, column \d+: /))
+      .toBeInTheDocument();
   });
 });

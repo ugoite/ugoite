@@ -13,8 +13,8 @@ components:
   body:
     - id: asset-reference-list
       type: list
-      description: Presents current Form-owned AssetReference values as a border-separated inventory grouped by asset ID, keeps each occurrence linked to its Entry, and reveals secondary metadata through Details. It reads entry.list in bounded pages until the complete current inventory is available.
-      source: entry.list
+      description: Presents current Form-owned AssetReference values from asset.list as full-row RowList rows with type/size meta, keeps each asset linked to its detail route, and keeps exact asset IDs in advanced disclosure. It reads the portable asset inventory once; rows stay mounted during refetch.
+      source: asset.list
       states:
         - loading
         - complete

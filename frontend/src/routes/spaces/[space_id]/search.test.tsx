@@ -5,7 +5,6 @@ import {
   render,
   screen,
   waitFor,
-  within,
 } from "@solidjs/testing-library";
 import { delay, http, HttpResponse } from "msw";
 import SpaceSearchRoute from "./search";
@@ -153,7 +152,7 @@ describe("/spaces/:space_id/search", () => {
 
     render(() => <SpaceSearchRoute />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show filters" }));
     await screen.findByRole("option", { name: "Meeting" });
     fireEvent.change(screen.getByLabelText("Form"), {
       target: { value: "Meeting" },
@@ -224,7 +223,7 @@ describe("/spaces/:space_id/search", () => {
     );
 
     render(() => <SpaceSearchRoute />);
-    fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show filters" }));
     await screen.findByRole("option", { name: "Times" });
     fireEvent.change(screen.getByLabelText("Form"), {
       target: { value: "Times" },
@@ -281,7 +280,7 @@ describe("/spaces/:space_id/search", () => {
     );
 
     render(() => <SpaceSearchRoute />);
-    fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show filters" }));
     await screen.findByRole("option", { name: "Assets" });
     fireEvent.change(screen.getByLabelText("Form"), {
       target: { value: "Assets" },
@@ -325,7 +324,7 @@ describe("/spaces/:space_id/search", () => {
     });
     render(() => <SpaceSearchRoute />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show filters" }));
     await screen.findByRole("option", { name: "Meeting" });
     fireEvent.change(screen.getByLabelText("Form"), {
       target: { value: "Meeting" },
@@ -362,7 +361,7 @@ describe("/spaces/:space_id/search", () => {
     });
 
     render(() => <SpaceSearchRoute />);
-    fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show filters" }));
     expect(screen.getByRole("option", { name: "Select a form" }))
       .toBeInTheDocument();
     await screen.findByRole("option", { name: "Typed fields" });
@@ -397,29 +396,69 @@ describe("/spaces/:space_id/search", () => {
     expect(await screen.findByText(/Choose a Form/)).toBeInTheDocument();
   });
 
-  it("keeps the four search destinations in one navigation row", () => {
+  it("PR6: keeps one search experience with progressive filters and related links", () => {
     render(() => <SpaceSearchRoute />);
 
-    const navigation = screen.getByRole("navigation", { name: "Search" });
-    expect(within(navigation).getByText("Quick")).toBeInTheDocument();
-    expect(within(navigation).getByText("Advanced")).toBeInTheDocument();
-    expect(within(navigation).getByRole("link", { name: "Files" }))
+    // One experience: the keyword box is always visible; filters are
+    // progressive disclosure, not a separate product tab.
+    expect(screen.getByLabelText("Search keywords")).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Search" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Quick search" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Advanced search" }))
+      .not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Files" }))
       .toHaveAttribute(
         "href",
         "/spaces/default/assets",
       );
-    expect(within(navigation).getByRole("link", { name: "Saved" }))
+    expect(screen.getByRole("link", { name: "Saved" }))
       .toHaveAttribute("href", "/spaces/default/sql");
-    expect(within(navigation).queryByText("Open SQL editor"))
+    expect(screen.queryByText("Open SQL editor"))
       .not.toBeInTheDocument();
     expect(screen.queryByText("Search history")).not.toBeInTheDocument();
     expect(document.querySelector(".facet")).not.toBeInTheDocument();
 
+    // Filters stay hidden until requested.
+    expect(screen.queryByLabelText("Form")).not.toBeInTheDocument();
     fireEvent.click(
-      within(navigation).getByRole("button", { name: "Advanced search" }),
+      screen.getByRole("button", { name: "Show filters" }),
     );
+    expect(screen.getByLabelText("Form")).toBeInTheDocument();
     expect(document.querySelector(".searchCondition.ui-card"))
       .not.toBeInTheDocument();
+  });
+
+  it("PR6: renders result rows through RowList with full-row activation", async () => {
+    const record: KeywordSearchResult = {
+      id: "entry-9",
+      title: "Row Entry",
+      created_at: "2025-01-01T00:00:00Z",
+      updated_at: "2025-01-02T00:00:00Z",
+    };
+    server.use(
+      http.get(
+        testApiUrl("/spaces/default/search"),
+        () => HttpResponse.json([record]),
+      ),
+    );
+
+    const { container } = render(() => <SpaceSearchRoute />);
+
+    fireEvent.input(screen.getByLabelText("Search keywords"), {
+      target: { value: "row" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search entries" }));
+
+    const row = await screen.findByRole("button", { name: /Row Entry/ });
+    expect(row).toHaveClass("rowListMain");
+    expect(container.querySelector(".rowList")).toBeInTheDocument();
+    expect(container.querySelector(".searchResultRow")).toBeNull();
+    fireEvent.click(row);
+    expect(navigateMock).toHaveBeenCalledWith(
+      "/spaces/default/entries/entry-9",
+    );
   });
 
   it("PR4: keeps previous results and the count visible during re-search", async () => {
@@ -487,10 +526,12 @@ describe("/spaces/:space_id/search", () => {
     render(() => <SpaceSearchRoute />);
 
     expect(screen.getByRole("heading", { name: "検索" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "クイック検索" }))
+    expect(screen.getByRole("button", { name: "フィルターを表示" }))
       .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "詳細検索" }))
-      .toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "クイック検索" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "詳細検索" }))
+      .not.toBeInTheDocument();
     expect(screen.getByLabelText("検索キーワード")).toHaveAttribute(
       "placeholder",
       "タイトル、フィールド、タグ、本文からエントリを検索",

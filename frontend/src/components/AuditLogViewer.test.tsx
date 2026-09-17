@@ -13,7 +13,7 @@ import { authApi, spaceApi } from "~/lib/ugoite-client";
 
 vi.mock("~/lib/ugoite-client", () => ({
   authApi: { listAudit: vi.fn() },
-  spaceApi: { listAudit: vi.fn() },
+  spaceApi: { listAudit: vi.fn(), listMembers: vi.fn() },
 }));
 
 const nodeEvent = (
@@ -63,6 +63,7 @@ describe("AuditLogViewer", () => {
     setLocale("en");
     vi.mocked(authApi.listAudit).mockReset();
     vi.mocked(spaceApi.listAudit).mockReset();
+    vi.mocked(spaceApi.listMembers).mockResolvedValue([]);
   });
 
   it("filters node events locally and resets to the first page", async () => {
@@ -189,8 +190,42 @@ describe("AuditLogViewer", () => {
     expect(await screen.findByText("成功")).toBeInTheDocument();
   });
 
-  it("renders the shared viewer with a custom loader", async () => {
-    const load = vi.fn().mockResolvedValue({
+  it("PR6: resolves space actor IDs to member display names with raw IDs advanced-only", async () => {
+    vi.mocked(spaceApi.listAudit).mockResolvedValue({
+      items: [
+        spaceEvent(0, {
+          actor_principal_id: "01900000-0000-7000-8000-000000000042",
+        }),
+      ],
+      total: 1,
+      offset: 0,
+      limit: 25,
+    });
+    vi.mocked(spaceApi.listMembers).mockResolvedValue([
+      {
+        principal: {
+          principal_id: "01900000-0000-7000-8000-000000000042",
+          display_name: "Ada Example",
+          kind: "human",
+          state: "active",
+        },
+        role: "owner",
+      },
+    ]);
+    render(() => <SpaceAuditLogViewer spaceId="space-1" />);
+
+    expect(await screen.findByText("Ada Example")).toBeInTheDocument();
+    // The row shows the display name; the exact identity stays in the
+    // row disclosure.
+    fireEvent.click(screen.getByText("View details"));
+    expect(
+      screen.getByText("01900000-0000-7000-8000-000000000042").closest(
+        "details",
+      ),
+    ).not.toBeNull();
+  });
+
+  it("renders the shared viewer with a custom loader", async () => {    const load = vi.fn().mockResolvedValue({
       items: [nodeEvent(0)],
       total: 1,
       offset: 0,

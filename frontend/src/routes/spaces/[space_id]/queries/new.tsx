@@ -1,6 +1,7 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import type { Diagnostic } from "@codemirror/lint";
 import { createEffect, createSignal, For, Show } from "solid-js";
+import { BackLink } from "~/components/BackLink";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { SqlQueryEditor } from "~/components";
 import { formApi } from "~/lib/ugoite-client";
@@ -44,6 +45,16 @@ export default function SpaceQueryCreateRoute() {
 
   const schema = () => buildSqlSchema((forms() || []) as Form[]);
 
+  // Line/column rendering for editor diagnostics. Offsets come from the
+  // CodeMirror lint gutter; the list mirrors them as text so the error
+  // position survives without pointer access.
+  const diagnosticLine = (offset: number): number =>
+    sqlInput().slice(0, Math.max(0, offset)).split("\n").length;
+  const diagnosticColumn = (offset: number): number => {
+    const before = sqlInput().slice(0, Math.max(0, offset));
+    return offset - (before.lastIndexOf("\n") + 1) + 1;
+  };
+
   const handleSave = async () => {
     if (isSaving()) return;
     setError(null);
@@ -79,6 +90,10 @@ export default function SpaceQueryCreateRoute() {
           <div class="eyebrow">{t("sqlPage.searchSavedSql")}</div>
           <h1>{t("sqlPage.newSql")}</h1>
         </div>
+        <BackLink
+          href={`/spaces/${encodeURIComponent(spaceId())}/sql`}
+          label={t("sqlPage.backToSavedSql")}
+        />
       </div>
       <div class="settingsMain surface">
         <label class="ui-label" for="query-title">
@@ -112,7 +127,15 @@ export default function SpaceQueryCreateRoute() {
         <Show when={diagnostics().length > 0}>
           <ul class="text-sm ui-text-warning ui-stack-sm">
             <For each={diagnostics()}>
-              {(diag) => <li>{diag.message}</li>}
+              {(diag) => (
+                <li>
+                  {t("sqlPage.diagnosticAt", {
+                    line: diagnosticLine(diag.from),
+                    column: diagnosticColumn(diag.from),
+                    message: diag.message,
+                  })}
+                </li>
+              )}
             </For>
           </ul>
         </Show>
