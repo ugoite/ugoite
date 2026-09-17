@@ -282,6 +282,90 @@ fn test_create_space_with_independent_display_name() {
     assert_eq!(meta["name"], serde_json::json!("Team Notes"));
 }
 
+/// `space create --name "   "` fails before any write: no Space directory
+/// is created and the retry surface stays clean.
+#[test]
+fn test_create_space_rejects_whitespace_display_name_before_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("cli-config.json");
+    let space_path = dir.path().join("spaces").join("blank-name");
+
+    let output = Command::new(ugoite_bin())
+        .arg("space")
+        .arg("create")
+        .arg(&space_path)
+        .arg("--name")
+        .arg("   ")
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        !output.status.success(),
+        "whitespace-only display name must fail"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Space display name must not be empty"),
+        "unexpected stderr: {stderr}"
+    );
+    assert!(
+        !dir.path().join("spaces").exists(),
+        "failed create must not write any Space state"
+    );
+}
+
+/// `space create --name "Alpha"` stores Alpha; retrying the same slug with
+/// `--name "Beta"` converges to the existing Space without renaming.
+#[test]
+fn test_create_space_retry_does_not_rename() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("cli-config.json");
+    let space_path = dir.path().join("spaces").join("named-space");
+
+    let first = Command::new(ugoite_bin())
+        .arg("space")
+        .arg("create")
+        .arg(&space_path)
+        .arg("--name")
+        .arg("Alpha")
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        first.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let created: serde_json::Value =
+        serde_json::from_slice(&first.stdout).expect("create prints JSON");
+    assert_eq!(created["created"], serde_json::json!(true));
+    assert_eq!(created["name"], serde_json::json!("Alpha"));
+
+    let retry = Command::new(ugoite_bin())
+        .arg("space")
+        .arg("create")
+        .arg(&space_path)
+        .arg("--name")
+        .arg("Beta")
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        retry.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&retry.stderr)
+    );
+    let converged: serde_json::Value =
+        serde_json::from_slice(&retry.stdout).expect("retry prints JSON");
+    assert_eq!(converged["created"], serde_json::json!(false));
+    assert_eq!(converged["id"], created["id"]);
+
+    let space_dir = created_space_dir(dir.path(), &first);
+    let meta: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(space_dir.join("meta.json")).unwrap()).unwrap();
+    assert_eq!(meta["name"], serde_json::json!("Alpha"));
+}
+
 /// `space create` without `--name` keeps the slug as the display name.
 #[test]
 fn test_create_space_defaults_display_name_to_slug() {

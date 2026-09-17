@@ -42,6 +42,33 @@ pub fn storage_type_and_root(root_uri: &str) -> (String, String, String) {
     )
 }
 
+/// Single Space display-name normalization rule.
+///
+/// Creation callers trim one provided display name and reject an
+/// empty/whitespace-only value before any write; an absent name defaults to
+/// the requested slug at the call site (never here). The positional slug
+/// stays the stable Space key while the normalized name only seeds
+/// `meta.json:name` on first creation; retries never rename.
+pub fn normalize_space_display_name(value: &str) -> Result<String, SpaceDisplayNameError> {
+    let normalized = value.trim().to_string();
+    if normalized.is_empty() {
+        return Err(SpaceDisplayNameError);
+    }
+    Ok(normalized)
+}
+
+/// Rejection of an empty/whitespace-only Space display name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpaceDisplayNameError;
+
+impl std::fmt::Display for SpaceDisplayNameError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Space display name must not be empty")
+    }
+}
+
+impl std::error::Error for SpaceDisplayNameError {}
+
 /// Stable durable Space compatibility identity.
 ///
 /// Product versions and Space versions evolve independently. A Space version

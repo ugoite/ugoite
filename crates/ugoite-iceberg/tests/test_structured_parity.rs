@@ -526,9 +526,48 @@ async fn duplicate_field_sources_are_diagnostics_not_precedence() -> anyhow::Res
         app_error.code(),
         ugoite_core::error::ErrorCode::InvalidInput
     );
+    // Adapter boundary pins the exact stable shape: one code
+    // (`INVALID_INPUT`) and one detail object carrying only the lexically
+    // sorted duplicate key array. Message text is not contract.
     assert_eq!(
-        app_error.detail().expect("detail")["duplicate_fields"],
-        serde_json::json!(["Body"])
+        app_error.code(),
+        ugoite_core::error::ErrorCode::InvalidInput
+    );
+    assert_eq!(app_error.code().as_str(), "INVALID_INPUT");
+    assert_eq!(
+        app_error.detail().expect("detail").clone(),
+        serde_json::json!({"duplicate_fields": ["Body"]})
+    );
+
+    // Multiple duplicates keep the same exact shape in lexical order.
+    let mut multi_fields = BTreeMap::new();
+    multi_fields.insert("Done".to_string(), serde_json::Value::Bool(true));
+    let mut multi_extra = BTreeMap::new();
+    multi_extra.insert("Done".to_string(), serde_json::Value::Bool(false));
+    multi_extra.insert("Count".to_string(), serde_json::Value::Number(1.into()));
+    let multi_error = entry::create_structured_entry_with_scopes_and_change(
+        &op,
+        ws_path,
+        "dupe-multi",
+        Some("T".to_string()),
+        "Note".to_string(),
+        vec![],
+        multi_fields,
+        multi_extra,
+        "author",
+        &integrity,
+        None,
+        None,
+    )
+    .await
+    .expect_err("multiple overlaps must fail");
+    let multi_app_error = multi_error
+        .downcast_ref::<ugoite_core::error::AppError>()
+        .expect("typed");
+    assert_eq!(multi_app_error.code().as_str(), "INVALID_INPUT");
+    assert_eq!(
+        multi_app_error.detail().expect("detail").clone(),
+        serde_json::json!({"duplicate_fields": ["Count", "Done"]})
     );
 
     // An explicit extra naming a real field is the same caller bug even when

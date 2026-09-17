@@ -22,7 +22,8 @@ use crate::integrity::RealIntegrityProvider;
 use crate::{
     asset,
     authorization::{
-        effective_actions_for_state, AuthorizationState, Authorizer, ResourceKind, ResourceRef,
+        effective_actions_for_state, AuthorizationLease, AuthorizationState, Authorizer,
+        ResourceKind, ResourceRef,
     },
     entry, form, iceberg_store, index, preferences, saved_sql, search, space, sql_session,
 };
@@ -599,6 +600,17 @@ async fn acquire_local_space_slug_claim_lock(
     Ok(Some(file))
 }
 
+/// The admitted write context shared by raw Markdown and structured Entry
+/// mutations. `scopes` is the authorized form/entry scope map, `integrity`
+/// and `workspace` are the mutation context, and the held lease keeps the
+/// authorization snapshot pinned across the write.
+struct EntryAuthorizedWritePrelude {
+    scopes: BTreeMap<String, EntryScope>,
+    integrity: RealIntegrityProvider,
+    workspace: String,
+    _authorization_lease: AuthorizationLease,
+}
+
 impl UgoiteService {
     pub fn new(root_uri: impl Into<String>) -> Result<Self> {
         Self::new_with_endpoint(root_uri, None)
@@ -914,6 +926,11 @@ impl UgoiteService {
         slug: &str,
         display_name: &str,
     ) -> Result<SpaceCreateOutcome> {
+        // Independent service-side validation: the shared domain rule trims
+        // and rejects empty/whitespace-only names before any write, so direct
+        // service callers fail the same way the CLI does.
+        let display_name = ugoite_domain::space::normalize_space_display_name(display_name)
+            .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
         self.ensure_authoritative_mutation_contract()?;
         validate_storage_id(validate_space_id(slug))?;
         crate::iceberg_store::ensure_mutation_admitted(&self.operator, &format!("spaces/{slug}"))
@@ -988,7 +1005,7 @@ impl UgoiteService {
             return Ok(SpaceCreateOutcome::Existing(existing));
         }
         Ok(SpaceCreateOutcome::Created(
-            self.create_new_operator_space_with_name(slug, display_name)
+            self.create_new_operator_space_with_name(slug, &display_name)
                 .await?,
         ))
     }
@@ -2438,6 +2455,61 @@ impl UgoiteService {
         .await
     }
 
+    /// Shared admission/auth prelude for raw Markdown and structured Entry
+    /// writes (authorized creates and updates).
+    ///
+    /// Raw and structured paths converge here in the existing order: (1)
+    /// Space/request admission, (2) Entry identity normalization, (3) parent
+    /// revision checks, (4) principal/scope authorization, (5) mutation
+    /// context creation. Both transports therefore reach the same durable
+    /// revision representation with identical auth failure codes. The helper
+    /// never parses Markdown and never constructs structured fields; the
+    /// `ChangeCommand` flows through untouched (the entry boundary owns its
+    /// default), and the authorization lease is held for the whole mutation.
+    ///
+    async fn entry_authorized_write_prelude(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        action: Action,
+        parent_revision_id: Option<&str>,
+        principal_ids: &[Uuid],
+    ) -> Result<EntryAuthorizedWritePrelude> {
+        // (1) Space/request admission.
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.ensure_mutation_admitted(space_id).await?;
+        self.validate_complete_space(space_id).await?;
+        // (2) Entry identity normalization.
+        validate_storage_id(validate_entry_id(entry_id))?;
+        // (3) Common parent revision checks (updates only; creates pass None).
+        if let Some(parent_revision_id) = parent_revision_id {
+            validate_storage_id(validate_revision_id(parent_revision_id))?;
+        }
+        // (4) Principal/scope authorization under one held lease.
+        let (state, authorization_lease) = Authorizer::new(self.operator.clone())
+            .acquire_state_lease(space_id)
+            .await?;
+        self.require_action_for_principals_in_state(
+            &state,
+            entry_id,
+            ResourceKind::Entry,
+            action,
+            principal_ids,
+        )?;
+        let scopes = self
+            .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+            .await?;
+        // (5) Common mutation context creation.
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        let workspace = self.workspace_path(space_id);
+        Ok(EntryAuthorizedWritePrelude {
+            scopes,
+            integrity,
+            workspace,
+            _authorization_lease: authorization_lease,
+        })
+    }
+
     pub async fn create_entry_authorized_for_principals_with_change(
         &self,
         space_id: &str,
@@ -2447,43 +2519,22 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         change: Option<ChangeCommand>,
     ) -> Result<Value> {
-        require_nonempty_authorized_principals(principal_ids)?;
-        self.ensure_mutation_admitted(space_id).await?;
-        self.validate_complete_space(space_id).await?;
-        validate_storage_id(validate_entry_id(entry_id))?;
-        let (_authorization_state, _authorization_lease, scopes) = if principal_ids.is_empty() {
-            (None, None, BTreeMap::new())
-        } else {
-            let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
-                .acquire_state_lease(space_id)
-                .await?;
-            self.require_action_for_principals_in_state(
-                &state,
-                entry_id,
-                ResourceKind::Entry,
-                Action::Create,
-                principal_ids,
-            )?;
-            let scopes = self
-                .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
-                .await?;
-            (Some(state), Some(_authorization_lease), scopes)
-        };
-        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
-        let workspace = self.workspace_path(space_id);
+        let prelude = self
+            .entry_authorized_write_prelude(space_id, entry_id, Action::Create, None, principal_ids)
+            .await?;
         let (_, receipt) = entry::create_entry_with_scopes_and_change_with_receipt(
             &self.operator,
-            &workspace,
+            &prelude.workspace,
             entry_id,
             markdown,
             author,
-            &integrity,
-            Some(&scopes),
+            &prelude.integrity,
+            Some(&prelude.scopes),
             change,
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
-        let mut result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
+        let mut result = entry::get_entry(&self.operator, &prelude.workspace, entry_id).await?;
         result["change_id"] = json!(receipt.command_id);
         self.record_committed_entry_revision(
             space_id,
@@ -2555,33 +2606,12 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         change: Option<ChangeCommand>,
     ) -> Result<Value> {
-        require_nonempty_authorized_principals(principal_ids)?;
-        self.ensure_mutation_admitted(space_id).await?;
-        self.validate_complete_space(space_id).await?;
-        validate_storage_id(validate_entry_id(entry_id))?;
-        let (_authorization_state, _authorization_lease, scopes) = if principal_ids.is_empty() {
-            (None, None, BTreeMap::new())
-        } else {
-            let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
-                .acquire_state_lease(space_id)
-                .await?;
-            self.require_action_for_principals_in_state(
-                &state,
-                entry_id,
-                ResourceKind::Entry,
-                Action::Create,
-                principal_ids,
-            )?;
-            let scopes = self
-                .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
-                .await?;
-            (Some(state), Some(_authorization_lease), scopes)
-        };
-        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
-        let workspace = self.workspace_path(space_id);
+        let prelude = self
+            .entry_authorized_write_prelude(space_id, entry_id, Action::Create, None, principal_ids)
+            .await?;
         let (_, receipt) = entry::create_structured_entry_with_scopes_and_change_with_receipt(
             &self.operator,
-            &workspace,
+            &prelude.workspace,
             entry_id,
             title,
             form_name,
@@ -2589,13 +2619,13 @@ impl UgoiteService {
             fields,
             extra_attributes,
             author,
-            &integrity,
-            Some(&scopes),
+            &prelude.integrity,
+            Some(&prelude.scopes),
             change,
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
-        let mut result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
+        let mut result = entry::get_entry(&self.operator, &prelude.workspace, entry_id).await?;
         result["change_id"] = json!(receipt.command_id);
         self.record_committed_entry_revision(
             space_id,
@@ -2835,48 +2865,24 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         change: Option<ChangeCommand>,
     ) -> Result<Value> {
-        require_nonempty_authorized_principals(principal_ids)?;
-        self.ensure_mutation_admitted(space_id).await?;
-        self.validate_complete_space(space_id).await?;
-        validate_storage_id(validate_entry_id(entry_id))?;
-        if let Some(parent_revision_id) = parent_revision_id {
-            validate_storage_id(validate_revision_id(parent_revision_id))?;
-        }
-        let (state, _authorization_lease) = {
-            let (state, lease) = Authorizer::new(self.operator.clone())
-                .acquire_state_lease(space_id)
-                .await?;
-            self.require_action_for_principals_in_state(
-                &state,
+        let prelude = self
+            .entry_authorized_write_prelude(
+                space_id,
                 entry_id,
-                ResourceKind::Entry,
                 Action::Update,
+                parent_revision_id,
                 principal_ids,
-            )?;
-            (Some(state), Some(lease))
-        };
-        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
-        let scopes = if principal_ids.is_empty() {
-            None
-        } else {
-            Some(
-                self.authorized_form_entry_scopes_for_state(
-                    space_id,
-                    state.as_ref().expect("authorized state is present"),
-                    principal_ids,
-                )
-                .await?,
             )
-        };
+            .await?;
         let result = entry::update_entry_authorized_with_change(
             &self.operator,
-            &self.workspace_path(space_id),
+            &prelude.workspace,
             entry_id,
             markdown,
             parent_revision_id,
             author,
-            &integrity,
-            scopes.as_ref(),
+            &prelude.integrity,
+            Some(&prelude.scopes),
             change,
         )
         .await?;
@@ -2950,42 +2956,18 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         change: Option<ChangeCommand>,
     ) -> Result<Value> {
-        require_nonempty_authorized_principals(principal_ids)?;
-        self.ensure_mutation_admitted(space_id).await?;
-        self.validate_complete_space(space_id).await?;
-        validate_storage_id(validate_entry_id(entry_id))?;
-        if let Some(parent_revision_id) = parent_revision_id {
-            validate_storage_id(validate_revision_id(parent_revision_id))?;
-        }
-        let (state, _authorization_lease) = {
-            let (state, lease) = Authorizer::new(self.operator.clone())
-                .acquire_state_lease(space_id)
-                .await?;
-            self.require_action_for_principals_in_state(
-                &state,
+        let prelude = self
+            .entry_authorized_write_prelude(
+                space_id,
                 entry_id,
-                ResourceKind::Entry,
                 Action::Update,
+                parent_revision_id,
                 principal_ids,
-            )?;
-            (Some(state), Some(lease))
-        };
-        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
-        let scopes = if principal_ids.is_empty() {
-            None
-        } else {
-            Some(
-                self.authorized_form_entry_scopes_for_state(
-                    space_id,
-                    state.as_ref().expect("authorized state is present"),
-                    principal_ids,
-                )
-                .await?,
             )
-        };
+            .await?;
         let result = entry::update_structured_entry_authorized_with_change(
             &self.operator,
-            &self.workspace_path(space_id),
+            &prelude.workspace,
             entry_id,
             title,
             form_name,
@@ -2994,8 +2976,8 @@ impl UgoiteService {
             extra_attributes,
             parent_revision_id,
             author,
-            &integrity,
-            scopes.as_ref(),
+            &prelude.integrity,
+            Some(&prelude.scopes),
             change,
         )
         .await?;
@@ -3202,7 +3184,11 @@ impl UgoiteService {
     /// by the request adapter, which may hold the (non-reentrant)
     /// authorization lease across the call. Direct callers must use
     /// [`Self::delete_entry_authorized_for_principals_with_change_receipt`].
-    pub async fn delete_entry_with_change_receipt_for_principals(
+    ///
+    /// Crate-internal: every direct caller is inside this service module, so
+    /// the boundary stays `pub(crate)` instead of growing a public
+    /// authorization-bypassing surface.
+    pub(crate) async fn delete_entry_with_change_receipt_for_principals(
         &self,
         space_id: &str,
         entry_id: &str,

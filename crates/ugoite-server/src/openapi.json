@@ -1446,25 +1446,7 @@
             }
           },
           "403": {
-            "description": "Forbidden: missing recent Passkey ceremony (RECENT_PASSKEY_REQUIRED), or step-up failure (STEP_UP_INVALID, STEP_UP_NOT_APPROVED, STEP_UP_ACCOUNT_INACTIVE). Authorization is evaluated before single-use challenge consumption.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown step-up challenge (STEP_UP_NOT_FOUND); consumed challenges are removed and report unknown.",
+            "description": "Forbidden: missing recent Passkey ceremony (RECENT_PASSKEY_REQUIRED), or step-up failure (STEP_UP_INVALID, STEP_UP_NOT_APPROVED, STEP_UP_ACCOUNT_INACTIVE). Authorization is evaluated before single-use challenge consumption. Unknown, expired, consumed, operation-mismatched, and Space-mismatched challenges fail closed with 403 STEP_UP_INVALID (no 404 branch). Challenges are single-use: an authorized mutation attempt consumes the challenge even if the later write fails, so retries start a new challenge.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1483,24 +1465,6 @@
           },
           "409": {
             "description": "The Space slug is already owned by another account",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "410": {
-            "description": "Expired step-up challenge (STEP_UP_EXPIRED).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2070,25 +2034,7 @@
             }
           },
           "403": {
-            "description": "Forbidden: missing recent Passkey ceremony (RECENT_PASSKEY_REQUIRED), or step-up failure (STEP_UP_INVALID, STEP_UP_NOT_APPROVED, STEP_UP_ACCOUNT_INACTIVE). Authorization is evaluated before single-use challenge consumption.",
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown step-up challenge (STEP_UP_NOT_FOUND); consumed challenges are removed and report unknown.",
+            "description": "Forbidden: missing recent Passkey ceremony (RECENT_PASSKEY_REQUIRED), or step-up failure (STEP_UP_INVALID, STEP_UP_NOT_APPROVED, STEP_UP_ACCOUNT_INACTIVE). Authorization is evaluated before single-use challenge consumption. Unknown, expired, consumed, operation-mismatched, and Space-mismatched challenges fail closed with 403 STEP_UP_INVALID (no 404 branch). Challenges are single-use: an authorized mutation attempt consumes the challenge even if the later write fails, so retries start a new challenge.",
             "headers": {
               "X-Ugoite-Key-Id": {
                 "$ref": "#/components/headers/X-Ugoite-Key-Id"
@@ -2107,24 +2053,6 @@
           },
           "409": {
             "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "410": {
-            "description": "Expired step-up challenge (STEP_UP_EXPIRED).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2570,7 +2498,7 @@
             }
           },
           "403": {
-            "description": "Forbidden: missing recent Passkey ceremony (RECENT_PASSKEY_REQUIRED), or step-up failure (STEP_UP_INVALID, STEP_UP_NOT_APPROVED, STEP_UP_ACCOUNT_INACTIVE). Authorization is evaluated before single-use challenge consumption.",
+            "description": "Forbidden: missing recent Passkey ceremony (RECENT_PASSKEY_REQUIRED), or step-up failure (STEP_UP_INVALID, STEP_UP_NOT_APPROVED, STEP_UP_ACCOUNT_INACTIVE). Authorization is evaluated before single-use challenge consumption. Unknown, expired, consumed, operation-mismatched, and Space-mismatched challenges fail closed with 403 STEP_UP_INVALID (no 404 branch). Challenges are single-use: an authorized mutation attempt consumes the challenge even if the later write fails, so retries start a new challenge.",
             "headers": {
               "X-Ugoite-Key-Id": {
                 "$ref": "#/components/headers/X-Ugoite-Key-Id"
@@ -2584,47 +2512,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown step-up challenge (STEP_UP_NOT_FOUND); consumed challenges are removed and report unknown.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
               }
             }
           },
           "409": {
             "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "410": {
-            "description": "Expired step-up challenge (STEP_UP_EXPIRED).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2746,25 +2638,7 @@
             }
           },
           "403": {
-            "description": "Forbidden: missing recent Passkey ceremony (RECENT_PASSKEY_REQUIRED), or step-up failure (STEP_UP_INVALID, STEP_UP_NOT_APPROVED, STEP_UP_ACCOUNT_INACTIVE). Authorization is evaluated before single-use challenge consumption.",
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown step-up challenge (STEP_UP_NOT_FOUND); consumed challenges are removed and report unknown.",
+            "description": "Forbidden: missing recent Passkey ceremony (RECENT_PASSKEY_REQUIRED), or step-up failure (STEP_UP_INVALID, STEP_UP_NOT_APPROVED, STEP_UP_ACCOUNT_INACTIVE). Authorization is evaluated before single-use challenge consumption. Unknown, expired, consumed, operation-mismatched, and Space-mismatched challenges fail closed with 403 STEP_UP_INVALID (no 404 branch). Challenges are single-use: an authorized mutation attempt consumes the challenge even if the later write fails, so retries start a new challenge.",
             "headers": {
               "X-Ugoite-Key-Id": {
                 "$ref": "#/components/headers/X-Ugoite-Key-Id"
@@ -2783,24 +2657,6 @@
           },
           "409": {
             "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "410": {
-            "description": "Expired step-up challenge (STEP_UP_EXPIRED).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2922,25 +2778,7 @@
             }
           },
           "403": {
-            "description": "Forbidden: missing recent Passkey ceremony (RECENT_PASSKEY_REQUIRED), or step-up failure (STEP_UP_INVALID, STEP_UP_NOT_APPROVED, STEP_UP_ACCOUNT_INACTIVE). Authorization is evaluated before single-use challenge consumption.",
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown step-up challenge (STEP_UP_NOT_FOUND); consumed challenges are removed and report unknown.",
+            "description": "Forbidden: missing recent Passkey ceremony (RECENT_PASSKEY_REQUIRED), or step-up failure (STEP_UP_INVALID, STEP_UP_NOT_APPROVED, STEP_UP_ACCOUNT_INACTIVE). Authorization is evaluated before single-use challenge consumption. Unknown, expired, consumed, operation-mismatched, and Space-mismatched challenges fail closed with 403 STEP_UP_INVALID (no 404 branch). Challenges are single-use: an authorized mutation attempt consumes the challenge even if the later write fails, so retries start a new challenge.",
             "headers": {
               "X-Ugoite-Key-Id": {
                 "$ref": "#/components/headers/X-Ugoite-Key-Id"
@@ -2959,24 +2797,6 @@
           },
           "409": {
             "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "410": {
-            "description": "Expired step-up challenge (STEP_UP_EXPIRED).",
             "content": {
               "application/json": {
                 "schema": {
@@ -3942,7 +3762,7 @@
             }
           },
           "422": {
-            "description": "Validation error",
+            "description": "Validation error. Structured writes reject a key supplied in both `fields` and `extra_attributes` (or an extra shadowing a real field name) with code `INVALID_INPUT` and detail `{\"duplicate_fields\": [\"FieldA\", \"FieldB\"]}`: a lexically sorted string array; message text is not contract.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4425,7 +4245,7 @@
             }
           },
           "422": {
-            "description": "Validation error",
+            "description": "Validation error. Structured writes reject a key supplied in both `fields` and `extra_attributes` (or an extra shadowing a real field name) with code `INVALID_INPUT` and detail `{\"duplicate_fields\": [\"FieldA\", \"FieldB\"]}`: a lexically sorted string array; message text is not contract.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5383,43 +5203,7 @@
             }
           },
           "403": {
-            "description": "Forbidden: missing recent Passkey ceremony (RECENT_PASSKEY_REQUIRED), or step-up failure (STEP_UP_INVALID, STEP_UP_NOT_APPROVED, STEP_UP_ACCOUNT_INACTIVE). Authorization is evaluated before single-use challenge consumption.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown step-up challenge (STEP_UP_NOT_FOUND); consumed challenges are removed and report unknown.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "410": {
-            "description": "Expired step-up challenge (STEP_UP_EXPIRED).",
+            "description": "Forbidden: missing recent Passkey ceremony (RECENT_PASSKEY_REQUIRED), or step-up failure (STEP_UP_INVALID, STEP_UP_NOT_APPROVED, STEP_UP_ACCOUNT_INACTIVE). Authorization is evaluated before single-use challenge consumption. Unknown, expired, consumed, operation-mismatched, and Space-mismatched challenges fail closed with 403 STEP_UP_INVALID (no 404 branch). Challenges are single-use: an authorized mutation attempt consumes the challenge even if the later write fails, so retries start a new challenge.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5483,43 +5267,7 @@
             }
           },
           "403": {
-            "description": "Forbidden: missing recent Passkey ceremony (RECENT_PASSKEY_REQUIRED), or step-up failure (STEP_UP_INVALID, STEP_UP_NOT_APPROVED, STEP_UP_ACCOUNT_INACTIVE). Authorization is evaluated before single-use challenge consumption.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown step-up challenge (STEP_UP_NOT_FOUND); consumed challenges are removed and report unknown.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "410": {
-            "description": "Expired step-up challenge (STEP_UP_EXPIRED).",
+            "description": "Forbidden: missing recent Passkey ceremony (RECENT_PASSKEY_REQUIRED), or step-up failure (STEP_UP_INVALID, STEP_UP_NOT_APPROVED, STEP_UP_ACCOUNT_INACTIVE). Authorization is evaluated before single-use challenge consumption. Unknown, expired, consumed, operation-mismatched, and Space-mismatched challenges fail closed with 403 STEP_UP_INVALID (no 404 branch). Challenges are single-use: an authorized mutation attempt consumes the challenge even if the later write fails, so retries start a new challenge.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11208,7 +10956,7 @@
     "/auth/step-up/status": {
       "get": {
         "summary": "Check step-up challenge status",
-        "description": "Reports a challenge without mutating it. Unknown challenges are STEP_UP_NOT_FOUND (404), expired ones STEP_UP_EXPIRED (410), unapproved or mismatched ones STEP_UP_NOT_APPROVED or STEP_UP_INVALID (403).",
+        "description": "Reports a challenge without mutating it. Unknown, malformed, expired, and consumed challenges fail closed with 403 STEP_UP_INVALID (no 404 branch); only pending and approved states report success.",
         "parameters": [
           {
             "name": "challenge_id",
@@ -11243,27 +10991,7 @@
             }
           },
           "403": {
-            "description": "Not approved or invalid challenge (STEP_UP_NOT_APPROVED, STEP_UP_INVALID)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown challenge (STEP_UP_NOT_FOUND)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Expired challenge (STEP_UP_EXPIRED)",
+            "description": "Unknown, expired, or consumed challenge (STEP_UP_INVALID), or not approved (STEP_UP_NOT_APPROVED)",
             "content": {
               "application/json": {
                 "schema": {
@@ -11278,7 +11006,7 @@
     "/auth/step-up/approve": {
       "post": {
         "summary": "Approve step-up challenge from a recent Passkey session",
-        "description": "Approval requires a recent Passkey ceremony and never consumes the challenge; consumption happens atomically at mutation time and reuse is rejected. Failure codes mirror status: STEP_UP_NOT_FOUND (404), STEP_UP_EXPIRED (410), STEP_UP_NOT_APPROVED or STEP_UP_INVALID (403).",
+        "description": "Approval requires a recent Passkey ceremony and never consumes the challenge; consumption happens inside the authorized mutation just before the write, so a denied mutation leaves the challenge consumable while an authorized attempt burns it even if the later write fails. Retries start a new challenge. Unknown, expired, and consumed challenges fail closed with 403 STEP_UP_INVALID (no 404 branch).",
         "requestBody": {
           "required": true,
           "content": {
@@ -11323,26 +11051,6 @@
           },
           "403": {
             "description": "No recent ceremony (RECENT_PASSKEY_REQUIRED), or not approved/invalid challenge (STEP_UP_NOT_APPROVED, STEP_UP_INVALID)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown challenge (STEP_UP_NOT_FOUND)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Expired challenge (STEP_UP_EXPIRED)",
             "content": {
               "application/json": {
                 "schema": {
@@ -12337,7 +12045,7 @@
         "name": "limit",
         "in": "query",
         "required": false,
-        "description": "Maximum number of audit events to return. Values are bounded to 500.",
+        "description": "Maximum number of audit events to return. Effective range is 1..=500 after normalization: 0 normalizes to 1 (never a validation error) and larger values clamp to 500.",
         "schema": {
           "type": "integer",
           "minimum": 1,

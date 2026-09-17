@@ -159,6 +159,47 @@ fn space_audit_events_lists_allowlisted_evidence_core() {
         .is_some_and(|items| items.len() <= 1));
 }
 
+/// Audit paging stays in the effective 1..=500 range: `limit=0` normalizes
+/// to 1 (never a validation error) and huge values clamp to 500 without
+/// overflowing before the cap.
+#[test]
+fn space_audit_events_pagination_is_bounded() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.json");
+    let space_path = setup_audited_space(&config_path, &root, "audit-paging");
+
+    let zeroed = stdout_json(
+        &run_cli(
+            &config_path,
+            &["space", "audit-events", &space_path, "--limit", "0"],
+        ),
+        "space audit-events limit=0",
+    );
+    assert_eq!(
+        zeroed.get("limit").and_then(|limit| limit.as_u64()),
+        Some(1)
+    );
+
+    let huge = stdout_json(
+        &run_cli(
+            &config_path,
+            &[
+                "space",
+                "audit-events",
+                &space_path,
+                "--limit",
+                "18446744073709551615",
+            ],
+        ),
+        "space audit-events huge limit",
+    );
+    assert_eq!(
+        huge.get("limit").and_then(|limit| limit.as_u64()),
+        Some(500)
+    );
+}
+
 /// Remote transport uses the shared space.audit operation route.
 #[test]
 fn space_audit_events_remote_uses_canonical_route() {

@@ -170,11 +170,9 @@ async fn login(
     actions: Vec<String>,
     resource: Option<String>,
 ) -> Result<()> {
-    if let Some(requested) = space_uid {
-        if requested.get_version() != Some(uuid::Version::SortRand) {
-            bail!("backend/api mode requires SPACE_UID (UUIDv7)");
-        }
-    }
+    // UUIDv7 admission lives in exactly one place: the Clap value parser
+    // (`parse_space_uid_arg`). No post-parse recheck here; the parser-level
+    // regression test (`login_space_uid_accepts_only_uuid_v7`) pins rejection.
     let signing_key = SigningKey::random(&mut OsRng);
     let public_key_jwk = public_jwk(&signing_key);
     let device_payload = oauth_payload(

@@ -45,6 +45,13 @@ parent conflicts instead of overwriting. `entry delete` appends a deletion
 tombstone; permanent removal is unavailable. Run `ugoite entry <command>
 --help` for exact flags.
 
+Structured authoring (`--form` with `--field KEY=VALUE` or `--fields-file`)
+goes through the same shared validation as raw Markdown. Supply each field
+once: a key in both structured fields and preserved extra attributes (or an
+extra shadowing a real field name) is rejected with
+`{"code": "INVALID_INPUT", "detail": {"duplicate_fields": [...]}}`, where the
+array is lexically sorted and message text is not contract.
+
 </TabItem>
 </Tabs>
 

@@ -715,8 +715,18 @@ fn space_compat_check() -> Result<()> {
 /// closed instead of being silently skipped, so a stray directory can never
 /// hide drift between code and fixtures.
 fn canonical_fixture_space_versions() -> Result<Vec<String>> {
-    let entries =
-        fs::read_dir("fixtures/spaces").context("read canonical Space fixture inventory")?;
+    canonical_space_versions_in(Path::new("fixtures/spaces"))
+}
+
+/// Inventory of canonical Space version directories under `root`.
+///
+/// The fixture root contains canonical Space directories only: a
+/// non-directory entry or a non-canonical directory name is invalid test
+/// input, not an alternate layout, and fails closed instead of being
+/// silently skipped, so a stray entry can never hide drift between code and
+/// fixtures.
+fn canonical_space_versions_in(root: &Path) -> Result<Vec<String>> {
+    let entries = fs::read_dir(root).context("read canonical Space fixture inventory")?;
     let mut versions = Vec::new();
     for entry in entries {
         let entry = entry.context("read canonical Space fixture inventory entry")?;
@@ -1694,6 +1704,30 @@ phases:
                 "{invalid:?} must not classify as a canonical Space version"
             );
         }
+    }
+
+    #[test]
+    fn fixture_layout_rejects_non_directory_and_non_canonical_entries() {
+        let root = std::env::temp_dir().join(format!(
+            "ugoite-xtask-fixture-layout-{}-{}",
+            std::process::id(),
+            "reject"
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("0.1")).expect("canonical fixture dir");
+        assert_eq!(
+            canonical_space_versions_in(&root).expect("canonical layout passes"),
+            vec!["0.1".to_string()]
+        );
+        fs::write(root.join("stray.json"), "{}").expect("stray file entry");
+        canonical_space_versions_in(&root).expect_err(
+            "a non-directory fixture-root entry is invalid test input, not an alternate layout",
+        );
+        fs::remove_file(root.join("stray.json")).expect("remove stray file");
+        fs::create_dir_all(root.join("draft")).expect("non-canonical dir");
+        canonical_space_versions_in(&root)
+            .expect_err("a non-canonical directory name must fail closed");
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

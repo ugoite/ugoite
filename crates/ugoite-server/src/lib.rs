@@ -65,7 +65,7 @@ use ugoite_identity::{
     node_identity::{
         AccountInvitation, ActiveCredentialKind, NodeAuditInput, NodeIdentityService,
         OidcAttemptPurpose, OwnerRecoveryContext, RecoveryBindingSnapshot, StepUpError,
-        TotpEnrollmentFinishError,
+        TotpEnrollmentFinishError, STEP_UP_ELIGIBLE_OPERATIONS,
     },
     oauth::{self, AccessTokenClaims, Confirmation},
 };
@@ -1713,23 +1713,15 @@ fn require_recent_passkey(identity: &RequestIdentityContext) -> ApiResult<()> {
     Ok(())
 }
 
-/// Operations a browser-approved step-up challenge may satisfy. The
-/// allow-list keeps challenges scoped to remote Space mutations; dangerous
-/// operations stay on human-approval tokens and browser ceremonies stay on
-/// recent Passkey.
-const STEP_UP_ELIGIBLE_OPERATIONS: &[&str] = &[
-    "space.create",
-    "space.patch",
-    "space.members.invite",
-    "space.members.update_role",
-    "space.members.revoke",
-    "pin.create",
-    "pin.delete",
-];
-
 /// Mutation target a step-up challenge is bound to. Identity (account +
 /// credential) plus operation plus Space is the bound intent; the Space
 /// mutation permission itself is always re-evaluated at consume time.
+///
+/// The eligible-operation set is the canonical
+/// [`STEP_UP_ELIGIBLE_OPERATIONS`] imported from the identity layer (single
+/// source; no second array here): challenges stay scoped to remote Space
+/// mutations while dangerous operations stay on human-approval tokens and
+/// browser ceremonies stay on recent Passkey.
 #[derive(Clone, Debug)]
 struct StepUpBinding {
     operation: &'static str,
@@ -1757,12 +1749,19 @@ fn step_up_challenge_uuid(identity: &RequestIdentityContext) -> ApiResult<Option
 /// Consumes one bound step-up challenge. Must be called inside the
 /// `with_authorized_*` closure after authorization passes, just before the
 /// mutation write, so denied mutations never burn the single-use challenge.
+///
+/// Single-use without a two-phase commit: once the authorized mutation
+/// attempt consumes the challenge it stays consumed even if the later write
+/// fails, so callers must start a new challenge before retrying. The bound
+/// Space is normalized once (trimmed) so a padded value can never mismatch
+/// the stored binding.
 async fn consume_step_up_binding(
     state: &AppState,
     identity: &RequestIdentityContext,
     binding: &StepUpBinding,
     challenge_id: Uuid,
 ) -> ApiResult<()> {
+    let bound_space_id = binding.space_id.as_deref().map(str::trim);
     state
         .identity
         .consume_step_up_challenge(
@@ -1770,14 +1769,16 @@ async fn consume_step_up_binding(
             identity.credential_id,
             challenge_id,
             binding.operation,
-            binding.space_id.as_deref(),
+            bound_space_id,
         )
         .await
         .map_err(|error| {
             let message = error.to_string();
-            let (status, code) = if message.contains("expired") {
-                (StatusCode::GONE, "STEP_UP_EXPIRED")
-            } else if message.contains("not approved") {
+            // Fail closed without an existence oracle: unknown, expired,
+            // consumed, and mismatched challenges all report 403
+            // STEP_UP_INVALID. Only the still-pending (not approved) state
+            // keeps its distinct code.
+            let (status, code) = if message.contains("not approved") {
                 (StatusCode::FORBIDDEN, "STEP_UP_NOT_APPROVED")
             } else {
                 (StatusCode::FORBIDDEN, "STEP_UP_INVALID")
@@ -5366,11 +5367,12 @@ async fn oauth_device_pending(
     })))
 }
 
-/// Maps step-up lifecycle failures to stable codes. Unknown challenges are
-/// 404; everything else stays 403/410 so callers can distinguish retryable
-/// (start a new challenge) from terminal states without parsing messages.
-/// Typed identity errors carry their own `STEP_UP_*` code: the pending cap is
-/// 429, intent validation is 422, and inactive accounts are 403.
+/// Maps step-up lifecycle failures to stable codes. Unknown, expired,
+/// consumed, and mismatched challenges are all 403 `STEP_UP_INVALID` with no
+/// 404 branch, so callers cannot probe challenge existence and must start a
+/// new challenge before retrying. Typed identity errors carry their own
+/// `STEP_UP_*` code: the pending cap is 429, intent validation is 422, and
+/// inactive accounts are 403.
 fn step_up_error(error: anyhow::Error) -> ApiError {
     if let Some(typed) = error.downcast_ref::<StepUpError>() {
         let message = error.to_string();
@@ -5387,12 +5389,6 @@ fn step_up_error(error: anyhow::Error) -> ApiError {
         return ApiError::new(status, json!({"code": code, "message": message}));
     }
     let message = error.to_string();
-    if message.contains("unknown step-up challenge") {
-        return ApiError::new(
-            StatusCode::NOT_FOUND,
-            json!({"code": "STEP_UP_NOT_FOUND", "message": message}),
-        );
-    }
     // Typed cap errors also surface through their Display code prefix when
     // the anyhow chain has been re-wrapped without type retention.
     if message.contains("STEP_UP_RATE_LIMITED") {
@@ -5414,9 +5410,7 @@ fn step_up_error(error: anyhow::Error) -> ApiError {
             );
         }
     }
-    let (status, code) = if message.contains("expired") {
-        (StatusCode::GONE, "STEP_UP_EXPIRED")
-    } else if message.contains("not approved") {
+    let (status, code) = if message.contains("not approved") {
         (StatusCode::FORBIDDEN, "STEP_UP_NOT_APPROVED")
     } else {
         (StatusCode::FORBIDDEN, "STEP_UP_INVALID")
@@ -5446,10 +5440,13 @@ async fn start_step_up(
             json!({"code":"STEP_UP_OPERATION_NOT_ELIGIBLE","message":"step-up is not available for this operation"}),
         ));
     }
+    // Normalize once: validate and bind the same trimmed value so padded
+    // input can never mismatch the stored challenge binding at consume time.
     let space_id = payload
         .space_id
         .as_deref()
-        .filter(|value| !value.trim().is_empty());
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     if payload.operation != "space.create" && space_id.is_none() {
         return Err(ApiError::new(
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -5498,7 +5495,10 @@ struct StepUpQuery {
 }
 
 /// Reports a step-up challenge without mutating it. Only the bound account
-/// may observe its own challenge.
+/// may observe its own challenge. Unknown, malformed, and expired challenges
+/// fail closed with 403 `STEP_UP_INVALID` (no 404 branch), so the status
+/// surface cannot oracle challenge existence; only pending/approved states
+/// report success.
 async fn step_up_status(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
@@ -5506,8 +5506,8 @@ async fn step_up_status(
 ) -> ApiResult<Json<Value>> {
     let challenge_id = query.challenge_id.trim().parse::<Uuid>().map_err(|_| {
         ApiError::new(
-            StatusCode::NOT_FOUND,
-            json!({"code": "STEP_UP_NOT_FOUND", "message": "unknown step-up challenge"}),
+            StatusCode::FORBIDDEN,
+            json!({"code": "STEP_UP_INVALID", "message": "unknown step-up challenge"}),
         )
     })?;
     let status = state
@@ -5515,6 +5515,12 @@ async fn step_up_status(
         .step_up_challenge_status(identity.account_id, challenge_id)
         .await
         .map_err(step_up_error)?;
+    if status.get("status").and_then(Value::as_str) == Some("expired") {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            json!({"code": "STEP_UP_INVALID", "message": "step-up challenge has expired"}),
+        ));
+    }
     Ok(Json(status))
 }
 
@@ -8583,15 +8589,15 @@ async fn patch_space(
 #[derive(Default, Deserialize)]
 struct AuditQuery {
     #[serde(default)]
-    offset: usize,
+    offset: u64,
     #[serde(default = "default_audit_limit")]
-    limit: usize,
+    limit: u64,
     action: Option<String>,
     actor_principal_id: Option<String>,
     outcome: Option<String>,
 }
 
-fn default_audit_limit() -> usize {
+fn default_audit_limit() -> u64 {
     100
 }
 
@@ -8617,6 +8623,10 @@ async fn list_audit_events(
         .await
         .map_err(ApiError::from_core)?;
     let space_id_for_read = space_id.clone();
+    // Clamp the protocol integers before any `usize` conversion: the
+    // effective range is 1..=500 (`0` normalizes to `1`, never a validation
+    // error), so even the largest protocol integer cannot overflow.
+    let (audit_limit, audit_offset) = audit::normalize_audit_page(query.limit, query.offset);
     Authorizer::new(state.service.operator().clone())
         .with_state_lock(&space_id, move |authorization| async move {
             require_actions_in_authorization_state(&authorization, &principals, Action::Share)?;
@@ -8624,8 +8634,8 @@ async fn list_audit_events(
                 state.service.operator(),
                 &space_id_for_read,
                 AuditListOptions {
-                    offset: query.offset,
-                    limit: query.limit,
+                    offset: audit_offset,
+                    limit: audit_limit,
                     action: query.action,
                     actor_principal_id: query.actor_principal_id,
                     outcome: query.outcome,
@@ -13283,7 +13293,8 @@ mod authentication_regression_tests {
             .await?;
         assert_eq!(status, StatusCode::OK, "{patched}");
         // Consumed challenges are removed: a later status lookup fails
-        // closed as unknown rather than resurrecting the intent.
+        // closed as invalid (403, no 404 branch) rather than resurrecting
+        // the intent.
         let (status, consumed) = client
             .json(
                 Method::GET,
@@ -13291,8 +13302,8 @@ mod authentication_regression_tests {
                 None,
             )
             .await?;
-        assert_eq!(status, StatusCode::NOT_FOUND, "{consumed}");
-        assert_eq!(consumed["code"], "STEP_UP_NOT_FOUND", "{consumed}");
+        assert_eq!(status, StatusCode::FORBIDDEN, "{consumed}");
+        assert_eq!(consumed["code"], "STEP_UP_INVALID", "{consumed}");
 
         // Single-use: replaying the consumed challenge fails closed.
         let (status, replayed) = client
@@ -13435,6 +13446,168 @@ mod authentication_regression_tests {
             .await?;
         assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
         assert_eq!(body["code"], "STEP_UP_INVALID", "{body}");
+        Ok(())
+    }
+
+    #[test]
+    fn step_up_eligible_operations_are_the_canonical_identity_set() {
+        // The server exposes no second array: the allow-list is imported
+        // from the identity layer, and this pins the surfaced members.
+        assert_eq!(
+            STEP_UP_ELIGIBLE_OPERATIONS,
+            ugoite_identity::node_identity::STEP_UP_ELIGIBLE_OPERATIONS,
+            "server must derive its eligible operations from the canonical set"
+        );
+        assert_eq!(
+            STEP_UP_ELIGIBLE_OPERATIONS,
+            &[
+                "space.create",
+                "space.patch",
+                "space.members.invite",
+                "space.members.update_role",
+                "space.members.revoke",
+                "pin.create",
+                "pin.delete",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn step_up_failures_map_to_forbidden_invalid_without_oracle() -> anyhow::Result<()> {
+        use axum::response::IntoResponse;
+        // Unknown, expired, consumed, and mismatched challenges share one
+        // fail-closed mapping: 403 STEP_UP_INVALID, no 404 branch.
+        for message in [
+            "unknown step-up challenge",
+            "unknown or consumed step-up challenge",
+            "step-up challenge has expired",
+            "step-up challenge does not match this mutation",
+            "step-up challenge belongs to a different account",
+            "step-up challenge belongs to a different credential",
+        ] {
+            let response = step_up_error(anyhow::anyhow!(message.to_string())).into_response();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{message}");
+            let body = axum::body::to_bytes(response.into_body(), 64 * 1024).await?;
+            let payload: Value = serde_json::from_slice(&body)?;
+            assert_eq!(payload["code"], "STEP_UP_INVALID", "{message}");
+        }
+        // The still-pending state keeps its distinct code (also 403).
+        let response =
+            step_up_error(anyhow::anyhow!("step-up challenge is not approved")).into_response();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn step_up_status_rejects_unknown_and_malformed_without_oracle() -> anyhow::Result<()> {
+        let principal_id = Uuid::from_u128(25113);
+        let (client, _state, _space_id, _credential_id, _account_id) =
+            step_up_production_fixture("step-up-status-oracle", principal_id).await?;
+        for challenge_id in [Uuid::now_v7().to_string(), "not-a-uuid".to_string()] {
+            let (status, body) = client
+                .json(
+                    Method::GET,
+                    &format!("/auth/step-up/status?challenge_id={challenge_id}"),
+                    None,
+                )
+                .await?;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{challenge_id}: {body}");
+            assert_eq!(body["code"], "STEP_UP_INVALID", "{challenge_id}: {body}");
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn step_up_padded_space_id_binds_trimmed_value() -> anyhow::Result<()> {
+        let principal_id = Uuid::from_u128(25114);
+        let (client, state, space_id, _credential_id, account_id) =
+            step_up_production_fixture("step-up-trim", principal_id).await?;
+        // Normalize once: a padded space_id starts, approves, and satisfies
+        // the mutation bound to the trimmed value.
+        let (status, started) = client
+            .json(
+                Method::POST,
+                "/auth/step-up/start",
+                Some(json!({"operation": "space.patch", "space_id": format!("  {space_id}  ")})),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::CREATED, "{started}");
+        let challenge_id = started["challenge_id"]
+            .as_str()
+            .expect("challenge id")
+            .to_string();
+        state
+            .identity
+            .approve_step_up_challenge(account_id, challenge_id.parse()?)
+            .await?;
+        let (status, patched) = client
+            .json_with_headers(
+                Method::PATCH,
+                &format!("/spaces/{space_id}"),
+                Some(json!({"name": "trimmed"})),
+                &[("x-ugoite-step-up", &challenge_id)],
+            )
+            .await?;
+        assert_eq!(status, StatusCode::OK, "{patched}");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn step_up_consumed_challenge_stays_consumed_when_mutation_fails() -> anyhow::Result<()> {
+        let principal_id = Uuid::from_u128(25115);
+        let (client, state, space_id, _credential_id, account_id) =
+            step_up_production_fixture("step-up-burn", principal_id).await?;
+        let (status, started) = client
+            .json(
+                Method::POST,
+                "/auth/step-up/start",
+                Some(json!({"operation": "space.patch", "space_id": space_id})),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::CREATED, "{started}");
+        let challenge_id = started["challenge_id"]
+            .as_str()
+            .expect("challenge id")
+            .to_string();
+        state
+            .identity
+            .approve_step_up_challenge(account_id, challenge_id.parse()?)
+            .await?;
+        // The authorized attempt consumes the single-use challenge before
+        // the invalid payload fails the write.
+        let (status, failed) = client
+            .json_with_headers(
+                Method::PATCH,
+                &format!("/spaces/{space_id}"),
+                Some(json!({"unsupported_field": true})),
+                &[("x-ugoite-step-up", &challenge_id)],
+            )
+            .await?;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{failed}");
+        assert!(
+            failed["code"] != "STEP_UP_INVALID" && failed["code"] != "STEP_UP_NOT_APPROVED",
+            "failure must be the mutation, not step-up consumption: {failed}"
+        );
+        // Retry requires a new challenge: the consumed one reports invalid.
+        let (status, consumed) = client
+            .json(
+                Method::GET,
+                &format!("/auth/step-up/status?challenge_id={challenge_id}"),
+                None,
+            )
+            .await?;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{consumed}");
+        assert_eq!(consumed["code"], "STEP_UP_INVALID", "{consumed}");
+        let (status, replayed) = client
+            .json_with_headers(
+                Method::PATCH,
+                &format!("/spaces/{space_id}"),
+                Some(json!({"name": "retry"})),
+                &[("x-ugoite-step-up", &challenge_id)],
+            )
+            .await?;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{replayed}");
+        assert_eq!(replayed["code"], "STEP_UP_INVALID", "{replayed}");
         Ok(())
     }
 
@@ -15411,6 +15584,64 @@ mod authentication_regression_tests {
             .oneshot(Request::get(format!("/spaces/{space_id}/audit")).body(Body::empty())?)
             .await?;
         assert_eq!(viewer_response.status(), StatusCode::FORBIDDEN);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn space_audit_pagination_is_bounded_and_overflow_safe() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-audit-pagination")?;
+        state.initialize_node().await?;
+        let owner = Uuid::now_v7();
+        let space_id = state
+            .service
+            .create_space_for_principal("audit-pagination", owner, "Owner")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        state
+            .identity
+            .bind_local_owner(space_uid, owner, owner)
+            .await?;
+        let mut identity = content_identity(owner, space_uid);
+        identity.token_principal_id = None;
+        identity.token_space_uid = None;
+        identity.token_actions = None;
+
+        // limit=0 normalizes to 1: no new INVALID_INPUT, effective range
+        // stays 1..=500 after normalization/clamping.
+        let route = Router::new()
+            .route("/spaces/{space_id}/audit", get(list_audit_events))
+            .layer(Extension(identity.clone()))
+            .with_state(state.clone());
+        let response = route
+            .oneshot(Request::get(format!("/spaces/{space_id}/audit?limit=0")).body(Body::empty())?)
+            .await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        let listing: Value = serde_json::from_slice(&body)?;
+        assert_eq!(listing["limit"], 1);
+
+        // The largest protocol integer clamps to 500 without overflowing
+        // before the cap applies.
+        let route = Router::new()
+            .route("/spaces/{space_id}/audit", get(list_audit_events))
+            .layer(Extension(identity))
+            .with_state(state);
+        let response = route
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/audit?limit={}&offset={}",
+                    u64::MAX,
+                    u64::MAX
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        let listing: Value = serde_json::from_slice(&body)?;
+        assert_eq!(listing["limit"], 500);
+        assert!(listing["items"].as_array().is_some_and(Vec::is_empty));
         Ok(())
     }
 

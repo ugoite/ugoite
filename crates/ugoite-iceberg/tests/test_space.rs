@@ -8,8 +8,43 @@ use serde_json::Value;
 #[cfg(unix)]
 use tempfile::tempdir;
 use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_iceberg::service::UgoiteService;
 use ugoite_iceberg::{form, space};
 use uuid::Uuid;
+
+#[tokio::test]
+async fn operator_space_create_rejects_whitespace_display_name_before_write() -> anyhow::Result<()>
+{
+    let service = UgoiteService::new("memory://space-display-name-validation")?;
+    let error = service
+        .ensure_operator_space_with_name("blank-name", "   ")
+        .await
+        .expect_err("whitespace-only display name must fail before any write");
+    let typed = error
+        .downcast::<AppError>()
+        .expect("display-name rejection must be a typed AppError");
+    assert_eq!(typed.code(), ErrorCode::InvalidInput);
+    // No Space state may exist after the rejected create.
+    assert!(service.space_id_by_slug("blank-name").await?.is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn operator_space_create_retry_keeps_first_display_name() -> anyhow::Result<()> {
+    let service = UgoiteService::new("memory://space-display-name-retry")?;
+    let first = service
+        .ensure_operator_space_with_name("named-space", "Alpha")
+        .await?;
+    assert!(first.created());
+    let retry = service
+        .ensure_operator_space_with_name("named-space", "Beta")
+        .await?;
+    assert!(!retry.created());
+    assert_eq!(retry.space_id(), first.space_id());
+    let metadata = service.get_space(&retry.space_id().to_string()).await?;
+    assert_eq!(metadata["name"], serde_json::json!("Alpha"));
+    Ok(())
+}
 
 #[tokio::test]
 /// REQ-STO-002, REQ-STO-004

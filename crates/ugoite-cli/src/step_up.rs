@@ -35,6 +35,17 @@ pub fn recent_passkey_required(error: &anyhow::Error) -> bool {
         == Some("RECENT_PASSKEY_REQUIRED")
 }
 
+/// Reports whether a remote failure is the converged fail-closed step-up
+/// code (unknown, expired, consumed, or mismatched challenge).
+fn step_up_invalid(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<ApiProtocolError>()
+        .and_then(|protocol| protocol.payload.as_deref())
+        .and_then(|payload| payload.get("code"))
+        .and_then(Value::as_str)
+        == Some("STEP_UP_INVALID")
+}
+
 fn step_up_string(field: &Value, name: &str) -> Result<String> {
     field
         .as_str()
@@ -109,14 +120,23 @@ pub async fn execute_with_step_up(
             bail!("step-up challenge expired before browser approval");
         }
         tokio::time::sleep(Duration::from_secs(interval)).await;
-        let status = http::execute(
+        // Unknown, expired, and consumed challenges fail closed with
+        // 403 STEP_UP_INVALID (no 404 branch): polling ends terminally and
+        // the caller starts a new challenge for a retry.
+        let status = match http::execute(
             base_url,
             "auth.step_up.status",
             json!({"challenge_id": challenge_id}),
             None,
         )
         .await
-        .context("check step-up challenge status")?;
+        {
+            Ok(status) => status,
+            Err(error) if step_up_invalid(&error) => {
+                bail!("step-up challenge is no longer available")
+            }
+            Err(error) => return Err(error).context("check step-up challenge status"),
+        };
         match status["status"].as_str().unwrap_or_default() {
             "approved" => break,
             "pending" => continue,

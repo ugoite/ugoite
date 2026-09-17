@@ -3,6 +3,8 @@
 use anyhow::Result;
 use chrono::Utc;
 use serde_json::json;
+use std::collections::BTreeMap;
+use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::structured_search::StructuredSearch;
 use ugoite_domain::identity::{
     AccessPolicy, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
@@ -11,6 +13,207 @@ use ugoite_iceberg::authorization::{Authorizer, ResourceKind, ResourceRef};
 use ugoite_iceberg::saved_sql::{SqlKind, SqlPayload};
 use ugoite_iceberg::service::UgoiteService;
 use uuid::Uuid;
+
+fn semantic_error_code(error: anyhow::Error) -> ErrorCode {
+    error
+        .downcast::<AppError>()
+        .expect("entry write failures must be typed AppErrors")
+        .code()
+}
+
+/// Raw and structured writes share one admission/auth prelude, so the same
+/// denied principal fails with the same semantic error code on both paths.
+#[tokio::test]
+async fn raw_and_structured_denied_principal_share_semantic_error_code() -> Result<()> {
+    let service = UgoiteService::new("memory://raw-structured-denied-parity")?;
+    let owner = Uuid::from_u128(301);
+    let editor = Uuid::from_u128(302);
+    let space_id = service
+        .create_space_for_principal("denied-parity", owner, "Owner")
+        .await?
+        .to_string();
+    service
+        .upsert_form(
+            &space_id,
+            &serde_json::json!({
+                "name": "Note",
+                "fields": {"Body": {"type": "markdown"}}
+            }),
+        )
+        .await?;
+    service
+        .create_entry_authorized_for_principals(
+            &space_id,
+            "denied-note",
+            "---\nform: Note\n---\n# Denied\n\n## Body\nInitial",
+            "owner",
+            &[owner],
+        )
+        .await?;
+
+    let authorizer = Authorizer::new(service.operator().clone());
+    authorizer
+        .add_human_member(
+            &space_id,
+            owner,
+            SpacePrincipal {
+                principal_id: editor,
+                kind: PrincipalKind::Human,
+                display_name: "Editor".to_string(),
+                state: PrincipalState::Active,
+                created_at: Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Editor,
+        )
+        .await?;
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &ResourceRef {
+                kind: ResourceKind::Form,
+                id: "Note".to_string(),
+                parent: None,
+            },
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: Vec::new(),
+            },
+        )
+        .await?;
+
+    let raw_create = service
+        .create_entry_authorized_for_principals(
+            &space_id,
+            "denied-raw",
+            "---\nform: Note\n---\n# Denied",
+            "editor",
+            &[editor],
+        )
+        .await
+        .expect_err("denied raw create must fail");
+    let mut structured_fields = BTreeMap::new();
+    structured_fields.insert("Body".to_string(), json!("Denied"));
+    let structured_create = service
+        .create_structured_entry_authorized_for_principals(
+            &space_id,
+            "denied-structured",
+            Some("Denied".to_string()),
+            "Note".to_string(),
+            Vec::new(),
+            structured_fields,
+            BTreeMap::new(),
+            "editor",
+            &[editor],
+        )
+        .await
+        .expect_err("denied structured create must fail");
+    assert_eq!(
+        semantic_error_code(raw_create),
+        semantic_error_code(structured_create)
+    );
+
+    let raw_update = service
+        .update_entry_authorized_for_principals(
+            &space_id,
+            "denied-note",
+            "---\nform: Note\n---\n# Denied",
+            None,
+            "editor",
+            &[editor],
+        )
+        .await
+        .expect_err("denied raw update must fail");
+    let mut structured_update_fields = BTreeMap::new();
+    structured_update_fields.insert("Body".to_string(), json!("Denied"));
+    let structured_update = service
+        .update_structured_entry_authorized_for_principals(
+            &space_id,
+            "denied-note",
+            None,
+            None,
+            None,
+            structured_update_fields,
+            BTreeMap::new(),
+            None,
+            "editor",
+            &[editor],
+        )
+        .await
+        .expect_err("denied structured update must fail");
+    assert_eq!(
+        semantic_error_code(raw_update),
+        semantic_error_code(structured_update)
+    );
+    Ok(())
+}
+
+/// The same admissible update through raw Markdown and structured fields
+/// reaches the same durable revision representation.
+#[tokio::test]
+async fn raw_and_structured_admissible_updates_reach_same_durable_outcome() -> Result<()> {
+    let service = UgoiteService::new("memory://raw-structured-update-parity")?;
+    let owner = Uuid::from_u128(303);
+    let space_id = service
+        .create_space_for_principal("update-parity", owner, "Owner")
+        .await?
+        .to_string();
+    service
+        .upsert_form(
+            &space_id,
+            &serde_json::json!({
+                "name": "Note",
+                "fields": {"Body": {"type": "markdown"}}
+            }),
+        )
+        .await?;
+    for entry_id in ["parity-raw", "parity-structured"] {
+        service
+            .create_entry_authorized_for_principals(
+                &space_id,
+                entry_id,
+                "---\nform: Note\n---\n# Parity\n\n## Body\nInitial",
+                "owner",
+                &[owner],
+            )
+            .await?;
+    }
+
+    service
+        .update_entry_authorized_for_principals(
+            &space_id,
+            "parity-raw",
+            "---\nform: Note\n---\n# Parity\n\n## Body\nUpdated",
+            None,
+            "owner",
+            &[owner],
+        )
+        .await?;
+    let mut fields = BTreeMap::new();
+    fields.insert("Body".to_string(), json!("Updated"));
+    service
+        .update_structured_entry_authorized_for_principals(
+            &space_id,
+            "parity-structured",
+            None,
+            None,
+            None,
+            fields,
+            BTreeMap::new(),
+            None,
+            "owner",
+            &[owner],
+        )
+        .await?;
+
+    let raw = service.get_entry(&space_id, "parity-raw").await?;
+    let structured = service.get_entry(&space_id, "parity-structured").await?;
+    for key in ["content", "frontmatter", "sections"] {
+        assert_eq!(raw[key], structured[key], "durable {key} must agree");
+    }
+    Ok(())
+}
 
 #[tokio::test]
 async fn test_service_boundary_covers_primary_adapter_operations() -> Result<()> {

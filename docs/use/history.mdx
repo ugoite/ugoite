@@ -40,6 +40,10 @@ ugoite change list /path/to/workspace/spaces/demo
 Take `<revision-id>`, Change IDs, and Run IDs from the list output. Run
 `ugoite entry history --help` and `ugoite change --help` for exact flags.
 
+Space audit paging (`ugoite space audit-events --limit/--offset`) stays in
+the effective range 1..=500 after normalization: `0` normalizes to `1`
+(never a validation error) and larger values clamp to `500`.
+
 </TabItem>
 </Tabs>
 
