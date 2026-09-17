@@ -40,7 +40,7 @@ describe("entry info route", () => {
     setLocale("en");
   });
 
-  it("renders metadata values with a back link", async () => {
+  it("REQ-UX-NAV-001: exposes exactly one back control to the entry", async () => {
     vi.mocked(entryApi.get).mockResolvedValue({
       id: "entry-1",
       title: "Test Entry",

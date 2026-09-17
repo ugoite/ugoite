@@ -76,7 +76,7 @@ map to the same surface as their route.
 Cross-cutting: §§7–8 apply to every rendered surface above (all except row 3,
 which renders no UI).
 
-## Companion test files (33)
+## Companion test files (34)
 
 Each test file maps to the same plan section and surface as its route file.
 
@@ -112,6 +112,7 @@ Each test file maps to the same plan section and surface as its route file.
   §6)
 - `frontend/src/routes/spaces/[space_id]/entries/new.test.tsx` → row 19 (§5)
 - `frontend/src/routes/spaces/[space_id]/forms/index.test.tsx` → row 28 (§6)
+- `frontend/src/routes/spaces/[space_id]/forms/types.test.tsx` → row 29 (§6)
 - `frontend/src/routes/spaces/[space_id]/history.test.tsx` → row 30 (§9)
 - `frontend/src/routes/spaces/[space_id]/queries/new.test.tsx` → row 31 (§6)
 - `frontend/src/routes/spaces/[space_id]/queries/[query_id]/variables.test.tsx`

@@ -62,6 +62,31 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     seedSpace(testSpace);
   });
 
+  it("REQ-UX-NAV-001: exposes exactly one back control to saved SQL", async () => {
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "Recent Search",
+      sql:
+        `SELECT * FROM "${entryRelation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
+      variables: [],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+
+    render(() => <SpaceSqlDetailRoute />);
+
+    const backLink = await screen.findByRole("link", {
+      name: "Back to Saved SQL",
+    });
+    expect(backLink).toHaveAttribute("href", "/spaces/default/sql");
+    expect(screen.getAllByRole("link", { name: "Back to Saved SQL" }))
+      .toHaveLength(1);
+    // Shell destinations stay in the shell: no route-level shortcuts.
+    expect(screen.queryByRole("link", { name: "Back to Dashboard" }))
+      .not.toBeInTheDocument();
+  });
+
   it("REQ-FE-062: saved SQL detail renders a read-only query summary and supported actions", async () => {
     seedSqlEntry("default", {
       id: "saved-query",

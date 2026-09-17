@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import {
   CreateEntryDialog,
   CreateFormDialog,
@@ -295,6 +295,26 @@ describe("CreateFormDialog", () => {
     const controls = columnInput.nextElementSibling;
     expect(controls).toHaveClass("grid");
     expect(controls).toHaveClass("grid-cols-[minmax(0,1fr)_auto]");
+  });
+
+  it("REQ-UX-ENTRY-001: renders create-form fields as plain FieldStack rows without card sections", async () => {
+    render(() => (
+      <CreateFormDialog
+        open={true}
+        columnTypes={columnTypes}
+        formNames={[]}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />
+    ));
+
+    fireEvent.click(screen.getByText("+ Add Column"));
+
+    const list = screen.getByRole("list", { name: "Columns" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(1);
+    // Plain rows: editors and guidance render without card chrome.
+    expect(list.querySelector(".ui-card")).toBeNull();
+    expect(screen.getByPlaceholderText("Column Name")).toBeInTheDocument();
   });
 
   it("creates form with valid name and fields", async () => {
@@ -2559,6 +2579,48 @@ describe("EditFormDialog", () => {
       field1: { type: "string", required: false },
     },
   };
+
+  it("REQ-UX-ENTRY-001: renders edit-form fields as plain FieldStack rows without card sections", () => {
+    render(() => (
+      <EditFormDialog
+        open={true}
+        entryForm={mockForm}
+        columnTypes={columnTypes}
+        formNames={["ExistingForm"]}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />
+    ));
+
+    const list = screen.getByRole("list", { name: "Columns" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(1);
+    expect(list.querySelector(".ui-card")).toBeNull();
+  });
+
+  it("REQ-UX-LIST-002: keeps edit-form save on a single-row action bar with a strong save", () => {
+    const { container } = render(() => (
+      <EditFormDialog
+        open={true}
+        entryForm={mockForm}
+        columnTypes={columnTypes}
+        formNames={["ExistingForm"]}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />
+    ));
+
+    const bars = container.querySelectorAll(".ui-dialog-actions");
+    expect(bars).toHaveLength(1);
+    const bar = bars[0];
+    expect(bar.querySelector('[type="submit"]')).toHaveClass(
+      "ui-button-primary",
+    );
+    expect(
+      screen.getByRole("button", { name: "Save Changes" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" }))
+      .toBeInTheDocument();
+  });
 
   it("maintains focus on column name input when typing in edit dialog", async () => {
     const onSubmit = vi.fn();

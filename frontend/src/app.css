@@ -614,6 +614,12 @@ code {
   display: grid;
   gap: 8px;
 }
+/* Form dialog field rows (PR-7 FieldStack): single-column rows that never
+ * force horizontal overflow at narrow viewports. */
+.fieldStack,
+.fieldStackRow {
+  min-width: 0;
+}
 .ui-page {
   max-width: 1180px;
   margin: 0 auto;
@@ -661,6 +667,12 @@ code {
 .btn:hover, .ui-button:hover {
   border-color: #ADB9C8;
   background: #FBFCFE;
+}
+/* Visible keyboard focus for all button chrome, including the shared
+ * positional BackLink (POL-UI-007, follow-up #2861). */
+.btn:focus-visible, .ui-button:focus-visible {
+  outline: 2px solid var(--focus, var(--brand));
+  outline-offset: 2px;
 }
 .primary, .ui-button-primary {
   background: var(--brand) !important;

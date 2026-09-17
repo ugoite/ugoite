@@ -63,6 +63,11 @@ export default function SetupRoute() {
     <main class="publicShell">
       <section class="publicCard ui-stack">
         <h1 class="ui-page-title">Initialize this Ugoite node</h1>
+        <Show when={!hasInitialPasskey()}>
+          <p class="ui-muted">
+            Set up this node by creating its first administrator Passkey.
+          </p>
+        </Show>
         <Show
           when={!hasInitialPasskey()}
           fallback={

@@ -90,6 +90,65 @@ requirements:
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
                 covers: [FEAT-UX-007#binding.back-control-implementation/target.back-link-control]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/queries/[query_id]/variables.test.tsx", test: "PR6: backs to the saved query once with typed variable inputs" } }
+          - id: info-single-back
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/info.test.tsx
+            selector: { kind: test, name: "REQ-UX-NAV-001: exposes exactly one back control to the entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.entry-info-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/info.test.tsx", test: "REQ-UX-NAV-001: exposes exactly one back control to the entry" } }
+          - id: sql-detail-single-back
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
+            selector: { kind: test, name: "REQ-UX-NAV-001: exposes exactly one back control to saved SQL" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-UX-NAV-001: exposes exactly one back control to saved SQL" } }
+          - id: form-types-single-back
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/forms/types.test.tsx
+            selector: { kind: test, name: "REQ-UX-NAV-001: exposes exactly one back control to forms" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.form-types-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/types.test.tsx", test: "REQ-UX-NAV-001: exposes exactly one back control to forms" } }
+      - id: single-context-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the PR-7 auth and form family surfaces state their context once with no competing header through exact Vitest cases.
+        targets:
+          - id: join-single-context
+            adapter: typescript
+            path: frontend/src/routes/spaces/join.test.tsx
+            selector: { kind: test, name: "REQ-UX-NAV-001: states the join context once without a competing title" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
+                covers: [FEAT-UX-009#binding.auth-form-implementation/target.join-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/join.test.tsx, test: "REQ-UX-NAV-001: states the join context once without a competing title" } }
+          - id: setup-single-context
+            adapter: typescript
+            path: frontend/src/routes/setup.test.tsx
+            selector: { kind: test, name: "REQ-UX-NAV-001: states the setup task once with a one-line onboarding note" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
+                covers: [FEAT-UX-009#binding.auth-form-implementation/target.setup-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/setup.test.tsx, test: "REQ-UX-NAV-001: states the setup task once with a one-line onboarding note" } }
+          - id: form-types-single-context
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/forms/types.test.tsx
+            selector: { kind: test, name: "REQ-UX-NAV-001: states the form context once without a competing header" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.form-types-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/types.test.tsx", test: "REQ-UX-NAV-001: states the form context once without a competing header" } }
       - id: shell-ownership-verification
         role: verification
         facet: verification
@@ -160,6 +219,47 @@ requirements:
                 criterion: REQ-UX-ENTRY-001#criterion.explicit-async-states
                 covers: [FEAT-UX-002#binding.entry-baseline/target.entry-detail-surface]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "PR4: announces saving without layout shift and toasts success transiently" } }
+      - id: form-dialog-structure-verification
+        role: verification
+        facet: verification
+        responsibility: Verify PR-7 form create/edit dialogs render fields as plain FieldStack rows without card sections and derive editor guidance from the active Form through exact Vitest cases.
+        targets:
+          - id: create-field-stack-rows
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-UX-ENTRY-001: renders create-form fields as plain FieldStack rows without card sections" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-001#criterion.no-decorative-cards
+                covers: [FEAT-UX-009#binding.auth-form-implementation/target.form-dialog-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-UX-ENTRY-001: renders create-form fields as plain FieldStack rows without card sections" } }
+          - id: edit-field-stack-rows
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-UX-ENTRY-001: renders edit-form fields as plain FieldStack rows without card sections" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-001#criterion.no-decorative-cards
+                covers: [FEAT-UX-009#binding.auth-form-implementation/target.form-dialog-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-UX-ENTRY-001: renders edit-form fields as plain FieldStack rows without card sections" } }
+          - id: field-stack-primitive-rows
+            adapter: typescript
+            path: frontend/src/components/FieldStack.test.tsx
+            selector: { kind: test, name: "REQ-UX-ENTRY-001: renders field editors as plain list rows without card chrome" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-001#criterion.no-decorative-cards
+                covers: [FEAT-UX-009#binding.auth-form-implementation/target.form-dialog-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FieldStack.test.tsx, test: "REQ-UX-ENTRY-001: renders field editors as plain list rows without card chrome" } }
+          - id: entry-guidance-derived
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-053: renders English entry guidance across input modes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-001#criterion.form-derived-guidance
+                covers: [FEAT-UX-009#binding.auth-form-implementation/target.form-dialog-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-053: renders English entry guidance across input modes" } }
   - id: REQ-UX-LIST-001
     title: List Rows With Full-Row Activation and Advanced-Only Identifiers
     description: Selectable list rows activate across the full row without a separate boxed chevron, and raw UUIDs or internal identifiers appear only inside explicitly advanced or diagnostic disclosure while primary rows show human-meaningful names.
@@ -409,6 +509,20 @@ requirements:
                 criterion: REQ-UX-LIST-002#criterion.one-row-action-bar
                 covers: [FEAT-UX-003#binding.list-baseline/target.action-bar-surface]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "PR4: keeps a single one-row action bar with save/history/info/delete" } }
+      - id: form-edit-action-bar-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the PR-7 form edit dialog keeps save on a single-row action bar with a strong primary save through exact Vitest cases.
+        targets:
+          - id: form-edit-save-single-row
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-UX-LIST-002: keeps edit-form save on a single-row action bar with a strong save" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-002#criterion.one-row-action-bar
+                covers: [FEAT-UX-009#binding.auth-form-implementation/target.form-dialog-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-UX-LIST-002: keeps edit-form save on a single-row action bar with a strong save" } }
   - id: REQ-UX-I18N-001
     title: Dictionary Copy Without Legacy Strings
     description: User-facing copy resolves through the shared English and Japanese locale dictionaries with identical key sets, and legacy hardcoded Japanese strings outside the dictionary are absent from shipped surfaces.
@@ -438,6 +552,29 @@ requirements:
                 criterion: REQ-UX-I18N-001#criterion.no-legacy-jp-strings
                 covers: [FEAT-UX-004#binding.locale-baseline/target.locale-dictionary]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ux-pr5-legacy-strings.test.tsx, test: "REQ-UX-I18N-001: forbids legacy Japanese strings on touched surfaces" } }
+      - id: locale-lint-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the PR-7 locale lint keeps English and Japanese key sets identical with no stale UX-program keys through exact Vitest cases.
+        targets:
+          - id: locale-key-parity
+            adapter: typescript
+            path: frontend/src/spec/ux-pr7-locale-lint.test.ts
+            selector: { kind: test, name: "REQ-UX-I18N-001: keeps the English and Japanese key sets identical" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-I18N-001#criterion.dictionary-copy
+                covers: [FEAT-UX-004#binding.locale-baseline/target.locale-dictionary]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ux-pr7-locale-lint.test.ts, test: "REQ-UX-I18N-001: keeps the English and Japanese key sets identical" } }
+          - id: locale-no-stale-keys
+            adapter: typescript
+            path: frontend/src/spec/ux-pr7-locale-lint.test.ts
+            selector: { kind: test, name: "REQ-UX-I18N-001: ships no stale dictionary keys orphaned by the UX program" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-I18N-001#criterion.dictionary-copy
+                covers: [FEAT-UX-004#binding.locale-baseline/target.locale-dictionary]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ux-pr7-locale-lint.test.ts, test: "REQ-UX-I18N-001: ships no stale dictionary keys orphaned by the UX program" } }
   - id: REQ-UX-RESP-001
     title: Responsive Surfaces With Accessible Names, Focus, and Fixed Tokens
     description: Surfaces stay usable at narrow widths, expose accessible names with a visible orderly focus path, and style surfaces with the fixed palette tokens instead of inline or ad hoc colors.
@@ -456,6 +593,94 @@ requirements:
         kind: behavior
         statement: Surface-aware components use the fixed surface palette tokens and do not add inline color styles or ad hoc color utilities.
         governed_by: [POL-UI-012#rule.governance]
+    bindings:
+      - id: responsive-narrow-verification
+        role: verification
+        facet: verification
+        responsibility: Verify PR-7 form dialog fields stay readable in a single stacked column at narrow viewports through exact Vitest cases.
+        targets:
+          - id: create-form-narrow-columns
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-055: keeps create-form column inputs readable on narrow layouts" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-RESP-001#criterion.responsive-narrow-layout
+                covers: [FEAT-UX-009#binding.auth-form-implementation/target.form-dialog-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-055: keeps create-form column inputs readable on narrow layouts" } }
+          - id: field-stack-single-column
+            adapter: typescript
+            path: frontend/src/components/FieldStack.test.tsx
+            selector: { kind: test, name: "REQ-UX-RESP-001: keeps rows in a single stacked column at any viewport" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-RESP-001#criterion.responsive-narrow-layout
+                covers: [FEAT-UX-009#binding.auth-form-implementation/target.form-dialog-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FieldStack.test.tsx, test: "REQ-UX-RESP-001: keeps rows in a single stacked column at any viewport" } }
+      - id: a11y-names-verification
+        role: verification
+        facet: verification
+        responsibility: Verify PR-7 auth, account, and form surfaces expose accessible names with a visible orderly focus path through exact Vitest cases.
+        targets:
+          - id: login-single-task-names
+            adapter: typescript
+            path: frontend/src/routes/login.test.tsx
+            selector: { kind: test, name: "REQ-UX-RESP-001: exposes a single sign-in task with one inline error" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-RESP-001#criterion.a11y-names-focus
+                covers: [FEAT-UX-009#binding.auth-form-implementation/target.login-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/login.test.tsx, test: "REQ-UX-RESP-001: exposes a single sign-in task with one inline error" } }
+          - id: device-approval-names
+            adapter: typescript
+            path: frontend/src/routes/device.test.tsx
+            selector: { kind: test, name: "REQ-UX-RESP-001: keeps the approval controls labeled with a single context" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-RESP-001#criterion.a11y-names-focus
+                covers: [FEAT-UX-009#binding.auth-form-implementation/target.device-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/device.test.tsx, test: "REQ-UX-RESP-001: keeps the approval controls labeled with a single context" } }
+          - id: security-tabs-named
+            adapter: typescript
+            path: frontend/src/routes/settings/security.test.tsx
+            selector: { kind: test, name: "REQ-UX-RESP-001: keeps credential tabs named with a visible focus path" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-RESP-001#criterion.a11y-names-focus
+                covers: [FEAT-UX-009#binding.auth-form-implementation/target.security-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/settings/security.test.tsx, test: "REQ-UX-RESP-001: keeps credential tabs named with a visible focus path" } }
+          - id: forms-edit-gear-named
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
+            selector: { kind: test, name: "REQ-UX-RESP-001: keeps icon-only row actions named with tooltips" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-RESP-001#criterion.a11y-names-focus
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.forms-index-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "REQ-UX-RESP-001: keeps icon-only row actions named with tooltips" } }
+      - id: surface-tokens-verification
+        role: verification
+        facet: verification
+        responsibility: Verify surface-aware components use the fixed surface palette tokens with no raw color utilities or inline color styles through exact Vitest cases.
+        targets:
+          - id: no-raw-color-utilities
+            adapter: typescript
+            path: frontend/src/themes/usage.test.ts
+            selector: { kind: test, name: "REQ-FE-042: avoids raw color utilities in surface-aware components" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-RESP-001#criterion.fixed-surface-tokens
+                covers: [FEAT-UX-005#binding.responsive-baseline/target.search-bar-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/themes/usage.test.ts, test: "REQ-FE-042: avoids raw color utilities in surface-aware components" } }
+          - id: no-inline-color-styles
+            adapter: typescript
+            path: frontend/src/themes/usage.test.ts
+            selector: { kind: test, name: "REQ-FE-042: avoids inline color styles in surface-aware components" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-RESP-001#criterion.fixed-surface-tokens
+                covers: [FEAT-UX-005#binding.responsive-baseline/target.search-bar-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/themes/usage.test.ts, test: "REQ-FE-042: avoids inline color styles in surface-aware components" } }
   - id: REQ-UX-ENTRY-002
     title: Append-Only Restore
     description: Entry restore appends a new revision derived from the selected historical revision while existing revision history remains intact and append-only.
