@@ -200,6 +200,14 @@ describe("Forms list", () => {
     expect(screen.getByLabelText("System form")).toBeInTheDocument();
     expect(screen.queryByText("System")).not.toBeInTheDocument();
   });
+  it("REQ-UX-RESP-001: keeps icon-only row actions named with tooltips", () => {
+    renderPage([noteForm]);
+    const edit = screen.getByRole("button", { name: "Edit Notes" });
+    // Icon-only secondary action: accessible name plus hover tooltip
+    // (POL-UI-011) so the control never depends on vision alone.
+    expect(edit).toHaveAttribute("title", "Edit Notes");
+    expect(edit.getAttribute("aria-label")).toBe("Edit Notes");
+  });
   it("keeps edit on a small per-row button that does not navigate", async () => {
     vi.mocked(formApi.create).mockResolvedValue(noteForm);
     renderPage([noteForm]);

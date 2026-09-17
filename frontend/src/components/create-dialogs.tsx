@@ -13,6 +13,7 @@ import {
   type EntryInputMode,
 } from "~/lib/entry-input";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import { FieldStack, FieldStackRow } from "~/components/FieldStack";
 import { t, type TranslationKey } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import { searchApi } from "~/lib/ugoite-client";
@@ -1526,9 +1527,10 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
                 </button>
               </div>
 
+              <FieldStack label={t("createDialog.form.columnsTitle")}>
               <Index each={fields()}>
                 {(field, i) => (
-                  <div class="flex flex-col gap-1">
+                  <FieldStackRow class="flex flex-col gap-1">
                     <div class={columnEditorRowClass}>
                       <input
                         type="text"
@@ -1672,9 +1674,10 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
                         {fieldIssues().get(i)}
                       </span>
                     </Show>
-                  </div>
+                  </FieldStackRow>
                 )}
               </Index>
+              </FieldStack>
               <Show when={fields().length === 0}>
                 <div class="ui-card text-sm ui-muted italic text-center">
                   {t("createDialog.form.noColumnsDefined")}
@@ -2035,9 +2038,10 @@ export function EditFormDialog(props: EditFormDialogProps) {
                 </button>
               </div>
 
+              <FieldStack label={t("createDialog.form.columnsTitle")}>
               <Index each={fields()}>
                 {(field, i) => (
-                  <div class="flex flex-col gap-1 border-b pb-2 mb-2 last:border-0">
+                  <FieldStackRow class="flex flex-col gap-1 border-b pb-2 mb-2 last:border-0">
                     <div class={columnEditorRowClass}>
                       <input
                         type="text"
@@ -2192,9 +2196,10 @@ export function EditFormDialog(props: EditFormDialogProps) {
                         {fieldIssues().get(i)}
                       </span>
                     </Show>
-                  </div>
+                  </FieldStackRow>
                 )}
               </Index>
+              </FieldStack>
               <Show when={fields().length === 0}>
                 <div class="ui-card text-sm ui-muted italic text-center">
                   {t("createDialog.form.noColumnsDefined")}

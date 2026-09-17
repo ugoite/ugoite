@@ -254,6 +254,27 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
+          - id: entry-info-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/info.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+          - id: sql-detail-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+          - id: form-types-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/forms/types.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
   - id: FEAT-UX-008
     title: Shared row-list primitive with Spaces and Forms migration
     summary: Provide the shared RowList rendered by the Spaces and Forms lists so rows activate across the full row without an Open column, boxed chevron, or in-row cards, and apply the Entry list first slice (positional back link, list-adjacent create action, chipless rows with compact right-meta dates).
@@ -298,3 +319,63 @@ features:
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
               - kind: satisfies
                 criterion: REQ-UX-ENTRY-001#criterion.no-decorative-cards
+  - id: FEAT-UX-009
+    title: Auth and form family single-task surfaces
+    summary: Provide the login, setup, device approval, space join, and account security surfaces plus the shared form-dialog field stack so each states its context once, keeps icon-only actions named, and renders form fields as plain rows with a single-row save bar.
+    status: planned
+    bindings:
+      - id: auth-form-implementation
+        role: implementation
+        facet: frontend
+        responsibility: Keep the auth and form family surfaces connected to the single-context, named-action, and plain-row criteria.
+        targets:
+          - id: login-surface
+            adapter: typescript
+            path: frontend/src/routes/login.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
+              - kind: satisfies
+                criterion: REQ-UX-RESP-001#criterion.a11y-names-focus
+          - id: setup-surface
+            adapter: typescript
+            path: frontend/src/routes/setup.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
+          - id: device-surface
+            adapter: typescript
+            path: frontend/src/routes/device.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-RESP-001#criterion.a11y-names-focus
+          - id: join-surface
+            adapter: typescript
+            path: frontend/src/routes/spaces/join.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
+          - id: security-surface
+            adapter: typescript
+            path: frontend/src/routes/settings/security.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-RESP-001#criterion.a11y-names-focus
+          - id: form-dialog-surface
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-001#criterion.no-decorative-cards
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-001#criterion.form-derived-guidance
+              - kind: satisfies
+                criterion: REQ-UX-LIST-002#criterion.one-row-action-bar
+              - kind: satisfies
+                criterion: REQ-UX-RESP-001#criterion.responsive-narrow-layout

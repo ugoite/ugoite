@@ -24,6 +24,53 @@ describe("/device", () => {
     vi.mocked(spaceApi.list).mockReset();
   });
 
+  it("REQ-UX-RESP-001: keeps the approval controls labeled with a single context", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        device_name: "CLI",
+        requested_actions: ["read", "create", "update"],
+        resource: null,
+      }),
+    });
+    vi.mocked(spaceApi.list).mockResolvedValue([{
+      id: "space-1",
+      name: "Docs",
+      space_uid: "space-uid-1",
+    }]);
+
+    render(() => <DeviceApprovalRoute />);
+
+    expect(
+      await screen.findByRole("button", { name: "Approve CLI access" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Approve CLI access" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("heading")).toHaveLength(1);
+    expect(screen.getByLabelText("Space")).toBeInTheDocument();
+  });
+
+  it("explains unsupported resources with recovery guidance", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        device_name: "Other client",
+        requested_actions: ["read"],
+        resource: "https://other.example/mcp",
+      }),
+    });
+
+    render(() => <DeviceApprovalRoute />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Unsupported device authorization",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Approve/ })).toBeNull();
+  });
+
   it("approves a supported REST CLI request", async () => {
     fetchMock.mockResolvedValue({
       ok: true,

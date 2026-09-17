@@ -68,6 +68,24 @@ describe("SecuritySettingsRoute", () => {
     vi.mocked(authApi.finishTotpEnrollment).mockResolvedValue(undefined);
   });
 
+  it("REQ-UX-RESP-001: keeps credential tabs named with a visible focus path", async () => {
+    render(() => <SecuritySettingsRoute />);
+
+    const tablist = await screen.findByRole("tablist", {
+      name: "Credential settings",
+    });
+    expect(tablist).toBeInTheDocument();
+    for (const name of ["Passkeys", "Sessions", "Audit Log"]) {
+      const tab = screen.getByRole("tab", { name });
+      expect(tab).toHaveAttribute("aria-selected");
+      expect(tab.getAttribute("aria-controls")).toMatch(
+        /^credential-panel-/,
+      );
+    }
+    const panel = screen.getByRole("tabpanel", { name: "Passkeys" });
+    expect(panel).toHaveAttribute("aria-labelledby", "credential-tab-passkeys");
+  });
+
   it("shows only the selected credential panel", () => {
     render(() => <SecuritySettingsRoute />);
 

@@ -91,6 +91,27 @@ describe("/login continuation", () => {
     expect(authApi.loginWithOidc).not.toHaveBeenCalled();
   });
 
+  it("REQ-UX-RESP-001: exposes a single sign-in task with one inline error", async () => {
+    vi.mocked(authApi.loginWithPasskey).mockRejectedValue(
+      new Error("No passkey found"),
+    );
+    render(() => <LoginRoute />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Sign in with a passkey" }),
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("No passkey found");
+    // A single task surface: one error, one primary action, one recovery path.
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(
+      screen.getByRole("button", { name: "Sign in with a passkey" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Lost your Passkey?" }))
+      .toBeInTheDocument();
+  });
+
   it("links to the dedicated Account Self-Recovery journey", async () => {
     render(() => <LoginRoute />);
 

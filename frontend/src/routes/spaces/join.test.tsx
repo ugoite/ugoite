@@ -45,9 +45,28 @@ describe("/spaces/join", () => {
     render(() => <SpaceInvitationJoinRoute />);
 
     await waitFor(() =>
-      expect(screen.getByText("Join a Space").parentElement?.parentElement)
-        .toHaveAttribute("data-authenticated", "false")
+      expect(
+        screen.getByRole("heading", { name: "Join" }).parentElement
+          ?.parentElement?.parentElement,
+      ).toHaveAttribute("data-authenticated", "false")
     );
+  });
+
+  it("REQ-UX-NAV-001: states the join context once without a competing title", async () => {
+    render(() => <SpaceInvitationJoinRoute />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Join" }))
+        .toBeInTheDocument()
+    );
+    // One visible context statement: the screen heading names the task and
+    // no second heading repeats it inside the surface.
+    expect(screen.getAllByRole("heading")).toHaveLength(1);
+    expect(screen.queryByRole("heading", { name: "Join a Space" }))
+      .not.toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Join a Space" }),
+    ).toBeInTheDocument();
   });
 
   it("accepts an invitation for an already signed-in account", async () => {

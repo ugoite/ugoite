@@ -334,7 +334,7 @@ describe("/spaces", () => {
     expect(open.contains(settings)).toBe(false);
   });
 
-  it("PR3: renders spaces as rows with icon-only secondary actions", async () => {
+  it("REQ-UX-LIST-001: renders spaces as rows with icon-only secondary actions", async () => {
     (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         id: "default",

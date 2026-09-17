@@ -1,5 +1,6 @@
-import { A, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
 import { For, Show } from "solid-js";
+import { BackLink } from "~/components/BackLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { formApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
@@ -23,9 +24,10 @@ export default function SpaceFormTypesRoute() {
           <div class="eyebrow">{t("spaceShell.bottom.grid")}</div>
           <h1>{t("formTypesPage.heading")}</h1>
         </div>
-        <A href={`/spaces/${encodeURIComponent(spaceId())}/forms`} class="btn">
-          {t("formTypesPage.back")}
-        </A>
+        <BackLink
+          href={`/spaces/${encodeURIComponent(spaceId())}/forms`}
+          label={t("formTypesPage.back")}
+        />
       </div>
 
       {/* Panel-local spinner: loaded types stay mounted on refetch. */}

@@ -96,8 +96,7 @@ export default function SpaceInvitationJoinRoute() {
           <h1>Join</h1>
         </div>
       </div>
-      <section class="settingsMain surface">
-        <h2>Join a Space</h2>
+      <section class="settingsMain surface" aria-label="Join a Space">
         <p class="ui-muted">
           Signed-in accounts can accept this one-use invitation directly. If you
           are not signed in, Ugoite registers a new Passkey first.
