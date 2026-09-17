@@ -123,7 +123,7 @@ ugoite sql session-rows /path/to/workspace/spaces/demo <session-id> --offset 0 -
 ```
 
 `sql saved-execute` returns the same page envelope with `sql_id` for the
-executed definition:
+executed definition. Local/core mode carries no `session_id`:
 
 ```bash
 ugoite sql saved-execute /path/to/workspace/spaces/demo <sql-id> --limit 1
@@ -140,6 +140,38 @@ ugoite sql saved-execute /path/to/workspace/spaces/demo <sql-id> --limit 1
   "total_count": 2
 }
 ```
+
+Remote mode (CLI pointed at a server) returns the same envelope plus a
+`session_id` continuation handle:
+
+```bash
+ugoite sql saved-execute /path/to/workspace/spaces/demo <sql-id> --limit 1
+```
+
+```json
+{
+  "count": 1,
+  "limit": 1,
+  "offset": 0,
+  "result": [{ "_ugoite_id": "task-a", "_ugoite_title": "Alpha" }],
+  "rows": [{ "_ugoite_id": "task-a", "_ugoite_title": "Alpha" }],
+  "session_id": "<session-id>",
+  "sql_id": "<sql-id>",
+  "total_count": 2
+}
+```
+
+Contract notes:
+
+- `sql_id` is the identity of the saved SQL definition (durable Knowledge).
+- `session_id` is a transient handle for the remote SQL execution/session,
+  used for result continuation. It is runtime/transport metadata, not
+  durable Knowledge.
+- `session_id` is not guaranteed to be present in local/core mode. Scripts
+  and automation must not require it, and must not treat its presence or
+  value as Knowledge semantics.
+- Row, count, and pagination meanings (`rows`/`result`/`count`/
+  `total_count`/`offset`/`limit`) are identical across both transports.
 
 ## Verify the result
 
