@@ -241,12 +241,12 @@ test.describe("Entries CRUD", () => {
 		await expect(page.locator("body")).toBeVisible();
 		await settleUiLoading(page);
 
-		await expect(page.getByRole("button", { name: "New entry" })).toBeEnabled();
+		await expect(page.getByRole("button", { name: "+ Entry" })).toBeEnabled();
 		await expect(
 			page.getByText("Start by creating your first form."),
 		).toHaveCount(0);
 
-		await page.getByRole("button", { name: "New entry" }).click();
+		await page.getByRole("button", { name: "+ Entry" }).click();
 		await expect(page).toHaveURL(
 			new RegExp(`/spaces/${spaceId}/entries/new$`),
 			{ timeout: 10_000 },
@@ -455,7 +455,7 @@ test.describe("Entries CRUD", () => {
 		await settleUiLoading(page);
 		await page.waitForLoadState("networkidle");
 
-		const newEntryButton = page.getByRole("button", { name: "New entry" });
+		const newEntryButton = page.getByRole("button", { name: "+ Entry" });
 		await expect(newEntryButton).toBeEnabled();
 		await newEntryButton.click();
 		await expect(page).toHaveURL(

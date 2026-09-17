@@ -251,7 +251,7 @@ describe("/spaces", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Available Spaces")).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: "Open Space" }))
+      expect(screen.getByRole("link", { name: "default" }))
         .toBeInTheDocument();
     });
 
@@ -281,21 +281,22 @@ describe("/spaces", () => {
     render(() => <SpacesIndexRoute />);
 
     await waitFor(() => {
-      expect(screen.getByRole("table", { name: "Spaces" }))
+      expect(screen.getByRole("list", { name: "Spaces" }))
         .toBeInTheDocument();
     });
 
-    const spacesTable = screen.getByRole("table", { name: "Spaces" });
-    expect(within(spacesTable).getByText("default")).toBeInTheDocument();
-    expect(within(spacesTable).getByText("Operations")).toBeInTheDocument();
-    expect(within(spacesTable).getAllByRole("link", { name: "Open Space" })[0])
+    const spacesList = screen.getByRole("list", { name: "Spaces" });
+    expect(within(spacesList).getByText("default")).toBeInTheDocument();
+    expect(within(spacesList).getByText("Operations")).toBeInTheDocument();
+    expect(within(spacesList).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(spacesList).getByRole("link", { name: "default" }))
       .toHaveAttribute(
         "href",
         "/spaces/default/dashboard",
       );
   });
 
-  it("PR4: renders spaces as a table with icon-only actions", async () => {
+  it("REQ-UX-LIST-001: opens spaces through full-row links with an unboxed secondary settings action", async () => {
     (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         id: "default",
@@ -308,42 +309,66 @@ describe("/spaces", () => {
     render(() => <SpacesIndexRoute />);
 
     await waitFor(() => {
-      expect(screen.getByRole("table", { name: "Spaces" }))
+      expect(screen.getByRole("list", { name: "Spaces" }))
         .toBeInTheDocument();
     });
 
-    const spacesTable = screen.getByRole("table", { name: "Spaces" });
-    expect(
-      within(spacesTable).getByRole("columnheader", { name: "Space name" }),
-    ).toBeInTheDocument();
-    expect(
-      within(spacesTable).queryByRole("columnheader", { name: "Forms" }),
-    ).toBeNull();
-    expect(
-      within(spacesTable).getByRole("columnheader", { name: "Settings" }),
-    ).toBeInTheDocument();
-    expect(
-      within(spacesTable).getByRole("columnheader", { name: "Open" }),
-    ).toBeInTheDocument();
+    const spacesList = screen.getByRole("list", { name: "Spaces" });
+    // No table semantics and no Open column duplicating row activation.
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader")).not.toBeInTheDocument();
+    expect(within(spacesList).queryByText("Open")).not.toBeInTheDocument();
+    // No boxed chevron and no in-row cards.
+    expect(spacesList.querySelector(".spacesOpen")).toBeNull();
+    expect(spacesList.querySelector(".ui-card")).toBeNull();
+    const chevron = spacesList.querySelector(".rowListChevron")!;
+    expect(chevron.tagName).toBe("SPAN");
+    expect(chevron).toHaveAttribute("aria-hidden", "true");
+    // Full-row link carries the space name; the gear is an unboxed sibling.
+    const open = within(spacesList).getByRole("link", { name: "Default" });
+    expect(open).toHaveAttribute("href", "/spaces/default/dashboard");
+    const settings = within(spacesList).getByRole("link", {
+      name: "Settings",
+    });
+    expect(settings).toHaveAttribute("href", "/spaces/default/settings");
+    expect(open.contains(settings)).toBe(false);
+  });
+
+  it("PR3: renders spaces as rows with icon-only secondary actions", async () => {
+    (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: "default",
+        name: "Default",
+        slug: "default",
+        created_at: "2025-01-01T00:00:00Z",
+      },
+    ]);
+
+    render(() => <SpacesIndexRoute />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("list", { name: "Spaces" }))
+        .toBeInTheDocument();
+    });
+
+    const spacesList = screen.getByRole("list", { name: "Spaces" });
     // Single name only: no slug second line.
-    expect(within(spacesTable).getByText("Default")).toBeInTheDocument();
-    expect(spacesTable.querySelector("small")).toBeNull();
-    expect(within(spacesTable).queryByText("default", { selector: "small" }))
+    expect(within(spacesList).getByText("Default")).toBeInTheDocument();
+    expect(spacesList.querySelector("small")).toBeNull();
+    expect(within(spacesList).queryByText("default", { selector: "small" }))
       .not.toBeInTheDocument();
-    // No placeholder form-count column: only real data and actions remain.
-    expect(within(spacesTable).queryByText("—")).toBeNull();
-    // Icon-only actions keep their accessible names.
+    // No placeholder content: only real data and actions remain.
+    expect(within(spacesList).queryByText("—")).toBeNull();
+    // Icon-only secondary action keeps its accessible name.
     expect(
-      within(spacesTable).getByRole("link", { name: "Settings" }),
+      within(spacesList).getByRole("link", { name: "Settings" }),
     ).toHaveAttribute("href", "/spaces/default/settings");
-    const open = within(spacesTable).getByRole("link", {
-      name: "Open Space",
+    const open = within(spacesList).getByRole("link", {
+      name: "Default",
     });
     expect(open).toHaveAttribute("href", "/spaces/default/dashboard");
     expect(open.textContent).toContain("›");
-    // Only the wrapper scrolls; the selector page has no Home back link.
-    expect(document.querySelector(".tablewrap")).toBeInTheDocument();
-    expect(document.querySelector(".tablewrap table")).toBe(spacesTable);
+    // The selector page has no Home back link.
     expect(screen.queryByRole("link", { name: "Back to Home" })).not
       .toBeInTheDocument();
   });
@@ -360,7 +385,7 @@ describe("/spaces", () => {
     render(() => <SpacesIndexRoute />);
 
     await waitFor(() => {
-      expect(screen.getByRole("table", { name: "Spaces" }))
+      expect(screen.getByRole("list", { name: "Spaces" }))
         .toBeInTheDocument();
     });
     expect(screen.queryByText("No spaces available.")).not.toBeInTheDocument();

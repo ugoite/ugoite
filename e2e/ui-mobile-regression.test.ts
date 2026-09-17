@@ -98,8 +98,8 @@ test.describe("Mobile UI regression @screenshot", () => {
     });
     await page.locator(".formsPage").waitFor({ state: "visible" });
     await expect(page.getByRole("heading", { name: "Forms" })).toBeVisible();
-    await expect(page.locator(".formRow").first()).toBeVisible();
-    await expect(page.locator(".entriesList")).toBeVisible();
+    await expect(page.locator(".rowListItem").first()).toBeVisible();
+    await expect(page.locator(".rowList")).toBeVisible();
     await expect(page.locator(".mobileFormPicker")).toHaveCount(0);
     await expect(page.locator(".desktopFormPicker")).toHaveCount(0);
     await expect(page.locator(".formsPage select")).toHaveCount(0);
@@ -111,8 +111,8 @@ test.describe("Mobile UI regression @screenshot", () => {
     });
     await page.locator(".formsPage").waitFor({ state: "visible" });
     await expect(page.getByRole("heading", { name: "Forms" })).toBeVisible();
-    await expect(page.locator(".formRow").first()).toBeVisible();
-    await expect(page.locator(".entriesList")).toBeVisible();
+    await expect(page.locator(".rowListItem").first()).toBeVisible();
+    await expect(page.locator(".rowList")).toBeVisible();
     await expect(page.locator(".mobileFormPicker")).toHaveCount(0);
     await expect(page.locator(".desktopFormPicker")).toHaveCount(0);
     await expect(page.locator(".bottomNav")).toBeVisible();
@@ -148,7 +148,7 @@ async function runMobileRegression(
         // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
         await expect(page.getByRole("heading", { name: "Forms" }))
           .toBeVisible();
-        await expect(page.locator(".formRow").first()).toBeVisible();
+        await expect(page.locator(".rowListItem").first()).toBeVisible();
         await expect(page.locator(".mobileFormPicker")).toHaveCount(0);
         await expect(page.locator(".desktopFormPicker")).toHaveCount(0);
         await expectMobileControlFontSize(page);
