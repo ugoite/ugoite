@@ -287,6 +287,7 @@ inventory:
             - docs/spec/ui/pages/space-sql.yaml
             - docs/spec/ui/pages/space-test-connection.yaml
             - docs/spec/ui/components/space-shell.yaml
+            - docs/spec/ui/ux-route-inventory.md
             - .github/workflows/ci.yml
             - .github/workflows/codeql.yml
             - .github/workflows/pr-require-close-issue.yml
@@ -324,6 +325,15 @@ inventory:
             - crates/ugoite-iceberg/src/search.rs
             - crates/ugoite-konase/src/agent_runtime.rs
             - frontend/src/lib/search-api.ts
+            - frontend/src/components/SpaceShell.tsx
+            - frontend/src/components/GlobalShell.tsx
+            - frontend/src/components/EntryList.tsx
+            - frontend/src/components/EntryDetailPane.tsx
+            - frontend/src/components/ListPanel.tsx
+            - frontend/src/components/ActionIconBar.tsx
+            - frontend/src/components/SearchBar.tsx
+            - frontend/src/lib/i18n.ts
+            - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/restore.tsx
             - frontend/app.config.ts
             - crates/ugoite-iceberg/tests/fixtures/v0.1-knowledge.json
             - fixtures/spaces/0.1/spaces/019c1234-5678-7abc-8def-0123456789ab/meta.json
