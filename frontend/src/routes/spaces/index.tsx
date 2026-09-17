@@ -214,7 +214,7 @@ export default function SpacesIndexRoute() {
                 class="ui-button ui-button-primary text-sm"
                 onClick={openCreateForm}
               >
-                {t("spacesPage.create")}
+                {t("spacesPage.createShort")}
               </button>
             </Show>
           </div>
@@ -344,7 +344,7 @@ export default function SpacesIndexRoute() {
                   class="ui-button ui-button-primary text-sm"
                   onClick={openCreateForm}
                 >
-                  {t("spacesPage.create")}
+                  {t("spacesPage.createShort")}
                 </button>
               </div>
               <a

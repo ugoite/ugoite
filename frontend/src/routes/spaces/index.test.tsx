@@ -62,7 +62,7 @@ describe("/spaces", () => {
       expect(screen.getByText("No spaces available.")).toBeInTheDocument();
     });
 
-    expect(screen.getByRole("button", { name: "Create space" }))
+    expect(screen.getByRole("button", { name: "+ Space" }))
       .toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Join with invitation" }))
       .toHaveAttribute(
@@ -90,7 +90,7 @@ describe("/spaces", () => {
       expect(screen.getByText("No spaces available.")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ Space" }));
     fireEvent.input(screen.getByLabelText("Space name"), {
       target: { value: "プロジェクトメモ 📝" },
     });
@@ -122,7 +122,7 @@ describe("/spaces", () => {
       expect(screen.getByText("No spaces available.")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ Space" }));
     fireEvent.input(screen.getByLabelText("Space name"), {
       target: { value: "My space" },
     });
@@ -144,7 +144,7 @@ describe("/spaces", () => {
       expect(screen.getByText("No spaces available.")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ Space" }));
 
     expect(screen.getByLabelText("Space name")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("e.g. Project notes"))
@@ -174,7 +174,7 @@ describe("/spaces", () => {
       expect(screen.getByText("No spaces available.")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ Space" }));
     fireEvent.input(screen.getByLabelText("Space name"), {
       target: { value: "My space" },
     });
@@ -215,7 +215,7 @@ describe("/spaces", () => {
       expect(screen.getByText("No spaces available.")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ Space" }));
     fireEvent.input(screen.getByLabelText("Space name"), {
       target: { value: "My space" },
     });

@@ -33,9 +33,9 @@ describe("404 route", () => {
       "href",
       "/",
     );
-    expect(screen.getByRole("link", { name: "About Ugoite" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Docs" })).toHaveAttribute(
       "href",
-      "/about",
+      "https://ugoite.github.io/ugoite/docs/guide/start",
     );
   });
 });

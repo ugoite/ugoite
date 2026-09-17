@@ -6,7 +6,6 @@ export type UiIconName =
   | "search"
   | "settings"
   | "spaces"
-  | "about"
   | "menu"
   | "plus"
   | "entry"
@@ -57,12 +56,6 @@ const paths: Record<UiIconName, () => JSX.Element> = {
       <path d="M4 7.5 12 4l8 3.5-8 3.5-8-3.5z" />
       <path d="M4 12.5 12 16l8-3.5" />
       <path d="M4 17 12 20l8-3" />
-    </>
-  ),
-  about: () => (
-    <>
-      <path d="M6 4h12v16H6z" />
-      <path d="M9 8h6M9 12h6M9 16h4" />
     </>
   ),
   menu: () => (

@@ -8,7 +8,7 @@ export function GlobalShell(
   props: {
     title: string;
     children: JSX.Element;
-    active?: "spaces" | "about";
+    active?: "spaces";
     authenticated?: boolean;
   },
 ) {
@@ -34,15 +34,6 @@ export function GlobalShell(
             >
               <UiIcon name="spaces" />
               <span>{t("nav.spaces")}</span>
-            </A>
-            <A
-              class="navItem"
-              classList={{ active: props.active === "about" }}
-              href="/about"
-              end
-            >
-              <UiIcon name="about" />
-              <span>{t("nav.about")}</span>
             </A>
           </nav>
         </aside>
@@ -86,15 +77,6 @@ export function GlobalShell(
         >
           <UiIcon name="spaces" />
           <span>{t("nav.spaces")}</span>
-        </A>
-        <A
-          classList={{ active: props.active === "about" }}
-          href="/about"
-          aria-current={props.active === "about" ? "page" : undefined}
-          end
-        >
-          <UiIcon name="about" />
-          <span>{t("nav.about")}</span>
         </A>
       </nav>
     </main>

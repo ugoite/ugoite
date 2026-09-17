@@ -290,7 +290,7 @@ describe("UI spec YAML registry", () => {
       type: "sidebar",
       position: "left-fixed",
       width: "228px",
-      items: ["Spaces", "About"],
+      items: ["Spaces"],
     });
     const spaceSidebar = components.find((component) =>
       component.id === "space-sidebar"
@@ -315,7 +315,7 @@ describe("UI spec YAML registry", () => {
       type: "bottom-navigation",
       height: "66px",
       breakpoint: "900px",
-      items: ["Spaces", "About"],
+      items: ["Spaces"],
     });
   });
 

@@ -8,7 +8,7 @@ components:
     type: sidebar
     position: left-fixed
     width: 228px
-    items: [Spaces, About]
+    items: [Spaces]
     notes: Global routes only. Hidden below 900px and replaced by the global bottom navigation.
   - id: space-sidebar
     type: sidebar
@@ -29,4 +29,4 @@ components:
     type: bottom-navigation
     height: 66px
     breakpoint: 900px
-    items: [Spaces, About]
+    items: [Spaces]

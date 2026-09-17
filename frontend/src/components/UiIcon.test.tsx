@@ -9,7 +9,6 @@ const allNames: UiIconName[] = [
   "search",
   "settings",
   "spaces",
-  "about",
   "menu",
   "plus",
   "entry",
