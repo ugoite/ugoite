@@ -159,45 +159,92 @@ fn sql_page_output_with_alias(
     })
 }
 
-/// Normalize a remote `sql_session.rows` payload into the stable envelope.
-fn normalize_remote_rows(
+/// Strict decoder for a remote `sql_session.rows` payload into the stable
+/// envelope inputs.
+///
+/// The documented server envelope carries `rows` (array), `total_count`,
+/// `offset`, and `limit` (integers). A 2xx body that misses those fields or
+/// carries the wrong types is protocol drift: fail loudly through the shared
+/// remote-response error path instead of synthesizing values, reinterpreting
+/// drift as zero, or printing partial success JSON to stdout.
+pub(crate) fn decode_remote_rows(
     payload: &serde_json::Value,
-    fallback_offset: usize,
-    fallback_limit: usize,
-) -> Result<serde_json::Value> {
+    operation: &'static str,
+) -> Result<(Vec<serde_json::Value>, u64, usize, usize)> {
     let rows = payload
         .get("rows")
         .and_then(|value| value.as_array())
         .cloned()
-        .unwrap_or_default();
+        .ok_or_else(|| malformed_remote_response(operation, "expected \"rows\" to be an array"))?;
     let total_count = payload
         .get("total_count")
-        .or_else(|| payload.get("totalCount"))
         .and_then(serde_json::Value::as_u64)
-        .unwrap_or(rows.len() as u64);
-    let offset = payload
-        .get("offset")
-        .and_then(serde_json::Value::as_u64)
-        .map(|value| value as usize)
-        .unwrap_or(fallback_offset);
-    let limit = payload
-        .get("limit")
-        .and_then(serde_json::Value::as_u64)
-        .map(|value| value as usize)
-        .unwrap_or(fallback_limit);
-    Ok(sql_page_output_with_alias(rows, total_count, offset, limit))
+        .ok_or_else(|| {
+            malformed_remote_response(operation, "expected \"total_count\" to be an integer")
+        })?;
+    let offset = decode_remote_page_int(payload, operation, "offset")?;
+    let limit = decode_remote_page_int(payload, operation, "limit")?;
+    Ok((rows, total_count, offset, limit))
 }
 
-fn normalize_remote_count(payload: &serde_json::Value, session_id: &str) -> serde_json::Value {
+fn decode_remote_page_int(
+    payload: &serde_json::Value,
+    operation: &str,
+    field: &str,
+) -> Result<usize> {
+    let raw = payload
+        .get(field)
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| {
+            malformed_remote_response(operation, &format!("expected \"{field}\" to be an integer"))
+        })?;
+    usize::try_from(raw).map_err(|_| {
+        malformed_remote_response(
+            operation,
+            &format!("\"{field}\" exceeds the addressable page window"),
+        )
+    })
+}
+
+pub(crate) fn decode_remote_count(
+    payload: &serde_json::Value,
+    session_id: &str,
+) -> Result<serde_json::Value> {
     let count = payload
         .get("count")
         .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    serde_json::json!({
+        .ok_or_else(|| {
+            malformed_remote_response("sql_session.count", "expected \"count\" to be an integer")
+        })?;
+    Ok(serde_json::json!({
         "count": count,
         "total_count": count,
         "session_id": session_id,
-    })
+    }))
+}
+
+/// Fail-closed protocol drift through the existing remote-response error
+/// path: `ApiProtocolError` with kind `invalid_response` projects to a
+/// stable machine `stderr` envelope, a non-zero exit, and an empty stdout.
+fn malformed_remote_response(operation: &str, what: &str) -> anyhow::Error {
+    ugoite_api_client::ApiProtocolError {
+        kind: "invalid_response".to_string(),
+        message: format!("{operation}: malformed remote response: {what}"),
+        operation: Some(operation.to_string()),
+        status: Some(200),
+        detail: None,
+        payload: None,
+    }
+    .into()
+}
+
+/// Redacted diagnostics for CLI-local SQL session state I/O.
+///
+/// Mentions the logical session ID and the file/state role; the chained OS
+/// error keeps the root cause. The absolute configured session directory is
+/// never interpolated, keeping machine-readable output clean.
+fn session_state_context(session_id: &str, action: &str, role: &str) -> String {
+    format!("failed to {action} SQL session {session_id} {role}")
 }
 
 fn cli_sql_session_dir(root: &str, space_id: &str) -> std::path::PathBuf {
@@ -226,12 +273,8 @@ fn write_local_sql_session(root: &str, space_id: &str, sql: &str) -> Result<serd
         .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
     let session_id = Uuid::now_v7().to_string();
     let dir = cli_sql_session_dir(root, space_id);
-    std::fs::create_dir_all(&dir).with_context(|| {
-        format!(
-            "failed to create CLI SQL session directory {}",
-            dir.display()
-        )
-    })?;
+    std::fs::create_dir_all(&dir)
+        .with_context(|| session_state_context(&session_id, "create", "state directory"))?;
     let meta = serde_json::json!({
         "id": session_id,
         "space_id": space_id,
@@ -246,7 +289,7 @@ fn write_local_sql_session(root: &str, space_id: &str, sql: &str) -> Result<serd
     });
     let path = dir.join(format!("{session_id}.json"));
     std::fs::write(&path, serde_json::to_vec_pretty(&meta)?)
-        .with_context(|| format!("failed to persist CLI SQL session {}", path.display()))?;
+        .with_context(|| session_state_context(&session_id, "persist", "state"))?;
     Ok(meta)
 }
 
@@ -479,7 +522,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                     .get("id")
                     .and_then(|value| value.as_str())
                     .ok_or_else(|| anyhow::anyhow!("SQL session response did not include an id"))?;
-                let rows = http::execute(
+                let rows_payload = http::execute(
                     &base,
                     "sql_session.rows",
                     serde_json::json!({
@@ -491,7 +534,9 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                     None,
                 )
                 .await?;
-                let mut output = normalize_remote_rows(&rows, offset_value, limit_value)?;
+                let (rows, total_count, offset, limit) =
+                    decode_remote_rows(&rows_payload, "sql_session.rows")?;
+                let mut output = sql_page_output_with_alias(rows, total_count, offset, limit);
                 output["sql_id"] = serde_json::json!(sql_id);
                 output["session_id"] = serde_json::json!(session_id);
                 print_json(&output);
@@ -587,7 +632,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                     None,
                 )
                 .await?;
-                print_json(&normalize_remote_count(&result, &session_id));
+                print_json(&decode_remote_count(&result, &session_id)?);
                 return Ok(());
             }
             let meta = read_local_sql_session(&root, &space_id, &session_id)?;
@@ -621,7 +666,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             let (root, space_id) =
                 resolve_space_reference(&config, &space_path, "sql session-rows")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::execute(
+                let rows_payload = http::execute(
                     &base,
                     "sql_session.rows",
                     serde_json::json!({
@@ -633,7 +678,9 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                     None,
                 )
                 .await?;
-                let mut output = normalize_remote_rows(&result, offset_value, limit_value)?;
+                let (rows, total_count, offset, limit) =
+                    decode_remote_rows(&rows_payload, "sql_session.rows")?;
+                let mut output = sql_page_output_with_alias(rows, total_count, offset, limit);
                 output["session_id"] = serde_json::json!(session_id);
                 print_json(&output);
                 return Ok(());
@@ -660,4 +707,101 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rows_payload() -> serde_json::Value {
+        serde_json::json!({
+            "rows": [{"_ugoite_id": "task-a"}],
+            "total_count": 3,
+            "offset": 1,
+            "limit": 1,
+        })
+    }
+
+    #[test]
+    fn remote_rows_decode_accepts_the_documented_envelope() {
+        let (rows, total_count, offset, limit) =
+            decode_remote_rows(&rows_payload(), "sql_session.rows").expect("valid envelope");
+        assert_eq!(rows, vec![serde_json::json!({"_ugoite_id": "task-a"})]);
+        assert_eq!(total_count, 3);
+        assert_eq!(offset, 1);
+        assert_eq!(limit, 1);
+    }
+
+    #[test]
+    fn remote_rows_decode_rejects_protocol_drift() {
+        // Missing total_count must not be synthesized from the row count.
+        let missing_total = serde_json::json!({"rows": [], "offset": 0, "limit": 50});
+        // A string offset must not fall back to the requested page.
+        let string_offset = serde_json::json!({
+            "rows": [], "total_count": 0, "offset": "0", "limit": 50,
+        });
+        // A missing rows array must not become an empty page.
+        let missing_rows = serde_json::json!({"total_count": 0, "offset": 0, "limit": 50});
+        // The undocumented camelCase alias is drift, not a synonym.
+        let camel_total = serde_json::json!({
+            "rows": [], "totalCount": 0, "offset": 0, "limit": 50,
+        });
+        // A missing limit must not fall back to the requested page.
+        let missing_limit = serde_json::json!({"rows": [], "total_count": 0, "offset": 0});
+        for payload in [
+            missing_total,
+            string_offset,
+            missing_rows,
+            camel_total,
+            missing_limit,
+        ] {
+            let error = decode_remote_rows(&payload, "sql_session.rows")
+                .expect_err("drift must fail loudly");
+            let projected = crate::output::project_error(&error);
+            assert_eq!(projected.kind, "invalid_input", "{payload}");
+            assert_eq!(projected.exit_code(), 2, "{payload}");
+            assert!(
+                projected.message.contains("malformed remote response"),
+                "{payload}: {}",
+                projected.message
+            );
+        }
+    }
+
+    #[test]
+    fn remote_count_decode_requires_an_integer_count() {
+        let valid = serde_json::json!({"count": 3});
+        let decoded = decode_remote_count(&valid, "session-1").expect("valid count envelope");
+        assert_eq!(decoded["count"], serde_json::json!(3));
+        assert_eq!(decoded["total_count"], serde_json::json!(3));
+        assert_eq!(decoded["session_id"], serde_json::json!("session-1"));
+
+        // A missing count must not be reinterpreted as zero.
+        for payload in [
+            serde_json::json!({}),
+            serde_json::json!({"total_count": 3}),
+            serde_json::json!({"count": "3"}),
+        ] {
+            let error =
+                decode_remote_count(&payload, "session-1").expect_err("drift must fail loudly");
+            let projected = crate::output::project_error(&error);
+            assert_eq!(projected.kind, "invalid_input", "{payload}");
+            assert_eq!(projected.exit_code(), 2, "{payload}");
+        }
+    }
+
+    #[test]
+    fn session_state_context_mentions_id_and_role_without_paths() {
+        let message = session_state_context(
+            "019f1234-5678-7abc-8def-0123456789ab",
+            "create",
+            "state directory",
+        );
+        assert!(message.contains("019f1234-5678-7abc-8def-0123456789ab"));
+        assert!(message.contains("state directory"));
+        assert!(
+            !message.contains('/'),
+            "diagnostics must not embed absolute session-dir paths: {message}"
+        );
+    }
 }

@@ -18,7 +18,7 @@ pub struct SearchCmd {
 pub enum SearchSubCmd {
     /// Keyword search
     #[command(
-        long_about = "Run keyword search.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or a bare immutable `SPACE_UID`.\n\nExamples:\n  # Core mode\n  ugoite search keyword /root/spaces/my-space invoice\n\n  # Backend mode (immutable Space UID)\n  ugoite search keyword 019f1234-5678-7abc-8def-0123456789ab invoice"
+        long_about = "Run keyword search. Attachment text is searchable only after `index run` has rebuilt the derived index.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or a bare immutable `SPACE_UID`.\n\nExamples:\n  # Core mode\n  ugoite search keyword /root/spaces/my-space invoice\n\n  # Backend mode (immutable Space UID)\n  ugoite search keyword 019f1234-5678-7abc-8def-0123456789ab invoice"
     )]
     Keyword {
         #[arg(

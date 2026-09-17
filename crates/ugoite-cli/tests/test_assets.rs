@@ -1142,11 +1142,24 @@ fn serve_stub(listener: TcpListener, backend: Arc<StubBackend>, expected: usize)
                     serde_json::to_vec(&backend.refs.lock().unwrap().clone()).unwrap(),
                 )
             } else if head.starts_with(&format!("GET /spaces/{uid}/assets/")) {
-                (
-                    "200 OK",
-                    "application/octet-stream",
-                    backend.asset_bytes.clone(),
-                )
+                // Fail-closed `asset.read` context gate mirroring the server:
+                // both exact portable-protocol names must be present, so a
+                // renamed or dropped CLI parameter gets 403 instead of bytes.
+                let request_line = head.lines().next().unwrap_or("");
+                if asset_read_context(request_line).is_none() {
+                    (
+                        "403 Forbidden",
+                        "application/json",
+                        br#"{"detail":"asset reads require a containing Form and Entry context"}"#
+                            .to_vec(),
+                    )
+                } else {
+                    (
+                        "200 OK",
+                        "application/octet-stream",
+                        backend.asset_bytes.clone(),
+                    )
+                }
             } else if head.starts_with(&format!("GET /spaces/{uid}/search")) {
                 (
                     "200 OK",
@@ -1171,6 +1184,53 @@ fn serve_stub(listener: TcpListener, backend: Arc<StubBackend>, expected: usize)
         stream.write_all(response.as_bytes()).unwrap();
         stream.write_all(&body).unwrap();
     }
+}
+
+/// Required `asset.read` query context with the exact portable-protocol
+/// names (`form`, `entry_id`) and percent-decoded values. Returns `None`
+/// when either parameter is missing, empty, or renamed, so the stub fails
+/// closed exactly where the server does.
+fn asset_read_context(request_line: &str) -> Option<(String, String)> {
+    let target = request_line.split_whitespace().nth(1)?;
+    let query = target.split_once('?')?.1;
+    let mut form = None;
+    let mut entry_id = None;
+    for pair in query.split('&') {
+        let (name, value) = pair.split_once('=')?;
+        let value = percent_decode(value)?;
+        match name {
+            "form" => form = Some(value),
+            "entry_id" => entry_id = Some(value),
+            _ => {}
+        }
+    }
+    let form = form.filter(|value| !value.is_empty())?;
+    let entry_id = entry_id.filter(|value| !value.is_empty())?;
+    Some((form, entry_id))
+}
+
+fn percent_decode(raw: &str) -> Option<String> {
+    let bytes = raw.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'%' if index + 3 <= bytes.len() => {
+                let hex = std::str::from_utf8(&bytes[index + 1..index + 3]).ok()?;
+                decoded.push(u8::from_str_radix(hex, 16).ok()?);
+                index += 3;
+            }
+            b'+' => {
+                decoded.push(b' ');
+                index += 1;
+            }
+            byte => {
+                decoded.push(byte);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8(decoded).ok()
 }
 
 fn stub_asset(asset_id: &str, name: &str, size: u64) -> serde_json::Value {
@@ -1370,6 +1430,77 @@ fn test_asset_attach_create_reads_name_back_remote() {
     );
     assert!(seen[3].0.contains("form=Doc"), "{}", seen[3].0);
     assert!(seen[3].0.contains("entry_id=doc-1"), "{}", seen[3].0);
+    // Exact names and encoded values: a renamed or dropped parameter must
+    // fail this assertion, not just the substring checks above.
+    let request_line = seen[3].0.lines().next().unwrap_or("");
+    let (form, entry_id) =
+        asset_read_context(request_line).expect("asset.read carries form and entry_id");
+    assert_eq!(form, "Doc", "{request_line}");
+    assert_eq!(entry_id, "doc-1", "{request_line}");
+}
+
+/// The stub gate itself fails closed: every partial or renamed `asset.read`
+/// query combination gets the same 403 the server returns, while the exact
+/// documented query gets bytes.
+#[test]
+fn stub_asset_read_rejects_missing_or_renamed_context_query() {
+    use std::io::{Read, Write};
+    let setup = start_stub(
+        stub_asset("asset-1", "a.txt", 5),
+        b"hello".to_vec(),
+        vec![],
+        serde_json::json!([]),
+    );
+    let addr = setup.listener.local_addr().expect("stub addr");
+    let uid = setup.uid.clone();
+    let cases = [
+        (format!("/spaces/{uid}/assets/asset-1"), 403),
+        (format!("/spaces/{uid}/assets/asset-1?entry_id=doc-1"), 403),
+        (format!("/spaces/{uid}/assets/asset-1?form=Doc"), 403),
+        (
+            format!("/spaces/{uid}/assets/asset-1?Form=Doc&entry_id=doc-1"),
+            403,
+        ),
+        (
+            format!("/spaces/{uid}/assets/asset-1?form=Doc&entryId=doc-1"),
+            403,
+        ),
+        (
+            format!("/spaces/{uid}/assets/asset-1?form=&entry_id=doc-1"),
+            403,
+        ),
+        (
+            format!("/spaces/{uid}/assets/asset-1?form=Doc&entry_id=doc-1"),
+            200,
+        ),
+    ];
+    let harness = spawn_stub(setup, cases.len());
+    for (target, status) in &cases {
+        let mut stream = std::net::TcpStream::connect(addr).expect("connect stub");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let request = format!("GET {target} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
+        stream
+            .write_all(request.as_bytes())
+            .expect("write stub request");
+        let mut response = String::new();
+        stream
+            .read_to_string(&mut response)
+            .expect("read stub response");
+        let status_line = response.lines().next().unwrap_or("").to_string();
+        assert!(
+            status_line.starts_with(&format!("HTTP/1.1 {status} ")),
+            "{target}: {status_line}"
+        );
+        if *status == 403 {
+            assert!(
+                response.contains("asset reads require a containing Form and Entry context"),
+                "{target}: {response}"
+            );
+        }
+    }
+    harness.handle.join().unwrap();
 }
 
 /// Remote full-replacement update resupplies both attachment references: the

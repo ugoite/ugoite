@@ -598,3 +598,191 @@ fn sql_saved_execute_remote_reuses_saved_sql_and_session_ops() {
     assert!(second.contains("/sql-sessions "), "{second}");
     assert!(third.contains("/rows?"), "{third}");
 }
+
+fn assert_malformed_remote_response(output: &Output, what: &str) {
+    assert!(
+        !output.status.success(),
+        "{what} must fail loudly: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "{what} must not print partial success JSON to stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("malformed remote response"),
+        "{what} must use the remote-response error path: {stderr}"
+    );
+}
+
+#[test]
+fn sql_session_rows_remote_rejects_missing_total_count() {
+    let space_id = "019f1234-5678-7abc-8def-0123456789ab";
+    let session_id = "019f1234-5678-7abc-8def-0123456789ac";
+    let (base_url, _rx, handle) = spawn_stub_server(
+        |_| {
+            (
+                200,
+                "{\"rows\":[{\"_ugoite_id\":\"task-a\"}],\"offset\":1,\"limit\":1}".to_string(),
+            )
+        },
+        1,
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("cli-config.json");
+    use_backend_mode(&config_path, &base_url);
+
+    let output = run_cli(
+        &config_path,
+        &[
+            "sql",
+            "session-rows",
+            space_id,
+            session_id,
+            "--offset",
+            "1",
+            "--limit",
+            "1",
+        ],
+    );
+    handle.join().unwrap();
+    assert_malformed_remote_response(&output, "missing total_count");
+}
+
+#[test]
+fn sql_session_rows_remote_rejects_string_offset() {
+    let space_id = "019f1234-5678-7abc-8def-0123456789ab";
+    let session_id = "019f1234-5678-7abc-8def-0123456789ac";
+    let (base_url, _rx, handle) = spawn_stub_server(
+        |_| {
+            (
+                200,
+                "{\"rows\":[],\"total_count\":0,\"offset\":\"0\",\"limit\":50}".to_string(),
+            )
+        },
+        1,
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("cli-config.json");
+    use_backend_mode(&config_path, &base_url);
+
+    let output = run_cli(&config_path, &["sql", "session-rows", space_id, session_id]);
+    handle.join().unwrap();
+    assert_malformed_remote_response(&output, "string offset");
+}
+
+#[test]
+fn sql_session_count_remote_rejects_missing_count() {
+    let space_id = "019f1234-5678-7abc-8def-0123456789ab";
+    let session_id = "019f1234-5678-7abc-8def-0123456789ac";
+    let (base_url, _rx, handle) =
+        spawn_stub_server(|_| (200, "{\"total_count\":3}".to_string()), 1);
+
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("cli-config.json");
+    use_backend_mode(&config_path, &base_url);
+
+    let output = run_cli(
+        &config_path,
+        &["sql", "session-count", space_id, session_id],
+    );
+    handle.join().unwrap();
+    assert_malformed_remote_response(&output, "missing count");
+}
+
+/// A server error envelope keeps the server-error path: the server code is
+/// surfaced, never reinterpreted as shape drift.
+#[test]
+fn sql_session_count_remote_server_error_keeps_server_error_path() {
+    let space_id = "019f1234-5678-7abc-8def-0123456789ab";
+    let session_id = "019f1234-5678-7abc-8def-0123456789ac";
+    let (base_url, _rx, handle) = spawn_stub_server(
+        |_| {
+            (
+                410,
+                "{\"code\":\"SQL_SESSION_EXPIRED\",\"message\":\"SQL session expired\"}"
+                    .to_string(),
+            )
+        },
+        1,
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("cli-config.json");
+    use_backend_mode(&config_path, &base_url);
+
+    let output = run_cli(
+        &config_path,
+        &["sql", "session-count", space_id, session_id],
+    );
+    handle.join().unwrap();
+    assert!(
+        !output.status.success(),
+        "server error must fail: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "server error must leave stdout empty: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("SQL_SESSION_EXPIRED"),
+        "server code must be surfaced: {stderr}"
+    );
+    assert!(
+        !stderr.contains("malformed remote response"),
+        "server errors must not be reinterpreted as shape drift: {stderr}"
+    );
+}
+
+/// SQL session state I/O failures mention the logical session ID and the OS
+/// cause, never the absolute configured session directory.
+#[test]
+fn sql_session_create_fs_failure_redacts_absolute_session_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.json");
+    let (space_path, relation) = setup_sql_space(&config_path, &root, "sql-session-redact");
+    // Block session state creation with a regular file where the CLI
+    // session directory must live: the OS cause fires without chmod games.
+    std::fs::write(
+        dir.path().join(".ugoite-cli-sql-sessions"),
+        b"not a directory",
+    )
+    .expect("block session dir");
+    let sql = format!("SELECT * FROM \"{relation}\" ORDER BY _ugoite_id");
+
+    let output = run_cli(
+        &config_path,
+        &["sql", "session-create", &space_path, "--sql", &sql],
+    );
+    assert!(
+        !output.status.success(),
+        "blocked session state must fail: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "machine-readable stdout must stay clean: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains(&root),
+        "stderr must not print the absolute session directory: {stderr}"
+    );
+    assert!(
+        stderr.contains("SQL session"),
+        "stderr keeps the logical session context: {stderr}"
+    );
+    assert!(
+        stderr.contains("os error"),
+        "stderr keeps the OS root cause: {stderr}"
+    );
+}
