@@ -51,7 +51,7 @@ describe("entry revision review route", () => {
       content: "# Current title\n\n## Body\nCurrent",
       revision_id: "rev-current",
       created_at: "2026-01-01T00:00:00Z",
-      updated_at: "2026-01-02T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
     });
     vi.mocked(entryApi.getRevision).mockResolvedValue({
       revision_id: "rev-old",
@@ -102,21 +102,42 @@ describe("entry revision review route", () => {
     expect(screen.queryByText("Selected historical revision"))
       .not.toBeInTheDocument();
     expect(screen.queryByText("Current title")).not.toBeInTheDocument();
-    expect(screen.queryByText(/rev-old/)).toBeNull();
+    // Raw revision ids stay out of primary content; the advanced technical
+    // disclosure owns them.
+    const main = container.querySelector(".settingsMain")!;
+    const details = main.querySelector("details")!;
+    expect(main.textContent).toContain("rev-old");
+    expect(details.textContent).toContain("rev-old");
+    expect(
+      main.textContent?.replace(details.textContent ?? "", ""),
+    ).not.toContain("rev-old");
 
     // Destructive-restore warning stays visible as an alert.
     expect(await screen.findByText(/Restore appends a new current revision/))
       .toBeInTheDocument();
 
-    // Primary action is restore only.
-    const buttons = container.querySelectorAll('button[type="button"]');
-    expect(buttons).toHaveLength(1);
+    // Primary action is restore only (plus copy helpers in details).
     const restore = await screen.findByRole("button", {
       name: "Restore this revision",
     });
     expect(restore).toHaveTextContent("Restore");
 
     fireEvent.click(restore);
+
+    // PR4: restore runs behind a confirmation dialog stating append-only
+    // semantics; nothing is sent until Confirm restore is activated.
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(
+      screen.getByText(
+        /Restore creates a new revision from this version/,
+      ),
+    ).toBeInTheDocument();
+    expect(entryApi.restore).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm restore" }),
+    );
 
     expect(entryApi.restore).toHaveBeenCalledWith(
       "default",
@@ -126,6 +147,28 @@ describe("entry revision review route", () => {
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith("/spaces/default/entries/entry-1")
     );
+  });
+
+  it("PR4: cancelling the restore dialog sends nothing and keeps the review", async () => {
+    render(() => <SpaceEntryRevisionRoute />);
+
+    const restore = await screen.findByRole("button", {
+      name: "Restore this revision",
+    });
+    fireEvent.click(restore);
+    await screen.findByRole("dialog");
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    );
+    expect(entryApi.restore).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    // The review stays mounted with the restore action available.
+    expect(
+      screen.getByRole("button", { name: "Restore this revision" }),
+    ).toBeInTheDocument();
   });
 
   it("REQ-UX-NAV-001: exposes exactly one back control to history", async () => {

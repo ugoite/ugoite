@@ -1,4 +1,4 @@
-import { A, useBeforeLeave } from "@solidjs/router";
+import { useBeforeLeave } from "@solidjs/router";
 import {
   createEffect,
   createMemo,
@@ -11,6 +11,7 @@ import type { Accessor } from "solid-js";
 
 import { AssetField } from "~/components/AssetField";
 import { ActionIconBar } from "~/components/ActionIconBar";
+import { BackLink } from "~/components/BackLink";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
 import {
   createEntryFieldInputId,
@@ -471,6 +472,28 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   const [lastSavedContent, setLastSavedContent] = createSignal("");
   const [isDirty, setIsDirty] = createSignal(false);
   const [isSaving, setIsSaving] = createSignal(false);
+  // Transient save confirmation for the detail view (PR4): the permanent
+  // saved chip is gone; success surfaces once as a toast announcement and
+  // then clears. The create flow keeps its inline save area instead.
+  const [saveNotice, setSaveNotice] = createSignal<string | null>(null);
+  let saveNoticeTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearSaveNotice = () => {
+    if (saveNoticeTimer) {
+      clearTimeout(saveNoticeTimer);
+      saveNoticeTimer = undefined;
+    }
+    setSaveNotice(null);
+  };
+  const flashSaveNotice = (message: string) => {
+    clearSaveNotice();
+    setSaveNotice(message);
+    if (typeof window !== "undefined") {
+      saveNoticeTimer = setTimeout(() => {
+        saveNoticeTimer = undefined;
+        setSaveNotice(null);
+      }, 4000);
+    }
+  };
   const [conflictMessage, setConflictMessage] = createSignal<string | null>(
     null,
   );
@@ -587,6 +610,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   const isCreateMode = createMemo(() =>
     !createdEntry() && Boolean(props.createForm?.())
   );
+  // Save is strong only when there is dirty work and nothing blocks it;
+  // a clean editor shows a weak disabled tool instead of a saved chip.
+  const saveReady = () =>
+    isDirty() && !isSaving() && compatibilityDiagnostics().length === 0;
   const isAuthoringSession = createMemo(() =>
     !draftSessionFinished() &&
     (Boolean(props.createForm?.()) || Boolean(createdEntry()))
@@ -640,6 +667,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   });
 
   onCleanup(() => {
+    clearSaveNotice();
     persistCreateDraft();
     for (const state of assetFieldStates.values()) state.dispose();
   });
@@ -870,6 +898,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setConflictMessage(null);
     setValidationError(null);
     setInvalidFields([]);
+    clearSaveNotice();
     persistCreateDraft();
 
     const formDef = currentForm() ?? props.createForm?.();
@@ -926,6 +955,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setInvalidFields([]);
     setCompatibilityDiagnostics([]);
     setPendingCanonicalDraft(null);
+    clearSaveNotice();
     persistCreateDraft();
     trackCompat(
       parseSourceToDraftViaWasm(content, fallbackTitle).then(
@@ -1125,6 +1155,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     // loss-producing compatibility conversion is an explicit exception.
     // Lock before async validation so rapid saves still yield one revision.
     setIsSaving(true);
+    clearSaveNotice();
     // Settle pending source<->draft reconciliations first so a rapid
     // source-type + save can never persist TS-only semantics.
     await settleCompat();
@@ -1252,6 +1283,11 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       const unchanged = JSON.stringify(currentSnapshot()) ===
         JSON.stringify(requestSnapshot);
       setIsDirty(!unchanged);
+      if (!context.create && unchanged) {
+        // Transient confirmation only: the detail view has no permanent
+        // saved chip (PR4). The create flow keeps its inline save area.
+        flashSaveNotice(t("entryDetail.saved"));
+      }
       if (!unchanged && context.create) {
         // Bind the durable identity without replacing the active draft. The
         // next save is an optimistic update against this revision.
@@ -1275,16 +1311,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const handleRefresh = async () => {
-    /* v8 ignore start */
-    if (isDirty() && !confirm(t("entryDetail.confirmRefresh"))) return;
-    /* v8 ignore stop */
-    setLastLoadedEntryId(null);
-    setLastLoadedResourceRevisionId(null);
-    setAssetEditorGeneration((generation) => generation + 1);
-    await refetchEntry();
   };
 
   const handleDelete = async () => {
@@ -1473,12 +1499,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           <>
             <header class="ui-entry-header">
               <div class="min-w-0">
-                <A
+                <BackLink
                   href={formWorkspaceHref()}
-                  class="text-sm ui-link"
-                >
-                  {t("entryDetail.back")}
-                </A>
+                  label={t("entryDetail.back")}
+                />
                 <Show when={isCreateMode()}>
                   <h2 class="ui-page-subtitle mt-2">
                     {t("createDialog.entry.heading")}
@@ -1515,59 +1539,72 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                   </Show>
                 </div>
               </div>
-              <div class="ui-entry-save-area">
-                {/* Inline refetch spinner: entry fields stay visible. */}
-                <Show when={entryLoading()}>
-                  <LocalBusyIndicator
-                    size="sm"
-                    label={t("entryDetail.loading")}
-                  />
-                </Show>
-                <span
-                  class="text-sm ui-save-state"
-                  role="status"
-                  aria-live="polite"
-                  classList={{
-                    "ui-warning": isDirty() && !isSaving(),
-                    "ui-muted": !isDirty() || isSaving(),
-                  }}
-                >
-                  {isSaving()
-                    ? t("entryDetail.saving")
-                    : isDirty()
-                    ? t("entryDetail.unsaved")
-                    : t("entryDetail.saved")}
-                </span>
-                <button
-                  type="button"
-                  class="ui-button ui-button-primary"
-                  onClick={() => void handleSave()}
-                  disabled={!isDirty() || isSaving() ||
-                    compatibilityDiagnostics().length > 0}
-                  aria-busy={isSaving() || undefined}
-                  aria-label={t("entryDetail.save")}
-                >
-                  <Show when={isSaving()}>
-                    <ButtonSpinner />
+              <Show when={isCreateMode()}>
+                <div class="ui-entry-save-area">
+                  {/* Inline refetch spinner: entry fields stay visible. */}
+                  <Show when={entryLoading()}>
+                    <LocalBusyIndicator
+                      size="sm"
+                      label={t("entryDetail.loading")}
+                    />
                   </Show>
-                  {t("entryDetail.save")}
-                </button>
-              </div>
+                  <span
+                    class="text-sm ui-save-state"
+                    role="status"
+                    aria-live="polite"
+                    classList={{
+                      "ui-warning": isDirty() && !isSaving(),
+                      "ui-muted": !isDirty() || isSaving(),
+                    }}
+                  >
+                    {isSaving()
+                      ? t("entryDetail.saving")
+                      : isDirty()
+                      ? t("entryDetail.unsaved")
+                      : t("entryDetail.saved")}
+                  </span>
+                  <button
+                    type="button"
+                    class="ui-button ui-button-primary"
+                    onClick={() => void handleSave()}
+                    disabled={!isDirty() || isSaving() ||
+                      compatibilityDiagnostics().length > 0}
+                    aria-busy={isSaving() || undefined}
+                    aria-label={t("entryDetail.save")}
+                  >
+                    <Show when={isSaving()}>
+                      <ButtonSpinner />
+                    </Show>
+                    {t("entryDetail.save")}
+                  </button>
+                </div>
+              </Show>
             </header>
 
             <Show when={!isCreateMode()}>
+              {/*
+                Single one-line action bar (PR4): save rides with
+                history/info/delete instead of a separate header save area.
+                Save is filled/strong only when dirty and unblocked, weak and
+                disabled when clean. The permanent saved chip is gone; success
+                announces once through the transient toast below.
+              */}
               <ActionIconBar
                 label={t("entryDetail.actionBarLabel")}
                 class="ui-entry-action-bar"
                 items={[
                   {
-                    key: "refresh",
-                    label: t("entryDetail.action.refreshShort"),
-                    accessibleName: t("entryDetail.refresh"),
-                    icon: "refresh",
-                    class: "ui-entry-tool",
+                    key: "save",
+                    label: t("entryDetail.save"),
+                    accessibleName: t("entryDetail.save"),
+                    icon: "save",
+                    class: saveReady()
+                      ? "ui-entry-tool ui-entry-tool-primary"
+                      : "ui-entry-tool",
+                    disabled: !saveReady(),
+                    busy: isSaving(),
                     onClick: () => {
-                      void handleRefresh();
+                      void handleSave();
                     },
                   },
                   {
@@ -1601,6 +1638,11 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                   },
                 ]}
               />
+              <Show when={isSaving() || saveNotice()}>
+                <p class="ui-save-toast" role="status">
+                  {isSaving() ? t("entryDetail.saving") : saveNotice()}
+                </p>
+              </Show>
             </Show>
             <Show when={isCreateMode()}>
               <ActionIconBar

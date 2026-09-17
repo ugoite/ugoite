@@ -1,14 +1,27 @@
 import { useNavigate, useParams } from "@solidjs/router";
-import { createMemo, createSignal, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  Show,
+} from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { createEntryFieldInputId, EntryFields } from "~/components/EntryFields";
 import { formatDateTimeLabel } from "~/lib/date-format";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { parseEntryMarkdownPresentation } from "~/lib/entry-input";
+import {
+  actorDisplayNameLookup,
+  resolveActorDisplayName,
+  revisionActorId,
+  revisionOperationLabel,
+} from "~/lib/entry-history";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { t } from "~/lib/i18n";
-import { entryApi } from "~/lib/ugoite-client";
+import { entryApi, spaceApi } from "~/lib/ugoite-client";
+import type { SpaceMember } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { spaceRoute } from "~/lib/space-shell-route";
 
@@ -40,8 +53,66 @@ export default function SpaceEntryRevisionRoute() {
   const [revision] = createResource(() =>
     entryApi.getRevision(spaceId(), entryId(), revisionId())
   );
+  // Best-effort member directory for the actor display name (same view
+  // model as the history rows). Raw actor identity stays in the advanced
+  // technical disclosure below, never in primary content.
+  const [members] = createResource(
+    () => spaceId(),
+    async (id): Promise<SpaceMember[]> => {
+      try {
+        return await spaceApi.listMembers(id);
+      } catch {
+        return [];
+      }
+    },
+    { initialValue: [] as SpaceMember[] },
+  );
+  const actorLookup = createMemo(() =>
+    actorDisplayNameLookup(
+      (members() ?? []).map((member) => ({
+        principal_id: member.principal.principal_id,
+        display_name: member.principal.display_name,
+      })),
+    )
+  );
+  const actorName = createMemo(() =>
+    revision()
+      ? resolveActorDisplayName(revision()!, actorLookup())
+      : t("entryHistory.unknownActor")
+  );
+  const actorId = createMemo(() =>
+    revision() ? revisionActorId(revision()!) : null
+  );
   const [restoreError, setRestoreError] = createSignal<string | null>(null);
   const [isRestoring, setIsRestoring] = createSignal(false);
+  // Restore runs behind an explicit confirmation dialog (PR4): the dialog
+  // states the append-only semantics before the mutation can run.
+  const [restoreConfirmOpen, setRestoreConfirmOpen] = createSignal(false);
+  let confirmButtonRef: HTMLButtonElement | undefined;
+  let restoreButtonRef: HTMLButtonElement | undefined;
+
+  createEffect(() => {
+    if (restoreConfirmOpen()) {
+      // Move focus into the dialog when it opens (POL-UI-007 orderly path).
+      queueMicrotask(() => confirmButtonRef?.focus());
+    }
+  });
+  onCleanup(() => {
+    confirmButtonRef = undefined;
+    restoreButtonRef = undefined;
+  });
+
+  const openRestoreConfirm = () => {
+    if (!revision() || isRestoring()) return;
+    setRestoreError(null);
+    setRestoreConfirmOpen(true);
+  };
+  const closeRestoreConfirm = () => {
+    if (isRestoring()) return;
+    setRestoreConfirmOpen(false);
+    // Return focus to the invoking control on dismiss.
+    queueMicrotask(() => restoreButtonRef?.focus());
+  };
   const reviewError = createMemo(() =>
     revision.error
       ? formatUserFacingError(
@@ -72,6 +143,14 @@ export default function SpaceEntryRevisionRoute() {
     }))
   );
 
+  const copyText = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      // Clipboard is a progressive enhancement; the value stays visible.
+    }
+  };
+
   const handleRestore = async () => {
     if (!revision() || isRestoring()) return;
     setIsRestoring(true);
@@ -80,6 +159,7 @@ export default function SpaceEntryRevisionRoute() {
       // Restore is an append-only mutation. The response carries the newly
       // current revision; navigating to the Entry route reopens that state.
       await entryApi.restore(spaceId(), entryId(), revisionId());
+      setRestoreConfirmOpen(false);
       navigate(entryPath());
     } catch (error) {
       setRestoreError(
@@ -94,13 +174,18 @@ export default function SpaceEntryRevisionRoute() {
     }
   };
 
+  const handleDialogKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeRestoreConfirm();
+    }
+  };
+
   return (
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow">
-            {t("entryRevision.eyebrow")} · {entryId()}
-          </div>
+          <div class="eyebrow">{t("entryRevision.eyebrow")}</div>
           <h1>{t("entryRevision.title")}</h1>
           <Show when={revision()}>
             {(selected) => (
@@ -128,20 +213,28 @@ export default function SpaceEntryRevisionRoute() {
           <p class="ui-alert ui-alert-warning">
             {t("entryRevision.restoreNotice")}
           </p>
+          <p class="text-sm ui-muted">
+            {t("entryRevision.operation")}:{" "}
+            {revisionOperationLabel(revision()!)}
+            {" · "}
+            {t("entryRevision.actor")}: {actorName()}
+          </p>
           <EntryFields
             titleValue={revisionTitleValue()}
             fields={revisionFields()}
             getValue={(name) => parsedRevision().fields[name] ?? ""}
             readOnly
+            showFieldTypes
           />
 
           <div class="revision-restore-row">
             <button
+              ref={restoreButtonRef}
               type="button"
               class="btn primary ui-entry-history-restore"
               aria-label={t("entryRevision.restore")}
               aria-busy={isRestoring() || undefined}
-              onClick={() => void handleRestore()}
+              onClick={openRestoreConfirm}
               disabled={isRestoring()}
             >
               <Show when={isRestoring()}>
@@ -153,6 +246,110 @@ export default function SpaceEntryRevisionRoute() {
           <Show when={restoreError()}>
             <p class="ui-alert ui-alert-error">{restoreError()}</p>
           </Show>
+
+          {/*
+            Advanced disclosure only: raw revision and actor identifiers live
+            here (copyable), never in primary rows or headings.
+          */}
+          <details class="revision-technical-details">
+            <summary>{t("entryHistory.debugDetails")}</summary>
+            <dl class="ui-entry-detail-list">
+              <div>
+                <dt>{t("entryHistory.revisionId")}</dt>
+                <dd class="font-mono break-all">
+                  {revision()?.revision_id}
+                  <Show when={revision()?.revision_id}>
+                    {(id) => (
+                      <button
+                        type="button"
+                        class="ui-button ui-button-secondary ui-button-sm ml-2"
+                        aria-label={`${t("common.copy")} ${id()}`}
+                        title={t("common.copy")}
+                        onClick={() => void copyText(id())}
+                      >
+                        {t("common.copy")}
+                      </button>
+                    )}
+                  </Show>
+                </dd>
+              </div>
+              <Show when={actorId()}>
+                {(id) => (
+                  <div>
+                    <dt>{t("entryRevision.actor")}</dt>
+                    <dd class="font-mono break-all">
+                      {id()}
+                      <button
+                        type="button"
+                        class="ui-button ui-button-secondary ui-button-sm ml-2"
+                        aria-label={`${t("common.copy")} ${id()}`}
+                        title={t("common.copy")}
+                        onClick={() => void copyText(id())}
+                      >
+                        {t("common.copy")}
+                      </button>
+                    </dd>
+                  </div>
+                )}
+              </Show>
+            </dl>
+          </details>
+        </div>
+      </Show>
+
+      {/*
+        Restore confirmation dialog (PR4): states the append-only semantics
+        (a new history event is created; existing history is never
+        rewritten) and only then runs the mutation.
+      */}
+      <Show when={restoreConfirmOpen()}>
+        <div
+          class="ui-backdrop"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) closeRestoreConfirm();
+          }}
+        >
+          <div
+            class="ui-dialog ui-restore-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="restore-confirm-title"
+            aria-describedby="restore-confirm-body"
+            onKeyDown={handleDialogKeyDown}
+          >
+            <h2 id="restore-confirm-title" class="ui-dialog-title">
+              {t("entryRevision.restoreConfirmTitle")}
+            </h2>
+            <p id="restore-confirm-body" class="ui-restore-dialog-body">
+              {t("entryRevision.restoreConfirmBody")}
+            </p>
+            <div class="ui-dialog-actions">
+              <button
+                type="button"
+                class="ui-button ui-button-secondary"
+                disabled={isRestoring()}
+                onClick={closeRestoreConfirm}
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                ref={confirmButtonRef}
+                type="button"
+                class="ui-button ui-button-primary"
+                aria-busy={isRestoring() || undefined}
+                disabled={isRestoring()}
+                onClick={() => void handleRestore()}
+              >
+                <Show when={isRestoring()}>
+                  <ButtonSpinner />
+                </Show>
+                {t("entryRevision.restoreConfirm")}
+              </button>
+            </div>
+            <Show when={restoreError()}>
+              <p class="ui-alert ui-alert-error mt-3">{restoreError()}</p>
+            </Show>
+          </div>
         </div>
       </Show>
     </>

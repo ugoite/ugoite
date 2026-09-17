@@ -2235,7 +2235,8 @@ textarea {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: hidden;
   padding: 10px 0;
   border-bottom: 1px solid var(--line);
 }
@@ -2274,6 +2275,38 @@ textarea {
 .ui-entry-tool-danger {
   margin-left: auto;
   color: var(--danger);
+}
+/* PR4: save is filled/strong only when dirty and unblocked; the clean
+ * editor shows the same tool weak and disabled instead of a saved chip. */
+.ui-entry-tool-primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+.ui-entry-tool-primary:hover,
+.ui-entry-tool-primary:focus-visible {
+  background: var(--brand-ink);
+  border-color: var(--brand-ink);
+  color: #fff;
+}
+/* PR4: transient save confirmation. Fixed overlay so it never shifts the
+ * entry layout; the live region carries the announcement. */
+.ui-save-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 90;
+  max-width: min(480px, calc(100vw - 32px));
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--ui-surface-1);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ui-entry-view-controls {
   display: flex;
@@ -2900,8 +2933,11 @@ a.tool {
 }
 
 @media (max-width: 560px) {
+  /* PR4: the entry action bar stays a single row at 390px. Four flexible
+   * columns with ellipsis labels fit without wrapping or scrolling. */
   .actionbar.compact-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
   }
 }
 
@@ -4029,6 +4065,19 @@ a.tool {
 }
 .revision-restore-row .btn {
   min-height: 44px;
+}
+/* PR4: restore confirmation dialog (append-only semantics stated before the
+ * destructive-adjacent action runs) and the advanced technical disclosure
+ * that owns raw revision/actor identifiers. */
+.ui-restore-dialog {
+  width: min(520px, calc(100vw - 32px));
+}
+.ui-restore-dialog-body {
+  margin: 12px 0 20px;
+  font-size: 14px;
+}
+.revision-technical-details {
+  margin-top: 16px;
 }
 
 @media (max-width: 900px) {
