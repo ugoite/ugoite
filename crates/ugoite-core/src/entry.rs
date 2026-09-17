@@ -1423,10 +1423,32 @@ mod tests {
             BTreeMap::from([("Body".to_string(), Value::String("shadow".to_string()))]),
         );
         let error = normalize_and_validate_draft(&form, &draft).expect_err("overlap");
+        // Stable contract: exactly one code and one detail shape. Message
+        // text is not contract.
         assert_eq!(error.code(), ErrorCode::InvalidInput);
+        assert_eq!(error.code().as_str(), "INVALID_INPUT");
         assert_eq!(
-            error.detail().expect("detail")["duplicate_fields"],
-            serde_json::json!(["Body"])
+            error.detail().expect("detail").clone(),
+            serde_json::json!({"duplicate_fields": ["Body"]})
+        );
+
+        // Deterministic order: multiple duplicates sort lexically regardless
+        // of input order.
+        let multi = structured_fields_to_draft(
+            "T",
+            Some("Note"),
+            Vec::new(),
+            BTreeMap::from([("Done".to_string(), Value::Bool(true))]),
+            BTreeMap::from([
+                ("Done".to_string(), Value::Bool(false)),
+                ("Count".to_string(), Value::Number(1.into())),
+            ]),
+        );
+        let error = normalize_and_validate_draft(&form, &multi).expect_err("multi overlap");
+        assert_eq!(error.code().as_str(), "INVALID_INPUT");
+        assert_eq!(
+            error.detail().expect("detail").clone(),
+            serde_json::json!({"duplicate_fields": ["Count", "Done"]})
         );
 
         // An explicit extra shadowing a real field is the same caller bug

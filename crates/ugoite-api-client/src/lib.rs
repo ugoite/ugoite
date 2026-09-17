@@ -2058,15 +2058,17 @@ mod tests {
 
     #[test]
     fn step_up_errors_preserve_stable_codes_in_payload() {
+        // Unknown, expired, consumed, and mismatched challenges all fail
+        // closed with one code (403 STEP_UP_INVALID, no 404 branch).
         let error = decode_response(
             "space.create",
             ApiResponse {
-                status: 410,
-                status_text: "Gone".into(),
+                status: 403,
+                status_text: "Forbidden".into(),
                 headers: vec![],
                 body: json!({
-                    "code": "STEP_UP_EXPIRED",
-                    "message": "step-up challenge has expired"
+                    "code": "STEP_UP_INVALID",
+                    "message": "unknown step-up challenge"
                 })
                 .to_string(),
             },
@@ -2075,8 +2077,8 @@ mod tests {
         assert_eq!(
             error.payload.as_deref(),
             Some(&json!({
-                "code": "STEP_UP_EXPIRED",
-                "message": "step-up challenge has expired"
+                "code": "STEP_UP_INVALID",
+                "message": "unknown step-up challenge"
             })),
             "stable step-up codes must survive decode"
         );

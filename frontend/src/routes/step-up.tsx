@@ -26,11 +26,11 @@ const errorMessage = (cause: unknown): string =>
 
 const viewForFailure = (cause: unknown): StepUpView => {
   switch (errorCode(cause)) {
-    case "STEP_UP_EXPIRED":
-      return "expired";
-    case "STEP_UP_NOT_FOUND":
-      return "used";
+    // Unknown, expired, consumed, and mismatched challenges fail closed
+    // with one code (403 STEP_UP_INVALID, no 404 branch). All of them mean
+    // the same thing here: start the CLI mutation again for a fresh request.
     case "STEP_UP_INVALID":
+      return "used";
     case "STEP_UP_NOT_APPROVED":
     case "STEP_UP_ACCOUNT_INACTIVE":
       return "forbidden";

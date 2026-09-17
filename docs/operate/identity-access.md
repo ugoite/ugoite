@@ -61,6 +61,28 @@ credentials have different targets and cannot cross-use. The [CLI
 Reference](../reference/cli.md) explains endpoint modes and points to the
 installed command help for exact options.
 
+## Step-up for remote Space mutations
+
+Device tokens can never carry a recent-Passkey ceremony, so remote Space
+mutations gated on fresh human presence complete a browser step-up instead:
+the CLI starts a short-lived challenge bound to the exact account, credential,
+operation, and Space; the browser approves it after its own fresh Passkey
+ceremony; the CLI retries the identical mutation once with the challenge.
+
+Step-up fails closed without an existence oracle. Unknown, expired, consumed,
+operation-mismatched, and Space-mismatched challenges all return 403
+`STEP_UP_INVALID` (no 404 branch). The bound Space is normalized once, so a
+padded value can never mismatch the stored binding.
+
+Challenges are single-use without a two-phase commit. Authorization is
+evaluated before consumption, so a denied mutation leaves the challenge
+consumable; once an authorized mutation attempt consumes it, the challenge
+stays consumed even if the later write fails. Request a new challenge before
+retrying. The eligible operations are the single canonical set owned by the
+identity layer (`space.create`, `space.patch`, `space.members.invite`,
+`space.members.update_role`, `space.members.revoke`, `pin.create`,
+`pin.delete`).
+
 ## Recovery
 
 ### Account Self-Recovery

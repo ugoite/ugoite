@@ -35,6 +35,12 @@ Failures use stable codes such as `STORAGE_MUTATION_UNAVAILABLE` for unverified
 backends. Validation failures return safe detail without exposing storage
 layout. See [Error handling](../architecture/quality/error-handling.md).
 
+Structured Entry writes reject a key supplied in both `fields` and
+`extra_attributes` (or an extra shadowing a real field name) with exactly
+`{"code": "INVALID_INPUT", "detail": {"duplicate_fields": ["FieldA",
+"FieldB"]}}`: `duplicate_fields` is a lexically sorted string array and
+message text is not contract.
+
 ## Related
 
 - `cargo run -p xtask -- openapi-check` verifies the contract.

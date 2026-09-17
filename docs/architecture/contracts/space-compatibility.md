@@ -50,6 +50,17 @@ identity, current values, and revision history. Negative cases cover unknown,
 future, missing, malformed, and schema-only metadata; unsupported open is
 asserted to leave the authoritative tree unchanged.
 
+## Fixture layout
+
+The expected `space-compat-check` fixture layout is explicit: the fixture
+root (`fixtures/spaces/`) contains canonical Space version directories only
+(`0.1` today). A non-directory entry or a non-canonical directory name is
+invalid test input, not an alternate layout, and the check fails closed
+instead of skipping it. Likewise each version directory holds canonical
+Space bootstrap fixtures only; stray files are not silently treated as
+Spaces. The regression test pins rejection of non-directory and
+non-canonical entries so drift between code and fixtures can never hide.
+
 There is no migration registry, generic migration trait, migration graph,
 downgrade framework, or automatic migration-on-open. If a future incompatible
 Space Version becomes necessary, its explicit conversion design and evidence

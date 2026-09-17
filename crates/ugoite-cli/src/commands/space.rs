@@ -176,7 +176,11 @@ pub enum SpaceSubCmd {
         space_path: String,
         #[arg(long, default_value_t = 0)]
         offset: u64,
-        #[arg(long, default_value_t = 50)]
+        #[arg(
+            long,
+            default_value_t = 50,
+            help = "Maximum audit events to return. Effective range is 1..=500 after normalization: 0 normalizes to 1 and larger values clamp to 500."
+        )]
         limit: u64,
     },
 }
@@ -243,6 +247,20 @@ fn audit_rows_table(rows: &[serde_json::Value]) -> Vec<serde_json::Value> {
         .collect()
 }
 
+/// Single `space create` display-name rule.
+///
+/// An absent name defaults to the requested slug; a provided name is trimmed
+/// via the shared domain normalization and an empty/whitespace-only value
+/// fails before any write. The positional slug stays the stable Space key;
+/// the resolved name only seeds the durable display name on first creation.
+fn resolve_create_display_name(requested_slug: &str, display_name: Option<&str>) -> Result<String> {
+    match display_name {
+        None => Ok(requested_slug.to_string()),
+        Some(name) => ugoite_domain::space::normalize_space_display_name(name)
+            .map_err(|error| anyhow::anyhow!(error.to_string())),
+    }
+}
+
 pub async fn create_space_cmd(
     root_path: Option<&str>,
     space_id: &str,
@@ -259,11 +277,7 @@ pub async fn create_space_cmd_with_name(
 ) -> Result<()> {
     let config = load_config()?;
     let requested_slug = parse_space_path(space_id).1;
-    let resolved_name = display_name
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-        .unwrap_or(&requested_slug)
-        .to_string();
+    let resolved_name = resolve_create_display_name(&requested_slug, display_name)?;
     if let Some(base) = validated_base_url(&config)? {
         // Remote Space creation may require fresh human presence; the
         // step-up handoff (browser approval, one automatic retry) keeps the
@@ -301,12 +315,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 // for all later operations. Never treat the requested slug as
                 // a UID and never fall back to another Space.
                 let requested_slug = parse_space_path(&space_path).1;
-                let resolved_name = name
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|display| !display.is_empty())
-                    .unwrap_or(&requested_slug)
-                    .to_string();
+                let resolved_name = resolve_create_display_name(&requested_slug, name.as_deref())?;
                 let result = step_up::execute_with_step_up(
                     &base,
                     "space.create",
@@ -319,12 +328,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 return Ok(());
             }
             let requested_slug = parse_space_path(&space_path).1;
-            let resolved_name = name
-                .as_deref()
-                .map(str::trim)
-                .filter(|display| !display.is_empty())
-                .unwrap_or(&requested_slug)
-                .to_string();
+            let resolved_name = resolve_create_display_name(&requested_slug, name.as_deref())?;
             let (root, _) = resolve_space_reference(&config, &space_path, "space create")?;
             let service = UgoiteService::new_without_background_refresh(&root)?;
             let outcome = service
@@ -547,8 +551,12 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             // Open hook heals crash-missing evidence; the list itself is a
             // light read of committed evidence.
             service.open_space(&space_id).await?;
+            // Clamp before `usize` conversion: effective range 1..=500, so
+            // even the largest CLI integer cannot overflow before the cap.
+            let (audit_limit, audit_offset) =
+                ugoite_iceberg::audit::normalize_audit_page(limit, offset);
             let result = service
-                .list_space_audit(&space_id, offset as usize, limit as usize)
+                .list_space_audit(&space_id, audit_offset, audit_limit)
                 .await?;
             if fmt != Format::Json {
                 if let Some(rows) = result.get("items").and_then(|value| value.as_array()) {
@@ -570,4 +578,33 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_create_display_name;
+
+    #[test]
+    fn create_display_name_defaults_to_requested_slug() {
+        assert_eq!(
+            resolve_create_display_name("team-notes", None).unwrap(),
+            "team-notes"
+        );
+    }
+
+    #[test]
+    fn create_display_name_trims_provided_name() {
+        assert_eq!(
+            resolve_create_display_name("team-notes", Some("  Team Notes  ")).unwrap(),
+            "Team Notes"
+        );
+    }
+
+    #[test]
+    fn create_display_name_rejects_whitespace_only_before_any_write() {
+        for rejected in ["", "   ", "\t\n "] {
+            resolve_create_display_name("team-notes", Some(rejected))
+                .expect_err("whitespace-only display name must fail before any write");
+        }
+    }
 }

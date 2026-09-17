@@ -19,6 +19,20 @@ const MAX_AUDIT_LIMIT: usize = 500;
 const DEFAULT_AUDIT_RETENTION: usize = 5000;
 const MAX_AUDIT_RETENTION: usize = 50000;
 
+/// Normalize a protocol-supplied audit page before any `usize` conversion.
+///
+/// The effective range after normalization/clamping is 1..=500: `limit`
+/// clamps into range (`0` normalizes to `1`, never a validation error) and
+/// `offset` saturates instead of wrapping, so even the largest protocol
+/// integer cannot overflow before the 500 cap applies.
+pub fn normalize_audit_page(limit: u64, offset: u64) -> (usize, usize) {
+    let limit = limit.clamp(1, MAX_AUDIT_LIMIT as u64);
+    (
+        usize::try_from(limit).unwrap_or(MAX_AUDIT_LIMIT),
+        usize::try_from(offset).unwrap_or(usize::MAX),
+    )
+}
+
 #[derive(Debug, Clone)]
 pub struct AuditListOptions {
     pub offset: usize,
@@ -796,6 +810,10 @@ pub async fn list_audit_events(
         right_ts.cmp(left_ts)
     });
 
+    // Effective range 1..=500 after normalization/clamping: `0` becomes
+    // `1` (never a validation error) and anything above 500 caps at 500.
+    // Protocol adapters must additionally clamp before `usize` conversion
+    // via [`normalize_audit_page`].
     let normalized_limit = options.limit.clamp(1, MAX_AUDIT_LIMIT);
     let normalized_offset = options.offset;
     let total = events.len();
@@ -825,6 +843,34 @@ mod tests {
     use super::*;
     use std::{env, process::Command};
     use ugoite_storage::operator_from_uri;
+
+    #[test]
+    fn audit_page_normalizes_before_usize_conversion() {
+        // Effective range 1..=500: 0 becomes 1, never a validation error.
+        assert_eq!(normalize_audit_page(0, 0), (1, 0));
+        assert_eq!(normalize_audit_page(1, 7), (1, 7));
+        assert_eq!(normalize_audit_page(500, 0), (500, 0));
+        assert_eq!(normalize_audit_page(501, 0), (500, 0));
+        // The largest protocol integer clamps to 500 without overflowing
+        // before the cap applies.
+        assert_eq!(normalize_audit_page(u64::MAX, u64::MAX), (500, usize::MAX));
+    }
+
+    #[tokio::test]
+    async fn audit_list_normalizes_zero_limit_to_one() -> Result<()> {
+        let op = operator_from_uri("memory://audit-page-normalization")?;
+        let listed = list_audit_events(
+            &op,
+            "demo",
+            AuditListOptions {
+                limit: 0,
+                ..AuditListOptions::default()
+            },
+        )
+        .await?;
+        assert_eq!(listed["limit"], 1);
+        Ok(())
+    }
 
     #[tokio::test]
     /// REQ-SEC-008

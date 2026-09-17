@@ -820,10 +820,12 @@ impl std::fmt::Display for StepUpError {
 
 impl std::error::Error for StepUpError {}
 
-/// Operations a browser-approved step-up challenge may satisfy. Mirrors the
-/// server `STEP_UP_ELIGIBLE_OPERATIONS` allow-list; the identity layer owns
-/// this copy so a challenge can never bind an out-of-scope intent even when
-/// the REST boundary is bypassed in tests.
+/// Operations a browser-approved step-up challenge may satisfy.
+///
+/// This is the single authoritative eligible-operation set: the server
+/// imports this constant instead of keeping its own allow-list, so a
+/// challenge can never bind an out-of-scope intent even when the REST
+/// boundary is bypassed in tests, and the two layers cannot drift apart.
 pub const STEP_UP_ELIGIBLE_OPERATIONS: &[&str] = &[
     "space.create",
     "space.patch",
@@ -6215,6 +6217,11 @@ impl NodeIdentityService {
         let challenge_id = Uuid::now_v7();
         let now = Utc::now();
         let expires_at = timestamp(now + Duration::minutes(10));
+        // Normalize once: the stored binding carries the same trimmed value
+        // that validation accepted, so padded input can never mismatch at
+        // consume time. `normalized_space` is `None` exactly when no Space
+        // target is bound (space creation).
+        let bound_space_id = normalized_space.map(str::to_string);
         state.step_up_challenges.insert(
             challenge_id,
             StepUpChallenge {
@@ -6222,7 +6229,7 @@ impl NodeIdentityService {
                 account_id,
                 credential_id,
                 operation: operation.to_string(),
-                space_id: space_id.map(str::to_string),
+                space_id: bound_space_id,
                 status: StepUpStatus::Pending,
                 created_at: timestamp(now),
                 expires_at: expires_at.clone(),

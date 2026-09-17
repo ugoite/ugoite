@@ -103,8 +103,8 @@ describe("/step-up", () => {
     vi.mocked(protocolFetch).mockRejectedValue(
       new UgoiteApiError({
         message: "unknown step-up challenge",
-        code: "STEP_UP_NOT_FOUND",
-        status: 404,
+        code: "STEP_UP_INVALID",
+        status: 403,
       }),
     );
     render(() => <StepUpApprovalRoute />);
@@ -115,12 +115,19 @@ describe("/step-up", () => {
     expect(document.body.textContent).not.toContain("challenge-1");
   });
 
-  it("reports an expired challenge", async () => {
+  it("reports an expired challenge as already-used with retry guidance", async () => {
     vi.mocked(authApi.getSession).mockResolvedValue({ authenticated: true });
-    vi.mocked(protocolFetch).mockResolvedValue({ status: "expired" });
+    vi.mocked(protocolFetch).mockRejectedValue(
+      new UgoiteApiError({
+        message: "step-up challenge has expired",
+        code: "STEP_UP_INVALID",
+        status: 403,
+      }),
+    );
     render(() => <StepUpApprovalRoute />);
 
-    expect(await screen.findByText("has expired", { exact: false }))
-      .toBeInTheDocument();
+    expect(await screen.findByText("start the CLI mutation again", {
+      exact: false,
+    })).toBeInTheDocument();
   });
 });
