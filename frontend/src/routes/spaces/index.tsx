@@ -216,7 +216,6 @@ export default function SpacesIndexRoute() {
       <div class="ui-stack">
         <div class="screenHead">
           <div class="screenTitle">
-            <div class="eyebrow">Ugoite</div>
             <h1>{t("spacesPage.title")}</h1>
           </div>
           <div class="actions">

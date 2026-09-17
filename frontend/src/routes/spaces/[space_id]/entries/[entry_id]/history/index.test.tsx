@@ -7,8 +7,21 @@ import { entryApi } from "~/lib/ugoite-client";
 import SpaceEntryHistoryRoute from "./index";
 
 vi.mock("@solidjs/router", () => ({
-  A: (props: { href: string; class?: string; children: unknown }) => (
-    <a href={props.href} class={props.class}>{props.children}</a>
+  A: (props: {
+    href: string;
+    class?: string;
+    children: unknown;
+    "aria-label"?: string;
+    title?: string;
+  }) => (
+    <a
+      href={props.href}
+      class={props.class}
+      aria-label={props["aria-label"]}
+      title={props.title}
+    >
+      {props.children}
+    </a>
   ),
   useParams: () => ({ space_id: "default", entry_id: "entry-1" }),
 }));
@@ -37,6 +50,24 @@ describe("entry history route", () => {
 
     expect(await screen.findByText(formatDateTimeLabel(timestamp)))
       .toBeInTheDocument();
+  });
+
+  it("REQ-UX-NAV-001: exposes exactly one back control to the entry", async () => {
+    vi.mocked(entryApi.history).mockResolvedValue({ revisions: [] });
+
+    render(() => <SpaceEntryHistoryRoute />);
+
+    const back = await screen.findByRole("link", { name: "Back to Entry" });
+    expect(back).toHaveAttribute(
+      "href",
+      "/spaces/default/entries/entry-1",
+    );
+    expect(back).toHaveAttribute("title", "Back to Entry");
+    expect(screen.getAllByRole("link", { name: "Back to Entry" }))
+      .toHaveLength(1);
+    // The space-history shortcut is gone: the shell owns that destination.
+    expect(screen.queryByRole("link", { name: "View space history" }))
+      .not.toBeInTheDocument();
   });
 
   it("routes revisions through the single History path with no /restore links", async () => {

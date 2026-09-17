@@ -18,8 +18,19 @@ const navigateMock = vi.fn();
 const entryRelation = "form_00000000000000000000000000000001";
 
 vi.mock("@solidjs/router", () => ({
-  A: (props: { href: string; class?: string; children: unknown }) => (
-    <a href={props.href} class={props.class}>
+  A: (props: {
+    href: string;
+    class?: string;
+    children: unknown;
+    "aria-label"?: string;
+    title?: string;
+  }) => (
+    <a
+      href={props.href}
+      class={props.class}
+      aria-label={props["aria-label"]}
+      title={props.title}
+    >
       {props.children}
     </a>
   ),
@@ -94,10 +105,11 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
         "href",
         "/spaces/default/sql",
       );
-    expect(screen.getByRole("link", { name: "Open Search" })).toHaveAttribute(
-      "href",
-      "/spaces/default/search",
-    );
+    // Shell destinations stay in the shell: no route-level shortcuts.
+    expect(screen.queryByRole("link", { name: "Open Search" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Back to Dashboard" }))
+      .not.toBeInTheDocument();
   });
 
   it("REQ-FE-062: saved SQL detail runs variable-free queries through SQL sessions", async () => {

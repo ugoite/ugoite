@@ -1,5 +1,6 @@
-import { A, useNavigate, useParams } from "@solidjs/router";
+import { useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, Show } from "solid-js";
+import { BackLink } from "~/components/BackLink";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { createEntryFieldInputId, EntryFields } from "~/components/EntryFields";
 import { formatDateTimeLabel } from "~/lib/date-format";
@@ -109,9 +110,10 @@ export default function SpaceEntryRevisionRoute() {
             )}
           </Show>
         </div>
-        <A href={`${entryPath()}/history`} class="btn">
-          {t("entryRevision.backToHistory")}
-        </A>
+        <BackLink
+          href={`${entryPath()}/history`}
+          label={t("entryRevision.backToHistory")}
+        />
       </div>
 
       {/* Panel-local spinner: rendered content stays mounted on refetch. */}

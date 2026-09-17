@@ -1,6 +1,7 @@
-import { A, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
 import { createMemo, Show } from "solid-js";
 import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
+import { BackLink } from "~/components/BackLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { formatDateTimeLabel } from "~/lib/date-format";
 import { t } from "~/lib/i18n";
@@ -57,9 +58,7 @@ export default function SpaceEntryInfoRoute() {
           </div>
           <h1>{t("entryInfo.title")}</h1>
         </div>
-        <A href={entryPath()} class="btn">
-          {t("entryInfo.backToEntry")}
-        </A>
+        <BackLink href={entryPath()} label={t("entryInfo.backToEntry")} />
       </div>
       {/* Panel-local spinner: rendered info stays mounted on refetch. */}
       <Show when={entry.loading}>

@@ -257,7 +257,6 @@ export default function SpaceDashboardRoute() {
                 </span>
                 <span>
                   <b>{t("dashboard.noRecent")}</b>
-                  <small>{spaceName()}</small>
                 </span>
               </div>
             }
