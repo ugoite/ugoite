@@ -799,9 +799,12 @@ mod tests {
         );
         assert!(message.contains("019f1234-5678-7abc-8def-0123456789ab"));
         assert!(message.contains("state directory"));
+        // NOTE: do not interpolate `message` here: it carries the logical
+        // session ID by design (spec requires the ID in diagnostics), and
+        // echoing it into a log sink trips cleartext-logging analysis.
         assert!(
             !message.contains('/'),
-            "diagnostics must not embed absolute session-dir paths: {message}"
+            "diagnostics must not embed absolute session-dir paths"
         );
     }
 }
