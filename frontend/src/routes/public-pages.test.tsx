@@ -1,9 +1,10 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@solidjs/testing-library";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
-import AboutRoute from "./about";
+import AboutRedirectRoute, { aboutDocsHref } from "./about";
 import IndexRoute from "./index";
+
 vi.mock("@solidjs/router", () => ({
   A: (props: Record<string, unknown>) => {
     const { children, ...rest } = props;
@@ -20,24 +21,44 @@ vi.mock(
     },
   }),
 );
+
+const docsHref =
+  "https://ugoite.github.io/ugoite/docs/guide/start";
+
 describe("concept public pages", () => {
-  beforeEach(() => setLocale("en"));
-  it("renders About inside the new global shell and localizes it", async () => {
-    render(() => <AboutRoute />);
-    expect(screen.getByRole("heading", { name: "About Ugoite" }))
-      .toBeInTheDocument();
-    expect(screen.getAllByText("Ugoite").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Spaces").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute(
+  const originalLocation = window.location;
+  const replaceMock = vi.fn();
+
+  beforeEach(() => {
+    setLocale("en");
+    replaceMock.mockReset();
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...originalLocation, replace: replaceMock },
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: originalLocation,
+    });
+    setLocale("en");
+    cleanup();
+  });
+
+  it("redirects /about bookmarks to Docs instead of rendering an About page", () => {
+    render(() => <AboutRedirectRoute />);
+
+    expect(aboutDocsHref).toBe(docsHref);
+    expect(replaceMock).toHaveBeenCalledWith(docsHref);
+    expect(screen.getByRole("link", { name: "Docs" })).toHaveAttribute(
       "href",
-      "/login",
+      docsHref,
     );
-    setLocale("ja");
-    await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "Ugoite について" }))
-        .toBeInTheDocument()
-    );
-    expect(screen.getAllByText("スペース").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("heading", { name: "About Ugoite" })).not
+      .toBeInTheDocument();
+    expect(screen.queryByText("Spaces")).not.toBeInTheDocument();
   });
 
   it("REQ-FE-064: public landing pages render the selected locale", async () => {
@@ -49,13 +70,5 @@ describe("concept public pages", () => {
         "ローカルファーストの知識を、検索と自動化のために構造化",
       ),
     ).toBeInTheDocument();
-
-    cleanup();
-    render(() => <AboutRoute />);
-    await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "Ugoite について" }))
-        .toBeInTheDocument()
-    );
-    expect(screen.getByText("ローカルファーストの所有権")).toBeInTheDocument();
   });
 });

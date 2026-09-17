@@ -104,7 +104,7 @@ async function settleUiLoading(page: Page): Promise<void> {
 }
 
 async function collectInternalLinks(page: Page, currentSpaceId: string): Promise<InternalLink[]> {
-	const allowedPrefixes = [`/spaces/${currentSpaceId}`, "/spaces", "/about"];
+	const allowedPrefixes = [`/spaces/${currentSpaceId}`, "/spaces"];
 	const links = await page.evaluate(() => {
 		return Array.from(document.querySelectorAll("a[href]"))
 			.map((anchor) => anchor.getAttribute("href") ?? "")

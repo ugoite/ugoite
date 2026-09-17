@@ -189,10 +189,6 @@ export function SpaceShell(props: SpaceShellProps) {
             <UiIcon name="spaces" />
             <span>{t("nav.spaces")}</span>
           </A>
-          <A class="navItem" href="/about" end>
-            <UiIcon name="about" />
-            <span>{t("nav.about")}</span>
-          </A>
         </div>
       </aside>
     );

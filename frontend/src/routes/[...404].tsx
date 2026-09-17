@@ -1,4 +1,10 @@
 import { GlobalShell } from "~/components/GlobalShell";
+import { getDocsiteHref } from "~/lib/docsite-links";
+
+const docsHref = getDocsiteHref(
+  "/docs/guide/start",
+  "docs/guide/start/index.md",
+);
 
 export default function NotFound() {
   return (
@@ -23,8 +29,8 @@ export default function NotFound() {
           <a href="/" class="btn">
             Back to Home
           </a>
-          <a href="/about" class="btn">
-            About Ugoite
+          <a href={docsHref} class="btn" target="_blank" rel="noopener">
+            Docs
           </a>
         </div>
       </div>

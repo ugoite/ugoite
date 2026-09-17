@@ -291,10 +291,10 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-064#criterion.public-locale
-          - id: public-about-route
+          - id: about-docs-redirect
             adapter: typescript
             path: frontend/src/routes/about.tsx
-            selector: { kind: symbol, name: About }
+            selector: { kind: symbol, name: AboutRedirectRoute }
             claims:
               - kind: satisfies
                 criterion: REQ-FE-064#criterion.public-locale

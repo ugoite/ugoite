@@ -29,13 +29,43 @@ test.describe("Public page stability", () => {
 				}
 			});
 
-			for (const pathname of ["/", "/about", "/does-not-exist"]) {
+			for (const pathname of ["/", "/does-not-exist"]) {
 				await page.goto(pathname);
 				await page.waitForLoadState("networkidle");
 			}
 
 			expect(preferenceRequests).toEqual([]);
 			expect(consoleErrors).toEqual([]);
+		} finally {
+			await context.close();
+		}
+	});
+
+	test("UX-PR5: /about bookmarks redirect to the single Docs authority", async ({
+		browser,
+	}) => {
+		const context = await browser.newContext({
+			baseURL: process.env.FRONTEND_URL ?? "http://localhost:3000",
+			storageState: { cookies: [], origins: [] },
+		});
+		try {
+			const page = await context.newPage();
+			await page.route(
+				"https://ugoite.github.io/ugoite/docs/guide/start",
+				(route) =>
+					route.fulfill({
+						status: 200,
+						contentType: "text/html",
+						body: "<!doctype html><html><body>Docs</body></html>",
+					}),
+			);
+
+			await page.goto("/about");
+			await page.waitForURL(
+				"https://ugoite.github.io/ugoite/docs/guide/start",
+			);
+
+			await expect(page.locator("body")).toContainText("Docs");
 		} finally {
 			await context.close();
 		}
@@ -96,8 +126,11 @@ test.describe("Public page stability", () => {
 				page.getByRole("link", { name: "Back to Home" }),
 			).toHaveAttribute("href", "/");
 			await expect(
-				page.getByRole("link", { name: "About Ugoite" }),
-			).toHaveAttribute("href", "/about");
+				page.getByRole("link", { name: "Docs" }),
+			).toHaveAttribute(
+				"href",
+				"https://ugoite.github.io/ugoite/docs/guide/start",
+			);
 			await expect(page.locator("body")).not.toContainText("Visit solidjs.com");
 			await expect(page.locator("body")).not.toContainText("About Page");
 		} finally {
@@ -132,19 +165,6 @@ test.describe("Public page stability", () => {
 				"ローカルファーストの知識を、検索と自動化のために構造化",
 			);
 			await expect(page.locator("main").getByRole("link", { name: "詳しく見る" })).toBeVisible();
-
-			await page.goto("/about");
-			await page.waitForLoadState("networkidle");
-
-			await expect(page.locator("html")).toHaveAttribute("lang", "ja");
-			await expect(page.locator("html")).toHaveAttribute("data-locale", "ja");
-			await expect(
-				page.locator("main").getByRole("heading", { name: "Ugoite について" }),
-			).toBeVisible();
-			await expect(page.locator("main")).toContainText("柔軟な構造と高速な検索");
-			await expect(
-				page.locator("main").getByRole("link", { name: "ホームに戻る" }),
-			).toHaveAttribute("href", "/");
 		} finally {
 			await context.close();
 		}

@@ -1,7 +1,13 @@
 import { A, useNavigate } from "@solidjs/router";
 import { createSignal, Show } from "solid-js";
 import { authApi } from "~/lib/ugoite-client";
+import { getDocsiteHref } from "~/lib/docsite-links";
 import { t } from "~/lib/i18n";
+
+const docsHref = getDocsiteHref(
+  "/docs/guide/start",
+  "docs/guide/start/index.md",
+);
 
 export function AccountMenu(props: { settingsHref?: string } = {}) {
   const navigate = useNavigate();
@@ -28,7 +34,6 @@ export function AccountMenu(props: { settingsHref?: string } = {}) {
       </button>
       <Show when={open()}>
         <div class="accountMenuPanel" role="menu">
-          <div class="accountMenuTitle">{t("account.title")}</div>
           <A
             href={settingsHref()}
             role="menuitem"
@@ -36,6 +41,15 @@ export function AccountMenu(props: { settingsHref?: string } = {}) {
           >
             {t("account.settings")}
           </A>
+          <a
+            href={docsHref}
+            target="_blank"
+            rel="noopener"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+          >
+            {t("account.docs")}
+          </a>
           <button
             type="button"
             role="menuitem"

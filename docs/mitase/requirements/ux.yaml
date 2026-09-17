@@ -63,6 +63,29 @@ requirements:
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
                 covers: [FEAT-UX-007#binding.back-control-implementation/target.entry-revision-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].test.tsx", test: "REQ-UX-NAV-001: exposes exactly one back control to history" } }
+      - id: shell-ownership-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the global shell owns the single Spaces destination with no parallel About chrome through exact Vitest cases.
+        targets:
+          - id: global-shell-spaces-only
+            adapter: typescript
+            path: frontend/src/components/GlobalShell.test.tsx
+            selector: { kind: test, name: "REQ-UX-NAV-001: keeps global navigation limited to Spaces without an About entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.single-shell-ownership
+                covers: [FEAT-UX-005#binding.responsive-baseline/target.global-shell-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/GlobalShell.test.tsx, test: "REQ-UX-NAV-001: keeps global navigation limited to Spaces without an About entry" } }
+          - id: global-shell-router-spaces-only
+            adapter: typescript
+            path: frontend/src/components/GlobalShell.navigation.test.tsx
+            selector: { kind: test, name: "REQ-UX-NAV-001: exposes only Spaces in global navigation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.single-shell-ownership
+                covers: [FEAT-UX-005#binding.responsive-baseline/target.global-shell-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/GlobalShell.navigation.test.tsx, test: "REQ-UX-NAV-001: exposes only Spaces in global navigation" } }
   - id: REQ-UX-ENTRY-001
     title: Entry Workspace Without Decoration
     description: The Entry workspace uses plain structure for explanation and metadata, reserves card containers for actionable or selectable groupings, renders explicit async states, and derives editor guidance from the active Form without inventing field headings.
@@ -305,6 +328,21 @@ requirements:
         kind: behavior
         statement: Legacy hardcoded Japanese strings outside the shared locale dictionary are absent from shipped surfaces.
         governed_by: [POL-I18N-001#rule.governance]
+    bindings:
+      - id: i18n-legacy-verification
+        role: verification
+        facet: verification
+        responsibility: Verify legacy Japanese strings are absent from the shared dictionary and the touched PR-5 surfaces through exact Vitest cases.
+        targets:
+          - id: legacy-strings-absent
+            adapter: typescript
+            path: frontend/src/spec/ux-pr5-legacy-strings.test.tsx
+            selector: { kind: test, name: "REQ-UX-I18N-001: forbids legacy Japanese strings on touched surfaces" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-I18N-001#criterion.no-legacy-jp-strings
+                covers: [FEAT-UX-004#binding.locale-baseline/target.locale-dictionary]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ux-pr5-legacy-strings.test.tsx, test: "REQ-UX-I18N-001: forbids legacy Japanese strings on touched surfaces" } }
   - id: REQ-UX-RESP-001
     title: Responsive Surfaces With Accessible Names, Focus, and Fixed Tokens
     description: Surfaces stay usable at narrow widths, expose accessible names with a visible orderly focus path, and style surfaces with the fixed palette tokens instead of inline or ad hoc colors.

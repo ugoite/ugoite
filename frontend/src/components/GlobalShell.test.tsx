@@ -1,9 +1,12 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, within } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GlobalShell } from "./GlobalShell";
 import { authApi } from "~/lib/ugoite-client";
 import { setLocale } from "~/lib/i18n";
+
+const docsHref =
+  "https://ugoite.github.io/ugoite/docs/guide/start";
 
 vi.mock("~/lib/ugoite-client", () => ({
   authApi: {
@@ -35,10 +38,36 @@ describe("GlobalShell account menu", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Account" }));
 
-    expect(screen.getByRole("menu")).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Account settings" }))
+    const menu = screen.getByRole("menu");
+    expect(menu).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "Account settings" }))
       .toHaveAttribute("href", "/settings/security");
     expect(authApi.clearSession).not.toHaveBeenCalled();
+  });
+
+  it("offers Settings, Docs, and Logout without a menu heading", () => {
+    render(() => (
+      <GlobalShell title="Spaces">
+        <p>Content</p>
+      </GlobalShell>
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "Account" }));
+
+    const menu = screen.getByRole("menu");
+    const items = within(menu).getAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual([
+      "Account settings",
+      "Docs",
+      "Sign out",
+    ]);
+    expect(
+      within(menu).getByRole("menuitem", { name: "Docs" }),
+    ).toHaveAttribute("href", docsHref);
+    expect(
+      within(menu).getByRole("menuitem", { name: "Docs" }),
+    ).toHaveAttribute("target", "_blank");
+    expect(within(menu).queryByText("Account")).not.toBeInTheDocument();
   });
 
   it("signs out only from the explicit menu action", async () => {
@@ -57,7 +86,7 @@ describe("GlobalShell account menu", () => {
 
   it("shows a sign-in link when used for a public route", () => {
     render(() => (
-      <GlobalShell title="About" authenticated={false}>
+      <GlobalShell title="Spaces" authenticated={false}>
         <p>Content</p>
       </GlobalShell>
     ));
@@ -69,7 +98,7 @@ describe("GlobalShell account menu", () => {
     expect(screen.queryByRole("button", { name: "Account" })).toBeNull();
   });
 
-  it("keeps global navigation limited to Spaces and About", () => {
+  it("REQ-UX-NAV-001: keeps global navigation limited to Spaces without an About entry", () => {
     render(() => (
       <GlobalShell title="Spaces">
         <p>Content</p>
@@ -77,7 +106,8 @@ describe("GlobalShell account menu", () => {
     ));
 
     expect(screen.getAllByRole("link", { name: "Spaces" })).toHaveLength(2);
-    expect(screen.getAllByRole("link", { name: "About" })).toHaveLength(2);
+    expect(screen.queryByRole("link", { name: "About" })).not
+      .toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Home" })).not
       .toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Forms" })).not
