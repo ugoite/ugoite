@@ -1,4 +1,3 @@
-import { loadingState } from "./loading";
 import {
   getFrontendTestApiBase,
   getRuntimeFrontendApiBase,
@@ -44,9 +43,7 @@ export const joinUrl = (base: string, path = "/"): string => {
   return `${b}/${p}`;
 };
 
-export type ApiFetchOptions = RequestInit & {
-  trackLoading?: boolean;
-};
+export type ApiFetchOptions = RequestInit;
 
 const applyServerRequestAuth = async (
   requestInit: RequestInit,
@@ -92,21 +89,9 @@ export const apiFetch = async (path = "/", options?: ApiFetchOptions) => {
     url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
   }
   /* v8 ignore stop */
-  // Global loading is reserved for true global transitions only: app
-  // bootstrap, auth establishment, and space switch. Local fetches must not
-  // drive the global loading bar, so the default is false. Callers that own
-  // a global transition opt in explicitly via `trackLoading: true`.
-  const shouldTrackLoading = options?.trackLoading ?? false;
-  if (shouldTrackLoading) {
-    loadingState.start();
-  }
-  const { trackLoading: _trackLoading, ...requestInit } = options ?? {};
-  const serverAwareRequestInit = await applyServerRequestAuth(requestInit);
-  try {
-    return await fetch(url, serverAwareRequestInit);
-  } finally {
-    if (shouldTrackLoading) {
-      loadingState.stop();
-    }
-  }
+  // Quiet loading: local panel/row refetches never unmount the shell.
+  // Callers render a panel-local `LocalBusyIndicator` while rows stay
+  // visible; route/auth/bootstrap pending UI covers first paint only.
+  const serverAwareRequestInit = await applyServerRequestAuth(options ?? {});
+  return await fetch(url, serverAwareRequestInit);
 };

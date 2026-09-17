@@ -1,3 +1,5 @@
+import { UgoiteApiError } from "../ugoite-client/protocol";
+
 export type BrowserMcpTarget = {
   resource: string;
   endpoint: string;
@@ -156,7 +158,13 @@ export const authorizeBrowserMcp = async (
   options: BrowserMcpAuthorizationOptions,
 ): Promise<BrowserMcpCredential> => {
   if (!options.spaceUid.trim()) {
-    throw new Error("Current Space UID is required for MCP access");
+    throw new UgoiteApiError({
+      kind: "invalid_arguments",
+      code: "INVALID_INPUT",
+      operation: "space.get",
+      message: "Current Space UID is required for MCP access",
+      detail: { kind: "space_identity", field: "space_uid" },
+    });
   }
   const fetcher = options.fetcher ?? fetch;
   const target = await discoverBrowserMcpTarget(fetcher);

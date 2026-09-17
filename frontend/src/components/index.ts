@@ -1,6 +1,8 @@
 // Component exports
 export { ActionIconBar } from "./ActionIconBar";
+export { ButtonSpinner } from "./ButtonSpinner";
 export { IconButton } from "./IconButton";
+export { IconLink } from "./IconLink";
 export { UiIcon } from "./UiIcon";
 export { EntryList } from "./EntryList";
 export { LocalBusyIndicator } from "./LocalBusyIndicator";

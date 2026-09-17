@@ -11,6 +11,7 @@ import type { Accessor } from "solid-js";
 
 import { AssetField } from "~/components/AssetField";
 import { ActionIconBar } from "~/components/ActionIconBar";
+import { ButtonSpinner } from "~/components/ButtonSpinner";
 import {
   createEntryFieldInputId,
   type EntryFieldDescriptor,
@@ -500,13 +501,17 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   const [assetEditorGeneration, setAssetEditorGeneration] = createSignal(0);
   const [showAdvancedSource, setShowAdvancedSource] = createSignal(false);
   // Compat diagnostics block saving, so auto-open the Advanced source
-  // disclosure while they are present: the blocking Markdown stays visible
-  // for review. One-way latch — the user can still close it manually
-  // afterwards without forcing it back open.
+  // disclosure when they appear: the blocking Markdown stays visible for
+  // review. Latch semantics: auto-open on the empty->non-empty transition,
+  // remain open when the diagnostic clears, close only on user close, and
+  // auto-open again on a later diagnostic episode if closed.
+  let hadCompatDiagnostics = false;
   createEffect(() => {
-    if (compatibilityDiagnostics().length > 0) {
+    const has = compatibilityDiagnostics().length > 0;
+    if (has && !hadCompatDiagnostics) {
       setShowAdvancedSource(true);
     }
+    hadCompatDiagnostics = has;
   });
   const [hasUserEdited, setHasUserEdited] = createSignal(false);
   const [createdEntry, setCreatedEntry] = createSignal<
@@ -1539,9 +1544,13 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                   onClick={() => void handleSave()}
                   disabled={!isDirty() || isSaving() ||
                     compatibilityDiagnostics().length > 0}
+                  aria-busy={isSaving() || undefined}
                   aria-label={t("entryDetail.save")}
                 >
-                  {isSaving() ? t("entryDetail.saving") : t("entryDetail.save")}
+                  <Show when={isSaving()}>
+                    <ButtonSpinner />
+                  </Show>
+                  {t("entryDetail.save")}
                 </button>
               </div>
             </header>
@@ -1553,9 +1562,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 items={[
                   {
                     key: "refresh",
-                    // Short visible label; the long i18n string stays as the
-                    // accessible name so no key is deleted or added.
-                    label: "更新",
+                    label: t("entryDetail.action.refreshShort"),
                     accessibleName: t("entryDetail.refresh"),
                     icon: "refresh",
                     class: "ui-entry-tool",
@@ -1565,7 +1572,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                   },
                   {
                     key: "history",
-                    label: "履歴",
+                    label: t("entryDetail.action.historyShort"),
                     accessibleName: t("entryDetail.history"),
                     icon: "history",
                     class: "ui-entry-tool",
@@ -1575,7 +1582,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                   },
                   {
                     key: "info",
-                    label: "情報",
+                    label: t("entryDetail.action.infoShort"),
                     accessibleName: t("entryDetail.info"),
                     icon: "info",
                     class: "ui-entry-tool",
@@ -1585,7 +1592,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                   },
                   {
                     key: "delete",
-                    label: "削除",
+                    label: t("entryDetail.action.deleteShort"),
                     accessibleName: t("entryDetail.delete"),
                     icon: "trash",
                     danger: true,
@@ -1602,7 +1609,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 items={[
                   {
                     key: "back",
-                    label: "戻る",
+                    label: t("entryDetail.action.backShort"),
                     accessibleName: t("entryDetail.back"),
                     icon: "close",
                     class: "ui-entry-tool",

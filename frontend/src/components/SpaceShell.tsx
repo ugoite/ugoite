@@ -2,7 +2,6 @@ import { A, useNavigate } from "@solidjs/router";
 import type { JSX } from "solid-js";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { t, type TranslationKey } from "~/lib/i18n";
-import { loadingState } from "~/lib/loading";
 import { UiIcon, type UiIconName } from "~/components/UiIcon";
 import { AccountMenu } from "~/components/AccountMenu";
 import { KonasePanel } from "~/components/konase/KonasePanel";
@@ -99,14 +98,6 @@ export function SpaceShell(props: SpaceShellProps) {
 
   return (
     <main class="app workspaceApp">
-      {
-        /* Global bar for global transitions only (bootstrap / auth / space
-          switch). Local fetches use panel-local spinners so the shell,
-          sidebar, topbar, bottom nav, and children stay mounted. */
-      }
-      <Show when={loadingState.isLoading()}>
-        <div class="loadingBar" />
-      </Show>
       <div class="desktopSidebar">{sidebar()}</div>
       <Show when={drawerOpen()}>
         <button

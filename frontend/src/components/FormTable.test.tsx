@@ -12,7 +12,11 @@ import {
   encodeSpreadsheetCsvChunked,
   FormTable,
 } from "./FormTable";
-import { encodeSpreadsheetCsv, entryApi } from "~/lib/ugoite-client";
+import {
+  encodeSpreadsheetCsv,
+  entryApi,
+  spreadsheetCsvRequestBytes,
+} from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
 import { setLocale } from "~/lib/i18n";
 
@@ -457,22 +461,80 @@ describe("FormTable", () => {
   it("splits CSV exports into bounded WASM requests without changing bytes", async () => {
     const headers = ["title"];
     const rows = [["a"], ["b"], ["c"]];
-    const singleRowBytes = new TextEncoder().encode(
-      JSON.stringify([headers, rows[0]]),
-    ).length;
+    const singleRowBytes = spreadsheetCsvRequestBytes([headers, rows[0]]);
 
     const chunks = chunkCsvRowsForExport(headers, rows, singleRowBytes);
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.flat()).toEqual(rows);
-    for (const chunk of chunks) {
-      expect(
-        new TextEncoder().encode(JSON.stringify([headers, ...chunk])).length,
-      ).toBeLessThanOrEqual(singleRowBytes);
+    for (const [index, chunk] of chunks.entries()) {
+      const invocation = index === 0 ? [headers, ...chunk] : chunk;
+      expect(spreadsheetCsvRequestBytes(invocation)).toBeLessThanOrEqual(
+        singleRowBytes,
+      );
     }
 
     await expect(
       encodeSpreadsheetCsvChunked(headers, rows, singleRowBytes),
     ).resolves.toBe(await encodeSpreadsheetCsv([headers, ...rows]));
+  });
+
+  it("measures the exact envelope near the ASCII boundary", () => {
+    const headers = ["title"];
+    const fitRows = [[headers, ["a"]].flat()];
+    const fitBytes = spreadsheetCsvRequestBytes([headers, ["a"]]);
+    // Fits at the exact limit: one chunk.
+    expect(chunkCsvRowsForExport(headers, [["a"]], fitBytes)).toEqual([
+      [["a"]],
+    ]);
+    // One more byte forces the next chunk under exact accounting.
+    const oneMore = [["a"], ["b"]];
+    const chunks = chunkCsvRowsForExport(headers, oneMore, fitBytes);
+    expect(chunks.length).toBe(2);
+    expect(chunks.flat()).toEqual(oneMore);
+    for (const [index, chunk] of chunks.entries()) {
+      const invocation = index === 0 ? [headers, ...chunk] : chunk;
+      expect(spreadsheetCsvRequestBytes(invocation)).toBeLessThanOrEqual(
+        fitBytes,
+      );
+    }
+    void fitRows;
+  });
+
+  it("measures the exact envelope near the multibyte JA boundary", () => {
+    const headers = ["タイトル"];
+    const row: readonly string[] = ["日本語"];
+    const fitBytes = spreadsheetCsvRequestBytes([headers, row]);
+    expect(chunkCsvRowsForExport(headers, [row], fitBytes)).toEqual([[row]]);
+
+    const twoRows: readonly (readonly string[])[] = [row, ["日本語追"]];
+    const chunks = chunkCsvRowsForExport(headers, twoRows, fitBytes);
+    expect(chunks.flat()).toEqual(twoRows);
+    expect(chunks.length).toBe(2);
+    for (const [index, chunk] of chunks.entries()) {
+      const invocation = index === 0 ? [headers, ...chunk] : chunk;
+      expect(spreadsheetCsvRequestBytes(invocation)).toBeLessThanOrEqual(
+        fitBytes,
+      );
+    }
+  });
+
+  it("keeps every invocation within 256KiB under exact accounting", async () => {
+    const headers = ["title", "body"];
+    const rows = Array.from(
+      { length: 20 },
+      (_, i) => [`row-${i}`, `value-${i}`] as const,
+    ).map(([a, b]) => [a, b] as unknown as readonly string[]);
+    const chunks = chunkCsvRowsForExport(headers, rows);
+    expect(chunks.flat()).toEqual(rows);
+    for (const [index, chunk] of chunks.entries()) {
+      const invocation = index === 0 ? [headers, ...chunk] : chunk;
+      expect(spreadsheetCsvRequestBytes(invocation)).toBeLessThanOrEqual(
+        256 * 1024,
+      );
+    }
+    await expect(encodeSpreadsheetCsvChunked(headers, rows)).resolves.toBe(
+      await encodeSpreadsheetCsv([headers, ...rows]),
+    );
   });
 
   it("REQ-FE-030: Add Row button opens the canonical entry editor", async () => {

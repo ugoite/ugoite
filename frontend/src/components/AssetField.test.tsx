@@ -532,10 +532,10 @@ describe("AssetField", () => {
     expect(screen.queryByText("first.txt")).toBeNull();
   });
 
-  it("keeps action and filename in busy reading button names", () => {
+  it("keeps the stable accessible name with a spinner while reading", () => {
     const state = createAssetFieldState();
     const encoded = serializeAssetReference(first);
-    render(() => (
+    const { container } = render(() => (
       <AssetField
         fieldId="document"
         fieldName="document"
@@ -552,15 +552,20 @@ describe("AssetField", () => {
     state.setReadingIds(new Set([first.asset_id]));
 
     const preview = screen.getByRole("button", {
-      name: "Reading… Preview first.txt",
+      name: "Preview first.txt",
     });
     const download = screen.getByRole("button", {
-      name: "Reading… Download first.txt",
+      name: "Download first.txt",
     });
     expect(preview).toBeDisabled();
     expect(download).toBeDisabled();
-    expect(preview).toHaveAttribute("title", "Reading… Preview first.txt");
-    expect(download).toHaveAttribute("title", "Reading… Download first.txt");
+    expect(preview).toHaveAttribute("aria-busy", "true");
+    expect(download).toHaveAttribute("aria-busy", "true");
+    expect(preview).toHaveAttribute("title", "Preview first.txt");
+    expect(download).toHaveAttribute("title", "Download first.txt");
+    expect(container.querySelectorAll(".btnSpinner").length).toBeGreaterThan(
+      0,
+    );
   });
 
   it("keeps native media controls in the preview dialog tab order", async () => {

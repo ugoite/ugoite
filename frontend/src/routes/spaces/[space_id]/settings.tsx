@@ -236,10 +236,7 @@ export default function SpaceSettingsRoute() {
                     <thead class="ui-table-head">
                       <tr>
                         <th class="ui-table-header-cell" scope="col">
-                          {t("settings.memberName")}
-                        </th>
-                        <th class="ui-table-header-cell" scope="col">
-                          {t("settings.memberEmail")}
+                          {t("settings.member")}
                         </th>
                         <th class="ui-table-header-cell" scope="col">
                           {t("settings.role")}
@@ -254,20 +251,28 @@ export default function SpaceSettingsRoute() {
                     </thead>
                     <tbody class="ui-table-body">
                       <For each={members() ?? []}>
-                        {(member: SpaceMember) => (
-                          <tr class="ui-table-row">
-                            <td
-                              class="ui-table-cell membersNameCell"
-                              title={member.principal.display_name}
-                            >
-                              {member.principal.display_name}
-                            </td>
-                            <td
-                              class="ui-table-cell membersIdCell"
-                              title={member.principal.principal_id}
-                            >
-                              <code>{member.principal.principal_id}</code>
-                            </td>
+                        {(member: SpaceMember) => {
+                          const displayName =
+                            member.principal.display_name?.trim();
+                          return (
+                            <tr class="ui-table-row">
+                              <td
+                                class="ui-table-cell membersNameCell"
+                                title={displayName ||
+                                  member.principal.principal_id}
+                              >
+                                <span class="membersPrimary">
+                                  {displayName ||
+                                    member.principal.principal_id}
+                                </span>
+                                {displayName
+                                  ? (
+                                    <code class="membersSecondary">
+                                      {member.principal.principal_id}
+                                    </code>
+                                  )
+                                  : null}
+                              </td>
                             <td class="ui-table-cell">
                               <select
                                 value={member.role}
@@ -306,8 +311,9 @@ export default function SpaceSettingsRoute() {
                                 {t("settings.revoke")}
                               </button>
                             </td>
-                          </tr>
-                        )}
+                            </tr>
+                          );
+                        }}
                       </For>
                     </tbody>
                   </table>

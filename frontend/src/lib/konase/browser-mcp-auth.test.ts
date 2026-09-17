@@ -3,6 +3,7 @@ import {
   authorizeBrowserMcp,
   discoverBrowserMcpTarget,
 } from "./browser-mcp-auth";
+import { UgoiteApiError } from "../ugoite-client/protocol";
 
 const origin = location.origin;
 
@@ -142,6 +143,14 @@ describe("browser MCP authorization", () => {
       spaceUid: "space-a-uid",
       fetcher,
     })).rejects.toThrow("different Space");
+  });
+
+  it("throws typed INVALID_INPUT for a missing Space UID", async () => {
+    const error = await authorizeBrowserMcp({ spaceUid: "  " }).catch(
+      (cause) => cause,
+    );
+    expect(error).toBeInstanceOf(UgoiteApiError);
+    expect(error.code).toBe("INVALID_INPUT");
   });
 
   it("fails closed when protected-resource metadata points to another origin", async () => {

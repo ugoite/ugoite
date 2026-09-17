@@ -1,5 +1,6 @@
 import { A, useParams } from "@solidjs/router";
 import { createSignal, For, Show } from "solid-js";
+import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateTimeLabel } from "~/lib/date-format";
@@ -188,11 +189,13 @@ export default function SpaceHistoryRoute() {
                               type="button"
                               class="ui-button ui-button-primary text-sm"
                               disabled={working()}
+                              aria-busy={working() || undefined}
                               onClick={() => void confirmRecovery()}
                             >
-                              {working()
-                                ? t("searchPage.running")
-                                : t("spaceHistory.confirmAppend")}
+                              <Show when={working()}>
+                                <ButtonSpinner />
+                              </Show>
+                              {t("spaceHistory.confirmAppend")}
                             </button>
                             <button
                               type="button"

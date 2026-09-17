@@ -1,4 +1,6 @@
 import { createSignal, Show } from "solid-js";
+import { ButtonSpinner } from "~/components/ButtonSpinner";
+import { t } from "~/lib/i18n";
 import { renderMarkdownPreview } from "~/lib/markdown";
 
 export interface MarkdownEditorProps {
@@ -68,9 +70,13 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
               class="ui-button ui-button-primary text-sm"
               onClick={props.onSave}
               disabled={!props.isDirty || props.isSaving || props.disabled}
-              aria-label="Save"
+              aria-busy={props.isSaving || undefined}
+              aria-label={t("common.save")}
             >
-              {props.isSaving ? "Saving..." : "Save"}
+              <Show when={props.isSaving}>
+                <ButtonSpinner />
+              </Show>
+              {t("common.save")}
             </button>
           </Show>
         </div>

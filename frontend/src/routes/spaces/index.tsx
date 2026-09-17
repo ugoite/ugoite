@@ -1,4 +1,5 @@
 import { A, useNavigate } from "@solidjs/router";
+import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { GlobalShell } from "~/components/GlobalShell";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
@@ -42,11 +43,10 @@ const isForbiddenError = (value: unknown): boolean =>
 function SpaceTable(props: { label: string; spaces: readonly Space[] }) {
   return (
     <div class="tablewrap">
-      <table class="table spacesTable" aria-label={props.label}>
+      <table class="dataTable spacesTable" aria-label={props.label}>
         <thead>
           <tr>
             <th scope="col">{t("spacesPage.columnName")}</th>
-            <th scope="col">{t("spacesPage.columnFormCount")}</th>
             <th scope="col">{t("spacesPage.columnSettings")}</th>
             <th scope="col">{t("spacesPage.columnOpen")}</th>
           </tr>
@@ -58,16 +58,6 @@ function SpaceTable(props: { label: string; spaces: readonly Space[] }) {
                 <td>
                   <span class="spacesName">
                     {space.name || space.slug || spaceUid(space)}
-                  </span>
-                </td>
-                {
-                  /* Form counts are not part of the Space payload; keep the
-                    column with an explicit unknown placeholder. */
-                }
-                <td class="spacesCount">
-                  <span aria-hidden="true">—</span>
-                  <span class="ui-sr-only">
-                    {t("spacesPage.formCountUnknown")}
                   </span>
                 </td>
                 <td>
@@ -164,7 +154,13 @@ export default function SpacesIndexRoute() {
     // identifier: navigating by slug could open a different Space.
     const spaceUid = created.space_uid;
     if (!spaceUid) {
-      throw new Error("Space creation response omitted space_uid");
+      throw new UgoiteApiError({
+        kind: "invalid_arguments",
+        code: "INVALID_INPUT",
+        operation: "space.create",
+        message: "Space creation response omitted space_uid",
+        detail: { kind: "space_identity", field: "space_uid" },
+      });
     }
     await refetchSpaces();
     closeCreateForm();
@@ -318,10 +314,12 @@ export default function SpacesIndexRoute() {
                   class="ui-button ui-button-primary text-sm"
                   disabled={!newSpaceName().trim() || !newSpaceId().trim() ||
                     isCreating()}
+                  aria-busy={isCreating() || undefined}
                 >
-                  {isCreating()
-                    ? t("spacesPage.creating")
-                    : t("spacesPage.create")}
+                  <Show when={isCreating()}>
+                    <ButtonSpinner />
+                  </Show>
+                  {t("spacesPage.create")}
                 </button>
               </div>
             </form>

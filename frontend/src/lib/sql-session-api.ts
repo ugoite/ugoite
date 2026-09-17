@@ -90,8 +90,6 @@ export const sqlSessionApi = {
     return await protocolFetch<SqlSession>(
       "sql_session.get",
       { space_id: spaceId, session_id: sessionId },
-      undefined,
-      { trackLoading: false },
     );
   },
 
@@ -99,8 +97,6 @@ export const sqlSessionApi = {
     const payload = await protocolFetch<{ count: number }>(
       "sql_session.count",
       { space_id: spaceId, session_id: sessionId },
-      undefined,
-      { trackLoading: false },
     );
     return payload.count;
   },
@@ -119,8 +115,6 @@ export const sqlSessionApi = {
         offset,
         limit,
       },
-      undefined,
-      { trackLoading: false },
     );
     const rows = Array.isArray(payload.rows)
       ? payload.rows.filter(isSqlSessionRow)
