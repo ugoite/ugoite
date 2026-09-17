@@ -84,6 +84,8 @@ inventory:
             - frontend/src/components/EntryList.test.tsx
             - frontend/src/components/ListPanel.tsx
             - frontend/src/components/ListPanel.test.tsx
+            - frontend/src/components/RowList.tsx
+            - frontend/src/components/RowList.test.tsx
             - frontend/src/lib/space-store.ts
             - frontend/src/lib/space-store.test.ts
             - frontend/src/lib/entry-store.ts

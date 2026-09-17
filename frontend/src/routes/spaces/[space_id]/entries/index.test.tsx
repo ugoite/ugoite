@@ -18,8 +18,21 @@ const navigate = vi.fn();
 vi.mock("@solidjs/router", () => ({
   useNavigate: () => navigate,
   useSearchParams: () => [searchParams, vi.fn()],
-  A: (props: { href: string; children: unknown }) => (
-    <a href={props.href}>{props.children}</a>
+  A: (props: {
+    href: string;
+    class?: string;
+    children: unknown;
+    "aria-label"?: string;
+    title?: string;
+  }) => (
+    <a
+      href={props.href}
+      class={props.class}
+      aria-label={props["aria-label"]}
+      title={props.title}
+    >
+      {props.children}
+    </a>
   ),
 }));
 
@@ -184,8 +197,7 @@ describe("/spaces/:space_id/entries", () => {
 
     const expectedDate = new Date(1772960822.056 * 1000).toLocaleDateString();
     expect(await screen.findByText("Query Entry")).toBeInTheDocument();
-    expect(await screen.findByText(`Updated ${expectedDate}`))
-      .toBeInTheDocument();
+    expect(await screen.findByText(expectedDate)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Query Entry/ }));
     expect(navigate).toHaveBeenCalledWith(
@@ -306,9 +318,82 @@ describe("/spaces/:space_id/entries", () => {
       .toBeInTheDocument();
     expect(queryBody?.filter).toMatchObject({ form: "Notes" });
 
-    fireEvent.click(screen.getByRole("button", { name: "New entry" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ Entry" }));
     expect(navigate).toHaveBeenCalledWith(
       "/spaces/default/entries/new?form=Notes",
+    );
+  });
+
+  it("REQ-UX-ENTRY-001: renders form-scoped entries with a positional back link and list-adjacent create action", async () => {
+    searchParams.form = "Notes";
+    server.use(
+      http.post(
+        testApiUrl("/spaces/default/query"),
+        () =>
+          HttpResponse.json([{
+            id: "scoped-1",
+            title: "Scoped note",
+            form: "Notes",
+            updated_at: "2026-03-01T00:00:00Z",
+            properties: {},
+            tags: [],
+          }]),
+      ),
+    );
+
+    renderRoute([noteForm]);
+
+    expect(await screen.findByRole("heading", { name: "Notes" }))
+      .toBeInTheDocument();
+    // Shared positional back control: short visible label, full destination
+    // as the accessible name — no "Back to Forms" sentence in the layout.
+    const back = screen.getByRole("link", { name: "Back to Forms" });
+    expect(back).toHaveAttribute("href", "/spaces/default/forms");
+    expect(back).toHaveTextContent("Back");
+    expect(back.textContent).not.toMatch(/Back to Forms/);
+    // The create action sits adjacent to the list, not in the header.
+    const create = screen.getByRole("button", { name: "+ Entry" });
+    expect(
+      document.querySelector(".entriesHeader")!.contains(create),
+    ).toBe(false);
+    expect(
+      document.querySelector(".entriesCreateRow")!.contains(create),
+    ).toBe(true);
+    expect(document.querySelector(".entriesCreateRow")).toBeInTheDocument();
+  });
+
+  it("REQ-UX-LIST-001: renders entry rows without type chips and with compact right-meta dates", async () => {
+    searchParams.form = "Notes";
+    server.use(
+      http.post(
+        testApiUrl("/spaces/default/query"),
+        () =>
+          HttpResponse.json([{
+            id: "scoped-1",
+            title: "Scoped note",
+            form: "Notes",
+            updated_at: "2026-03-01T00:00:00Z",
+            properties: {},
+            tags: [],
+          }]),
+      ),
+    );
+
+    renderRoute([noteForm]);
+
+    expect(await screen.findByRole("button", { name: /Scoped note/ }))
+      .toBeInTheDocument();
+    // The form is already the list context: no per-row type chip repeats it.
+    expect(document.querySelector(".entryRow .ui-pill")).toBeNull();
+    expect(document.querySelector(".entryRowForm")).toBeNull();
+    // Raw identifiers stay out of normal rows; the row shows the title only.
+    const row = screen.getByRole("button", { name: /Scoped note/ });
+    expect(row.textContent).not.toContain("scoped-1");
+    // Compact right-meta date without a repeated "Updated" label.
+    const date = document.querySelector(".entryRowDate")!;
+    expect(date.textContent).not.toMatch(/Updated/);
+    expect(date.textContent).toContain(
+      new Date("2026-03-01T00:00:00Z").toLocaleDateString(),
     );
   });
 
@@ -327,7 +412,7 @@ describe("/spaces/:space_id/entries", () => {
       .toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to Forms" }))
       .toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "New entry" })).not
+    expect(screen.queryByRole("button", { name: "+ Entry" })).not
       .toBeInTheDocument();
     expect(await screen.findByText("No entries found.")).toBeInTheDocument();
   });
@@ -486,7 +571,7 @@ describe("/spaces/:space_id/entries", () => {
     expect(screen.getByRole("link", { name: "Back to Forms" }))
       .toHaveAttribute("href", "/spaces/space%2Fwith%20space/forms");
 
-    fireEvent.click(screen.getByRole("button", { name: "New entry" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ Entry" }));
     expect(navigate).toHaveBeenCalledWith(
       "/spaces/space%2Fwith%20space/entries/new?form=My%20Form",
     );

@@ -127,21 +127,21 @@ describe("Forms list", () => {
   });
   it("navigates to the form-scoped Entry list on row click", () => {
     renderPage([noteForm]);
-    fireEvent.click(document.querySelector(".formRowMain")!);
+    fireEvent.click(document.querySelector(".rowListMain")!);
     expect(navigate).toHaveBeenCalledWith(
       "/spaces/default/entries?form=Notes",
     );
   });
   it("encodes Form names in the entries navigation target", () => {
     renderPage([spacedForm]);
-    fireEvent.click(document.querySelector(".formRowMain")!);
+    fireEvent.click(document.querySelector(".rowListMain")!);
     expect(navigate).toHaveBeenCalledWith(
       "/spaces/default/entries?form=My%20Form",
     );
   });
   it("encodes Space path segments when navigating to the Entry list", () => {
     renderPage([noteForm], undefined, "space/with space");
-    fireEvent.click(document.querySelector(".formRowMain")!);
+    fireEvent.click(document.querySelector(".rowListMain")!);
     expect(navigate).toHaveBeenCalledWith(
       "/spaces/space%2Fwith%20space/entries?form=Notes",
     );
@@ -203,7 +203,7 @@ describe("Forms list", () => {
   it("keeps edit on a small per-row button that does not navigate", async () => {
     vi.mocked(formApi.create).mockResolvedValue(noteForm);
     renderPage([noteForm]);
-    const row = document.querySelector(".formRowMain")!;
+    const row = document.querySelector(".rowListMain")!;
     expect(
       within(row).queryByRole("button", { name: /Edit/ }),
     ).toBeNull();

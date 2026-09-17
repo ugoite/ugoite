@@ -81,6 +81,21 @@ requirements:
         kind: behavior
         statement: Editor guidance derives from the active Form fields and explains unstructured Forms without fabricating field headings or examples.
         governed_by: [POL-UI-010#rule.guidance]
+    bindings:
+      - id: entry-list-slice-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Entry list first slice (positional back link with list-adjacent create action) through exact Vitest cases.
+        targets:
+          - id: entry-scoped-back-create
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/index.test.tsx"
+            selector: { kind: test, name: "REQ-UX-ENTRY-001: renders form-scoped entries with a positional back link and list-adjacent create action" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-001#criterion.no-decorative-cards
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.entries-index-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "REQ-UX-ENTRY-001: renders form-scoped entries with a positional back link and list-adjacent create action" } }
   - id: REQ-UX-LIST-001
     title: List Rows With Full-Row Activation and Advanced-Only Identifiers
     description: Selectable list rows activate across the full row without a separate boxed chevron, and raw UUIDs or internal identifiers appear only inside explicitly advanced or diagnostic disclosure while primary rows show human-meaningful names.
@@ -95,6 +110,57 @@ requirements:
         kind: behavior
         statement: Primary rows show human-meaningful names while raw UUIDs and internal identifiers appear only inside explicitly advanced or diagnostic disclosure.
         governed_by: [POL-UI-005#rule.governance]
+    bindings:
+      - id: row-list-verification
+        role: verification
+        facet: verification
+        responsibility: Verify full-row activation and advanced-only identifiers through exact Vitest cases.
+        targets:
+          - id: rowlist-full-row
+            adapter: typescript
+            path: frontend/src/components/RowList.test.tsx
+            selector: { kind: test, name: "REQ-UX-LIST-001: activates the full row without a boxed chevron or Open column" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.full-row-activation
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/RowList.test.tsx, test: "REQ-UX-LIST-001: activates the full row without a boxed chevron or Open column" } }
+          - id: rowlist-secondary-action
+            adapter: typescript
+            path: frontend/src/components/RowList.test.tsx
+            selector: { kind: test, name: "REQ-UX-LIST-001: keeps secondary actions from triggering row activation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.full-row-activation
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/RowList.test.tsx, test: "REQ-UX-LIST-001: keeps secondary actions from triggering row activation" } }
+          - id: rowlist-keyboard
+            adapter: typescript
+            path: frontend/src/components/RowList.test.tsx
+            selector: { kind: test, name: "REQ-UX-LIST-001: exposes keyboard-operable rows with accessible names and visible focus" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.full-row-activation
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/RowList.test.tsx, test: "REQ-UX-LIST-001: exposes keyboard-operable rows with accessible names and visible focus" } }
+          - id: spaces-full-row
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.test.tsx
+            selector: { kind: test, name: "REQ-UX-LIST-001: opens spaces through full-row links with an unboxed secondary settings action" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.full-row-activation
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.spaces-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/index.test.tsx, test: "REQ-UX-LIST-001: opens spaces through full-row links with an unboxed secondary settings action" } }
+          - id: entry-rows-compact
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/index.test.tsx"
+            selector: { kind: test, name: "REQ-UX-LIST-001: renders entry rows without type chips and with compact right-meta dates" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.entries-index-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "REQ-UX-LIST-001: renders entry rows without type chips and with compact right-meta dates" } }
   - id: REQ-UX-LIST-002
     title: One-Row Action Bar at 390px
     description: Primary list and workspace action bars remain in a single row without wrapping or horizontal scrolling at a 390px viewport.
@@ -105,6 +171,21 @@ requirements:
         kind: behavior
         statement: Primary list and workspace action bars remain in a single row without wrapping or horizontal scrolling at a 390px viewport.
         governed_by: [POL-UI-004#rule.governance]
+    bindings:
+      - id: row-list-single-row-verification
+        role: verification
+        facet: verification
+        responsibility: Verify single-row list structure without wrapping through exact Vitest cases.
+        targets:
+          - id: rowlist-single-row
+            adapter: typescript
+            path: frontend/src/components/RowList.test.tsx
+            selector: { kind: test, name: "REQ-UX-LIST-002: keeps each row in a single flex row with ellipsis and nowrap meta" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-002#criterion.one-row-action-bar
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/RowList.test.tsx, test: "REQ-UX-LIST-002: keeps each row in a single flex row with ellipsis and nowrap meta" } }
   - id: REQ-UX-I18N-001
     title: Dictionary Copy Without Legacy Strings
     description: User-facing copy resolves through the shared English and Japanese locale dictionaries with identical key sets, and legacy hardcoded Japanese strings outside the dictionary are absent from shipped surfaces.

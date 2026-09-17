@@ -1,4 +1,4 @@
-import { A, useNavigate, useSearchParams } from "@solidjs/router";
+import { useNavigate, useSearchParams } from "@solidjs/router";
 import {
   createEffect,
   createMemo,
@@ -8,6 +8,7 @@ import {
   Show,
 } from "solid-js";
 import { CreateFormDialog } from "~/components/create-dialogs";
+import { BackLink } from "~/components/BackLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { formatDateLabel } from "~/lib/date-format";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
@@ -235,46 +236,24 @@ export default function SpaceEntriesIndexPane() {
               </p>
             </Show>
             <Show when={!sessionId().trim() && formName()}>
-              <A
-                class="text-sm ui-focus-text"
+              <BackLink
                 href={`/spaces/${encodeURIComponent(spaceId())}/forms`}
-              >
-                {t("entriesPage.formBack")}
-              </A>
+                label={t("entriesPage.formBack")}
+              />
             </Show>
           </div>
-          <div class="flex items-center gap-2">
-            <Show when={sessionId().trim()}>
+          <Show when={sessionId().trim()}>
+            <div class="flex items-center gap-2">
               <button
                 type="button"
                 class="ui-button ui-button-secondary text-sm"
-                onClick={() => navigate(`/spaces/${encodeURIComponent(spaceId())}/forms`)}
+                onClick={() =>
+                  navigate(`/spaces/${encodeURIComponent(spaceId())}/forms`)}
               >
                 {t("querySession.clear")}
               </button>
-            </Show>
-            <Show when={!formName() || !isReservedForm()}>
-              <button
-                type="button"
-                class="ui-button text-sm"
-                classList={{
-                  "ui-button-primary": hasCreatableForms(),
-                  "ui-button-secondary": !hasCreatableForms(),
-                }}
-                disabled={!hasCreatableForms()}
-                onClick={() =>
-                  navigate(
-                    formName()
-                      ? `/spaces/${encodeURIComponent(spaceId())}/entries/new?form=${
-                        encodeURIComponent(formName())
-                      }`
-                      : `/spaces/${encodeURIComponent(spaceId())}/entries/new`,
-                  )}
-              >
-                {t("entriesPage.newButton")}
-              </button>
-            </Show>
-          </div>
+            </div>
+          </Show>
         </div>
 
         <div class="mt-6 entriesBody" aria-busy={isLoading() || undefined}>
@@ -374,6 +353,29 @@ export default function SpaceEntriesIndexPane() {
               </div>
             </div>
           </Show>
+          <Show when={!formName() || !isReservedForm()}>
+            <div class="entriesCreateRow">
+              <button
+                type="button"
+                class="ui-button text-sm"
+                classList={{
+                  "ui-button-primary": hasCreatableForms(),
+                  "ui-button-secondary": !hasCreatableForms(),
+                }}
+                disabled={!hasCreatableForms()}
+                onClick={() =>
+                  navigate(
+                    formName()
+                      ? `/spaces/${
+                        encodeURIComponent(spaceId())
+                      }/entries/new?form=${encodeURIComponent(formName())}`
+                      : `/spaces/${encodeURIComponent(spaceId())}/entries/new`,
+                  )}
+              >
+                {t("entriesPage.newShort")}
+              </button>
+            </div>
+          </Show>
           <div class="entriesList">
             <For each={visibleEntries()}>
               {(entry) => (
@@ -386,14 +388,9 @@ export default function SpaceEntriesIndexPane() {
                     <span class="entryRowTitle">
                       {entry.title || t("common.untitled")}
                     </span>
-                    <Show when={entry.form}>
-                      <span class="ui-pill entryRowForm">{entry.form}</span>
-                    </Show>
                   </span>
                   <span class="entryRowDate ui-muted">
-                    {t("common.updatedAt", {
-                      date: formatDateLabel(entry.updated_at),
-                    })}
+                    {formatDateLabel(entry.updated_at)}
                   </span>
                   <span class="entryRowChevron" aria-hidden="true">›</span>
                 </button>

@@ -1,6 +1,7 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { CreateFormDialog, EditFormDialog } from "~/components/create-dialogs";
+import { RowList, RowListButton, RowListItem } from "~/components/RowList";
 import { UiIcon } from "~/components/UiIcon";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { t } from "~/lib/i18n";
@@ -121,55 +122,57 @@ export default function SpaceFormsIndexPane() {
             <Show when={filteredForms().length === 0}>
               <p class="text-sm ui-muted">{t("formsPage.noForms")}</p>
             </Show>
-            <div
-              class="entriesList"
-              role="list"
-              aria-label={t("formsPage.heading")}
-            >
+            <RowList label={t("formsPage.heading")}>
               <For each={filteredForms()}>
                 {(form) => (
-                  <div class="formRow" role="listitem">
-                    <button
-                      type="button"
-                      class="formRowMain"
-                      onClick={() =>
-                        navigate(
-                          `/spaces/${encodeURIComponent(ctx.spaceId())}/entries?form=${
-                            encodeURIComponent(form.name)
-                          }`,
-                        )}
-                    >
-                      <span class="glyph" aria-hidden="true">
-                        {form.name.slice(0, 1).toUpperCase()}
-                      </span>
-                      <span class="formRowName">{form.name}</span>
-                      <Show when={isReservedMetadataForm(form.name)}>
-                        <span
-                          class="systemFormIcon"
-                          aria-label={t("formsPage.systemForm")}
-                          title={t("formsPage.systemForm")}
-                        >
-                          <UiIcon name="storage" />
-                        </span>
-                      </Show>
-                      <span class="entryRowChevron" aria-hidden="true">
-                        ›
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      class="ui-button ui-button-secondary ui-button-sm formRowEdit"
-                      aria-label={t("formsPage.editFormAria", {
-                        name: form.name,
-                      })}
-                      onClick={() => setEditingForm(form)}
-                    >
-                      <UiIcon name="settings" />
-                    </button>
-                  </div>
+                  <RowListItem
+                    main={
+                      <RowListButton
+                        onActivate={() =>
+                          navigate(
+                            `/spaces/${
+                              encodeURIComponent(ctx.spaceId())
+                            }/entries?form=${encodeURIComponent(form.name)}`,
+                          )}
+                        primary={
+                          <>
+                            <span class="glyph" aria-hidden="true">
+                              {form.name.slice(0, 1).toUpperCase()}
+                            </span>
+                            <span class="formRowName">{form.name}</span>
+                            <Show when={isReservedMetadataForm(form.name)}>
+                              <span
+                                class="systemFormIcon"
+                                aria-label={t("formsPage.systemForm")}
+                                title={t("formsPage.systemForm")}
+                              >
+                                <UiIcon name="storage" />
+                              </span>
+                            </Show>
+                          </>
+                        }
+                        chevron
+                      />
+                    }
+                    actions={
+                      <button
+                        type="button"
+                        class="rowListIconButton formRowEdit"
+                        aria-label={t("formsPage.editFormAria", {
+                          name: form.name,
+                        })}
+                        title={t("formsPage.editFormAria", {
+                          name: form.name,
+                        })}
+                        onClick={() => setEditingForm(form)}
+                      >
+                        <UiIcon name="settings" />
+                      </button>
+                    }
+                  />
                 )}
               </For>
-            </div>
+            </RowList>
           </div>
         </div>
         <CreateFormDialog

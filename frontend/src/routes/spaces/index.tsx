@@ -2,6 +2,7 @@ import { A, useNavigate } from "@solidjs/router";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { GlobalShell } from "~/components/GlobalShell";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import { RowList, RowListItem, RowListLink } from "~/components/RowList";
 import { UiIcon } from "~/components/UiIcon";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { getDocsiteHref } from "~/lib/docsite-links";
@@ -42,52 +43,34 @@ const isForbiddenError = (value: unknown): boolean =>
 
 function SpaceTable(props: { label: string; spaces: readonly Space[] }) {
   return (
-    <div class="tablewrap">
-      <table class="dataTable spacesTable" aria-label={props.label}>
-        <thead>
-          <tr>
-            <th scope="col">{t("spacesPage.columnName")}</th>
-            <th scope="col">{t("spacesPage.columnSettings")}</th>
-            <th scope="col">{t("spacesPage.columnOpen")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <For each={props.spaces}>
-            {(space) => (
-              <tr>
-                <td>
-                  <span class="spacesName">
-                    {space.name || space.slug || spaceUid(space)}
-                  </span>
-                </td>
-                <td>
-                  <div class="spacesActions">
-                    <A
-                      href={`/spaces/${encodeURIComponent(spaceUid(space))}/settings`}
-                      class="btn iconBtn"
-                      aria-label={t("spacesPage.openSettings")}
-                    >
-                      <UiIcon name="settings" />
-                    </A>
-                  </div>
-                </td>
-                <td>
-                  <div class="spacesActions">
-                    <A
-                      href={`/spaces/${encodeURIComponent(spaceUid(space))}/dashboard`}
-                      class="btn iconBtn spacesOpen"
-                      aria-label={t("spacesPage.openSpace")}
-                    >
-                      <span aria-hidden="true">›</span>
-                    </A>
-                  </div>
-                </td>
-              </tr>
-            )}
-          </For>
-        </tbody>
-      </table>
-    </div>
+    <RowList label={props.label}>
+      <For each={props.spaces}>
+        {(space) => {
+          const uid = spaceUid(space);
+          return (
+            <RowListItem
+              main={
+                <RowListLink
+                  href={`/spaces/${encodeURIComponent(uid)}/dashboard`}
+                  primary={space.name || space.slug || uid}
+                  chevron
+                />
+              }
+              actions={
+                <A
+                  href={`/spaces/${encodeURIComponent(uid)}/settings`}
+                  class="rowListIconButton"
+                  aria-label={t("spacesPage.openSettings")}
+                  title={t("spacesPage.openSettings")}
+                >
+                  <UiIcon name="settings" />
+                </A>
+              }
+            />
+          );
+        }}
+      </For>
+    </RowList>
   );
 }
 
