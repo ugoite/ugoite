@@ -2217,19 +2217,11 @@ textarea {
 .ui-entry-header,
 .ui-entry-main-header,
 .ui-entry-field-heading,
-.ui-entry-advanced-note,
-.ui-entry-save-area {
+.ui-entry-advanced-note {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-}
-.ui-entry-save-area {
-  align-items: center;
-  padding: 0;
-}
-.ui-entry-save-area > button {
-  min-width: 5rem;
 }
 .ui-entry-header {
   padding-bottom: 18px;
@@ -4011,21 +4003,6 @@ a.tool {
  * (Action strip styling reuses the PR2 `.actionbar.compact-actions`/`.tool`
  * contract plus the existing `.ui-entry-action-bar`/`.ui-entry-tool` hooks;
  * no duplicate actionbar rules here.) */
-
-/* Subtle save-state badge: quiet metadata, not a noisy alert. */
-.ui-save-state {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 2px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--soft2);
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 650;
-  white-space: nowrap;
-}
 
 /* History table: only the wrapper scrolls horizontally, never the page.
  * Density (10px/8px rows, 12px headers) matches audit-log/members/spaces. */

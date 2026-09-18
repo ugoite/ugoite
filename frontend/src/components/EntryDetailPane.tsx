@@ -71,7 +71,6 @@ export interface EntryDetailPaneProps {
   createForm?: Accessor<Form | undefined>;
   onCreateFormChange?: (formName: string) => void;
   onDeleted: () => void;
-  onCancel?: () => void;
   onCreated?: (result: { id: string; revision_id: string }) => void;
   onAfterSave?: () => void;
 }
@@ -1592,15 +1591,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 carries Back navigation, this bar carries Save. Save is
                 strong only for valid unsaved changes; no separate
                 unsaved-changes badge. Saving state shows on the Save
-                action itself, success announces once via toast.
+                action itself (creation navigates away on success, so no
+                success toast is needed here).
               */}
-              {/* Inline refetch spinner: entry fields stay visible. */}
-              <Show when={entryLoading()}>
-                <LocalBusyIndicator
-                  size="sm"
-                  label={t("entryDetail.loading")}
-                />
-              </Show>
               <ActionIconBar
                 label={t("entryDetail.actionBarLabel")}
                 class="ui-entry-action-bar"
