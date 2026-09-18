@@ -12,6 +12,7 @@ import type { Accessor } from "solid-js";
 import { AssetField } from "~/components/AssetField";
 import { ActionIconBar } from "~/components/ActionIconBar";
 import { BackLink } from "~/components/BackLink";
+import { ListEditor } from "~/components/ListEditor";
 import {
   createEntryFieldInputId,
   type EntryFieldDescriptor,
@@ -34,6 +35,8 @@ import {
 import {
   type DraftFields,
   draftValueToDisplayString,
+  isPlainStringListField,
+  normalizeStringListValue,
   readAssetReferences,
   toTransportFields,
 } from "~/lib/draft-values";
@@ -1382,6 +1385,59 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           entryId={isCreateMode() ? undefined : entry()?.id}
           generation={assetEditorGeneration()}
           onChange={(nextValue) => handleFieldChange(fieldName, nextValue)}
+        />
+      );
+    }
+
+    if (
+      fieldDef.type === "list" &&
+      !isAssetReferenceListField(fieldDef) &&
+      isPlainStringListField(fieldDef)
+    ) {
+      // Repeated typed controls instead of newline conventions: each item
+      // is a text box, adding/removing marks the entry dirty, and the user
+      // never types list syntax.
+      const items = () => normalizeStringListValue(draftFields()[fieldName]);
+      return (
+        <ListEditor
+          values={items()}
+          onChange={(next) => handleFieldChange(fieldName, next)}
+          createItem={() => ""}
+          addLabel={t("entryDetail.listAddItem")}
+          renderItem={(item, index, helpers) => (
+            <div class="flex items-center gap-2">
+              <input
+                id={index === 0 ? fieldId : `${fieldId}-${index}`}
+                class="ui-input"
+                value={item}
+                aria-label={t("entryDetail.listItemLabel", {
+                  field: fieldName,
+                  index: index + 1,
+                })}
+                aria-invalid={invalid() ? "true" : undefined}
+                aria-describedby={invalid() ? describedBy() : undefined}
+                placeholder={t("entryDetail.fieldPlaceholder")}
+                onInput={(event) =>
+                  handleFieldChange(
+                    fieldName,
+                    items().map((entry, position) =>
+                      position === index ? event.currentTarget.value : entry
+                    ),
+                  )}
+              />
+              <button
+                type="button"
+                class="ui-button ui-button-secondary ui-button-sm text-sm"
+                aria-label={t("entryDetail.listRemoveItem", {
+                  field: fieldName,
+                  index: index + 1,
+                })}
+                onClick={helpers.remove}
+              >
+                {t("common.remove")}
+              </button>
+            </div>
+          )}
         />
       );
     }

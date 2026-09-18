@@ -378,9 +378,16 @@ describe("EntryDetailPane", () => {
     fireEvent.input(notes, { target: { value: "Details \n" } });
     expect(notes).toHaveValue("Details \n");
 
-    const items = await screen.findByLabelText("Items");
-    fireEvent.input(items, { target: { value: "one\ntwo\n" } });
-    expect(items).toHaveValue("one\ntwo\n");
+    // String lists edit as repeated typed controls: add two items and
+    // remove the second before saving.
+    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    const item1 = await screen.findByLabelText("Items item 1");
+    fireEvent.input(item1, { target: { value: "one" } });
+    fireEvent.input(screen.getByLabelText("Items item 2"), {
+      target: { value: "two" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Remove Items item 2" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -395,7 +402,7 @@ describe("EntryDetailPane", () => {
         Title: "Planning",
         Summary: "Project",
         Notes: "Details",
-        Items: "one\ntwo",
+        Items: ["one"],
       },
     });
     expect(onCreated).toHaveBeenCalledWith({
@@ -785,7 +792,7 @@ describe("EntryDetailPane", () => {
     await waitFor(() => expect(document.activeElement).toBe(checklist));
   });
 
-  it("defers marker-only required lists to the Rust canonical semantics", async () => {
+  it("blocks saving an empty required string list", async () => {
     const createMock = entryApi.create as ReturnType<typeof vi.fn>;
     createMock.mockResolvedValue({
       id: "created-entry",
@@ -808,15 +815,19 @@ describe("EntryDetailPane", () => {
       />
     ));
 
-    // TypeScript shows a list-format hint for marker-only input, but the
-    // shared Rust boundary owns required/list semantics. Rust parses "-\n*"
-    // as a non-empty list, so the save proceeds with the same classification
-    // as the server mutation instead of a TS-only block.
-    const items = await screen.findByLabelText("Items");
-    fireEvent.input(items, { target: { value: "-\n*" } });
+    // No text conventions: zero items render no inputs, only the add
+    // action. The shared Rust boundary owns required/list semantics, so
+    // saving an empty required list fails validation instead of the
+    // TypeScript hint inventing marker syntax.
+    await screen.findByRole("button", { name: "Add item" });
+    expect(screen.queryByLabelText("Items item 1")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(document.querySelector("#entry-detail-validation"))
+        .not.toBeNull()
+    );
+    expect(createMock).not.toHaveBeenCalled();
   });
 
   it("focuses an empty required asset field before creating an entry", async () => {
