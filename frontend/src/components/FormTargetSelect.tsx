@@ -23,7 +23,7 @@ let formTargetSelectCounter = 0;
  * remains the stable Form identifier. Free-text entry is impossible:
  * blurring or pressing Escape reverts to the last committed value, so an
  * invalid stored value can only come from a deleted target and is then
- * shown as an actionable unknown option alongside the field error.
+ * shown as an informational unknown option alongside the field error.
  */
 export function FormTargetSelect(props: FormTargetSelectProps) {
   const listId = `form-target-list-${formTargetSelectCounter += 1}`;
@@ -34,6 +34,17 @@ export function FormTargetSelect(props: FormTargetSelectProps) {
   // Follow external resets (dialog open/close) while the popup is closed.
   createEffect(() => {
     if (!open()) setQuery(props.value);
+  });
+
+  // Keep the keyboard cursor inside the visible matches when the option
+  // list shrinks while the popup is open.
+  createEffect(() => {
+    const count = filtered().length;
+    if (count === 0) {
+      setActiveIndex(0);
+      return;
+    }
+    setActiveIndex((index) => Math.min(index, count - 1));
   });
 
   const sortedOptions = createMemo(() => [...props.options].sort());

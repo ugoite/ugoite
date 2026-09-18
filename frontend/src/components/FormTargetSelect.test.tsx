@@ -111,6 +111,17 @@ describe("FormTargetSelect", () => {
     ).toBeInTheDocument();
   });
 
+  it("ignores Enter when there are no matches", async () => {
+    const onChange = vi.fn();
+    setup({ value: "", onChange });
+    const box = screen.getByRole("combobox", { name: "Target Form" });
+    fireEvent.focus(box);
+    fireEvent.input(box, { target: { value: "zzz" } });
+    await screen.findByRole("listbox");
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("shows an empty state when no Forms exist", async () => {
     setup({ value: "", options: [] });
     const box = screen.getByRole("combobox", { name: "Target Form" });
