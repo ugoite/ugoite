@@ -140,6 +140,55 @@ describe("SpaceSettingsRoute", () => {
       .toBeInTheDocument();
   });
 
+  it("opens the settings navigation as a drawer and closes it on selection", async () => {
+    const { container } = render(() => <SpaceSettingsRoute />);
+    await screen.findByRole("heading", { name: "General" });
+
+    // One category list only: desktop sidebar and mobile drawer share it.
+    expect(
+      container.querySelectorAll('nav[aria-label="Settings"]'),
+    ).toHaveLength(1);
+    const menuButton = screen.getByRole("button", {
+      name: "Settings menu: General",
+    });
+    expect(menuButton).toHaveAttribute("aria-expanded", "false");
+    expect(menuButton).toHaveAttribute("aria-controls", "settings-nav");
+    expect(container.querySelector(".drawerBackdrop")).toBeNull();
+
+    fireEvent.click(menuButton);
+    expect(menuButton).toHaveAttribute("aria-expanded", "true");
+    expect(container.querySelector(".drawerBackdrop")).not.toBeNull();
+    // Focus moves into the drawer for keyboard users.
+    await waitFor(() =>
+      expect(document.activeElement?.getAttribute("aria-label")).toBe(
+        "Close menu",
+      )
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Members" }));
+    expect(setSearchParams).toHaveBeenCalledWith({ section: "members" });
+    // Selecting a category closes the drawer and returns focus.
+    expect(container.querySelector(".drawerBackdrop")).toBeNull();
+    expect(menuButton).toHaveAttribute("aria-expanded", "false");
+    expect(document.activeElement).toBe(menuButton);
+  });
+
+  it("closes the settings drawer on Escape", async () => {
+    const { container } = render(() => <SpaceSettingsRoute />);
+    await screen.findByRole("heading", { name: "General" });
+
+    const menuButton = screen.getByRole("button", {
+      name: "Settings menu: General",
+    });
+    fireEvent.click(menuButton);
+    expect(container.querySelector(".drawerBackdrop")).not.toBeNull();
+
+    const nav = container.querySelector("#settings-nav")!;
+    fireEvent.keyDown(nav, { key: "Escape" });
+    expect(container.querySelector(".drawerBackdrop")).toBeNull();
+    expect(document.activeElement).toBe(menuButton);
+  });
+
   it("keeps protocol role tokens visible on the route", async () => {
     searchParams.section = "members";
     vi.mocked(spaceApi.listMembers).mockResolvedValue([{
