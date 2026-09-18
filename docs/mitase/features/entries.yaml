@@ -338,3 +338,26 @@ features:
           - target: FEAT-ENTRY-001#binding.cli/target.entry-command
             role: operator
         guarantees: [REQ-ENTRY-005#criterion.history]
+  - id: FEAT-ENTRY-002
+    title: Title-less Entry model
+    summary: Converge the canonical Entry on entry_id identity with Form-defined values only; legacy titles remain readable as compatibility metadata without migration.
+    status: planned
+    bindings:
+      - id: core
+        role: implementation
+        facet: core
+        responsibility: Implement dual-schema Form storage and title-less Entry lifecycle without synthesizing entry_id into a stored title.
+        targets:
+          - id: titleless-model
+            adapter: rust
+            path: crates/ugoite-iceberg/src/entry.rs
+            selector: { kind: symbol, name: create_structured_entry_with_scopes_and_change }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-011#criterion.no-implicit-title-field
+              - kind: satisfies
+                criterion: REQ-ENTRY-011#criterion.entry-id-identity
+              - kind: satisfies
+                criterion: REQ-ENTRY-011#criterion.user-defined-title-field
+              - kind: satisfies
+                criterion: REQ-ENTRY-011#criterion.legacy-read

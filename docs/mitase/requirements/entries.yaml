@@ -222,3 +222,40 @@ requirements:
         kind: behavior
         statement: Individual historical Entry revisions are retrievable through the service and operator surfaces.
         governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-005#rule.governance, POL-006#rule.governance, POL-014#rule.governance]
+  - id: REQ-ENTRY-011
+    title: Title-less Entry canonical model
+    description: An Entry has no intrinsic title. A Form does not implicitly acquire a title field or title storage column. Entry identity is the stable entry_id; a human-readable name exists only when the Form defines it as a normal field. Existing title-bearing Space 0.1 remains readable without migration and space_version stays 0.1.
+    priority: high
+    status: planned
+    criteria:
+      - id: no-implicit-title-field
+        kind: behavior
+        statement: A Form does not implicitly acquire a title field or title storage column; newly created Form storage has no ugoite_entry_title column.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: entry-id-identity
+        kind: behavior
+        statement: Entry identity is independent from any human-readable Form field; UI identification falls back to the stable entry_id and never synthesizes entry_id into a stored title.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance]
+      - id: user-defined-title-field
+        kind: behavior
+        statement: A Form may define Title, Name, Subject, or Summary as a normal field with no Entry-level semantics, including on zero-field Forms which remain valid.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: legacy-read
+        kind: behavior
+        statement: Existing title-bearing Space 0.1 entries remain readable without migration while space_version stays 0.1.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: legacy-freeze-test
+        role: verification
+        facet: verification
+        responsibility: Freeze the legacy title-bearing v0.1 fixture so later dual-schema work cannot silently rewrite it.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_titleless.rs
+            selector: { kind: test, name: legacy_title_bearing_fixture_stays_frozen }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-011#criterion.legacy-read
+                covers: [FEAT-ENTRY-002#binding.core/target.titleless-model]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_titleless, test: legacy_title_bearing_fixture_stays_frozen } }
