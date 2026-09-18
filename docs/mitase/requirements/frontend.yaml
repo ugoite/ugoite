@@ -132,12 +132,12 @@ requirements:
           - id: create-space-guidance
             adapter: typescript
             path: frontend/src/routes/spaces/index.test.tsx
-            selector: { kind: test, name: "REQ-FE-002: labels the create-space field as a Space slug and explains its mutable metadata semantics" }
+            selector: { kind: test, name: "REQ-FE-002: labels the create-space field as a Space slug with task-oriented help" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-002#criterion.explicit-create-action
                 covers: [FEAT-FE-001#binding.frontend/target.spaces-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/index.test.tsx, test: "REQ-FE-002: labels the create-space field as a Space slug and explains its mutable metadata semantics" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/index.test.tsx, test: "REQ-FE-002: labels the create-space field as a Space slug with task-oriented help" } }
           - id: authorized-single-space
             adapter: typescript
             path: frontend/src/lib/space-store.test.ts
