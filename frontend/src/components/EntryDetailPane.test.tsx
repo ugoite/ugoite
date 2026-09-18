@@ -857,6 +857,76 @@ describe("EntryDetailPane", () => {
     expect(onCreated).toHaveBeenCalled();
   });
 
+  it("edits number and boolean lists as repeated typed controls", async () => {
+    const createMock = entryApi.create as ReturnType<typeof vi.fn>;
+    createMock.mockResolvedValue({
+      id: "created-entry",
+      revision_id: "created-revision",
+    });
+    const form: Form = {
+      name: "Task",
+      version: 1,
+      template: "# Task\n\n## Counts\n\n## Flags\n",
+      fields: {
+        Counts: {
+          type: "list",
+          required: false,
+          items: { type: "double" },
+        },
+        Flags: { type: "list", required: false, items: { type: "boolean" } },
+      },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    // Numeric items edit as text boxes with decimal keyboards; the stored
+    // value stays numeric and focus survives keystrokes.
+    const addButtons = await screen.findAllByRole("button", {
+      name: "Add item",
+    });
+    expect(addButtons).toHaveLength(2);
+    fireEvent.click(addButtons[0]);
+    const countInput = (await screen.findByLabelText(
+      "Counts item 1",
+    )) as HTMLInputElement;
+    expect(countInput.getAttribute("inputmode")).toBe("decimal");
+    countInput.focus();
+    fireEvent.input(countInput, { target: { value: "12" } });
+    expect(document.activeElement).toBe(countInput);
+    fireEvent.input(countInput, { target: { value: "12.5" } });
+    expect(countInput).toHaveValue("12.5");
+
+    // Boolean items edit as checkboxes.
+    fireEvent.click(addButtons[1]);
+    const flagBox = (await screen.findByLabelText(
+      "Flags item 1",
+    )) as HTMLInputElement;
+    expect(flagBox.getAttribute("type")).toBe("checkbox");
+    fireEvent.click(flagBox);
+    expect(flagBox).toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
+    expect(entryApi.create).toHaveBeenCalledWith(
+      "default",
+      expect.objectContaining({
+        form: "Task",
+        fields: expect.objectContaining({
+          Counts: [12.5],
+          Flags: [true],
+        }),
+      }),
+    );
+  });
+
   it("blocks saving an empty required string list", async () => {
     const createMock = entryApi.create as ReturnType<typeof vi.fn>;
     createMock.mockResolvedValue({

@@ -160,6 +160,97 @@ export const normalizeStringListValue = (value: DraftValue): string[] => {
 };
 
 /**
+ * Plain number lists: explicit integer/long/float/double item types.
+ */
+export const isPlainNumberListField = (field: {
+  type?: string;
+  items?: { type: string } | undefined;
+}): boolean => {
+  if (field.type !== "list") return false;
+  const itemType = field.items?.type;
+  return itemType === "integer" || itemType === "long" ||
+    itemType === "float" || itemType === "double";
+};
+
+/**
+ * Plain boolean lists: explicit boolean item type.
+ */
+export const isBooleanListField = (field: {
+  type?: string;
+  items?: { type: string } | undefined;
+}): boolean => {
+  return field.type === "list" && field.items?.type === "boolean";
+};
+
+/**
+ * Normalize any stored shape into the boolean array a repeated list
+ * editor binds. Typed arrays stay; legacy text lines map through the
+ * shared boolean aliases with unparseable lines kept raw so Rust reports
+ * the canonical diagnostic.
+ */
+const BOOLEAN_TRUE_ALIASES = new Set(["true", "yes", "on", "1"]);
+const BOOLEAN_FALSE_ALIASES = new Set(["false", "no", "off", "0"]);
+
+export const parseBooleanAlias = (text: string): boolean | undefined => {
+  const normalized = text.trim().toLowerCase();
+  if (BOOLEAN_TRUE_ALIASES.has(normalized)) return true;
+  if (BOOLEAN_FALSE_ALIASES.has(normalized)) return false;
+  return undefined;
+};
+
+export const normalizeBooleanListValue = (value: DraftValue): Array<boolean | string> => {
+  if (Array.isArray(value)) {
+    return value.filter(
+      (item): item is boolean | string =>
+        typeof item === "boolean" || typeof item === "string",
+    );
+  }
+  if (typeof value === "string") {
+    return value
+      .split(/\r?\n/)
+      .map((line) => line.trim().replace(LIST_ITEM_PREFIX_PATTERN, "").trim())
+      .filter((line) => line !== "")
+      .map((line) => parseBooleanAlias(line) ?? line);
+  }
+  return [];
+};
+
+/**
+ * Normalize any stored shape into the number array a repeated list editor
+ * binds. Finite numerics stay numeric; other text stays raw for Rust to
+ * judge, matching the scalar number inputs.
+ */
+export const normalizeNumberListValue = (value: DraftValue): Array<number | string> => {
+  if (Array.isArray(value)) {
+    return value.filter(
+      (item): item is number | string =>
+        typeof item === "number" || typeof item === "string",
+    );
+  }
+  if (typeof value === "string") {
+    return value
+      .split(/\r?\n/)
+      .map((line) => line.trim().replace(LIST_ITEM_PREFIX_PATTERN, "").trim())
+      .filter((line) => line !== "")
+      .map((line) => {
+        const parsed = Number(line);
+        return line !== "" && Number.isFinite(parsed) ? parsed : line;
+      });
+  }
+  return [];
+};
+/**
+ * Commit number-item text: finite numerics store numeric, everything else
+ * (including blank) stays raw text for Rust to judge, matching the scalar
+ * number inputs.
+ */
+export const parseNumberItemText = (raw: string): number | string => {
+  if (raw.trim() === "") return "";
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : raw;
+};
+
+/**
  * Plain string lists: untyped lists (string items per the domain) or an
  * explicit string item type. Other item kinds keep their current editors
  * until their typed passes land.
@@ -280,6 +371,18 @@ export const toTransportFields = (
       if (coerced === undefined) continue;
       if (Array.isArray(coerced) && coerced.length === 0) continue;
       fields[name] = coerced;
+      continue;
+    }
+    if (
+      field &&
+      (isPlainNumberListField(field) || isBooleanListField(field)) &&
+      Array.isArray(value)
+    ) {
+      // Whitespace-only text never persists as an item; kinds stay mixed
+      // for Rust to judge, and emptiness stays meaningful for requiredness.
+      fields[name] = value.filter(
+        (item) => !(typeof item === "string" && item.trim() === ""),
+      );
       continue;
     }
     if (field && isPlainStringListField(field) && Array.isArray(value)) {
