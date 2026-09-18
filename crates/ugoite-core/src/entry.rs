@@ -766,7 +766,9 @@ pub fn render_markdown(
 ) -> String {
     let mut markdown = String::new();
     markdown.push_str(&render_frontmatter(form_name, tags));
-    markdown.push_str(&format!("# {title}\n\n"));
+    if !title.trim().is_empty() {
+        markdown.push_str(&format!("# {title}\n\n"));
+    }
 
     let mut ordered = Vec::new();
     if let Some(map) = fields.as_object() {

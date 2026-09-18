@@ -39,9 +39,11 @@ fn test_integrity_req_int_001_hmac_provider_matches_known_digest() {
 /// REQ-FORM-005
 fn test_metadata_req_form_005_reserved_metadata_columns_are_case_insensitive_and_extendable() {
     let columns = metadata_columns();
-    assert!(columns.contains("title"));
+    // Title-less Entry (REQ-ENTRY-011): `title` is a normal user-definable
+    // Form field, not a reserved metadata column.
+    assert!(!columns.contains("title"));
     assert!(columns.contains("space_id"));
-    assert!(is_reserved_metadata_column("Title"));
+    assert!(!is_reserved_metadata_column("Title"));
     assert!(is_reserved_metadata_column("SPACE_ID"));
     assert!(!is_reserved_metadata_column("issue777_custom_column"));
 

@@ -4,7 +4,9 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 const DEFAULT_METADATA_COLUMNS: &[&str] = &[
     "id",
     "entry_id",
-    "title",
+    // Title-less Entry (REQ-ENTRY-011): `title` is a normal user-definable
+    // Form field, not an Entry-level system column. The 0.1.x SQL compat
+    // alias `_ugoite_title` stays namespaced so it can never collide.
     "form",
     "tags",
     "created_at",

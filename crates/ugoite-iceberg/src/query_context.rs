@@ -217,6 +217,11 @@ fn allowed_scalar_functions(allowed_functions: &BTreeSet<String>) -> Vec<Arc<Sca
     if allowed_functions.contains(crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME) {
         functions.push(crate::search_normalization::search_normalize_udf());
     }
+    // Title-less compat: the `_ugoite_title` view projection for tables
+    // without a legacy physical column resolves through this pure helper.
+    // It only reads its string argument, so exposing it to user SQL reveals
+    // nothing beyond what the caller already selected.
+    functions.push(crate::legacy_title::legacy_title_udf());
     functions
 }
 
@@ -351,6 +356,15 @@ impl IcebergWorkspace {
                 table_uuid: table.metadata().uuid().to_string(),
                 snapshot_id: current_snapshot_id,
             };
+            // Title-less Entry (REQ-ENTRY-011): new Form tables have no
+            // `ugoite_entry_title` physical column. Project an empty compat
+            // value so legacy `_ugoite_title` queries keep working; the Rust
+            // row reader resolves the extension_metadata legacy title on top.
+            let has_legacy_title = table
+                .metadata()
+                .current_schema()
+                .field_by_name("ugoite_entry_title")
+                .is_some();
             let provider: Arc<dyn TableProvider> = match current_snapshot_id {
                 Some(snapshot_id) => Arc::new(
                     crate::read_schema_provider::CurrentSchemaTableProvider::try_new(
@@ -373,6 +387,14 @@ impl IcebergWorkspace {
             relations.insert(internal.clone());
             context.register_table(internal.as_str(), provider.clone())?;
             let visible = visible_columns(&form, form_policy)?;
+            // Title-less Entry (REQ-ENTRY-011): new Form tables have no
+            // `ugoite_entry_title` physical column. The `_ugoite_title`
+            // compat value resolves through the legacy-title helper over
+            // `extension_metadata`, so existing title queries keep working.
+            let needs_legacy_title = !has_legacy_title
+                && visible
+                    .iter()
+                    .any(|column| column.source == "ugoite_entry_title");
             // Project before deriving latest revisions. This keeps opaque
             // Form columns out of the physical scan when a closed query
             // surface intentionally exposes only a safe subset, such as
@@ -381,9 +403,15 @@ impl IcebergWorkspace {
             let mut source_names = BTreeSet::new();
             let mut source_columns = Vec::new();
             for column in &visible {
+                if column.source == "ugoite_entry_title" && !has_legacy_title {
+                    continue;
+                }
                 if source_names.insert(column.source.clone()) {
                     source_columns.push(ident(&column.source));
                 }
+            }
+            if needs_legacy_title && source_names.insert("extension_metadata".to_string()) {
+                source_columns.push(ident("extension_metadata"));
             }
             for source in ["entry_id", "entry_version", "operation"] {
                 if source_names.insert(source.to_string()) {
@@ -419,7 +447,15 @@ impl IcebergWorkspace {
                 .select(
                     visible
                         .iter()
-                        .map(|column| ident(&column.source).alias(&column.name))
+                        .map(|column| {
+                            if column.source == "ugoite_entry_title" && !has_legacy_title {
+                                crate::legacy_title::legacy_title_udf()
+                                    .call(vec![col("extension_metadata")])
+                                    .alias(&column.name)
+                            } else {
+                                ident(&column.source).alias(&column.name)
+                            }
+                        })
                         .collect::<Vec<_>>(),
                 )?
                 .into_view();

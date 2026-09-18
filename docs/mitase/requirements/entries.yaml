@@ -226,7 +226,7 @@ requirements:
     title: Title-less Entry canonical model
     description: An Entry has no intrinsic title. A Form does not implicitly acquire a title field or title storage column. Entry identity is the stable entry_id; a human-readable name exists only when the Form defines it as a normal field. Existing title-bearing Space 0.1 remains readable without migration and space_version stays 0.1.
     priority: high
-    status: planned
+    status: implemented
     criteria:
       - id: no-implicit-title-field
         kind: behavior
@@ -259,3 +259,53 @@ requirements:
                 criterion: REQ-ENTRY-011#criterion.legacy-read
                 covers: [FEAT-ENTRY-002#binding.core/target.titleless-model]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_titleless, test: legacy_title_bearing_fixture_stays_frozen } }
+      - id: titleless-model-test
+        role: verification
+        facet: verification
+        responsibility: Verify title-less storage, entry_id identity, normal title fields, and compatibility preservation through exact integration tests.
+        targets:
+          - id: no-title-column-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_titleless.rs
+            selector: { kind: test, name: new_form_has_no_implicit_title_column }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-011#criterion.no-implicit-title-field
+                covers: [FEAT-ENTRY-002#binding.core/target.titleless-model]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_titleless, test: new_form_has_no_implicit_title_column } }
+          - id: no-synthetic-title-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_titleless.rs
+            selector: { kind: test, name: structured_create_without_title_stores_no_synthetic_title }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-011#criterion.entry-id-identity
+                covers: [FEAT-ENTRY-002#binding.core/target.titleless-model]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_titleless, test: structured_create_without_title_stores_no_synthetic_title } }
+          - id: markdown-titleless-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_titleless.rs
+            selector: { kind: test, name: markdown_create_without_h1_is_title_less }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-011#criterion.entry-id-identity
+                covers: [FEAT-ENTRY-002#binding.core/target.titleless-model]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_titleless, test: markdown_create_without_h1_is_title_less } }
+          - id: compat-title-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_titleless.rs
+            selector: { kind: test, name: compat_title_on_titleless_form_is_preserved }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-011#criterion.legacy-read
+                covers: [FEAT-ENTRY-002#binding.core/target.titleless-model]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_titleless, test: compat_title_on_titleless_form_is_preserved } }
+          - id: normal-title-field-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_titleless.rs
+            selector: { kind: test, name: form_defined_title_field_is_a_normal_field }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-011#criterion.user-defined-title-field
+                covers: [FEAT-ENTRY-002#binding.core/target.titleless-model]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_titleless, test: form_defined_title_field_is_a_normal_field } }
