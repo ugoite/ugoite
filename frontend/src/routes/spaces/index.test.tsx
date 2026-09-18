@@ -97,7 +97,7 @@ describe("/spaces", () => {
     fireEvent.input(screen.getByLabelText("Space slug"), {
       target: { value: "my-space" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     await waitFor(() => {
       expect(spaceApi.create).toHaveBeenCalledWith({
@@ -129,7 +129,7 @@ describe("/spaces", () => {
     fireEvent.input(screen.getByLabelText("Space slug"), {
       target: { value: "my-space" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     await waitFor(() => {
       expect(navigateMock).not.toHaveBeenCalled();
@@ -137,7 +137,7 @@ describe("/spaces", () => {
     });
   });
 
-  it("REQ-FE-002: labels the create-space field as a Space slug and explains its mutable metadata semantics", async () => {
+  it("REQ-FE-002: labels the create-space field as a Space slug with task-oriented help", async () => {
     render(() => <SpacesIndexRoute />);
 
     await waitFor(() => {
@@ -153,9 +153,25 @@ describe("/spaces", () => {
     expect(screen.getByPlaceholderText("e.g. team-notes")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Use letters, numbers, hyphens, or underscores. This human-readable metadata can be changed later; remote operations use the server-returned Space UID.",
+        "Use letters, numbers, hyphens, or underscores.",
       ),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        /remote operations use the server-returned Space UID/i,
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/never created automatically/i),
+    ).not.toBeInTheDocument();
+    // Minimal creation form: no redundant in-card title, only Cancel/Create.
+    expect(
+      screen.queryByRole("heading", { name: "Create space" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Cancel" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create" })).toBeInTheDocument();
   });
 
   it("REQ-FE-002: rewrites invalid Space slug backend errors into user-facing guidance", async () => {
@@ -181,7 +197,7 @@ describe("/spaces", () => {
     fireEvent.input(screen.getByLabelText("Space slug"), {
       target: { value: "My Space" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     await waitFor(() => {
       expect(
@@ -222,7 +238,7 @@ describe("/spaces", () => {
     fireEvent.input(screen.getByLabelText("Space slug"), {
       target: { value: "my-space" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Authenticate with Passkey" }))

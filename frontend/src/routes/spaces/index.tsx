@@ -229,14 +229,6 @@ export default function SpacesIndexRoute() {
           </h2>
           <Show when={showCreateForm()}>
             <form class="ui-card ui-stack-sm mb-4" onSubmit={handleCreateSpace}>
-              <div>
-                <h3 class="text-base font-semibold">
-                  {t("spacesPage.create")}
-                </h3>
-                <p class="text-sm ui-muted">
-                  {t("spacesPage.createDescription")}
-                </p>
-              </div>
               <div class="ui-field">
                 <label class="ui-label" for="space-display-name">
                   {t("spacesPage.spaceName")}
@@ -246,6 +238,7 @@ export default function SpacesIndexRoute() {
                   type="text"
                   class="ui-input"
                   value={newSpaceName()}
+                  ref={(element) => element.focus()}
                   onInput={(event) =>
                     setNewSpaceName(event.currentTarget.value)}
                   placeholder={t("spacesPage.spaceNamePlaceholder")}
