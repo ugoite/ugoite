@@ -36,9 +36,15 @@ import {
 import {
   type DraftFields,
   draftValueToDisplayString,
+  isBooleanListField,
+  isPlainNumberListField,
   isPlainStringListField,
+  normalizeBooleanListValue,
+  normalizeNumberListValue,
   normalizeObjectListValue,
   normalizeStringListValue,
+  parseBooleanAlias,
+  parseNumberItemText,
   readAssetReferences,
   toTransportFields,
 } from "~/lib/draft-values";
@@ -1458,6 +1464,95 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           onChange={(next) => handleFieldChange(fieldName, next)}
           invalid={invalid()}
           describedBy={invalid() ? describedBy() : undefined}
+        />
+      );
+    }
+
+    if (
+      fieldDef.type === "list" &&
+      !isAssetReferenceListField(fieldDef) &&
+      (isPlainNumberListField(fieldDef) || isBooleanListField(fieldDef))
+    ) {
+      // Repeated typed controls for numeric and boolean items. Reads stay
+      // in leaf bindings so rows (and focus) survive keystrokes.
+      const isNumeric = isPlainNumberListField(fieldDef);
+      const readItems = () =>
+        isNumeric
+          ? normalizeNumberListValue(draftFields()[fieldName])
+          : normalizeBooleanListValue(draftFields()[fieldName]);
+      return (
+        <ListEditor
+          values={readItems()}
+          onChange={(next) => handleFieldChange(fieldName, next)}
+          createItem={() => (isNumeric ? "" : false) as number | string | boolean}
+          addLabel={t("entryDetail.listAddItem")}
+          renderItem={(item, index, helpers) => (
+            <div class="flex items-center gap-2">
+              <Show
+                when={!isNumeric}
+                fallback={
+                  <input
+                    id={index() === 0 ? fieldId : `${fieldId}-${index()}`}
+                    class="ui-input"
+                    value={String(item())}
+                    aria-label={t("entryDetail.listItemLabel", {
+                      field: fieldName,
+                      index: index() + 1,
+                    })}
+                    aria-invalid={invalid() ? "true" : undefined}
+                    aria-describedby={invalid() ? describedBy() : undefined}
+                    placeholder={t("entryDetail.fieldPlaceholder")}
+                    inputmode="decimal"
+                    onInput={(event) =>
+                      handleFieldChange(
+                        fieldName,
+                        readItems().map((entry, position) =>
+                          position === index()
+                            ? parseNumberItemText(event.currentTarget.value)
+                            : entry
+                        ),
+                      )}
+                  />
+                }
+              >
+                <input
+                  id={index() === 0 ? fieldId : `${fieldId}-${index()}`}
+                  type="checkbox"
+                  checked={typeof item() === "boolean"
+                    ? item() as boolean
+                    : parseBooleanAlias(
+                      typeof item() === "string" ? (item() as string) : "",
+                    ) === true}
+                  aria-label={t("entryDetail.listItemLabel", {
+                    field: fieldName,
+                    index: index() + 1,
+                  })}
+                  aria-invalid={invalid() ? "true" : undefined}
+                  aria-describedby={invalid() ? describedBy() : undefined}
+                  onChange={(event) =>
+                    handleFieldChange(
+                      fieldName,
+                      readItems().map((entry, position) =>
+                        position === index()
+                          ? event.currentTarget.checked
+                          : entry
+                      ),
+                    )}
+                />
+              </Show>
+              <button
+                type="button"
+                class="ui-button ui-button-secondary ui-button-sm text-sm"
+                aria-label={t("entryDetail.listRemoveItem", {
+                  field: fieldName,
+                  index: index() + 1,
+                })}
+                onClick={helpers.remove}
+              >
+                {t("common.remove")}
+              </button>
+            </div>
+          )}
         />
       );
     }

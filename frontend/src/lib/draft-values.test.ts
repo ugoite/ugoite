@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   draftValueToDisplayString,
+  isBooleanListField,
   isCanonicalAssetValue,
+  isPlainNumberListField,
   isPlainStringListField,
+  normalizeBooleanListValue,
+  normalizeNumberListValue,
   normalizeObjectListValue,
   normalizeStringListValue,
+  parseBooleanAlias,
   parseMarkdownStringList,
+  parseNumberItemText,
   readAssetReferences,
   toTransportFields,
 } from "~/lib/draft-values";
@@ -136,6 +142,55 @@ describe("draft-values", () => {
     expect(normalizeObjectListValue('"not-an-array"')).toEqual([]);
     expect(normalizeObjectListValue("not-json")).toEqual([]);
     expect(normalizeObjectListValue(undefined)).toEqual([]);
+  });
+
+  it("normalizes number and boolean list shapes", () => {
+    expect(isPlainNumberListField({ type: "list" })).toBe(false);
+    expect(
+      isPlainNumberListField({ type: "list", items: { type: "integer" } }),
+    ).toBe(true);
+    expect(
+      isPlainNumberListField({ type: "list", items: { type: "double" } }),
+    ).toBe(true);
+    expect(isBooleanListField({ type: "list", items: { type: "boolean" } }))
+      .toBe(true);
+    expect(isBooleanListField({ type: "list" })).toBe(false);
+    expect(normalizeNumberListValue([1, "x", "2.5"])).toEqual([1, "x", "2.5"]);
+    expect(normalizeNumberListValue("- 3\n* 4.5")).toEqual([3, 4.5]);
+    expect(normalizeNumberListValue(undefined)).toEqual([]);
+    expect(parseNumberItemText(" 12.5 ")).toBe(12.5);
+    expect(parseNumberItemText("")).toBe("");
+    expect(parseNumberItemText("12a")).toBe("12a");
+    expect(parseBooleanAlias("YES")).toBe(true);
+    expect(parseBooleanAlias("off")).toBe(false);
+    expect(parseBooleanAlias("maybe")).toBeUndefined();
+    expect(normalizeBooleanListValue([true, "no", 1])).toEqual([
+      true,
+      "no",
+      1,
+    ]);
+    expect(normalizeBooleanListValue("- yes\n- off\n- bogus")).toEqual([
+      true,
+      false,
+      "bogus",
+    ]);
+  });
+
+  it("drops blank text items from number and boolean lists at transport", () => {
+    const form: Form = {
+      ...typedForm(),
+      fields: {
+        ...typedForm().fields,
+        Count: { id: 110, type: "list", required: false, items: { type: "integer" } },
+        Flags: { id: 111, type: "list", required: false, items: { type: "boolean" } },
+      },
+    };
+    const transported = toTransportFields(form, {
+      Count: [1, "", "  ", 2],
+      Flags: [true, ""],
+    });
+    expect(transported.Count).toEqual([1, 2]);
+    expect(transported.Flags).toEqual([true]);
   });
 
   it("parses legacy asset JSON strings only at the bridge, not in components", () => {    const transported = toTransportFields(typedForm(), {
