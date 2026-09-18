@@ -133,6 +133,94 @@ async fn advanced_search_sql_is_saved_and_materialized() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+/// REQ-API-006 saved-sql-name-field: the display name is a normal optional
+/// Form field; reads fall back to the legacy Entry title and nameless
+/// records stay valid.
+async fn saved_sql_name_is_a_normal_field_with_legacy_fallback() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "sql-name-field", "/tmp").await?;
+    let ws_path = "spaces/sql-name-field";
+    let integrity = FakeIntegrityProvider;
+
+    let payload = SqlPayload {
+        name: Some("Old Name".to_string()),
+        kind: SqlKind::UserQuery,
+        metadata: None,
+        sql: format!("SELECT * FROM \"{FORM_RELATION}\" ORDER BY _ugoite_updated_at"),
+        variables: json!([]),
+    };
+    let created =
+        saved_sql::create_sql(&op, ws_path, "sql-named", &payload, "author", &integrity).await?;
+    assert_eq!(
+        created.get("name").and_then(|v| v.as_str()),
+        Some("Old Name")
+    );
+    let revision_id = created
+        .get("revision_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    let renamed = SqlPayload {
+        name: Some("New Name".to_string()),
+        ..payload
+    };
+    let updated = saved_sql::update_sql(
+        &op,
+        ws_path,
+        "sql-named",
+        &renamed,
+        &revision_id,
+        "author",
+        &integrity,
+    )
+    .await?;
+    assert_eq!(
+        updated.get("name").and_then(|v| v.as_str()),
+        Some("New Name")
+    );
+
+    let fetched = saved_sql::get_sql(&op, ws_path, "sql-named").await?;
+    assert_eq!(
+        fetched.get("name").and_then(|v| v.as_str()),
+        Some("New Name")
+    );
+    let listed = saved_sql::list_sql(&op, ws_path, EntryScope::AllCurrent).await?;
+    let listed_name = listed
+        .iter()
+        .find(|item| item.get("id") == Some(&json!("sql-named")))
+        .and_then(|item| item.get("name"))
+        .cloned()
+        .unwrap_or(json!(null));
+    assert_eq!(listed_name, json!("New Name"));
+
+    // Nameless search-history records remain valid without a name field.
+    let history = SqlPayload {
+        name: None,
+        kind: SqlKind::SearchHistory,
+        metadata: Some(SqlMetadata {
+            search_criteria: Some(ugoite_iceberg::saved_sql::SearchHistoryCriteria {
+                form_name: "Meeting".to_string(),
+                tags: vec![],
+                updated_from: "".to_string(),
+                updated_to: "".to_string(),
+                field_conditions: vec![],
+            }),
+            generated_name: None,
+        }),
+        sql: format!("SELECT * FROM \"{FORM_RELATION}\" LIMIT 1"),
+        variables: json!([]),
+    };
+    let saved_history =
+        saved_sql::create_sql(&op, ws_path, "sql-history", &history, "author", &integrity).await?;
+    assert!(saved_history["name"].is_null());
+    let fetched_history = saved_sql::get_sql(&op, ws_path, "sql-history").await?;
+    assert!(fetched_history["name"].is_null());
+
+    Ok(())
+}
+
+#[tokio::test]
 /// REQ-API-007
 async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
     let op = setup_operator()?;

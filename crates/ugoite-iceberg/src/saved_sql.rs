@@ -193,6 +193,11 @@ fn sql_form_definition() -> Value {
         "name": SQL_FORM_NAME,
         "version": 1,
         "fields": {
+            // Title-less Entry (REQ-ENTRY-011): the saved-SQL display name is
+            // a normal optional Form field, not the Entry-level title. Older
+            // records without this field remain valid and fall back to the
+            // legacy Entry title on read; no table rewrite is performed.
+            "name": {"type": "string", "required": false},
             "sql": {"type": "sql", "required": true},
             "variables": {"type": "object_list", "required": false}
         },
@@ -365,10 +370,19 @@ fn sql_entry_from_row(row: &entry::EntryRow) -> Result<Value> {
                 .context("SQL row metadata is invalid")?,
         )
     };
+    // Title-less Entry: prefer the normal `name` field, then fall back to
+    // the legacy Entry title so records written before the `name` field
+    // existed (and nameless search-history records) keep working.
+    let name = fields
+        .get("name")
+        .and_then(|value| value.as_str())
+        .filter(|name| !name.trim().is_empty())
+        .map(str::to_owned)
+        .or_else(|| (!row.title.trim().is_empty()).then(|| row.title.clone()));
 
     Ok(serde_json::json!({
         "id": row.entry_id,
-        "name": if row.title.is_empty() { Value::Null } else { Value::String(row.title.clone()) },
+        "name": name.map(Value::String).unwrap_or(Value::Null),
         "kind": kind,
         "metadata": metadata,
         "sql": sql_value,
@@ -514,6 +528,9 @@ pub async fn create_sql<I: IntegrityProvider>(
     let integrity_payload = sql_integrity_payload(integrity, &normalized_payload, &variables);
 
     let mut fields = Map::new();
+    if let Some(name) = normalized_payload.name.as_deref() {
+        fields.insert("name".to_string(), Value::String(name.to_string()));
+    }
     fields.insert(
         "sql".to_string(),
         Value::String(normalized_payload.sql.to_string()),
@@ -523,6 +540,8 @@ pub async fn create_sql<I: IntegrityProvider>(
 
     let row = entry::EntryRow {
         entry_id: sql_id.to_string(),
+        // Keep the legacy title carrier populated for readers that predate
+        // the normal `name` field. New readers prefer `fields.name`.
         title: normalized_payload.name.clone().unwrap_or_default(),
         form: SQL_FORM_NAME.to_string(),
         tags: Vec::new(),
@@ -617,6 +636,9 @@ pub async fn update_sql<I: IntegrityProvider>(
     let integrity_payload = sql_integrity_payload(integrity, &normalized_payload, &variables);
 
     let mut fields = Map::new();
+    if let Some(name) = normalized_payload.name.as_deref() {
+        fields.insert("name".to_string(), Value::String(name.to_string()));
+    }
     fields.insert(
         "sql".to_string(),
         Value::String(normalized_payload.sql.to_string()),
@@ -708,4 +730,66 @@ pub async fn delete_sql(op: &Operator, ws_path: &str, sql_id: &str, actor: &str)
     };
     entry::append_revision_row_for_form(op, ws_path, SQL_FORM_NAME, &tombstone, &form_def).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod name_field_tests {
+    use super::*;
+
+    fn row_with_title_and_fields(title: &str, fields: Value) -> entry::EntryRow {
+        entry::EntryRow {
+            entry_id: "sql-legacy".to_string(),
+            title: title.to_string(),
+            form: SQL_FORM_NAME.to_string(),
+            tags: Vec::new(),
+            created_at: 1.0,
+            updated_at: 1.0,
+            fields,
+            extra_attributes: serde_json::json!({
+                "kind": "user-query",
+                "metadata": null,
+            }),
+            revision_id: "rev-1".to_string(),
+            parent_revision_id: None,
+            integrity: entry::IntegrityPayload {
+                checksum: String::new(),
+                signature: String::new(),
+            },
+            deleted: false,
+            deleted_at: None,
+            author: "author".to_string(),
+            updated_by: "author".to_string(),
+            deleted_by: None,
+            entry_version: 1,
+        }
+    }
+
+    fn sql_fields(name: Option<&str>) -> Value {
+        let mut fields = Map::new();
+        if let Some(name) = name {
+            fields.insert("name".to_string(), Value::String(name.to_string()));
+        }
+        fields.insert("sql".to_string(), Value::String("SELECT 1".to_string()));
+        fields.insert("variables".to_string(), Value::Array(Vec::new()));
+        Value::Object(fields)
+    }
+
+    #[test]
+    fn name_read_prefers_field_then_legacy_title_then_null() {
+        let entry = sql_entry_from_row(&row_with_title_and_fields(
+            "Legacy Title",
+            sql_fields(Some("Field Name")),
+        ))
+        .expect("field name must win");
+        assert_eq!(entry["name"], Value::String("Field Name".to_string()));
+
+        let entry =
+            sql_entry_from_row(&row_with_title_and_fields("Legacy Title", sql_fields(None)))
+                .expect("legacy title must be kept");
+        assert_eq!(entry["name"], Value::String("Legacy Title".to_string()));
+
+        let entry = sql_entry_from_row(&row_with_title_and_fields("", sql_fields(None)))
+            .expect("nameless records stay valid");
+        assert!(entry["name"].is_null());
+    }
 }

@@ -20,6 +20,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
+              - kind: satisfies
+                criterion: REQ-API-006#criterion.saved-sql-name-field
           - id: get-sql
             adapter: rust
             path: crates/ugoite-iceberg/src/saved_sql.rs
@@ -27,6 +29,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
+              - kind: satisfies
+                criterion: REQ-API-006#criterion.saved-sql-name-field
           - id: create-sql
             adapter: rust
             path: crates/ugoite-iceberg/src/saved_sql.rs
@@ -36,6 +40,8 @@ features:
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
               - kind: satisfies
                 criterion: REQ-API-007#criterion.declared-template-bindings
+              - kind: satisfies
+                criterion: REQ-API-006#criterion.saved-sql-name-field
           - id: update-sql
             adapter: rust
             path: crates/ugoite-iceberg/src/saved_sql.rs
@@ -43,6 +49,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
+              - kind: satisfies
+                criterion: REQ-API-006#criterion.saved-sql-name-field
           - id: delete-sql
             adapter: rust
             path: crates/ugoite-iceberg/src/saved_sql.rs
