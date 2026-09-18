@@ -2,6 +2,7 @@ import { createMemo, For, onMount, Show } from "solid-js";
 import type { Accessor } from "solid-js";
 import { createEntryStore } from "~/lib/entry-store";
 import type { EntryRecord } from "~/lib/types";
+import { entryDisplayLabel } from "~/lib/entry-label";
 import { t } from "~/lib/i18n";
 import { formatDateLabel } from "~/lib/date-format";
 import { formatValueForDisplay } from "~/lib/display-value";
@@ -157,7 +158,7 @@ function EntryListItem(props: EntryListItemProps) {
       >
         <div class="flex justify-between items-start mb-2">
           <h3 class="font-semibold truncate flex-1 pr-2">
-            {props.entry.title || t("common.untitled")}
+            {entryDisplayLabel(props.entry)}
           </h3>
           <Show when={props.entry.form}>
             <span class="ui-pill text-xs whitespace-nowrap">

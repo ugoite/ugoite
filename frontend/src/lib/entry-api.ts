@@ -110,17 +110,16 @@ export const entryApi = {
   async createFromWebform(
     spaceId: string,
     formDef: Form,
-    title: string,
+    _legacyTitle: string | null | undefined,
     fieldValues: DraftFields,
     id?: string,
   ): Promise<{ id: string; revision_id: string }> {
-    // Structured dogfood path: no Markdown generation. The shared Rust
-    // boundary coerces and validates; `__markdown` extras are dropped.
+    // Title-less Entry: the human-readable name lives in Form fields only.
+    // The legacy title argument is accepted for compatibility but never sent.
     const fields = buildStructuredEntryFields(formDef, fieldValues);
     return await this.create(spaceId, {
       id,
       form: formDef.name,
-      title,
       fields,
     });
   },
@@ -128,14 +127,14 @@ export const entryApi = {
   async createFromChat(
     spaceId: string,
     formDef: Form,
-    title: string,
+    legacyTitle: string | null | undefined,
     answers: DraftFields,
     id?: string,
   ): Promise<{ id: string; revision_id: string }> {
     // Chat answers ride the same structured path as webforms (no Markdown
     // detour). Input UX and answer content are unchanged; delegate so the
     // two paths cannot drift.
-    return await this.createFromWebform(spaceId, formDef, title, answers, id);
+    return await this.createFromWebform(spaceId, formDef, legacyTitle, answers, id);
   },
 
   async update(

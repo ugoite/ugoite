@@ -869,7 +869,10 @@ describe("error paths", () => {
     expect(webformPayload.markdown).toBeUndefined();
     expect(chatPayload.markdown).toBeUndefined();
     expect(chatPayload.form).toBe("Task");
-    expect(chatPayload.title).toBe("Same Task");
+    // Title-less Entry: the legacy title argument is never sent; names live
+    // in Form fields only.
+    expect(chatPayload.title).toBeUndefined();
+    expect(webformPayload.title).toBeUndefined();
     expect(chatPayload.fields).toEqual(webformPayload.fields);
     expect(chatPayload.fields).toMatchObject({
       Status: "Pending",

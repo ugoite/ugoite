@@ -209,7 +209,7 @@ describe("EntryList", () => {
     it("should display form badge and handle no title and non-string properties", () => {
       const record: EntryRecord = {
         id: "form-entry",
-        title: "",
+        title: null,
         form: "Meeting",
         updated_at: "2025-01-01T00:00:00Z",
         properties: {
@@ -223,7 +223,7 @@ describe("EntryList", () => {
       render(() => (
         <EntryList entries={entries} loading={loading} error={error} />
       ));
-      expect(screen.getByText("Untitled")).toBeInTheDocument();
+      expect(screen.getByText("form-entry")).toBeInTheDocument();
       expect(screen.getByText("Meeting")).toBeInTheDocument();
       expect(screen.getByText("5")).toBeInTheDocument();
       expect(screen.queryByText("[object Object]")).not.toBeInTheDocument();

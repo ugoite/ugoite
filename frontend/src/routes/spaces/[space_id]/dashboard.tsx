@@ -4,6 +4,7 @@ import { CreateFormDialog } from "~/components/create-dialogs";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import { createEntryStore } from "~/lib/entry-store";
+import { entryDisplayLabel } from "~/lib/entry-label";
 import { getDocsiteHref } from "~/lib/docsite-links";
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
@@ -180,7 +181,7 @@ export default function SpaceDashboardRoute() {
                   <UiIcon name="entry" />
                 </span>
                 <span>
-                  <b>{entry().title || t("common.untitled")}</b>
+                  <b>{entryDisplayLabel(entry())}</b>
                   <small>{entry().form || t("dashboard.entry")}</small>
                 </span>
                 <span class="chev">›</span>
@@ -272,7 +273,7 @@ export default function SpaceDashboardRoute() {
                   <UiIcon name="entry" />
                 </span>
                 <span>
-                  <b>{entry.title || t("common.untitled")}</b>
+                  <b>{entryDisplayLabel(entry)}</b>
                   <small>{t("dashboard.entry")} · {entry.form || "—"}</small>
                 </span>
                 <span>›</span>

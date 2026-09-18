@@ -280,7 +280,7 @@ describe("ListPanel", () => {
       const [filterForm, setFilterForm] = createSignal("");
       const entry: EntryRecord = {
         id: "complex-entry",
-        title: "",
+        title: null,
         updated_at: "2025-01-01T00:00:00Z",
         properties: { count: 42, flag: true },
         tags: [],
@@ -301,7 +301,7 @@ describe("ListPanel", () => {
           entries={[entry, noPropsEntry]}
         />
       ));
-      expect(screen.getByText("Untitled")).toBeInTheDocument();
+      expect(screen.getByText("complex-entry")).toBeInTheDocument();
       expect(screen.getByText("42")).toBeInTheDocument();
     });
 

@@ -4,16 +4,22 @@
 
 /**
  * Replace the first level-1 heading in a markdown template with the provided title.
- * If no H1 is present, prepend one to the template.
+ * Title-less Entry: an empty title removes the H1 instead of synthesizing
+ * one, so no `# ` heading is generated for entries without a legacy title.
  */
 export function replaceFirstH1(template: string, title: string): string {
   const lines = template.split(/\r?\n/);
   for (let i = 0; i < lines.length; i += 1) {
     if (lines[i].startsWith("# ") || lines[i].startsWith("#\t")) {
+      if (!title.trim()) {
+        lines.splice(i, 1);
+        return lines.join("\n").replace(/^\n+/, "");
+      }
       lines[i] = `# ${title}`;
       return lines.join("\n");
     }
   }
+  if (!title.trim()) return template;
   return `# ${title}\n\n${template}`;
 }
 

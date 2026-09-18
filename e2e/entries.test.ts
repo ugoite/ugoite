@@ -257,16 +257,22 @@ test.describe("Entries CRUD", () => {
 			timeout: 10_000,
 		});
 		await expect(page.locator("#entry-form-selector")).toHaveValue("Entry");
-		await page.getByLabel("Title").fill(
+		// Title-less Entry: no Entry-level title input; the Body field carries
+		// the content and the heading falls back to the stable entry ID.
+		await page.getByLabel("Body").fill(
 			`Starter entry from Entries ${Date.now()}`,
 		);
 		await page.getByRole("button", { name: "Save" }).click();
 		await page.waitForURL(new RegExp(`/spaces/${spaceId}/entries/[^/]+$`), {
 			timeout: 10_000,
 		});
+		const createdId = decodeURIComponent(
+			new URL(page.url()).pathname.split("/").pop() ?? "",
+		);
+		expect(createdId).not.toBe("");
 		await expect(
 			page.getByRole("heading", {
-				name: /Starter entry from Entries/,
+				name: createdId,
 				level: 1,
 			}),
 		).toBeVisible();
@@ -278,7 +284,6 @@ test.describe("Entries CRUD", () => {
 	}) => {
 		const timestamp = Date.now();
 		const formName = `EntryCreateFields-${timestamp}`;
-		const title = `Entry create boundary ${timestamp}`;
 		const formResponse = await request.post(
 			getBackendUrl(`/spaces/${spaceId}/forms`),
 			{
@@ -317,8 +322,8 @@ test.describe("Entries CRUD", () => {
 			{ waitUntil: "domcontentloaded" },
 		);
 		await settleUiLoading(page);
-		await expect(page.getByLabel("Title")).toHaveValue(formName);
-		await page.getByLabel("Title").fill(title);
+		// Title-less structured create: no title input is rendered.
+		await expect(page.getByLabel("Title")).toHaveCount(0);
 		await page.getByLabel("test number").fill("0");
 		await page.getByLabel("ts").fill("2026-08-21T10:48");
 
@@ -384,7 +389,6 @@ test.describe("Entries CRUD", () => {
 		const spaceName = `row-reference-picker-${timestamp}`;
 		const projectAlphaId = `project-alpha-${timestamp}`;
 		const projectBetaId = `project-beta-${timestamp}`;
-		const taskTitle = `Task referencing alpha project ${timestamp}`;
 		const createSpace = await request.post(getBackendUrl("/spaces"), {
 			data: { slug: spaceName, name: "Entries relation test" },
 		});
@@ -465,7 +469,6 @@ test.describe("Entries CRUD", () => {
 			page.getByRole("heading", { name: "Create New Entry" }),
 		).toBeVisible({ timeout: 10_000 });
 
-		await page.getByLabel("Title").fill(taskTitle);
 		await page.getByLabel("Form").selectOption("Task");
 		const summaryInput = page.getByRole("textbox", { name: "Summary" });
 		const projectInput = page.getByRole("searchbox", { name: "Project" });

@@ -21,6 +21,7 @@ import {
 } from "~/lib/metadata-forms";
 import { sqlSessionApi, sqlSessionRowToEntryRecord } from "~/lib/ugoite-client";
 import type { EntryRecord, FormCreatePayload } from "~/lib/types";
+import { entryDisplayLabel } from "~/lib/entry-label";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 
@@ -121,24 +122,22 @@ export default function SpaceEntriesIndexPane() {
 
   const displayEntries = createMemo(() => displayEntryState().entries);
 
-  type EntrySort = "updated" | "title";
+  type EntrySort = "updated" | "id";
   const [entryQuery, setEntryQuery] = createSignal("");
   const [entrySort, setEntrySort] = createSignal<EntrySort>("updated");
   const visibleEntries = createMemo(() => {
     const query = entryQuery().trim().toLocaleLowerCase();
     const filtered = query
       ? displayEntries().filter((entry) =>
-        [entry.title, entry.form].some((value) =>
+        [entryDisplayLabel(entry), entry.form].some((value) =>
           value?.toLocaleLowerCase().includes(query)
         )
       )
       : displayEntries();
 
     return [...filtered].sort((left, right) => {
-      if (entrySort() === "title") {
-        return (left.title || t("common.untitled")).localeCompare(
-          right.title || t("common.untitled"),
-        );
+      if (entrySort() === "id") {
+        return left.id.localeCompare(right.id);
       }
 
       const leftUpdated = Date.parse(left.updated_at);
@@ -320,7 +319,7 @@ export default function SpaceEntriesIndexPane() {
                   <option value="updated">
                     {t("entriesPage.sortUpdated")}
                   </option>
-                  <option value="title">{t("entriesPage.sortTitle")}</option>
+                  <option value="id">{t("entriesPage.sortId")}</option>
                 </select>
               </label>
               <span class="entriesCount ui-muted">
@@ -386,7 +385,7 @@ export default function SpaceEntriesIndexPane() {
                 >
                   <span class="entryRowMain">
                     <span class="entryRowTitle">
-                      {entry.title || t("common.untitled")}
+                      {entryDisplayLabel(entry)}
                     </span>
                   </span>
                   <span class="entryRowDate ui-muted">

@@ -346,8 +346,9 @@ describe("EntryDetailPane", () => {
     const form: Form = {
       name: "Meeting",
       version: 1,
-      template: "# Meeting\n\n## Summary\n\n## Notes\n\n## Items\n",
+      template: "# Meeting\n\n## Title\n\n## Summary\n\n## Notes\n\n## Items\n",
       fields: {
+        Title: { type: "string", required: false },
         Summary: { type: "string", required: false },
         Notes: { type: "markdown", required: false },
         Items: { type: "list", required: false },
@@ -364,10 +365,10 @@ describe("EntryDetailPane", () => {
       />
     ));
 
-    const title = await screen.findByLabelText("Title");
-    expect(title).toHaveValue("Meeting");
-    fireEvent.input(title, { target: { value: "Planning " } });
-    expect(title).toHaveValue("Planning ");
+    const titleField = await screen.findByLabelText("Title");
+    expect(titleField).toHaveValue("");
+    fireEvent.input(titleField, { target: { value: "Planning " } });
+    expect(titleField).toHaveValue("Planning ");
 
     const summary = await screen.findByLabelText("Summary");
     fireEvent.input(summary, { target: { value: "Project " } });
@@ -384,11 +385,14 @@ describe("EntryDetailPane", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(entryApi.create).toHaveBeenCalled());
+    const createPayload = (entryApi.create as ReturnType<typeof vi.fn>).mock
+      .calls[0][1] as Record<string, unknown>;
+    expect(createPayload.title).toBeUndefined();
     expect(entryApi.create).toHaveBeenCalledWith("default", {
       form: "Meeting",
-      title: "Planning ",
       tags: [],
       fields: {
+        Title: "Planning",
         Summary: "Project",
         Notes: "Details",
         Items: "one\ntwo",
@@ -510,7 +514,7 @@ describe("EntryDetailPane", () => {
     );
   });
 
-  it("creates an empty-title entry and keeps Untitled as presentation only", async () => {
+  it("creates a title-less entry without sending a title payload", async () => {
     const createMock = entryApi.create as ReturnType<typeof vi.fn>;
     createMock.mockResolvedValue({
       id: "untitled-entry",
@@ -533,23 +537,26 @@ describe("EntryDetailPane", () => {
       />
     ));
 
-    const title = await screen.findByLabelText("Title");
-    fireEvent.input(title, { target: { value: "" } });
+    const body = await screen.findByLabelText("Body");
+    fireEvent.input(body, { target: { value: "hello" } });
 
-    expect(title).toHaveValue("");
-    expect(screen.getByRole("heading", { name: "Untitled" }))
+    expect(body).toHaveValue("hello");
+    // Title-less Entry: the create heading falls back to the form name and
+    // never synthesizes an "Untitled" label.
+    expect(screen.getByRole("heading", { name: "Notes" }))
       .toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Untitled" })).toBeNull();
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
     const payload = createMock.mock.calls[0][1] as Record<string, unknown>;
-    expect(payload.title).toBe("");
+    expect(payload.title).toBeUndefined();
     expect(JSON.stringify(payload)).not.toContain("Untitled");
   });
 
-  it("does not let an empty title bypass active required-field validation", async () => {
+  it("does not let a missing required field bypass validation for a title-less entry", async () => {
     const createMock = entryApi.create as ReturnType<typeof vi.fn>;
     createMock.mockResolvedValue({
       id: "untitled-task-entry",
@@ -572,11 +579,11 @@ describe("EntryDetailPane", () => {
       />
     ));
 
-    const title = await screen.findByLabelText("Title");
-    fireEvent.input(title, { target: { value: "" } });
-    expect(title).toHaveValue("");
-    expect(screen.getByRole("heading", { name: "Untitled" }))
-      .toBeInTheDocument();
+    const titleHeading = await screen.findByRole("heading", {
+      name: "Task",
+    });
+    expect(titleHeading).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Untitled" })).toBeNull();
 
     const save = screen.getByRole("button", { name: "Save" });
     fireEvent.click(save);
@@ -592,7 +599,7 @@ describe("EntryDetailPane", () => {
 
     await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
     const payload = createMock.mock.calls[0][1] as Record<string, unknown>;
-    expect(payload.title).toBe("");
+    expect(payload.title).toBeUndefined();
     expect(JSON.stringify(payload)).not.toContain("Untitled");
     expect((payload.fields as Record<string, unknown>).Status).toBe("Ready");
   });
@@ -872,9 +879,11 @@ describe("EntryDetailPane", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(entryApi.create).toHaveBeenCalled());
+    const datePayload = (entryApi.create as ReturnType<typeof vi.fn>).mock
+      .calls[0][1] as Record<string, unknown>;
+    expect(datePayload.title).toBeUndefined();
     expect(entryApi.create).toHaveBeenCalledWith("default", {
       form: "Meeting",
-      title: "Meeting",
       tags: [],
       fields: { Date: "2026-08-03" },
     });
@@ -978,9 +987,11 @@ describe("EntryDetailPane", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(entryApi.create).toHaveBeenCalled());
+    const contractPayload = (entryApi.create as ReturnType<typeof vi.fn>).mock
+      .calls[0][1] as Record<string, unknown>;
+    expect(contractPayload.title).toBeUndefined();
     expect(entryApi.create).toHaveBeenCalledWith("default", {
       form: "Contract",
-      title: "Contract",
       tags: [],
       fields: { contract: uploaded },
     });
@@ -1443,7 +1454,11 @@ describe("EntryDetailPane", () => {
 
     expect(await screen.findByText("This form has no structured fields."))
       .toBeInTheDocument();
-    expect(screen.getByLabelText("Title")).toHaveValue("Scratch Note");
+    // Title-less Entry: no Entry-level title control; the heading shows the
+    // trimmed legacy title.
+    expect(screen.queryByLabelText("Title")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Scratch Note" }))
+      .toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open source editor" }))
       .toBeInTheDocument();
   });
@@ -1476,7 +1491,9 @@ describe("EntryDetailPane", () => {
 
     expect(await screen.findByText("This form has no structured fields."))
       .toBeInTheDocument();
-    expect(screen.getByLabelText("Title")).toHaveValue("Broken Note");
+    expect(screen.queryByLabelText("Title")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Broken Note" }))
+      .toBeInTheDocument();
   });
 
   it("REQ-FE-053: keeps type and additional-content warnings next to the form", async () => {
@@ -2160,7 +2177,8 @@ describe("EntryDetailPane", () => {
     // Shared entry fields with consistent spacing hooks.
     const fields = document.querySelector(".form.entry-fields")!;
     expect(fields).not.toBeNull();
-    expect(fields.querySelectorAll(".field").length).toBeGreaterThanOrEqual(3);
+    // Title-less Entry: no Entry-level title row, only the Form fields.
+    expect(fields.querySelectorAll(".field")).toHaveLength(2);
     expect(screen.getByLabelText("Notes")).toHaveValue("**review**!");
   });
 

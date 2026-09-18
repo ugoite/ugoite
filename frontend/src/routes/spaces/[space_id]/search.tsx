@@ -9,6 +9,7 @@ import { formApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
 import { localInputToRfc3339Instant } from "~/lib/search-date";
 import type { EntryRecord, KeywordSearchResult } from "~/lib/types";
+import { entryDisplayLabel } from "~/lib/entry-label";
 import { createResource } from "~/lib/recoverable-resource";
 import { t, type TranslationKey } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
@@ -933,7 +934,7 @@ export default function SpaceSearchRoute() {
                         <RowListItem
                           main={
                             <RowListButton
-                              primary={entry.title || t("common.untitled")}
+                              primary={entryDisplayLabel(entry)}
                               secondary={entry.form}
                               meta={formatDateLabel(entry.updated_at)}
                               chevron
@@ -955,7 +956,7 @@ export default function SpaceSearchRoute() {
                         <RowListItem
                           main={
                             <RowListButton
-                              primary={entry.title || t("common.untitled")}
+                              primary={entryDisplayLabel(entry)}
                               secondary={entry.form}
                               meta={formatDateLabel(entry.updated_at)}
                               chevron

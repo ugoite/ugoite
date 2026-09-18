@@ -16,10 +16,11 @@ export interface EntryFieldsControlHelpers {
 }
 
 export interface EntryFieldsProps {
-  titleValue: string;
-  titleId?: string;
-  onTitleChange?: (value: string) => void;
   /**
+   * Form fields only. Title-less Entry: there is no Entry-level title
+   * control; a Form that defines Title/Name renders it as a normal field
+   * through `fields`, exactly like any other string field.
+   *
    * Field structure (order-stable per form). Values are NOT snapshots here:
    * read them through `getValue`/`renderControl` so row structure never
    * depends on keystrokes and focused inputs stay mounted.
@@ -114,10 +115,10 @@ function defaultControl(
 }
 
 /**
- * Shared entry field renderer. Title, body, and other fields share one
- * spacing contract (`.form` / `.field`); read-only mode disables every
- * control and marks the wrapper `.readonly`. Used by the entry editor and
- * the revision review route.
+ * Shared entry field renderer. Form fields share one spacing contract
+ * (`.form` / `.field`); read-only mode disables every control and marks the
+ * wrapper `.readonly`. Used by the entry editor and the revision review
+ * route.
  *
  * Rows are keyed by descriptor identity (`For`): pass a stable-identity
  * array (memoized per form) and keep values in live bindings (`getValue`,
@@ -127,7 +128,6 @@ function defaultControl(
  * as new-entry form switches.
  */
 export function EntryFields(props: EntryFieldsProps) {
-  const titleId = () => props.titleId ?? "entry-title-editor";
   const readOnly = () => props.readOnly ?? false;
 
   return (
@@ -135,25 +135,6 @@ export function EntryFields(props: EntryFieldsProps) {
       class="form entry-fields"
       classList={{ readonly: readOnly() }}
     >
-      <div class="field ui-entry-field ui-entry-title-field">
-        <div class="ui-entry-field-heading">
-          <label class="ui-label" for={titleId()}>
-            {t("common.title")}
-          </label>
-          <Show when={!readOnly()}>
-            <span class="ui-pill">{t("entryDetail.optional")}</span>
-          </Show>
-        </div>
-        <input
-          id={titleId()}
-          class="ui-input ui-entry-title-input"
-          value={props.titleValue}
-          disabled={readOnly()}
-          placeholder={t("common.untitled")}
-          onInput={(event) => props.onTitleChange?.(event.currentTarget.value)}
-        />
-      </div>
-
       <div class="ui-entry-field-list">
         <For each={props.fields}>
           {(field) => {
