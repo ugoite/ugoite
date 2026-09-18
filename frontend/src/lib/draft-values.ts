@@ -109,7 +109,7 @@ export const normalizeObjectListValue = (
   value: DraftValue,
 ): Record<string, unknown>[] => {
   if (Array.isArray(value)) {
-    return value.filter(
+    return (value as unknown[]).filter(
       (item): item is Record<string, unknown> =>
         typeof item === "object" && item !== null && !Array.isArray(item),
     );
@@ -153,7 +153,9 @@ export const parseMarkdownStringList = (text: string): string[] => {
  */
 export const normalizeStringListValue = (value: DraftValue): string[] => {
   if (Array.isArray(value)) {
-    return value.filter((item): item is string => typeof item === "string");
+    return (value as unknown[]).filter((item): item is string =>
+      typeof item === "string"
+    );
   }
   if (typeof value === "string") return parseMarkdownStringList(value);
   return [];
@@ -198,11 +200,15 @@ export const parseBooleanAlias = (text: string): boolean | undefined => {
   return undefined;
 };
 
-export const normalizeBooleanListValue = (value: DraftValue): Array<boolean | string> => {
+export const normalizeBooleanListValue = (
+  value: DraftValue,
+): Array<boolean | string | number> => {
   if (Array.isArray(value)) {
-    return value.filter(
-      (item): item is boolean | string =>
-        typeof item === "boolean" || typeof item === "string",
+    // Numbers pass through for Rust to judge (it accepts 1/0 as booleans).
+    return (value as unknown[]).filter(
+      (item): item is boolean | string | number =>
+        typeof item === "boolean" || typeof item === "string" ||
+        typeof item === "number",
     );
   }
   if (typeof value === "string") {
@@ -220,9 +226,11 @@ export const normalizeBooleanListValue = (value: DraftValue): Array<boolean | st
  * binds. Finite numerics stay numeric; other text stays raw for Rust to
  * judge, matching the scalar number inputs.
  */
-export const normalizeNumberListValue = (value: DraftValue): Array<number | string> => {
+export const normalizeNumberListValue = (
+  value: DraftValue,
+): Array<number | string> => {
   if (Array.isArray(value)) {
-    return value.filter(
+    return (value as unknown[]).filter(
       (item): item is number | string =>
         typeof item === "number" || typeof item === "string",
     );

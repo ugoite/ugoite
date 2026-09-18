@@ -164,7 +164,11 @@ describe("draft-values", () => {
     expect(parseBooleanAlias("YES")).toBe(true);
     expect(parseBooleanAlias("off")).toBe(false);
     expect(parseBooleanAlias("maybe")).toBeUndefined();
-    expect(normalizeBooleanListValue([true, "no", 1])).toEqual([true, "no"]);
+    expect(normalizeBooleanListValue([true, "no", 1])).toEqual([
+      true,
+      "no",
+      1,
+    ]);
     expect(normalizeBooleanListValue("- yes\n- off\n- bogus")).toEqual([
       true,
       false,
