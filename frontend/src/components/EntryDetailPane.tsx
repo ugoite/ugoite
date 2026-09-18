@@ -13,6 +13,7 @@ import { AssetField } from "~/components/AssetField";
 import { ActionIconBar } from "~/components/ActionIconBar";
 import { BackLink } from "~/components/BackLink";
 import { ListEditor } from "~/components/ListEditor";
+import { ObjectListEditor } from "~/components/ObjectListEditor";
 import {
   createEntryFieldInputId,
   type EntryFieldDescriptor,
@@ -36,6 +37,7 @@ import {
   type DraftFields,
   draftValueToDisplayString,
   isPlainStringListField,
+  normalizeObjectListValue,
   normalizeStringListValue,
   readAssetReferences,
   toTransportFields,
@@ -1396,23 +1398,25 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     ) {
       // Repeated typed controls instead of newline conventions: each item
       // is a text box, adding/removing marks the entry dirty, and the user
-      // never types list syntax.
-      const items = () => normalizeStringListValue(draftFields()[fieldName]);
+      // never types list syntax. Reads stay in leaf bindings so rows (and
+      // focus) survive keystrokes; only add/remove re-structures rows.
+      const readItems = () =>
+        normalizeStringListValue(draftFields()[fieldName]);
       return (
         <ListEditor
-          values={items()}
+          values={readItems()}
           onChange={(next) => handleFieldChange(fieldName, next)}
           createItem={() => ""}
           addLabel={t("entryDetail.listAddItem")}
           renderItem={(item, index, helpers) => (
             <div class="flex items-center gap-2">
               <input
-                id={index === 0 ? fieldId : `${fieldId}-${index}`}
+                id={index() === 0 ? fieldId : `${fieldId}-${index()}`}
                 class="ui-input"
-                value={item}
+                value={item()}
                 aria-label={t("entryDetail.listItemLabel", {
                   field: fieldName,
-                  index: index + 1,
+                  index: index() + 1,
                 })}
                 aria-invalid={invalid() ? "true" : undefined}
                 aria-describedby={invalid() ? describedBy() : undefined}
@@ -1420,8 +1424,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 onInput={(event) =>
                   handleFieldChange(
                     fieldName,
-                    items().map((entry, position) =>
-                      position === index ? event.currentTarget.value : entry
+                    readItems().map((entry, position) =>
+                      position === index()
+                        ? event.currentTarget.value
+                        : entry
                     ),
                   )}
               />
@@ -1430,7 +1436,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 class="ui-button ui-button-secondary ui-button-sm text-sm"
                 aria-label={t("entryDetail.listRemoveItem", {
                   field: fieldName,
-                  index: index + 1,
+                  index: index() + 1,
                 })}
                 onClick={helpers.remove}
               >
@@ -1442,10 +1448,23 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       );
     }
 
+    if (fieldDef.type === "object_list") {
+      // Repeated grouped object editors instead of JSON text: each item
+      // shows its properties with typed nested controls.
+      return (
+        <ObjectListEditor
+          fieldName={fieldName}
+          values={normalizeObjectListValue(draftFields()[fieldName])}
+          onChange={(next) => handleFieldChange(fieldName, next)}
+          invalid={invalid()}
+          describedBy={invalid() ? describedBy() : undefined}
+        />
+      );
+    }
+
     if (
       fieldDef.type === "markdown" ||
-      (fieldDef.type === "list" && !isAssetReferenceListField(fieldDef)) ||
-      fieldDef.type === "object_list"
+      (fieldDef.type === "list" && !isAssetReferenceListField(fieldDef))
     ) {
       return (
         <textarea

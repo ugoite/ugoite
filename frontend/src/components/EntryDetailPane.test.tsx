@@ -382,8 +382,13 @@ describe("EntryDetailPane", () => {
     // remove the second before saving.
     fireEvent.click(screen.getByRole("button", { name: "Add item" }));
     fireEvent.click(screen.getByRole("button", { name: "Add item" }));
-    const item1 = await screen.findByLabelText("Items item 1");
+    const item1 = (await screen.findByLabelText(
+      "Items item 1",
+    )) as HTMLInputElement;
+    item1.focus();
     fireEvent.input(item1, { target: { value: "one" } });
+    // Rows keep focus while typing: only leaf bindings update.
+    expect(document.activeElement).toBe(item1);
     fireEvent.input(screen.getByLabelText("Items item 2"), {
       target: { value: "two" },
     });
@@ -781,15 +786,75 @@ describe("EntryDetailPane", () => {
       />
     ));
 
-    const checklist = await screen.findByLabelText("Checklist");
-    fireEvent.input(checklist, { target: { value: "[]" } });
+    // No JSON text: zero items render the empty state plus the add action.
+    await screen.findByText("No items yet.");
+    expect(screen.queryByLabelText("Checklist")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(createMock).not.toHaveBeenCalled();
     await waitFor(() =>
-      expect(checklist).toHaveAttribute("aria-invalid", "true")
+      expect(document.querySelector("#entry-detail-validation"))
+        .not.toBeNull()
     );
-    await waitFor(() => expect(document.activeElement).toBe(checklist));
+  });
+
+  it("edits object lists as repeated typed groups", async () => {
+    const createMock = entryApi.create as ReturnType<typeof vi.fn>;
+    createMock.mockResolvedValue({
+      id: "created-entry",
+      revision_id: "created-revision",
+    });
+    const onCreated = vi.fn();
+    const form: Form = {
+      name: "Task",
+      version: 1,
+      template: "# Task\n\n## Checklist\n",
+      fields: { Checklist: { type: "object_list", required: false } },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={onCreated}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    await screen.findByText("No items yet.");
+    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    await screen.findByRole("group", {
+      name: "Checklist item 1",
+    });
+    fireEvent.input(screen.getByLabelText("Property name"), {
+      target: { value: "step" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add property" }));
+    const stepInput = (await screen.findByLabelText(
+      "step",
+    )) as HTMLInputElement;
+    // Typing keeps focus: rows subscribe narrowly instead of re-creating
+    // focused inputs on every keystroke.
+    stepInput.focus();
+    fireEvent.input(stepInput, { target: { value: "o" } });
+    expect(document.activeElement).toBe(stepInput);
+    fireEvent.input(stepInput, { target: { value: "one" } });
+    expect(document.activeElement).toBe(stepInput);
+    expect(stepInput).toHaveValue("one");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
+    expect(entryApi.create).toHaveBeenCalledWith(
+      "default",
+      expect.objectContaining({
+        form: "Task",
+        fields: expect.objectContaining({
+          Checklist: [{ step: "one" }],
+        }),
+      }),
+    );
+    expect(onCreated).toHaveBeenCalled();
   });
 
   it("blocks saving an empty required string list", async () => {
