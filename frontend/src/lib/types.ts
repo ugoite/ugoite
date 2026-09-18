@@ -178,7 +178,8 @@ export interface AssetReference {
 /** Entry record (from index) */
 export interface EntryRecord {
   id: string;
-  title: string;
+  /** 0.1.x legacy compatibility display metadata; absent for title-less entries. */
+  title?: string | null;
   form?: string;
   created_at?: string;
   updated_at: string;
@@ -432,7 +433,8 @@ export interface ApiError {
 /** Minimal keyword-search result returned by the backend Entry scan. */
 export interface KeywordSearchResult {
   id: string;
-  title: string;
+  /** 0.1.x legacy compatibility display metadata; empty for title-less entries. */
+  title?: string | null;
   form: string;
   created_at: string | number;
   updated_at: string | number;

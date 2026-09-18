@@ -1034,12 +1034,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     );
   };
 
-  const handleTitleChange = (title: string) => {
-    setHasUserEdited(true);
-    setDraftTitle(title);
-    syncEditorFromDraft(title, draftFields());
-  };
-
   const handleFieldChange = (fieldName: string, value: unknown) => {
     setHasUserEdited(true);
     const next = { ...draftFields(), [fieldName]: value };
@@ -1261,13 +1255,11 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         ? context.create
           ? await entryApi.create(context.wsId, {
             form: formName,
-            title,
             tags: draftTags(),
             fields,
           })
           : await entryApi.update(context.wsId, context.entryId!, {
             form: formName,
-            title,
             tags: draftTags(),
             fields,
             parent_revision_id: context.revisionId!,
@@ -1510,7 +1502,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 </Show>
                 <div class="mt-2 flex flex-wrap items-center gap-2">
                   <h1 class="ui-page-title truncate">
-                    {editorTitle() || t("common.untitled")}
+                    {editorTitle().trim() || currentEntry().id}
                   </h1>
                   <Show when={currentEntry().form}>
                     <span class="ui-pill">{currentEntry().form}</span>
@@ -1744,8 +1736,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                       class="ui-entry-form-body"
                     >
                       <EntryFields
-                        titleValue={editorTitle()}
-                        onTitleChange={handleTitleChange}
                         fields={entryFieldDescriptors()}
                         getValue={fieldValue}
                         isInvalid={(fieldName) =>

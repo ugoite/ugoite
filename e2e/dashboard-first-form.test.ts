@@ -65,13 +65,19 @@ test.describe("Dashboard starter-entry onboarding", () => {
 			timeout: 10_000,
 		});
 		await expect(page.locator("#entry-form-selector")).toHaveValue("Entry");
-		await page.getByLabel("Title").fill("Starter quick note");
+		// Title-less Entry: the Body field carries the content and the
+		// heading falls back to the stable entry ID.
+		await page.getByLabel("Body").fill("Starter quick note");
 		await page.getByRole("button", { name: "Save" }).click();
 		await page.waitForURL(new RegExp(`/spaces/${createdSpaceId}/entries/[^/]+$`), {
 			timeout: 10_000,
 		});
+		const createdId = decodeURIComponent(
+			new URL(page.url()).pathname.split("/").pop() ?? "",
+		);
+		expect(createdId).not.toBe("");
 		await expect(
-			page.getByRole("heading", { name: "Starter quick note", level: 1 }),
+			page.getByRole("heading", { name: createdId, level: 1 }),
 		).toBeVisible();
 	});
 });

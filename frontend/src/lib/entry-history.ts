@@ -124,8 +124,10 @@ export const revisionSummary = (revision: RevisionMetadata): string => {
   return t("entryHistory.summary.unknown");
 };
 
-export const revisionTitle = (revision: RevisionMetadata): string =>
-  revision.title?.trim() || t("common.untitled");
+export const revisionTitle = (
+  revision: RevisionMetadata,
+  fallbackId = "",
+): string => revision.title?.trim() || fallbackId;
 
 export const revisionForm = (revision: RevisionMetadata): string =>
   revision.form?.trim() || t("entryHistory.unknownValue");

@@ -529,9 +529,11 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Test Entry" },
-    });
+    // Title-less Entry: no title input is rendered.
+    expect(
+      screen.queryByPlaceholderText("Enter entry title..."),
+    ).not.toBeInTheDocument();
+    expect(document.querySelector("#entry-title")).toBeNull();
 
     const createButton = screen.getByRole("button", { name: "Create" });
     expect(createButton).toBeDisabled();
@@ -561,6 +563,12 @@ describe("CreateEntryDialog", () => {
         onSubmit={onSubmit}
       />
     ));
+
+    // Title-less Entry: no title input exists; the legacy title is always "".
+    expect(
+      screen.queryByPlaceholderText("Enter entry title..."),
+    ).not.toBeInTheDocument();
+    expect(document.querySelector("#entry-title")).toBeNull();
 
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Notes" },
@@ -594,9 +602,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Test Entry" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -632,9 +637,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Test Entry" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -668,9 +670,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Markdown Entry" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Meeting" },
     });
@@ -715,9 +714,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Test Entry" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Event" },
     });
@@ -758,9 +754,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Task Entry" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -772,7 +765,7 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "Task Entry",
+      "",
       "Task",
       { Summary: "Active summary" },
       "webform",
@@ -809,9 +802,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Task Entry" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -824,7 +814,7 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "Task Entry",
+      "",
       "Task",
       { Summary: "Active summary" },
       "webform",
@@ -854,9 +844,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Writable Event" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Event" },
     });
@@ -876,7 +863,7 @@ describe("CreateEntryDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     expect(onSubmit).toHaveBeenCalledWith(
-      "Writable Event",
+      "",
       "Event",
       {
         Amount: "12.",
@@ -907,9 +894,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Task with Summary" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -921,7 +905,7 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "Task with Summary",
+      "",
       "Task",
       expect.objectContaining({ Summary: "Optional summary" }),
       "webform",
@@ -949,9 +933,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Task with schedule" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -981,9 +962,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Task fallback id" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -1013,9 +991,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "My Markdown Entry" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Meeting" },
     });
@@ -1034,7 +1009,7 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "My Markdown Entry",
+      "",
       "Meeting",
       expect.objectContaining({
         __markdown:
@@ -1065,9 +1040,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Reset Me" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Meeting" },
     });
@@ -1087,7 +1059,7 @@ describe("CreateEntryDialog", () => {
     fireEvent.submit(form);
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "Reset Me",
+      "",
       "Meeting",
       expect.objectContaining({
         __markdown:
@@ -1096,13 +1068,10 @@ describe("CreateEntryDialog", () => {
       "markdown",
     );
     await waitFor(() => {
+      // Title-less Entry: no title input exists to reset.
       expect(
-        (screen.getByPlaceholderText(
-          "Enter entry title...",
-        ) as HTMLInputElement).value,
-      ).toBe(
-        "",
-      );
+        screen.queryByPlaceholderText("Enter entry title..."),
+      ).not.toBeInTheDocument();
       expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe(
         "",
       );
@@ -1141,9 +1110,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Localized Task" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -1247,9 +1213,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Task linked to Alpha" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -1266,7 +1229,7 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "Task linked to Alpha",
+      "",
       "Task",
       expect.objectContaining({
         Summary: "Track the launch",
@@ -1339,9 +1302,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Chat-linked task" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -1361,7 +1321,7 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "Chat-linked task",
+      "",
       "Task",
       expect.objectContaining({
         Summary: "Use the picker inside chat mode",
@@ -1418,9 +1378,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Task after clearing selection" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -1437,7 +1394,7 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "Task after clearing selection",
+      "",
       "Task",
       {
         Summary: "Only keep the human summary",
@@ -1510,9 +1467,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Sorted references" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -1613,9 +1567,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Raw reference task" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -1628,7 +1579,7 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "Raw reference task",
+      "",
       "Task",
       {
         Summary: "Use a raw reference string",
@@ -1669,9 +1620,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Offline reference task" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -1684,7 +1632,7 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "Offline reference task",
+      "",
       "Task",
       {
         Summary: "Capture a raw reference without space context",
@@ -1734,9 +1682,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Broken references" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -1789,9 +1734,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Task linked to search text" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -1840,9 +1782,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Chat unresolved reference" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -1887,9 +1826,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Localized Task" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -1913,7 +1849,7 @@ describe("CreateEntryDialog", () => {
     ).toBeInTheDocument();
   });
 
-  it("REQ-FE-037: keeps user-edited markdown when title changes", async () => {
+  it("REQ-FE-037: keeps user-edited markdown without a title input", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
     const forms = [
@@ -1934,6 +1870,12 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
+    // Title-less Entry: no title input exists and generated markdown omits H1.
+    expect(
+      screen.queryByPlaceholderText("Enter entry title..."),
+    ).not.toBeInTheDocument();
+    expect(document.querySelector("#entry-title")).toBeNull();
+
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Meeting" },
     });
@@ -1945,10 +1887,6 @@ describe("CreateEntryDialog", () => {
     const customMarkdown =
       "# Custom\n\n---\nform: Meeting\n---\n\n## Date\n2026-02-14\n";
     fireEvent.input(markdownArea, { target: { value: customMarkdown } });
-
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Updated title" },
-    });
 
     expect(
       (screen.getByRole("textbox", {
@@ -1978,9 +1916,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "My Task" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -1988,7 +1923,7 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "My Task",
+      "",
       "Task",
       expect.any(Object),
       "webform",
@@ -2020,9 +1955,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Chat Task" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -2073,9 +2005,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Chat Task" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -2104,7 +2033,7 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "Chat Task",
+      "",
       "Task",
       { Summary: "Conversation summary" },
       "chat",
@@ -2134,9 +2063,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Chat Task" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -2196,9 +2122,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Chat Task" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -2237,9 +2160,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Chat Task" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -2276,9 +2196,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Chat Task" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -2314,9 +2231,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Chat Task" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -2332,7 +2246,7 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "Chat Task",
+      "",
       "Task",
       expect.objectContaining({
         Summary: "Conversation summary",
@@ -2366,9 +2280,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Chat Task" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -2386,7 +2297,7 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "Chat Task",
+      "",
       "Task",
       expect.not.objectContaining({
         Notes: "Draft note",
@@ -2416,9 +2327,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "My Entry" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Meeting" },
     });
@@ -2458,9 +2366,6 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
-      target: { value: "Needs Status" },
-    });
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "Task" },
     });
@@ -2472,12 +2377,10 @@ describe("CreateEntryDialog", () => {
     expect(onSubmit).not.toHaveBeenCalled();
     expect(screen.getByText("Please fill required fields: Status."))
       .toBeInTheDocument();
+    // Title-less Entry: no title input exists to preserve.
     expect(
-      (screen.getByPlaceholderText("Enter entry title...") as HTMLInputElement)
-        .value,
-    ).toBe(
-      "Needs Status",
-    );
+      screen.queryByPlaceholderText("Enter entry title..."),
+    ).not.toBeInTheDocument();
   });
 
   it("REQ-FE-037: permits an ordinary user form named Assets", async () => {
@@ -2561,7 +2464,8 @@ describe("CreateEntryDialog", () => {
 
     expect(screen.getByRole("heading", { name: "新しいエントリを作成" }))
       .toBeInTheDocument();
-    expect(screen.getByLabelText("タイトル")).toBeInTheDocument();
+    // Title-less Entry: no title field is rendered in any locale.
+    expect(screen.queryByLabelText("タイトル")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Webフォーム" }))
       .toBeInTheDocument();
     expect(screen.getByRole("button", { name: "作成" })).toBeInTheDocument();

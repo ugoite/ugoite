@@ -82,11 +82,11 @@ describe("entry revision review route", () => {
     expect(subtitle.textContent).toContain("·");
 
     // Shared read-only fields: every control disabled, wrapper marked.
+    // Title-less Entry: no Entry-level title control; only Form fields render.
     const fields = container.querySelector(".form.entry-fields.readonly");
     expect(fields).not.toBeNull();
-    expect(await screen.findByLabelText("Title")).toBeDisabled();
+    expect(screen.queryByLabelText("Title")).toBeNull();
     expect(await screen.findByLabelText("Body")).toBeDisabled();
-    expect(screen.getByLabelText("Title")).toHaveValue("Historical title");
     expect(screen.getByLabelText("Body")).toHaveValue("Original");
 
     // No two-column compare, no raw dump, no heavy metadata.

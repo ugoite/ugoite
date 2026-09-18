@@ -133,9 +133,6 @@ export default function SpaceEntryRevisionRoute() {
       return { title: "", fields: {} as Record<string, string> };
     }
   });
-  const revisionTitleValue = createMemo(() =>
-    parsedRevision().title || revision()?.title || ""
-  );
   const revisionFields = createMemo(() =>
     Object.keys(parsedRevision().fields).map((name, index) => ({
       name,
@@ -220,7 +217,6 @@ export default function SpaceEntryRevisionRoute() {
             {t("entryRevision.actor")}: {actorName()}
           </p>
           <EntryFields
-            titleValue={revisionTitleValue()}
             fields={revisionFields()}
             getValue={(name) => parsedRevision().fields[name] ?? ""}
             readOnly

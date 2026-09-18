@@ -72,7 +72,6 @@ describe("FormTable", () => {
     const entries = [
       {
         id: "1",
-        title: "Entry1",
         properties: undefined,
         updated_at: new Date().toISOString(),
       },
@@ -110,7 +109,6 @@ describe("FormTable", () => {
     } as any;
     vi.spyOn(searchApi, "query").mockResolvedValue([{
       id: "1",
-      title: "Entry1",
       properties: {
         asset: {
           asset_id: "asset-1",
@@ -150,14 +148,12 @@ describe("FormTable", () => {
     } as any;
     const entries = [
       {
-        id: "1",
-        title: "B Entry",
+        id: "entry-b",
         properties: { price: 20 },
         updated_at: "2026-01-01",
       },
       {
-        id: "2",
-        title: "A Entry",
+        id: "entry-a",
         properties: { price: 10 },
         updated_at: "2026-01-02",
       },
@@ -174,25 +170,25 @@ describe("FormTable", () => {
     ));
 
     await waitFor(() =>
-      expect(desktopTable().getByText("A Entry")).toBeInTheDocument()
+      expect(desktopTable().getByText("entry-a")).toBeInTheDocument()
     );
 
-    // Initially might be in order returned by API. Click Title to sort.
-    const titleHeader = desktopTable().getByText("Title");
-    fireEvent.click(titleHeader); // Asc null -> asc
+    // Initially might be in order returned by API. Click ID to sort.
+    const idHeader = desktopTable().getByText("ID");
+    fireEvent.click(idHeader); // Asc null -> asc
 
     await waitFor(() => {
       const rows = document.querySelectorAll("tbody tr");
-      expect(rows[0]).toHaveTextContent("A Entry");
+      expect(rows[0]).toHaveTextContent("entry-a");
     });
 
-    fireEvent.click(titleHeader); // Asc -> desc
+    fireEvent.click(idHeader); // Asc -> desc
     await waitFor(() => {
       const rows = document.querySelectorAll("tbody tr");
-      expect(rows[0]).toHaveTextContent("B Entry");
+      expect(rows[0]).toHaveTextContent("entry-b");
     });
 
-    fireEvent.click(titleHeader); // desc -> null (clear sort)
+    fireEvent.click(idHeader); // desc -> null (clear sort)
     await waitFor(() => {
       // Both entries still visible (sort cleared)
       const rows = document.querySelectorAll("tbody tr");
@@ -207,14 +203,12 @@ describe("FormTable", () => {
     } as any;
     const entries = [
       {
-        id: "1",
-        title: "Apple",
+        id: "entry-apple",
         properties: { tag: "fruit" },
         updated_at: "2026-01-01",
       },
       {
-        id: "2",
-        title: "Carrot",
+        id: "entry-carrot",
         properties: { tag: "veggie" },
         updated_at: "2026-01-01",
       },
@@ -231,15 +225,15 @@ describe("FormTable", () => {
     ));
 
     await waitFor(() =>
-      expect(desktopTable().getByText("Apple")).toBeInTheDocument()
+      expect(desktopTable().getByText("entry-apple")).toBeInTheDocument()
     );
 
     const searchInput = getByPlaceholderText("Global Search...");
     fireEvent.input(searchInput, { target: { value: "carrot" } });
 
     await waitFor(() => {
-      expect(desktopTable().getByText("Carrot")).toBeInTheDocument();
-      expect(desktopTable().queryByText("Apple")).not.toBeInTheDocument();
+      expect(desktopTable().getByText("entry-carrot")).toBeInTheDocument();
+      expect(desktopTable().queryByText("entry-apple")).not.toBeInTheDocument();
     });
   });
 
@@ -250,20 +244,17 @@ describe("FormTable", () => {
     } as any;
     const entries = [
       {
-        id: "1",
-        title: "Apple",
+        id: "apple-1",
         properties: { tag: "fruit" },
         updated_at: "2026-01-01",
       },
       {
-        id: "2",
-        title: "Apple Pie",
+        id: "apple-2",
         properties: { tag: "dessert" },
         updated_at: "2026-01-01",
       },
       {
-        id: "3",
-        title: "Carrot",
+        id: "carrot-1",
         properties: { tag: "fruit" },
         updated_at: "2026-01-01",
       },
@@ -292,7 +283,7 @@ describe("FormTable", () => {
     await waitFor(() => {
       const rows = document.querySelectorAll("tbody tr");
       expect(rows.length).toBe(1);
-      expect(rows[0]).toHaveTextContent("Apple");
+      expect(rows[0]).toHaveTextContent("apple-1");
       expect(rows[0]).toHaveTextContent("fruit");
     });
   });
@@ -304,14 +295,12 @@ describe("FormTable", () => {
     } as any;
     const entries = [
       {
-        id: "1",
-        title: "Keep Me",
+        id: "keep-entry",
         properties: { price: 100 },
         updated_at: "2026-01-01",
       },
       {
-        id: "2",
-        title: "Drop Me",
+        id: "drop-entry",
         properties: { price: 200 },
         updated_at: "2026-01-01",
       },
@@ -352,12 +341,12 @@ describe("FormTable", () => {
     await waitFor(() => expect(getByText("Export CSV")).toBeInTheDocument());
 
     fireEvent.input(getByPlaceholderText("Global Search..."), {
-      target: { value: "Keep" },
+      target: { value: "keep" },
     });
     await waitFor(() => {
       const rows = document.querySelectorAll("tbody tr");
       expect(rows.length).toBe(1);
-      expect(rows[0]).toHaveTextContent("Keep Me");
+      expect(rows[0]).toHaveTextContent("keep-entry");
     });
 
     fireEvent.click(getByText("Export CSV"));
@@ -369,9 +358,9 @@ describe("FormTable", () => {
     });
     const csvContent = await exportedBlob!.text();
     expect(csvContent).toContain(
-      '"Keep Me","100","2026-01-01T00:00:00.000Z"',
+      '"keep-entry","100","2026-01-01T00:00:00.000Z"',
     );
-    expect(csvContent).not.toContain("Drop Me");
+    expect(csvContent).not.toContain("drop-entry");
   });
 
   it("exports formula/control-prefixed values as literal text with CRLF endings", async () => {
@@ -381,20 +370,17 @@ describe("FormTable", () => {
     } as any;
     const entries = [
       {
-        id: "1",
-        title: "=SUM(A1:A2)",
+        id: "=SUM(A1:A2)",
         properties: { code: "+1" },
         updated_at: "2026-01-01",
       },
       {
-        id: "2",
-        title: "-discount",
+        id: "-discount",
         properties: { code: "@user" },
         updated_at: "2026-01-02",
       },
       {
-        id: "3",
-        title: "plain",
+        id: "plain",
         properties: { code: "\u0001=CMD" },
         updated_at: "2026-01-03",
       },
@@ -446,7 +432,7 @@ describe("FormTable", () => {
     });
     const csvContent = await exportedBlob!.text();
     expect(csvContent).toBe(
-      '"title","code","updated_at"\r\n' +
+      '"id","code","updated_at"\r\n' +
         '"\'=SUM(A1:A2)","\'+\u0031","2026-01-01T00:00:00.000Z"\r\n' +
         '"\'-discount","\'@user","2026-01-02T00:00:00.000Z"\r\n' +
         '"plain","\'\u0001=CMD","2026-01-03T00:00:00.000Z"',
@@ -459,7 +445,7 @@ describe("FormTable", () => {
   });
 
   it("splits CSV exports into bounded WASM requests without changing bytes", async () => {
-    const headers = ["title"];
+    const headers = ["id"];
     const rows = [["a"], ["b"], ["c"]];
     const singleRowBytes = spreadsheetCsvRequestBytes([headers, rows[0]]);
 
@@ -479,7 +465,7 @@ describe("FormTable", () => {
   });
 
   it("measures the exact envelope near the ASCII boundary", () => {
-    const headers = ["title"];
+    const headers = ["id"];
     const fitRows = [[headers, ["a"]].flat()];
     const fitBytes = spreadsheetCsvRequestBytes([headers, ["a"]]);
     // Fits at the exact limit: one chunk.
@@ -501,7 +487,7 @@ describe("FormTable", () => {
   });
 
   it("measures the exact envelope near the multibyte JA boundary", () => {
-    const headers = ["タイトル"];
+    const headers = ["id"];
     const row: readonly string[] = ["日本語"];
     const fitBytes = spreadsheetCsvRequestBytes([headers, row]);
     expect(chunkCsvRowsForExport(headers, [row], fitBytes)).toEqual([[row]]);
@@ -519,7 +505,7 @@ describe("FormTable", () => {
   });
 
   it("keeps every invocation within 256KiB under exact accounting", async () => {
-    const headers = ["title", "body"];
+    const headers = ["id", "body"];
     const rows = Array.from(
       { length: 20 },
       (_, i) => [`row-${i}`, `value-${i}`] as const,
@@ -576,7 +562,6 @@ describe("FormTable", () => {
     const entries = [
       {
         id: "1",
-        title: "Entry1",
         properties: { col: "val" },
         updated_at: "2026-01-01",
       },
@@ -584,7 +569,7 @@ describe("FormTable", () => {
     vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
     const getSpy = vi.spyOn(entryApi, "get").mockResolvedValue({
       id: "1",
-      content: "# Entry1\n\n## col\nval",
+      content: "---\nform: Test\n---\n\n## col\nval",
       revision_id: "rev1",
     } as any);
     const updateSpy = vi.spyOn(entryApi, "update").mockResolvedValue({} as any);
@@ -599,7 +584,7 @@ describe("FormTable", () => {
     ));
 
     // Wait for render
-    await waitFor(() => desktopTable().getByText("Entry1"));
+    await waitFor(() => desktopTable().getByText("1"));
 
     // Click Edit Toggle (Lock icon)
     const toggleButton = getByTitle("Enable Editing");
@@ -635,7 +620,6 @@ describe("FormTable", () => {
     const entries = [
       {
         id: "1",
-        title: "Entry1",
         properties: { col: "val" },
         updated_at: "2026-01-01",
       },
@@ -653,11 +637,11 @@ describe("FormTable", () => {
     ));
 
     await waitFor(() =>
-      expect(desktopTable().getByText("Entry1")).toBeInTheDocument()
+      expect(desktopTable().getByText("1")).toBeInTheDocument()
     );
 
     // Find the row
-    const row = desktopTable().getByText("Entry1").closest("tr");
+    const row = desktopTable().getByText("1").closest("tr");
     if (!row) throw new Error("Row not found");
 
     // Click the row itself (but not the link icon)
@@ -704,13 +688,11 @@ describe("FormTable", () => {
     const entries = [
       {
         id: "1",
-        title: "Entry1",
         properties: { col: "val1" },
         updated_at: new Date("2026-01-01").toISOString(),
       },
       {
         id: "2",
-        title: "Entry2",
         properties: { col: "val2" },
         updated_at: new Date("2026-01-02").toISOString(),
       },
@@ -728,11 +710,11 @@ describe("FormTable", () => {
       />
     ));
 
-    await waitFor(() => desktopTable().getByText("Entry1"));
+    await waitFor(() => desktopTable().getByText("1"));
 
     // Simulate drag selection from (0,0) to (1,1)
-    // Col 0: Title, Col 1: col
-    const cell1 = desktopTable().getByText("Entry1");
+    // Col 0: ID, Col 1: col
+    const cell1 = desktopTable().getByText("1");
     const cell2 = desktopTable().getByText("val2");
 
     fireEvent.mouseDown(cell1);
@@ -742,7 +724,7 @@ describe("FormTable", () => {
     // Trigger Ctrl+C
     fireEvent.keyDown(document, { key: "c", ctrlKey: true });
 
-    expect(writeTextSpy).toHaveBeenCalledWith("Entry1\tval1\nEntry2\tval2");
+    expect(writeTextSpy).toHaveBeenCalledWith("1\tval1\n2\tval2");
   });
 
   it("should not trigger custom copy when input is focused", async () => {
@@ -776,14 +758,12 @@ describe("FormTable", () => {
     } as any;
     const entries = [
       {
-        id: "1",
-        title: "B",
+        id: "entry-b",
         properties: { col: "v1" },
         updated_at: "2026-01-02",
       },
       {
-        id: "2",
-        title: "A",
+        id: "entry-a",
         properties: { col: "v2" },
         updated_at: "2026-01-01",
       },
@@ -799,17 +779,17 @@ describe("FormTable", () => {
       />
     ));
 
-    await waitFor(() => desktopTable().getByText("A"));
+    await waitFor(() => desktopTable().getByText("entry-a"));
 
     // Open sort menu
     fireEvent.click(getByLabelText("Sort menu"));
     // Change sort field via dropdown
     const sortFieldSelect = getByLabelText("Sort field");
-    fireEvent.change(sortFieldSelect, { target: { value: "title" } });
+    fireEvent.change(sortFieldSelect, { target: { value: "id" } });
 
     await waitFor(() => {
       const rows = document.querySelectorAll("tbody tr");
-      expect(rows[0]).toHaveTextContent("A");
+      expect(rows[0]).toHaveTextContent("entry-a");
     });
 
     // Change to empty (clears sort)
@@ -823,14 +803,12 @@ describe("FormTable", () => {
     } as any;
     const entries = [
       {
-        id: "1",
-        title: "Apple",
+        id: "apple-1",
         properties: { col: "fruit" },
         updated_at: "2026-01-01",
       },
       {
-        id: "2",
-        title: "Carrot",
+        id: "carrot-1",
         properties: { col: "veggie" },
         updated_at: "2026-01-01",
       },
@@ -849,12 +827,12 @@ describe("FormTable", () => {
     await waitFor(() => expect(document.querySelector("tbody")).toBeTruthy());
 
     // Column filters are visible (showColumnFilters starts true)
-    // Find the title column filter (first filter input after headers)
+    // Find the ID column filter (first filter input after headers)
     const filterInputs = document.querySelectorAll("input.ui-table-filter");
     expect(filterInputs.length).toBeGreaterThan(0);
 
-    // Filter by title column
-    fireEvent.input(filterInputs[0], { target: { value: "Apple" } });
+    // Filter by ID column
+    fireEvent.input(filterInputs[0], { target: { value: "apple-1" } });
 
     await waitFor(() => {
       const rows = document.querySelectorAll("tbody tr");
@@ -870,7 +848,6 @@ describe("FormTable", () => {
     const entries = [
       {
         id: "1",
-        title: "Entry1",
         properties: { col: "val1" },
         updated_at: new Date("2026-01-01").toISOString(),
       },
@@ -888,12 +865,12 @@ describe("FormTable", () => {
       />
     ));
 
-    await waitFor(() => desktopTable().getByText("Entry1"));
+    await waitFor(() => desktopTable().getByText("1"));
 
-    // Select title cell (col 0)
-    const cell1 = desktopTable().getByText("Entry1");
+    // Select ID cell (col 0)
+    const cell1 = desktopTable().getByText("1");
     // Get a cell with a date (updated_at column, col 2)
-    const updatedCell = document.querySelectorAll("tbody td")[3]; // Actions(0), Title(1), col(2), updated(3)
+    const updatedCell = document.querySelectorAll("tbody td")[3]; // Actions(0), ID(1), col(2), updated(3)
 
     fireEvent.mouseDown(cell1);
     fireEvent.mouseEnter(updatedCell, { buttons: 1 });
@@ -906,24 +883,22 @@ describe("FormTable", () => {
     });
   });
 
-  it("inline edit title cell via handleCellUpdate", async () => {
+  it("id cell is read-only via handleCellUpdate", async () => {
     const entryForm = {
       name: "Test",
       fields: { col: { type: "string" } },
     } as any;
     const entries = [
       {
-        id: "1",
-        title: "OldTitle",
+        id: "entry-1",
         properties: { col: "val" },
         updated_at: "2026-01-01",
       },
     ];
     vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
     const getSpy = vi.spyOn(entryApi, "get").mockResolvedValue({
-      id: "1",
-      title: "OldTitle",
-      content: "# OldTitle\n\n## col\nval",
+      id: "entry-1",
+      content: "---\nform: Test\n---\n\n## col\nval",
       revision_id: "rev1",
     } as any);
     const updateSpy = vi.spyOn(entryApi, "update").mockResolvedValue({} as any);
@@ -937,37 +912,22 @@ describe("FormTable", () => {
       />
     ));
 
-    await waitFor(() => desktopTable().getByText("OldTitle"));
+    await waitFor(() => desktopTable().getByText("entry-1"));
 
     // Enable edit mode
     fireEvent.click(getByTitle("Enable Editing"));
 
-    // Click on the title cell td
-    const titleText = desktopTable().getByText("OldTitle");
-    const titleTd = titleText.closest("td") ?? titleText;
-    fireEvent.click(titleTd);
+    // Click on the ID cell td: the stable entry id is identity and never
+    // becomes an inline editor.
+    const idText = desktopTable().getByText("entry-1");
+    const idTd = idText.closest("td") ?? idText;
+    fireEvent.click(idTd);
 
-    // Find the title input using display value
-    const titleInput = await waitFor(() => {
-      const input = document.querySelector(
-        "input.ui-table-cell-input",
-      ) as HTMLInputElement;
-      if (!input) throw new Error("title input not found");
-      return input;
-    });
-
-    fireEvent.input(titleInput, { target: { value: "NewTitle" } });
-    fireEvent.blur(titleInput);
-
-    await waitFor(() => {
-      expect(updateSpy).toHaveBeenCalledWith(
-        "ws",
-        "1",
-        expect.objectContaining({
-          markdown: expect.stringContaining("NewTitle"),
-        }),
-      );
-    });
+    // No inline editor opens for the ID cell.
+    expect(
+      document.querySelector("input.ui-table-cell-input"),
+    ).not.toBeInTheDocument();
+    expect(updateSpy).not.toHaveBeenCalled();
 
     updateSpy.mockRestore();
     getSpy.mockRestore();
@@ -984,8 +944,7 @@ describe("FormTable", () => {
       },
     } as any;
     vi.spyOn(searchApi, "query").mockResolvedValue([{
-      id: "1",
-      title: "Entry1",
+      id: "entry-1",
       properties: {
         status: "Open",
         owner: "Aki",
@@ -994,18 +953,19 @@ describe("FormTable", () => {
       },
       updated_at: "2026-01-01",
     }] as any);
+    const onEntryClick = vi.fn();
 
     render(() => (
       <FormTable
         spaceId="ws"
         entryForm={entryForm}
-        onEntryClick={() => {}}
+        onEntryClick={onEntryClick}
         onAddRow={() => {}}
       />
     ));
 
     await waitFor(() =>
-      expect(mobileList().getByText("Entry1"))
+      expect(mobileList().getByText("entry-1"))
         .toBeInTheDocument()
     );
     expect(mobileList().getByText("status")).toBeInTheDocument();
@@ -1014,6 +974,9 @@ describe("FormTable", () => {
     expect(extraField.closest(".ui-table-mobile-extra-fields"))
       .toBeTruthy();
     expect(mobileList().getByText("Show 1 more field")).toBeInTheDocument();
+    // The mobile card header shows the stable entry ID and navigates.
+    fireEvent.click(mobileList().getByText("entry-1"));
+    expect(onEntryClick).toHaveBeenCalledWith("entry-1");
   });
 
   it("keeps additional mobile card fields inline-editable", async () => {
@@ -1028,7 +991,6 @@ describe("FormTable", () => {
     } as any;
     vi.spyOn(searchApi, "query").mockResolvedValue([{
       id: "1",
-      title: "Entry1",
       properties: {
         status: "Open",
         owner: "Aki",
@@ -1039,7 +1001,7 @@ describe("FormTable", () => {
     }] as any);
     vi.spyOn(entryApi, "get").mockResolvedValue({
       id: "1",
-      content: "# Entry1\n\n## notes\nOld",
+      content: "---\nform: Test\n---\n\n## notes\nOld",
       revision_id: "rev1",
     } as any);
     const updateSpy = vi.spyOn(entryApi, "update").mockResolvedValue({} as any);
@@ -1054,7 +1016,7 @@ describe("FormTable", () => {
     ));
 
     await waitFor(() =>
-      expect(mobileList().getByText("Entry1"))
+      expect(mobileList().getByText("1"))
         .toBeInTheDocument()
     );
     fireEvent.click(getByTitle("Enable Editing"));
@@ -1104,7 +1066,7 @@ describe("FormTable", () => {
 
     expect(getByRole("textbox", { name: "Global Search..." })).toBeInTheDocument();
     // Desktop header inputs and the mobile panel share accessible names.
-    expect(getAllByRole("textbox", { name: "Title Filter..." }).length).toBeGreaterThan(0);
+    expect(getAllByRole("textbox", { name: "ID Filter..." }).length).toBeGreaterThan(0);
     expect(getAllByRole("textbox", { name: "col Filter..." }).length).toBeGreaterThan(0);
   });
 

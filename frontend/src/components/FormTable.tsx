@@ -15,7 +15,7 @@ import {
   searchApi,
   spreadsheetCsvRequestBytes,
 } from "~/lib/ugoite-client";
-import { replaceFirstH1, updateH2Section } from "~/lib/markdown";
+import { updateH2Section } from "~/lib/markdown";
 import { t } from "~/lib/i18n";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { formatDateLabel } from "~/lib/date-format";
@@ -34,7 +34,7 @@ interface FormTableProps {
 
 type SortDirection = "asc" | "desc" | null;
 
-/** Helper to filter entries by title or properties */
+/** Helper to filter entries by ID or properties */
 function filterEntries(
   entries: EntryRecord[],
   fields: string[],
@@ -44,8 +44,7 @@ function filterEntries(
   const text = query.toLowerCase();
   return entries.filter((entry) => {
     /* v8 ignore start */
-    const title = (entry.title || "").toLowerCase();
-    if (title.includes(text)) return true;
+    if (entry.id.toLowerCase().includes(text)) return true;
     for (const field of fields) {
       const val = formatValueForDisplay(entry.properties?.[field], "en-US", "")
         .toLowerCase();
@@ -70,7 +69,7 @@ function applyColumnFilters(
       const filterLower = filter.toLowerCase();
       let val = "";
       /* v8 ignore start */
-      if (field === "title") val = entry.title || "";
+      if (field === "id") val = entry.id;
       else if (field === "updated_at") {
         val = formatDateLabel(entry.updated_at);
       } else {
@@ -94,10 +93,10 @@ function sortEntries(
     let valA: string | number;
     let valB: string | number;
 
-    if (field === "title") {
+    if (field === "id") {
       /* v8 ignore start */
-      valA = a.title || "";
-      valB = b.title || "";
+      valA = a.id;
+      valB = b.id;
       /* v8 ignore stop */
       /* v8 ignore start */
     } else if (field === "updated_at") {
@@ -188,7 +187,7 @@ function formatCsvValues(entry: EntryRecord, headers: string[]) {
   return headers
     .map((field) => {
       let val = "";
-      if (field === "title") val = entry.title || "";
+      if (field === "id") val = entry.id;
       else if (field === "updated_at") {
         try {
           val = new Date(entry.updated_at).toISOString();
@@ -321,7 +320,7 @@ export function FormTable(props: FormTableProps) {
     /* v8 ignore stop */
   );
 
-  const sortableFields = createMemo(() => ["title", ...fields(), "updated_at"]);
+  const sortableFields = createMemo(() => ["id", ...fields(), "updated_at"]);
 
   const processedEntries = createMemo(() => {
     const currentEntries = entries();
@@ -404,7 +403,7 @@ export function FormTable(props: FormTableProps) {
         /* v8 ignore stop */
       }));
 
-      const headers = ["title", ...fieldNames, "updated_at"];
+      const headers = ["id", ...fieldNames, "updated_at"];
       const dataRows = data.map((entry) => formatCsvValues(entry, headers));
       /* v8 ignore start */
       const csvContent = await encodeSpreadsheetCsvChunked(
@@ -444,12 +443,7 @@ export function FormTable(props: FormTableProps) {
       const entry = await entryApi.get(props.spaceId, entryId);
       let updatedMarkdown = entry.content;
 
-      if (field === "title") {
-        /* v8 ignore start */
-        if (entry.title === value) return;
-        /* v8 ignore stop */
-        updatedMarkdown = replaceFirstH1(updatedMarkdown, value);
-      } else {
+      {
         /* v8 ignore start */
         const currentValue = formatValueForInput(
           currentRow?.properties?.[field],
@@ -522,9 +516,9 @@ export function FormTable(props: FormTableProps) {
     c2: number,
   ) => {
     const rowData = [];
-    // Col 0: Title
+    // Col 0: stable Entry ID (identity, never a synthesized title)
     /* v8 ignore start */
-    if (c1 <= 0 && c2 >= 0) rowData.push(entry.title || "");
+    if (c1 <= 0 && c2 >= 0) rowData.push(entry.id);
     /* v8 ignore stop */
 
     // Cols 1..N: Fields
@@ -836,12 +830,12 @@ export function FormTable(props: FormTableProps) {
 
         <Show when={showColumnFilters()}>
           <div class="ui-table-mobile-filters" id="form-table-mobile-filters">
-            <For each={["title", ...fields(), "updated_at"]}>
+            <For each={["id", ...fields(), "updated_at"]}>
               {(field) => (
                 <label class="ui-table-mobile-filter">
                   <span>
-                    {field === "title"
-                      ? t("formTable.title")
+                    {field === "id"
+                      ? t("formTable.id")
                       : field === "updated_at"
                       ? t("formTable.updated")
                       : field}
@@ -880,11 +874,11 @@ export function FormTable(props: FormTableProps) {
                     <button
                       type="button"
                       class="ui-table-header-button select-none"
-                      onClick={() => handleHeaderClick("title")}
+                      onClick={() => handleHeaderClick("id")}
                     >
-                      {t("formTable.title")}
+                      {t("formTable.id")}
                       <SortIcon
-                        active={sortField() === "title"}
+                        active={sortField() === "id"}
                         direction={sortDirection()}
                       />
                     </button>
@@ -893,10 +887,10 @@ export function FormTable(props: FormTableProps) {
                         type="text"
                         class="ui-input ui-input-sm ui-table-filter text-xs"
                         placeholder={t("formTable.columnFilter")}
-                        aria-label={`${t("formTable.title")} ${t("formTable.columnFilter")}`}
-                        value={columnFilters().title || ""}
+                        aria-label={`${t("formTable.id")} ${t("formTable.columnFilter")}`}
+                        value={columnFilters().id || ""}
                         onInput={(e) =>
-                          updateColumnFilter("title", e.currentTarget.value)}
+                          updateColumnFilter("id", e.currentTarget.value)}
                         onClick={(e) => e.stopPropagation()}
                       />
                     </Show>
@@ -1009,36 +1003,8 @@ export function FormTable(props: FormTableProps) {
                       onMouseDown={() => handleCellMouseDown(rowIndex(), 0)}
                       onMouseEnter={(e) =>
                         handleCellMouseEnter(e, rowIndex(), 0)}
-                      onClick={(e) => {
-                        if (isEditMode()) {
-                          e.stopPropagation();
-                          setEditingCell({ id: entry.id, field: "title" });
-                        }
-                      }}
                     >
-                      <Show
-                        when={isCellEditing(entry.id, "title")}
-                        fallback={entry.title || t("common.untitled")}
-                      >
-                        <input
-                          value={entry.title || ""}
-                          onBlur={(e) => {
-                            const newVal = e.currentTarget.value;
-                            handleCellUpdate(entry.id, "title", newVal);
-                            if (
-                              editingCell()?.id === entry.id &&
-                              editingCell()?.field === "title"
-                            ) {
-                              setEditingCell(null);
-                            }
-                          }}
-                          onKeyDown={(e) =>
-                            e.key === "Enter" && e.currentTarget.blur()}
-                          class="ui-table-cell-input"
-                          autofocus
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </Show>
+                      {entry.id}
                     </td>
                     <For each={fields()}>
                       {(field, fieldIndex) => (
@@ -1129,41 +1095,13 @@ export function FormTable(props: FormTableProps) {
             {(entry) => (
               <article class="ui-table-mobile-card" role="listitem">
                 <div class="ui-table-mobile-card-header">
-                  <Show
-                    when={isCellEditing(entry.id, "title")}
-                    fallback={
-                      <button
-                        type="button"
-                        class="ui-table-mobile-title"
-                        onClick={() => {
-                          if (isEditMode()) {
-                            setEditingCell({ id: entry.id, field: "title" });
-                          } else {
-                            props.onEntryClick(entry.id);
-                          }
-                        }}
-                      >
-                        {entry.title || t("common.untitled")}
-                      </button>
-                    }
+                  <button
+                    type="button"
+                    class="ui-table-mobile-title"
+                    onClick={() => props.onEntryClick(entry.id)}
                   >
-                    <input
-                      value={entry.title || ""}
-                      class="ui-table-cell-input ui-table-mobile-title-input"
-                      autofocus
-                      aria-label={t("formTable.title")}
-                      onBlur={(event) => {
-                        void handleCellUpdate(
-                          entry.id,
-                          "title",
-                          event.currentTarget.value,
-                        );
-                        setEditingCell(null);
-                      }}
-                      onKeyDown={(event) =>
-                        event.key === "Enter" && event.currentTarget.blur()}
-                    />
-                  </Show>
+                    {entry.id}
+                  </button>
                   <button
                     type="button"
                     class="ui-button ui-button-secondary ui-button-sm"

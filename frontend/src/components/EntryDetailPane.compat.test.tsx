@@ -242,11 +242,15 @@ describe("EntryDetailPane source compat bridge", () => {
     await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
     expect(updateMock).toHaveBeenCalledWith("default", "entry-1", {
       form: "Note",
-      title: "Note",
       tags: [],
       fields: { Body: "kept" },
       parent_revision_id: "rev-1",
     });
+    const updatePayload = updateMock.mock.calls[0][2] as Record<
+      string,
+      unknown
+    >;
+    expect(updatePayload.title).toBeUndefined();
   });
 
   it("auto-opens the Advanced source disclosure while saves are blocked", async () => {

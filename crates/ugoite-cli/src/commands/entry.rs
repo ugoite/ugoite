@@ -48,7 +48,7 @@ pub enum EntrySubCmd {
     },
     /// Create an entry
     #[command(
-        long_about = "Create an entry in a space.\n\nThe entry ID is a slug (alphanumeric + hyphens). Content is a Markdown string. Frontmatter is optional and only needed when you want form-backed metadata.\n\nExamples:\n  # Core mode - minimal note\n  ugoite entry create /root/spaces/my-space my-note --content '# My Note'\n\n  # Core mode - read content from a file\n  ugoite entry create /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode - read content from explicit stdin\n  cat ./note.md | ugoite entry create /root/spaces/my-space my-note --file -\n\n  # Core mode - note with form frontmatter\n  ugoite entry create /root/spaces/my-space my-note --content $'---\\nform: Note\\n---\\n# My Note\\n\\n## Body\\n\\nHello world.'\n\n  # Backend mode - immutable Space UID\n  ugoite entry create 019f1234-5678-7abc-8def-0123456789ab task-01 --content '# Task 01'\n\n  # Core mode with custom author\n  ugoite entry create /root/spaces/my-space my-note --content '# Note' --author alice\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface.\n\nExamples:\n  # Core mode - structured fields without Markdown\n  ugoite entry create /root/spaces/my-space task-01 --form Task --title 'Ship 0.1.x' --field status=open --field priority=3\n\n  # Core mode - complex values from a JSON object file (or --fields-file - for stdin)\n  ugoite entry create /root/spaces/my-space task-01 --form Task --fields-file fields.json\n\nAsset attachment uses this structured path: first `asset upload` the bytes, then put the returned asset object as the field value in --fields-file JSON (for example {\"Document\": {\"asset_id\": \"...\", \"name\": \"report.txt\", \"media_type\": \"...\", \"size_bytes\": 36, \"sha256\": \"...\"}}). There is no dedicated attach flag; --field KEY=VALUE stays a string and cannot carry an asset object."
+        long_about = "Create an entry in a space.\n\nThe entry ID is a slug (alphanumeric + hyphens). Content is a Markdown string. Frontmatter is optional and only needed when you want form-backed metadata.\n\nExamples:\n  # Core mode - minimal note\n  ugoite entry create /root/spaces/my-space my-note --content '# My Note'\n\n  # Core mode - read content from a file\n  ugoite entry create /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode - read content from explicit stdin\n  cat ./note.md | ugoite entry create /root/spaces/my-space my-note --file -\n\n  # Core mode - note with form frontmatter\n  ugoite entry create /root/spaces/my-space my-note --content $'---\\nform: Note\\n---\\n# My Note\\n\\n## Body\\n\\nHello world.'\n\n  # Backend mode - immutable Space UID\n  ugoite entry create 019f1234-5678-7abc-8def-0123456789ab task-01 --content '# Task 01'\n\n  # Core mode with custom author\n  ugoite entry create /root/spaces/my-space my-note --content '# Note' --author alice\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface.\n\nExamples:\n  # Core mode - structured fields without Markdown (title-less)\n  ugoite entry create /root/spaces/my-space task-01 --form Task --field status=open --field priority=3\n\n  # Core mode - complex values from a JSON object file (or --fields-file - for stdin)\n  ugoite entry create /root/spaces/my-space task-01 --form Task --fields-file fields.json\n\n  # 0.1.x compatibility only: --title preserves a legacy display title and will be removed in 0.2\n  ugoite entry create /root/spaces/my-space task-01 --form Task --title 'Ship 0.1.x' --field status=open\n\nAsset attachment uses this structured path: first `asset upload` the bytes, then put the returned asset object as the field value in --fields-file JSON (for example {\"Document\": {\"asset_id\": \"...\", \"name\": \"report.txt\", \"media_type\": \"...\", \"size_bytes\": 36, \"sha256\": \"...\"}}). There is no dedicated attach flag; --field KEY=VALUE stays a string and cannot carry an asset object."
     )]
     Create {
         #[arg(
@@ -82,7 +82,7 @@ pub enum EntrySubCmd {
         #[arg(
             long,
             allow_hyphen_values = true,
-            help = "Entry title for structured authoring"
+            help = "Legacy 0.1.x compatibility title for structured authoring (omit for title-less entries; removed in 0.2)"
         )]
         title: Option<String>,
         #[arg(
@@ -105,7 +105,7 @@ pub enum EntrySubCmd {
     },
     /// Update an entry
     #[command(
-        long_about = "Update an entry in a space.\n\nExamples:\n  # Core mode\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated'\n\n  # Core mode - read content from a file\n  ugoite entry update /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode with optimistic concurrency\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated' --parent-revision-id rev-1\n\n  # Backend mode (immutable Space UID)\n  ugoite entry update 019f1234-5678-7abc-8def-0123456789ab my-note --markdown '# Updated'\n\nWhen --parent-revision-id is omitted, the CLI reads the current Entry immediately before the update and uses its revision ID for optimistic concurrency.\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface. --field/--fields-file values are the complete post-update field map: omitted fields are cleared, never patched. Tags and extra attributes are preserved because they are not editable through this CLI command; an explicit --field/--fields-file value replaces a preserved extra attribute with the same key.\n\nExamples:\n  # Core mode - structured update without Markdown\n  ugoite entry update /root/spaces/my-space task-01 --title 'New title' --fields-file entry-fields.json --parent-revision-id rev-1\n\nStructured updates carry the complete post-update field map: to keep an existing attachment while adding another, read the current entry first and resupply the full Attachments array in --fields-file. Omitted list items are dropped, never merged."
+        long_about = "Update an entry in a space.\n\nExamples:\n  # Core mode\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated'\n\n  # Core mode - read content from a file\n  ugoite entry update /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode with optimistic concurrency\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated' --parent-revision-id rev-1\n\n  # Backend mode (immutable Space UID)\n  ugoite entry update 019f1234-5678-7abc-8def-0123456789ab my-note --markdown '# Updated'\n\nWhen --parent-revision-id is omitted, the CLI reads the current Entry immediately before the update and uses its revision ID for optimistic concurrency.\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface. --field/--fields-file values are the complete post-update field map: omitted fields are cleared, never patched. Tags and extra attributes are preserved because they are not editable through this CLI command; an explicit --field/--fields-file value replaces a preserved extra attribute with the same key.\n\nExamples:\n  # Core mode - structured update without Markdown (title-less; legacy titles are left untouched)\n  ugoite entry update /root/spaces/my-space task-01 --fields-file entry-fields.json --parent-revision-id rev-1\n\n  # 0.1.x compatibility only: --title updates the legacy display title and will be removed in 0.2\n  ugoite entry update /root/spaces/my-space task-01 --title 'New title' --fields-file entry-fields.json --parent-revision-id rev-1\n\nStructured updates carry the complete post-update field map: to keep an existing attachment while adding another, read the current entry first and resupply the full Attachments array in --fields-file. Omitted list items are dropped, never merged."
     )]
     Update {
         #[arg(
@@ -139,7 +139,7 @@ pub enum EntrySubCmd {
         #[arg(
             long,
             allow_hyphen_values = true,
-            help = "Updated entry title for structured authoring"
+            help = "Legacy 0.1.x compatibility title for structured authoring (omit to leave titles untouched; removed in 0.2)"
         )]
         title: Option<String>,
         #[arg(
@@ -666,6 +666,11 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             let has_markdown = content.is_some() || file.is_some();
             validate_entry_input_style(has_structured, has_markdown, "--content/--file")?;
             if has_structured {
+                if title.is_some() {
+                    eprintln!(
+                        "note: --title is a 0.1.x legacy compatibility option; omit it for title-less entries (removed in 0.2)"
+                    );
+                }
                 return create_structured_entry(
                     &config,
                     &fmt,
@@ -766,6 +771,11 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             let has_markdown = markdown.is_some() || file.is_some();
             validate_entry_input_style(has_structured, has_markdown, "--markdown/--file")?;
             if has_structured {
+                if title.is_some() {
+                    eprintln!(
+                        "note: --title is a 0.1.x legacy compatibility option; omit it to leave titles untouched (removed in 0.2)"
+                    );
+                }
                 return update_structured_entry(
                     &config,
                     &fmt,

@@ -422,7 +422,6 @@ function RowReferencePicker(props: RowReferencePickerProps) {
  * Dialog for creating a new entry with optional form selection.
  */
 export function CreateEntryDialog(props: CreateEntryDialogProps) {
-  const [title, setTitle] = createSignal("");
   const [selectedForm, setSelectedForm] = createSignal("");
   const [inputMode, setInputMode] = createSignal<EntryInputMode>("webform");
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
@@ -439,7 +438,6 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     Record<string, RowReferenceOption>
   >({});
   const [chatStep, setChatStep] = createSignal(0);
-  let inputRef: HTMLInputElement | undefined;
   let dialogRef: HTMLDialogElement | undefined;
 
   const selectableForms = createMemo(() =>
@@ -557,7 +555,6 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     /* v8 ignore next */
     if (!props.open) return;
     setErrorMessage(null);
-    setTitle("");
     setInputMode("webform");
     setMarkdownInput("");
     setLastGeneratedMarkdown("");
@@ -579,7 +576,6 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
       setSelectedForm("");
     }
     /* v8 ignore stop */
-    inputRef?.focus();
   });
 
   createEffect(() => {
@@ -605,11 +601,8 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     }
     /* v8 ignore stop */
     setFieldValues(defaults);
-    const generated = buildEntryMarkdownFromFields(
-      form,
-      title().trim() || form.name,
-      defaults,
-    );
+    // Title-less Entry: the preview carries no H1; names live in fields.
+    const generated = buildEntryMarkdownFromFields(form, "", defaults);
     setMarkdownInput(generated);
     setLastGeneratedMarkdown(generated);
     setInitializedFormName(form.name);
@@ -622,11 +615,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     const form = selectedFormDef();
     if (!form) return;
     if (inputMode() !== "markdown") return;
-    const generated = buildEntryMarkdownFromFields(
-      form,
-      title().trim() || form.name,
-      fieldValues(),
-    );
+    const generated = buildEntryMarkdownFromFields(form, "", fieldValues());
     const current = markdownInput();
     const previousGenerated = lastGeneratedMarkdown();
     if (current === "" || current === previousGenerated) {
@@ -823,7 +812,6 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 
   const resetEntryDraft = () => {
     setErrorMessage(null);
-    setTitle("");
     setSelectedForm("");
     setRowReferenceQueries({});
     setMarkdownInput("");
@@ -858,22 +846,23 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
       ? null
       : t("createDialog.entry.error.provideMarkdown");
 
-  const submitEntry = async (entryTitle: string, formName: string) => {
+  // Title-less Entry: the legacy title argument is always empty; names
+  // live in Form fields. The callback shape is kept for compatibility.
+  const submitEntry = async (_entryTitle: string, formName: string) => {
     if (inputMode() === "markdown") {
       await props.onSubmit(
-        entryTitle,
+        "",
         formName,
         { __markdown: markdownInput().trim() },
         "markdown",
       );
       return;
     }
-    await props.onSubmit(entryTitle, formName, fieldValues(), inputMode());
+    await props.onSubmit("", formName, fieldValues(), inputMode());
   };
 
   const handleSubmit = async (e: Event) => {
     e.preventDefault();
-    const entryTitle = title().trim();
     const formName = selectedForm().trim();
     /* v8 ignore start */
     if (!formName) {
@@ -890,7 +879,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
       return;
     }
     try {
-      await submitEntry(entryTitle, formName);
+      await submitEntry("", formName);
       resetEntryDraft();
     } catch (error) {
       setErrorMessage(
@@ -925,25 +914,6 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
           </h2>
 
           <form onSubmit={handleSubmit} class="ui-stack-sm">
-            <div class="ui-field">
-              <label class="ui-label" for="entry-title">
-                {t("createDialog.entry.titleLabel")}
-              </label>
-              <input
-                ref={inputRef}
-                id="entry-title"
-                type="text"
-                value={title()}
-                onInput={(e) => {
-                  setErrorMessage(null);
-                  setTitle(e.currentTarget.value);
-                }}
-                placeholder={t("createDialog.entry.titlePlaceholder")}
-                class="ui-input"
-                autofocus
-              />
-            </div>
-
             <Show
               when={selectableForms().length > 0}
               fallback={

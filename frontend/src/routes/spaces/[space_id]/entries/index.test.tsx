@@ -97,7 +97,7 @@ describe("/spaces/:space_id/entries", () => {
     expect(screen.queryByTestId("redirect")).not.toBeInTheDocument();
   });
 
-  it("provides a flat list with local filtering and title sorting", async () => {
+  it("provides a flat list with local filtering and ID sorting", async () => {
     server.use(
       http.get(
         testApiUrl("/spaces/default/entries"),
@@ -107,7 +107,7 @@ describe("/spaces/:space_id/entries", () => {
               id: "entry-1",
               title: "Zebra note",
               form: "Notes",
-              updated_at: "2026-03-02T00:00:00Z",
+              updated_at: "2026-03-01T00:00:00Z",
               properties: {},
               tags: [],
             },
@@ -115,7 +115,15 @@ describe("/spaces/:space_id/entries", () => {
               id: "entry-2",
               title: "Alpha note",
               form: "Notes",
-              updated_at: "2026-03-01T00:00:00Z",
+              updated_at: "2026-03-02T00:00:00Z",
+              properties: {},
+              tags: [],
+            },
+            {
+              id: "entry-3",
+              title: null,
+              form: "Notes",
+              updated_at: "2026-03-03T00:00:00Z",
               properties: {},
               tags: [],
             },
@@ -125,7 +133,12 @@ describe("/spaces/:space_id/entries", () => {
 
     renderRoute();
 
+    // Labels: titles where present, IDs otherwise.
     expect(await screen.findByRole("button", { name: /Zebra note/ }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Alpha note/ }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /entry-3/ }))
       .toBeInTheDocument();
     const filter = screen.getByRole("search");
     expect(filter).toBeInTheDocument();
@@ -134,20 +147,42 @@ describe("/spaces/:space_id/entries", () => {
     });
     expect(screen.queryByRole("button", { name: /Zebra note/ }))
       .not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /entry-3/ }))
+      .not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Alpha note/ }))
+      .toBeInTheDocument();
+
+    // Filter matches the ID label for title-less entries.
+    fireEvent.input(screen.getByLabelText("Filter entries"), {
+      target: { value: "entry-3" },
+    });
+    expect(screen.queryByRole("button", { name: /Alpha note/ }))
+      .not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /entry-3/ }))
+      .toBeInTheDocument();
+
+    // Filter matches the form name as well as the label.
+    fireEvent.input(screen.getByLabelText("Filter entries"), {
+      target: { value: "Notes" },
+    });
+    expect(screen.getByRole("button", { name: /Zebra note/ }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Alpha note/ }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /entry-3/ }))
       .toBeInTheDocument();
 
     fireEvent.input(screen.getByLabelText("Filter entries"), {
       target: { value: "" },
     });
     fireEvent.change(screen.getByLabelText("Sort entries"), {
-      target: { value: "title" },
+      target: { value: "id" },
     });
     expect(
       [...document.querySelectorAll(".entryRowTitle")].map((node) =>
         node.textContent
       ),
-    ).toEqual(["Alpha note", "Zebra note"]);
+    ).toEqual(["Zebra note", "Alpha note", "entry-3"]);
     fireEvent.change(screen.getByLabelText("Sort entries"), {
       target: { value: "updated" },
     });
@@ -155,7 +190,7 @@ describe("/spaces/:space_id/entries", () => {
       [...document.querySelectorAll(".entryRowTitle")].map((node) =>
         node.textContent
       ),
-    ).toEqual(["Zebra note", "Alpha note"]);
+    ).toEqual(["entry-3", "Alpha note", "Zebra note"]);
     expect(document.querySelector(".entryRow")).toBeInTheDocument();
     expect(document.querySelector(".entryRow .ui-card")).toBeNull();
   });
@@ -233,8 +268,7 @@ describe("/spaces/:space_id/entries", () => {
     expect(
       await screen.findByText(/SQL session result is not an Entry projection/),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Untitled/ }))
-      .not.toBeInTheDocument();
+    expect(document.querySelector(".entryRow")).toBeNull();
     expect(navigate).not.toHaveBeenCalled();
   });
 
