@@ -158,12 +158,11 @@ describe("SpaceSettingsRoute", () => {
     fireEvent.click(menuButton);
     expect(menuButton).toHaveAttribute("aria-expanded", "true");
     expect(container.querySelector(".drawerBackdrop")).not.toBeNull();
-    // Focus moves into the drawer for keyboard users.
-    await waitFor(() =>
-      expect(document.activeElement?.getAttribute("aria-label")).toBe(
-        "Close menu",
-      )
-    );
+    // Focus moves into the drawer close control for keyboard users.
+    const closeButton = container.querySelector(
+      "#settings-nav button",
+    ) as HTMLButtonElement;
+    await waitFor(() => expect(document.activeElement).toBe(closeButton));
 
     fireEvent.click(screen.getByRole("button", { name: "Members" }));
     expect(setSearchParams).toHaveBeenCalledWith({ section: "members" });

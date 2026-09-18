@@ -1364,32 +1364,6 @@ textarea {
 .settingsMenuRow {
   display: none;
 }
-.settingsNav {
-  position: static;
-  padding: 0 20px 0 0;
-  display: grid;
-  gap: 5px;
-  align-content: start;
-  border: 0;
-  border-right: 1px solid var(--line);
-  border-radius: 0;
-  background: transparent;
-}
-.settingsNav button, .settingsNav a {
-  border: 0;
-  background: transparent;
-  border-radius: 8px;
-  padding: 10px 8px;
-  text-align: left;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: #55657B;
-}
-.settingsNav button.active, .settingsNav a.active {
-  background: linear-gradient(90deg, var(--brand-soft), #FBFCFF);
-  color: var(--brand-ink);
-}
 .searchModeNav {
   display: flex;
   align-items: center;
@@ -1870,7 +1844,7 @@ textarea {
     display: block;
     padding: 8px 2px 0;
   }
-  .listPane, .formPicker, .settingsNav {
+  .listPane, .formPicker {
     position: static;
   }
   .settingsMenuRow {
@@ -2122,7 +2096,7 @@ textarea {
     border-left: 0;
     border-top: 1px solid var(--line);
   }
-  .listPane, .formPicker, .settingsNav {
+  .listPane, .formPicker {
     border-right: 0;
     border-bottom: 1px solid var(--line);
     padding: 0 0 16px;
@@ -2140,19 +2114,6 @@ textarea {
   }
   .searchModeNavEditor {
     margin-left: 0;
-  }
-  .settingsNav {
-    display: flex;
-    align-items: stretch;
-    gap: 6px;
-    overflow-x: auto;
-    white-space: nowrap;
-  }
-  .settingsNav button,
-  .settingsNav a {
-    flex: 0 0 auto;
-    min-height: 44px;
-    padding: 10px 12px;
   }
   .ui-entry-sidebar {
     border-left: 0;
@@ -3930,8 +3891,7 @@ a.tool {
 }
 
 :root[data-color-mode="dark"] .sidebarSpaceSelect select,
-:root[data-color-mode="dark"] .navItem.active,
-:root[data-color-mode="dark"] .settingsNav button.active {
+:root[data-color-mode="dark"] .navItem.active {
   background: var(--brand-soft);
   color: var(--ink);
 }

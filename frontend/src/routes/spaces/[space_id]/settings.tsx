@@ -134,17 +134,17 @@ export default function SpaceSettingsRoute() {
       <div
         class="settingsLayout settingsWorkspace"
         classList={{ settingsNavOpen: drawerOpen() }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            closeDrawer();
+          }
+        }}
       >
         <nav
           id="settings-nav"
           class="settingsNavPanel"
           aria-label={t("settings.title")}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              closeDrawer();
-            }
-          }}
         >
           <div class="settingsNavHead">
             <span class="text-sm font-semibold">{t("settings.title")}</span>
