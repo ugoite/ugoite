@@ -12,7 +12,6 @@ import type { Accessor } from "solid-js";
 import { AssetField } from "~/components/AssetField";
 import { ActionIconBar } from "~/components/ActionIconBar";
 import { BackLink } from "~/components/BackLink";
-import { ButtonSpinner } from "~/components/ButtonSpinner";
 import {
   createEntryFieldInputId,
   type EntryFieldDescriptor,
@@ -72,7 +71,6 @@ export interface EntryDetailPaneProps {
   createForm?: Accessor<Form | undefined>;
   onCreateFormChange?: (formName: string) => void;
   onDeleted: () => void;
-  onCancel?: () => void;
   onCreated?: (result: { id: string; revision_id: string }) => void;
   onAfterSave?: () => void;
 }
@@ -1276,8 +1274,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         JSON.stringify(requestSnapshot);
       setIsDirty(!unchanged);
       if (!context.create && unchanged) {
-        // Transient confirmation only: the detail view has no permanent
-        // saved chip (PR4). The create flow keeps its inline save area.
+        // Transient confirmation only: neither view keeps a permanent
+        // saved chip. The create flow announces through the same toast.
         flashSaveNotice(t("entryDetail.saved"));
       }
       if (!unchanged && context.create) {
@@ -1327,15 +1325,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       );
       /* v8 ignore stop */
     }
-  };
-
-  const handleCancel = () => {
-    /* v8 ignore start */
-    if (isDirty() && !confirm(t("entryDetail.confirmDiscard"))) return;
-    /* v8 ignore stop */
-    clearCreateDraft();
-    setDraftSessionFinished(true);
-    (props.onCancel ?? props.onDeleted)();
   };
 
   const handleCreateFormChange = (formName: string) => {
@@ -1504,7 +1493,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                   <h1 class="ui-page-title truncate">
                     {editorTitle().trim() || currentEntry().id}
                   </h1>
-                  <Show when={currentEntry().form}>
+                  <Show when={currentEntry().form && !(isCreateMode() && props.forms && props.onCreateFormChange)}>
                     <span class="ui-pill">{currentEntry().form}</span>
                   </Show>
                   <Show
@@ -1531,46 +1520,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                   </Show>
                 </div>
               </div>
-              <Show when={isCreateMode()}>
-                <div class="ui-entry-save-area">
-                  {/* Inline refetch spinner: entry fields stay visible. */}
-                  <Show when={entryLoading()}>
-                    <LocalBusyIndicator
-                      size="sm"
-                      label={t("entryDetail.loading")}
-                    />
-                  </Show>
-                  <span
-                    class="text-sm ui-save-state"
-                    role="status"
-                    aria-live="polite"
-                    classList={{
-                      "ui-warning": isDirty() && !isSaving(),
-                      "ui-muted": !isDirty() || isSaving(),
-                    }}
-                  >
-                    {isSaving()
-                      ? t("entryDetail.saving")
-                      : isDirty()
-                      ? t("entryDetail.unsaved")
-                      : t("entryDetail.saved")}
-                  </span>
-                  <button
-                    type="button"
-                    class="ui-button ui-button-primary"
-                    onClick={() => void handleSave()}
-                    disabled={!isDirty() || isSaving() ||
-                      compatibilityDiagnostics().length > 0}
-                    aria-busy={isSaving() || undefined}
-                    aria-label={t("entryDetail.save")}
-                  >
-                    <Show when={isSaving()}>
-                      <ButtonSpinner />
-                    </Show>
-                    {t("entryDetail.save")}
-                  </button>
-                </div>
-              </Show>
             </header>
 
             <Show when={!isCreateMode()}>
@@ -1637,20 +1586,39 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
               </Show>
             </Show>
             <Show when={isCreateMode()}>
+              {/*
+                Same interaction pattern as the detail view: the header
+                carries Back navigation, this bar carries Save. Save is
+                strong only for valid unsaved changes; no separate
+                unsaved-changes badge. Saving state shows on the Save
+                action itself (creation navigates away on success, so no
+                success toast is needed here).
+              */}
               <ActionIconBar
                 label={t("entryDetail.actionBarLabel")}
                 class="ui-entry-action-bar"
                 items={[
                   {
-                    key: "back",
-                    label: t("entryDetail.action.backShort"),
-                    accessibleName: t("entryDetail.back"),
-                    icon: "close",
-                    class: "ui-entry-tool",
-                    onClick: handleCancel,
+                    key: "save",
+                    label: t("entryDetail.save"),
+                    accessibleName: t("entryDetail.save"),
+                    icon: "save",
+                    class: saveReady()
+                      ? "ui-entry-tool ui-entry-tool-primary"
+                      : "ui-entry-tool",
+                    disabled: !saveReady(),
+                    busy: isSaving(),
+                    onClick: () => {
+                      void handleSave();
+                    },
                   },
                 ]}
               />
+              <Show when={isSaving() || saveNotice()}>
+                <p class="ui-save-toast" role="status">
+                  {isSaving() ? t("entryDetail.saving") : saveNotice()}
+                </p>
+              </Show>
             </Show>
 
             <Show when={validationError()}>

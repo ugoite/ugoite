@@ -404,6 +404,52 @@ describe("EntryDetailPane", () => {
     });
   });
 
+  it("uses one converged action row for entry creation", async () => {
+    const form: Form = {
+      name: "Meeting",
+      version: 1,
+      template: "# Meeting\n\n## Notes\n",
+      fields: { Notes: { type: "string", required: false } },
+    };
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreateFormChange={vi.fn()}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+    await screen.findByLabelText("Notes");
+
+    const page = document.querySelector(".ui-entry-page")!;
+    const header = page.querySelector(".ui-entry-header")!;
+    // Header carries the single Back navigation and the Form context;
+    // no header save area and no badge text.
+    expect(header.querySelector('a[href*="/forms"]')).not.toBeNull();
+    expect(header.querySelector(".ui-entry-save-area")).toBeNull();
+    expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
+    expect(screen.queryByText("All changes saved")).not.toBeInTheDocument();
+    // Form identity appears once in the selector, not as pill + selector.
+    expect(header.querySelector(".ui-pill")).toBeNull();
+    expect(screen.getByLabelText("Form")).toBeInTheDocument();
+
+    // Action bar carries the single Save tool. Creating the entry itself
+    // is the pending change, so Save starts enabled and strong...
+    const bar = page.querySelector(".actionbar.compact-actions")!;
+    expect(bar.querySelectorAll(".tool")).toHaveLength(1);
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(bar?.contains(save)).toBe(true);
+    expect(save).toBeEnabled();
+    expect(save.classList.contains("ui-entry-tool-primary")).toBe(true);
+
+    // ...and editing keeps it enabled without ever showing badge text.
+    fireEvent.input(screen.getByLabelText("Notes"), { target: { value: "hi" } });
+    expect(save).toBeEnabled();
+    expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
+  });
+
   it("preserves each Form's work when the new-entry Form changes", async () => {
     const formA: Form = {
       name: "Meeting",
@@ -1309,8 +1355,10 @@ describe("EntryDetailPane", () => {
       id: "created-entry",
       revision_id: "created-revision",
     });
-    expect(screen.getByText("All changes saved")).toBeInTheDocument();
+    // Converged create action row: no unsaved/saved badge text. The
+    // disabled Save action communicates the clean state.
     expect(save).toBeDisabled();
+    expect(screen.queryByText("All changes saved")).not.toBeInTheDocument();
     expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
   });
 
