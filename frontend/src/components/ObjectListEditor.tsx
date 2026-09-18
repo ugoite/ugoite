@@ -113,8 +113,11 @@ export function ObjectListEditor(props: ObjectListEditorProps) {
       emptyText={t("entryDetail.objectEmpty")}
       class="ui-stack"
       renderItem={(item, index, helpers) => {
-        // Property keys drive the inner structure; values flow through
-        // leaf bindings only, so typing never re-creates focused inputs.
+        // Property keys drive the inner structure. The outer row reads the
+        // item to derive its key set, so same-key edits only refresh leaf
+        // bindings while add/remove re-structure inner rows; Solid's keyed
+        // For reuses DOM for unchanged keys, keeping focus stable.
+        // AddPropertyRow is a component boundary, so its draft survives.
         const keys = (): string[] => Object.keys(item() ?? {});
         const itemLabel = () =>
           t("entryDetail.listItemLabel", {
