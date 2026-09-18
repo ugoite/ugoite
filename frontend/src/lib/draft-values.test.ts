@@ -3,6 +3,7 @@ import {
   draftValueToDisplayString,
   isCanonicalAssetValue,
   isPlainStringListField,
+  normalizeObjectListValue,
   normalizeStringListValue,
   parseMarkdownStringList,
   readAssetReferences,
@@ -124,6 +125,17 @@ describe("draft-values", () => {
       Tags: ["alpha", "", "  ", "beta"],
     });
     expect(transported.Tags).toEqual(["alpha", "beta"]);
+  });
+
+  it("normalizes stored shapes into object-list editor values", () => {
+    expect(normalizeObjectListValue([{ step: "one" }, "nope", 3, null]))
+      .toEqual([{ step: "one" }]);
+    expect(normalizeObjectListValue('[{"step":"one"}, 42]')).toEqual([
+      { step: "one" },
+    ]);
+    expect(normalizeObjectListValue('"not-an-array"')).toEqual([]);
+    expect(normalizeObjectListValue("not-json")).toEqual([]);
+    expect(normalizeObjectListValue(undefined)).toEqual([]);
   });
 
   it("parses legacy asset JSON strings only at the bridge, not in components", () => {    const transported = toTransportFields(typedForm(), {

@@ -99,6 +99,33 @@ export const draftValueToDisplayString = (value: DraftValue): string => {
 const isBlankString = (value: unknown): boolean =>
   typeof value === "string" && value.trim() === "";
 
+/**
+ * Normalize any stored draft shape into the object array a repeated
+ * object-list editor binds: object arrays stay as-is, legacy JSON text
+ * parses when it holds an array of objects, everything else starts empty.
+ * The shared Rust boundary remains the authority for item validity.
+ */
+export const normalizeObjectListValue = (
+  value: DraftValue,
+): Record<string, unknown>[] => {
+  if (Array.isArray(value)) {
+    return value.filter(
+      (item): item is Record<string, unknown> =>
+        typeof item === "object" && item !== null && !Array.isArray(item),
+    );
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed: unknown = JSON.parse(value.trim());
+      if (Array.isArray(parsed)) return normalizeObjectListValue(parsed);
+    } catch {
+      // Fall through to empty: unparseable text stays readable through the
+      // legacy textarea surfaces until edited, never invented here.
+    }
+  }
+  return [];
+};
+
 const LIST_ITEM_PREFIX_PATTERN = /^(?:[-*+](?:\s+\[[ xX]\])?\s*)/;
 
 /**
