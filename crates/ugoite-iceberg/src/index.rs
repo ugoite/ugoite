@@ -721,6 +721,10 @@ async fn query_entry_candidates_in_context(
     if branches.is_empty() {
         return Ok(Vec::new());
     }
+    // Title-less Entry (REQ-ENTRY-011): candidate identity is
+    // (entry_id, form); the legacy title is display metadata only and must
+    // not drive pagination. The cursor triple keeps its shape for
+    // compatibility but orders on the stable identity.
     let after_clause = page
         .after
         .map(|(title, id, form)| {

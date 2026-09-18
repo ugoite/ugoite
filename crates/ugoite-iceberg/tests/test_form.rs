@@ -189,7 +189,7 @@ async fn test_form_req_form_005_reject_reserved_metadata_columns() -> anyhow::Re
     let form_def = serde_json::json!({
         "name": "BadForm",
         "fields": {
-            "title": {"type": "string"}
+            "id": {"type": "string"}
         }
     });
 

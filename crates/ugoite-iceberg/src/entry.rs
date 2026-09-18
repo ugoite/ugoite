@@ -948,7 +948,9 @@ pub async fn create_entry_with_scopes_and_change_with_receipt<I: IntegrityProvid
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
     change: Option<ChangeCommand>,
 ) -> Result<(EntryMeta, CommitReceipt)> {
-    let conversion = core_entry::legacy_markdown_to_draft(content, entry_id);
+    // Title-less Entry: a missing H1 yields an empty compatibility title.
+    // The entry_id is identity only and is never copied into the title.
+    let conversion = core_entry::legacy_markdown_to_draft(content, "");
     if !conversion.diagnostics.is_empty() {
         return Err(core_entry::markdown_conversion_error(&conversion.diagnostics).into());
     }
@@ -983,8 +985,9 @@ pub struct EntryDraftRequest {
 
 /// Structured single create converging on the same D1 draft path as Markdown.
 ///
-/// `title` defaults to `entry_id` when `None`. This is additive: the legacy
-/// `{ markdown }` alias is untouched.
+/// Title-less Entry (REQ-ENTRY-011): `title` defaults to empty when `None`.
+/// The `entry_id` is identity only and is never synthesized into a stored
+/// title. A non-empty compatibility title is preserved as legacy metadata.
 #[allow(clippy::too_many_arguments)]
 pub async fn create_structured_entry_with_scopes_and_change<I: IntegrityProvider>(
     op: &Operator,
@@ -1034,7 +1037,7 @@ pub async fn create_structured_entry_with_scopes_and_change_with_receipt<I: Inte
     change: Option<ChangeCommand>,
 ) -> Result<(EntryMeta, CommitReceipt)> {
     let draft = core_entry::structured_fields_to_draft(
-        title.unwrap_or_else(|| entry_id.to_string()),
+        title.unwrap_or_default(),
         Some(form_name),
         tags,
         fields,
@@ -1105,11 +1108,11 @@ pub async fn create_entries_with_scopes_and_change<I: IntegrityProvider>(
 ) -> Result<Vec<EntryMeta>> {
     // Legacy batch is compatibility ingress: every Markdown request becomes a
     // draft first so it shares the single D1 path with structured creates.
+    // A missing H1 yields a title-less Entry; entry_id is never copied.
     let drafts: Result<Vec<_>> = requests
         .into_iter()
         .map(|request| {
-            let conversion =
-                core_entry::legacy_markdown_to_draft(&request.content, &request.entry_id);
+            let conversion = core_entry::legacy_markdown_to_draft(&request.content, "");
             if !conversion.diagnostics.is_empty() {
                 return Err(core_entry::markdown_conversion_error(&conversion.diagnostics).into());
             }

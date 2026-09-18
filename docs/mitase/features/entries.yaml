@@ -341,7 +341,7 @@ features:
   - id: FEAT-ENTRY-002
     title: Title-less Entry model
     summary: Converge the canonical Entry on entry_id identity with Form-defined values only; legacy titles remain readable as compatibility metadata without migration.
-    status: planned
+    status: implemented
     bindings:
       - id: core
         role: implementation

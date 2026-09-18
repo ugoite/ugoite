@@ -7,6 +7,7 @@
 #![recursion_limit = "512"]
 
 pub mod derived_relation;
+mod legacy_title;
 mod logical_storage;
 pub mod mutation_audit;
 mod read_schema_provider;
@@ -89,7 +90,7 @@ use ugoite_domain::change::{
 };
 use ugoite_domain::entry::{
     AssetReference, EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
-    RevisionError,
+    RevisionError, LEGACY_TITLE_EXTENSION_KEY,
 };
 use ugoite_domain::form::{
     sql_column_name, sql_relation_name, Compatibility, FieldType, FormChange, FormChangeSet,
@@ -3158,7 +3159,11 @@ fn form_schema(form: &FormDefinition) -> Result<Schema> {
         optional(10, "source_id", PrimitiveType::String),
         optional(11, "extension_metadata", PrimitiveType::String),
         optional(12, "extra_attributes", PrimitiveType::String),
-        required(13, "ugoite_entry_title", PrimitiveType::String),
+        // Title-less Entry (REQ-ENTRY-011): new Form storage acquires no
+        // `ugoite_entry_title` column. Field ID 13 stays vacant; existing
+        // tables keep their legacy column and are read dually without
+        // migration. Compatibility titles travel in
+        // `extension_metadata["ugoite/legacy-title"]`.
         required_type(
             14,
             "ugoite_entry_tags",
@@ -3340,6 +3345,7 @@ fn revision_batch_from_values(
     revisions: &[EntryRevision],
 ) -> Result<RecordBatch> {
     let schema = Arc::new(iceberg::arrow::schema_to_arrow_schema(table_schema)?);
+    let has_legacy_title_column = schema.field_with_name("ugoite_entry_title").is_ok();
     let mut entry_ids = FixedSizeBinaryBuilder::with_capacity(revisions.len(), 16);
     let mut revision_ids = FixedSizeBinaryBuilder::with_capacity(revisions.len(), 16);
     let mut parents = FixedSizeBinaryBuilder::with_capacity(revisions.len(), 16);
@@ -3407,7 +3413,14 @@ fn revision_batch_from_values(
         Arc::new(StringArray::from(
             revisions
                 .iter()
-                .map(|revision| serde_json::to_string(&revision.extension_metadata))
+                .map(|revision| {
+                    if has_legacy_title_column {
+                        serde_json::to_string(&revision.extension_metadata)
+                            .map_err(anyhow::Error::from)
+                    } else {
+                        extension_json_with_legacy_title(revision)
+                    }
+                })
                 .collect::<std::result::Result<Vec<_>, _>>()?,
         )),
         Arc::new(StringArray::from(
@@ -3416,12 +3429,16 @@ fn revision_batch_from_values(
                 .map(|revision| serde_json::to_string(&revision.extra_attributes))
                 .collect::<std::result::Result<Vec<_>, _>>()?,
         )),
-        Arc::new(StringArray::from(
+    ];
+    if has_legacy_title_column {
+        arrays.push(Arc::new(StringArray::from(
             revisions
                 .iter()
                 .map(|revision| revision.entry.title.as_str())
                 .collect::<Vec<_>>(),
-        )),
+        )));
+    }
+    arrays.extend([
         string_list_array(
             schema
                 .field_with_name("ugoite_entry_tags")
@@ -3498,7 +3515,7 @@ fn revision_batch_from_values(
                 .map(|revision| revision.change_id.as_str())
                 .collect::<Vec<_>>(),
         )),
-    ];
+    ]);
     for field in &form.fields {
         arrays.push(field_array(
             field,
@@ -4258,6 +4275,22 @@ fn uuid_at(array: &dyn Array, row: usize) -> Result<ugoite_domain::id::EntryId> 
     )?))
 }
 
+fn extension_json_with_legacy_title(revision: &EntryRevision) -> Result<String> {
+    if revision.entry.title.trim().is_empty()
+        || revision
+            .extension_metadata
+            .contains_key(LEGACY_TITLE_EXTENSION_KEY)
+    {
+        return Ok(serde_json::to_string(&revision.extension_metadata)?);
+    }
+    let mut extension = revision.extension_metadata.clone();
+    extension.insert(
+        LEGACY_TITLE_EXTENSION_KEY.to_string(),
+        serde_json::Value::String(revision.entry.title.clone()),
+    );
+    Ok(serde_json::to_string(&extension)?)
+}
+
 fn revisions_from_batch(
     batch: &RecordBatch,
     form: &FormDefinition,
@@ -4276,7 +4309,9 @@ fn revisions_from_batch(
     let source_ids = required_column::<StringArray>(batch, "source_id")?;
     let extensions = required_column::<StringArray>(batch, "extension_metadata")?;
     let extra_attributes = required_column::<StringArray>(batch, "extra_attributes")?;
-    let titles = required_column::<StringArray>(batch, "ugoite_entry_title")?;
+    let titles = batch
+        .column_by_name("ugoite_entry_title")
+        .and_then(|column| column.as_any().downcast_ref::<StringArray>());
     let tags = required_column::<ListArray>(batch, "ugoite_entry_tags")?;
     let created_at =
         required_column::<TimestampMicrosecondArray>(batch, "ugoite_entry_created_at")?;
@@ -4324,6 +4359,18 @@ fn revisions_from_batch(
         };
         let entry_version = u64::try_from(required_i64(&versions, row, "entry_version")?)?;
         let parent_revision_id = optional_uuid(parents, row)?.map(RevisionId::from);
+        // Title-less storage: the persisted extension may carry the reserved
+        // legacy-title key injected by the writer. It is a storage encoding
+        // of `entry.title`, not user metadata, so strip it on decode to keep
+        // revision round-trips exact.
+        let mut extension = json_map_at(extensions, row, "extension_metadata")?;
+        let title = match titles {
+            Some(arrays) => required_string(arrays, row, "ugoite_entry_title")?.to_string(),
+            None => extension
+                .remove(LEGACY_TITLE_EXTENSION_KEY)
+                .and_then(|value| value.as_str().map(str::to_owned))
+                .unwrap_or_default(),
+        };
         revisions.push(EntryRevision {
             form_id: form.id,
             entry_id: uuid_at(entry_ids, row)?,
@@ -4345,7 +4392,7 @@ fn revisions_from_batch(
             entry: EntryMetadata {
                 external_id: required_string(external_ids, row, "ugoite_entry_external_id")?
                     .to_string(),
-                title: required_string(titles, row, "ugoite_entry_title")?.to_string(),
+                title,
                 tags: string_list_at(tags, row)?,
                 created_at_micros: required_i64(&created_at, row, "ugoite_entry_created_at")?,
                 updated_at_micros: required_i64(&updated_at, row, "ugoite_entry_updated_at")?,
@@ -4363,7 +4410,7 @@ fn revisions_from_batch(
             },
             values,
             extra_attributes: json_map_at(extra_attributes, row, "extra_attributes")?,
-            extension_metadata: json_map_at(extensions, row, "extension_metadata")?,
+            extension_metadata: extension,
         });
     }
     Ok(revisions)
@@ -5013,6 +5060,90 @@ mod invariant_tests {
         changed.message = Some("different".into());
         let changed_message = publication_context_for_change(&changed, "entry.append", &payload)?;
         assert_ne!(same.command_digest, changed_message.command_digest);
+        Ok(())
+    }
+
+    fn titleless_form() -> FormDefinition {
+        FormDefinition {
+            id: FormId::from(Uuid::from_u128(18_520)),
+            version: FormVersion::new(1).expect("valid test Form version"),
+            name: "TitlelessProbe".into(),
+            description: None,
+            fields: Vec::new(),
+            allow_extra_attributes: false,
+            extension_metadata: BTreeMap::new(),
+        }
+    }
+
+    fn titleless_revision(
+        form: &FormDefinition,
+        entry_suffix: u128,
+        revision_suffix: u128,
+        title: &str,
+    ) -> EntryRevision {
+        EntryRevision {
+            form_id: form.id,
+            entry_id: EntryId::from(Uuid::from_u128(entry_suffix)),
+            revision_id: RevisionId::from(Uuid::from_u128(revision_suffix)),
+            change_id: format!("change-{revision_suffix}"),
+            parent_revision_id: None,
+            entry_version: 1,
+            expected_version: None,
+            operation: EntryOperation::Upsert,
+            committed_at_micros: revision_suffix as i64,
+            author_id: "test".into(),
+            form_version: form.version,
+            source_kind: "test".into(),
+            source_id: None,
+            entry: EntryMetadata {
+                title: title.to_string(),
+                updated_by: "test".into(),
+                ..EntryMetadata::default()
+            },
+            values: BTreeMap::new(),
+            extra_attributes: BTreeMap::new(),
+            extension_metadata: BTreeMap::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn titleless_storage_round_trips_empty_and_legacy_titles() -> Result<()> {
+        let workspace = IcebergWorkspace::memory_for_tests(
+            SpaceId::from(Uuid::from_u128(18_521)),
+            "memory://iceberg-titleless-fixture",
+        )
+        .await?;
+        let form = titleless_form();
+        workspace
+            .commit(publication_context("test-form", "test.form", &form)?)?
+            .create_form(&form)
+            .await?;
+        let table = workspace
+            .catalog
+            .load_table(&workspace.form_ident(form.id))
+            .await?;
+        assert!(
+            table
+                .metadata()
+                .current_schema()
+                .field_by_name("ugoite_entry_title")
+                .is_none(),
+            "new Form storage must not contain ugoite_entry_title"
+        );
+        let revisions = vec![
+            titleless_revision(&form, 18_522, 18_523, ""),
+            titleless_revision(&form, 18_524, 18_525, "Legacy Label"),
+        ];
+        let batch =
+            revision_batch_from_values(&form, table.metadata().current_schema(), &revisions)?;
+        assert!(
+            batch.column_by_name("ugoite_entry_title").is_none(),
+            "title-less batch must not carry a title array"
+        );
+        let decoded = revisions_from_batch(&batch, &form, table.metadata().current_schema())?;
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded[0].entry.title, "");
+        assert_eq!(decoded[1].entry.title, "Legacy Label");
         Ok(())
     }
 }
