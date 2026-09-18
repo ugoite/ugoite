@@ -14,6 +14,7 @@ import {
 } from "~/lib/entry-input";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { FieldStack, FieldStackRow } from "~/components/FieldStack";
+import { FormTargetSelect } from "~/components/FormTargetSelect";
 import { t, type TranslationKey } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import { searchApi } from "~/lib/ugoite-client";
@@ -1251,12 +1252,6 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
   const [submitError, setSubmitError] = createSignal<string | null>(null);
   let inputRef: HTMLInputElement | undefined;
   let dialogRef: HTMLDialogElement | undefined;
-  const targetFormOptions = createMemo(() => {
-    const options = new Set(props.formNames);
-    const current = name().trim();
-    if (current) options.add(current);
-    return Array.from(options);
-  });
   const listItemTypes = createMemo(() =>
     props.columnTypes.filter((type) =>
       type !== "list" && type !== "object_list"
@@ -1554,23 +1549,17 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
                         <span class="text-xs ui-muted">
                           {t("createDialog.form.targetFormLabel")}
                         </span>
-                        <input
-                          type="text"
-                          list={`row-ref-targets-${i}`}
-                          aria-label={t("createDialog.form.targetFormLabel")}
+                        <FormTargetSelect
+                          label={t("createDialog.form.targetFormLabel")}
+                          value={field().targetForm || ""}
+                          options={props.formNames}
                           placeholder={t(
                             "createDialog.form.targetFormPlaceholder",
                           )}
-                          value={field().targetForm || ""}
-                          onInput={(e) =>
-                            updateField(i, "targetForm", e.currentTarget.value)}
-                          class={columnAuxInputClass}
+                          inputClass={columnAuxInputClass}
+                          onChange={(value) =>
+                            updateField(i, "targetForm", value)}
                         />
-                        <datalist id={`row-ref-targets-${i}`}>
-                          <For each={targetFormOptions()}>
-                            {(option) => <option value={option} />}
-                          </For>
-                        </datalist>
                       </div>
                     </Show>
                     <Show when={field().type === "list"}>
@@ -1608,27 +1597,17 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
                           <span class="text-xs ui-muted">
                             {t("createDialog.form.targetFormLabel")}
                           </span>
-                          <input
-                            type="text"
-                            list={`list-row-ref-targets-${i}`}
-                            aria-label={t("createDialog.form.targetFormLabel")}
+                          <FormTargetSelect
+                            label={t("createDialog.form.targetFormLabel")}
+                            value={field().itemsTargetForm || ""}
+                            options={props.formNames}
                             placeholder={t(
                               "createDialog.form.targetFormPlaceholder",
                             )}
-                            value={field().itemsTargetForm || ""}
-                            onInput={(event) =>
-                              updateField(
-                                i,
-                                "itemsTargetForm",
-                                event.currentTarget.value,
-                              )}
-                            class={columnAuxInputClass}
+                            inputClass={columnAuxInputClass}
+                            onChange={(value) =>
+                              updateField(i, "itemsTargetForm", value)}
                           />
-                          <datalist id={`list-row-ref-targets-${i}`}>
-                            <For each={targetFormOptions()}>
-                              {(option) => <option value={option} />}
-                            </For>
-                          </datalist>
                         </div>
                       </Show>
                     </Show>
@@ -1802,13 +1781,6 @@ export function EditFormDialog(props: EditFormDialogProps) {
   >([]);
   const [submitError, setSubmitError] = createSignal<string | null>(null);
   let dialogRef: HTMLDialogElement | undefined;
-  const targetFormOptions = createMemo(() => {
-    const options = new Set(props.formNames);
-    /* v8 ignore start */
-    if (props.entryForm?.name) options.add(props.entryForm.name);
-    /* v8 ignore stop */
-    return Array.from(options);
-  });
   const listItemTypes = createMemo(() =>
     props.columnTypes.filter((type) =>
       type !== "list" && type !== "object_list"
@@ -2075,23 +2047,17 @@ export function EditFormDialog(props: EditFormDialogProps) {
                         <span class="text-xs ui-muted">
                           {t("createDialog.form.targetFormLabel")}
                         </span>
-                        <input
-                          type="text"
-                          list={`row-ref-targets-edit-${i}`}
-                          aria-label={t("createDialog.form.targetFormLabel")}
+                        <FormTargetSelect
+                          label={t("createDialog.form.targetFormLabel")}
+                          value={field().targetForm || ""}
+                          options={props.formNames}
                           placeholder={t(
                             "createDialog.form.targetFormPlaceholder",
                           )}
-                          value={field().targetForm || ""}
-                          onInput={(e) =>
-                            updateField(i, "targetForm", e.currentTarget.value)}
-                          class={columnAuxInputClass}
+                          inputClass={columnAuxInputClass}
+                          onChange={(value) =>
+                            updateField(i, "targetForm", value)}
                         />
-                        <datalist id={`row-ref-targets-edit-${i}`}>
-                          <For each={targetFormOptions()}>
-                            {(option) => <option value={option} />}
-                          </For>
-                        </datalist>
                       </div>
                     </Show>
                     <Show when={field().type === "list"}>
@@ -2130,27 +2096,17 @@ export function EditFormDialog(props: EditFormDialogProps) {
                           <span class="text-xs ui-muted">
                             {t("createDialog.form.targetFormLabel")}
                           </span>
-                          <input
-                            type="text"
-                            list={`list-row-ref-targets-edit-${i}`}
-                            aria-label={t("createDialog.form.targetFormLabel")}
+                          <FormTargetSelect
+                            label={t("createDialog.form.targetFormLabel")}
+                            value={field().itemsTargetForm || ""}
+                            options={props.formNames}
                             placeholder={t(
                               "createDialog.form.targetFormPlaceholder",
                             )}
-                            value={field().itemsTargetForm || ""}
-                            onInput={(event) =>
-                              updateField(
-                                i,
-                                "itemsTargetForm",
-                                event.currentTarget.value,
-                              )}
-                            class={columnAuxInputClass}
+                            inputClass={columnAuxInputClass}
+                            onChange={(value) =>
+                              updateField(i, "itemsTargetForm", value)}
                           />
-                          <datalist id={`list-row-ref-targets-edit-${i}`}>
-                            <For each={targetFormOptions()}>
-                              {(option) => <option value={option} />}
-                            </For>
-                          </datalist>
                         </div>
                       </Show>
                     </Show>
