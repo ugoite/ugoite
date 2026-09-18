@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   draftValueToDisplayString,
   isCanonicalAssetValue,
+  isPlainStringListField,
+  normalizeStringListValue,
+  parseMarkdownStringList,
   readAssetReferences,
   toTransportFields,
 } from "~/lib/draft-values";
@@ -91,8 +94,39 @@ describe("draft-values", () => {
     expect(isCanonicalAssetValue("not-an-asset")).toBe(false);
   });
 
-  it("parses legacy asset JSON strings only at the bridge, not in components", () => {
+  it("normalizes stored shapes into string-list editor values", () => {
+    // Markdown-list text (legacy presentation) parses like the shared
+    // Rust coercion: bullets/checkboxes stripped, empties skipped.
+    expect(parseMarkdownStringList("- alpha\n* beta\n+ [x] done\n\nbare"))
+      .toEqual(["alpha", "beta", "done", "bare"]);
+    expect(parseMarkdownStringList("-\n*  ")).toEqual([]);
+    // Typed arrays stay as-is; other shapes start empty.
+    expect(normalizeStringListValue(["a", 1, "b"])).toEqual(["a", "b"]);
+    expect(normalizeStringListValue("- a\n- b")).toEqual(["a", "b"]);
+    expect(normalizeStringListValue(undefined)).toEqual([]);
+    expect(
+      isPlainStringListField({ type: "list" }),
+    ).toBe(true);
+    expect(
+      isPlainStringListField({ type: "list", items: { type: "string" } }),
+    ).toBe(true);
+    expect(
+      isPlainStringListField({
+        type: "list",
+        items: { type: "row_reference" },
+      }),
+    ).toBe(false);
+    expect(isPlainStringListField({ type: "object_list" })).toBe(false);
+  });
+
+  it("drops blank string-list items at the transport boundary", () => {
     const transported = toTransportFields(typedForm(), {
+      Tags: ["alpha", "", "  ", "beta"],
+    });
+    expect(transported.Tags).toEqual(["alpha", "beta"]);
+  });
+
+  it("parses legacy asset JSON strings only at the bridge, not in components", () => {    const transported = toTransportFields(typedForm(), {
       Title: "T",
       File: JSON.stringify(assetRef),
       Files: JSON.stringify([assetRef]),

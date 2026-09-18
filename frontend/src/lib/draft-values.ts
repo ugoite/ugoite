@@ -99,6 +99,50 @@ export const draftValueToDisplayString = (value: DraftValue): string => {
 const isBlankString = (value: unknown): boolean =>
   typeof value === "string" && value.trim() === "";
 
+const LIST_ITEM_PREFIX_PATTERN = /^(?:[-*+](?:\s+\[[ xX]\])?\s*)/;
+
+/**
+ * Split Markdown-list presentation back into items. Mirrors the shared Rust
+ * list coercion (strip `-`/`*`/`+` bullets with optional checkboxes, skip
+ * empties) so a repeated list editor and the legacy textarea read the same
+ * stored shape.
+ */
+export const parseMarkdownStringList = (text: string): string[] => {
+  const items: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const item = line.trim().replace(LIST_ITEM_PREFIX_PATTERN, "").trim();
+    if (item) items.push(item);
+  }
+  return items;
+};
+
+/**
+ * Normalize any stored draft shape into the string array a repeated list
+ * editor binds: typed arrays stay as-is, legacy Markdown-list text parses,
+ * everything else starts empty.
+ */
+export const normalizeStringListValue = (value: DraftValue): string[] => {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+  if (typeof value === "string") return parseMarkdownStringList(value);
+  return [];
+};
+
+/**
+ * Plain string lists: untyped lists (string items per the domain) or an
+ * explicit string item type. Other item kinds keep their current editors
+ * until their typed passes land.
+ */
+export const isPlainStringListField = (field: {
+  type?: string;
+  items?: { type: string } | undefined;
+}): boolean => {
+  if (field.type !== "list") return false;
+  const itemType = field.items?.type;
+  return itemType === undefined || itemType === "string";
+};
+
 export type AssetReferenceReadIssue = "invalid" | "duplicate";
 
 export type AssetReferenceReadResult = {
@@ -206,6 +250,17 @@ export const toTransportFields = (
       if (coerced === undefined) continue;
       if (Array.isArray(coerced) && coerced.length === 0) continue;
       fields[name] = coerced;
+      continue;
+    }
+    if (field && isPlainStringListField(field) && Array.isArray(value)) {
+      // Blank items never persist: matches the shared Rust coercion that
+      // skips empty lines, so an untouched extra row cannot create "" items.
+      // An empty array stays meaningful (required-emptiness is decided by
+      // the shared boundary, matching the previous pass-through).
+      fields[name] = value.filter(
+        (item): item is string =>
+          typeof item === "string" && item.trim() !== "",
+      );
       continue;
     }
     if (typeof value === "string") {
