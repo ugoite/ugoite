@@ -238,7 +238,7 @@ export default function SpacesIndexRoute() {
                   type="text"
                   class="ui-input"
                   value={newSpaceName()}
-                  ref={(element) => element.focus()}
+                  ref={(element) => element?.focus()}
                   onInput={(event) =>
                     setNewSpaceName(event.currentTarget.value)}
                   placeholder={t("spacesPage.spaceNamePlaceholder")}
