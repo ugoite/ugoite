@@ -29,7 +29,7 @@ export default function NewEntryRoute() {
   // Entry creation never consults a configured Space default Form. The only
   // explicit preselection is the requested `?form=` parameter; otherwise the
   // editor offers the available Forms without a hidden preference.
-  const defaultForm = createMemo(() => {
+  const preselectedForm = createMemo(() => {
     return available().find((form) => form.name === requestedForm())?.name ??
       available()[0]?.name;
   });
@@ -37,7 +37,7 @@ export default function NewEntryRoute() {
     string | undefined
   >();
   createEffect(() => {
-    const fallback = defaultForm();
+    const fallback = preselectedForm();
     if (!fallback) {
       setSelectedFormName(undefined);
       return;
@@ -48,7 +48,7 @@ export default function NewEntryRoute() {
   });
   const selectedForm = createMemo(() =>
     available().find((form) => form.name === selectedFormName()) ??
-      available().find((form) => form.name === defaultForm())
+      available().find((form) => form.name === preselectedForm())
   );
   const returnToForms = () => searchParams.returnTo === "forms";
   const formsHref = () => {
