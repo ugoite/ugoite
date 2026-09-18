@@ -387,7 +387,7 @@ describe("EntryDetailPane", () => {
     fireEvent.input(screen.getByLabelText("Items item 2"), {
       target: { value: "two" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Remove item 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove Items item 2" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 

@@ -1429,6 +1429,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 type="button"
                 class="ui-button ui-button-secondary ui-button-sm text-sm"
                 aria-label={t("entryDetail.listRemoveItem", {
+                  field: fieldName,
                   index: index + 1,
                 })}
                 onClick={helpers.remove}
