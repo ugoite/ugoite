@@ -26,20 +26,18 @@ export default function NewEntryRoute() {
   const available = createMemo(() => filterCreatableEntryForms(forms() ?? []));
   const requestedForm = () =>
     typeof searchParams.form === "string" ? searchParams.form : "";
-  const configuredDefault = () =>
-    typeof space()?.settings?.default_form === "string"
-      ? space()?.settings?.default_form as string
-      : "";
-  const defaultForm = createMemo(() => {
+  // Entry creation never consults a configured Space default Form. The only
+  // explicit preselection is the requested `?form=` parameter; otherwise the
+  // editor offers the available Forms without a hidden preference.
+  const preselectedForm = createMemo(() => {
     return available().find((form) => form.name === requestedForm())?.name ??
-      available().find((form) => form.name === configuredDefault())?.name ??
       available()[0]?.name;
   });
   const [selectedFormName, setSelectedFormName] = createSignal<
     string | undefined
   >();
   createEffect(() => {
-    const fallback = defaultForm();
+    const fallback = preselectedForm();
     if (!fallback) {
       setSelectedFormName(undefined);
       return;
@@ -50,7 +48,7 @@ export default function NewEntryRoute() {
   });
   const selectedForm = createMemo(() =>
     available().find((form) => form.name === selectedFormName()) ??
-      available().find((form) => form.name === defaultForm())
+      available().find((form) => form.name === preselectedForm())
   );
   const returnToForms = () => searchParams.returnTo === "forms";
   const formsHref = () => {
@@ -96,7 +94,8 @@ export default function NewEntryRoute() {
                 <button
                   class="btn"
                   type="button"
-                  onClick={() => navigate(`/spaces/${encodeURIComponent(spaceId())}/forms`)}
+                  onClick={() =>
+                    navigate(`/spaces/${encodeURIComponent(spaceId())}/forms`)}
                 >
                   {t("entryPage.backToForms")}
                 </button>

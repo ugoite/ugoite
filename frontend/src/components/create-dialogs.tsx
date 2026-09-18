@@ -285,7 +285,6 @@ export interface CreateEntryDialogProps {
   open: boolean;
   forms: Form[];
   spaceId?: string;
-  defaultForm?: string;
   onClose: () => void;
   onSubmit: (
     title: string,
@@ -564,13 +563,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     setChatStep(0);
     const availableForms = selectableForms();
     /* v8 ignore start */
-    const defaultForm = props.defaultForm?.trim();
-    if (
-      defaultForm &&
-      availableForms.some((entryForm) => entryForm.name === defaultForm)
-    ) {
-      setSelectedForm(defaultForm);
-    } else if (availableForms.length === 1) {
+    if (availableForms.length === 1) {
       setSelectedForm(availableForms[0].name);
     } else {
       setSelectedForm("");

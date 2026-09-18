@@ -31,16 +31,14 @@ describe("v5 SpaceSettings", () => {
     fireEvent.input(screen.getByLabelText("Space Name"), {
       target: { value: "Renamed" },
     });
-    fireEvent.input(screen.getByLabelText("Default Form"), {
-      target: { value: "Meeting" },
-    });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(save).toHaveBeenCalledWith({
         name: "Renamed",
-        settings: { default_form: "Meeting" },
       })
     );
+    // No hidden default-Form preference: general settings edit only the name.
+    expect(screen.queryByLabelText("Default Form")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Timezone")).not.toBeInTheDocument();
   });
   it("renders storage values and saves only storage configuration", async () => {

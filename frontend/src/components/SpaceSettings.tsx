@@ -19,11 +19,6 @@ export interface SpaceSettingsProps {
 
 export function SpaceSettings(props: SpaceSettingsProps) {
   const [name, setName] = createSignal(props.space.name);
-  const [defaultForm, setDefaultForm] = createSignal(
-    typeof props.space.settings?.default_form === "string"
-      ? props.space.settings.default_form
-      : "Entry",
-  );
   const [uri, setUri] = createSignal(props.space.storage_config?.uri || "");
   const [endpoint, setEndpoint] = createSignal(
     props.space.storage_config?.endpoint || "",
@@ -56,10 +51,7 @@ export function SpaceSettings(props: SpaceSettingsProps) {
     try {
       await props.onSave(
         section() === "general"
-          ? {
-            name: name(),
-            settings: { default_form: defaultForm().trim() },
-          }
+          ? { name: name() }
           : { storage_config: config() },
       );
       setMessageType("success");
@@ -167,14 +159,6 @@ export function SpaceSettings(props: SpaceSettingsProps) {
                 id="space-name"
                 value={name()}
                 onInput={(e) => setName(e.currentTarget.value)}
-                required
-              />
-            </label>
-            <label>
-              {t("spaceSettings.defaultForm")}
-              <input
-                value={defaultForm()}
-                onInput={(event) => setDefaultForm(event.currentTarget.value)}
                 required
               />
             </label>
