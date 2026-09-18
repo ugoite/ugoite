@@ -9,7 +9,7 @@ components:
   body:
     - id: entry-list-toolbar
       type: toolbar
-      description: Provides local title/Form filtering and updated-or-title sorting for the loaded Entry list.
+      description: Provides local label/Form filtering and updated-or-ID sorting for the loaded Entry list, where the label is the legacy title when present and the stable entry ID otherwise.
     - id: plain-entry-list
       type: list
       description: The plain Entries route loads the Space's Entry list as border-separated rows, exposes local filtering and sorting, and keeps the first-entry flow without redirecting to Forms.

@@ -92,7 +92,7 @@ describe("CanvasPlaceholder", () => {
     expect(card.style.top).toBe("360px");
   });
 
-  it("should show 'Untitled' when entry has no title", () => {
+  it("should show the entry ID when entry has no title", () => {
     const noTitleEntry: EntryRecord = {
       id: "no-title",
       title: "",
@@ -101,7 +101,7 @@ describe("CanvasPlaceholder", () => {
       tags: [],
     };
     render(() => <CanvasPlaceholder entries={[noTitleEntry]} />);
-    expect(screen.getByText("Untitled")).toBeInTheDocument();
+    expect(screen.getByText("no-title")).toBeInTheDocument();
   });
 
   it("should display entry with form badge and non-string properties and >3 properties", () => {

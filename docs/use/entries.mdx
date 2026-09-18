@@ -7,8 +7,10 @@ sidebar:
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-An Entry is a versioned document. Updates append revisions rather than
-rewriting old history.
+An Entry is a durable Knowledge object that follows its Form. It has no
+intrinsic title: the stable `entry_id` is the identity, and a human-readable
+name exists only when the Form defines it as a normal field. Updates append
+revisions rather than rewriting old history.
 
 ## Outcome
 
@@ -35,10 +37,15 @@ Form](forms.mdx).
 
 ```bash
 ugoite entry create /path/to/workspace/spaces/demo meeting-2026-09-12 \
-  --content $'---\nform: Meeting\n---\n# Planning\n\n## Notes\n\nAgenda'
+  --form Meeting --field Notes=Agenda
 ugoite entry get /path/to/workspace/spaces/demo meeting-2026-09-12
 ugoite entry history /path/to/workspace/spaces/demo meeting-2026-09-12
 ```
+
+The H1 heading in raw Markdown carries only the 0.1.x legacy compatibility
+title; entries created without one are title-less, and `--title` is a legacy
+compatibility option (removed in 0.2). Existing title-bearing entries keep
+their titles without migration.
 
 Updates accept `--parent-revision-id` for optimistic conflict checks. A stale
 parent conflicts instead of overwriting. `entry delete` appends a deletion

@@ -736,7 +736,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   const loadedForms = () => props.forms?.() ?? [];
 
   // Structured draft is the authority; empty stays empty so the heading
-  // shows Untitled as presentation only (never saved as "Untitled").
+  // falls back to the stable entry ID (never a synthesized "Untitled").
   const editorTitle = createMemo(() => draftTitle());
   const editorGuidance = createMemo(() =>
     buildEditorGuidance(currentForm(), editorContent())

@@ -23,7 +23,10 @@ Form name with `ugoite form get`. Each Form is exposed as the
 backend-provided `form_<FormId>` relation (the Form UUID without dashes, as
 returned in the `id` field of `ugoite form get`) with `field_<FieldId>`
 columns plus `_ugoite_id`, `_ugoite_title`, `_ugoite_created_at`, and
-`_ugoite_updated_at` columns.
+`_ugoite_updated_at` columns. `_ugoite_title` is a 0.1.x compatibility
+projection (legacy physical title, then the reserved legacy-title metadata,
+then empty): new queries should use Form-defined fields and `_ugoite_id`
+for identity instead of relying on it.
 
 ## Steps
 
