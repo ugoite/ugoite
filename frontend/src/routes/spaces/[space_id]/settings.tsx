@@ -1,5 +1,11 @@
 import { useParams, useSearchParams } from "@solidjs/router";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Show,
+} from "solid-js";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import {
   RowList,
@@ -7,6 +13,7 @@ import {
   RowListItem,
   RowListLink,
 } from "~/components/RowList";
+import { UiIcon } from "~/components/UiIcon";
 import { SpaceSettings } from "~/components/SpaceSettings";
 import { SpaceAuditLogViewer } from "~/components/AuditLogViewer";
 import { locale, t, type TranslationKey } from "~/lib/i18n";
@@ -43,6 +50,35 @@ export default function SpaceSettingsRoute() {
       : "general"
   );
   const label = (section: typeof settingsSections[number]) => t(section.key);
+  const activeLabel = createMemo(() => {
+    const current = settingsSections.find(
+      (section) => section.id === active(),
+    );
+    return current ? label(current) : t("settings.title");
+  });
+  // Mobile settings navigation: the category list hides behind a menu
+  // button and opens as a drawer. Selecting a category closes it.
+  const [drawerOpen, setDrawerOpen] = createSignal(false);
+  let menuButtonRef: HTMLButtonElement | undefined;
+  let drawerCloseRef: HTMLButtonElement | undefined;
+  const closeDrawer = (refocus = true) => {
+    if (!drawerOpen()) return;
+    setDrawerOpen(false);
+    if (refocus) menuButtonRef?.focus();
+  };
+  const selectSection = (id: Section) => {
+    setSearch({ section: id });
+    closeDrawer();
+  };
+  // Never trap the drawer open across navigation: a deep link already
+  // selects its category, so an open drawer would only obscure content.
+  createEffect(() => {
+    active();
+    setDrawerOpen(false);
+  });
+  createEffect(() => {
+    if (drawerOpen()) drawerCloseRef?.focus();
+  });
   const [space, { refetch }] = createResource(spaceId, spaceApi.get);
   const [members, { refetch: refetchMembers }] = createResource(
     () => active() === "members" ? spaceId() : null,
@@ -95,8 +131,33 @@ export default function SpaceSettingsRoute() {
   };
   return (
     <>
-      <div class="settingsLayout settingsWorkspace">
-        <nav aria-label={t("settings.title")}>
+      <div
+        class="settingsLayout settingsWorkspace"
+        classList={{ settingsNavOpen: drawerOpen() }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            closeDrawer();
+          }
+        }}
+      >
+        <nav
+          id="settings-nav"
+          class="settingsNavPanel"
+          aria-label={t("settings.title")}
+        >
+          <div class="settingsNavHead">
+            <span class="text-sm font-semibold">{t("settings.title")}</span>
+            <button
+              ref={drawerCloseRef}
+              type="button"
+              class="ui-button ui-button-secondary ui-button-sm text-sm settingsNavClose"
+              aria-label={t("spaceShell.closeMenu")}
+              onClick={() => closeDrawer()}
+            >
+              <UiIcon name="close" />
+            </button>
+          </div>
           <RowList label={t("settings.title")}>
             <For each={settingsSections}>
               {(section) => (
@@ -117,7 +178,7 @@ export default function SpaceSettingsRoute() {
                         primary={label(section)}
                         chevron
                         ariaLabel={label(section)}
-                        onActivate={() => setSearch({ section: section.id })}
+                        onActivate={() => selectSection(section.id)}
                       />
                     )}
                 />
@@ -125,8 +186,30 @@ export default function SpaceSettingsRoute() {
             </For>
           </RowList>
         </nav>
+        <Show when={drawerOpen()}>
+          <button
+            type="button"
+            class="drawerBackdrop"
+            aria-label={t("spaceShell.closeMenu")}
+            onClick={() => closeDrawer()}
+          />
+        </Show>
         <main>
           <h1 class="ui-sr-only">{t("settings.title")}</h1>
+          <div class="settingsMenuRow">
+            <button
+              ref={menuButtonRef}
+              type="button"
+              class="ui-button ui-button-secondary text-sm settingsMenuButton"
+              aria-label={t("settings.menu", { section: activeLabel() })}
+              aria-expanded={drawerOpen()}
+              aria-controls="settings-nav"
+              onClick={() => setDrawerOpen((open) => !open)}
+            >
+              <UiIcon name="menu" />
+              <span>{activeLabel()}</span>
+            </button>
+          </div>
           {/* Panel-local spinner: settings content stays mounted on refetch. */}
           <Show when={space.loading}>
             <div class="settingsMain surface" aria-busy="true">

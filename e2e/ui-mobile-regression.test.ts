@@ -195,12 +195,24 @@ async function runMobileRegression(
     {
       name: "settings",
       path: `/spaces/${spaceId}/settings`,
-      ready: ".rowList",
+      ready: ".settingsMenuButton",
       assert: async () => {
         // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
+        // Categories hide behind the menu button on mobile; the drawer
+        // reveals them and closes on selection or Escape.
+        const menuButton = page.getByRole("button", {
+          name: /Settings menu/,
+        });
+        await expect(menuButton).toBeVisible();
+        await expect(page.getByRole("list", { name: "Settings" }))
+          .toBeHidden();
+        await menuButton.click();
         await expect(page.getByRole("list", { name: "Settings" }))
           .toBeVisible();
         await expectMobileControlFontSize(page);
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("list", { name: "Settings" }))
+          .toBeHidden();
       },
     },
     {
