@@ -67,7 +67,9 @@ const space: Space = {
   id: "default",
   name: "Default",
   created_at: "2026-01-01T00:00:00Z",
-  settings: { default_form: "Notes" },
+  // Legacy preference: entry creation must ignore it and offer the
+  // available Forms without a hidden default.
+  settings: { default_form: "Meeting" },
 };
 
 describe("NewEntryRoute", () => {
@@ -87,7 +89,7 @@ describe("NewEntryRoute", () => {
     );
   });
 
-  it("falls back to the configured default for an unknown Form", async () => {
+  it("ignores the legacy configured default and falls back to the first available Form", async () => {
     searchParams.form = "Missing";
     render(() => <NewEntryRoute />);
     await waitFor(() =>

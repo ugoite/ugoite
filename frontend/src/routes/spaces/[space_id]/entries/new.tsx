@@ -26,13 +26,11 @@ export default function NewEntryRoute() {
   const available = createMemo(() => filterCreatableEntryForms(forms() ?? []));
   const requestedForm = () =>
     typeof searchParams.form === "string" ? searchParams.form : "";
-  const configuredDefault = () =>
-    typeof space()?.settings?.default_form === "string"
-      ? space()?.settings?.default_form as string
-      : "";
+  // Entry creation never consults a configured Space default Form. The only
+  // explicit preselection is the requested `?form=` parameter; otherwise the
+  // editor offers the available Forms without a hidden preference.
   const defaultForm = createMemo(() => {
     return available().find((form) => form.name === requestedForm())?.name ??
-      available().find((form) => form.name === configuredDefault())?.name ??
       available()[0]?.name;
   });
   const [selectedFormName, setSelectedFormName] = createSignal<
@@ -96,7 +94,8 @@ export default function NewEntryRoute() {
                 <button
                   class="btn"
                   type="button"
-                  onClick={() => navigate(`/spaces/${encodeURIComponent(spaceId())}/forms`)}
+                  onClick={() =>
+                    navigate(`/spaces/${encodeURIComponent(spaceId())}/forms`)}
                 >
                   {t("entryPage.backToForms")}
                 </button>
