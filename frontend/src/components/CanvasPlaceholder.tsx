@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import type { EntryRecord } from "~/lib/types";
+import { entryDisplayLabel } from "~/lib/entry-label";
 import { formatValueForDisplay } from "~/lib/display-value";
 
 export interface CanvasPlaceholderProps {
@@ -115,7 +116,7 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
                   {/* Card Header */}
                   <div class="p-3 ui-card-header">
                     <h3 class="font-medium truncate">
-                      {entry.title || "Untitled"}
+                      {entryDisplayLabel(entry)}
                     </h3>
                     <Show when={entry.form}>
                       <span class="text-xs ui-muted">{entry.form}</span>

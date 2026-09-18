@@ -1,5 +1,5 @@
-version: "0.3"
-updated: "2026-09-16"
+version: "0.4"
+updated: "2026-09-18"
 page:
   id: space-entry-detail
   title: Entry Detail
@@ -17,9 +17,10 @@ components:
         - id: back-to-form
           type: link
           target_page: space-form-grid
-        - id: entry-title
+        - id: entry-label
           type: heading
-          text: "{entry_title}"
+          text: "{entry_label}"
+          description: Legacy compatibility title when present, otherwise the stable entry ID. No Untitled canonical label.
         - id: save-status
           type: status
           values:
@@ -41,8 +42,8 @@ components:
       type: form
       visibility: form-defined-entry
       items:
-        - title
         - typed-form-fields
+      description: Form fields only. A Form-defined Title or Name renders as a normal field with no Entry-level semantics.
       field_controls:
         boolean: free-form-text-input
         date: native-date-input

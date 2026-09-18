@@ -99,6 +99,15 @@ derived from the unique greatest version and is never a second source-of-truth
 table. Equal greatest versions are a visible corruption/conflict and never
 resolved by iteration order.
 
+An Entry has no intrinsic title. New Form tables carry no `ugoite_entry_title`
+column; a human-readable name exists only when the Form defines it as a normal
+field (for example a `name` string field). Tables created before the title-less
+change keep their legacy title column and are read without migration: readers
+resolve the legacy physical column first, then the reserved
+`extension_metadata["ugoite/legacy-title"]` compatibility value, then empty.
+The stable `entry_id` is the canonical identity; it is never synthesized into
+a stored title.
+
 Date, time, timestamp, UUID, and binary Form fields use their corresponding
 Iceberg primitive types. Markdown, SQL, row references, and ordinary strings
 remain Iceberg strings; binary entry values are base64 text at the domain
@@ -112,17 +121,20 @@ normalized to UTC. The server never infers a timezone for a timezone-less value.
 
 ## Markdown mapping
 
-The global template is:
+The compatibility template is:
 
 ```markdown
-# {title}
+# {legacy_title}
 
 ## {field_name}
 
 {value}
 ```
 
-H2 sections are parsed according to the Form field type. Supported types are
+The H1 heading is optional and carries only the 0.1.x legacy compatibility
+title. Entries without an H1 are title-less, and rendering a title-less Entry
+emits no synthetic H1. H2 sections are parsed according to the Form field
+type. Supported types are
 exposed by `GET /spaces/{space_id}/forms/types`; the Rust Form implementation is
 the source of truth. Unknown sections are rejected or retained according to
 `allow_extra_attributes`.
