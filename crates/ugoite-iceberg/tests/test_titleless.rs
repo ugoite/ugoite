@@ -246,3 +246,59 @@ async fn form_defined_title_field_is_a_normal_field() -> Result<()> {
     assert_eq!(stored["sections"]["writer"], "Herbert");
     Ok(())
 }
+
+/// REQ-SRCH-001 (title-less): entries without titles are searchable through
+/// their Form-defined values and paginate on stable identity.
+#[tokio::test]
+async fn titleless_entries_are_searchable_and_paginatable() -> Result<()> {
+    use ugoite_iceberg::search;
+    let op = setup_operator()?;
+    space::create_space(&op, "titleless-search", "/tmp").await?;
+    let ws_path = "spaces/titleless-search";
+    ensure_reading_form(&op, ws_path).await?;
+    let integrity = FakeIntegrityProvider;
+
+    for (id, note) in [("reading-a", "alpha beacon"), ("reading-b", "alpha signal")] {
+        let mut fields = BTreeMap::new();
+        fields.insert("temperature".to_string(), serde_json::json!(20.0));
+        fields.insert("note".to_string(), serde_json::json!(note));
+        entry::create_structured_entry_with_scopes_and_change(
+            &op,
+            ws_path,
+            id,
+            None,
+            "Reading".to_string(),
+            Vec::new(),
+            fields,
+            BTreeMap::new(),
+            "author",
+            &integrity,
+            None,
+            None,
+        )
+        .await?;
+    }
+
+    let results = search::search_entries(&op, ws_path, "alpha", 10).await?;
+    let ids: Vec<&str> = results.iter().map(|result| result.id.as_str()).collect();
+    assert!(ids.contains(&"reading-a"));
+    assert!(ids.contains(&"reading-b"));
+
+    let page_one = search::search_entries(&op, ws_path, "alpha", 1).await?;
+    assert_eq!(page_one.len(), 1);
+    let page_two = search::search_entries_with_scopes_after(
+        &op,
+        ws_path,
+        "alpha",
+        &std::collections::BTreeMap::from([(
+            "reading".to_string(),
+            ugoite_core::query::EntryScope::AllCurrent,
+        )]),
+        1,
+        Some((&page_one[0].title, &page_one[0].id, &page_one[0].form)),
+    )
+    .await?;
+    assert_eq!(page_two.len(), 1);
+    assert_ne!(page_two[0].id, page_one[0].id);
+    Ok(())
+}
