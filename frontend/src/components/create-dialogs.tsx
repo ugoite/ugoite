@@ -12,12 +12,10 @@ import {
   buildEntryMarkdownFromFields,
   type EntryInputMode,
 } from "~/lib/entry-input";
-import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { FieldStack, FieldStackRow } from "~/components/FieldStack";
+import { FieldInput, fieldValueToText } from "~/components/fields";
 import { FormTargetSelect } from "~/components/FormTargetSelect";
 import { t, type TranslationKey } from "~/lib/i18n";
-import { createResource } from "~/lib/recoverable-resource";
-import { searchApi } from "~/lib/ugoite-client";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import type { Form, FormCreatePayload } from "~/lib/types";
 import {
@@ -26,19 +24,11 @@ import {
 } from "~/lib/metadata-columns";
 import {
   filterCreatableEntryForms,
+  type FormNameValidationIssue,
   getFormNameValidationIssue,
   isReservedMetadataForm,
   RESERVED_METADATA_CLASSES,
-  type FormNameValidationIssue,
 } from "~/lib/metadata-forms";
-
-const numericFieldTypes = new Set([
-  "integer",
-  "long",
-  "number",
-  "double",
-  "float",
-]);
 
 const fieldTypeDescriptionKey = (type: string) => {
   if (type === "string") return "createDialog.form.fieldType.string";
@@ -87,9 +77,6 @@ const formatDatetimeLocal = (date: Date) => {
 const isLongTextField = (name: string, def: Form["fields"][string]) =>
   def.type === "markdown" || name.toLowerCase() === "sql";
 
-const isTextareaField = (name: string, def: Form["fields"][string]) =>
-  isLongTextField(name, def) || def.type === "object_list";
-
 const isActiveRequiredField = (def: Form["fields"][string]) =>
   def.required && !def.deprecated;
 
@@ -103,41 +90,9 @@ const createFieldInputId = (prefix: string, name: string, index: number) => {
 };
 
 /* v8 ignore start */
-const resolveTextareaPlaceholder = (def: Form["fields"][string]) => {
-  return def.type === "object_list"
-    ? "[]"
-    : t("createDialog.entry.textareaPlaceholder");
-};
+const resolveTextareaPlaceholder = () =>
+  t("createDialog.entry.textareaPlaceholder");
 /* v8 ignore stop */
-
-type RowReferenceOption = {
-  id: string;
-  title: string;
-  label: string;
-};
-
-const rowReferenceSuggestionLimit = 8;
-
-const normalizeRowReferenceTargetForm = (def: Form["fields"][string]) =>
-  def.target_form?.trim() ?? "";
-
-const buildRowReferenceOptions = (
-  entries: Array<{ id: string; title?: string | null }>,
-): RowReferenceOption[] =>
-  entries
-    .map((entry) => {
-      const title = entry.title?.trim() || entry.id;
-      return {
-        id: entry.id,
-        title,
-        label: title === entry.id ? entry.id : `${title} (${entry.id})`,
-      };
-    })
-    .sort(
-      (left, right) =>
-        left.title.localeCompare(right.title) ||
-        left.id.localeCompare(right.id),
-    );
 
 const buildInputModeHints = (mode: EntryInputMode): string[] => {
   const hints = mode === "webform"
@@ -302,122 +257,6 @@ function resolveSubmitErrorMessage(
   return formatUserFacingError(error, fallback);
 }
 
-type RowReferencePickerProps = {
-  spaceId: string;
-  fieldId: string;
-  targetForm: string;
-  query: string;
-  selectedOption: RowReferenceOption | null;
-  onQueryInput: (value: string) => void;
-  onSelect: (option: RowReferenceOption) => void;
-  onClear: () => void;
-};
-
-function RowReferencePicker(props: RowReferencePickerProps) {
-  const [options] = createResource(
-    () => ({
-      spaceId: props.spaceId.trim(),
-      targetForm: props.targetForm.trim(),
-      query: props.query,
-    }),
-    async ({ spaceId, targetForm, query }) => {
-      const entries = await searchApi.rowReferenceOptions(
-        spaceId,
-        targetForm,
-        query,
-        rowReferenceSuggestionLimit,
-      );
-      return buildRowReferenceOptions(entries);
-    },
-    {
-      initialValue: [] as RowReferenceOption[],
-    },
-  );
-
-  return (
-    <div class="ui-stack-sm">
-      <input
-        id={props.fieldId}
-        type="search"
-        class="ui-input"
-        value={props.query}
-        placeholder={t("createDialog.entry.rowReference.searchPlaceholder", {
-          form: props.targetForm,
-        })}
-        onInput={(event) => props.onQueryInput(event.currentTarget.value)}
-        autocomplete="off"
-      />
-      <p class="text-xs ui-muted">
-        {t("createDialog.entry.rowReference.help", { form: props.targetForm })}
-      </p>
-      <Show when={props.selectedOption}>
-        {(selectedOption) => (
-          <div class="ui-reference-picker-selection">
-            <p class="text-[11px] font-semibold uppercase tracking-wide ui-muted">
-              {t("createDialog.entry.rowReference.selected")}
-            </p>
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p class="text-sm font-medium">{selectedOption().title}</p>
-                <p class="text-xs ui-muted">{selectedOption().id}</p>
-              </div>
-              <button
-                type="button"
-                class="ui-button ui-button-secondary text-xs"
-                onClick={props.onClear}
-              >
-                {t("createDialog.entry.rowReference.clear")}
-              </button>
-            </div>
-          </div>
-        )}
-      </Show>
-      <Show when={options.loading}>
-        <LocalBusyIndicator
-          label={t("createDialog.entry.rowReference.loading", {
-            form: props.targetForm,
-          })}
-        />
-      </Show>
-      <Show when={!options.loading && options.error}>
-        <p class="text-xs ui-text-danger">
-          {t("createDialog.entry.rowReference.loadError", {
-            form: props.targetForm,
-          })}
-        </p>
-      </Show>
-      <Show when={!options.loading && !options.error && options().length > 0}>
-        <ul class="ui-reference-picker-list">
-          <For each={options()}>
-            {(option) => (
-              <li class="ui-reference-picker-option">
-                <button
-                  type="button"
-                  class="ui-reference-picker-button"
-                  onClick={() => props.onSelect(option)}
-                >
-                  <p class="text-sm font-medium">{option.title}</p>
-                  <p class="text-xs ui-muted">{option.id}</p>
-                </button>
-              </li>
-            )}
-          </For>
-        </ul>
-      </Show>
-      <Show
-        when={!options.loading && !options.error && props.query.trim() &&
-          options().length === 0}
-      >
-        <p class="text-xs ui-muted">
-          {t("createDialog.entry.rowReference.noMatches", {
-            form: props.targetForm,
-          })}
-        </p>
-      </Show>
-    </div>
-  );
-}
-
 /**
  * Dialog for creating a new entry with optional form selection.
  */
@@ -425,17 +264,16 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
   const [selectedForm, setSelectedForm] = createSignal("");
   const [inputMode, setInputMode] = createSignal<EntryInputMode>("webform");
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
-  const [fieldValues, setFieldValues] = createSignal<Record<string, string>>(
+  const [fieldValues, setFieldValues] = createSignal<Record<string, unknown>>(
     {},
   );
   const [markdownInput, setMarkdownInput] = createSignal("");
   const [lastGeneratedMarkdown, setLastGeneratedMarkdown] = createSignal("");
   const [initializedFormName, setInitializedFormName] = createSignal("");
-  const [rowReferenceQueries, setRowReferenceQueries] = createSignal<
-    Record<string, string>
-  >({});
-  const [rowReferenceSelections, setRowReferenceSelections] = createSignal<
-    Record<string, RowReferenceOption>
+  // Unresolved row-reference searches per field (query names no saved entry
+  // yet). Fed by the shared selector so required guards keep working.
+  const [rowReferencePending, setRowReferencePending] = createSignal<
+    Record<string, boolean>
   >({});
   const [chatStep, setChatStep] = createSignal(0);
   let dialogRef: HTMLDialogElement | undefined;
@@ -559,8 +397,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     setMarkdownInput("");
     setLastGeneratedMarkdown("");
     setInitializedFormName("");
-    setRowReferenceQueries({});
-    setRowReferenceSelections({});
+    setRowReferencePending({});
     setChatStep(0);
     const availableForms = selectableForms();
     /* v8 ignore start */
@@ -580,14 +417,13 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
       setMarkdownInput("");
       setLastGeneratedMarkdown("");
       setInitializedFormName("");
-      setRowReferenceQueries({});
-      setRowReferenceSelections({});
+      setRowReferencePending({});
       return;
     }
     if (initializedFormName() === form.name) {
       return;
     }
-    const defaults: Record<string, string> = {};
+    const defaults: Record<string, unknown> = {};
     /* v8 ignore start */
     for (const [name, def] of Object.entries(form.fields || {})) {
       if (!isActiveRequiredField(def)) continue;
@@ -596,12 +432,15 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     /* v8 ignore stop */
     setFieldValues(defaults);
     // Title-less Entry: the preview carries no H1; names live in fields.
-    const generated = buildEntryMarkdownFromFields(form, "", defaults);
+    const generated = buildEntryMarkdownFromFields(
+      form,
+      "",
+      serializeCreateValues(defaults),
+    );
     setMarkdownInput(generated);
     setLastGeneratedMarkdown(generated);
     setInitializedFormName(form.name);
-    setRowReferenceQueries({});
-    setRowReferenceSelections({});
+    setRowReferencePending({});
     setChatStep(0);
   });
 
@@ -609,7 +448,11 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     const form = selectedFormDef();
     if (!form) return;
     if (inputMode() !== "markdown") return;
-    const generated = buildEntryMarkdownFromFields(form, "", fieldValues());
+    const generated = buildEntryMarkdownFromFields(
+      form,
+      "",
+      serializeCreateValues(fieldValues()),
+    );
     const current = markdownInput();
     const previousGenerated = lastGeneratedMarkdown();
     if (current === "" || current === previousGenerated) {
@@ -618,7 +461,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     setLastGeneratedMarkdown(generated);
   });
 
-  const setFieldValue = (name: string, nextValue: string) => {
+  const setFieldValue = (name: string, nextValue: unknown) => {
     setErrorMessage(null);
     setFieldValues((prev) => ({
       ...prev,
@@ -635,69 +478,87 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     });
   };
 
-  const setRowReferenceQuery = (name: string, nextValue: string) =>
-    setRowReferenceQueries((prev) => ({
-      ...prev,
-      [name]: nextValue,
-    }));
+  /** Display text for required/answered checks. Rust owns validity. */
+  const fieldText = (name: string) => fieldValueToText(fieldValues()[name]);
 
-  const clearRowReferenceQuery = (name: string) =>
-    setRowReferenceQueries((prev) => {
-      const next = { ...prev };
-      delete next[name];
-      return next;
-    });
-
-  const clearRowReferenceSelectionState = (name: string) =>
-    setRowReferenceSelections((prev) => {
-      const next = { ...prev };
-      delete next[name];
-      return next;
-    });
-
-  const hasRowReferencePicker = (def: Form["fields"][string]) =>
-    Boolean(pickerSpaceId()) &&
-    def.type === "row_reference" &&
-    normalizeRowReferenceTargetForm(def) !== "";
-
-  const resolveSelectedRowReferenceOption = (name: string) =>
-    rowReferenceSelections()[name] ?? null;
+  /**
+   * Serialize the typed draft for the legacy string contract (submit payload
+   * and Markdown preview). Scalars pass through untouched; collections use
+   * the same display encoding the editors read back. Blanks drop out like
+   * before; object items are never filtered here — Rust rejects empty
+   * objects with field guidance.
+   */
+  const serializeCreateValues = (
+    values: Record<string, unknown>,
+  ): Record<string, string> => {
+    const serialized: Record<string, string> = {};
+    for (const [name, value] of Object.entries(values)) {
+      if (value === null || value === undefined) continue;
+      if (typeof value === "boolean") {
+        if (value) serialized[name] = "true";
+        continue;
+      }
+      if (typeof value === "number") {
+        serialized[name] = String(value);
+        continue;
+      }
+      if (Array.isArray(value)) {
+        if (value.length === 0) continue;
+        if (
+          value.every((item) => typeof item === "string" && item.trim() !== "")
+        ) {
+          const text = (value as string[])
+            .map((item) => `- ${item}`)
+            .join("\n");
+          if (text.trim()) serialized[name] = text;
+          continue;
+        }
+        if (
+          value.every((item) =>
+            typeof item === "string" || typeof item === "number" ||
+            typeof item === "boolean"
+          )
+        ) {
+          const items = (value as Array<string | number | boolean>).filter(
+            (item) => String(item).trim() !== "",
+          );
+          if (items.length === 0) continue;
+          serialized[name] = items.map((item) => `- ${String(item)}`).join(
+            "\n",
+          );
+          continue;
+        }
+        try {
+          serialized[name] = JSON.stringify(value);
+        } catch {
+          continue;
+        }
+        continue;
+      }
+      if (typeof value === "object") {
+        try {
+          serialized[name] = JSON.stringify(value);
+        } catch {
+          continue;
+        }
+        continue;
+      }
+      const text = value;
+      if (!text.trim()) continue;
+      serialized[name] = text;
+    }
+    return serialized;
+  };
 
   const rowReferenceSelectionPending = (
     name: string,
     def: Form["fields"][string],
   ) =>
     !def.deprecated &&
-    hasRowReferencePicker(def) &&
-    (rowReferenceQueries()[name] ?? "").trim() !== "" &&
-    !(fieldValues()[name] ?? "").trim();
-
-  const handleRowReferenceQueryInput = (name: string, nextQuery: string) => {
-    setRowReferenceQuery(name, nextQuery);
-    clearFieldValue(name);
-    clearRowReferenceSelectionState(name);
-    setErrorMessage(null);
-  };
-
-  const handleRowReferenceSelect = (
-    name: string,
-    option: RowReferenceOption,
-  ) => {
-    setRowReferenceQuery(name, option.label);
-    setFieldValue(name, option.id);
-    setRowReferenceSelections((prev) => ({
-      ...prev,
-      [name]: option,
-    }));
-    setErrorMessage(null);
-  };
-
-  const clearRowReferenceSelection = (name: string) => {
-    clearRowReferenceQuery(name);
-    clearFieldValue(name);
-    clearRowReferenceSelectionState(name);
-    setErrorMessage(null);
-  };
+    def.type === "row_reference" &&
+    (def.target_form?.trim() ?? "") !== "" &&
+    Boolean(pickerSpaceId()) &&
+    (rowReferencePending()[name] ?? false);
 
   const firstUnresolvedRowReferenceField = (
     fields: Array<[string, Form["fields"][string]]>,
@@ -712,45 +573,28 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     index: number,
   ) => {
     const fieldId = createFieldInputId(prefix, name, index);
-    if (hasRowReferencePicker(def)) {
-      return (
-        <RowReferencePicker
-          spaceId={pickerSpaceId()}
-          fieldId={fieldId}
-          targetForm={normalizeRowReferenceTargetForm(def)}
-          query={rowReferenceQueries()[name] ?? ""}
-          selectedOption={resolveSelectedRowReferenceOption(name)}
-          onQueryInput={(nextQuery) =>
-            handleRowReferenceQueryInput(name, nextQuery)}
-          onSelect={(option) => handleRowReferenceSelect(name, option)}
-          onClear={() => clearRowReferenceSelection(name)}
-        />
-      );
-    }
-
-    const useTextarea = isTextareaField(name, def);
-    const value = fieldValues()[name] ?? "";
-
-    if (useTextarea) {
-      return (
-        <textarea
-          id={fieldId}
-          class="ui-input ui-textarea"
-          placeholder={resolveTextareaPlaceholder(def)}
-          value={value}
-          onInput={(event) => setFieldValue(name, event.currentTarget.value)}
-        />
-      );
-    }
-
     return (
-      <input
-        id={fieldId}
-        type="text"
-        inputmode={numericFieldTypes.has(def.type) ? "decimal" : undefined}
-        class="ui-input"
-        value={value}
-        onInput={(event) => setFieldValue(name, event.currentTarget.value)}
+      <FieldInput
+        field={def}
+        value={fieldValues()[name]}
+        onChange={(next) => {
+          // Clearing a row reference drops the key from the draft (submit
+          // payloads omit it, as before); other types keep legacy behavior.
+          if (next === "" && def.type === "row_reference") {
+            clearFieldValue(name);
+            return;
+          }
+          setFieldValue(name, next);
+        }}
+        fieldId={fieldId}
+        fieldName={name}
+        spaceId={pickerSpaceId()}
+        multiline={isLongTextField(name, def)}
+        placeholder={isLongTextField(name, def)
+          ? resolveTextareaPlaceholder()
+          : undefined}
+        onRowReferencePendingChange={(pending) =>
+          setRowReferencePending((prev) => ({ ...prev, [name]: pending }))}
       />
     );
   };
@@ -777,7 +621,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
       );
       return;
     }
-    if (isActiveRequiredField(def) && !(fieldValues()[name] || "").trim()) {
+    if (isActiveRequiredField(def) && !fieldText(name).trim()) {
       setErrorMessage(
         t("createDialog.entry.error.answerRequired", { field: name }),
       );
@@ -797,8 +641,12 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
       );
       return;
     }
-    clearRowReferenceQuery(name);
     clearFieldValue(name);
+    setRowReferencePending((prev) => {
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
     setErrorMessage(null);
     moveChatStep(1);
   };
@@ -807,7 +655,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
   const resetEntryDraft = () => {
     setErrorMessage(null);
     setSelectedForm("");
-    setRowReferenceQueries({});
+    setRowReferencePending({});
     setMarkdownInput("");
     setLastGeneratedMarkdown("");
     setChatStep(0);
@@ -829,7 +677,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     }
     const missing = requiredFields()
       .map(([name]) => name)
-      .filter((name) => !(fieldValues()[name] || "").trim());
+      .filter((name) => !fieldText(name).trim());
     return missing.length > 0
       ? buildMissingRequiredFieldsMessage(missing)
       : null;
@@ -1210,7 +1058,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
               <button
                 type="submit"
                 disabled={!selectedForm().trim() || selectableForms().length ===
-                  0}
+                    0}
                 class="ui-button ui-button-primary text-sm"
               >
                 {t("common.create")}
@@ -1275,7 +1123,8 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
   });
 
   const showReservedNameGuidance = createMemo(
-    () => hasReservedMetadataFieldName(fields()) ||
+    () =>
+      hasReservedMetadataFieldName(fields()) ||
       nameValidationIssue() === "reserved",
   );
 
@@ -1486,139 +1335,141 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
               </div>
 
               <FieldStack label={t("createDialog.form.columnsTitle")}>
-              <Index each={fields()}>
-                {(field, i) => (
-                  <FieldStackRow class="flex flex-col gap-1">
-                    <div class={columnEditorRowClass}>
-                      <input
-                        type="text"
-                        placeholder={t(
-                          "createDialog.form.columnNamePlaceholder",
-                        )}
-                        value={field().name}
-                        onInput={(e) =>
-                          updateField(i, "name", e.currentTarget.value)}
-                        class={columnNameInputClass}
-                        classList={{ "ui-input-error": fieldIssues().has(i) }}
-                        aria-invalid={fieldIssues().has(i) || undefined}
-                      />
-                      <div class={columnEditorControlsClass}>
-                        <select
-                          aria-label={t("createDialog.form.fieldTypeLabel")}
-                          value={field().type}
-                          onChange={(e) =>
-                            updateField(i, "type", e.currentTarget.value)}
-                          class={columnTypeSelectClass}
-                          aria-describedby={`create-form-field-type-${i}-description`}
-                        >
-                          <For each={props.columnTypes}>
-                            {(type) => <option value={type}>{type}</option>}
-                          </For>
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => removeField(i)}
-                          class="ui-button ui-button-secondary ui-button-sm"
-                          aria-label={t("createDialog.form.removeColumnAria")}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    </div>
-                    <p
-                      id={`create-form-field-type-${i}-description`}
-                      class="ml-1 text-xs ui-muted"
-                    >
-                      {fieldTypeDescription(field().type)}
-                    </p>
-                    <label class="ml-1 inline-flex items-center gap-2 text-xs ui-muted">
-                      <input
-                        type="checkbox"
-                        checked={field().required}
-                        onChange={(event) =>
-                          updateField(
-                            i,
-                            "required",
-                            event.currentTarget.checked,
-                          )}
-                      />
-                      {t("createDialog.form.requiredLabel")}
-                    </label>
-                    <Show when={field().type === "row_reference"}>
-                      <div class={columnAuxRowClass}>
-                        <span class="text-xs ui-muted">
-                          {t("createDialog.form.targetFormLabel")}
-                        </span>
-                        <FormTargetSelect
-                          label={t("createDialog.form.targetFormLabel")}
-                          value={field().targetForm || ""}
-                          options={props.formNames}
+                <Index each={fields()}>
+                  {(field, i) => (
+                    <FieldStackRow class="flex flex-col gap-1">
+                      <div class={columnEditorRowClass}>
+                        <input
+                          type="text"
                           placeholder={t(
-                            "createDialog.form.targetFormPlaceholder",
+                            "createDialog.form.columnNamePlaceholder",
                           )}
-                          inputClass={columnAuxInputClass}
-                          onChange={(value) =>
-                            updateField(i, "targetForm", value)}
+                          value={field().name}
+                          onInput={(e) =>
+                            updateField(i, "name", e.currentTarget.value)}
+                          class={columnNameInputClass}
+                          classList={{ "ui-input-error": fieldIssues().has(i) }}
+                          aria-invalid={fieldIssues().has(i) || undefined}
                         />
+                        <div class={columnEditorControlsClass}>
+                          <select
+                            aria-label={t("createDialog.form.fieldTypeLabel")}
+                            value={field().type}
+                            onChange={(e) =>
+                              updateField(i, "type", e.currentTarget.value)}
+                            class={columnTypeSelectClass}
+                            aria-describedby={`create-form-field-type-${i}-description`}
+                          >
+                            <For each={props.columnTypes}>
+                              {(type) => <option value={type}>{type}</option>}
+                            </For>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => removeField(i)}
+                            class="ui-button ui-button-secondary ui-button-sm"
+                            aria-label={t("createDialog.form.removeColumnAria")}
+                          >
+                            ×
+                          </button>
+                        </div>
                       </div>
-                    </Show>
-                    <Show when={field().type === "list"}>
-                      <div class={columnAuxRowClass}>
-                        <span class="text-xs ui-muted">
-                          {t("createDialog.form.listItemTypeLabel")}
-                        </span>
-                        <select
-                          class={columnAuxInputClass}
-                          aria-label={t("createDialog.form.listItemTypeLabel")}
-                          value={field().itemsType || ""}
+                      <p
+                        id={`create-form-field-type-${i}-description`}
+                        class="ml-1 text-xs ui-muted"
+                      >
+                        {fieldTypeDescription(field().type)}
+                      </p>
+                      <label class="ml-1 inline-flex items-center gap-2 text-xs ui-muted">
+                        <input
+                          type="checkbox"
+                          checked={field().required}
                           onChange={(event) =>
                             updateField(
                               i,
-                              "itemsType",
-                              event.currentTarget.value,
+                              "required",
+                              event.currentTarget.checked,
                             )}
-                        >
-                          <option value="">
-                            {t("createDialog.form.listItemTypeText")}
-                          </option>
-                          <For each={listItemTypes()}>
-                            {(type) => (
-                              <option value={type}>
-                                {type === "asset_reference"
-                                  ? t("createDialog.form.listItemTypeAsset")
-                                  : type}
-                              </option>
-                            )}
-                          </For>
-                        </select>
-                      </div>
-                      <Show when={field().itemsType === "row_reference"}>
+                        />
+                        {t("createDialog.form.requiredLabel")}
+                      </label>
+                      <Show when={field().type === "row_reference"}>
                         <div class={columnAuxRowClass}>
                           <span class="text-xs ui-muted">
                             {t("createDialog.form.targetFormLabel")}
                           </span>
                           <FormTargetSelect
                             label={t("createDialog.form.targetFormLabel")}
-                            value={field().itemsTargetForm || ""}
+                            value={field().targetForm || ""}
                             options={props.formNames}
                             placeholder={t(
                               "createDialog.form.targetFormPlaceholder",
                             )}
                             inputClass={columnAuxInputClass}
                             onChange={(value) =>
-                              updateField(i, "itemsTargetForm", value)}
+                              updateField(i, "targetForm", value)}
                           />
                         </div>
                       </Show>
-                    </Show>
-                    <Show when={fieldIssues().has(i)}>
-                      <span class="text-xs ui-text-danger">
-                        {fieldIssues().get(i)}
-                      </span>
-                    </Show>
-                  </FieldStackRow>
-                )}
-              </Index>
+                      <Show when={field().type === "list"}>
+                        <div class={columnAuxRowClass}>
+                          <span class="text-xs ui-muted">
+                            {t("createDialog.form.listItemTypeLabel")}
+                          </span>
+                          <select
+                            class={columnAuxInputClass}
+                            aria-label={t(
+                              "createDialog.form.listItemTypeLabel",
+                            )}
+                            value={field().itemsType || ""}
+                            onChange={(event) =>
+                              updateField(
+                                i,
+                                "itemsType",
+                                event.currentTarget.value,
+                              )}
+                          >
+                            <option value="">
+                              {t("createDialog.form.listItemTypeText")}
+                            </option>
+                            <For each={listItemTypes()}>
+                              {(type) => (
+                                <option value={type}>
+                                  {type === "asset_reference"
+                                    ? t("createDialog.form.listItemTypeAsset")
+                                    : type}
+                                </option>
+                              )}
+                            </For>
+                          </select>
+                        </div>
+                        <Show when={field().itemsType === "row_reference"}>
+                          <div class={columnAuxRowClass}>
+                            <span class="text-xs ui-muted">
+                              {t("createDialog.form.targetFormLabel")}
+                            </span>
+                            <FormTargetSelect
+                              label={t("createDialog.form.targetFormLabel")}
+                              value={field().itemsTargetForm || ""}
+                              options={props.formNames}
+                              placeholder={t(
+                                "createDialog.form.targetFormPlaceholder",
+                              )}
+                              inputClass={columnAuxInputClass}
+                              onChange={(value) =>
+                                updateField(i, "itemsTargetForm", value)}
+                            />
+                          </div>
+                        </Show>
+                      </Show>
+                      <Show when={fieldIssues().has(i)}>
+                        <span class="text-xs ui-text-danger">
+                          {fieldIssues().get(i)}
+                        </span>
+                      </Show>
+                    </FieldStackRow>
+                  )}
+                </Index>
               </FieldStack>
               <Show when={fields().length === 0}>
                 <div class="ui-card text-sm ui-muted italic text-center">
@@ -1974,150 +1825,152 @@ export function EditFormDialog(props: EditFormDialogProps) {
               </div>
 
               <FieldStack label={t("createDialog.form.columnsTitle")}>
-              <Index each={fields()}>
-                {(field, i) => (
-                  <FieldStackRow class="flex flex-col gap-1 border-b pb-2 mb-2 last:border-0">
-                    <div class={columnEditorRowClass}>
-                      <input
-                        type="text"
-                        placeholder={t(
-                          "createDialog.form.columnNamePlaceholder",
-                        )}
-                        disabled={!field().isNew &&
-                          !!props.entryForm.fields[field().name]}
-                        value={field().name}
-                        onInput={(e) =>
-                          updateField(i, "name", e.currentTarget.value)}
-                        class={columnNameInputClass}
-                        classList={{
-                          "ui-input-error": fieldIssues().has(i) &&
-                            field().isNew,
-                        }}
-                        aria-invalid={fieldIssues().has(i) || undefined}
-                        title={!field().isNew
-                          ? t("createDialog.form.renameHint")
-                          : ""}
-                      />
-                      <div class={columnEditorControlsClass}>
-                        <select
-                          aria-label={t("createDialog.form.fieldTypeLabel")}
-                          value={field().type}
-                          onChange={(e) =>
-                            updateField(i, "type", e.currentTarget.value)}
-                          disabled={!field().isNew}
-                          class={columnTypeSelectClass}
-                          aria-describedby={`edit-form-field-type-${i}-description`}
-                        >
-                          <For each={props.columnTypes}>
-                            {(type) => <option value={type}>{type}</option>}
-                          </For>
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => removeField(i)}
-                          disabled={!field().isNew}
-                          class="ui-button ui-button-secondary ui-button-sm"
-                          aria-label={t("createDialog.form.removeColumnAria")}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    </div>
-                    <p
-                      id={`edit-form-field-type-${i}-description`}
-                      class="ml-1 text-xs ui-muted"
-                    >
-                      {fieldTypeDescription(field().type)}
-                    </p>
-                    <label class="ml-1 inline-flex items-center gap-2 text-xs ui-muted">
-                      <input
-                        type="checkbox"
-                        checked={field().required}
-                        onChange={(event) =>
-                          updateField(
-                            i,
-                            "required",
-                            event.currentTarget.checked,
-                          )}
-                      />
-                      {t("createDialog.form.requiredLabel")}
-                    </label>
-                    <Show when={field().type === "row_reference"}>
-                      <div class={columnAuxRowClass}>
-                        <span class="text-xs ui-muted">
-                          {t("createDialog.form.targetFormLabel")}
-                        </span>
-                        <FormTargetSelect
-                          label={t("createDialog.form.targetFormLabel")}
-                          value={field().targetForm || ""}
-                          options={props.formNames}
+                <Index each={fields()}>
+                  {(field, i) => (
+                    <FieldStackRow class="flex flex-col gap-1 border-b pb-2 mb-2 last:border-0">
+                      <div class={columnEditorRowClass}>
+                        <input
+                          type="text"
                           placeholder={t(
-                            "createDialog.form.targetFormPlaceholder",
+                            "createDialog.form.columnNamePlaceholder",
                           )}
-                          inputClass={columnAuxInputClass}
-                          onChange={(value) =>
-                            updateField(i, "targetForm", value)}
+                          disabled={!field().isNew &&
+                            !!props.entryForm.fields[field().name]}
+                          value={field().name}
+                          onInput={(e) =>
+                            updateField(i, "name", e.currentTarget.value)}
+                          class={columnNameInputClass}
+                          classList={{
+                            "ui-input-error": fieldIssues().has(i) &&
+                              field().isNew,
+                          }}
+                          aria-invalid={fieldIssues().has(i) || undefined}
+                          title={!field().isNew
+                            ? t("createDialog.form.renameHint")
+                            : ""}
                         />
+                        <div class={columnEditorControlsClass}>
+                          <select
+                            aria-label={t("createDialog.form.fieldTypeLabel")}
+                            value={field().type}
+                            onChange={(e) =>
+                              updateField(i, "type", e.currentTarget.value)}
+                            disabled={!field().isNew}
+                            class={columnTypeSelectClass}
+                            aria-describedby={`edit-form-field-type-${i}-description`}
+                          >
+                            <For each={props.columnTypes}>
+                              {(type) => <option value={type}>{type}</option>}
+                            </For>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => removeField(i)}
+                            disabled={!field().isNew}
+                            class="ui-button ui-button-secondary ui-button-sm"
+                            aria-label={t("createDialog.form.removeColumnAria")}
+                          >
+                            ×
+                          </button>
+                        </div>
                       </div>
-                    </Show>
-                    <Show when={field().type === "list"}>
-                      <div class={columnAuxRowClass}>
-                        <span class="text-xs ui-muted">
-                          {t("createDialog.form.listItemTypeLabel")}
-                        </span>
-                        <select
-                          class={columnAuxInputClass}
-                          aria-label={t("createDialog.form.listItemTypeLabel")}
-                          value={field().itemsType || ""}
-                          disabled={!field().isNew}
+                      <p
+                        id={`edit-form-field-type-${i}-description`}
+                        class="ml-1 text-xs ui-muted"
+                      >
+                        {fieldTypeDescription(field().type)}
+                      </p>
+                      <label class="ml-1 inline-flex items-center gap-2 text-xs ui-muted">
+                        <input
+                          type="checkbox"
+                          checked={field().required}
                           onChange={(event) =>
                             updateField(
                               i,
-                              "itemsType",
-                              event.currentTarget.value,
+                              "required",
+                              event.currentTarget.checked,
                             )}
-                        >
-                          <option value="">
-                            {t("createDialog.form.listItemTypeText")}
-                          </option>
-                          <For each={listItemTypes()}>
-                            {(type) => (
-                              <option value={type}>
-                                {type === "asset_reference"
-                                  ? t("createDialog.form.listItemTypeAsset")
-                                  : type}
-                              </option>
-                            )}
-                          </For>
-                        </select>
-                      </div>
-                      <Show when={field().itemsType === "row_reference"}>
+                        />
+                        {t("createDialog.form.requiredLabel")}
+                      </label>
+                      <Show when={field().type === "row_reference"}>
                         <div class={columnAuxRowClass}>
                           <span class="text-xs ui-muted">
                             {t("createDialog.form.targetFormLabel")}
                           </span>
                           <FormTargetSelect
                             label={t("createDialog.form.targetFormLabel")}
-                            value={field().itemsTargetForm || ""}
+                            value={field().targetForm || ""}
                             options={props.formNames}
                             placeholder={t(
                               "createDialog.form.targetFormPlaceholder",
                             )}
                             inputClass={columnAuxInputClass}
                             onChange={(value) =>
-                              updateField(i, "itemsTargetForm", value)}
+                              updateField(i, "targetForm", value)}
                           />
                         </div>
                       </Show>
-                    </Show>
-                    <Show when={fieldIssues().has(i) && field().isNew}>
-                      <span class="text-xs ui-text-danger">
-                        {fieldIssues().get(i)}
-                      </span>
-                    </Show>
-                  </FieldStackRow>
-                )}
-              </Index>
+                      <Show when={field().type === "list"}>
+                        <div class={columnAuxRowClass}>
+                          <span class="text-xs ui-muted">
+                            {t("createDialog.form.listItemTypeLabel")}
+                          </span>
+                          <select
+                            class={columnAuxInputClass}
+                            aria-label={t(
+                              "createDialog.form.listItemTypeLabel",
+                            )}
+                            value={field().itemsType || ""}
+                            disabled={!field().isNew}
+                            onChange={(event) =>
+                              updateField(
+                                i,
+                                "itemsType",
+                                event.currentTarget.value,
+                              )}
+                          >
+                            <option value="">
+                              {t("createDialog.form.listItemTypeText")}
+                            </option>
+                            <For each={listItemTypes()}>
+                              {(type) => (
+                                <option value={type}>
+                                  {type === "asset_reference"
+                                    ? t("createDialog.form.listItemTypeAsset")
+                                    : type}
+                                </option>
+                              )}
+                            </For>
+                          </select>
+                        </div>
+                        <Show when={field().itemsType === "row_reference"}>
+                          <div class={columnAuxRowClass}>
+                            <span class="text-xs ui-muted">
+                              {t("createDialog.form.targetFormLabel")}
+                            </span>
+                            <FormTargetSelect
+                              label={t("createDialog.form.targetFormLabel")}
+                              value={field().itemsTargetForm || ""}
+                              options={props.formNames}
+                              placeholder={t(
+                                "createDialog.form.targetFormPlaceholder",
+                              )}
+                              inputClass={columnAuxInputClass}
+                              onChange={(value) =>
+                                updateField(i, "itemsTargetForm", value)}
+                            />
+                          </div>
+                        </Show>
+                      </Show>
+                      <Show when={fieldIssues().has(i) && field().isNew}>
+                        <span class="text-xs ui-text-danger">
+                          {fieldIssues().get(i)}
+                        </span>
+                      </Show>
+                    </FieldStackRow>
+                  )}
+                </Index>
               </FieldStack>
               <Show when={fields().length === 0}>
                 <div class="ui-card text-sm ui-muted italic text-center">

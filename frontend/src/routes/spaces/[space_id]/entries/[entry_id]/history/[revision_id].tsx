@@ -8,7 +8,7 @@ import {
 } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
-import { createEntryFieldInputId, EntryFields } from "~/components/EntryFields";
+import { FieldValuesView } from "~/components/fields/FieldValue";
 import { formatDateTimeLabel } from "~/lib/date-format";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { parseEntryMarkdownPresentation } from "~/lib/entry-input";
@@ -122,7 +122,8 @@ export default function SpaceEntryRevisionRoute() {
   );
 
   // The stored Markdown is the revision content authority; the shared
-  // EntryFields renderer shows it read-only (every control disabled).
+  // read-only renderer shows it as text (never disabled inputs — editing
+  // controls belong to the FieldInput family alone).
   const parsedRevision = createMemo(() => {
     const markdown = revision()?.markdown ?? "";
     try {
@@ -132,10 +133,7 @@ export default function SpaceEntryRevisionRoute() {
     }
   });
   const revisionFields = createMemo(() =>
-    Object.keys(parsedRevision().fields).map((name, index) => ({
-      name,
-      fieldId: createEntryFieldInputId(name, index),
-    }))
+    Object.keys(parsedRevision().fields).map((name) => ({ name }))
   );
 
   const copyText = async (value: string) => {
@@ -214,11 +212,9 @@ export default function SpaceEntryRevisionRoute() {
             {" · "}
             {t("entryRevision.actor")}: {actorName()}
           </p>
-          <EntryFields
+          <FieldValuesView
             fields={revisionFields()}
             getValue={(name) => parsedRevision().fields[name] ?? ""}
-            readOnly
-            showFieldTypes
           />
 
           <div class="revision-restore-row">

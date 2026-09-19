@@ -291,6 +291,33 @@ pub fn normalize_and_validate_draft(
                 });
             }
             Ok(value) => {
+                // An empty object carries no properties, so it is never a
+                // meaningful object_list item on the write path. New writes
+                // containing one are rejected with the same invalid_type
+                // diagnostic as any other contract violation (INVALID_INPUT
+                // kind with field guidance). Historical storage is untouched:
+                // `stored_fields_to_values` keeps decoding legacy `[{}]`
+                // rows so existing spaces remain readable without migration.
+                if field.field_type == FieldType::ObjectList
+                    && matches!(&value, FieldValue::List(items) if items.iter().any(|item| matches!(item, FieldValue::Object(properties) if properties.is_empty())))
+                {
+                    let (expected_type, expected_format) =
+                        expected_field_contract(field.field_type.as_str());
+                    warnings.push(ValidationWarning {
+                        code: "invalid_type".to_string(),
+                        field: field.name.clone(),
+                        expected_type: expected_type.to_string(),
+                        expected_format: expected_format.to_string(),
+                        reason: format!(
+                            "value does not match the {expected_format} contract: object list items must not be empty objects"
+                        ),
+                        message: format!(
+                            "Field '{}' has invalid type; expected {}",
+                            field.name, expected_format
+                        ),
+                    });
+                    continue;
+                }
                 // A required empty list is missing per domain semantics.
                 if field.required
                     && !field.deprecated
@@ -2093,6 +2120,67 @@ mod tests {
             stored_fields_to_values(&Value::Null, &form).expect("legacy non-object payload"),
             BTreeMap::new()
         );
+    }
+
+    #[test]
+    fn empty_object_list_items_are_rejected_on_write_but_readable_from_legacy_storage() {
+        use crate::error::ErrorKind;
+
+        let form = preview_test_form();
+        // New writes carrying an empty object as a meaningful object_list
+        // item are rejected with field guidance (INVALID_INPUT kind).
+        let draft = structured_fields_to_draft(
+            "T",
+            Some("Preview"),
+            Vec::new(),
+            BTreeMap::from([
+                ("Title".into(), Value::String("hello".into())),
+                ("Rows".into(), serde_json::json!([{}])),
+            ]),
+            BTreeMap::new(),
+        );
+        let error =
+            normalize_and_validate_draft(&form, &draft).expect_err("[{}] must fail on write");
+        assert_eq!(error.code(), ErrorCode::FormValidationFailed);
+        assert_eq!(error.kind(), ErrorKind::InvalidInput);
+        let warnings = validation_warnings(&error).expect("field guidance");
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].field, "Rows");
+        assert_eq!(warnings[0].code, "invalid_type");
+        // The preview boundary agrees with the mutation path.
+        let preview_error = preview_structured_draft(&form, &draft).expect_err("preview must fail");
+        assert_eq!(preview_error.code(), ErrorCode::FormValidationFailed);
+        // The JSON-string write shape is rejected the same way.
+        let string_draft = structured_fields_to_draft(
+            "T",
+            Some("Preview"),
+            Vec::new(),
+            BTreeMap::from([
+                ("Title".into(), Value::String("hello".into())),
+                ("Rows".into(), Value::String("[{}]".to_string())),
+            ]),
+            BTreeMap::new(),
+        );
+        normalize_and_validate_draft(&form, &string_draft).expect_err("[{}] string must fail");
+        // Legacy storage rows stay readable without migration or format change.
+        let values = stored_fields_to_values(&serde_json::json!({"Rows": [{}]}), &form)
+            .expect("legacy [{}] stays readable");
+        assert_eq!(
+            values.get(&FieldId::new(108).unwrap()),
+            Some(&FieldValue::List(vec![FieldValue::Object(BTreeMap::new())]))
+        );
+        // Non-empty items keep passing the write boundary.
+        let valid_draft = structured_fields_to_draft(
+            "T",
+            Some("Preview"),
+            Vec::new(),
+            BTreeMap::from([
+                ("Title".into(), Value::String("hello".into())),
+                ("Rows".into(), serde_json::json!([{"name": "alpha"}])),
+            ]),
+            BTreeMap::new(),
+        );
+        normalize_and_validate_draft(&form, &valid_draft).expect("non-empty items pass");
     }
 
     #[test]
