@@ -39,7 +39,7 @@ pub enum EntrySubCmd {
             value_name = "SPACE_OR_ENTRY_ID",
             num_args(1..=2),
             required = true,
-            help = "ENTRY_ID against the selected context, or legacy SPACE ENTRY_ID."
+            help = "ENTRY_ID against the selected context (Entry slug/ID, e.g. 'my-note', 'task-01'), or legacy SPACE ENTRY_ID."
         )]
         space_and_id: Vec<String>,
     },
@@ -52,7 +52,7 @@ pub enum EntrySubCmd {
             value_name = "SPACE_OR_ENTRY_ID",
             num_args(1..=2),
             required = true,
-            help = "ENTRY_ID against the selected context, or legacy SPACE ENTRY_ID."
+            help = "ENTRY_ID against the selected context (Entry slug/ID, e.g. 'my-note', 'task-01'), or legacy SPACE ENTRY_ID."
         )]
         space_and_id: Vec<String>,
         #[arg(
@@ -106,7 +106,7 @@ pub enum EntrySubCmd {
             value_name = "SPACE_OR_ENTRY_ID",
             num_args(1..=2),
             required = true,
-            help = "ENTRY_ID against the selected context, or legacy SPACE ENTRY_ID."
+            help = "ENTRY_ID against the selected context (Entry slug/ID, e.g. 'my-note', 'task-01'), or legacy SPACE ENTRY_ID."
         )]
         space_and_id: Vec<String>,
         #[arg(
@@ -166,7 +166,7 @@ pub enum EntrySubCmd {
             value_name = "SPACE_OR_ENTRY_ID",
             num_args(1..=2),
             required = true,
-            help = "ENTRY_ID against the selected context, or legacy SPACE ENTRY_ID."
+            help = "ENTRY_ID against the selected context (Entry slug/ID, e.g. 'my-note', 'task-01'), or legacy SPACE ENTRY_ID."
         )]
         space_and_id: Vec<String>,
         #[arg(long)]
@@ -190,7 +190,7 @@ pub enum EntrySubCmd {
             value_name = "SPACE_OR_ENTRY_ID",
             num_args(1..=2),
             required = true,
-            help = "ENTRY_ID against the selected context, or legacy SPACE ENTRY_ID."
+            help = "ENTRY_ID against the selected context (Entry slug/ID, e.g. 'my-note', 'task-01'), or legacy SPACE ENTRY_ID."
         )]
         space_and_id: Vec<String>,
     },
