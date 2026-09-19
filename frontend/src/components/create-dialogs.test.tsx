@@ -1,6 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import {
   CreateEntryDialog,
   CreateFormDialog,
@@ -396,7 +402,8 @@ describe("CreateFormDialog", () => {
         target: { value: reservedName },
       });
 
-      expect(screen.getByText("Reserved metadata form name")).toBeInTheDocument();
+      expect(screen.getByText("Reserved metadata form name"))
+        .toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "Create Form" }));
       expect(onSubmit).not.toHaveBeenCalled();
     },
@@ -418,7 +425,8 @@ describe("CreateFormDialog", () => {
       target: { value: "ExistingForm" },
     });
 
-    expect(screen.getByText("A Form with this name already exists.")).toBeInTheDocument();
+    expect(screen.getByText("A Form with this name already exists."))
+      .toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create Form" }));
     expect(onSubmit).not.toHaveBeenCalled();
   });
@@ -538,7 +546,7 @@ describe("CreateEntryDialog", () => {
     const createButton = screen.getByRole("button", { name: "Create" });
     expect(createButton).toBeDisabled();
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Meeting" },
     });
     expect(createButton).not.toBeDisabled();
@@ -570,7 +578,7 @@ describe("CreateEntryDialog", () => {
     ).not.toBeInTheDocument();
     expect(document.querySelector("#entry-title")).toBeNull();
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Notes" },
     });
 
@@ -602,7 +610,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
 
@@ -637,7 +645,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
@@ -670,7 +678,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Meeting" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
@@ -714,7 +722,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Event" },
     });
 
@@ -754,7 +762,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
 
@@ -802,7 +810,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.input(screen.getByLabelText(/Summary/), {
@@ -844,7 +852,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Event" },
     });
 
@@ -894,7 +902,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
 
@@ -933,7 +941,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
 
@@ -962,7 +970,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
 
@@ -991,7 +999,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Meeting" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
@@ -1040,7 +1048,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Meeting" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
@@ -1072,7 +1080,10 @@ describe("CreateEntryDialog", () => {
       expect(
         screen.queryByPlaceholderText("Enter entry title..."),
       ).not.toBeInTheDocument();
-      expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe(
+      expect(
+        (screen.getByRole("combobox", { name: "Form *" }) as HTMLSelectElement)
+          .value,
+      ).toBe(
         "",
       );
       expect(screen.queryByRole("textbox", { name: "Markdown input" })).not
@@ -1110,7 +1121,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
 
@@ -1213,7 +1224,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.input(screen.getByLabelText(/Summary/), {
@@ -1302,7 +1313,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Chat" }));
@@ -1378,7 +1389,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.input(screen.getByLabelText(/Summary/), {
@@ -1467,7 +1478,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
 
@@ -1528,7 +1539,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.input(screen.getByLabelText(/Project/), {
@@ -1567,7 +1578,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.input(screen.getByLabelText(/Summary/), {
@@ -1620,7 +1631,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.input(screen.getByLabelText(/Summary/), {
@@ -1682,7 +1693,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
 
@@ -1734,7 +1745,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.input(screen.getByLabelText(/Summary/), {
@@ -1782,7 +1793,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Chat" }));
@@ -1826,7 +1837,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
 
@@ -1876,7 +1887,7 @@ describe("CreateEntryDialog", () => {
     ).not.toBeInTheDocument();
     expect(document.querySelector("#entry-title")).toBeNull();
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Meeting" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
@@ -1916,7 +1927,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     expect(screen.getByLabelText(/Status/)).toBeInTheDocument();
@@ -1955,7 +1966,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Chat" }));
@@ -2005,7 +2016,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Chat" }));
@@ -2063,7 +2074,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Chat" }));
@@ -2122,7 +2133,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Chat" }));
@@ -2160,7 +2171,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Chat" }));
@@ -2196,7 +2207,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Chat" }));
@@ -2231,7 +2242,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Chat" }));
@@ -2280,7 +2291,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Chat" }));
@@ -2327,7 +2338,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Meeting" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
@@ -2366,7 +2377,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
 
@@ -2412,7 +2423,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    const select = screen.getByRole("combobox");
+    const select = screen.getByRole("combobox", { name: "Form *" });
     expect(screen.getByRole("option", { name: "Assets" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Meeting" })).toBeInTheDocument();
     fireEvent.change(select, { target: { value: "Assets" } });

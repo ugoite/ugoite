@@ -12,13 +12,12 @@ import type { Accessor } from "solid-js";
 import { AssetField } from "~/components/AssetField";
 import { ActionIconBar } from "~/components/ActionIconBar";
 import { BackLink } from "~/components/BackLink";
-import { ListEditor } from "~/components/ListEditor";
-import { ObjectListEditor } from "~/components/ObjectListEditor";
 import {
   createEntryFieldInputId,
   type EntryFieldDescriptor,
   EntryFields,
 } from "~/components/EntryFields";
+import { FieldInput } from "~/components/fields";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import {
   type AssetFieldState,
@@ -36,23 +35,10 @@ import {
 import {
   type DraftFields,
   draftValueToDisplayString,
-  isBooleanListField,
-  isPlainNumberListField,
-  isPlainStringListField,
-  normalizeBooleanListValue,
-  normalizeNumberListValue,
-  normalizeObjectListValue,
-  normalizeStringListValue,
-  parseBooleanAlias,
-  parseNumberItemText,
   readAssetReferences,
   toTransportFields,
 } from "~/lib/draft-values";
-import {
-  entryApi,
-  RevisionConflictError,
-  searchApi,
-} from "~/lib/ugoite-client";
+import { entryApi, RevisionConflictError } from "~/lib/ugoite-client";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { validateEntryDraftViaWasm } from "~/lib/entry-validation";
 import {
@@ -86,22 +72,9 @@ export interface EntryDetailPaneProps {
   onAfterSave?: () => void;
 }
 
-type RowReferenceOption = {
-  id: string;
-  title: string;
-};
-
 const BOOLEAN_VALUE_REGEX = /^(true|false|yes|no|on|off|1|0)$/i;
 // Presentation hint only. The shared Rust boundary owns boolean coercion;
 // this regex never decides saveability.
-const NUMERIC_FIELD_TYPES = new Set([
-  "integer",
-  "long",
-  "number",
-  "double",
-  "float",
-]);
-const ROW_REFERENCE_SUGGESTION_LIMIT = 8;
 
 const isActiveRequiredField = (field: FormField) =>
   field.required && !field.deprecated;
@@ -265,14 +238,6 @@ function buildEditorGuidance(form: Form | null, markdown: string) {
   return { missingRequired, unknownSections, typeIssues };
 }
 
-function resolveInputMode(field: FormField): "decimal" | undefined {
-  return NUMERIC_FIELD_TYPES.has(field.type) ? "decimal" : undefined;
-}
-
-function resolveInputType(field: FormField): "date" | "text" {
-  return field.type === "date" ? "date" : "text";
-}
-
 class EntryLoadTimeoutError extends Error {
   constructor() {
     super("entry load timed out");
@@ -298,175 +263,6 @@ async function fetchWithTimeout<T>(
     if (timer) clearTimeout(timer);
     /* v8 ignore stop */
   }
-}
-
-function EntryRowReferenceField(props: {
-  spaceId: string;
-  fieldId: string;
-  targetForm: string;
-  value: string;
-  invalid?: boolean;
-  describedBy?: string;
-  onChange: (value: string) => void;
-}) {
-  const [query, setQuery] = createSignal(props.value);
-  const [selected, setSelected] = createSignal<RowReferenceOption | null>(
-    props.value ? { id: props.value, title: props.value } : null,
-  );
-  const [lastPropValue, setLastPropValue] = createSignal(props.value);
-
-  createEffect(() => {
-    const value = props.value;
-    if (value === lastPropValue()) return;
-    setLastPropValue(value);
-    setQuery(value);
-    setSelected(value ? { id: value, title: value } : null);
-  });
-
-  const [options] = createResource(
-    () => ({
-      spaceId: props.spaceId.trim(),
-      targetForm: props.targetForm.trim(),
-      query: query(),
-    }),
-    async ({ spaceId, targetForm, query: searchQuery }) => {
-      if (!spaceId || !targetForm) return [] as RowReferenceOption[];
-      const entries = await searchApi.rowReferenceOptions(
-        spaceId,
-        targetForm,
-        searchQuery,
-        ROW_REFERENCE_SUGGESTION_LIMIT,
-      );
-      return entries
-        .map((item) => ({
-          id: item.id,
-          title: item.title?.trim() || item.id,
-        }))
-        .sort(
-          (left, right) =>
-            left.title.localeCompare(right.title) ||
-            left.id.localeCompare(right.id),
-        );
-    },
-    { initialValue: [] as RowReferenceOption[] },
-  );
-
-  createEffect(() => {
-    const selectedValue = selected();
-    if (!selectedValue) return;
-    const match = options().find((option) => option.id === selectedValue.id);
-    if (match && match.title !== selectedValue.title) setSelected(match);
-  });
-
-  const handleQueryInput = (value: string) => {
-    setQuery(value);
-    setSelected(null);
-    if (props.value) {
-      setLastPropValue("");
-      props.onChange("");
-    }
-  };
-
-  const handleSelect = (option: RowReferenceOption) => {
-    setSelected(option);
-    setQuery(option.title);
-    setLastPropValue(option.id);
-    props.onChange(option.id);
-  };
-
-  const handleClear = () => {
-    setSelected(null);
-    setQuery("");
-    setLastPropValue("");
-    props.onChange("");
-  };
-
-  return (
-    <div class="ui-stack-sm">
-      <input
-        id={props.fieldId}
-        type="search"
-        class="ui-input"
-        value={query()}
-        aria-invalid={props.invalid ? "true" : undefined}
-        aria-describedby={props.describedBy}
-        placeholder={t("createDialog.entry.rowReference.searchPlaceholder", {
-          form: props.targetForm,
-        })}
-        onInput={(event) => handleQueryInput(event.currentTarget.value)}
-        autocomplete="off"
-      />
-      <p class="text-xs ui-muted">
-        {t("createDialog.entry.rowReference.help", { form: props.targetForm })}
-      </p>
-      <Show when={selected()}>
-        {(option) => (
-          <div class="ui-reference-picker-selection">
-            <p class="text-[11px] font-semibold uppercase tracking-wide ui-muted">
-              {t("createDialog.entry.rowReference.selected")}
-            </p>
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div class="min-w-0">
-                <p class="truncate text-sm font-medium">{option().title}</p>
-                <p class="truncate text-xs ui-muted">{option().id}</p>
-              </div>
-              <button
-                type="button"
-                class="ui-button ui-button-secondary ui-button-sm text-xs"
-                onClick={handleClear}
-              >
-                {t("createDialog.entry.rowReference.clear")}
-              </button>
-            </div>
-          </div>
-        )}
-      </Show>
-      <Show when={options.loading}>
-        <LocalBusyIndicator
-          label={t("createDialog.entry.rowReference.loading", {
-            form: props.targetForm,
-          })}
-        />
-      </Show>
-      <Show when={!options.loading && options.error}>
-        <p class="text-xs ui-text-danger">
-          {t("createDialog.entry.rowReference.loadError", {
-            form: props.targetForm,
-          })}
-        </p>
-      </Show>
-      <Show when={!options.loading && !options.error && options().length > 0}>
-        <ul class="ui-reference-picker-list">
-          <For each={options()}>
-            {(option) => (
-              <li class="ui-reference-picker-option">
-                <button
-                  type="button"
-                  class="ui-reference-picker-button"
-                  onClick={() => handleSelect(option)}
-                >
-                  <p class="text-sm font-medium">{option.title}</p>
-                  <p class="text-xs ui-muted">{option.id}</p>
-                </button>
-              </li>
-            )}
-          </For>
-        </ul>
-      </Show>
-      <Show
-        when={!options.loading &&
-          !options.error &&
-          query().trim() &&
-          options().length === 0}
-      >
-        <p class="text-xs ui-muted">
-          {t("createDialog.entry.rowReference.noMatches", {
-            form: props.targetForm,
-          })}
-        </p>
-      </Show>
-    </div>
-  );
 }
 
 export function EntryDetailPane(props: EntryDetailPaneProps) {
@@ -1352,26 +1148,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     invalid: () => boolean,
     describedBy: () => string | undefined,
   ) => {
-    const value = () => fieldValue(fieldName);
-
-    if (fieldDef.type === "row_reference" && fieldDef.target_form?.trim()) {
-      const targetForm = fieldDef.target_form.trim();
-      const targetFormName = props.forms?.().find((form) =>
-        form.id === targetForm
-      )?.name ?? targetForm;
-      return (
-        <EntryRowReferenceField
-          spaceId={props.spaceId()}
-          fieldId={fieldId}
-          targetForm={targetFormName}
-          value={value()}
-          invalid={invalid()}
-          describedBy={invalid() ? describedBy() : undefined}
-          onChange={(nextValue) => handleFieldChange(fieldName, nextValue)}
-        />
-      );
-    }
-
     if (
       fieldDef.type === "asset_reference" || isAssetReferenceListField(fieldDef)
     ) {
@@ -1397,198 +1173,42 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       );
     }
 
-    if (
-      fieldDef.type === "list" &&
-      !isAssetReferenceListField(fieldDef) &&
-      isPlainStringListField(fieldDef)
-    ) {
-      // Repeated typed controls instead of newline conventions: each item
-      // is a text box, adding/removing marks the entry dirty, and the user
-      // never types list syntax. Reads stay in leaf bindings so rows (and
-      // focus) survive keystrokes; only add/remove re-structures rows.
-      const readItems = () =>
-        normalizeStringListValue(draftFields()[fieldName]);
-      return (
-        <ListEditor
-          values={readItems()}
-          onChange={(next) => handleFieldChange(fieldName, next)}
-          createItem={() => ""}
-          addLabel={t("entryDetail.listAddItem")}
-          renderItem={(item, index, helpers) => (
-            <div class="flex items-center gap-2">
-              <input
-                id={index() === 0 ? fieldId : `${fieldId}-${index()}`}
-                class="ui-input"
-                value={item()}
-                aria-label={t("entryDetail.listItemLabel", {
-                  field: fieldName,
-                  index: index() + 1,
-                })}
-                aria-invalid={invalid() ? "true" : undefined}
-                aria-describedby={invalid() ? describedBy() : undefined}
-                placeholder={t("entryDetail.fieldPlaceholder")}
-                onInput={(event) =>
-                  handleFieldChange(
-                    fieldName,
-                    readItems().map((entry, position) =>
-                      position === index()
-                        ? event.currentTarget.value
-                        : entry
-                    ),
-                  )}
-              />
-              <button
-                type="button"
-                class="ui-button ui-button-secondary ui-button-sm text-sm"
-                aria-label={t("entryDetail.listRemoveItem", {
-                  field: fieldName,
-                  index: index() + 1,
-                })}
-                onClick={helpers.remove}
-              >
-                {t("common.remove")}
-              </button>
-            </div>
-          )}
-        />
-      );
-    }
-
-    if (fieldDef.type === "object_list") {
-      // Repeated grouped object editors instead of JSON text: each item
-      // shows its properties with typed nested controls.
-      return (
-        <ObjectListEditor
-          fieldName={fieldName}
-          values={normalizeObjectListValue(draftFields()[fieldName])}
-          onChange={(next) => handleFieldChange(fieldName, next)}
-          invalid={invalid()}
-          describedBy={invalid() ? describedBy() : undefined}
-        />
-      );
-    }
-
-    if (
-      fieldDef.type === "list" &&
-      !isAssetReferenceListField(fieldDef) &&
-      (isPlainNumberListField(fieldDef) || isBooleanListField(fieldDef))
-    ) {
-      // Repeated typed controls for numeric and boolean items. Reads stay
-      // in leaf bindings so rows (and focus) survive keystrokes.
-      const isNumeric = isPlainNumberListField(fieldDef);
-      const readItems = () =>
-        isNumeric
-          ? normalizeNumberListValue(draftFields()[fieldName])
-          : normalizeBooleanListValue(draftFields()[fieldName]);
-      return (
-        <ListEditor
-          values={readItems()}
-          onChange={(next) => handleFieldChange(fieldName, next)}
-          createItem={() => (isNumeric ? "" : false) as number | string | boolean}
-          addLabel={t("entryDetail.listAddItem")}
-          renderItem={(item, index, helpers) => (
-            <div class="flex items-center gap-2">
-              <Show
-                when={!isNumeric}
-                fallback={
-                  <input
-                    id={index() === 0 ? fieldId : `${fieldId}-${index()}`}
-                    class="ui-input"
-                    value={String(item())}
-                    aria-label={t("entryDetail.listItemLabel", {
-                      field: fieldName,
-                      index: index() + 1,
-                    })}
-                    aria-invalid={invalid() ? "true" : undefined}
-                    aria-describedby={invalid() ? describedBy() : undefined}
-                    placeholder={t("entryDetail.fieldPlaceholder")}
-                    inputmode="decimal"
-                    onInput={(event) =>
-                      handleFieldChange(
-                        fieldName,
-                        readItems().map((entry, position) =>
-                          position === index()
-                            ? parseNumberItemText(event.currentTarget.value)
-                            : entry
-                        ),
-                      )}
-                  />
-                }
-              >
-                <input
-                  id={index() === 0 ? fieldId : `${fieldId}-${index()}`}
-                  type="checkbox"
-                  checked={typeof item() === "boolean"
-                    ? item() as boolean
-                    : parseBooleanAlias(
-                      typeof item() === "string" ? (item() as string) : "",
-                    ) === true}
-                  aria-label={t("entryDetail.listItemLabel", {
-                    field: fieldName,
-                    index: index() + 1,
-                  })}
-                  aria-invalid={invalid() ? "true" : undefined}
-                  aria-describedby={invalid() ? describedBy() : undefined}
-                  onChange={(event) =>
-                    handleFieldChange(
-                      fieldName,
-                      readItems().map((entry, position) =>
-                        position === index()
-                          ? event.currentTarget.checked
-                          : entry
-                      ),
-                    )}
-                />
-              </Show>
-              <button
-                type="button"
-                class="ui-button ui-button-secondary ui-button-sm text-sm"
-                aria-label={t("entryDetail.listRemoveItem", {
-                  field: fieldName,
-                  index: index() + 1,
-                })}
-                onClick={helpers.remove}
-              >
-                {t("common.remove")}
-              </button>
-            </div>
-          )}
-        />
-      );
-    }
-
-    if (
-      fieldDef.type === "markdown" ||
-      (fieldDef.type === "list" && !isAssetReferenceListField(fieldDef))
-    ) {
-      return (
-        <textarea
-          id={fieldId}
-          class="ui-input ui-textarea"
-          value={value()}
-          aria-invalid={invalid() ? "true" : undefined}
-          aria-describedby={invalid() ? describedBy() : undefined}
-          placeholder={fieldDef.type === "list"
-            ? t("entryDetail.listPlaceholder")
-            : t("entryDetail.fieldPlaceholder")}
-          onInput={(event) =>
-            handleFieldChange(fieldName, event.currentTarget.value)}
-        />
-      );
-    }
-
+    // One component family shared with the create dialog: string/markdown,
+    // number, boolean, date, list, object_list, row_reference, and
+    // list<row_reference> render through FieldInput. Frontend owns
+    // display/interaction only; validity authority stays in Rust. Asset kinds
+    // stay a call-site override above (AssetField); this call never filters
+    // values alone.
+    const resolveTargetFormName = (target: string | undefined) => {
+      const trimmed = target?.trim() ?? "";
+      if (!trimmed) return target;
+      // The options lookup filters by Form name while stored targets may be
+      // opaque Form ids; resolve through the loaded catalog. Unresolvable
+      // values pass through untouched for the Rust boundary to diagnose.
+      return props.forms?.().find((form) => form.id === trimmed)?.name ??
+        target;
+    };
+    const resolvedField: FormField = {
+      ...fieldDef,
+      target_form: resolveTargetFormName(fieldDef.target_form),
+      items: fieldDef.items
+        ? {
+          ...fieldDef.items,
+          target_form: resolveTargetFormName(fieldDef.items.target_form),
+        }
+        : fieldDef.items,
+    };
     return (
-      <input
-        id={fieldId}
-        class="ui-input"
-        type={resolveInputType(fieldDef)}
-        inputmode={resolveInputMode(fieldDef)}
-        value={value()}
-        aria-invalid={invalid() ? "true" : undefined}
-        aria-describedby={invalid() ? describedBy() : undefined}
-        placeholder={t("entryDetail.fieldPlaceholder")}
-        onInput={(event) =>
-          handleFieldChange(fieldName, event.currentTarget.value)}
+      <FieldInput
+        field={resolvedField}
+        value={draftFields()[fieldName]}
+        onChange={(nextValue) => handleFieldChange(fieldName, nextValue)}
+        fieldId={fieldId}
+        fieldName={fieldName}
+        spaceId={props.spaceId()}
+        multiline={fieldDef.type === "markdown"}
+        invalid={invalid()}
+        describedBy={invalid() ? describedBy() : undefined}
       />
     );
   };
@@ -1663,7 +1283,11 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                   <h1 class="ui-page-title truncate">
                     {editorTitle().trim() || currentEntry().id}
                   </h1>
-                  <Show when={currentEntry().form && !(isCreateMode() && props.forms && props.onCreateFormChange)}>
+                  <Show
+                    when={currentEntry().form &&
+                      !(isCreateMode() && props.forms &&
+                        props.onCreateFormChange)}
+                  >
                     <span class="ui-pill">{currentEntry().form}</span>
                   </Show>
                   <Show
@@ -1693,13 +1317,15 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
             </header>
 
             <Show when={!isCreateMode()}>
-              {/*
+              {
+                /*
                 Single one-line action bar (PR4): save rides with
                 history/info/delete instead of a separate header save area.
                 Save is filled/strong only when dirty and unblocked, weak and
                 disabled when clean. The permanent saved chip is gone; success
                 announces once through the transient toast below.
-              */}
+              */
+              }
               <ActionIconBar
                 label={t("entryDetail.actionBarLabel")}
                 class="ui-entry-action-bar"
@@ -1724,7 +1350,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                     accessibleName: t("entryDetail.history"),
                     icon: "history",
                     class: "ui-entry-tool",
-                    href: `/spaces/${encodeURIComponent(props.spaceId())}/entries/${
+                    href: `/spaces/${
+                      encodeURIComponent(props.spaceId())
+                    }/entries/${
                       encodeURIComponent(props.entryId?.() ?? "")
                     }/history`,
                   },
@@ -1734,7 +1362,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                     accessibleName: t("entryDetail.info"),
                     icon: "info",
                     class: "ui-entry-tool",
-                    href: `/spaces/${encodeURIComponent(props.spaceId())}/entries/${
+                    href: `/spaces/${
+                      encodeURIComponent(props.spaceId())
+                    }/entries/${
                       encodeURIComponent(props.entryId?.() ?? "")
                     }/info`,
                   },
@@ -1756,14 +1386,16 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
               </Show>
             </Show>
             <Show when={isCreateMode()}>
-              {/*
+              {
+                /*
                 Same interaction pattern as the detail view: the header
                 carries Back navigation, this bar carries Save. Save is
                 strong only for valid unsaved changes; no separate
                 unsaved-changes badge. Saving state shows on the Save
                 action itself (creation navigates away on success, so no
                 success toast is needed here).
-              */}
+              */
+              }
               <ActionIconBar
                 label={t("entryDetail.actionBarLabel")}
                 class="ui-entry-action-bar"
