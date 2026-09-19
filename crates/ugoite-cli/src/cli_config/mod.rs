@@ -20,6 +20,7 @@ pub mod merge;
 pub mod model;
 pub mod resolve;
 pub mod runtime;
+pub mod target;
 pub mod write;
 
 pub use credentials::{credentials_path, CredentialStore};
@@ -34,4 +35,8 @@ pub use merge::{
 pub use model::{ConfigFile, ConnectionConfig, ContextConfig};
 pub use resolve::{resolve_cli_context, ResolvedCliContext, ResolvedConnection};
 pub use runtime::{load_cli_config, mutate_write_target, read_write_target_file, CliConfigFiles};
+pub use target::{
+    resolve_command_target, resolve_command_triple, resolve_context_target, split_space_and_id,
+    split_space_id_and_revision, SpaceTarget,
+};
 pub use write::{normalize_core_root_to_absolute, unique_context_name, write_config_file_atomic};

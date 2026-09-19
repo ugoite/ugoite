@@ -1,4 +1,4 @@
-use crate::config::{load_config, resolve_space_reference, validated_base_url};
+use crate::cli_config::{resolve_command_triple, split_space_and_id, split_space_id_and_revision};
 use crate::http;
 use crate::output::{
     effective_format, emit_success, print_json_table, read_compat_input, render_receipt,
@@ -21,30 +21,27 @@ pub struct EntryCmd {
 pub enum EntrySubCmd {
     /// List entries in a space
     #[command(
-        long_about = "List entries in a space.\n\nExamples:\n  # Core mode (local filesystem)\n  ugoite entry list /root/spaces/my-space\n\n  # Backend mode (immutable Space UID; requires config set --mode backend first)\n  ugoite entry list 019f1234-5678-7abc-8def-0123456789ab"
+        long_about = "List entries in a space.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite entry list\n\n  # Legacy explicit Space (v0.1.x compatibility)\n  ugoite entry list /root/spaces/my-space\n  ugoite entry list 019f1234-5678-7abc-8def-0123456789ab"
     )]
     List {
         #[arg(
             value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
         )]
-        space_path: String,
+        space_path: Option<String>,
     },
     /// Get an entry by ID
     #[command(
-        long_about = "Get an entry by ID.\n\nExamples:\n  # Core mode\n  ugoite entry get /root/spaces/my-space my-entry-id\n\n  # Backend mode (immutable Space UID)\n  ugoite entry get 019f1234-5678-7abc-8def-0123456789ab my-entry-id"
+        long_about = "Get an entry by ID.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite entry get my-entry-id\n\n  # Legacy explicit Space (v0.1.x compatibility)\n  ugoite entry get /root/spaces/my-space my-entry-id\n  ugoite entry get 019f1234-5678-7abc-8def-0123456789ab my-entry-id"
     )]
     Get {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_OR_ENTRY_ID",
+            num_args(1..=2),
+            required = true,
+            help = "ENTRY_ID against the selected context, or legacy SPACE ENTRY_ID."
         )]
-        space_path: String,
-        #[arg(
-            value_name = "ENTRY_ID",
-            help = "Entry slug/ID (e.g. 'my-note', 'task-01')"
-        )]
-        entry_id: String,
+        space_and_id: Vec<String>,
     },
     /// Create an entry
     #[command(
@@ -52,15 +49,12 @@ pub enum EntrySubCmd {
     )]
     Create {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_OR_ENTRY_ID",
+            num_args(1..=2),
+            required = true,
+            help = "ENTRY_ID against the selected context, or legacy SPACE ENTRY_ID."
         )]
-        space_path: String,
-        #[arg(
-            value_name = "ENTRY_ID",
-            help = "Entry slug/ID (e.g. 'my-note', 'task-01')"
-        )]
-        entry_id: String,
+        space_and_id: Vec<String>,
         #[arg(
             long,
             allow_hyphen_values = true,
@@ -109,15 +103,12 @@ pub enum EntrySubCmd {
     )]
     Update {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_OR_ENTRY_ID",
+            num_args(1..=2),
+            required = true,
+            help = "ENTRY_ID against the selected context, or legacy SPACE ENTRY_ID."
         )]
-        space_path: String,
-        #[arg(
-            value_name = "ENTRY_ID",
-            help = "Entry slug/ID (e.g. 'my-note', 'task-01')"
-        )]
-        entry_id: String,
+        space_and_id: Vec<String>,
         #[arg(
             long,
             allow_hyphen_values = true,
@@ -172,11 +163,12 @@ pub enum EntrySubCmd {
     )]
     Delete {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_OR_ENTRY_ID",
+            num_args(1..=2),
+            required = true,
+            help = "ENTRY_ID against the selected context, or legacy SPACE ENTRY_ID."
         )]
-        space_path: String,
-        entry_id: String,
+        space_and_id: Vec<String>,
         #[arg(long)]
         hard_delete: bool,
         /// Single-use approval token issued by a recently reauthenticated human.
@@ -195,11 +187,12 @@ pub enum EntrySubCmd {
     )]
     History {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_OR_ENTRY_ID",
+            num_args(1..=2),
+            required = true,
+            help = "ENTRY_ID against the selected context, or legacy SPACE ENTRY_ID."
         )]
-        space_path: String,
-        entry_id: String,
+        space_and_id: Vec<String>,
     },
     /// Get a specific revision
     #[command(
@@ -207,12 +200,12 @@ pub enum EntrySubCmd {
     )]
     Revision {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_OR_ENTRY_ID_AND_REVISION",
+            num_args(2..=3),
+            required = true,
+            help = "ENTRY_ID REVISION_ID against the selected context, or legacy SPACE ENTRY_ID REVISION_ID."
         )]
-        space_path: String,
-        entry_id: String,
-        revision_id: String,
+        space_id_and_revision: Vec<String>,
     },
     /// Restore an entry to a revision
     #[command(
@@ -220,12 +213,12 @@ pub enum EntrySubCmd {
     )]
     Restore {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_OR_ENTRY_ID_AND_REVISION",
+            num_args(2..=3),
+            required = true,
+            help = "ENTRY_ID REVISION_ID against the selected context, or legacy SPACE ENTRY_ID REVISION_ID."
         )]
-        space_path: String,
-        entry_id: String,
-        revision_id: String,
+        space_id_and_revision: Vec<String>,
         #[arg(
             long,
             default_value = "cli",
@@ -375,9 +368,10 @@ fn merge_structured_fields(
 
 #[allow(clippy::too_many_arguments)]
 async fn create_structured_entry(
-    config: &crate::config::EndpointConfig,
+    root: &str,
+    space_id: &str,
+    base: Option<&str>,
     fmt: &Format,
-    space_path: String,
     entry_id: String,
     form: Option<String>,
     title: Option<String>,
@@ -391,8 +385,7 @@ async fn create_structured_entry(
         );
     };
     let merged = merge_structured_fields(fields, fields_files)?;
-    let (root, space_id) = resolve_space_reference(config, &space_path, "entry create")?;
-    if let Some(base) = validated_base_url(config)? {
+    if let Some(base) = base {
         if author.is_some() {
             return Err(UsageError(
                 "entry create --author is only supported in core mode; backend/api derive author from the authenticated identity"
@@ -409,7 +402,7 @@ async fn create_structured_entry(
             body["title"] = serde_json::json!(title);
         }
         let result = http::execute(
-            &base,
+            base,
             "entry.create",
             serde_json::json!({"space_id": space_id}),
             Some(body),
@@ -434,10 +427,10 @@ async fn create_structured_entry(
         return Ok(());
     }
     let author = author.unwrap_or_else(|| "cli".to_string());
-    let service = UgoiteService::new_without_background_refresh(&root)?;
+    let service = UgoiteService::new_without_background_refresh(root)?;
     let (meta, _commit_receipt) = service
         .create_structured_entry_with_receipt(
-            &space_id,
+            space_id,
             &entry_id,
             title,
             form_name,
@@ -462,9 +455,10 @@ async fn create_structured_entry(
 
 #[allow(clippy::too_many_arguments)]
 async fn update_structured_entry(
-    config: &crate::config::EndpointConfig,
+    root: &str,
+    space_id: &str,
+    base: Option<&str>,
     fmt: &Format,
-    space_path: String,
     entry_id: String,
     form: Option<String>,
     title: Option<String>,
@@ -481,8 +475,7 @@ async fn update_structured_entry(
         .into());
     }
     let fields = merge_structured_fields(fields, fields_files)?;
-    let (root, space_id) = resolve_space_reference(config, &space_path, "entry update")?;
-    if let Some(base) = validated_base_url(config)? {
+    if let Some(base) = base {
         if author != "cli" {
             return Err(UsageError(
                 "entry update --author is only supported in core mode; backend/api derive author from the authenticated identity"
@@ -491,7 +484,7 @@ async fn update_structured_entry(
             .into());
         }
         let current = http::execute(
-            &base,
+            base,
             "entry.get",
             serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
             None,
@@ -521,7 +514,7 @@ async fn update_structured_entry(
         }
         body["parent_revision_id"] = serde_json::json!(parent_revision_id);
         let result = http::execute(
-            &base,
+            base,
             "entry.update",
             serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
             Some(body),
@@ -545,8 +538,8 @@ async fn update_structured_entry(
         );
         return Ok(());
     }
-    let service = UgoiteService::new_without_background_refresh(&root)?;
-    let current = service.get_entry(&space_id, &entry_id).await?;
+    let service = UgoiteService::new_without_background_refresh(root)?;
+    let current = service.get_entry(space_id, &entry_id).await?;
     let mut extra_attributes = entry_object_map(&current, "extra_attributes")?;
     // Explicit structured inputs are the complete post-update field map:
     // they replace preserved extra_attributes on key overlap. The shared
@@ -561,7 +554,7 @@ async fn update_structured_entry(
     };
     let result = service
         .update_structured_entry(
-            &space_id,
+            space_id,
             &entry_id,
             title,
             form,
@@ -590,15 +583,23 @@ async fn update_structured_entry(
     Ok(())
 }
 
-pub async fn run(cmd: EntryCmd) -> Result<()> {
-    let config = load_config()?;
+pub async fn run(
+    cmd: EntryCmd,
+    explicit_config: Option<&std::path::Path>,
+    context_override: Option<&str>,
+) -> Result<()> {
     let fmt = effective_format(cmd.format);
     match cmd.sub {
         EntrySubCmd::List { space_path } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "entry list")?;
-            if let Some(base) = validated_base_url(&config)? {
+            let (root, space_id, base) = resolve_command_triple(
+                space_path.as_deref(),
+                explicit_config,
+                context_override,
+                "entry list",
+            )?;
+            if let Some(base) = base.as_deref() {
                 let result = http::execute(
-                    &base,
+                    base,
                     "entry.list",
                     serde_json::json!({"space_id": space_id}),
                     None,
@@ -630,14 +631,19 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 emit_success(&entries, &fmt, None);
             }
         }
-        EntrySubCmd::Get {
-            space_path,
-            entry_id,
-        } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "entry get")?;
-            if let Some(base) = validated_base_url(&config)? {
+        EntrySubCmd::Get { space_and_id } => {
+            let (legacy_space, entry_id) =
+                split_space_and_id(&space_and_id, "ENTRY_ID", "entry get")?;
+            let entry_id = entry_id.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "entry get",
+            )?;
+            if let Some(base) = base.as_deref() {
                 let result = http::execute(
-                    &base,
+                    base,
                     "entry.get",
                     serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
                     None,
@@ -651,8 +657,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             emit_success(&entry, &fmt, None);
         }
         EntrySubCmd::Create {
-            space_path,
-            entry_id,
+            space_and_id,
             content,
             file,
             form,
@@ -661,6 +666,16 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             fields_files,
             author,
         } => {
+            let (legacy_space, entry_id) =
+                split_space_and_id(&space_and_id, "ENTRY_ID", "entry create")?;
+            let entry_id = entry_id.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "entry create",
+            )?;
+            let base = base.as_deref();
             let has_structured =
                 form.is_some() || title.is_some() || !fields.is_empty() || !fields_files.is_empty();
             let has_markdown = content.is_some() || file.is_some();
@@ -672,9 +687,10 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     );
                 }
                 return create_structured_entry(
-                    &config,
+                    &root,
+                    &space_id,
+                    base,
                     &fmt,
-                    space_path,
                     entry_id,
                     form,
                     title,
@@ -697,8 +713,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 (None, Some(path)) => read_compat_input(None, "--content", Some(path))?,
                 (None, None) => "# New Entry\n".to_string(),
             };
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "entry create")?;
-            if let Some(base) = validated_base_url(&config)? {
+            if let Some(base) = base {
                 if author.is_some() {
                     return Err(UsageError(
                         "entry create --author is only supported in core mode; backend/api derive author from the authenticated identity"
@@ -707,7 +722,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     .into());
                 }
                 let result = http::execute(
-                    &base,
+                    base,
                     "entry.create",
                     serde_json::json!({"space_id": space_id}),
                     Some(serde_json::json!({"id": entry_id, "markdown": content})),
@@ -755,8 +770,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             emit_success(&meta, &fmt, Some(render_receipt(&receipt, &stdout_style())));
         }
         EntrySubCmd::Update {
-            space_path,
-            entry_id,
+            space_and_id,
             markdown,
             file,
             form,
@@ -766,6 +780,15 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             parent_revision_id,
             author,
         } => {
+            let (legacy_space, entry_id) =
+                split_space_and_id(&space_and_id, "ENTRY_ID", "entry update")?;
+            let entry_id = entry_id.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "entry update",
+            )?;
             let has_structured =
                 form.is_some() || title.is_some() || !fields.is_empty() || !fields_files.is_empty();
             let has_markdown = markdown.is_some() || file.is_some();
@@ -777,9 +800,10 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     );
                 }
                 return update_structured_entry(
-                    &config,
+                    &root,
+                    &space_id,
+                    base.as_deref(),
                     &fmt,
-                    space_path,
                     entry_id,
                     form,
                     title,
@@ -791,8 +815,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 .await;
             }
             let markdown = read_compat_input(markdown, "--markdown", file)?;
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "entry update")?;
-            if let Some(base) = validated_base_url(&config)? {
+            if let Some(base) = base {
                 if author != "cli" {
                     return Err(UsageError(
                         "entry update --author is only supported in core mode; backend/api derive author from the authenticated identity"
@@ -865,16 +888,23 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             );
         }
         EntrySubCmd::Delete {
-            space_path,
-            entry_id,
+            space_and_id,
             hard_delete,
             human_approval,
             author,
         } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "entry delete")?;
+            let (legacy_space, entry_id) =
+                split_space_and_id(&space_and_id, "ENTRY_ID", "entry delete")?;
+            let entry_id = entry_id.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "entry delete",
+            )?;
             let human_approval =
                 human_approval.or_else(|| std::env::var("UGOITE_HUMAN_APPROVAL").ok());
-            if let Some(base) = validated_base_url(&config)? {
+            if let Some(base) = base {
                 if author != "cli" {
                     return Err(UsageError(
                         "entry delete --author is only supported in core mode; backend/api derive actor from the authenticated identity"
@@ -940,12 +970,17 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 Some(render_receipt(&receipt, &stdout_style())),
             );
         }
-        EntrySubCmd::History {
-            space_path,
-            entry_id,
-        } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "entry history")?;
-            if let Some(base) = validated_base_url(&config)? {
+        EntrySubCmd::History { space_and_id } => {
+            let (legacy_space, entry_id) =
+                split_space_and_id(&space_and_id, "ENTRY_ID", "entry history")?;
+            let entry_id = entry_id.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "entry history",
+            )?;
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "entry.history",
@@ -961,12 +996,19 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             emit_success(&history, &fmt, None);
         }
         EntrySubCmd::Revision {
-            space_path,
-            entry_id,
-            revision_id,
+            space_id_and_revision,
         } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "entry revision")?;
-            if let Some(base) = validated_base_url(&config)? {
+            let (legacy_space, entry_id, revision_id) =
+                split_space_id_and_revision(&space_id_and_revision, "entry revision")?;
+            let entry_id = entry_id.to_string();
+            let revision_id = revision_id.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "entry revision",
+            )?;
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "entry.revision",
@@ -988,13 +1030,20 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             emit_success(&rev, &fmt, None);
         }
         EntrySubCmd::Restore {
-            space_path,
-            entry_id,
-            revision_id,
+            space_id_and_revision,
             author,
         } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "entry restore")?;
-            if let Some(base) = validated_base_url(&config)? {
+            let (legacy_space, entry_id, revision_id) =
+                split_space_id_and_revision(&space_id_and_revision, "entry restore")?;
+            let entry_id = entry_id.to_string();
+            let revision_id = revision_id.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "entry restore",
+            )?;
+            if let Some(base) = base {
                 if author != "cli" {
                     return Err(UsageError(
                         "entry restore --author is only supported in core mode; backend/api derive author from the authenticated identity"
