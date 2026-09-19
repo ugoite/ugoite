@@ -57,15 +57,20 @@ export default function SpaceInvitationJoinRoute() {
   const [session] = createResource(async () =>
     await authApi.getSession().catch(() => ({ authenticated: false }))
   );
+  // Synchronous single-flight guard: plain route-instance boolean outside the
+  // Solid signal so two submits in the same tick cannot start two activation
+  // requests before the `busy` signal disables the button. Authority stays in
+  // Rust; this only prevents a second outstanding request from this instance.
+  let pending = false;
   const submit = async (event: Event) => {
     event.preventDefault();
+    if (pending) return;
     if (busy()) return;
+    pending = true;
     setBusy(true);
     setFailure(null);
-    let authenticated = false;
     try {
       const session = await authApi.getSession();
-      authenticated = session.authenticated;
       if (session.authenticated) {
         await authApi.acceptInvitation(token().trim());
       } else {
@@ -74,14 +79,27 @@ export default function SpaceInvitationJoinRoute() {
       history.replaceState(null, "", location.pathname);
       navigate("/spaces", { replace: true });
     } catch (cause) {
-      const failure = failureFor(cause);
-      if (authenticated && failure.showSpaces) {
-        history.replaceState(null, "", location.pathname);
-        navigate("/spaces", { replace: true });
+      const code = cause instanceof UgoiteApiError ? cause.code : undefined;
+      if (code === "INVITATION_NOT_PENDING") {
+        // Do not decide from the submit-start snapshot alone: re-check the
+        // current session. An invitation consumed by our own in-flight or
+        // just-finished activation leaves the visitor authenticated, in
+        // which case landing on /spaces is the correct outcome. A visitor
+        // who is still unauthenticated stays fail-closed with the error.
+        const current = await authApi.getSession().catch(() => ({
+          authenticated: false,
+        }));
+        if (current.authenticated) {
+          history.replaceState(null, "", location.pathname);
+          navigate("/spaces", { replace: true });
+        } else {
+          setFailure(failureFor(cause));
+        }
       } else {
-        setFailure(failure);
+        setFailure(failureFor(cause));
       }
     } finally {
+      pending = false;
       setBusy(false);
     }
   };
