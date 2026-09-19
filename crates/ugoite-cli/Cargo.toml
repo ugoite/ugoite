@@ -31,6 +31,7 @@ keyring = { version = "3", default-features = false, features = ["apple-native",
 uuid = { version = "1.23", features = ["v7", "serde"] }
 chrono = "0.4"
 url = "2.5"
+toml = { version = "0.8", features = ["parse", "display"] }
 rmcp = { version = "3.1", default-features = false, features = ["client", "transport-streamable-http-client-reqwest"] }
 
 [dev-dependencies]
