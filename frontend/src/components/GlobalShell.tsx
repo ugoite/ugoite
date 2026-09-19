@@ -49,7 +49,7 @@ export function GlobalShell(
           </a>
           <div class="topbarTools">
             <div class="crumbTop ui-sr-only">{props.title}</div>
-            <span class="pill iconpill" aria-label={t("konase.title")}>
+            <span class="pill iconpill">
               <span class="assistantDot" aria-hidden="true" />
               <span class="ui-sr-only">{t("konase.title")}</span>
             </span>

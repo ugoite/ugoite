@@ -112,6 +112,15 @@ describe("/login continuation", () => {
       .toBeInTheDocument();
   });
 
+  it("autofocuses the primary sign-in action once the config loads", async () => {
+    render(() => <LoginRoute />);
+
+    const signIn = await screen.findByRole("button", {
+      name: "Sign in with a passkey",
+    });
+    await waitFor(() => expect(signIn).toHaveFocus());
+  });
+
   it("links to the dedicated Account Self-Recovery journey", async () => {
     render(() => <LoginRoute />);
 

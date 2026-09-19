@@ -57,4 +57,23 @@ describe("BackLink", () => {
     });
     expect(back).toHaveTextContent("戻る");
   });
+
+  it("#2861: keeps a keyboard-focusable control on the focus-visible button chrome", () => {
+    render(() => (
+      <BackLink
+        href="/spaces/default/entries/entry-1"
+        label="Back to Entry"
+      />
+    ));
+
+    // The shared `.btn:focus-visible` rule carries the visible focus ring
+    // (POL-UI-007): the back control must keep that class and must not opt
+    // out of the tab order.
+    const back = screen.getByRole("link", { name: "Back to Entry" });
+    expect(back).toHaveClass("btn");
+    expect(back).not.toHaveAttribute("tabindex", "-1");
+    // Generic Back label: no Entry-namespaced string leaks onto shared
+    // surfaces beyond the Back meaning.
+    expect(back).toHaveTextContent("Back");
+  });
 });

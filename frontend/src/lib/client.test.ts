@@ -8,6 +8,7 @@ import { entryApi } from "./ugoite-client";
 import { searchApi } from "./ugoite-client";
 import { spaceApi } from "./ugoite-client";
 import { joinUrl } from "./api";
+import { UgoiteApiError } from "./ugoite-client/protocol";
 import { resetMockData, seedEntry, seedSpace } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Entry, EntryRecord, Space } from "./types";
@@ -507,6 +508,54 @@ describe("entryApi", () => {
 
       expect(bytes).toBeInstanceOf(Blob);
       expect(bytes.type).toBe("application/octet-stream");
+    });
+
+    it("#2824: rejects a context-free asset read with ASSET_CONTEXT_REQUIRED", async () => {
+      resetMockData();
+      seedSpace({
+        id: "ws-ctx",
+        name: "Context Space",
+        created_at: "2025-01-01T00:00:00Z",
+      });
+      // Every partial query combination fails closed with the same additive
+      // machine code and a context-only message (no hidden references).
+      for (
+        const query of ["", "?entry_id=some-entry", "?form=Doc"]
+      ) {
+        const response = await fetch(
+          testApiUrl(`/spaces/ws-ctx/assets/asset-1${query}`),
+        );
+        expect(response.status).toBe(403);
+        const body = await response.json() as Record<string, unknown>;
+        expect(body.code).toBe("ASSET_CONTEXT_REQUIRED");
+        expect(body.message).toBe(
+          "asset reads require a containing Form and Entry context",
+        );
+      }
+    });
+
+    it("#2824: surfaces the ASSET_CONTEXT_REQUIRED code through assetApi", async () => {
+      server.use(
+        http.get(
+          testApiUrl("/spaces/ws-asset-ctx/assets/asset-1"),
+          () =>
+            HttpResponse.json({
+              code: "ASSET_CONTEXT_REQUIRED",
+              message:
+                "asset reads require a containing Form and Entry context",
+            }, { status: 403 }),
+        ),
+      );
+      const failure = await assetApi.read(
+        "ws-asset-ctx",
+        "asset-1",
+        "Contracts",
+        "entry-1",
+      ).catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(UgoiteApiError);
+      expect((failure as UgoiteApiError).code).toBe(
+        "ASSET_CONTEXT_REQUIRED",
+      );
     });
   });
 });

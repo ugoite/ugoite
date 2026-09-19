@@ -293,6 +293,9 @@ export function FormTable(props: FormTableProps) {
   const [editingCell, setEditingCell] = createSignal<
     { id: string; field: string } | null
   >(null);
+  // Inline table action failures (export, cell update). No window.alert on
+  // the product surface: the message renders here with a dismiss action.
+  const [tableError, setTableError] = createSignal<string | null>(null);
 
   const canEditField = (field: string, value: unknown): boolean => {
     const type = props.entryForm.fields?.[field]?.type?.toLowerCase() ?? "";
@@ -426,7 +429,7 @@ export function FormTable(props: FormTableProps) {
       /* v8 ignore start */
       // biome-ignore lint/suspicious/noConsole: error reporting
       console.error("CSV Export failed:", err);
-      alert(t("formTable.exportFailed"));
+      setTableError(t("formTable.exportFailed"));
       /* v8 ignore stop */
     }
   };
@@ -463,7 +466,7 @@ export function FormTable(props: FormTableProps) {
       /* v8 ignore start */
       // biome-ignore lint/suspicious/noConsole: error logging
       console.error(t("formTable.updateFailed"), err);
-      alert(
+      setTableError(
         `${t("formTable.updateFailed")}: ${
           err instanceof Error ? err.message : String(err)
         }`,
@@ -724,6 +727,23 @@ export function FormTable(props: FormTableProps) {
             </Show>
           </div>
         </div>
+
+        <Show when={tableError()}>
+          <div
+            class="ui-alert ui-alert-error flex flex-wrap items-center justify-between gap-3"
+            role="alert"
+          >
+            <span>{tableError()}</span>
+            <button
+              class="btn"
+              type="button"
+              aria-label={t("common.close")}
+              onClick={() => setTableError(null)}
+            >
+              {t("common.close")}
+            </button>
+          </div>
+        </Show>
 
         <Show when={entries.error}>
           <div

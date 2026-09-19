@@ -2,6 +2,7 @@ import { useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { ActionIconBar } from "~/components/ActionIconBar";
 import { BackLink } from "~/components/BackLink";
+import { ConfirmDestructiveAction } from "~/components/ConfirmDestructiveAction";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { RowList, RowListItem, RowListLink } from "~/components/RowList";
 import { formatAssetSize } from "~/lib/asset-reference";
@@ -31,6 +32,19 @@ export default function SpaceAssetDetailRoute() {
     groupOccurrences(items() ?? [], assetId())
   );
   const head = createMemo(() => occurrences()[0]);
+  // Delete is BLOCKED (not warned) while any visible Entry references the
+  // asset: the button disables and names the referencing Entry+field.
+  // Hidden or unauthorized references stay fail-closed on the server; the UI
+  // never guesses about references it cannot see.
+  const isReferenced = createMemo(() => occurrences().length > 0);
+  const referenceSummary = createMemo(() =>
+    occurrences()
+      .map((occurrence) =>
+        `${occurrence.form} · ${occurrence.field} (${occurrence.entry_id})`
+      )
+      .join(", ")
+  );
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = createSignal(false);
 
   const download = async () => {
     const first = head();
@@ -64,14 +78,28 @@ export default function SpaceAssetDetailRoute() {
     }
   };
 
-  const remove = async () => {
+  const openDeleteConfirm = () => {
+    if (busy() !== null || isReferenced()) return;
+    setActionError(null);
+    setDeleteConfirmOpen(true);
+  };
+
+  const closeDeleteConfirm = () => {
     if (busy() !== null) return;
+    setDeleteConfirmOpen(false);
+  };
+
+  const remove = async () => {
+    if (busy() !== null || isReferenced()) return;
     setBusy("delete");
     setActionError(null);
     try {
       await assetApi.delete(spaceId(), assetId());
+      setDeleteConfirmOpen(false);
       navigate(`/spaces/${encodeURIComponent(spaceId())}/assets`);
     } catch (error) {
+      // Server fail-closed stays for hidden/unauthorized references: the
+      // failure surfaces here and the detail stays mounted for retry.
       setActionError(
         formatUserFacingError(error, "assetDetail.failedDelete"),
       );
@@ -105,8 +133,54 @@ export default function SpaceAssetDetailRoute() {
           {formatUserFacingError(items.error, "assetDetail.failedLoad")}
         </p>
       </Show>
+
+      {
+        /*
+        Zero visible references is a valid detail state (not a load error):
+        the asset metadata is unknown, but Delete stays available behind a
+        confirmation and the server stays fail-closed for hidden references.
+      */
+      }
       <Show when={!items.loading && !items.error && !head()}>
-        <p class="ui-muted">{t("assetDetail.failedLoad")}</p>
+        <div class="ui-stack-sm">
+          <p class="text-sm ui-muted">{t("assetDetail.noReferences")}</p>
+          <ActionIconBar
+            label={t("assetDetail.heading")}
+            actions={[
+              {
+                id: "delete",
+                icon: "trash",
+                label: t("assetDetail.delete"),
+                accessibleName: t("assetDetail.delete"),
+                danger: true,
+                busy: busy() === "delete",
+                disabled: busy() !== null,
+                onClick: () => openDeleteConfirm(),
+              },
+            ]}
+          />
+          <Show when={actionError()}>
+            <p class="ui-alert ui-alert-error" role="alert">
+              {actionError()}
+            </p>
+          </Show>
+          <ConfirmDestructiveAction
+            open={deleteConfirmOpen()}
+            title={t("assetDetail.delete")}
+            body={t("assetDetail.confirmDeleteUnknown")}
+            confirmLabel={t("assetDetail.delete")}
+            busy={busy() === "delete"}
+            error={actionError()}
+            onConfirm={() => void remove()}
+            onClose={closeDeleteConfirm}
+          />
+          <details class="settingsAdvanced">
+            <summary>{t("settings.advancedDetails")}</summary>
+            <p class="text-sm ui-muted">
+              <code>{assetId()}</code>
+            </p>
+          </details>
+        </div>
       </Show>
 
       <Show when={head()}>
@@ -133,17 +207,42 @@ export default function SpaceAssetDetailRoute() {
                   id: "delete",
                   icon: "trash",
                   label: t("assetDetail.delete"),
-                  accessibleName: `${t("assetDetail.delete")}: ${asset().name}`,
+                  accessibleName: isReferenced()
+                    ? t("assetDetail.deleteBlocked", {
+                      references: referenceSummary(),
+                    })
+                    : `${t("assetDetail.delete")}: ${asset().name}`,
                   danger: true,
                   busy: busy() === "delete",
-                  disabled: busy() !== null,
-                  onClick: () => void remove(),
+                  disabled: busy() !== null || isReferenced(),
+                  onClick: () => openDeleteConfirm(),
                 },
               ]}
             />
-            <Show when={actionError()}>
-              <p class="ui-alert ui-alert-error">{actionError()}</p>
+            <Show when={isReferenced()}>
+              <p class="ui-alert ui-alert-warning text-sm" role="note">
+                {t("assetDetail.deleteBlocked", {
+                  references: referenceSummary(),
+                })}
+              </p>
             </Show>
+            <Show when={actionError()}>
+              <p class="ui-alert ui-alert-error" role="alert">
+                {actionError()}
+              </p>
+            </Show>
+            <ConfirmDestructiveAction
+              open={deleteConfirmOpen()}
+              title={t("assetDetail.delete")}
+              body={t("assetDetail.confirmDelete", {
+                name: asset().name,
+              })}
+              confirmLabel={t("assetDetail.delete")}
+              busy={busy() === "delete"}
+              error={actionError()}
+              onConfirm={() => void remove()}
+              onClose={closeDeleteConfirm}
+            />
             <details class="settingsAdvanced">
               <summary>{t("settings.advancedDetails")}</summary>
               <p class="text-sm ui-muted">

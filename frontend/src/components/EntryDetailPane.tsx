@@ -12,12 +12,14 @@ import type { Accessor } from "solid-js";
 import { AssetField } from "~/components/AssetField";
 import { ActionIconBar } from "~/components/ActionIconBar";
 import { BackLink } from "~/components/BackLink";
+import { ConfirmDestructiveAction } from "~/components/ConfirmDestructiveAction";
 import {
   createEntryFieldInputId,
   type EntryFieldDescriptor,
   EntryFields,
 } from "~/components/EntryFields";
 import { FieldInput } from "~/components/fields";
+import { FieldValuesView } from "~/components/fields/FieldValue";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import {
   type AssetFieldState,
@@ -302,6 +304,25 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   const [conflictMessage, setConflictMessage] = createSignal<string | null>(
     null,
   );
+  // 409 recovery state: the user draft is never touched on conflict. The
+  // server revision id is shown, the latest saved version can be fetched for
+  // side-by-side review (read-only latest via FieldValuesView), and the next
+  // save re-runs explicitly against the adopted base. No auto-merge.
+  const [serverRevisionId, setServerRevisionId] = createSignal<string | null>(
+    null,
+  );
+  const [latestEntry, setLatestEntry] = createSignal<Entry | null>(null);
+  const [showLatest, setShowLatest] = createSignal(false);
+  const [latestLoading, setLatestLoading] = createSignal(false);
+  // Destructive delete runs behind the shared confirmation dialog: the
+  // failure stays inside the dialog and the draft stays intact.
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = createSignal(false);
+  const [isDeleting, setIsDeleting] = createSignal(false);
+  const [deleteError, setDeleteError] = createSignal<string | null>(null);
+  // Unsaved-work navigation guard: the pending router retry runs only after
+  // explicit confirmation in the shared dialog (no window.confirm).
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = createSignal(false);
+  let pendingLeaveRetry: (() => void) | null = null;
   const [validationError, setValidationError] = createSignal<
     {
       title: string;
@@ -510,14 +531,23 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     if (!isAuthoringSession() || !draftSession.hasDirtyWork()) return;
     if (event.defaultPrevented) return;
     event.preventDefault();
-    if (
-      typeof window === "undefined" ||
-      window.confirm(t("entryDetail.confirmLeave"))
-    ) {
-      clearCreateDraft();
-      event.retry(true);
-    }
+    if (leaveConfirmOpen()) return;
+    pendingLeaveRetry = () => event.retry(true);
+    setLeaveConfirmOpen(true);
   });
+
+  const confirmLeave = () => {
+    clearCreateDraft();
+    setLeaveConfirmOpen(false);
+    const retry = pendingLeaveRetry;
+    pendingLeaveRetry = null;
+    retry?.();
+  };
+
+  const cancelLeave = () => {
+    pendingLeaveRetry = null;
+    setLeaveConfirmOpen(false);
+  };
 
   createEffect(() => {
     if (typeof window === "undefined" || !isAuthoringSession()) return;
@@ -561,6 +591,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     fields: string[],
   ) => {
     setConflictMessage(null);
+    setServerRevisionId(null);
+    setLatestEntry(null);
+    setShowLatest(false);
     setInvalidFields(fields);
     setValidationError({ title, items });
     if (fields.length > 0) {
@@ -647,6 +680,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setHasUserEdited(saved?.dirty ?? false);
     setIsDirty(isCreateMode() ? true : false);
     setConflictMessage(null);
+    setServerRevisionId(null);
+    setLatestEntry(null);
+    setShowLatest(false);
     setValidationError(null);
     setInvalidFields([]);
     setCompatibilityDiagnostics([]);
@@ -923,6 +959,16 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       showRustValidationFailure(parsed.title, parsed.items, parsed.fields);
       return;
     } else if (error instanceof RevisionConflictError) {
+      // The user draft stays exactly as typed: only the recovery state is
+      // recorded. Re-save runs explicitly after the author reviews.
+      setServerRevisionId(
+        typeof error.currentRevisionId === "string" &&
+          error.currentRevisionId.trim()
+          ? error.currentRevisionId
+          : null,
+      );
+      setLatestEntry(null);
+      setShowLatest(false);
       setConflictMessage(
         error.apiError
           ? formatUserFacingError(
@@ -1076,6 +1122,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           parent_revision_id: context.revisionId!,
         });
       setCurrentRevisionId(result.revision_id);
+      setServerRevisionId(null);
+      setLatestEntry(null);
+      setShowLatest(false);
       setLastSavedContent(contentToSave);
       const unchanged = JSON.stringify(currentSnapshot()) ===
         JSON.stringify(requestSnapshot);
@@ -1110,28 +1159,71 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     }
   };
 
+  const openDeleteConfirm = () => {
+    if (isDeleting()) return;
+    setDeleteError(null);
+    setDeleteConfirmOpen(true);
+  };
+
+  const closeDeleteConfirm = () => {
+    if (isDeleting()) return;
+    setDeleteConfirmOpen(false);
+  };
+
   const handleDelete = async () => {
     const wsId = props.spaceId();
     const entryId = props.entryId?.() ?? "";
     /* v8 ignore start */
-    if (!wsId || !entryId) return;
-    if (!confirm(t("entryDetail.confirmDelete"))) return;
+    if (!wsId || !entryId || isDeleting()) return;
     /* v8 ignore stop */
 
+    setIsDeleting(true);
+    setDeleteError(null);
     try {
       await entryApi.delete(wsId, entryId);
+      setDeleteConfirmOpen(false);
       props.onDeleted();
     } catch (error) {
-      /* v8 ignore start */
-      alert(
+      // The failure stays inside the dialog; the draft stays intact and the
+      // dialog stays open for retry or safe dismiss.
+      setDeleteError(
         formatUserFacingError(
           error,
           "entryDetail.deleteFailed",
           "entry.delete",
         ),
       );
-      /* v8 ignore stop */
+    } finally {
+      setIsDeleting(false);
     }
+  };
+
+  // 409 recovery: fetch the latest saved version for side-by-side review.
+  // The local draft is never overwritten; adopting the base only re-points
+  // the next save.
+  const loadLatestForConflict = async () => {
+    const wsId = props.spaceId();
+    const entryId = createdEntry()?.id ?? props.entryId?.() ?? "";
+    if (!wsId || !entryId || latestLoading()) return;
+    setLatestLoading(true);
+    try {
+      setLatestEntry(await entryApi.get(wsId, entryId));
+      setShowLatest(true);
+    } catch (error) {
+      setConflictMessage(
+        formatUserFacingError(error, "entryDetail.saveFailed", "entry.get"),
+      );
+    } finally {
+      setLatestLoading(false);
+    }
+  };
+
+  const adoptLatestRevisionBase = () => {
+    const serverRevision = serverRevisionId();
+    if (!serverRevision) return;
+    // Keep every keystroke; only the optimistic base moves forward so the
+    // next explicit save records the draft on top of the latest revision.
+    setCurrentRevisionId(serverRevision);
   };
 
   const handleCreateFormChange = (formName: string) => {
@@ -1375,7 +1467,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                     icon: "trash",
                     danger: true,
                     class: "ui-entry-tool ui-entry-tool-danger",
-                    onClick: handleDelete,
+                    onClick: openDeleteConfirm,
                   },
                 ]}
               />
@@ -1440,8 +1532,110 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
             </Show>
 
             <Show when={conflictMessage()}>
-              <div class="ui-alert ui-alert-error text-sm">
-                {conflictMessage()}
+              <div
+                class="ui-alert ui-alert-error text-sm ui-entry-conflict"
+                role="alert"
+              >
+                <Show
+                  when={serverRevisionId()}
+                  fallback={conflictMessage()}
+                >
+                  {(serverRevision) => (
+                    <div class="ui-stack-sm">
+                      <p class="font-semibold">
+                        {t("entryDetail.conflictHeading")}
+                      </p>
+                      <p>{t("entryDetail.conflictBody")}</p>
+                      <p>
+                        {t("entryDetail.conflictServerRevision", {
+                          revision: serverRevision(),
+                        })}
+                      </p>
+                      <p class="ui-muted">{conflictMessage()}</p>
+                      <div class="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          class="ui-button ui-button-secondary ui-button-sm text-xs"
+                          disabled={latestLoading()}
+                          onClick={() => void loadLatestForConflict()}
+                          aria-expanded={showLatest()}
+                        >
+                          {showLatest()
+                            ? t("entryDetail.conflictHideLatest")
+                            : t("entryDetail.conflictShowLatest")}
+                        </button>
+                        <button
+                          type="button"
+                          class="ui-button ui-button-secondary ui-button-sm text-xs"
+                          onClick={adoptLatestRevisionBase}
+                        >
+                          {t("entryDetail.conflictAdoptBase")}
+                        </button>
+                      </div>
+                      <Show when={latestLoading()}>
+                        <LocalBusyIndicator
+                          size="sm"
+                          label={t("entryDetail.loading")}
+                        />
+                      </Show>
+                      <Show when={showLatest() && latestEntry()}>
+                        {(latest) => (
+                          <div class="ui-entry-conflict-compare">
+                            <section
+                              aria-label={t(
+                                "entryDetail.conflictLocalHeading",
+                              )}
+                            >
+                              <h3 class="text-sm font-semibold">
+                                {t("entryDetail.conflictLocalHeading")}
+                              </h3>
+                              <Show
+                                when={currentForm()}
+                                fallback={
+                                  <p class="text-sm whitespace-pre-wrap">
+                                    {editorContent()}
+                                  </p>
+                                }
+                              >
+                                {(entryForm) => (
+                                  <FieldValuesView
+                                    fields={Object.keys(
+                                      entryForm().fields || {},
+                                    ).map((name) => ({ name }))}
+                                    getValue={(name) =>
+                                      draftValueToDisplayString(
+                                        draftFields()[name],
+                                      )}
+                                  />
+                                )}
+                              </Show>
+                            </section>
+                            <section
+                              aria-label={t(
+                                "entryDetail.conflictLatestHeading",
+                              )}
+                            >
+                              <h3 class="text-sm font-semibold">
+                                {t("entryDetail.conflictLatestHeading")}
+                              </h3>
+                              <FieldValuesView
+                                fields={Object.keys(
+                                  parseEntryMarkdownPresentation(
+                                    latest().content ?? "",
+                                  ).fields,
+                                ).map((name) => ({ name }))}
+                                getValue={(name) =>
+                                  parseEntryMarkdownPresentation(
+                                    latest().content ?? "",
+                                  ).fields[name] ?? ""}
+                              />
+                            </section>
+                          </div>
+                        )}
+                      </Show>
+                    </div>
+                  )}
+                </Show>
               </div>
             </Show>
 
@@ -1675,6 +1869,25 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           </>
         )}
       </Show>
+
+      <ConfirmDestructiveAction
+        open={deleteConfirmOpen()}
+        title={t("entryDetail.deleteTitle")}
+        body={t("entryDetail.confirmDelete")}
+        confirmLabel={t("entryDetail.delete")}
+        busy={isDeleting()}
+        error={deleteError()}
+        onConfirm={() => void handleDelete()}
+        onClose={closeDeleteConfirm}
+      />
+      <ConfirmDestructiveAction
+        open={leaveConfirmOpen()}
+        title={t("entryDetail.leaveTitle")}
+        body={t("entryDetail.confirmLeave")}
+        confirmLabel={t("entryDetail.discard")}
+        onConfirm={confirmLeave}
+        onClose={cancelLeave}
+      />
     </div>
   );
   /* v8 ignore stop */

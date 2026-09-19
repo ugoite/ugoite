@@ -17,6 +17,7 @@ const CODE_KEYS: Record<string, TranslationKey> = {
   UNKNOWN_FORM_FIELDS: "errors.code.unknownFormFields",
   MARKDOWN_CONVERSION_LOSS: "entryDetail.compatibilityLossTitle",
   ASSET_NOT_FOUND: "errors.code.assetNotFound",
+  ASSET_CONTEXT_REQUIRED: "errors.code.assetContextRequired",
   INVITATION_EXPIRED: "errors.code.invitationExpired",
   INVITATION_NOT_FOUND: "errors.code.invitationNotFound",
   INVITATION_NOT_PENDING: "errors.code.invitationNotPending",

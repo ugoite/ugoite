@@ -1,13 +1,12 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import {
-  createEffect,
   createMemo,
   createSignal,
-  onCleanup,
   Show,
 } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
+import { ConfirmDestructiveAction } from "~/components/ConfirmDestructiveAction";
 import { FieldValuesView } from "~/components/fields/FieldValue";
 import { formatDateTimeLabel } from "~/lib/date-format";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
@@ -83,22 +82,9 @@ export default function SpaceEntryRevisionRoute() {
   );
   const [restoreError, setRestoreError] = createSignal<string | null>(null);
   const [isRestoring, setIsRestoring] = createSignal(false);
-  // Restore runs behind an explicit confirmation dialog (PR4): the dialog
-  // states the append-only semantics before the mutation can run.
+  // Restore runs behind the shared destructive-action confirmation: the
+  // dialog states the append-only semantics before the mutation can run.
   const [restoreConfirmOpen, setRestoreConfirmOpen] = createSignal(false);
-  let confirmButtonRef: HTMLButtonElement | undefined;
-  let restoreButtonRef: HTMLButtonElement | undefined;
-
-  createEffect(() => {
-    if (restoreConfirmOpen()) {
-      // Move focus into the dialog when it opens (POL-UI-007 orderly path).
-      queueMicrotask(() => confirmButtonRef?.focus());
-    }
-  });
-  onCleanup(() => {
-    confirmButtonRef = undefined;
-    restoreButtonRef = undefined;
-  });
 
   const openRestoreConfirm = () => {
     if (!revision() || isRestoring()) return;
@@ -108,8 +94,6 @@ export default function SpaceEntryRevisionRoute() {
   const closeRestoreConfirm = () => {
     if (isRestoring()) return;
     setRestoreConfirmOpen(false);
-    // Return focus to the invoking control on dismiss.
-    queueMicrotask(() => restoreButtonRef?.focus());
   };
   const reviewError = createMemo(() =>
     revision.error
@@ -167,13 +151,6 @@ export default function SpaceEntryRevisionRoute() {
     }
   };
 
-  const handleDialogKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeRestoreConfirm();
-    }
-  };
-
   return (
     <>
       <div class="screenHead">
@@ -219,7 +196,6 @@ export default function SpaceEntryRevisionRoute() {
 
           <div class="revision-restore-row">
             <button
-              ref={restoreButtonRef}
               type="button"
               class="btn primary ui-entry-history-restore"
               aria-label={t("entryRevision.restore")}
@@ -291,61 +267,21 @@ export default function SpaceEntryRevisionRoute() {
 
       {
         /*
-        Restore confirmation dialog (PR4): states the append-only semantics
-        (a new history event is created; existing history is never
-        rewritten) and only then runs the mutation.
+        Restore confirmation (shared destructive-action dialog): states the
+        append-only semantics (a new history event is created; existing
+        history is never rewritten) and only then runs the mutation.
       */
       }
-      <Show when={restoreConfirmOpen()}>
-        <div
-          class="ui-backdrop"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) closeRestoreConfirm();
-          }}
-        >
-          <div
-            class="ui-dialog ui-restore-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="restore-confirm-title"
-            aria-describedby="restore-confirm-body"
-            onKeyDown={handleDialogKeyDown}
-          >
-            <h2 id="restore-confirm-title" class="ui-dialog-title">
-              {t("entryRevision.restoreConfirmTitle")}
-            </h2>
-            <p id="restore-confirm-body" class="ui-restore-dialog-body">
-              {t("entryRevision.restoreConfirmBody")}
-            </p>
-            <div class="ui-dialog-actions">
-              <button
-                type="button"
-                class="ui-button ui-button-secondary"
-                disabled={isRestoring()}
-                onClick={closeRestoreConfirm}
-              >
-                {t("common.cancel")}
-              </button>
-              <button
-                ref={confirmButtonRef}
-                type="button"
-                class="ui-button ui-button-primary"
-                aria-busy={isRestoring() || undefined}
-                disabled={isRestoring()}
-                onClick={() => void handleRestore()}
-              >
-                <Show when={isRestoring()}>
-                  <ButtonSpinner />
-                </Show>
-                {t("entryRevision.restoreConfirm")}
-              </button>
-            </div>
-            <Show when={restoreError()}>
-              <p class="ui-alert ui-alert-error mt-3">{restoreError()}</p>
-            </Show>
-          </div>
-        </div>
-      </Show>
+      <ConfirmDestructiveAction
+        open={restoreConfirmOpen()}
+        title={t("entryRevision.restoreConfirmTitle")}
+        body={t("entryRevision.restoreConfirmBody")}
+        confirmLabel={t("entryRevision.restoreConfirm")}
+        busy={isRestoring()}
+        error={restoreError()}
+        onConfirm={() => void handleRestore()}
+        onClose={closeRestoreConfirm}
+      />
     </>
   );
 }

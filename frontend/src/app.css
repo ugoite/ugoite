@@ -1605,6 +1605,18 @@ textarea {
   align-items: center;
   gap: 8px;
 }
+/* Shared destructive-action confirmation: compact single column that fits
+ * 390px viewports without horizontal scrolling. */
+.ui-confirm-destructive-dialog {
+  width: min(440px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ui-confirm-destructive-body {
+  margin: 0;
+  font-size: 14px;
+}
 
 /* The v5 surface palette is fixed; dark mode swaps surfaces and foregrounds
  * rather than applying the retired theme/accent variants. */
@@ -2286,6 +2298,18 @@ textarea {
   border-color: var(--brand-ink);
   color: #fff;
 }
+/* PR6 409 recovery: latest-vs-local review stacks in one column at 390px. */
+.ui-entry-conflict-compare {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 4px;
+}
+@media (min-width: 720px) {
+  .ui-entry-conflict-compare {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
 /* PR4: transient save confirmation. Fixed overlay so it never shifts the
  * entry layout; the live region carries the announcement. */
 .ui-save-toast {
@@ -2902,9 +2926,13 @@ button.pill.iconpill[aria-expanded="true"] {
 a.pill.iconpill {
   text-decoration: none;
 }
+/* The shared ActionIconBar always renders `actionbar compact-actions`, so
+ * the bar sizing and the one-row 390px behavior live in this single rule
+ * (no separate `.actionbar` flex base). */
 .actionbar.compact-actions {
   min-width: 0;
   max-width: 100%;
+  min-height: 38px;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 72px));
   gap: 8px;
@@ -2985,15 +3013,6 @@ a.tool {
   border-radius: 12px;
   background: #fff;
   box-shadow: var(--shadow);
-}
-
-.actionbar {
-  min-height: 38px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 18px;
 }
 
 /* PR4 home header: space name + new-entry button only. */

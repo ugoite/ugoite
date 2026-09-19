@@ -370,6 +370,25 @@ export default function SpaceSearchRoute() {
     setFieldConditions([createFieldCondition()]);
   };
 
+  // No-result recovery: reset the query and every filter so the next search
+  // starts from a clean slate (typed input already clears per keystroke).
+  const clearSearch = () => {
+    setKeywordQuery("");
+    setKeywordSearchQuery("");
+    setKeywordResults([]);
+    setKeywordSearchPerformed(false);
+    setKeywordHasMore(false);
+    setAdvancedFormName("");
+    setAdvancedUpdatedFrom("");
+    setAdvancedUpdatedTo("");
+    setFieldConditions([createFieldCondition()]);
+    setAdvancedResults([]);
+    setAdvancedSearchPerformed(false);
+    setAdvancedHasMore(false);
+    setActiveAdvancedCriteria(null);
+    setActionError(null);
+  };
+
   const handleKeywordSearch = async () => {
     if (keywordLoading()) return;
     const query = keywordQuery().trim();
@@ -903,9 +922,20 @@ export default function SpaceSearchRoute() {
                     keywordResults().length === 0 &&
                     !actionError()}
                 >
-                  <p class="text-sm ui-muted">
-                    {t("searchPage.noMatchingEntries")}
-                  </p>
+                  <div class="ui-stack-sm">
+                    <p class="text-sm ui-muted">
+                      {t("searchPage.noMatchingEntries")}
+                    </p>
+                    <div>
+                      <button
+                        type="button"
+                        class="ui-button ui-button-secondary text-sm"
+                        onClick={clearSearch}
+                      >
+                        {t("searchPage.clearSearch")}
+                      </button>
+                    </div>
+                  </div>
                 </Show>
                 <Show
                   when={mode() === "advanced" && !advancedLoading() &&
@@ -913,9 +943,20 @@ export default function SpaceSearchRoute() {
                     advancedResults().length === 0 &&
                     !actionError()}
                 >
-                  <p class="text-sm ui-muted">
-                    {t("searchPage.noMatchingEntries")}
-                  </p>
+                  <div class="ui-stack-sm">
+                    <p class="text-sm ui-muted">
+                      {t("searchPage.noMatchingEntries")}
+                    </p>
+                    <div>
+                      <button
+                        type="button"
+                        class="ui-button ui-button-secondary text-sm"
+                        onClick={clearSearch}
+                      >
+                        {t("searchPage.clearSearch")}
+                      </button>
+                    </div>
+                  </div>
                 </Show>
                 <Show
                   when={mode() === "keyword" && !keywordSearchPerformed() &&

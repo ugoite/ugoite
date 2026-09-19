@@ -58,6 +58,7 @@ test.describe("WebKit 390px quiet layout", () => {
         `/spaces/${spaceId}/dashboard`,
         `/spaces/${spaceId}/entries/${entryId}`,
         `/spaces/${spaceId}/history`,
+        `/spaces/${spaceId}/assets`,
       ]
     ) {
       await page.goto(path, { waitUntil: "domcontentloaded" });

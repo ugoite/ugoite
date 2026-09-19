@@ -729,9 +729,16 @@ export const handlers = [
     const url = new URL(request.url);
     const asset = mockAssets.get(spaceId)?.get(assetId);
     if (!url.searchParams.get("form") || !url.searchParams.get("entry_id")) {
-      return HttpResponse.json({ detail: "Asset context required" }, {
-        status: 403,
-      });
+      // Additive machine code (#2824): same 403 status and context-only
+      // message as the server, plus ASSET_CONTEXT_REQUIRED so query renames
+      // cannot slip through unnoticed.
+      return HttpResponse.json(
+        {
+          code: "ASSET_CONTEXT_REQUIRED",
+          message: "asset reads require a containing Form and Entry context",
+        },
+        { status: 403 },
+      );
     }
     if (!asset) {
       return HttpResponse.json({ detail: "Not found" }, { status: 404 });

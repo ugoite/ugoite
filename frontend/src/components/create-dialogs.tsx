@@ -1472,9 +1472,9 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
                 </Index>
               </FieldStack>
               <Show when={fields().length === 0}>
-                <div class="ui-card text-sm ui-muted italic text-center">
+                <p class="text-sm ui-muted">
                   {t("createDialog.form.noColumnsDefined")}
-                </div>
+                </p>
               </Show>
               <Show when={showReservedNameGuidance()}>
                 <div class="ui-alert ui-alert-warning text-xs space-y-1">
@@ -1973,9 +1973,9 @@ export function EditFormDialog(props: EditFormDialogProps) {
                 </Index>
               </FieldStack>
               <Show when={fields().length === 0}>
-                <div class="ui-card text-sm ui-muted italic text-center">
+                <p class="text-sm ui-muted">
                   {t("createDialog.form.noColumnsDefined")}
-                </div>
+                </p>
               </Show>
               <Show when={showReservedNameGuidance()}>
                 <div class="ui-alert ui-alert-warning text-xs space-y-1">

@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createSignal } from "solid-js";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { EntryDetailPane as ActualEntryDetailPane } from "./EntryDetailPane";
 import {
   entryApi,
@@ -2257,27 +2257,38 @@ describe("EntryDetailPane", () => {
         message: "Entry not found",
       }),
     );
-    vi.stubGlobal("confirm", () => true);
-    const alertMock = vi.fn();
-    vi.stubGlobal("alert", alertMock);
+    const onDeleted = vi.fn();
 
     render(() => (
       <EntryDetailPane
         spaceId={() => "default"}
         entryId={() => "entry-1"}
-        onDeleted={vi.fn()}
+        onDeleted={onDeleted}
       />
     ));
 
     await waitFor(() => screen.getByRole("button", { name: "エントリを削除" }));
     fireEvent.click(screen.getByRole("button", { name: "エントリを削除" }));
 
+    // Delete runs behind the shared confirmation dialog: nothing is sent
+    // until the explicit confirm action, and the failure stays in-dialog.
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveAccessibleName("このエントリを削除しますか？");
+    expect(entryApi.delete).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "エントリを削除" }),
+    );
+
     await waitFor(() => {
-      expect(alertMock).toHaveBeenCalledWith(
+      expect(
+        within(dialog).getByRole("alert"),
+      ).toHaveTextContent(
         "エントリーが見つかりません。（詳細: Entry not found）",
       );
     });
-    vi.unstubAllGlobals();
+    expect(onDeleted).not.toHaveBeenCalled();
+    // The dialog stays open for retry or safe dismiss; the draft is intact.
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
   it("PR4: keeps a single one-row action bar with save/history/info/delete", async () => {
@@ -2443,7 +2454,6 @@ describe("EntryDetailPane", () => {
     });
     (entryApi.delete as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     const onDeleted = vi.fn();
-    vi.stubGlobal("confirm", () => true);
 
     render(() => (
       <EntryDetailPane
@@ -2456,13 +2466,18 @@ describe("EntryDetailPane", () => {
     // Wait for entry header to appear (entry is loaded)
     await waitFor(() => screen.getByRole("button", { name: "Delete entry" }));
 
+    // Delete runs behind the shared confirmation dialog: the mutation fires
+    // only after the explicit confirm action.
     fireEvent.click(screen.getByRole("button", { name: "Delete entry" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(entryApi.delete).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Delete entry" }),
+    );
 
     await waitFor(() => {
       expect(entryApi.delete).toHaveBeenCalledWith("default", "entry-1");
       expect(onDeleted).toHaveBeenCalled();
     });
-
-    vi.unstubAllGlobals();
   });
 });

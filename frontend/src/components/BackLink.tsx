@@ -19,10 +19,11 @@ interface BackLinkProps {
 }
 
 /**
- * Shared positional back control (POL-UI-001, POL-UI-004). Each nested
+ * Shared positional back control (POL-UI-001, POL-UI-007). Each nested
  * surface renders exactly one `BackLink` to its hierarchical parent with a
  * short visible label; the destination sentence lives only in the accessible
- * name and tooltip.
+ * name and tooltip. The visible label uses the generic `common.back` key:
+ * Entry-namespaced strings stay on Entry surfaces.
  */
 export function BackLink(props: BackLinkProps) {
   return (
@@ -33,7 +34,7 @@ export function BackLink(props: BackLinkProps) {
       title={props.label}
     >
       <span aria-hidden="true">{"← "}</span>
-      {t("entryDetail.action.backShort")}
+      {t("common.back")}
     </A>
   );
 }
