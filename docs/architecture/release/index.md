@@ -26,5 +26,5 @@ a product or support claim is safe to make.
   supported release scope.
 - [v0.1 Knowledge compatibility floor](v0.1-knowledge-compatibility.md) defines
   semantic recoverability and authority invariants.
-- [Channel changelogs](changelog.md) separate stable, beta, and alpha release
-  guidance.
+- [Release notes and historical channel records](changelog.md) define the
+  stable manual-note contract and label beta/alpha metadata as historical.

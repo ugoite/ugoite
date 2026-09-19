@@ -57,6 +57,7 @@ jobs:
           test "${source_ci_required_conclusion}" = success
           mise run version:check
           version="$(cat version.txt)"
+          mise run release:validate-notes -- --version "${version}"
           {
             echo "source_sha=${actual_sha}"
             echo "source_short=${actual_sha:0:12}"

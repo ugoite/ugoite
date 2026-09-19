@@ -446,8 +446,8 @@ requirements:
   linked_policies: *id001
   linked_specifications: *id002
   id: REQ-OPS-026
-  title: Repository-Managed Stable Changelog Source
-  description: The stable changelog source must not imply unpublished artifacts exist and must be rendered into the GitHub Release body after artifact and distribution verification. Historical beta and alpha sources remain separate but are not normal public release channels. Reruns replace one marked repository-owned section without duplicating generated notes.
+  title: Versioned Manual Release Note
+  description: Each stable candidate must contain a non-empty versioned manual Markdown release note whose matching source bytes are published into the GitHub Release body after distribution verification. Historical beta and alpha changelog files may remain as records but are not active publish channels.
   related_spec:
   - ../architecture/testing/ci-cd.md
   - ../../guide/operate/server/operations.md
@@ -456,6 +456,7 @@ requirements:
   verification: traced
   tests:
   - file: tools/release-notes_test.ts
+  - file: tools/release_contract_test.ts
   - file: .github/workflows/release-publish.yml
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml

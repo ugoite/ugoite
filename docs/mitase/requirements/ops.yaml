@@ -1143,3 +1143,38 @@ requirements:
                 criterion: REQ-OPS-025#criterion.release-authority-drift-gate
                 covers: [FEAT-OPS-001#binding.release-authority/target.authority-gate, FEAT-OPS-001#binding.release-authority/target.roadmap-claims]
                 runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::roadmap_with_returned_view_claim_fails } }
+
+  - id: REQ-OPS-026
+    title: Versioned Manual Release Note
+    description: Each stable candidate must contain a non-empty versioned manual Markdown release note whose matching source bytes are published into the GitHub Release body after distribution verification. Historical beta and alpha changelog files may remain as records but are not active publish channels.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: versioned-manual-release-note
+        kind: behavior
+        statement: Candidate preflight validates the exact versioned manual note, publication reads that note from the candidate source revision, and mutable aliases wait for successful note publication after distribution verification.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: manual-release-note-verification
+        role: verification
+        facet: release-communication
+        responsibility: Verify the stable-only manual note validator and release workflow ordering through the exact repository tests; historical channel changelogs remain records and are not active publish authorities.
+        targets:
+          - id: release-note-test
+            adapter: typescript
+            path: tools/release-notes_test.ts
+            selector: { kind: test, name: 'REQ-OPS-026: the candidate and publish workflows use exact manual note bytes' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-026#criterion.versioned-manual-release-note
+                covers: [FEAT-OPS-001#binding.repository-native-release/target.candidate-workflow, FEAT-OPS-001#binding.repository-native-release/target.publish-workflow]
+                runner: { runner: deno-test-file, arguments: { file: tools/release-notes_test.ts, test: 'REQ-OPS-026: the candidate and publish workflows use exact manual note bytes' } }
+          - id: release-contract-test
+            adapter: typescript
+            path: tools/release_contract_test.ts
+            selector: { kind: test, name: 'REQ-OPS-044: release-publish promotion flows through distribution verification to release notes before mutable aliases' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-026#criterion.versioned-manual-release-note
+                covers: [FEAT-OPS-001#binding.repository-native-release/target.candidate-workflow, FEAT-OPS-001#binding.repository-native-release/target.publish-workflow]
+                runner: { runner: deno-test-file, arguments: { file: tools/release_contract_test.ts, test: 'REQ-OPS-044: release-publish promotion flows through distribution verification to release notes before mutable aliases' } }

@@ -60,7 +60,10 @@ candidate workflow does not rerun the merge gate or full E2E suite. The manifest
 records the version, source SHA, candidate run identity, source `ci-required`
 check-run identity, artifact paths, digests, sizes, platforms, and container
 coordinates. The candidate manifest contains release artifact identity only; it
-does not contain verification state.
+does not contain verification state. Candidate generation also validates that
+the exact source contains the non-empty stable manual note at
+`docs/version/releases/v<version>.md` with a matching versioned frontmatter
+title (or an H1 for source-only notes).
 
 The candidate identity is the SHA-256 digest of the exact manifest bytes. The
 manifest does not contain its own identity, so two attempts for the same
@@ -96,12 +99,14 @@ verifies that the finalized release reports `isImmutable=true`. After the
 post-publish distribution check, the separate `mise run release:promote:aliases`
 task updates mutable aliases such as `latest`.
 
-The publish workflow checks out its verifier and release-note code at
-`github.workflow_sha`, never at the moving `main` ref. The workflow state is
-explicit: candidate, verified, publishing, versioned-published,
-distribution-verified, and announced. A failed later step leaves already
-published versioned identities intact and rerunning the same candidate resumes
-that promotion.
+The publish workflow checks out its verifier and release-note validator at
+`github.workflow_sha`, never at the moving `main` ref. The release note itself
+is read with `git show` from the candidate's exact `source_sha`; the workflow
+does not render YAML, collect PRs, or merge a generated section into the GitHub
+Release body. The workflow state is explicit: candidate, verified, publishing,
+versioned-published, distribution-verified, and announced. A failed later step
+leaves already published versioned identities intact and rerunning the same
+candidate validates and reapplies the same source note.
 
 The distribution check verifies the released assets, npm and Helm coordinates,
 container health, and CLI installer before the mutable aliases are changed. The
@@ -147,9 +152,12 @@ candidate -> verified -> publishing -> versioned-published
 
 The states are workflow boundaries, not a second release database. A failed run
 is resumed with the same candidate; versioned artifacts are never deleted or
-overwritten. Release notes and mutable aliases are updated only after
-`distribution-verified`. Broad browser E2E remains a PR, nightly, or explicit
-release-impact check rather than a publish or post-publish gate.
+overwritten. The versioned manual release note is published only after
+`distribution-verified`, and mutable aliases are updated only after that
+publication succeeds. Historical alpha and beta changelog YAML remains
+documentation history only; the active publish contract is stable-only. Broad
+browser E2E remains a PR, nightly, or explicit release-impact check rather than
+a publish or post-publish gate.
 
 Git SHA identifies source; artifact digest identifies bytes; candidate-manifest
 digest identifies a verified candidate; SemVer identifies the published

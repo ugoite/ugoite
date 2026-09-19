@@ -1,172 +1,109 @@
 import { assertEquals } from "@std/assert/equals";
-import {
-  channelForVersion,
-  composeReleaseNotes,
-  renderReleaseNotes,
-} from "./release-notes.ts";
+import { releaseNotePath, validateReleaseNote } from "./release-notes.ts";
 
-Deno.test("REQ-OPS-026: release versions select the matching note channel", () => {
-  assertEquals(channelForVersion("0.1.0"), "stable");
-  assertEquals(channelForVersion("0.1.0-beta.2"), "beta");
-  assertEquals(channelForVersion("0.1.0-alpha.7"), "alpha");
-});
-
-Deno.test("REQ-OPS-026: all channel sources render versioned release notes", async () => {
-  for (
-    const [channel, version] of [
-      ["stable", "0.1.0"],
-      ["beta", "0.1.0-beta.2"],
-      ["alpha", "0.1.0-alpha.7"],
-    ] as const
-  ) {
-    const rendered = await renderReleaseNotes({ channel, version });
-    assertEquals(rendered.includes(`# v${version}`), true);
-    assertEquals(
-      rendered.includes(`docs/version/changelog/${channel}.yaml`),
-      true,
-    );
-    assertEquals(rendered.includes("## Expectations"), true);
-    assertEquals(rendered.includes("## Planned"), true);
-  }
-});
-
-Deno.test("REQ-OPS-026: invalid channel sources fail before composition", async () => {
+Deno.test("REQ-OPS-026: stable release notes use one versioned Markdown source", async () => {
   const repoRoot = await Deno.makeTempDir({ prefix: "ugoite-release-notes-" });
-  const sourcePath = `${repoRoot}/docs/version/changelog/stable.yaml`;
-  const docPath = `${repoRoot}/docs/architecture/release/changelog-stable.md`;
-  await Deno.mkdir(`${repoRoot}/docs/version/changelog`, { recursive: true });
-  await Deno.mkdir(`${repoRoot}/docs/architecture/release`, {
+  const notePath = releaseNotePath("0.1.2", repoRoot);
+  await Deno.mkdir(notePath.substring(0, notePath.lastIndexOf("/")), {
     recursive: true,
   });
-  await Deno.writeTextFile(docPath, "---\ntitle: Stable\n---\n");
-  await Deno.writeTextFile(
-    sourcePath,
-    [
-      "channel: beta",
-      "title: Stable",
-      "doc_path: docs/architecture/release/changelog-stable.md",
-      "summary: Summary",
-      "release_notes:",
-      "  intro: Intro",
-      "  expectations:",
-      "  - Expectation",
-      "  added:",
-      "  - Added",
-      "  changed:",
-      "  - Changed",
-      "  planned:",
-      "  - Planned",
-      "",
-    ].join("\n"),
-  );
+  const source = [
+    "---",
+    'title: "Ugoite v0.1.2 — Safer everyday workflows"',
+    "---",
+    "",
+    "This is the release-specific explanation.",
+    "",
+  ].join("\n");
+  await Deno.writeTextFile(notePath, source);
 
-  await assertFails(
-    () =>
-      renderReleaseNotes({
-        channel: "stable",
-        version: "0.1.0",
-        repoRoot,
-        sourcePath,
-      }),
-    "channel must be stable",
+  assertEquals(
+    await validateReleaseNote({ version: "0.1.2", repoRoot }),
+    source,
   );
-  await assertFails(
-    () =>
-      renderReleaseNotes({
-        channel: "beta",
-        version: "0.1.0",
-        repoRoot,
-        sourcePath,
-      }),
-    "channel beta does not match release version",
-  );
-  await Deno.writeTextFile(
-    sourcePath,
-    [
-      "channel: stable",
-      "title: Stable",
-      "doc_path: docs/architecture/release/changelog-stable.md",
-      "summary: Summary",
-      "release_notes:",
-      "  intro: Intro",
-      "  expectations:",
-      "  - Expectation",
-      "  added:",
-      "  - Added",
-      "  changed:",
-      "  - Changed",
-      "",
-    ].join("\n"),
-  );
-  await assertFails(
-    () =>
-      renderReleaseNotes({
-        channel: "stable",
-        version: "0.1.0",
-        repoRoot,
-        sourcePath,
-      }),
-    "planned must be a non-empty list",
+  assertEquals(
+    await validateReleaseNote({ version: "0.1.2", sourcePath: notePath }),
+    source,
   );
 });
 
-Deno.test("REQ-OPS-026: marked channel notes replace once and preserve generated notes", () => {
-  const existingBody = "## Generated changes\n\n- Keep this summary";
-  const channelNotes =
-    "# v0.1.0 Stable Channel Changelog\n\n## Added\n\n- One change";
-  const first = composeReleaseNotes({
-    channel: "stable",
-    version: "0.1.0",
-    existingBody,
-    channelNotes,
-  });
-  assertEquals(first.includes(existingBody), true);
-  assertEquals((first.match(/UGOITE-CHANNEL-NOTES:v1:start/g) ?? []).length, 1);
-  assertEquals((first.match(/UGOITE-CHANNEL-NOTES:v1:end/g) ?? []).length, 1);
+Deno.test("REQ-OPS-026: the current repository version has a valid manual note", async () => {
+  const version = (await Deno.readTextFile("version.txt")).trim();
+  const source = await validateReleaseNote({ version });
+  assertEquals(source.includes(`title: "Ugoite v${version}`), true);
+});
 
-  const rerun = composeReleaseNotes({
-    channel: "stable",
-    version: "0.1.0",
-    existingBody: first,
-    channelNotes,
+Deno.test("REQ-OPS-026: the validator rejects missing, empty, mismatched, and prerelease notes", async () => {
+  const repoRoot = await Deno.makeTempDir({ prefix: "ugoite-release-notes-" });
+  const notePath = releaseNotePath("0.1.2", repoRoot);
+  await Deno.mkdir(notePath.substring(0, notePath.lastIndexOf("/")), {
+    recursive: true,
   });
-  assertEquals(rerun, first);
 
-  assertFailsSync(
-    () =>
-      composeReleaseNotes({
-        channel: "stable",
-        version: "0.1.0",
-        existingBody: "<!-- UGOITE-CHANNEL-NOTES:v1:start -->",
-        channelNotes: "# notes",
-      }),
-    "incomplete channel-notes marker",
+  await assertFails(
+    () => validateReleaseNote({ version: "0.1.2", repoRoot }),
+    "was not found",
   );
-  assertFailsSync(
-    () =>
-      composeReleaseNotes({
-        channel: "stable",
-        version: "0.1.0",
-        existingBody:
-          "<!-- UGOITE-CHANNEL-NOTES:v1:start channel=beta version=0.1.0-beta.1 -->\nold\n<!-- UGOITE-CHANNEL-NOTES:v1:end -->",
-        channelNotes: "# notes",
-      }),
-    "does not match the release channel or version",
+  await Deno.writeTextFile(notePath, "\n");
+  await assertFails(
+    () => validateReleaseNote({ version: "0.1.2", repoRoot }),
+    "is empty",
+  );
+  await Deno.writeTextFile(notePath, "# Ugoite v0.1.1 — Older release\n");
+  await assertFails(
+    () => validateReleaseNote({ version: "0.1.2", repoRoot }),
+    "does not match",
+  );
+  await assertFails(
+    () => validateReleaseNote({ version: "0.1.2-beta.1", repoRoot }),
+    "stable SemVer",
   );
 });
 
-Deno.test("REQ-OPS-026: workflow updates notes after artifact distribution verification", async () => {
-  const workflow = await Deno.readTextFile(
+Deno.test("REQ-OPS-026: the candidate and publish workflows use exact manual note bytes", async () => {
+  const candidate = await Deno.readTextFile(
+    ".github/workflows/release-candidate.yml",
+  );
+  const publish = await Deno.readTextFile(
     ".github/workflows/release-publish.yml",
   );
-  const distributionIndex = workflow.indexOf("verify-distribution:");
-  const notesJobIndex = workflow.indexOf("publish-channel-release-notes:");
-  assertEquals(notesJobIndex > distributionIndex, true);
-  assertEquals(workflow.includes("Install Playwright"), false);
-  assertEquals(workflow.includes("tools/release-notes.ts compose"), true);
+  const validator = await Deno.readTextFile("tools/release-notes.ts");
+
+  assertEquals(candidate.includes("release:validate-notes"), true);
+  assertEquals(validator.includes("docs/version/releases"), true);
+  assertEquals(publish.includes("publish-release-notes:"), true);
+  assertEquals(publish.includes("publish-channel-release-notes:"), false);
+  assertEquals(publish.includes("RELEASE_SOURCE_SHA"), true);
+  assertEquals(publish.includes('git show "${RELEASE_SOURCE_SHA}:'), true);
+  assertEquals(publish.includes("release:validate-notes"), true);
   assertEquals(
-    workflow.includes('gh release edit "${RELEASE_TAG}" --notes-file'),
+    publish.includes('gh release edit "${RELEASE_TAG}" --notes-file'),
     true,
+  );
+  assertEquals(publish.includes("UGOITE-CHANNEL-NOTES"), false);
+
+  const distributionIndex = publish.indexOf("verify-distribution:");
+  const notesJobIndex = publish.indexOf("publish-release-notes:");
+  const aliasesIndex = publish.indexOf("promote-aliases:");
+  assertEquals(notesJobIndex > distributionIndex, true);
+  assertEquals(aliasesIndex > notesJobIndex, true);
+  assertEquals(publish.includes("publish-release-notes"), true);
+});
+
+Deno.test("REQ-OPS-026: release documentation does not describe channel rendering as active", async () => {
+  const changelog = await Deno.readTextFile(
+    "docs/architecture/release/changelog.md",
+  );
+  const stable = await Deno.readTextFile(
+    "docs/architecture/release/changelog-stable.md",
+  );
+  assertEquals(changelog.includes("rendered into a marked section"), false);
+  assertEquals(changelog.includes("manual note"), true);
+  assertEquals(stable.includes("docs/version/releases/v<version>.md"), true);
+  assertEquals(stable.includes("Historical channel metadata"), true);
+  assertEquals(
+    stable.includes("is rendered into the GitHub Release body"),
+    false,
   );
 });
 
@@ -176,16 +113,6 @@ async function assertFails(
 ): Promise<void> {
   try {
     await operation();
-  } catch (error) {
-    assertEquals(String(error).includes(message), true);
-    return;
-  }
-  throw new Error(`expected operation to fail with ${message}`);
-}
-
-function assertFailsSync(operation: () => unknown, message: string): void {
-  try {
-    operation();
   } catch (error) {
     assertEquals(String(error).includes(message), true);
     return;

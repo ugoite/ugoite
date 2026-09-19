@@ -5,11 +5,13 @@ title: "Changelog channels"
 The repository keeps separate stable, beta, and alpha source files so historical
 release guidance remains attributable. Current publication is orchestrated by
 `.github/workflows/release-publish.yml` for stable verified candidates only;
-alpha and beta are not normal public release channels. After artifact
-publication and distribution verification, the stable source is rendered into a
-marked section of the GitHub Release body; reruns replace that section without
-duplicating generated notes.
+alpha and beta are not normal public release channels. Each stable candidate
+must carry a non-empty manual note at
+`docs/version/releases/v<version>.md`. After distribution verification, the
+publish workflow reads that note from the candidate's exact source revision and
+applies it as the GitHub Release body. Reruns reapply the same source note;
+there is no generated channel section to merge.
 
-- [Stable](changelog-stable.md)
-- [Beta](changelog-beta.md)
-- [Alpha](changelog-alpha.md)
+- [Stable release-note contract](changelog-stable.md)
+- [Beta historical record](changelog-beta.md)
+- [Alpha historical record](changelog-alpha.md)

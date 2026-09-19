@@ -182,6 +182,8 @@ inventory:
             - tools/knowledge_compatibility_test.ts
             - tools/pr_body_gate_test.ts
             - tools/release_contract_test.ts
+            - tools/release-notes.ts
+            - tools/release-notes_test.ts
             - tools/release.ts
             - tools/release_verify.ts
             - tools/release_verify_test.ts
