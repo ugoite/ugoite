@@ -2,6 +2,7 @@ pub mod asset;
 pub mod auth;
 pub mod change;
 pub mod config;
+pub mod context;
 pub mod entry;
 pub mod form;
 pub mod index;

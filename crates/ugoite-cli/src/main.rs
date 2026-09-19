@@ -25,6 +25,12 @@ const QUIET_ACCENT_STYLES: clap::builder::Styles = clap::builder::Styles::styled
     styles = QUIET_ACCENT_STYLES
 )]
 struct Cli {
+    /// Explicit canonical config file (single-file override, no merging).
+    #[arg(long, value_name = "PATH", global = true)]
+    config: Option<std::path::PathBuf>,
+    /// Explicit context name for this invocation (does not change current_context).
+    #[arg(long, value_name = "NAME", global = true)]
+    context: Option<String>,
     #[command(subcommand)]
     command: Commands,
 }
@@ -35,6 +41,8 @@ enum Commands {
     Auth(commands::auth::AuthCmd),
     /// CLI endpoint routing settings
     Config(commands::config::ConfigCmd),
+    /// Named CLI execution contexts (connection + Space UID + credential)
+    Context(commands::context::ContextCmd),
     /// Space management commands.
     ///
     /// Run `ugoite config current` to check whether you are in core, backend, or api mode before choosing positional arguments.
@@ -144,9 +152,16 @@ fn main() {
 }
 
 async fn run(cli: Cli) -> Result<()> {
+    let explicit_config = cli.config.as_deref();
+    let explicit_context = cli.context.as_deref();
     match cli.command {
         Commands::Auth(cmd) => commands::auth::run(cmd).await,
-        Commands::Config(cmd) => commands::config::run(cmd).await,
+        Commands::Config(cmd) => {
+            commands::config::run(cmd, explicit_config, explicit_context).await
+        }
+        Commands::Context(cmd) => {
+            commands::context::run(cmd, explicit_config, explicit_context).await
+        }
         Commands::Space(cmd) => commands::space::run(cmd).await,
         Commands::Entry(cmd) => commands::entry::run(cmd).await,
         Commands::Form(cmd) => commands::form::run(cmd).await,
