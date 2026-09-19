@@ -21,7 +21,7 @@ const QUIET_ACCENT_STYLES: clap::builder::Styles = clap::builder::Styles::styled
     name = "ugoite",
     about = "Ugoite CLI - Knowledge base management",
     version = env!("CARGO_PKG_VERSION"),
-    long_about = "Ugoite CLI - Knowledge base management\n\nQuick start (local-first / core mode):\n  # Inspect the spaces in your current workspace\n  ugoite space list .\n\n  # Create your first space with an explicit local spaces path\n  ugoite space create /path/to/workspace/spaces/demo\n\nQuick start (backend / API mode):\n  # Point the CLI at your backend\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\n  # Authenticate, then list spaces from the backend\n  ugoite auth login\n  ugoite space list",
+    long_about = "Ugoite CLI - Knowledge base management\n\nQuick start (named contexts):\n  # New local workspace: init, create (auto-registers the context), work without repeated paths\n  mkdir knowledge\n  cd knowledge\n  ugoite config init\n  ugoite space create demo\n  ugoite entry list\n  ugoite search keyword planning\n\n  # Switch or run once elsewhere\n  ugoite context use work\n  ugoite --context research search keyword catalyst\n\nQuick start (local-first / core mode):\n  # Inspect the spaces in your current workspace\n  ugoite space list .\n\n  # Create your first space with an explicit local spaces path\n  ugoite space create /path/to/workspace/spaces/demo\n\nQuick start (backend / API mode):\n  # Point the CLI at your backend\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\n  # Authenticate, then list spaces from the backend\n  ugoite auth login\n  ugoite space list",
     styles = QUIET_ACCENT_STYLES
 )]
 struct Cli {

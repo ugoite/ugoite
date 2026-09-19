@@ -36,18 +36,23 @@ returned by the server, such as
 <TabItem label="CLI">
 
 ```bash
-ugoite config set --mode core
-ugoite space create /path/to/workspace/spaces/demo
-ugoite space create /path/to/workspace/spaces/team-notes --name "Team Notes"
-ugoite space get /path/to/workspace/spaces/demo
-ugoite space list /path/to/workspace
+mkdir knowledge
+cd knowledge
+ugoite config init
+ugoite space create demo
+ugoite space get
+ugoite entry list
 ```
 
-The positional slug is the stable Space key. `--name` seeds the durable
+`space create` registers the new Space as the current CLI context by its
+immutable Space UID, so later commands need no Space path. The positional slug
+is the stable Space key. `--name` seeds the durable
 display name only on first creation: omit it to default to the slug, and pass
 a non-empty value otherwise (a whitespace-only name fails before any write).
 Retrying `space create` for an existing Space converges to the same durable
-identity and never renames it.
+identity and never renames it. The legacy explicit-path form (`ugoite space
+create /path/to/workspace/spaces/demo`) still works as the v0.1.x
+compatibility path.
 
 In backend mode, pass the immutable Space UID and omit the workspace path. A
 human Space slug is creation metadata, not a remote identity. See the [CLI

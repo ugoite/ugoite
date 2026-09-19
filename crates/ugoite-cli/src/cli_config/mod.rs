@@ -16,6 +16,7 @@
 
 pub mod credentials;
 pub mod discover;
+pub mod legacy;
 pub mod merge;
 pub mod model;
 pub mod resolve;
@@ -27,6 +28,10 @@ pub use credentials::{credentials_path, CredentialStore};
 pub use discover::{
     build_source_stack, canonical_global_config_path, project_local_config_path,
     resolve_write_target, source_stack_from_environment,
+};
+pub use legacy::{
+    legacy_config_path, normalize_legacy_to_config_file, read_legacy_config, LegacyEndpoint,
+    LegacyMode,
 };
 pub use merge::{
     load_effective_config, load_explicit_config_file, merge_loaded_configs, EffectiveConfig,

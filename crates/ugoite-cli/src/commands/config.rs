@@ -54,6 +54,8 @@ pub enum ConfigSubCmd {
         #[command(subcommand)]
         sub: ConnectionSubCmd,
     },
+    /// Migrate the legacy endpoint file to canonical TOML (v0.1.x read-only bridge)
+    Migrate,
 }
 
 #[derive(Subcommand)]
@@ -244,7 +246,55 @@ pub async fn run(
         ConfigSubCmd::Connection { sub } => {
             run_connection(sub, explicit_config).await?;
         }
+        ConfigSubCmd::Migrate => {
+            run_migrate(explicit_config)?;
+        }
     }
+    Ok(())
+}
+
+/// Migrate the legacy v0.1.x endpoint file to canonical TOML.
+///
+/// Read-only bridge: the legacy file is never modified or deleted, and an
+/// existing canonical write target is never silently overwritten. Only
+/// connections migrate — contexts are created afterwards by `space create`
+/// (automatic) or `context add`. Knowledge is never touched.
+fn run_migrate(explicit_config: Option<&Path>) -> Result<()> {
+    use crate::cli_config::{
+        legacy_config_path, normalize_legacy_to_config_file, read_legacy_config,
+    };
+
+    let cwd = cwd();
+    let write_target = if let Some(explicit) = explicit_config {
+        explicit.to_path_buf()
+    } else {
+        crate::cli_config::discover::live_write_target(None, &cwd)
+    };
+    if write_target.exists() {
+        bail!(
+            "Refusing to migrate over existing config at {}",
+            write_target.display()
+        );
+    }
+    let legacy_path = legacy_config_path();
+    let Some(legacy) = read_legacy_config()? else {
+        bail!(
+            "No legacy CLI configuration found at {}. Nothing to migrate.",
+            legacy_path.display()
+        );
+    };
+    let canonical = normalize_legacy_to_config_file(
+        &legacy,
+        &cwd,
+        &format!("legacy {}", legacy_path.display()),
+    )?;
+    crate::cli_config::write::write_config_file_atomic(&write_target, &canonical)?;
+    print_json(&serde_json::json!({
+        "migrated": true,
+        "from": legacy_path.to_string_lossy(),
+        "path": write_target.to_string_lossy(),
+        "connections": canonical.connections.keys().collect::<Vec<_>>(),
+    }));
     Ok(())
 }
 
