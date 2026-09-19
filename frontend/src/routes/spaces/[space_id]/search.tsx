@@ -14,6 +14,11 @@ import { createResource } from "~/lib/recoverable-resource";
 import { t, type TranslationKey } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
+import {
+  spaceAssetsPath,
+  spaceEntryPath,
+  spaceSqlPath,
+} from "~/lib/space-path";
 import { pageFromArray } from "~/lib/pagination";
 
 export const route = spaceRoute({ navigation: "search" });
@@ -511,13 +516,16 @@ export default function SpaceSearchRoute() {
           {t("searchPage.title")}
         </h1>
         <p class="ui-muted">
-          <A href={`/spaces/${encodeURIComponent(spaceId())}/assets`}>
-            {t("searchPage.nav.files")}
+          <A href={spaceAssetsPath(spaceId())}>
+            {t("searchPage.nav.assets")}
           </A>
           {" · "}
-          <A href={`/spaces/${encodeURIComponent(spaceId())}/sql`}>
-            {t("searchPage.nav.saved")}
+          <A href={spaceSqlPath(spaceId())}>
+            {t("searchPage.nav.savedSql")}
           </A>
+        </p>
+        <p class="text-sm ui-muted">
+          {t("searchPage.savedSqlHint")}
         </p>
 
         <div class="searchPage">
@@ -940,9 +948,7 @@ export default function SpaceSearchRoute() {
                               chevron
                               onActivate={() =>
                                 navigate(
-                                  `/spaces/${
-                                    encodeURIComponent(spaceId())
-                                  }/entries/${encodeURIComponent(entry.id)}`,
+                                  spaceEntryPath(spaceId(), entry.id),
                                 )}
                             />
                           }
@@ -962,9 +968,7 @@ export default function SpaceSearchRoute() {
                               chevron
                               onActivate={() =>
                                 navigate(
-                                  `/spaces/${
-                                    encodeURIComponent(spaceId())
-                                  }/entries/${encodeURIComponent(entry.id)}`,
+                                  spaceEntryPath(spaceId(), entry.id),
                                 )}
                             />
                           }

@@ -7,10 +7,26 @@ import { AccountMenu } from "~/components/AccountMenu";
 import { KonasePanel } from "~/components/konase/KonasePanel";
 import { createSpaceStore } from "~/lib/space-store";
 import { spaceUid } from "~/lib/space-list";
+import { spacePath, spaceSettingsPath } from "~/lib/space-path";
 
+// PR-07 Knowledge-first navigation (#2915):
+// Desktop: Home / Knowledge(Entries, Assets, Forms) / Explore(Search)
+//   / Recovery(History) / Settings.
+// Mobile bottom nav: Home, Entries, Search, History, More — More contains
+// Assets, Forms, Settings. Both surfaces expose the same seven destinations.
+export type SpaceNavigation =
+  | "home"
+  | "entries"
+  | "assets"
+  | "forms"
+  | "search"
+  | "history"
+  | "settings";
+
+// Legacy aliases kept for route compat: "forms" covered Knowledge before
+// PR-07. Inference below maps old paths onto the split destinations.
 export type SpaceTopTab = "dashboard" | "search";
 export type SpaceBottomTab = "object" | "grid";
-export type SpaceNavigation = "home" | "forms" | "search" | "settings";
 
 interface SpaceShellProps {
   spaceId: string;
@@ -23,20 +39,109 @@ interface SpaceShellProps {
   children: JSX.Element;
 }
 
-const navItems: Array<{ id: SpaceNavigation; icon: UiIconName; path: string }> =
-  [
-    { id: "home", icon: "home", path: "dashboard" },
-    { id: "forms", icon: "forms", path: "forms" },
-    { id: "search", icon: "search", path: "search" },
-    { id: "settings", icon: "settings", path: "settings" },
-  ];
+export interface SpaceNavItem {
+  id: SpaceNavigation;
+  icon: UiIconName;
+  path: string;
+  labelKey: TranslationKey;
+}
 
-const navigationLabels: Record<SpaceNavigation, TranslationKey> = {
-  home: "nav.home",
-  forms: "spaceShell.bottom.grid",
-  search: "spaceShell.top.search",
-  settings: "spaceShell.nav.settings",
-};
+export const SPACE_NAV_ITEMS: SpaceNavItem[] = [
+  {
+    id: "home",
+    icon: "home",
+    path: "dashboard",
+    labelKey: "spaceShell.nav.home",
+  },
+  {
+    id: "entries",
+    icon: "entry",
+    path: "entries",
+    labelKey: "spaceShell.nav.entries",
+  },
+  {
+    id: "assets",
+    icon: "asset",
+    path: "assets",
+    labelKey: "spaceShell.nav.assets",
+  },
+  {
+    id: "forms",
+    icon: "forms",
+    path: "forms",
+    labelKey: "spaceShell.nav.forms",
+  },
+  {
+    id: "search",
+    icon: "search",
+    path: "search",
+    labelKey: "spaceShell.nav.search",
+  },
+  {
+    id: "history",
+    icon: "history",
+    path: "history",
+    labelKey: "spaceShell.nav.history",
+  },
+  {
+    id: "settings",
+    icon: "settings",
+    path: "settings",
+    labelKey: "spaceShell.nav.settings",
+  },
+];
+
+export const MOBILE_PRIMARY_NAV: SpaceNavigation[] = [
+  "home",
+  "entries",
+  "search",
+  "history",
+];
+
+export const MOBILE_MORE_NAV: SpaceNavigation[] = [
+  "assets",
+  "forms",
+  "settings",
+];
+
+export interface SpaceNavGroup {
+  labelKey: TranslationKey | null;
+  items: SpaceNavigation[];
+}
+
+export const DESKTOP_NAV_GROUPS: SpaceNavGroup[] = [
+  { labelKey: null, items: ["home"] },
+  {
+    labelKey: "spaceShell.nav.knowledge",
+    items: ["entries", "assets", "forms"],
+  },
+  { labelKey: "spaceShell.nav.explore", items: ["search"] },
+  { labelKey: "spaceShell.nav.recovery", items: ["history"] },
+  { labelKey: null, items: ["settings"] },
+];
+
+const navItemById = new Map<SpaceNavigation, SpaceNavItem>(
+  SPACE_NAV_ITEMS.map((item) => [item.id, item]),
+);
+
+export function spaceNavItem(id: SpaceNavigation): SpaceNavItem {
+  const item = navItemById.get(id);
+  if (!item) throw new Error(`Unknown space navigation: ${id}`);
+  return item;
+}
+
+export function inferSpaceNavigation(pathname: string): SpaceNavigation {
+  if (pathname.includes("/settings")) return "settings";
+  if (pathname.includes("/history")) return "history";
+  if (
+    pathname.includes("/search") || pathname.includes("/sql") ||
+    pathname.includes("/queries")
+  ) return "search";
+  if (pathname.includes("/assets")) return "assets";
+  if (pathname.includes("/forms")) return "forms";
+  if (pathname.includes("/entries")) return "entries";
+  return "home";
+}
 
 export function SpaceShell(props: SpaceShellProps) {
   const spaceStore = createSpaceStore();
@@ -51,48 +156,80 @@ export function SpaceShell(props: SpaceShellProps) {
     if (props.activeTopTab === "dashboard") return "home";
     if (props.activeTopTab === "search") return "search";
     if (props.activeBottomTab === "grid") return "forms";
+    if (props.activeBottomTab === "object") return "entries";
     const pathname = typeof window === "undefined"
       ? ""
       : window.location.pathname;
-    if (pathname.includes("/settings")) return "settings";
-    if (
-      pathname.includes("/search") || pathname.includes("/sql") ||
-      pathname.includes("/queries")
-    ) return "search";
-    if (
-      pathname.includes("/forms") || pathname.includes("/entries") ||
-      pathname.includes("/assets")
-    ) return "forms";
-    return "home";
+    return inferSpaceNavigation(pathname);
   });
   const activePath = createMemo(() =>
-    navItems.find((item) => item.id === active())?.path ?? "dashboard"
+    navItemById.get(active())?.path ?? "dashboard"
   );
-  const crumb = createMemo(() => props.title ?? t(navigationLabels[active()]));
+  const activeLabelKey = createMemo<TranslationKey>(() =>
+    navItemById.get(active())?.labelKey ?? "spaceShell.nav.home"
+  );
+  const crumb = createMemo(() => props.title ?? t(activeLabelKey()));
 
   const switchSpace = (spaceId: string) => {
     if (!spaceId || spaceId === props.spaceId) return;
     spaceStore.selectSpace(spaceId);
-    navigate(`/spaces/${encodeURIComponent(spaceId)}/${activePath()}`);
+    navigate(spacePath(spaceId, activePath()));
   };
 
-  const navigation = (mobile = false) => (
+  const navLink = (id: SpaceNavigation, mobile = false) => {
+    const item = spaceNavItem(id);
+    return (
+      <A
+        href={spacePath(props.spaceId, item.path)}
+        class={mobile ? "" : "navItem"}
+        classList={{ active: active() === item.id }}
+        aria-current={active() === item.id ? "page" : undefined}
+        onClick={() => setDrawerOpen(false)}
+      >
+        <UiIcon name={item.icon} />
+        <span>{t(item.labelKey)}</span>
+      </A>
+    );
+  };
+
+  const desktopNavigation = () => (
+    <nav class="navGroup" aria-label={t("spaceShell.navigation")}>
+      <For each={DESKTOP_NAV_GROUPS}>
+        {(group) => (
+          <>
+            <Show when={group.labelKey}>
+              <div class="navGroupLabel" aria-hidden="true">
+                {t(group.labelKey as TranslationKey)}
+              </div>
+            </Show>
+            <For each={group.items}>
+              {(id) => navLink(id)}
+            </For>
+          </>
+        )}
+      </For>
+    </nav>
+  );
+
+  const mobileNavigation = () => (
     <nav
-      class={mobile ? "bottomNav" : "navGroup"}
+      class="bottomNav"
       aria-label={t("spaceShell.navigation")}
     >
-      {navItems.map((item) => (
-        <A
-          href={`/spaces/${encodeURIComponent(props.spaceId)}/${item.path}`}
-          class={mobile ? "" : "navItem"}
-          classList={{ active: active() === item.id }}
-          aria-current={active() === item.id ? "page" : undefined}
-          onClick={() => setDrawerOpen(false)}
-        >
-          <UiIcon name={item.icon} />
-          <span>{t(navigationLabels[item.id])}</span>
-        </A>
-      ))}
+      <For each={MOBILE_PRIMARY_NAV}>
+        {(id) => navLink(id, true)}
+      </For>
+      <details class="moreMenu">
+        <summary aria-label={t("spaceShell.nav.more")}>
+          <UiIcon name="menu" />
+          <span>{t("spaceShell.nav.more")}</span>
+        </summary>
+        <div class="moreMenuItems">
+          <For each={MOBILE_MORE_NAV}>
+            {(id) => navLink(id, true)}
+          </For>
+        </div>
+      </details>
     </nav>
   );
 
@@ -131,7 +268,10 @@ export function SpaceShell(props: SpaceShellProps) {
               <span class="ui-sr-only">{t("konase.title")}</span>
             </button>
             <AccountMenu
-              settingsHref={`/spaces/${encodeURIComponent(props.spaceId)}/settings?section=credentials`}
+              settingsHref={spaceSettingsPath(
+                props.spaceId,
+                "?section=credentials",
+              )}
             />
           </div>
         </header>
@@ -140,14 +280,14 @@ export function SpaceShell(props: SpaceShellProps) {
         </div>
         <div class="content">{props.children}</div>
       </section>
-      {navigation(true)}
+      {mobileNavigation()}
     </main>
   );
 
   function sidebar() {
     return (
       <aside class="sidebar">
-        <A class="brand" href={`/spaces/${encodeURIComponent(props.spaceId)}/dashboard`}>
+        <A class="brand" href={spacePath(props.spaceId, "dashboard")}>
           <img
             class="brandMark"
             src="/brand/ugoite-mark.svg"
@@ -183,7 +323,7 @@ export function SpaceShell(props: SpaceShellProps) {
             </For>
           </select>
         </label>
-        {navigation()}
+        {desktopNavigation()}
         <div class="sideFoot">
           <A class="navItem" href="/spaces" end>
             <UiIcon name="spaces" />

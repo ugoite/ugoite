@@ -1,11 +1,5 @@
 import { useParams, useSearchParams } from "@solidjs/router";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  Show,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import {
   RowList,
@@ -30,6 +24,7 @@ import {
   settingsSections,
 } from "~/lib/settings-sections";
 import { formatUserFacingError } from "~/lib/user-facing-error";
+import { spaceHistoryPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "settings", title: "settings" });
@@ -165,9 +160,7 @@ export default function SpaceSettingsRoute() {
                   main={section.id === "history"
                     ? (
                       <RowListLink
-                        href={`/spaces/${
-                          encodeURIComponent(spaceId())
-                        }/history`}
+                        href={spaceHistoryPath(spaceId())}
                         primary={label(section)}
                         secondary={t("settings.historyDescription")}
                         chevron
@@ -457,7 +450,7 @@ export default function SpaceSettingsRoute() {
               <p class="ui-muted">{t("settings.historyDescription")}</p>
               <a
                 class="btn primary"
-                href={`/spaces/${encodeURIComponent(spaceId())}/history`}
+                href={spaceHistoryPath(spaceId())}
               >
                 {t("settings.section.history")}
               </a>

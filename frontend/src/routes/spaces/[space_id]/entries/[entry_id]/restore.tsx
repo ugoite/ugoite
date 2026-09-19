@@ -3,7 +3,12 @@ import { onMount } from "solid-js";
 import { t } from "~/lib/i18n";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "forms", title: "entryHistory" });
+import { decodeSpaceSegment, spaceEntryPath } from "~/lib/space-path";
+
+export const route = spaceRoute({
+  navigation: "entries",
+  title: "entryHistory",
+});
 
 // Legacy compat: /entries/:entry_id/restore now redirects to the single
 // History path (/entries/:entry_id/history). Restore itself lives on the
@@ -12,8 +17,11 @@ export default function SpaceEntryRestoreRedirectRoute() {
   const navigate = useNavigate();
   const params = useParams<{ space_id: string; entry_id: string }>();
   const historyPath = () =>
-    `/spaces/${encodeURIComponent(params.space_id ?? "")}/entries/${
-      encodeURIComponent(params.entry_id ?? "")
+    `${
+      spaceEntryPath(
+        decodeSpaceSegment(params.space_id ?? ""),
+        params.entry_id ?? "",
+      )
     }/history`;
 
   onMount(() => {

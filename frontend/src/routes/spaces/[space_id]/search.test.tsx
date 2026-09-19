@@ -1,11 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { delay, http, HttpResponse } from "msw";
 import SpaceSearchRoute from "./search";
 import { resetMockData, seedForm, seedSpace } from "~/test/mocks/handlers";
@@ -408,13 +403,14 @@ describe("/spaces/:space_id/search", () => {
       .not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Advanced search" }))
       .not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Files" }))
+    expect(screen.getByRole("link", { name: "Assets" }))
       .toHaveAttribute(
         "href",
         "/spaces/default/assets",
       );
-    expect(screen.getByRole("link", { name: "Saved" }))
+    expect(screen.getByRole("link", { name: "Saved SQL" }))
       .toHaveAttribute("href", "/spaces/default/sql");
+    expect(screen.getByText(/advanced Search surface/i)).toBeInTheDocument();
     expect(screen.queryByText("Open SQL editor"))
       .not.toBeInTheDocument();
     expect(screen.queryByText("Search history")).not.toBeInTheDocument();

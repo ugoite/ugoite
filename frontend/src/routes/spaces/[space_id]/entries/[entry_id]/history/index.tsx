@@ -14,11 +14,15 @@ import { t } from "~/lib/i18n";
 import { entryApi, spaceApi } from "~/lib/ugoite-client";
 import type { SpaceMember } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceEntryPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 import { pageFromArray } from "~/lib/pagination";
 import type { EntryRevision } from "~/lib/types";
 
-export const route = spaceRoute({ navigation: "forms", title: "entryHistory" });
+export const route = spaceRoute({
+  navigation: "entries",
+  title: "entryHistory",
+});
 
 const HISTORY_PAGE_SIZE = 50;
 
@@ -26,8 +30,11 @@ export default function SpaceEntryHistoryRoute() {
   const params = useParams<{ space_id: string; entry_id: string }>();
   const spaceId = () => params.space_id;
   const entryId = () => params.entry_id;
-  const encodedSpaceId = () => encodeURIComponent(spaceId());
-  const encodedEntryId = () => encodeURIComponent(entryId());
+  const entryHref = () => spaceEntryPath(spaceId(), entryId());
+  const revisionHref = (revisionId: string) =>
+    `${spaceEntryPath(spaceId(), entryId())}/history/${
+      encodeURIComponent(revisionId)
+    }`;
   const [history] = createResource(() =>
     entryApi.history(spaceId(), entryId(), undefined, HISTORY_PAGE_SIZE + 1)
   );
@@ -107,7 +114,7 @@ export default function SpaceEntryHistoryRoute() {
           <h1>{t("entryHistory.title")}</h1>
         </div>
         <BackLink
-          href={`/spaces/${encodedSpaceId()}/entries/${encodedEntryId()}`}
+          href={entryHref()}
           label={t("entryHistory.backToEntry")}
         />
       </div>
@@ -130,31 +137,30 @@ export default function SpaceEntryHistoryRoute() {
             when={data().revisions.length > 0}
             fallback={<p class="ui-muted">{t("entryHistory.empty")}</p>}
           >
-            {/*
+            {
+              /*
               RowList rows (PR4): the full row activates to the revision
               review (click or Enter on the native link). Primary is the
               operation, secondary the actor display name, meta the compact
               timestamp, plus an unboxed chevron. Revision id, title, form,
               and raw actor UUIDs stay out of rows (the revision route owns
               that detail).
-            */}
+            */
+            }
             <div aria-busy={history.loading || undefined}>
               <RowList label={t("entryHistory.title")}>
                 <For each={revisions()}>
                   {(revision) => {
                     const operation = () => revisionOperationLabel(revision);
                     const name = () => actorName(revision);
-                    const when = () =>
-                      formatDateTimeLabel(revision.timestamp);
+                    const when = () => formatDateTimeLabel(revision.timestamp);
                     const rowLabel = () =>
                       `${operation()} · ${name()} · ${when()}`;
                     return (
                       <RowListItem
                         main={
                           <RowListLink
-                            href={`/spaces/${encodedSpaceId()}/entries/${encodedEntryId()}/history/${
-                              encodeURIComponent(revision.revision_id)
-                            }`}
+                            href={revisionHref(revision.revision_id)}
                             primary={operation()}
                             secondary={name()}
                             meta={when()}

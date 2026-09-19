@@ -39,36 +39,64 @@ describe("v5 SpaceShell", () => {
   beforeEach(() => {
     setLocale("en");
   });
-  it("renders the four persistent navigation destinations and children", () => {
+  it("renders the Knowledge-first destinations with zero desktop/mobile gap", () => {
     render(() => (
       <SpaceShell spaceId="my-space-uid" activeNavigation="home">
         <p>Content</p>
       </SpaceShell>
     ));
     expect(screen.getByText("Content")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Home" })[0]).toHaveAttribute(
-      "href",
-      "/spaces/my-space-uid/dashboard",
-    );
-    expect(screen.getAllByRole("link", { name: "Forms" })[0]).toHaveAttribute(
-      "href",
-      "/spaces/my-space-uid/forms",
-    );
-    expect(screen.getAllByRole("link", { name: "Search" })[0]).toHaveAttribute(
-      "href",
-      "/spaces/my-space-uid/search",
-    );
-    expect(screen.getAllByRole("link", { name: "Settings" })[0])
-      .toHaveAttribute("href", "/spaces/my-space-uid/settings");
+    const expected: Array<[string, string]> = [
+      ["Home", "/spaces/my-space-uid/dashboard"],
+      ["Entries", "/spaces/my-space-uid/entries"],
+      ["Assets", "/spaces/my-space-uid/assets"],
+      ["Forms", "/spaces/my-space-uid/forms"],
+      ["Search", "/spaces/my-space-uid/search"],
+      ["History", "/spaces/my-space-uid/history"],
+      ["Settings", "/spaces/my-space-uid/settings"],
+    ];
+    for (const [name, href] of expected) {
+      const links = screen.getAllByRole("link", { name });
+      expect(links.length).toBeGreaterThanOrEqual(2);
+      for (const link of links) {
+        expect(link).toHaveAttribute("href", href);
+      }
+    }
+    // Desktop groups Knowledge/Explore/Recovery; mobile More holds the rest.
+    expect(screen.getByText("Knowledge")).toBeInTheDocument();
+    expect(screen.getByText("Explore")).toBeInTheDocument();
+    expect(screen.getByText("Recovery")).toBeInTheDocument();
+    expect(screen.getByText("More")).toBeInTheDocument();
   });
   it("marks the selected destination in desktop and mobile navigation", () => {
     render(() => (
-      <SpaceShell spaceId="my-space-uid" activeNavigation="forms">
+      <SpaceShell spaceId="my-space-uid" activeNavigation="entries">
         <p>Content</p>
       </SpaceShell>
     ));
-    for (const link of screen.getAllByRole("link", { name: "Forms" })) {
+    for (const link of screen.getAllByRole("link", { name: "Entries" })) {
       expect(link).toHaveClass("active");
+    }
+  });
+  it("encodes Space segments across desktop and mobile targets", () => {
+    render(() => (
+      <SpaceShell spaceId="space/with space" activeNavigation="home">
+        <p>Content</p>
+      </SpaceShell>
+    ));
+    for (
+      const link of screen.getAllByRole("link", { name: "Entries" })
+    ) {
+      expect(link).toHaveAttribute(
+        "href",
+        "/spaces/space%2Fwith%20space/entries",
+      );
+    }
+    for (const link of screen.getAllByRole("link", { name: "History" })) {
+      expect(link).toHaveAttribute(
+        "href",
+        "/spaces/space%2Fwith%20space/history",
+      );
     }
   });
   it("opens account settings inside the current Space settings navigation", () => {

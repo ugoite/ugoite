@@ -4,9 +4,10 @@ import { EntryDetailPane } from "~/components/EntryDetailPane";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { t } from "~/lib/i18n";
+import { spaceFormsPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "forms" });
+export const route = spaceRoute({ navigation: "entries" });
 
 export default function SpaceEntryDetailRoute() {
   const navigate = useNavigate();
@@ -52,7 +53,7 @@ export default function SpaceEntryDetailRoute() {
             entryId={entryId}
             forms={ctx.forms}
             onDeleted={() => {
-              navigate(`/spaces/${encodeURIComponent(spaceId())}/forms`, { replace: true });
+              navigate(spaceFormsPath(spaceId()), { replace: true });
             }}
           />
         </Show>

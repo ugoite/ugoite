@@ -11,6 +11,7 @@ import {
 } from "~/lib/metadata-forms";
 import { formApi } from "~/lib/ugoite-client";
 import type { Form, FormCreatePayload } from "~/lib/types";
+import { spaceEntriesPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "forms" });
@@ -42,7 +43,7 @@ export default function SpaceFormsIndexPane() {
       if (!spaceId) return;
       setRedirectedLegacy(true);
       navigate(
-        `/spaces/${encodeURIComponent(spaceId)}/entries?form=${encodeURIComponent(legacy)}`,
+        spaceEntriesPath(spaceId, `?form=${encodeURIComponent(legacy)}`),
         { replace: true },
       );
     }
@@ -53,7 +54,10 @@ export default function SpaceFormsIndexPane() {
     setShowFormDialog(false);
     await ctx.refetchForms();
     navigate(
-      `/spaces/${encodeURIComponent(ctx.spaceId())}/entries?form=${encodeURIComponent(payload.name)}`,
+      spaceEntriesPath(
+        ctx.spaceId(),
+        `?form=${encodeURIComponent(payload.name)}`,
+      ),
     );
   };
   const updateForm = async (payload: FormCreatePayload) => {
@@ -130,9 +134,10 @@ export default function SpaceFormsIndexPane() {
                       <RowListButton
                         onActivate={() =>
                           navigate(
-                            `/spaces/${
-                              encodeURIComponent(ctx.spaceId())
-                            }/entries?form=${encodeURIComponent(form.name)}`,
+                            spaceEntriesPath(
+                              ctx.spaceId(),
+                              `?form=${encodeURIComponent(form.name)}`,
+                            ),
                           )}
                         primary={
                           <>

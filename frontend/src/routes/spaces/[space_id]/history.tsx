@@ -14,10 +14,11 @@ import type { SpaceMember } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
+import { spaceDashboardPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({
-  navigation: "settings",
+  navigation: "history",
   title: "spaceHistory",
 });
 
@@ -120,8 +121,8 @@ export default function SpaceHistoryRoute() {
           <h1>{t("spaceHistory.title")}</h1>
         </div>
         <BackLink
-          href={`/spaces/${encodeURIComponent(spaceId())}/settings`}
-          label={t("spaceHistory.backToSettings")}
+          href={spaceDashboardPath(spaceId())}
+          label={t("spaceHistory.backToSpace")}
         />
       </div>
       <p class="ui-muted">{t("spaceHistory.description")}</p>

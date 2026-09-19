@@ -6,9 +6,10 @@ import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi, spaceApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
+import { spaceEntryPath, spaceFormsPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "forms", title: "newEntry" });
+export const route = spaceRoute({ navigation: "entries", title: "newEntry" });
 
 export default function NewEntryRoute() {
   const params = useParams<{ space_id: string }>();
@@ -54,7 +55,7 @@ export default function NewEntryRoute() {
   const formsHref = () => {
     const formName = selectedFormName() ?? selectedForm()?.name;
     const query = formName ? `?form=${encodeURIComponent(formName)}` : "";
-    return `/spaces/${encodeURIComponent(spaceId())}/forms${query}`;
+    return spaceFormsPath(spaceId(), query);
   };
 
   return (
@@ -94,8 +95,7 @@ export default function NewEntryRoute() {
                 <button
                   class="btn"
                   type="button"
-                  onClick={() =>
-                    navigate(`/spaces/${encodeURIComponent(spaceId())}/forms`)}
+                  onClick={() => navigate(spaceFormsPath(spaceId()))}
                 >
                   {t("entryPage.backToForms")}
                 </button>
@@ -110,21 +110,16 @@ export default function NewEntryRoute() {
                 onCreateFormChange={setSelectedFormName}
                 onDeleted={() =>
                   navigate(
-                    returnToForms()
-                      ? formsHref()
-                      : `/spaces/${encodeURIComponent(spaceId())}/forms`,
+                    returnToForms() ? formsHref() : spaceFormsPath(spaceId()),
                   )}
                 onCreated={({ id: entryId }) => {
                   if (returnToForms()) {
                     navigate(formsHref(), { replace: true });
                     return;
                   }
-                  navigate(
-                    `/spaces/${encodeURIComponent(spaceId())}/entries/${
-                      encodeURIComponent(entryId)
-                    }`,
-                    { replace: true },
-                  );
+                  navigate(spaceEntryPath(spaceId(), entryId), {
+                    replace: true,
+                  });
                 }}
               />
             )}

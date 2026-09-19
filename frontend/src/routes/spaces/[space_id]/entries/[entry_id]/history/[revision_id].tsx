@@ -23,9 +23,10 @@ import { t } from "~/lib/i18n";
 import { entryApi, spaceApi } from "~/lib/ugoite-client";
 import type { SpaceMember } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceEntryPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "forms", title: "revision" });
+export const route = spaceRoute({ navigation: "entries", title: "revision" });
 
 /** Revision subtitle: shared locale-aware date plus a localized marker. */
 export function formatRevisionSubtitle(
@@ -45,10 +46,7 @@ export default function SpaceEntryRevisionRoute() {
   const spaceId = () => params.space_id;
   const entryId = () => params.entry_id;
   const revisionId = () => params.revision_id;
-  const entryPath = () =>
-    `/spaces/${encodeURIComponent(spaceId())}/entries/${
-      encodeURIComponent(entryId())
-    }`;
+  const entryPath = () => spaceEntryPath(spaceId(), entryId());
 
   const [revision] = createResource(() =>
     entryApi.getRevision(spaceId(), entryId(), revisionId())
@@ -243,10 +241,12 @@ export default function SpaceEntryRevisionRoute() {
             <p class="ui-alert ui-alert-error">{restoreError()}</p>
           </Show>
 
-          {/*
+          {
+            /*
             Advanced disclosure only: raw revision and actor identifiers live
             here (copyable), never in primary rows or headings.
-          */}
+          */
+          }
           <details class="revision-technical-details">
             <summary>{t("entryHistory.debugDetails")}</summary>
             <dl class="ui-entry-detail-list">
@@ -293,11 +293,13 @@ export default function SpaceEntryRevisionRoute() {
         </div>
       </Show>
 
-      {/*
+      {
+        /*
         Restore confirmation dialog (PR4): states the append-only semantics
         (a new history event is created; existing history is never
         rewritten) and only then runs the mutation.
-      */}
+      */
+      }
       <Show when={restoreConfirmOpen()}>
         <div
           class="ui-backdrop"

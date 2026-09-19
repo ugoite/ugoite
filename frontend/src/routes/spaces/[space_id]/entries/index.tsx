@@ -23,9 +23,14 @@ import { sqlSessionApi, sqlSessionRowToEntryRecord } from "~/lib/ugoite-client";
 import type { EntryRecord, FormCreatePayload } from "~/lib/types";
 import { entryDisplayLabel } from "~/lib/entry-label";
 import { formatUserFacingError } from "~/lib/user-facing-error";
+import {
+  spaceEntriesPath,
+  spaceEntryPath,
+  spaceFormsPath,
+} from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "forms" });
+export const route = spaceRoute({ navigation: "entries" });
 
 export default function SpaceEntriesIndexPane() {
   const navigate = useNavigate();
@@ -184,7 +189,11 @@ export default function SpaceEntriesIndexPane() {
     const err = error();
     if (!err) return null;
     if (formName() && !sessionId().trim()) {
-      return formatUserFacingError(err, "formTable.recordsError", "search.query");
+      return formatUserFacingError(
+        err,
+        "formTable.recordsError",
+        "search.query",
+      );
     }
     return formatUserFacingError(
       err,
@@ -210,7 +219,7 @@ export default function SpaceEntriesIndexPane() {
   );
 
   const handleSelectEntry = (entryId: string) => {
-    navigate(`/spaces/${encodeURIComponent(spaceId())}/entries/${encodeURIComponent(entryId)}`);
+    navigate(spaceEntryPath(spaceId(), entryId));
   };
 
   const handleCreateForm = async (payload: FormCreatePayload) => {
@@ -236,7 +245,7 @@ export default function SpaceEntriesIndexPane() {
             </Show>
             <Show when={!sessionId().trim() && formName()}>
               <BackLink
-                href={`/spaces/${encodeURIComponent(spaceId())}/forms`}
+                href={spaceFormsPath(spaceId())}
                 label={t("entriesPage.formBack")}
               />
             </Show>
@@ -246,8 +255,7 @@ export default function SpaceEntriesIndexPane() {
               <button
                 type="button"
                 class="ui-button ui-button-secondary text-sm"
-                onClick={() =>
-                  navigate(`/spaces/${encodeURIComponent(spaceId())}/forms`)}
+                onClick={() => navigate(spaceFormsPath(spaceId()))}
               >
                 {t("querySession.clear")}
               </button>
@@ -365,10 +373,11 @@ export default function SpaceEntriesIndexPane() {
                 onClick={() =>
                   navigate(
                     formName()
-                      ? `/spaces/${
-                        encodeURIComponent(spaceId())
-                      }/entries/new?form=${encodeURIComponent(formName())}`
-                      : `/spaces/${encodeURIComponent(spaceId())}/entries/new`,
+                      ? spaceEntriesPath(
+                        spaceId(),
+                        `/new?form=${encodeURIComponent(formName())}`,
+                      )
+                      : spaceEntriesPath(spaceId(), "/new"),
                   )}
               >
                 {t("entriesPage.newShort")}
@@ -387,6 +396,16 @@ export default function SpaceEntriesIndexPane() {
                     <span class="entryRowTitle">
                       {entryDisplayLabel(entry)}
                     </span>
+                    {
+                      /* #2864: unscoped (all-forms) view keeps Form context as
+                        secondary metadata; the form-scoped list already names
+                        the Form in its heading so per-row repetition is out. */
+                    }
+                    <Show when={!formName() && entry.form}>
+                      <span class="entryRowForm ui-muted">
+                        {entry.form}
+                      </span>
+                    </Show>
                   </span>
                   <span class="entryRowDate ui-muted">
                     {formatDateLabel(entry.updated_at)}
@@ -397,7 +416,8 @@ export default function SpaceEntriesIndexPane() {
             </For>
           </div>
           <Show
-            when={!sessionId().trim() && !formName() && ctx.entryStore.hasMore()}
+            when={!sessionId().trim() && !formName() &&
+              ctx.entryStore.hasMore()}
           >
             <div class="mt-6 flex justify-center">
               <button
