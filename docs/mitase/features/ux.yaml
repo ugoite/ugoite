@@ -33,6 +33,20 @@ features:
                 criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.single-shell-ownership
+          - id: space-dashboard-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/dashboard.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
+          - id: spaces-index-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
           - id: route-inventory-record
             adapter: declared
             path: docs/spec/ui/ux-route-inventory.md

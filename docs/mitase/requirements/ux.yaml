@@ -25,7 +25,7 @@ requirements:
       - id: back-control-verification
         role: verification
         facet: verification
-        responsibility: Verify each nested surface exposes exactly one positional back control through exact Vitest cases.
+        responsibility: Verify each nested Entry, SQL, and Form surface exposes exactly one positional back control through exact Vitest cases, including the Info and saved-SQL detail routes.
         targets:
           - id: back-link-label
             adapter: typescript
@@ -120,7 +120,7 @@ requirements:
       - id: single-context-verification
         role: verification
         facet: verification
-        responsibility: Verify the PR-7 auth and form family surfaces state their context once with no competing header through exact Vitest cases.
+        responsibility: Verify the Space index, dashboard, auth, and form family surfaces state their context once with no competing header through exact Vitest cases.
         targets:
           - id: join-single-context
             adapter: typescript
@@ -149,6 +149,24 @@ requirements:
                 criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
                 covers: [FEAT-UX-007#binding.back-control-implementation/target.form-types-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/types.test.tsx", test: "REQ-UX-NAV-001: states the form context once without a competing header" } }
+          - id: dashboard-single-context
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
+            selector: { kind: test, name: "REQ-UX-NAV-001: states the Space context once without a competing header" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
+                covers: [FEAT-UX-001#binding.navigation-baseline/target.space-dashboard-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/dashboard.test.tsx", test: "REQ-UX-NAV-001: states the Space context once without a competing header" } }
+          - id: spaces-index-single-context
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.test.tsx
+            selector: { kind: test, name: "REQ-UX-NAV-001: states the Spaces context once without a competing title" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
+                covers: [FEAT-UX-001#binding.navigation-baseline/target.spaces-index-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/index.test.tsx, test: "REQ-UX-NAV-001: states the Spaces context once without a competing title" } }
       - id: shell-ownership-verification
         role: verification
         facet: verification
