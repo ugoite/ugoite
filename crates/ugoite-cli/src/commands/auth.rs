@@ -710,6 +710,51 @@ pub async fn active_session_for(
     Ok(Some(session))
 }
 
+/// Refresh an in-memory session without touching the legacy singleton file.
+///
+/// Named credential profiles share the legacy refresh policy (30s skew) but
+/// persist through the user-global credential store instead of
+/// `cli-credentials.json`. Returns `Ok(None)` when the server offers no
+/// refresh (caller keeps the existing session); the caller persists any
+/// rotated session back to its named profile.
+pub async fn refresh_session(session: &AuthSession, base_url: &str) -> Result<Option<AuthSession>> {
+    if session.expires_at > Utc::now().timestamp() + 30 {
+        return Ok(Some(session.clone()));
+    }
+    let mut refreshed = session.clone();
+    let key = load_signing_key(&refreshed)?;
+    let token_url = format!("{}/oauth/token", base_url.trim_end_matches('/'));
+    let assertion = client_assertion(&key, &refreshed.public_key_jwk, &token_url)?;
+    let response = reqwest::Client::new()
+        .post(&token_url)
+        .json(&oauth_payload(
+            json!({
+                "grant_type": "refresh_token",
+                "refresh_token": refreshed.refresh_token,
+                "client_assertion": assertion,
+            }),
+            refreshed.resource.as_deref(),
+        ))
+        .send()
+        .await
+        .context("refresh CLI access token")?;
+    let status = response.status();
+    let payload: Value = response.json().await?;
+    if !status.is_success() {
+        bail!("CLI credential refresh failed: {payload}");
+    }
+    refreshed.access_token = payload["access_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("refresh response omitted access_token"))?
+        .to_string();
+    refreshed.refresh_token = payload["refresh_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("refresh response omitted refresh_token"))?
+        .to_string();
+    refreshed.expires_at = Utc::now().timestamp() + payload["expires_in"].as_i64().unwrap_or(300);
+    Ok(Some(refreshed))
+}
+
 fn oauth_payload(mut payload: Value, resource: Option<&str>) -> Value {
     if let Some(resource) = resource {
         payload["resource"] = Value::String(resource.to_owned());

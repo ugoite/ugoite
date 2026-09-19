@@ -20,7 +20,6 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::net::IpAddr;
-use std::path::Path;
 
 pub const CONFIG_VERSION_V1: u32 = 1;
 
@@ -29,7 +28,7 @@ pub const CONFIG_VERSION_V1: u32 = 1;
 /// `core` / `backend` / `api` are transport/topology attributes of a named
 /// connection, never a global CLI mode.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(tag = "type", rename_all = "lowercase")]
+#[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
 pub enum ConnectionConfig {
     Core { root: String },
     Backend { url: String },
@@ -39,6 +38,7 @@ pub enum ConnectionConfig {
 /// Named execution target: connection + immutable Space UID + optional
 /// named credential profile reference. Secrets never live here.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ContextConfig {
     pub connection: String,
     pub space_uid: uuid::Uuid,
@@ -48,6 +48,7 @@ pub struct ContextConfig {
 
 /// On-disk canonical config file.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ConfigFile {
     #[serde(default = "default_config_version")]
     pub version: u32,
@@ -113,9 +114,9 @@ impl ConfigFile {
             // enforces that the merged view resolves.
         }
         if let Some(current) = &self.current_context {
-            if current.trim().is_empty() {
-                bail!("invalid empty current_context in {source_label}");
-            }
+            validate_config_name(current, "context").with_context(|| {
+                format!("invalid current_context {current:?} in {source_label}")
+            })?;
             // Cross-source current_context targets are legal; the effective
             // config enforces resolvability.
         }
@@ -124,17 +125,37 @@ impl ConfigFile {
 }
 
 fn validate_connection_name(name: &str) -> Result<()> {
-    if name.trim().is_empty() || name.contains('/') || name.contains('\\') || name.contains('\0') {
-        bail!("connection name must be a non-empty single path segment");
+    validate_config_name(name, "connection")
+}
+
+fn validate_context_name(name: &str) -> Result<()> {
+    validate_config_name(name, "context")
+}
+
+/// Shared name rule for connection/context/credential identities.
+///
+/// Rejects empty, leading/trailing whitespace, ".", "..", "/", "\\", NUL;
+/// allows Unicode and `.-_` otherwise. Names are single path-segment
+/// identities, never paths.
+pub fn validate_config_name(name: &str, kind: &str) -> Result<()> {
+    if name.is_empty() || name.trim().is_empty() {
+        bail!("{kind} name must be a non-empty single path segment");
+    }
+    if name != name.trim() {
+        bail!("{kind} name must not have leading or trailing whitespace");
+    }
+    if name == "." || name == ".." {
+        bail!("{kind} name must not be {name:?}");
+    }
+    if name.contains('/') || name.contains('\\') || name.contains('\0') {
+        bail!("{kind} name must be a non-empty single path segment");
     }
     Ok(())
 }
 
-fn validate_context_name(name: &str) -> Result<()> {
-    if name.trim().is_empty() || name.contains('/') || name.contains('\\') || name.contains('\0') {
-        bail!("context name must be a non-empty single path segment");
-    }
-    Ok(())
+/// Credential profile identities share the connection/context rule.
+pub fn validate_credential_name(name: &str) -> Result<()> {
+    validate_config_name(name, "credential")
 }
 
 pub fn validate_connection(connection: &ConnectionConfig) -> Result<()> {
@@ -158,22 +179,49 @@ fn validate_context_fields(context: &ContextConfig) -> Result<()> {
     if context.connection.trim().is_empty() {
         bail!("context connection must not be empty");
     }
+    validate_config_name(&context.connection, "connection")
+        .with_context(|| format!("invalid context connection {:?}", context.connection))?;
     if context.space_uid.get_version() != Some(uuid::Version::SortRand) {
         bail!("context space_uid must be a UUIDv7");
     }
     if let Some(credential) = &context.credential {
-        if credential.trim().is_empty() {
-            bail!("context credential must not be empty when present");
-        }
+        validate_credential_name(credential)
+            .with_context(|| format!("invalid context credential {credential:?}"))?;
     }
     Ok(())
 }
 
 /// Shared endpoint rule with the legacy config path: `https://` always OK,
 /// `http://` only for loopback development hosts.
+///
+/// Fail-closed base-endpoint rules: non-empty host, no embedded userinfo, no
+/// fragment, and no query string (a base endpoint is an origin + path, never
+/// `?`/`#` material). Rejects e.g. `https:///path`.
 pub fn validate_remote_url(url: &str, label: &str) -> Result<url::Url> {
     let parsed =
         url::Url::parse(url).map_err(|error| anyhow!("{label} URL {url:?} is invalid: {error}"))?;
+    let host = parsed.host_str().unwrap_or_default();
+    if host.trim().is_empty() {
+        bail!("{label} URL {url:?} must have a non-empty host");
+    }
+    // Fail-closed empty-authority check: `https:///path` parses with host
+    // "path" under WHATWG rules, but the literal text has no authority at
+    // all. Require the parsed host to appear literally after `scheme://`
+    // (case-insensitive); this also rejects any hidden userinfo prefix.
+    let lowered = url.to_ascii_lowercase();
+    let expected_authority = format!("://{}", host.to_ascii_lowercase());
+    if !lowered.contains(&expected_authority) {
+        bail!("{label} URL {url:?} must include a host authority (for example https://host/path), not an empty authority");
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        bail!("{label} URL {url:?} must not embed userinfo");
+    }
+    if parsed.fragment().is_some() {
+        bail!("{label} URL {url:?} must not contain a fragment");
+    }
+    if parsed.query().is_some() {
+        bail!("{label} URL {url:?} must not contain a query string");
+    }
     match parsed.scheme() {
         "https" => Ok(parsed),
         "http" => {
@@ -208,15 +256,9 @@ pub fn serialize_config(config: &ConfigFile) -> Result<String> {
     toml::to_string_pretty(config).context("serialize canonical CLI config as TOML")
 }
 
-/// Best-effort absolute normalization used at write time: relative core
-/// roots are resolved against `cwd` so disk state stays absolute.
-pub fn normalize_root_against_cwd(root: &str, cwd: &Path) -> String {
-    let path = Path::new(root);
-    if path.is_absolute() {
-        return root.to_string();
-    }
-    cwd.join(path).to_string_lossy().into_owned()
-}
+// Write-boundary root normalization lives in exactly one place:
+// `super::write::normalize_core_root_to_absolute`. This module owns
+// validation only, never a second normalization authority.
 
 #[cfg(test)]
 mod tests {

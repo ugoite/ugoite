@@ -10,7 +10,7 @@ use anyhow::{bail, Result};
 use std::path::PathBuf;
 
 use super::merge::EffectiveConfig;
-use super::model::{validate_remote_url, ConnectionConfig};
+use super::model::{validate_config_name, validate_remote_url, ConnectionConfig};
 
 /// Resolved transport for one named connection.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,13 +42,34 @@ impl ResolvedConnection {
 
 /// Resolve the execution target. Never falls back to first Space/connection,
 /// recently used Space, or directory contents.
+///
+/// Empty `--context` (`""` or whitespace-only) is a usage error (exit 2),
+/// never a fallback to `current_context`: unspecified (`None`) and
+/// explicit-empty are distinguished.
 pub fn resolve_cli_context(
     effective: &EffectiveConfig,
     explicit_context: Option<&str>,
 ) -> Result<ResolvedCliContext> {
+    if let Some(name) = explicit_context {
+        if name.trim().is_empty() {
+            return Err(crate::output::UsageError(
+                "--context must not be empty; pass a context name or omit --context to use the current context".to_string(),
+            )
+            .into());
+        }
+        // Validate explicit name shape early so typos fail with an actionable
+        // message rather than a generic "not defined".
+        let trimmed = name.trim();
+        if let Err(error) = validate_config_name(trimmed, "context") {
+            return Err(crate::output::UsageError(format!(
+                "invalid --context {name:?}: {error:#}"
+            ))
+            .into());
+        }
+    }
     let context_name = match explicit_context {
-        Some(name) if !name.trim().is_empty() => name.trim().to_owned(),
-        _ => effective.current_context.as_ref().map(|value| value.value.clone()).ok_or_else(|| {
+        Some(name) => name.trim().to_owned(),
+        None => effective.current_context.as_ref().map(|value| value.value.clone()).ok_or_else(|| {
             anyhow::anyhow!(
                 "No Ugoite context is selected.\nCreate a Space:\n  ugoite space create <NAME>\nSelect an existing context:\n  ugoite context use <NAME>\nOr run once with:\n  ugoite --context <NAME> entry list"
             )
