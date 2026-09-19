@@ -7,7 +7,7 @@ product meaning.
 
 | Stream | Status      | Current meaning                                                                                                                                                               |
 | ------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `v0.1` | v0.1.1 published | Foundation Freeze for user-owned Knowledge, portable history, and thin adapters; v0.1.1 is a compatible patch and v0.1.x remains the maintenance line |
+| `v0.1` | v0.1.2 prepared | Foundation Freeze for user-owned Knowledge, portable history, and thin adapters; v0.1.1 is the current published compatible patch, and v0.1.2 is the final planned 0.1.x patch before v0.2 |
 | `v0.2` | planned     | Product UX sole authority: make the frozen v0.1 Foundation completable, discoverable, and consistent; Knowledge-to-tools remains a North Star, not a shipped acceptance claim |
 
 A task marked done means its described implementation exists. Planned
