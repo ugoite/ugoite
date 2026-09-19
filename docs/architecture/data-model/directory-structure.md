@@ -87,6 +87,11 @@ outside the `spaces/{id}` prefix and is not part of a Space copy.
 { "default_form": "Entry" }
 ```
 
+`default_form` is a required Space 0.1 storage/bootstrap field retained for
+portable settings compatibility. The browser-backed entry flow does not use it
+as its current Form-selection authority; it selects the Form explicitly through
+the entry route.
+
 Portable membership, principal, policy, human-approval, approval-audit-outbox,
 and authorization-audit state is stored in
 `spaces/{space_id}/security/principals.json`. Membership-shaped keys in

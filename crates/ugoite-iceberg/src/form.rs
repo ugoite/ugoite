@@ -116,24 +116,7 @@ pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Resu
             to_domain_form(&normalized).map_err(|error| invalid_form_input(error.to_string()))?;
         let changes = form_changes(&current_domain, &desired_domain)?;
         if !changes.is_empty() {
-            let command = crate::system_publication_context(
-                format!(
-                    "form-evolve:{}:{}",
-                    current_domain.id,
-                    current_domain.version.get()
-                ),
-                "form.evolve",
-                &changes,
-            )?;
-            crate::authorization::ensure_authorization_write_fence().await?;
-            workspace
-                .commit(command)?
-                .evolve_form(&FormChangeSet {
-                    form_id: current_domain.id,
-                    expected_version: Some(current_domain.version),
-                    changes,
-                })
-                .await?;
+            commit_form_evolution(op, ws_path, &current_domain, changes).await?;
         }
         return Ok(());
     }
@@ -143,6 +126,30 @@ pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Resu
     to_domain_form(&normalized).map_err(|error| invalid_form_input(error.to_string()))?;
     crate::authorization::ensure_authorization_write_fence().await?;
     iceberg_store::ensure_form_tables(op, ws_path, &normalized).await?;
+    Ok(())
+}
+
+async fn commit_form_evolution(
+    op: &Operator,
+    ws_path: &str,
+    current: &FormDefinition,
+    changes: Vec<FormChange>,
+) -> Result<()> {
+    let command = crate::system_publication_context(
+        format!("form-evolve:{}:{}", current.id, current.version.get()),
+        "form.evolve",
+        &changes,
+    )?;
+    crate::authorization::ensure_authorization_write_fence().await?;
+    let workspace = iceberg_store::native_mutation_workspace(op, ws_path).await?;
+    workspace
+        .commit(command)?
+        .evolve_form(&FormChangeSet {
+            form_id: current.id,
+            expected_version: Some(current.version),
+            changes,
+        })
+        .await?;
     Ok(())
 }
 
@@ -263,9 +270,12 @@ pub(crate) async fn upsert_metadata_form(
             preserve_stable_identities(&mut normalized, &existing)?;
             let current_domain = to_domain_form(&existing)?;
             let desired_domain = to_domain_form(&normalized)?;
-            if form_changes(&current_domain, &desired_domain)?.is_empty() {
+            let changes = form_changes(&current_domain, &desired_domain)?;
+            if changes.is_empty() {
                 return Ok(());
             }
+            commit_form_evolution(op, ws_path, &current_domain, changes).await?;
+            return Ok(());
         }
     }
     iceberg_store::ensure_form_tables(op, ws_path, &normalized).await?;

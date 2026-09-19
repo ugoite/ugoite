@@ -53,7 +53,11 @@ compatibility identity, and integrity key material; it does not store a
 physical storage descriptor. Product version, Space compatibility version, and
 internal physical representation are independent. A Node-local binding, when
 configured, is kept outside the `spaces/{space_id}` prefix and is merged only
-into the runtime Space view. `settings.json` is created with `default_form: Entry`; portable
+into the runtime Space view. `settings.json` is created with `default_form: Entry`.
+`default_form` is a required Space 0.1 storage/bootstrap field retained for
+portable settings compatibility; it is not the browser's current Form-selection
+authority. The browser-backed entry flow uses its explicit Form route instead.
+Portable
 membership, principal, policy, and authorization-audit state is stored in
 `security/principals.json`. Legacy membership-shaped settings are unsupported,
 and public Space patching cannot modify membership-managed keys.

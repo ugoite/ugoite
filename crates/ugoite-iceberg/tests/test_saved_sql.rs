@@ -2,7 +2,11 @@ mod common;
 
 use common::setup_operator;
 use serde_json::json;
+use std::collections::BTreeMap;
 use ugoite_core::query::EntryScope;
+use ugoite_iceberg::entry;
+use ugoite_iceberg::form;
+use ugoite_iceberg::iceberg_store;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
 use ugoite_iceberg::saved_sql::{
     self, SearchHistoryOperator, SqlGeneratedName, SqlKind, SqlMetadata, SqlPayload,
@@ -216,6 +220,94 @@ async fn saved_sql_name_is_a_normal_field_with_legacy_fallback() -> anyhow::Resu
     assert!(saved_history["name"].is_null());
     let fetched_history = saved_sql::get_sql(&op, ws_path, "sql-history").await?;
     assert!(fetched_history["name"].is_null());
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-API-006 saved-sql-name-field: reading a pre-name SQL Form evolves only
+/// the Form schema; the old row remains readable and new rows use `name` as a
+/// normal field without a table rewrite.
+async fn saved_sql_evolves_legacy_form_without_rewriting_entries() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "sql-name-field-legacy", "/tmp").await?;
+    let ws_path = "spaces/sql-name-field-legacy";
+    let integrity = FakeIntegrityProvider;
+
+    // The public Form API rejects reserved metadata names. Seed the historical
+    // SQL Form through the storage boundary so this fixture represents a
+    // pre-name system Form rather than a user-created Form.
+    iceberg_store::ensure_form_tables(
+        &op,
+        ws_path,
+        &json!({
+            "id": "00000000-0000-0000-0000-000000000001",
+            "name": "SQL",
+            "version": 1,
+            "fields": {
+                "sql": {"id": 100, "type": "sql", "required": true},
+                "variables": {"id": 101, "type": "object_list", "required": false}
+            },
+            "allow_extra_attributes": "allow_json"
+        }),
+    )
+    .await?;
+    let legacy_form = form::get_form(&op, ws_path, "SQL").await?;
+    assert!(legacy_form["fields"].get("name").is_none());
+
+    let mut legacy_fields = BTreeMap::new();
+    legacy_fields.insert("sql".to_string(), json!("SELECT 1"));
+    legacy_fields.insert("variables".to_string(), json!([]));
+    let mut legacy_attributes = BTreeMap::new();
+    legacy_attributes.insert("kind".to_string(), json!("user-query"));
+    legacy_attributes.insert("metadata".to_string(), serde_json::Value::Null);
+    entry::create_structured_entry_with_scopes_and_change(
+        &op,
+        ws_path,
+        "legacy-sql",
+        Some("Legacy SQL".to_string()),
+        "SQL".to_string(),
+        Vec::new(),
+        legacy_fields,
+        legacy_attributes,
+        "author",
+        &integrity,
+        None,
+        None,
+    )
+    .await?;
+    let before_evolution = entry::get_entry(&op, ws_path, "legacy-sql").await?;
+    let legacy_revision = before_evolution["revision_id"].clone();
+
+    let legacy = saved_sql::get_sql(&op, ws_path, "legacy-sql").await?;
+    assert_eq!(legacy["name"], json!("Legacy SQL"));
+    assert_eq!(legacy["revision_id"], legacy_revision);
+
+    let evolved_form = form::get_form(&op, ws_path, "SQL").await?;
+    assert!(
+        evolved_form["fields"].get("name").is_some(),
+        "evolved SQL Form: {evolved_form}"
+    );
+    assert_eq!(evolved_form["version"], json!(2));
+
+    let new_payload = SqlPayload {
+        name: Some("Current SQL".to_string()),
+        kind: SqlKind::UserQuery,
+        metadata: None,
+        sql: "SELECT 2".to_string(),
+        variables: json!([]),
+    };
+    saved_sql::create_sql(
+        &op,
+        ws_path,
+        "current-sql",
+        &new_payload,
+        "author",
+        &integrity,
+    )
+    .await?;
+    let current_entry = entry::get_entry(&op, ws_path, "current-sql").await?;
+    assert_eq!(current_entry["sections"]["name"], json!("Current SQL"));
 
     Ok(())
 }

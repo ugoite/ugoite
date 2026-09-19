@@ -113,6 +113,7 @@ schemas:
       properties:
         default_form:
           type: string
+          description: Required Space 0.1 storage/bootstrap field; retained for portable settings compatibility and not used as the browser's current Form-selection authority.
   user_preferences:
     description: Portable user-scoped browser preferences for selected Space and locale.
     path: users/{sha256(user_id)}/preferences.json
