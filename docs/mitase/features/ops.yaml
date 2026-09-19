@@ -380,6 +380,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-OPS-044#criterion.repository-native-release-promotion
+              - kind: satisfies
+                criterion: REQ-OPS-026#criterion.versioned-manual-release-note
           - id: publish-workflow
             adapter: declared
             path: .github/workflows/release-publish.yml
@@ -387,6 +389,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-OPS-044#criterion.repository-native-release-promotion
+              - kind: satisfies
+                criterion: REQ-OPS-026#criterion.versioned-manual-release-note
           - id: release-implementation
             adapter: typescript
             path: tools/release.ts
@@ -554,6 +558,16 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-OPS-015#criterion.production-authentication
+      - id: release-communication
+        role: contract-source
+        facet: release-communication
+        responsibility: Define the stable-only manual release note authority that candidate and publish workflows must consume. Historical channel changelogs remain documentation records and do not become active release authorities.
+        targets:
+          - id: manual-note-validator
+            adapter: typescript
+            path: tools/release-notes.ts
+            selector: { kind: file }
+
       - id: release-authority
         role: implementation
         facet: release-authority
@@ -582,3 +596,14 @@ features:
                 criterion: REQ-OPS-025#criterion.product-ux-authority
               - kind: satisfies
                 criterion: REQ-OPS-025#criterion.release-authority-drift-gate
+    contracts:
+      - id: release-note-publication
+        kind: custom
+        source: FEAT-OPS-001#binding.release-communication/target.manual-note-validator
+        participants:
+          - target: FEAT-OPS-001#binding.repository-native-release/target.candidate-workflow
+            role: candidate
+          - target: FEAT-OPS-001#binding.repository-native-release/target.publish-workflow
+            role: publisher
+        guarantees:
+          - REQ-OPS-026#criterion.versioned-manual-release-note

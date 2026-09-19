@@ -91,7 +91,10 @@ the latest stable tag before updating projections. A compatible change advances
 the patch; a breaking change advances the minor. Preparation never creates a
 tag, release, or registry artifact. The current published compatible patch is
 `0.1.1`; candidate creation and promotion remain separate operator-controlled
-workflows for future releases.
+workflows for future releases. Stable publication requires a non-empty,
+versioned manual note at `docs/version/releases/v<version>.md`; the note is
+validated at candidate preflight and read from the exact candidate source when
+published.
 
 `Release Candidate` checks out one exact source SHA, verifies that it is
 reachable from `main` and has a successful `ci-required` check, then builds and
@@ -124,7 +127,10 @@ updated only after that check and release-note publication.
 Candidate verification and distribution verification are separate. The former
 checks staged bytes and exact candidate runtime inputs; the latter checks
 published bytes, registry identities, container health, and installer
-availability. Neither publish stage runs browser Playwright E2E. Both workflows
+availability. After distribution verification, the publish workflow applies the
+candidate's manual Markdown note as the GitHub Release body and only then
+promotes mutable aliases. Historical alpha and beta changelog files are not
+active release channels. Neither publish stage runs browser Playwright E2E. Both workflows
 keep a top-level `permissions: {}` boundary and grant only job-scoped
 permissions.
 

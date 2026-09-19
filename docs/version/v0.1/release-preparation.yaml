@@ -27,7 +27,7 @@ phases:
 - id: release-communication
   status: completed
   tasks:
-  - description: Provide channel-specific stable, beta, and alpha release-note publication only after artifact and distribution verification.
+  - description: Require a non-empty versioned manual stable release note and publish it only after artifact and distribution verification.
     done: true
-  - description: Complete a release with published channel-specific notes.
+  - description: Complete a release with the exact candidate-source manual note.
     done: true

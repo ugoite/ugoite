@@ -232,8 +232,8 @@ jobs:
       - name: Record distribution state
         run: echo 'state=distribution-verified' >>"${GITHUB_STEP_SUMMARY}"
 
-  publish-channel-release-notes:
-    name: Announce stable release
+  publish-release-notes:
+    name: Publish versioned release notes
     needs:
       - promote
       - verify-distribution
@@ -244,6 +244,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
@@ -251,18 +252,22 @@ jobs:
           install: true
           cache: false
 
-      - name: Publish repository-owned stable release notes
+      - name: Publish exact candidate release note
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: v${{ needs.promote.outputs.version }}
           RELEASE_VERSION: ${{ needs.promote.outputs.version }}
+          RELEASE_SOURCE_SHA: ${{ needs.promote.outputs.source_sha }}
         run: |
           set -euo pipefail
-          body_file="$(mktemp)"
           notes_file="$(mktemp)"
-          trap 'rm -f "${body_file}" "${notes_file}"' EXIT
-          gh release view "${RELEASE_TAG}" --json body --jq .body >"${body_file}"
-          deno run -A tools/release-notes.ts compose --channel stable --version "${RELEASE_VERSION}" --body-file "${body_file}" --output "${notes_file}"
+          trap 'rm -f "${notes_file}"' EXIT
+          git fetch --no-tags origin "${RELEASE_SOURCE_SHA}"
+          note_path="docs/version/releases/v${RELEASE_VERSION}.md"
+          git show "${RELEASE_SOURCE_SHA}:${note_path}" >"${notes_file}"
+          mise run release:validate-notes -- \
+            --version "${RELEASE_VERSION}" \
+            --source-path "${notes_file}"
           gh release edit "${RELEASE_TAG}" --notes-file "${notes_file}"
           echo "state=announced" >> "$GITHUB_STEP_SUMMARY"
 
@@ -274,7 +279,7 @@ jobs:
     needs:
       - promote
       - verify-distribution
-      - publish-channel-release-notes
+      - publish-release-notes
     runs-on: ubuntu-24.04
     permissions:
       actions: read

@@ -458,6 +458,10 @@ run = "deno run -A tools/release.ts version-check"
 description = "Prepare the next pre-1.0 compatible or breaking product version"
 run = "deno run -A tools/release.ts prepare"
 
+[tasks."release:validate-notes"]
+description = "Validate the versioned manual release note for a stable release"
+run = "deno run -A tools/release-notes.ts validate"
+
 [tasks."release:candidate"]
 description = "Build, verify, and record a release candidate manifest"
 run = "deno run -A tools/release.ts candidate"

@@ -1,177 +1,111 @@
-import { parse } from "yaml";
-import { join, relative, resolve } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export type ReleaseChannel = "stable" | "beta" | "alpha";
-
 export type ReleaseNotesOptions = {
-  channel: ReleaseChannel;
   version: string;
   repoRoot?: string;
   sourcePath?: string;
 };
 
-export type ComposeReleaseNotesOptions = ReleaseNotesOptions & {
-  existingBody: string;
-  channelNotes?: string;
-};
-
-const RELEASE_VERSION = /^\d+\.\d+\.\d+(?:-(alpha|beta)\.\d+)?$/;
-const CHANNELS = ["stable", "beta", "alpha"] as const;
-const CHANNEL_NOTES_START = "<!-- UGOITE-CHANNEL-NOTES:v1:start";
-const CHANNEL_NOTES_END = "<!-- UGOITE-CHANNEL-NOTES:v1:end -->";
+const RELEASE_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const REPO_ROOT = fileURLToPath(new URL("../", import.meta.url));
 
 if (import.meta.main) {
   await main(Deno.args);
 }
 
-export function channelForVersion(version: string): ReleaseChannel {
-  const match = RELEASE_VERSION.exec(version);
-  if (!match) {
-    throw new Error(`release version must be valid SemVer, got ${version}`);
-  }
-  return (match[1] ?? "stable") as ReleaseChannel;
+/**
+ * Return the repository-relative path for one stable release note.
+ *
+ * Release notes are authored Markdown, not a rendered projection of channel
+ * YAML. Keeping this path calculation in one validator makes candidate and
+ * publish workflows agree on the exact source file without introducing a
+ * second release-note authority.
+ */
+export function releaseNotePath(
+  version: string,
+  repoRoot = REPO_ROOT,
+): string {
+  assertStableVersion(version);
+  return resolve(repoRoot, "docs/version/releases", `v${version}.md`);
 }
 
-export async function renderReleaseNotes(
+export async function validateReleaseNote(
   options: ReleaseNotesOptions,
 ): Promise<string> {
-  assertChannelMatchesVersion(options.channel, options.version);
+  assertStableVersion(options.version);
   const repoRoot = resolve(options.repoRoot ?? REPO_ROOT);
   const sourcePath = resolve(
-    options.sourcePath ??
-      join(repoRoot, "docs/version/changelog", `${options.channel}.yaml`),
+    options.sourcePath ?? releaseNotePath(options.version, repoRoot),
   );
-  const source = await readFile(sourcePath, "channel changelog source");
-  const document = parseChannelDocument(source, sourcePath);
-  const context = relative(repoRoot, sourcePath) || sourcePath;
-  const configuredChannel = requiredString(document, "channel", context);
-  if (configuredChannel !== options.channel) {
+  const note = await readFile(sourcePath);
+  const frontmatterTitle = releaseTitle(note);
+  const firstNonEmptyLine = stripFrontmatter(note)
+    .split(/\r?\n/)
+    .find((line) => line.trim());
+  if (!frontmatterTitle && !firstNonEmptyLine) {
+    throw new Error(`release note is empty at ${sourcePath}`);
+  }
+
+  const heading = frontmatterTitle ??
+    (firstNonEmptyLine
+      ? /^#\s+Ugoite\s+v(\d+\.\d+\.\d+)(?:\s|$)/.exec(
+        firstNonEmptyLine.trim(),
+      )
+      : null);
+  if (!heading) {
     throw new Error(
-      `${context} channel must be ${options.channel}, got ${configuredChannel}`,
+      `release note must contain a versioned frontmatter title or heading for ${options.version}`,
     );
   }
-
-  const title = requiredString(document, "title", context);
-  const docPath = requiredString(document, "doc_path", context);
-  const fullDocPath = resolve(repoRoot, docPath);
-  if (relative(repoRoot, fullDocPath).startsWith("..")) {
-    throw new Error(`${context} doc_path escapes the repository: ${docPath}`);
+  if (heading[1] !== options.version) {
+    throw new Error(
+      `release note heading version ${
+        heading[1]
+      } does not match ${options.version}`,
+    );
   }
-  await readFile(fullDocPath, "human-readable changelog document");
-  const summary = requiredString(document, "summary", context);
-  const releaseNotes = requiredMapping(document, "release_notes", context);
-  const releaseNotesContext = `${context}.release_notes`;
-  const intro = requiredString(releaseNotes, "intro", releaseNotesContext);
-  const expectations = requiredStringList(
-    releaseNotes,
-    "expectations",
-    releaseNotesContext,
-  );
-  const added = requiredStringList(releaseNotes, "added", releaseNotesContext);
-  const changed = requiredStringList(
-    releaseNotes,
-    "changed",
-    releaseNotesContext,
-  );
-  const planned = requiredStringList(
-    releaseNotes,
-    "planned",
-    releaseNotesContext,
-  );
-
-  return [
-    `# v${options.version} ${title}`,
-    `Rendered from \`docs/version/changelog/${options.channel}.yaml\` for the \`${options.channel}\` release channel. Human-readable changelog: \`${docPath}\`.`,
-    summary,
-    `## Channel guidance\n\n${intro}`,
-    renderSection("Expectations", expectations),
-    renderSection("Added", added),
-    renderSection("Changed", changed),
-    renderSection("Planned", planned),
-  ].join("\n\n");
+  return note;
 }
 
-export function composeReleaseNotes(
-  options: ComposeReleaseNotesOptions,
-): string {
-  assertChannelMatchesVersion(options.channel, options.version);
-  const channelNotes = options.channelNotes?.trim();
-  if (!channelNotes) {
-    throw new Error("channel notes must be non-empty");
-  }
+function stripFrontmatter(note: string): string {
+  const frontmatter = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.exec(note);
+  return frontmatter ? note.slice(frontmatter[0].length) : note;
+}
 
-  const start =
-    `${CHANNEL_NOTES_START} channel=${options.channel} version=${options.version} -->`;
-  const existingBody = options.existingBody.trim();
-  const startIndex = existingBody.indexOf(CHANNEL_NOTES_START);
-  const endIndex = existingBody.indexOf(CHANNEL_NOTES_END);
-  if (startIndex === -1 && endIndex === -1) {
-    return `${start}\n${channelNotes}\n${CHANNEL_NOTES_END}${
-      existingBody ? `\n\n${existingBody}` : ""
-    }\n`;
-  }
-  if (startIndex === -1 || endIndex === -1) {
-    throw new Error("release body contains an incomplete channel-notes marker");
-  }
-  if (
-    startIndex !== existingBody.lastIndexOf(CHANNEL_NOTES_START) ||
-    endIndex !== existingBody.lastIndexOf(CHANNEL_NOTES_END) ||
-    endIndex < startIndex
-  ) {
-    throw new Error(
-      "release body contains multiple or out-of-order channel-notes markers",
-    );
-  }
-  const existingStart = existingBody.slice(
-    startIndex,
-    existingBody.indexOf("-->", startIndex) + 3,
+function releaseTitle(
+  note: string,
+): RegExpExecArray | null {
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(note);
+  if (!frontmatter) return null;
+  return /^title:\s*["']?Ugoite\s+v(\d+\.\d+\.\d+)(?:\s|["']|$)/m.exec(
+    frontmatter[1],
   );
-  if (existingStart !== start) {
+}
+
+function assertStableVersion(version: string): void {
+  if (!RELEASE_VERSION.test(version)) {
     throw new Error(
-      "release body channel-notes marker does not match the release channel or version",
+      `release version must be stable SemVer x.y.z, got ${version}`,
     );
   }
-  const endAfterMarker = endIndex + CHANNEL_NOTES_END.length;
-  const replacement = `${start}\n${channelNotes}\n${CHANNEL_NOTES_END}`;
-  return `${existingBody.slice(0, startIndex)}${replacement}${
-    existingBody.slice(endAfterMarker)
-  }\n`;
 }
 
 async function main(args: string[]): Promise<void> {
   const command = args[0];
   const flags = parseFlags(args.slice(1));
-  const channel = requireFlag(flags, "channel") as ReleaseChannel;
-  if (!CHANNELS.includes(channel)) {
+  if (command !== "validate") {
     throw new Error(
-      `channel must be one of ${CHANNELS.join(", ")}, got ${channel}`,
+      "usage: release-notes.ts validate --version <version> [--source-path <path>] [--output <path>]",
     );
   }
-  const version = requireFlag(flags, "version");
 
-  if (command === "render") {
-    const rendered = await renderReleaseNotes({ channel, version });
-    await writeResult(rendered, flags.output);
-    return;
-  }
-  if (command === "compose") {
-    const bodyPath = requireFlag(flags, "body-file");
-    const body = await Deno.readTextFile(bodyPath);
-    const channelNotes = await renderReleaseNotes({ channel, version });
-    const composed = composeReleaseNotes({
-      channel,
-      version,
-      existingBody: body,
-      channelNotes,
-    });
-    await writeResult(composed, flags.output);
-    return;
-  }
-  throw new Error(
-    "usage: release-notes.ts <render|compose> --channel <channel> --version <version> [--body-file <path>] [--output <path>]",
-  );
+  const version = requireFlag(flags, "version");
+  const note = await validateReleaseNote({
+    version,
+    sourcePath: flags["source-path"],
+  });
+  await writeResult(note, flags.output);
 }
 
 function parseFlags(args: string[]): Record<string, string> {
@@ -199,82 +133,11 @@ function requireFlag(flags: Record<string, string>, key: string): string {
   return value;
 }
 
-function assertChannelMatchesVersion(
-  channel: ReleaseChannel,
-  version: string,
-): void {
-  const derived = channelForVersion(version);
-  if (derived !== channel) {
-    throw new Error(
-      `channel ${channel} does not match release version ${version}; expected ${derived}`,
-    );
-  }
-}
-
-function parseChannelDocument(
-  source: string,
-  sourcePath: string,
-): Record<string, unknown> {
-  let parsed: unknown;
-  try {
-    parsed = parse(source);
-  } catch (error) {
-    throw new Error(`unable to parse ${sourcePath}: ${error}`);
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`${sourcePath} must be a YAML mapping`);
-  }
-  return parsed as Record<string, unknown>;
-}
-
-function requiredMapping(
-  mapping: Record<string, unknown>,
-  key: string,
-  context: string,
-): Record<string, unknown> {
-  const value = mapping[key];
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${context}.${key} must be a mapping`);
-  }
-  return value as Record<string, unknown>;
-}
-
-function requiredString(
-  mapping: Record<string, unknown>,
-  key: string,
-  context: string,
-): string {
-  const value = mapping[key];
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`${context}.${key} must be a non-empty string`);
-  }
-  return value.trim();
-}
-
-function requiredStringList(
-  mapping: Record<string, unknown>,
-  key: string,
-  context: string,
-): string[] {
-  const value = mapping[key];
-  if (
-    !Array.isArray(value) || value.length === 0 ||
-    value.some((item) => typeof item !== "string" || !item.trim())
-  ) {
-    throw new Error(`${context}.${key} must be a non-empty list of strings`);
-  }
-  return value.map((item) => (item as string).trim());
-}
-
-function renderSection(title: string, items: string[]): string {
-  return `## ${title}\n\n${items.map((item) => `- ${item}`).join("\n")}`;
-}
-
-async function readFile(path: string, label: string): Promise<string> {
+async function readFile(path: string): Promise<string> {
   try {
     return await Deno.readTextFile(path);
   } catch {
-    throw new Error(`${label} was not found at ${path}`);
+    throw new Error(`release note was not found at ${path}`);
   }
 }
 
@@ -283,7 +146,7 @@ async function writeResult(
   outputPath: string | undefined,
 ): Promise<void> {
   if (outputPath) {
-    await Deno.writeTextFile(outputPath, `${content.trim()}\n`);
+    await Deno.writeTextFile(outputPath, content);
     return;
   }
   console.log(content.trim());

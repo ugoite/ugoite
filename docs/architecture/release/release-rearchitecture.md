@@ -21,8 +21,8 @@ migration:
 - browser-local Space persistence;
 - optional synchronization/relay semantics;
 - sponsored Agent Principals and their scoped automation boundary;
-- channel-specific release communication and support rollout after a published
-  version.
+- additional release-channel communication beyond the stable manual-note
+  contract, and support rollout after a published version.
 
 Browser-local persistence and optional synchronization remain future scope and
 must remain labeled as such. Passkey and invitation-gated OIDC are supported

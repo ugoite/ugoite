@@ -119,6 +119,7 @@ Deno.test("REQ-OPS-044: repository-native release tasks and split workflows are 
   assertEquals(candidate.includes("mise run release:candidate"), true);
   assertEquals(candidate.includes("candidate-manifest.json"), true);
   assertEquals(candidate.includes("docker-compose.release.yaml"), true);
+  assertEquals(candidate.includes("release:validate-notes"), true);
   assertEquals(
     candidate.includes(
       "candidate-${{ needs.preflight.outputs.source_short }}-${{ github.run_id }}",
@@ -185,7 +186,8 @@ Deno.test("REQ-OPS-044: repository-native release tasks and split workflows are 
   assertEquals(publish.includes("mise run release:verify-candidate"), true);
   assertEquals(publish.includes("mise run release:promote"), true);
   assertEquals(publish.includes("verify-distribution:"), true);
-  assertEquals(publish.includes("publish-channel-release-notes:"), true);
+  assertEquals(publish.includes("publish-release-notes:"), true);
+  assertEquals(publish.includes("publish-channel-release-notes:"), false);
   assertEquals(publish.includes("release:promote:aliases"), true);
   assertEquals(publish.includes("UGOITE_PROMOTION_DEFER_ALIASES"), false);
   assertEquals(publish.includes("inputs.candidate_id"), false);
@@ -231,7 +233,11 @@ Deno.test("REQ-OPS-044: repository-native release tasks and split workflows are 
   assertEquals(publish.includes("GH_TOKEN: ${{ github.token }}"), true);
   assertEquals(publish.includes("release:verify-candidate-assets"), true);
   assertEquals(publish.includes("verify-release-distribution.sh"), true);
-  assertEquals(publish.includes("publish-channel-release-notes:"), true);
+  assertEquals(publish.includes("publish-release-notes:"), true);
+  assertEquals(publish.includes("RELEASE_SOURCE_SHA"), true);
+  assertEquals(publish.includes('git show "${RELEASE_SOURCE_SHA}:'), true);
+  assertEquals(publish.includes("release:validate-notes"), true);
+  assertEquals(publish.includes("UGOITE-CHANNEL-NOTES"), false);
   assertEquals(publish.includes("release:promote:aliases"), true);
   assertEquals(publish.includes("UGOITE_PROMOTION_DEFER_ALIASES"), false);
   assertEquals(publish.includes("ref: main"), false);
@@ -490,7 +496,7 @@ Deno.test("REQ-OPS-044: release-publish promotion flows through distribution ver
       "preflight",
       "promote",
       "verify-distribution",
-      "publish-channel-release-notes",
+      "publish-release-notes",
       "promote-aliases",
     ]
   ) {
@@ -498,13 +504,13 @@ Deno.test("REQ-OPS-044: release-publish promotion flows through distribution ver
   }
   assertEquals(needsOf("promote").includes("preflight"), true);
   assertEquals(needsOf("verify-distribution").includes("promote"), true);
-  const notesNeeds = needsOf("publish-channel-release-notes");
+  const notesNeeds = needsOf("publish-release-notes");
   assertEquals(notesNeeds.includes("promote"), true);
   assertEquals(notesNeeds.includes("verify-distribution"), true);
   const aliasNeeds = needsOf("promote-aliases");
   assertEquals(aliasNeeds.includes("promote"), true);
   assertEquals(aliasNeeds.includes("verify-distribution"), true);
-  assertEquals(aliasNeeds.includes("publish-channel-release-notes"), true);
+  assertEquals(aliasNeeds.includes("publish-release-notes"), true);
 });
 
 Deno.test("REQ-OPS-044: publish preflight proves candidate provenance via the Actions API while the manifest stays authoritative", async () => {
