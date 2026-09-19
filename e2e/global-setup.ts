@@ -1,5 +1,8 @@
 import { chromium, expect, type FullConfig } from "@playwright/test";
-import { gotoWithOneEnvironmentRetry } from "./lib/navigation-retry.ts";
+import {
+  gotoPageWithOneEnvironmentRetry,
+  gotoWithOneEnvironmentRetry,
+} from "./lib/navigation-retry.ts";
 import {
   addVirtualAuthenticator,
   removeVirtualAuthenticator,
@@ -175,7 +178,16 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     await continueButton.click();
     await expect(page).toHaveURL(/\/spaces$/);
 
-    await page.goto(new URL("/settings/security", baseURL).toString());
+    // Same environment-aware policy as the initial setup navigation: exactly
+    // one retry on browser-level failure (ERR_NETWORK_CHANGED and kin).
+    // Product verdicts (4xx/5xx, validation, ceremony failures) never retry.
+    // A context rebuild would drop the fresh session, so the retry stays on
+    // the same page.
+    await gotoPageWithOneEnvironmentRetry(
+      page,
+      new URL("/settings/security", baseURL).toString(),
+      { label: "global setup /settings/security" },
+    );
     const setupRecoveryAuthenticator = page.getByRole("button", {
       name: "Set up or replace recovery authenticator",
     });

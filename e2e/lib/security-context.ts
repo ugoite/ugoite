@@ -85,14 +85,145 @@ const ENVIRONMENT_FAILURE_PATTERNS = [
   "net::",
 ];
 
-/** True when a failure is harness/environment noise, not an app verdict. */
-export function isEnvironmentFailure(error: unknown): boolean {
-  const message = error instanceof Error
+/**
+ * Product verdicts that must NEVER trigger a context rebuild, even when the
+ * message happens to mention a network token. Checked before the environment
+ * allowlist so retry fails closed: HTTP verdicts, API validation/authorization
+ * errors, WebAuthn ceremony failures, visible application errors, assertion
+ * failures, and product state mismatches.
+ */
+const NEVER_RETRY_PATTERNS = [
+  "returned 4",
+  "returned 5",
+  "status: 4",
+  "status: 5",
+  "HTTP 4",
+  "HTTP 5",
+  " 400",
+  " 401",
+  " 403",
+  " 404",
+  " 409",
+  " 422",
+  " 423",
+  " 500",
+  " 502",
+  " 503",
+  "ORIGIN_MISMATCH",
+  "NODE_UNINITIALIZED",
+  "VALIDATION",
+  "validation",
+  "Unauthorized",
+  "Forbidden",
+  "NotAllowedError",
+  "InvalidStateError",
+  "SecurityError",
+  "WebAuthn",
+  "webauthn",
+  "authenticator",
+  "passkey",
+  "ceremony",
+  "toBe",
+  "toHave",
+  "toMatch",
+  "toEqual",
+  "expect(",
+  "[application]",
+];
+
+/** Static frontend chunk/asset failure markers (/_build/ JS, manifest). */
+const STATIC_ASSET_PATTERNS = [
+  "/_build/",
+  "ugoite-manifest.js",
+  "Loading chunk",
+  "Loading CSS chunk",
+  "Dynamically imported module",
+  "Failed to fetch dynamically imported module",
+  "failed to load resource",
+  "modulepreload",
+];
+
+function messageOf(error: unknown): string {
+  return error instanceof Error
     ? `${error.message}\n${error.stack ?? ""}`
     : String(error);
+}
+
+/** True when a failure is harness/environment noise, not an app verdict. */
+export function isEnvironmentFailure(error: unknown): boolean {
+  const message = messageOf(error);
   return ENVIRONMENT_FAILURE_PATTERNS.some((pattern) =>
     message.includes(pattern)
   );
+}
+
+/** True when a failure is a product verdict that must never be retried. */
+export function isProductFailure(error: unknown): boolean {
+  const message = messageOf(error);
+  return NEVER_RETRY_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
+/** True when the error text shows a static JS/CSS chunk request failing. */
+export function isStaticAssetFailure(error: unknown): boolean {
+  const message = messageOf(error);
+  return STATIC_ASSET_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
+export type DocumentProbe = {
+  /** HTTP status of the document response, when known. */
+  status?: number;
+  /** Snippet of the loaded document body, when known. */
+  bodySnippet?: string;
+  /** Recorded failed asset/chunk request text, when known. */
+  assetError?: string;
+};
+
+/**
+ * Pure retry verdict for a navigation failure. Returns `"retry"` ONLY for:
+ * document load failure, recognized ERR_NETWORK_CHANGED, connection
+ * reset/refused, static JS chunk request failure, or a 2xx document with an
+ * empty DOM plus a frontend asset environment error. Every product verdict
+ * (HTTP 4xx/5xx, API validation/authorization, WebAuthn ceremony, visible
+ * application error, assertion failure, product state mismatch) returns
+ * `"no-retry"`. Product signals take precedence so retry fails closed.
+ */
+export function classifyNavigationFailure(
+  error: unknown,
+  probe: DocumentProbe = {},
+): "retry" | "no-retry" {
+  if (
+    typeof probe.status === "number" && probe.status >= 400 &&
+    probe.status <= 599
+  ) {
+    return "no-retry";
+  }
+  if (isProductFailure(error)) return "no-retry";
+  if (isEnvironmentFailure(error)) return "retry";
+  if (
+    isStaticAssetFailure(error) && isEnvironmentFailure(probe.assetError ?? "")
+  ) {
+    return "retry";
+  }
+  if (isStaticAssetFailure(probe.assetError ?? "")) return "retry";
+  const body = probe.bodySnippet ?? "";
+  const emptyDom = body.length === 0 ||
+    (!body.includes('<div id="app"') && !body.includes("/_build/"));
+  if (
+    emptyDom &&
+    (isEnvironmentFailure(probe.assetError ?? "") ||
+      isStaticAssetFailure(probe.assetError ?? ""))
+  ) {
+    return "retry";
+  }
+  return "no-retry";
+}
+
+/** True only when the failure earns exactly one environment rebuild. */
+export function shouldRetryEnvironmentFailure(
+  error: unknown,
+  probe: DocumentProbe = {},
+): boolean {
+  return classifyNavigationFailure(error, probe) === "retry";
 }
 
 /**

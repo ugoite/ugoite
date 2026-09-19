@@ -183,12 +183,117 @@ for i in $(seq 1 "$backend_start_timeout"); do
   sleep 1
 done
 
-E2E_SETUP_SECRET="$("${compose_cmd[@]}" logs --no-color ugoite | sed -n 's/.*#secret=\([^[:space:]]*\).*/\1/p' | tail -n 1)"
+# PR-01 product readiness gate (issue #2910): /health 200 alone does not prove
+# the composed image serves THIS checkout. Poll each product signal
+# sequentially before Playwright starts so a blank /setup page fails here
+# with diagnostics instead of flaking inside the browser run.
+readiness_timeout="${E2E_READINESS_TIMEOUT_SECONDS:-60}"
+EXPECTED_SOURCE_SHA="$CHECKOUT_SOURCE_SHA"
+
+readiness_diagnostics() {
+  local phase="$1"
+  local url="$2"
+  local reason="$3"
+  echo "✗ ERROR: product readiness failed at phase: ${phase}"
+  echo "  failed request URL: ${url}"
+  echo "  reason: ${reason}"
+  echo "  expected source SHA: ${EXPECTED_SOURCE_SHA}"
+  local actual_header_sha
+  actual_header_sha="$(curl -sSI "${BACKEND_URL%/}/health" 2>/dev/null | grep -i '^x-ugoite-source-sha:' | tr -d '\r' | awk '{print $2}')"
+  echo "  actual X-Ugoite-Source-Sha header: ${actual_header_sha:-<unavailable>}"
+  local actual_build_info
+  actual_build_info="$(curl -s "${BACKEND_URL%/}/build-info.json" 2>/dev/null | head -c 500)"
+  echo "  actual /build-info.json snippet: ${actual_build_info:-<unavailable>}"
+  local setup_snippet
+  setup_snippet="$(curl -s "${BACKEND_URL%/}/setup" 2>/dev/null | head -c 500)"
+  echo "  actual /setup body snippet: ${setup_snippet:-<unavailable>}"
+  local setup_code
+  setup_code="$(curl -s -o /dev/null -w '%{http_code}' "${BACKEND_URL%/}/setup" 2>/dev/null)"
+  echo "  actual /setup HTTP status: ${setup_code:-<unavailable>}"
+  echo "  container log tail (ugoite, last 100 lines):"
+  "${compose_cmd[@]}" logs --no-color --tail=100 ugoite 2>/dev/null || true
+  exit 1
+}
+
+echo "Checking product readiness (expected SHA: ${EXPECTED_SOURCE_SHA})..."
+
+echo "  [1/4] /health source SHA header..."
+health_sha=""
+for i in $(seq 1 "$readiness_timeout"); do
+  if curl -sf "${BACKEND_URL%/}/health" >/dev/null 2>&1; then
+    health_sha="$(curl -sSI "${BACKEND_URL%/}/health" 2>/dev/null | grep -i '^x-ugoite-source-sha:' | tr -d '\r' | awk '{print $2}')"
+    if [ "$health_sha" = "$EXPECTED_SOURCE_SHA" ]; then
+      echo "  ✓ /health serves expected SHA"
+      break
+    fi
+  fi
+  if [ "$i" -eq "$readiness_timeout" ]; then
+    readiness_diagnostics "health-sha" "${BACKEND_URL%/}/health" "X-Ugoite-Source-Sha header did not match checkout SHA within ${readiness_timeout}s (last seen: ${health_sha:-<none>})"
+  fi
+  sleep 1
+done
+
+echo "  [2/4] /build-info.json source_sha..."
+build_info_sha=""
+for i in $(seq 1 "$readiness_timeout"); do
+  build_info_body="$(curl -s "${BACKEND_URL%/}/build-info.json" 2>/dev/null || true)"
+  if [ -n "$build_info_body" ]; then
+    build_info_sha="$(printf '%s' "$build_info_body" | grep -o '"source_sha"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n 1 | sed -E 's/.*\"([0-9a-f]{40}|unknown)\".*/\1/')"
+    if [ "$build_info_sha" = "$EXPECTED_SOURCE_SHA" ]; then
+      echo "  ✓ /build-info.json serves expected SHA"
+      break
+    fi
+  fi
+  if [ "$i" -eq "$readiness_timeout" ]; then
+    readiness_diagnostics "build-info-sha" "${BACKEND_URL%/}/build-info.json" "/build-info.json source_sha did not match checkout SHA within ${readiness_timeout}s (last seen: ${build_info_sha:-<none>})"
+  fi
+  sleep 1
+done
+
+# The shipped frontend entrypoint always renders <div id="app"> plus a built
+# asset reference (/_build/ script + ugoite-manifest.js). Sources:
+# frontend/scripts/generate-static-index.ts, frontend/src/entry-server.tsx,
+# frontend/src/runtime/start-server.ts. A 2xx /setup without these is the
+# blank-page bootstrap failure from #2910, not a ready product.
+echo "  [3/4] /setup serves shipped frontend entrypoint..."
+for i in $(seq 1 "$readiness_timeout"); do
+  setup_body="$(curl -s "${BACKEND_URL%/}/setup" 2>/dev/null || true)"
+  setup_status="$(curl -s -o /dev/null -w '%{http_code}' "${BACKEND_URL%/}/setup" 2>/dev/null || true)"
+  if [ -n "$setup_body" ] \
+    && printf '%s' "$setup_body" | grep -q '<div id="app"' \
+    && printf '%s' "$setup_body" | grep -q '/_build/'; then
+    echo "  ✓ /setup serves shipped frontend entrypoint (HTTP ${setup_status})"
+    break
+  fi
+  if [ "$i" -eq "$readiness_timeout" ]; then
+    readiness_diagnostics "setup-entrypoint" "${BACKEND_URL%/}/setup" "/setup (HTTP ${setup_status:-<unknown>}) lacked the shipped frontend entrypoint (<div id=\"app\" + /_build/ asset) within ${readiness_timeout}s"
+  fi
+  sleep 1
+done
+
+echo "  [4/4] setup secret uniquely extractable from container log..."
+setup_log="$("${compose_cmd[@]}" logs --no-color ugoite 2>/dev/null || true)"
+secret_count="$(printf '%s' "$setup_log" | sed -n 's/.*#secret=\([^[:space:]]*\).*/\1/p' | wc -l | tr -d ' ')"
+distinct_secret_count="$(printf '%s' "$setup_log" | sed -n 's/.*#secret=\([^[:space:]]*\).*/\1/p' | sort -u | wc -l | tr -d ' ')"
+if [ -z "$secret_count" ] || [ "$secret_count" -eq 0 ]; then
+  echo "✗ ERROR: setup secret was not present in the container startup log"
+  echo "  container log tail (ugoite, last 100 lines):"
+  "${compose_cmd[@]}" logs --no-color --tail=100 ugoite 2>/dev/null || true
+  exit 1
+fi
+if [ "$distinct_secret_count" -ne 1 ]; then
+  echo "✗ ERROR: setup secret is ambiguous in the container startup log (occurrences=${secret_count}, distinct=${distinct_secret_count}); refusing to guess"
+  echo "  container log tail (ugoite, last 100 lines):"
+  "${compose_cmd[@]}" logs --no-color --tail=100 ugoite 2>/dev/null || true
+  exit 1
+fi
+E2E_SETUP_SECRET="$(printf '%s' "$setup_log" | sed -n 's/.*#secret=\([^[:space:]]*\).*/\1/p' | tail -n 1)"
 if [ -z "$E2E_SETUP_SECRET" ]; then
   echo "✗ ERROR: setup secret was not present in the container startup log"
   exit 1
 fi
 export E2E_SETUP_SECRET
+echo "  ✓ setup secret extracted exactly once (distinct=1)"
 
 echo "Frontend URL: $FRONTEND_URL"
 
