@@ -28,6 +28,9 @@ pub enum ContextSubCmd {
     /// Show the current context name
     Current,
     /// Add a context (validates UID shape; Space existence is checked at use time)
+    #[command(
+        long_about = "Add a context binding a connection to one immutable Space UID.\n\nThe UID resolves to exactly one local directory (<root>/spaces/<SPACE_UID>) and the shared Space compatibility classifier decides compatibility. Legacy slug-named directories and implicit path discovery are never consulted here; reach those only through the 0.1.x compatibility explicit-Space positional. Space existence is checked at use time, not at add time.\n\nExamples:\n  ugoite context add demo --connection local --space 019f1234-5678-7abc-8def-0123456789ab\n  ugoite context use demo"
+    )]
     Add {
         #[arg(value_name = "NAME")]
         name: String,

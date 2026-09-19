@@ -26,7 +26,7 @@ pub struct AssetCmd {
 pub enum AssetSubCmd {
     /// Upload an asset
     #[command(
-        long_about = "Upload an asset.\n\nUploading stores bytes only and never attaches them to an Entry. To attach, place the returned asset object (asset_id, name, media_type, size_bytes, sha256) as a field value through `entry create --fields-file` or `entry update --fields-file`; there is no dedicated attach flag. An uploaded-but-unreferenced object is not Space-visible Knowledge and never appears in `asset list`.\n\nExamples:\n  # Core mode\n  ugoite asset upload /root/spaces/my-space ./logo.png\n\n  # Backend mode (immutable Space UID)\n  ugoite asset upload 019f1234-5678-7abc-8def-0123456789ab ./logo.png"
+        long_about = "Upload an asset.\n\nUploading stores bytes only and never attaches them to an Entry. To attach, place the returned asset object (asset_id, name, media_type, size_bytes, sha256) as a field value through `entry create --fields-file` or `entry update --fields-file`; there is no dedicated attach flag. An uploaded-but-unreferenced object is not Space-visible Knowledge and never appears in `asset list`.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite asset upload ./logo.png\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME asset upload ./logo.png\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite asset upload /root/spaces/my-space ./logo.png\n  ugoite asset upload 019f1234-5678-7abc-8def-0123456789ab ./logo.png"
     )]
     Upload {
         #[arg(
@@ -41,7 +41,7 @@ pub enum AssetSubCmd {
     },
     /// Delete an asset
     #[command(
-        long_about = "Delete an asset.\n\nExamples:\n  # Core mode\n  ugoite asset delete /root/spaces/my-space asset-123\n\n  # Backend mode (immutable Space UID)\n  ugoite asset delete 019f1234-5678-7abc-8def-0123456789ab asset-123"
+        long_about = "Delete an asset.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite asset delete asset-123\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME asset delete asset-123\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite asset delete /root/spaces/my-space asset-123\n  ugoite asset delete 019f1234-5678-7abc-8def-0123456789ab asset-123"
     )]
     Delete {
         #[arg(
@@ -56,7 +56,7 @@ pub enum AssetSubCmd {
     },
     /// List Form-owned asset references visible in a space
     #[command(
-        long_about = "List asset reference metadata visible in a space.\n\nMetadata only, never bytes: names, media types, and sizes belong to the referencing Entry fields. Each row carries the owning form, entry, and field identity.\n\nExamples:\n  # Core mode\n  ugoite asset list /root/spaces/my-space\n\n  # Backend mode (immutable Space UID)\n  ugoite asset list 019f1234-5678-7abc-8def-0123456789ab"
+        long_about = "List asset reference metadata visible in a space.\n\nMetadata only, never bytes: names, media types, and sizes belong to the referencing Entry fields. Each row carries the owning form, entry, and field identity.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite asset list\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME asset list\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite asset list /root/spaces/my-space\n  ugoite asset list 019f1234-5678-7abc-8def-0123456789ab"
     )]
     List {
         #[arg(
@@ -67,7 +67,7 @@ pub enum AssetSubCmd {
     },
     /// Read an asset referenced by an entry field
     #[command(
-        long_about = "Read an asset through its owning Entry field context.\n\nAn asset ID alone grants no read authority: the containing entry and field must reference it, otherwise the read fails as not found. --entry and --field are required; omitting them is a usage error, and on the server the form/entry_id query context is required (reads without it fail closed). Safely displayable text content is printed; anything else is metadata only and needs `asset download`.\n\nExamples:\n  # Core mode\n  ugoite asset read /root/spaces/my-space asset-123 --entry note-1 --field Document\n\n  # Backend mode (immutable Space UID)\n  ugoite asset read 019f1234-5678-7abc-8def-0123456789ab asset-123 --entry note-1 --field Document"
+        long_about = "Read an asset through its owning Entry field context.\n\nAn asset ID alone grants no read authority: the containing entry and field must reference it, otherwise the read fails as not found. --entry and --field are required; omitting them is a usage error, and on the server the form/entry_id query context is required (reads without it fail closed). Safely displayable text content is printed; anything else is metadata only and needs `asset download`.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite asset read asset-123 --entry note-1 --field Document\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME asset read asset-123 --entry note-1 --field Document\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite asset read /root/spaces/my-space asset-123 --entry note-1 --field Document\n  ugoite asset read 019f1234-5678-7abc-8def-0123456789ab asset-123 --entry note-1 --field Document"
     )]
     Read {
         #[arg(
@@ -84,7 +84,7 @@ pub enum AssetSubCmd {
     },
     /// Download an asset referenced by an entry field
     #[command(
-        long_about = "Download asset bytes through its owning Entry field context.\n\nSame context rules as `asset read`, but always writes exact bytes: either to --out PATH or to stdout with `--out -` (refused when stdout is a terminal, so binary content is never sprayed across a terminal).\n\nExamples:\n  # Core mode\n  ugoite asset download /root/spaces/my-space asset-123 --entry note-1 --field Document --out ./logo.png\n\n  # Backend mode (immutable Space UID)\n  ugoite asset download 019f1234-5678-7abc-8def-0123456789ab asset-123 --entry note-1 --field Document --out ./logo.png"
+        long_about = "Download asset bytes through its owning Entry field context.\n\nSame context rules as `asset read`, but always writes exact bytes: either to --out PATH or to stdout with `--out -` (refused when stdout is a terminal, so binary content is never sprayed across a terminal).\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite asset download asset-123 --entry note-1 --field Document --out ./logo.png\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME asset download asset-123 --entry note-1 --field Document --out ./logo.png\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite asset download /root/spaces/my-space asset-123 --entry note-1 --field Document --out ./logo.png\n  ugoite asset download 019f1234-5678-7abc-8def-0123456789ab asset-123 --entry note-1 --field Document --out ./logo.png"
     )]
     Download {
         #[arg(

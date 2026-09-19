@@ -26,6 +26,9 @@ pub enum SqlSubCmd {
     /// Validate SQL syntax without executing it
     Lint { sql_text: String },
     /// List saved SQL queries
+    #[command(
+        long_about = "List saved SQL queries.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql saved-list\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql saved-list\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql saved-list /root/spaces/my-space\n  ugoite sql saved-list 019f1234-5678-7abc-8def-0123456789ab"
+    )]
     SavedList {
         #[arg(
             value_name = "SPACE_UID_OR_PATH",
@@ -34,6 +37,9 @@ pub enum SqlSubCmd {
         space_path: Option<String>,
     },
     /// Get a saved SQL query
+    #[command(
+        long_about = "Get a saved SQL query.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql saved-get <sql-id>\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql saved-get <sql-id>\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql saved-get /root/spaces/my-space <sql-id>\n  ugoite sql saved-get 019f1234-5678-7abc-8def-0123456789ab <sql-id>"
+    )]
     SavedGet {
         #[arg(
             value_name = "SPACE_OR_SQL_ID",
@@ -44,6 +50,9 @@ pub enum SqlSubCmd {
         space_and_id: Vec<String>,
     },
     /// Create a saved SQL query
+    #[command(
+        long_about = "Create a saved SQL query.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql saved-create --name planning --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10'\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql saved-create --name planning --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10'\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql saved-create /root/spaces/my-space --name planning --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10'"
+    )]
     SavedCreate {
         #[arg(
             value_name = "SPACE_UID_OR_PATH",
@@ -58,6 +67,9 @@ pub enum SqlSubCmd {
         variables: Option<String>,
     },
     /// Update a saved SQL query
+    #[command(
+        long_about = "Update a saved SQL query.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql saved-update <sql-id> --name planning --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10' --parent-revision-id rev-1\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql saved-update <sql-id> --name planning --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10' --parent-revision-id rev-1\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql saved-update /root/spaces/my-space <sql-id> --name planning --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10' --parent-revision-id rev-1"
+    )]
     SavedUpdate {
         #[arg(
             value_name = "SPACE_OR_SQL_ID",
@@ -76,6 +88,9 @@ pub enum SqlSubCmd {
         parent_revision_id: String,
     },
     /// Delete a saved SQL query
+    #[command(
+        long_about = "Delete a saved SQL query.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql saved-delete <sql-id>\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql saved-delete <sql-id>\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql saved-delete /root/spaces/my-space <sql-id>"
+    )]
     SavedDelete {
         #[arg(
             value_name = "SPACE_OR_SQL_ID",
@@ -92,7 +107,11 @@ pub enum SqlSubCmd {
     /// Reuses the shared read-only admission (`validate_read_only_sql`) and
     /// the shared paged executor. Write/DDL input is rejected pre-execution
     /// with READ_ONLY_SQL_REQUIRED on every transport. Output is stable JSON
-    /// with result/count/offset/limit metadata.
+    /// with result/count/offset/limit metadata. Local mode carries no
+    /// `session_id`; remote mode adds the `session_id` continuation handle.
+    #[command(
+        long_about = "Execute a saved SQL query with bounded pagination.\n\nLocal mode carries no `session_id`; remote mode adds the `session_id` continuation handle (see the Saved SQL task page).\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql saved-execute <sql-id> --limit 20\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql saved-execute <sql-id> --limit 20\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql saved-execute /root/spaces/my-space <sql-id> --limit 20"
+    )]
     SavedExecute {
         #[arg(
             value_name = "SPACE_OR_SQL_ID",
@@ -112,6 +131,9 @@ pub enum SqlSubCmd {
     /// under the workspace root and executes through the shared read-only
     /// admission and paged executor. Backend/api mode uses
     /// `sql_session.create`. Write SQL is rejected pre-execution.
+    #[command(
+        long_about = "Create a SQL session for a read-only SELECT.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql session-create --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10'\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql session-create --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10'\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql session-create /root/spaces/my-space --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10'"
+    )]
     SessionCreate {
         #[arg(
             value_name = "SPACE_UID_OR_PATH",
@@ -122,6 +144,9 @@ pub enum SqlSubCmd {
         sql: String,
     },
     /// Get SQL session metadata.
+    #[command(
+        long_about = "Get SQL session metadata.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql session-get <session-id>\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql session-get <session-id>\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql session-get /root/spaces/my-space <session-id>"
+    )]
     SessionGet {
         #[arg(
             value_name = "SPACE_OR_SESSION_ID",
@@ -132,6 +157,9 @@ pub enum SqlSubCmd {
         space_and_id: Vec<String>,
     },
     /// Get SQL session metadata (explicit alias for session-get).
+    #[command(
+        long_about = "Get SQL session metadata (explicit alias for session-get).\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql session-metadata <session-id>\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql session-metadata <session-id>\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql session-metadata /root/spaces/my-space <session-id>"
+    )]
     SessionMetadata {
         #[arg(
             value_name = "SPACE_OR_SESSION_ID",
@@ -142,6 +170,9 @@ pub enum SqlSubCmd {
         space_and_id: Vec<String>,
     },
     /// Get the total row count for a SQL session.
+    #[command(
+        long_about = "Get the total row count for a SQL session.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql session-count <session-id>\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql session-count <session-id>\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql session-count /root/spaces/my-space <session-id>"
+    )]
     SessionCount {
         #[arg(
             value_name = "SPACE_OR_SESSION_ID",
@@ -152,6 +183,9 @@ pub enum SqlSubCmd {
         space_and_id: Vec<String>,
     },
     /// Read one bounded page of SQL session rows.
+    #[command(
+        long_about = "Read one bounded page of SQL session rows.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql session-rows <session-id> --offset 0 --limit 1\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql session-rows <session-id> --offset 0 --limit 1\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql session-rows /root/spaces/my-space <session-id> --offset 0 --limit 1"
+    )]
     SessionRows {
         #[arg(
             value_name = "SPACE_OR_SESSION_ID",

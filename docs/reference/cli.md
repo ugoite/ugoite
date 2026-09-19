@@ -53,6 +53,16 @@ state in `./.ugoite/config.toml` (project-local, preferred when present),
 deletes Knowledge. The single-mode `config set` flow above remains available
 as the v0.1.x compatibility path.
 
+Context path rule: a context's immutable Space UID resolves to exactly one
+local directory (`<root>/spaces/<SPACE_UID>`) and the shared Space
+compatibility classifier decides compatibility. Legacy slug-named directories
+and implicit path/slug discovery are never consulted on the context path;
+reach those only through the 0.1.x compatibility explicit-Space positional.
+`ugoite config current` prints the resolved connection, Space UID, and
+credential name (never secrets) in a stable section order: `Config sources:`,
+`Write target:`, `Current context:`, `Connection:`, `Root:` (local) or
+`Endpoint:` (remote), `Space:`, `Credential:`.
+
 ## Authentication
 
 `ugoite auth login` starts browser-approved device authorization for backend

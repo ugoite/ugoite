@@ -485,7 +485,11 @@ fn help_examples_are_present_and_local_example_runs() {
             .expect("help");
         assert!(output.status.success());
         let text = String::from_utf8_lossy(&output.stdout).to_string();
-        assert!(text.contains("Examples:"), "help: {text}");
+        // PR-04 help contract: context-first tiers with labeled compatibility.
+        assert!(text.contains("Examples"), "help: {text}");
+        assert!(text.contains("# Selected context"), "help: {text}");
+        assert!(text.contains("--context NAME"), "help: {text}");
+        assert!(text.contains("# 0.1.x compatibility"), "help: {text}");
         assert!(text.contains("--file"), "help: {text}");
     }
 

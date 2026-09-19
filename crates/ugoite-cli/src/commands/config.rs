@@ -21,6 +21,9 @@ pub enum ConfigSubCmd {
     /// Show saved endpoint config
     Show,
     /// Show the active endpoint mode in plain language
+    #[command(
+        long_about = "Show the active selection in plain language.\n\nMachine shape (canonical config present): `Config sources:` (one per line), `Write target:` (one line), `Current context:` (name or `(none)`), then for a selected context `Connection:` (name plus transport), `Root:` (local) or `Endpoint:` (remote), `Space:` (immutable Space UID), and `Credential:` (profile name or `none`). With no canonical config present, the legacy endpoint-mode text (`Current endpoint mode: ...`) is printed instead for 0.1.x compatibility."
+    )]
     Current,
     /// Save endpoint config (mode, backend URL, API URL)
     #[command(

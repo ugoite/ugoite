@@ -45,34 +45,31 @@ enum Commands {
     Context(commands::context::ContextCmd),
     /// Space management commands.
     ///
-    /// Run `ugoite config current` to check whether you are in core, backend, or api mode before choosing positional arguments.
-    /// Use `/root/spaces/<slug>` for `SPACE_UID_OR_PATH` arguments in core mode.
-    /// Use a bare immutable `SPACE_UID` in backend/api mode.
-    /// For `ugoite space list`, pass `ROOT_PATH` in core mode and omit it in backend/api mode.
+    /// Space-bound commands use the selected context by default (see `ugoite config current`); the legacy explicit Space positional (`/root/spaces/<slug>` locally, bare immutable `SPACE_UID` for remote) is 0.1.x compatibility only.
     Space(commands::space::SpaceCmd),
     /// Entry management commands
     Entry(commands::entry::EntryCmd),
     /// Form management commands.
     ///
-    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<slug>` in core mode or a bare `SPACE_UID` in backend/api mode.
+    /// Space-bound commands use the selected context by default (see `ugoite config current`); the legacy explicit Space positional (`/root/spaces/<slug>` locally, bare immutable `SPACE_UID` for remote) is 0.1.x compatibility only.
     Form(commands::form::FormCmd),
     /// Asset management commands
     Asset(commands::asset::AssetCmd),
     /// Search commands.
     ///
-    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<slug>` in core mode or a bare `SPACE_UID` in backend/api mode.
+    /// Space-bound commands use the selected context by default (see `ugoite config current`); the legacy explicit Space positional (`/root/spaces/<slug>` locally, bare immutable `SPACE_UID` for remote) is 0.1.x compatibility only.
     Search(commands::search::SearchCmd),
     /// Space Change history and revert commands.
     ///
-    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<slug>` in core mode or a bare `SPACE_UID` in backend/api mode.
+    /// Space-bound commands use the selected context by default (see `ugoite config current`); the legacy explicit Space positional (`/root/spaces/<slug>` locally, bare immutable `SPACE_UID` for remote) is 0.1.x compatibility only.
     Change(commands::change::ChangeCmd),
     /// Knowledge snapshot (pin) commands.
     ///
-    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<slug>` in core mode or a bare `SPACE_UID` in backend/api mode.
+    /// Space-bound commands use the selected context by default (see `ugoite config current`); the legacy explicit Space positional (`/root/spaces/<slug>` locally, bare immutable `SPACE_UID` for remote) is 0.1.x compatibility only.
     Pin(commands::pin::PinCmd),
     /// Run undo commands.
     ///
-    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<slug>` in core mode or a bare `SPACE_UID` in backend/api mode.
+    /// Space-bound commands use the selected context by default (see `ugoite config current`); the legacy explicit Space positional (`/root/spaces/<slug>` locally, bare immutable `SPACE_UID` for remote) is 0.1.x compatibility only.
     Run(commands::run::RunCmd),
     /// SQL syntax linting and completion commands
     Sql(commands::sql::SqlCmd),
@@ -115,7 +112,7 @@ enum Commands {
     ///   ugoite query /root/spaces/my-space --sql "SELECT _ugoite_id FROM \"form_<FormId>\" WHERE field_100 = 'Daily note'"
     ///
     #[command(
-        long_about = "Query a Space with DataFusion SQL.\n\nThe backend returns a stable Form relation (form_<FormId>) and stable field columns (field_<FieldId>) alongside _ugoite_* metadata columns. Only authorized Form relations are resolvable.\n\nExamples:\n  # Core mode (full local Space path)\n  ugoite query /root/spaces/my-space --sql \"SELECT _ugoite_id, field_100 FROM \\\"form_<FormId>\\\" LIMIT 10\"\n\n  # Backend/API mode (immutable Space UID)\n  ugoite query 019f1234-5678-7abc-8def-0123456789ab --sql \"SELECT _ugoite_id FROM \\\"form_<FormId>\\\" WHERE field_100 = 'Daily note'\""
+        long_about = "Query a Space with DataFusion SQL.\n\nThe backend returns a stable Form relation (form_<FormId>) and stable field columns (field_<FieldId>) alongside _ugoite_* metadata columns. Only authorized Form relations are resolvable.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite query --sql \"SELECT _ugoite_id, field_100 FROM \\\"form_<FormId>\\\" LIMIT 10\"\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME query --sql \"SELECT _ugoite_id FROM \\\"form_<FormId>\\\" WHERE field_100 = 'Daily note'\"\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite query /root/spaces/my-space --sql \"SELECT _ugoite_id, field_100 FROM \\\"form_<FormId>\\\" LIMIT 10\"\n  ugoite query 019f1234-5678-7abc-8def-0123456789ab --sql \"SELECT _ugoite_id FROM \\\"form_<FormId>\\\" WHERE field_100 = 'Daily note'\""
     )]
     Query {
         #[arg(

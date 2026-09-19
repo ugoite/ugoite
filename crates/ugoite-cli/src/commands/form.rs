@@ -15,7 +15,7 @@ pub struct FormCmd {
 pub enum FormSubCmd {
     /// List forms
     #[command(
-        long_about = "List forms for a space.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or a bare immutable `SPACE_UID`.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite form list\n\n  # Legacy explicit Space (v0.1.x compatibility)\n  ugoite form list /root/spaces/my-space\n  ugoite form list 019f1234-5678-7abc-8def-0123456789ab"
+        long_about = "List forms for a space.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite form list\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME form list\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite form list /root/spaces/my-space\n  ugoite form list 019f1234-5678-7abc-8def-0123456789ab"
     )]
     List {
         #[arg(
@@ -26,7 +26,7 @@ pub enum FormSubCmd {
     },
     /// Get a form
     #[command(
-        long_about = "Get a form.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or a bare immutable `SPACE_UID`.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite form get Note\n\n  # Legacy explicit Space (v0.1.x compatibility)\n  ugoite form get /root/spaces/my-space Note\n  ugoite form get 019f1234-5678-7abc-8def-0123456789ab Note"
+        long_about = "Get a form.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite form get Note\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME form get Note\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite form get /root/spaces/my-space Note\n  ugoite form get 019f1234-5678-7abc-8def-0123456789ab Note"
     )]
     Get {
         #[arg(
@@ -39,7 +39,7 @@ pub enum FormSubCmd {
     },
     /// Upsert a form from a JSON file
     #[command(
-        long_about = "Upsert a form from a JSON file.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or a bare immutable `SPACE_UID`.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite form update ./note-form.json\n\n  # Legacy explicit Space (v0.1.x compatibility)\n  ugoite form update /root/spaces/my-space ./note-form.json\n  ugoite form update 019f1234-5678-7abc-8def-0123456789ab ./note-form.json"
+        long_about = "Upsert a form from a JSON file.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite form update ./note-form.json\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME form update ./note-form.json\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite form update /root/spaces/my-space ./note-form.json\n  ugoite form update 019f1234-5678-7abc-8def-0123456789ab ./note-form.json"
     )]
     Update {
         #[arg(

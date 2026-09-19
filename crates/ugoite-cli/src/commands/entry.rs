@@ -23,7 +23,7 @@ pub struct EntryCmd {
 pub enum EntrySubCmd {
     /// List entries in a space
     #[command(
-        long_about = "List entries in a space.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite entry list\n\n  # Legacy explicit Space (v0.1.x compatibility)\n  ugoite entry list /root/spaces/my-space\n  ugoite entry list 019f1234-5678-7abc-8def-0123456789ab"
+        long_about = "List entries in a space.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite entry list\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME entry list\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite entry list /root/spaces/my-space\n  ugoite entry list 019f1234-5678-7abc-8def-0123456789ab"
     )]
     List {
         #[arg(
@@ -34,7 +34,7 @@ pub enum EntrySubCmd {
     },
     /// Get an entry by ID
     #[command(
-        long_about = "Get an entry by ID.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite entry get my-entry-id\n\n  # Legacy explicit Space (v0.1.x compatibility)\n  ugoite entry get /root/spaces/my-space my-entry-id\n  ugoite entry get 019f1234-5678-7abc-8def-0123456789ab my-entry-id"
+        long_about = "Get an entry by ID.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite entry get my-entry-id\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME entry get my-entry-id\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite entry get /root/spaces/my-space my-entry-id\n  ugoite entry get 019f1234-5678-7abc-8def-0123456789ab my-entry-id"
     )]
     Get {
         #[arg(
@@ -47,7 +47,7 @@ pub enum EntrySubCmd {
     },
     /// Create an entry
     #[command(
-        long_about = "Create an entry in a space.\n\nThe entry ID is a slug (alphanumeric + hyphens). Content is a Markdown string. Frontmatter is optional and only needed when you want form-backed metadata.\n\nExamples:\n  # Core mode - minimal note\n  ugoite entry create /root/spaces/my-space my-note --content '# My Note'\n\n  # Core mode - read content from a file\n  ugoite entry create /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode - read content from explicit stdin\n  cat ./note.md | ugoite entry create /root/spaces/my-space my-note --file -\n\n  # Core mode - note with form frontmatter\n  ugoite entry create /root/spaces/my-space my-note --content $'---\\nform: Note\\n---\\n# My Note\\n\\n## Body\\n\\nHello world.'\n\n  # Backend mode - immutable Space UID\n  ugoite entry create 019f1234-5678-7abc-8def-0123456789ab task-01 --content '# Task 01'\n\n  # Core mode with custom author\n  ugoite entry create /root/spaces/my-space my-note --content '# Note' --author alice\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface.\n\nExamples:\n  # Core mode - structured fields without Markdown (title-less)\n  ugoite entry create /root/spaces/my-space task-01 --form Task --field status=open --field priority=3\n\n  # Core mode - complex values from a JSON object file (or --fields-file - for stdin)\n  ugoite entry create /root/spaces/my-space task-01 --form Task --fields-file fields.json\n\n  # 0.1.x compatibility only: --title preserves a legacy display title and will be removed in 0.2\n  ugoite entry create /root/spaces/my-space task-01 --form Task --title 'Ship 0.1.x' --field status=open\n\nAsset attachment uses this structured path: first `asset upload` the bytes, then put the returned asset object as the field value in --fields-file JSON (for example {\"Document\": {\"asset_id\": \"...\", \"name\": \"report.txt\", \"media_type\": \"...\", \"size_bytes\": 36, \"sha256\": \"...\"}}). There is no dedicated attach flag; --field KEY=VALUE stays a string and cannot carry an asset object."
+        long_about = "Create an entry in a space.\n\nThe entry ID is a slug (alphanumeric + hyphens). Structured authoring is recommended; raw Markdown is the 0.1.x compatibility surface.\n\nExamples (structured, preferred):\n  # Selected context (no Space argument)\n  ugoite entry create task-01 --form Task --field status=open --field priority=3\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME entry create task-01 --form Task --fields-file fields.json\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite entry create /root/spaces/my-space task-01 --form Task --field status=open\n  ugoite entry create 019f1234-5678-7abc-8def-0123456789ab task-01 --form Task --fields-file fields.json\n\n  # 0.1.x compatibility only: --title preserves a legacy display title and will be removed in 0.2\n  ugoite entry create /root/spaces/my-space task-01 --form Task --title 'Ship 0.1.x' --field status=open\n\nExamples (raw Markdown, 0.1.x compatibility):\n  # Selected context (no Space argument)\n  ugoite entry create my-note --content '# My Note'\n\n  # Selected context override for one invocation\n  ugoite --context NAME entry create my-note --file ./note.md\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite entry create /root/spaces/my-space my-note --content '# My Note'\n  cat ./note.md | ugoite entry create /root/spaces/my-space my-note --file -\n\nFrontmatter is optional in the compatibility path and only needed when you want form-backed metadata.\n\nAsset attachment uses this structured path: first `asset upload` the bytes, then put the returned asset object as the field value in --fields-file JSON (for example {\"Document\": {\"asset_id\": \"...\", \"name\": \"report.txt\", \"media_type\": \"...\", \"size_bytes\": 36, \"sha256\": \"...\"}}). There is no dedicated attach flag; --field KEY=VALUE stays a string and cannot carry an asset object."
     )]
     Create {
         #[arg(
@@ -95,13 +95,13 @@ pub enum EntrySubCmd {
         fields_files: Vec<String>,
         #[arg(
             long,
-            help = "Author name to record in the revision history (core mode only)"
+            help = "Author name to record in the revision history (local only)"
         )]
         author: Option<String>,
     },
     /// Update an entry
     #[command(
-        long_about = "Update an entry in a space.\n\nExamples:\n  # Core mode\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated'\n\n  # Core mode - read content from a file\n  ugoite entry update /root/spaces/my-space my-note --file ./note.md\n\n  # Core mode with optimistic concurrency\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated' --parent-revision-id rev-1\n\n  # Backend mode (immutable Space UID)\n  ugoite entry update 019f1234-5678-7abc-8def-0123456789ab my-note --markdown '# Updated'\n\nWhen --parent-revision-id is omitted, the CLI reads the current Entry immediately before the update and uses its revision ID for optimistic concurrency.\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface. --field/--fields-file values are the complete post-update field map: omitted fields are cleared, never patched. Tags and extra attributes are preserved because they are not editable through this CLI command; an explicit --field/--fields-file value replaces a preserved extra attribute with the same key.\n\nExamples:\n  # Core mode - structured update without Markdown (title-less; legacy titles are left untouched)\n  ugoite entry update /root/spaces/my-space task-01 --fields-file entry-fields.json --parent-revision-id rev-1\n\n  # 0.1.x compatibility only: --title updates the legacy display title and will be removed in 0.2\n  ugoite entry update /root/spaces/my-space task-01 --title 'New title' --fields-file entry-fields.json --parent-revision-id rev-1\n\nStructured updates carry the complete post-update field map: to keep an existing attachment while adding another, read the current entry first and resupply the full Attachments array in --fields-file. Omitted list items are dropped, never merged."
+        long_about = "Update an entry in a space.\n\nStructured authoring is recommended; raw Markdown is the 0.1.x compatibility surface. --field/--fields-file values are the complete post-update field map: omitted fields are cleared, never patched. Tags and extra attributes are preserved because they are not editable through this CLI command; an explicit --field/--fields-file value replaces a preserved extra attribute with the same key.\n\nExamples (structured, preferred):\n  # Selected context (no Space argument)\n  ugoite entry update task-01 --fields-file entry-fields.json --parent-revision-id rev-1\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME entry update task-01 --field status=done --parent-revision-id rev-1\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite entry update /root/spaces/my-space task-01 --fields-file entry-fields.json --parent-revision-id rev-1\n  ugoite entry update 019f1234-5678-7abc-8def-0123456789ab task-01 --title 'New title' --fields-file entry-fields.json --parent-revision-id rev-1\n\nExamples (raw Markdown, 0.1.x compatibility):\n  # Selected context (no Space argument)\n  ugoite entry update my-note --markdown '# Updated'\n\n  # Selected context override for one invocation\n  ugoite --context NAME entry update my-note --markdown '# Updated' --parent-revision-id rev-1\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite entry update /root/spaces/my-space my-note --markdown '# Updated'\n  ugoite entry update 019f1234-5678-7abc-8def-0123456789ab my-note --markdown '# Updated'\n\nWhen --parent-revision-id is omitted, the CLI reads the current Entry immediately before the update and uses its revision ID for optimistic concurrency.\n\nStructured updates carry the complete post-update field map: to keep an existing attachment while adding another, read the current entry first and resupply the full Attachments array in --fields-file. Omitted list items are dropped, never merged."
     )]
     Update {
         #[arg(
@@ -155,13 +155,13 @@ pub enum EntrySubCmd {
         #[arg(
             long,
             default_value = "cli",
-            help = "Author name to record in the revision history (core mode only)"
+            help = "Author name to record in the revision history (local only)"
         )]
         author: String,
     },
     /// Delete an entry
     #[command(
-        long_about = "Delete an entry from a space.\n\nExamples:\n  # Core mode\n  ugoite entry delete /root/spaces/my-space my-note\n\n  # Backend mode (immutable Space UID; dangerous: requires a human approval token)\n  ugoite entry delete 019f1234-5678-7abc-8def-0123456789ab my-note --human-approval <token>"
+        long_about = "Delete an entry from a space.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite entry delete my-note\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME entry delete my-note\n\n  # 0.1.x compatibility only: legacy explicit Space (remote deletions require a human approval token)\n  ugoite entry delete /root/spaces/my-space my-note\n  ugoite entry delete 019f1234-5678-7abc-8def-0123456789ab my-note --human-approval <token>"
     )]
     Delete {
         #[arg(
@@ -179,13 +179,13 @@ pub enum EntrySubCmd {
         #[arg(
             long,
             default_value = "cli",
-            help = "Actor name to record for the delete (core mode only)"
+            help = "Actor name to record for the delete (local only)"
         )]
         author: String,
     },
     /// Get entry history
     #[command(
-        long_about = "Get the revision history of an entry.\n\nExamples:\n  # Core mode\n  ugoite entry history /root/spaces/my-space my-note\n\n  # Backend mode (immutable Space UID)\n  ugoite entry history 019f1234-5678-7abc-8def-0123456789ab my-note"
+        long_about = "Get the revision history of an entry.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite entry history my-note\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME entry history my-note\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite entry history /root/spaces/my-space my-note\n  ugoite entry history 019f1234-5678-7abc-8def-0123456789ab my-note"
     )]
     History {
         #[arg(
@@ -198,7 +198,7 @@ pub enum EntrySubCmd {
     },
     /// Get a specific revision
     #[command(
-        long_about = "Get a specific revision of an entry.\n\nExamples:\n  # Core mode\n  ugoite entry revision /root/spaces/my-space my-note rev-1\n\n  # Backend mode (immutable Space UID)\n  ugoite entry revision 019f1234-5678-7abc-8def-0123456789ab my-note rev-1"
+        long_about = "Get a specific revision of an entry.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite entry revision my-note rev-1\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME entry revision my-note rev-1\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite entry revision /root/spaces/my-space my-note rev-1\n  ugoite entry revision 019f1234-5678-7abc-8def-0123456789ab my-note rev-1"
     )]
     Revision {
         #[arg(
@@ -211,7 +211,7 @@ pub enum EntrySubCmd {
     },
     /// Restore an entry to a revision
     #[command(
-        long_about = "Restore an entry to a previous revision.\n\nExamples:\n  # Core mode\n  ugoite entry restore /root/spaces/my-space my-note rev-1\n\n  # Backend mode (immutable Space UID)\n  ugoite entry restore 019f1234-5678-7abc-8def-0123456789ab my-note rev-1"
+        long_about = "Restore an entry to a previous revision.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite entry restore my-note rev-1\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME entry restore my-note rev-1\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite entry restore /root/spaces/my-space my-note rev-1\n  ugoite entry restore 019f1234-5678-7abc-8def-0123456789ab my-note rev-1"
     )]
     Restore {
         #[arg(
@@ -224,7 +224,7 @@ pub enum EntrySubCmd {
         #[arg(
             long,
             default_value = "cli",
-            help = "Author name to record in the revision history (core mode only)"
+            help = "Author name to record in the revision history (local only)"
         )]
         author: String,
     },

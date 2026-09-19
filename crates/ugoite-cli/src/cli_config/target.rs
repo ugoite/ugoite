@@ -7,7 +7,15 @@
 //!
 //! The compatibility parsing lives in this CLI adapter layer only; domain
 //! semantics never branch per connection type. Local and remote keep the
-//! same command meaning — only transport and trust boundary differ.
+//! same command meaning — only transport and trust boundary differ
+//! (core/backend/api transport detail).
+//!
+//! Context path rule: an immutable Space UID resolves to exactly one local
+//! directory (`<root>/spaces/<SPACE_UID>`) and the shared domain-owned Space
+//! compatibility classifier decides compatibility. Legacy slug-named
+//! directories and implicit path/slug discovery are never consulted on the
+//! context path; they stay reachable only through the explicit legacy
+//! positional, which is not reintroduced here.
 
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};

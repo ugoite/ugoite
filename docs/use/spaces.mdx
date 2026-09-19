@@ -54,6 +54,11 @@ identity and never renames it. The legacy explicit-path form (`ugoite space
 create /path/to/workspace/spaces/demo`) still works as the v0.1.x
 compatibility path.
 
+Context path rule: a context's immutable Space UID resolves to exactly one
+local directory (`<root>/spaces/<SPACE_UID>`) and the shared Space
+compatibility classifier decides compatibility. Legacy slug-named directories
+and implicit path/slug discovery are never consulted on the context path.
+
 In backend mode, pass the immutable Space UID and omit the workspace path. A
 human Space slug is creation metadata, not a remote identity. See the [CLI
 Reference](../reference/cli.md).

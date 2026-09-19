@@ -70,7 +70,7 @@ pub enum SpaceSubCmd {
     },
     /// Get space metadata
     #[command(
-        long_about = "Get space metadata.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or an immutable `SPACE_UID`.\n\nExamples:\n  # Core mode\n  ugoite space get /root/spaces/my-space\n\n  # Backend mode (immutable Space UID)\n  ugoite space get 019f1234-5678-7abc-8def-0123456789ab"
+        long_about = "Get space metadata.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite space get\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME space get\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite space get /root/spaces/my-space\n  ugoite space get 019f1234-5678-7abc-8def-0123456789ab"
     )]
     Get {
         #[arg(
@@ -81,7 +81,7 @@ pub enum SpaceSubCmd {
     },
     /// Patch space metadata
     #[command(
-        long_about = "Patch space metadata.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or an immutable `SPACE_UID`.\n\nExamples:\n  # Core mode\n  ugoite space patch /root/spaces/my-space --name \"Renamed Space\"\n\n  # Backend mode (immutable Space UID)\n  ugoite space patch 019f1234-5678-7abc-8def-0123456789ab --settings '{\"theme\":\"dark\"}'"
+        long_about = "Patch space metadata.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite space patch --name \"Renamed Space\"\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME space patch --name \"Renamed Space\"\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite space patch /root/spaces/my-space --name \"Renamed Space\"\n  ugoite space patch 019f1234-5678-7abc-8def-0123456789ab --settings '{\"theme\":\"dark\"}'"
     )]
     Patch {
         #[arg(
