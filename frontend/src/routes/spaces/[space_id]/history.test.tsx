@@ -87,16 +87,14 @@ describe("space history route", () => {
     expect(changeApi.list).toHaveBeenCalledWith("default");
   });
 
-  it("PR6: reaches space history from Settings and backs to Settings only", async () => {
+  it("PR7: history is top-level with a back link to the Space home", async () => {
     vi.mocked(changeApi.list).mockResolvedValue([]);
 
     render(() => <SpaceHistoryRoute />);
 
-    const back = await screen.findByRole("link", { name: "Back to Settings" });
-    expect(back).toHaveAttribute("href", "/spaces/default/settings");
-    expect(screen.getAllByRole("link", { name: "Back to Settings" }))
-      .toHaveLength(1);
-    expect(screen.queryByRole("link", { name: "Back to Space" }))
+    const back = await screen.findByRole("link", { name: "Back to Space" });
+    expect(back).toHaveAttribute("href", "/spaces/default/dashboard");
+    expect(screen.queryByRole("link", { name: "Back to Settings" }))
       .not.toBeInTheDocument();
   });
 

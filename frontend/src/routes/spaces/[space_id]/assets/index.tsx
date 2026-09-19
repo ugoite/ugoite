@@ -9,7 +9,7 @@ import { assetApi, type AssetListItem } from "~/lib/ugoite-client";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "forms", title: "assets" });
+export const route = spaceRoute({ navigation: "assets", title: "assets" });
 
 type AssetGroup = {
   asset_id: string;

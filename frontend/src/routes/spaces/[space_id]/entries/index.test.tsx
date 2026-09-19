@@ -272,7 +272,8 @@ describe("/spaces/:space_id/entries", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it("returns to the Forms workspace when clearing SQL results", async () => {    searchParams.session = "session-1";
+  it("returns to the Forms workspace when clearing SQL results", async () => {
+    searchParams.session = "session-1";
     server.use(
       http.get(
         testApiUrl("/spaces/default/sql-sessions/session-1"),
@@ -609,5 +610,44 @@ describe("/spaces/:space_id/entries", () => {
     expect(navigate).toHaveBeenCalledWith(
       "/spaces/space%2Fwith%20space/entries/new?form=My%20Form",
     );
+  });
+
+  it("#2864: unscoped view shows Form name per row; scoped view does not repeat it", async () => {
+    server.use(
+      http.get(
+        testApiUrl("/spaces/default/entries"),
+        () =>
+          HttpResponse.json([
+            {
+              id: "entry-1",
+              title: "Zebra note",
+              form: "Notes",
+              updated_at: "2026-03-01T00:00:00Z",
+              properties: {},
+              tags: [],
+            },
+            {
+              id: "entry-2",
+              title: "Project plan",
+              form: "Projects",
+              updated_at: "2026-03-02T00:00:00Z",
+              properties: {},
+              tags: [],
+            },
+          ]),
+      ),
+    );
+
+    renderRoute([noteForm]);
+
+    expect(await screen.findByRole("button", { name: /Zebra note/ }))
+      .toBeInTheDocument();
+    const zebra = screen.getByRole("button", { name: /Zebra note/ });
+    const plan = screen.getByRole("button", { name: /Project plan/ });
+    expect(zebra.textContent).toContain("Notes");
+    expect(plan.textContent).toContain("Projects");
+    expect(document.querySelector(".entryRowForm")).not.toBeNull();
+    // Entry creation stays one tap away in the unscoped view.
+    expect(screen.getByRole("button", { name: "+ Entry" })).toBeInTheDocument();
   });
 });

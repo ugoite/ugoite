@@ -25,7 +25,11 @@ vi.mock("~/lib/space-store", () => ({
 
 const formsRoute = spaceRoute({ navigation: "forms" });
 const dashboardRoute = spaceRoute({ navigation: "home" });
-const newEntryRoute = spaceRoute({ navigation: "forms", title: "newEntry" });
+const newEntryRoute = spaceRoute({ navigation: "entries", title: "newEntry" });
+const historyRoute = spaceRoute({
+  navigation: "history",
+  title: "spaceHistory",
+});
 const settingsRoute = spaceRoute({ navigation: "settings", title: "settings" });
 const testConnectionRoute = spaceRoute({
   navigation: "settings",
@@ -50,6 +54,10 @@ function NewEntryPage() {
   return <p>New Entry route</p>;
 }
 
+function HistoryPage() {
+  return <p>History route</p>;
+}
+
 function TestConnectionPage() {
   return <p>Test connection route</p>;
 }
@@ -66,6 +74,7 @@ const routes: RouteDefinition[] = [{
     { path: "/dashboard", component: DashboardPage, ...dashboardRoute },
     { path: "/forms", component: FormsPage, ...formsRoute },
     { path: "/entries/new", component: NewEntryPage, ...newEntryRoute },
+    { path: "/history", component: HistoryPage, ...historyRoute },
     { path: "/settings", component: SettingsPage, ...settingsRoute },
     {
       path: "/test-connection",
@@ -109,13 +118,29 @@ describe("/spaces/:space_id persistent layout", () => {
         "New Entry",
       );
       expect(loadSpacesMock).toHaveBeenCalledOnce();
-      expect(screen.getAllByRole("link", { name: "Forms" })[0])
+      // Entry creation lives under Entries (shortest path preserved).
+      expect(screen.getAllByRole("link", { name: "Entries" })[0])
         .toHaveClass("active");
-      expect(screen.getAllByRole("link", { name: "Forms" })[0])
+      expect(screen.getAllByRole("link", { name: "Entries" })[0])
         .toHaveAttribute("aria-current", "page");
       expectNotCurrent("Spaces");
     });
     expect(screen.getByRole("main")).toBe(shell);
+  });
+
+  it("surfaces History as top-level navigation (not buried in Settings)", async () => {
+    renderAt("/spaces/demo/history");
+
+    await waitFor(() => {
+      expect(screen.getByText("History route")).toBeInTheDocument();
+      expect(screen.getAllByRole("link", { name: "History" })[0])
+        .toHaveClass("active");
+      expect(screen.getAllByRole("link", { name: "History" })[0])
+        .toHaveAttribute("aria-current", "page");
+    });
+    expectNotCurrent("Spaces");
+    expect(screen.getAllByRole("link", { name: "Settings" })[0])
+      .not.toHaveClass("active");
   });
 
   it("does not mark the Spaces action current on the dashboard", async () => {

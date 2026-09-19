@@ -11,6 +11,13 @@ import { createResource } from "~/lib/recoverable-resource";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi, spaceApi } from "~/lib/ugoite-client";
 import type { FormCreatePayload } from "~/lib/types";
+import {
+  spaceEntriesPath,
+  spaceEntryPath,
+  spaceFormsPath,
+  spaceSearchPath,
+  spaceSqlPath,
+} from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "home" });
@@ -72,7 +79,7 @@ export default function SpaceDashboardRoute() {
   const startNewEntry = () => {
     if (!formsAvailable()) return;
     if (entryForms().length) {
-      navigate(`/spaces/${encodeURIComponent(spaceId())}/entries/new`);
+      navigate(spaceEntriesPath(spaceId(), "/new"));
     } else {
       setShowFormDialog(true);
     }
@@ -173,9 +180,7 @@ export default function SpaceDashboardRoute() {
             {(entry) => (
               <A
                 class="continueItem"
-                href={`/spaces/${encodeURIComponent(spaceId())}/entries/${
-                  encodeURIComponent(entry().id)
-                }`}
+                href={spaceEntryPath(spaceId(), entry().id)}
               >
                 <span class="glyph active">
                   <UiIcon name="entry" />
@@ -188,7 +193,7 @@ export default function SpaceDashboardRoute() {
               </A>
             )}
           </Show>
-          <A class="continueItem" href={`/spaces/${encodeURIComponent(spaceId())}/forms`}>
+          <A class="continueItem" href={spaceFormsPath(spaceId())}>
             <span class="glyph">
               {entryForms()[0]?.name?.slice(0, 1).toUpperCase() || "F"}
             </span>
@@ -198,7 +203,7 @@ export default function SpaceDashboardRoute() {
             </span>
             <span class="chev">›</span>
           </A>
-          <A class="continueItem" href={`/spaces/${encodeURIComponent(spaceId())}/search`}>
+          <A class="continueItem" href={spaceSearchPath(spaceId())}>
             <span class="glyph">
               <UiIcon name="search" />
             </span>
@@ -220,9 +225,10 @@ export default function SpaceDashboardRoute() {
             {(form) => (
               <A
                 class="pinItem"
-                href={`/spaces/${encodeURIComponent(spaceId())}/forms?form=${
-                  encodeURIComponent(form.name)
-                }`}
+                href={spaceFormsPath(
+                  spaceId(),
+                  `?form=${encodeURIComponent(form.name)}`,
+                )}
               >
                 <span class="glyph">{form.name.slice(0, 1).toUpperCase()}</span>
                 <span>
@@ -232,13 +238,13 @@ export default function SpaceDashboardRoute() {
               </A>
             )}
           </For>
-          <A class="pinItem" href={`/spaces/${encodeURIComponent(spaceId())}/sql`}>
+          <A class="pinItem" href={spaceSqlPath(spaceId())}>
             <span class="glyph">
               <UiIcon name="sql" />
             </span>
             <span>
-              <b>{t("dashboard.savedSql")}</b>
-              <small>{t("dashboard.saved")}</small>
+              <b>{t("sqlPage.savedSql")}</b>
+              <small>{t("dashboard.savedSqlHint")}</small>
             </span>
           </A>
         </div>
@@ -265,9 +271,7 @@ export default function SpaceDashboardRoute() {
             {(entry) => (
               <A
                 class="rowBtn"
-                href={`/spaces/${encodeURIComponent(spaceId())}/entries/${
-                  encodeURIComponent(entry.id)
-                }`}
+                href={spaceEntryPath(spaceId(), entry.id)}
               >
                 <span class="glyph">
                   <UiIcon name="entry" />
