@@ -8,9 +8,6 @@ import {
 } from "~/components/fields/row-reference";
 import {
   draftValueToDisplayString,
-  isBooleanListField,
-  isPlainNumberListField,
-  isPlainStringListField,
   normalizeBooleanListValue,
   normalizeNumberListValue,
   normalizeObjectListValue,
