@@ -4,7 +4,10 @@ import type {
   BrowserContextOptions,
   Page,
 } from "@playwright/test";
-import { isEnvironmentFailure } from "./security-context.ts";
+import {
+  classifyNavigationFailure,
+  type DocumentProbe,
+} from "./security-context.ts";
 
 export type NavigationRetryOptions = {
   /** Human label used in the retry log line. Defaults to the URL. */
@@ -21,8 +24,9 @@ export type NavigationRetryOptions = {
   prepare?: (page: Page, target: BrowserContext) => Promise<void>;
   /**
    * Readiness check after navigation (for example waiting for a heading).
-   * Failures here never trigger a rebuild: the page already loaded, so a
-   * new context cannot help and retrying would mask an application verdict.
+   * Failures here retry only for a 2xx document with an empty DOM plus a
+   * frontend asset environment error; every other post-load failure is an
+   * application verdict and throws without retrying.
    */
   waitForReady?: (page: Page) => Promise<void>;
   /**
@@ -42,14 +46,23 @@ export type NavigationRetryResult = {
 /**
  * Navigates a fresh browser context to `url`, allowing exactly ONE context
  * rebuild when the initial `page.goto` itself throws a browser-level
- * environment failure (`ERR_NETWORK_CHANGED`, refused sockets, DNS, ... as
- * classified by `isEnvironmentFailure`).
+ * environment failure (document load failure, recognized
+ * `ERR_NETWORK_CHANGED`, refused/reset sockets, static JS chunk request
+ * failure, as classified by `classifyNavigationFailure`).
+ *
+ * A post-navigation readiness failure retries only for the narrow 2xx
+ * document with an empty DOM plus a frontend asset environment error: the
+ * page already loaded, so any other readiness failure is an application
+ * verdict and a new context cannot help. HTTP 4xx/5xx, API validation or
+ * authorization errors, WebAuthn ceremony failures, visible application
+ * errors, assertion failures, and product state mismatches never retry.
  *
  * Code-guard against retrying product work: this helper can only perform
  * navigation. It accepts no generic callback, so product API calls cannot be
  * wrapped in it; non-OK responses and post-navigation readiness failures
- * always throw without retrying. Callers must only use it from
- * setup/navigation paths (global setup, initial ceremony navigation).
+ * always throw without retrying unless the empty-DOM asset rule matches.
+ * Callers must only use it from setup/navigation paths (global setup,
+ * initial ceremony navigation).
  */
 export async function gotoWithOneEnvironmentRetry(
   browser: Browser,
@@ -59,16 +72,31 @@ export async function gotoWithOneEnvironmentRetry(
   const label = options.label ?? url;
 
   const attempt = async (): Promise<
-    { target: BrowserContext; page: Page }
+    {
+      target: BrowserContext;
+      page: Page;
+      status?: number;
+      assetErrors: string[];
+    }
   > => {
     const target = await browser.newContext({
       storageState: { cookies: [], origins: [] },
       ...options.contextOptions,
     });
     const page = await target.newPage();
+    const assetErrors: string[] = [];
+    page.on("requestfailed", (request) => {
+      const failure = request.failure()?.errorText ?? "requestfailed";
+      assetErrors.push(`${request.url()} :: ${failure}`);
+    });
+    page.on("console", (message) => {
+      if (message.type() === "error") assetErrors.push(message.text());
+    });
+    let status: number | undefined;
     try {
       await options.prepare?.(page, target);
       const response = await page.goto(url, options.gotoOptions);
+      status = response?.status();
       if (options.requireOkResponse && !response?.ok()) {
         throw new Error(
           `navigation to ${url} returned ${response?.status()}: ${
@@ -80,7 +108,21 @@ export async function gotoWithOneEnvironmentRetry(
       await target.close().catch(() => {});
       throw error;
     }
-    return { target, page };
+    return { target, page, status, assetErrors };
+  };
+
+  const probeForReadyFailure = async (
+    entry: { page: Page; status?: number; assetErrors: string[] },
+  ): Promise<DocumentProbe> => {
+    const bodySnippet = await entry.page.content().then(
+      (html) => html.slice(0, 2000),
+      () => "",
+    );
+    return {
+      status: entry.status,
+      bodySnippet,
+      assetError: entry.assetErrors.join(" | ").slice(0, 2000),
+    };
   };
 
   try {
@@ -88,12 +130,32 @@ export async function gotoWithOneEnvironmentRetry(
     try {
       await options.waitForReady?.(first.page);
     } catch (error) {
+      const probe = await probeForReadyFailure(first);
       await first.target.close().catch(() => {});
+      // Narrow exception: a 2xx document with an empty DOM plus a frontend
+      // asset environment error earns the single rebuild. Everything else
+      // that fails after load is an application verdict.
+      if (classifyNavigationFailure(error, probe) === "retry") {
+        const reason = error instanceof Error ? error.message : String(error);
+        console.log(
+          `[environment] ${label}: ready check hit an empty document with an asset failure; rebuilding the browser context once: ${
+            reason.slice(0, 500)
+          }`,
+        );
+        const second = await attempt();
+        try {
+          await options.waitForReady?.(second.page);
+        } catch (readyError) {
+          await second.target.close().catch(() => {});
+          throw readyError;
+        }
+        return { target: second.target, page: second.page, retried: true };
+      }
       throw error;
     }
-    return { ...first, retried: false };
+    return { target: first.target, page: first.page, retried: false };
   } catch (error) {
-    if (!isEnvironmentFailure(error)) throw error;
+    if (classifyNavigationFailure(error) !== "retry") throw error;
     const reason = error instanceof Error ? error.message : String(error);
     console.log(
       `[environment] ${label}: initial navigation hit a browser-level failure; rebuilding the browser context once: ${
@@ -108,6 +170,36 @@ export async function gotoWithOneEnvironmentRetry(
       await second.target.close().catch(() => {});
       throw readyError;
     }
-    return { ...second, retried: true };
+    return { target: second.target, page: second.page, retried: true };
+  }
+}
+
+/**
+ * Same environment classification for navigation on an EXISTING page (for
+ * example the authenticated /settings/security hop inside global setup,
+ * where rebuilding the context would drop the fresh session). Retries the
+ * `page.goto` exactly once when `classifyNavigationFailure` says retry;
+ * product verdicts throw on the first attempt.
+ */
+export async function gotoPageWithOneEnvironmentRetry(
+  page: Page,
+  url: string,
+  options: { label?: string; gotoOptions?: Parameters<Page["goto"]>[1] } = {},
+): Promise<{ retried: boolean }> {
+  const label = options.label ?? url;
+  try {
+    await page.goto(url, options.gotoOptions);
+    return { retried: false };
+  } catch (error) {
+    if (classifyNavigationFailure(error) !== "retry") throw error;
+    const reason = error instanceof Error ? error.message : String(error);
+    console.log(
+      `[environment] ${label}: navigation hit a browser-level failure; retrying once on the same page: ${
+        reason.slice(0, 500)
+      }`,
+    );
+    // Exactly one retry; the second attempt throws through.
+    await page.goto(url, options.gotoOptions);
+    return { retried: true };
   }
 }
