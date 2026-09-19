@@ -45,6 +45,17 @@ pub enum SpaceSubCmd {
             help = "Display name for the new Space; defaults to the requested slug."
         )]
         name: Option<String>,
+        #[arg(
+            long,
+            value_name = "CONNECTION",
+            help = "Canonical connection to create the Space on. Defaults to the current context's connection, or the only defined connection."
+        )]
+        connection: Option<String>,
+        #[arg(
+            long,
+            help = "Create the Space without registering a CLI context (no config changes)."
+        )]
+        no_context: bool,
     },
     /// List spaces
     #[command(
@@ -304,11 +315,284 @@ pub async fn create_space_cmd_with_name(
     Ok(())
 }
 
-pub async fn run(cmd: SpaceCmd) -> Result<()> {
+/// Canonical path triggers: explicit connection selection, explicit opt-out,
+/// an explicit `--config` file, or any existing canonical source. Otherwise
+/// the legacy positional-path behavior is preserved unchanged.
+fn should_use_canonical_create(
+    explicit_config: Option<&std::path::Path>,
+    explicit_connection: Option<&str>,
+    no_context: bool,
+) -> bool {
+    if explicit_connection.is_some() || no_context || explicit_config.is_some() {
+        return true;
+    }
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    !crate::cli_config::discover::source_stack_from_environment(None, &cwd).is_empty()
+}
+
+/// Select the connection for `space create` (plan section 37):
+/// explicit `--connection` → override/current context's connection → the only
+/// defined connection → error (never guess among several). A dangling
+/// current_context (name without a context entry) fails closed instead of
+/// falling through, so a broken config can never silently pick a connection.
+fn select_create_connection(
+    effective: &crate::cli_config::EffectiveConfig,
+    explicit: Option<&str>,
+    context_override: Option<&str>,
+) -> Result<String> {
+    if let Some(name) = explicit {
+        if !effective.connections.contains_key(name) {
+            bail!("Connection {name:?} is not defined.");
+        }
+        return Ok(name.to_string());
+    }
+    if let Some(name) = context_override {
+        let context = effective
+            .contexts
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("Context {name:?} is not defined."))?;
+        return Ok(context.value.connection.clone());
+    }
+    if let Some(current) = effective.current_context.as_ref() {
+        let context = effective.contexts.get(&current.value).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Current context {:?} is not defined. Select another context with `ugoite context use <NAME>`.",
+                current.value
+            )
+        })?;
+        return Ok(context.value.connection.clone());
+    }
+    if effective.connections.len() == 1 {
+        if let Some(name) = effective.connections.keys().next() {
+            return Ok(name.clone());
+        }
+    }
+    bail!("Cannot determine a connection for `space create`: pass --connection <NAME>.")
+}
+
+/// Canonical `space create`: create the Space, then register it as a CLI
+/// context (immutable UID) and make it current — unless `--no-context`.
+/// A config write failure after successful creation never deletes the Space;
+/// it fails non-zero with the Space UID and config path instead (plan 35).
+#[allow(clippy::too_many_arguments)]
+async fn create_space_canonical(
+    space_path: &str,
+    display_name: Option<&str>,
+    explicit_connection: Option<&str>,
+    no_context: bool,
+    explicit_config: Option<&std::path::Path>,
+    context_override: Option<&str>,
+    fmt: Format,
+) -> Result<()> {
+    use crate::cli_config::{
+        load_cli_config, mutate_write_target, unique_context_name, ConnectionConfig, ContextConfig,
+    };
+
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let files = load_cli_config(explicit_config, &cwd)?;
+    let connection_name =
+        select_create_connection(&files.effective, explicit_connection, context_override)?;
+    let connection = files
+        .effective
+        .connections
+        .get(&connection_name)
+        .ok_or_else(|| anyhow::anyhow!("Connection {connection_name:?} is not defined."))?;
+    let requested_slug = parse_space_path(space_path).1;
+    if requested_slug.trim().is_empty() {
+        bail!("Space slug must not be empty");
+    }
+    if space_path.contains("/spaces/") || space_path.contains('/') {
+        // Canonical core creation ignores any positional root: the
+        // connection's root is the authority. Warn instead of silently
+        // using a different directory than the user typed.
+        eprintln!(
+            "Note: canonical `space create` uses connection {connection_name:?} root; the positional path is read as slug {requested_slug:?}."
+        );
+    }
+    let resolved_name = resolve_create_display_name(&requested_slug, display_name)?;
+
+    // Create the Space first (Knowledge mutation), before any config change.
+    enum Created {
+        Core { space_uid: uuid::Uuid },
+        Remote { space_uid: uuid::Uuid },
+    }
+    let created = match &connection.value {
+        ConnectionConfig::Core { root } => {
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let outcome = service
+                .ensure_operator_space_with_name(&requested_slug, &resolved_name)
+                .await?;
+            Created::Core {
+                space_uid: outcome.space_id(),
+            }
+        }
+        ConnectionConfig::Backend { url } | ConnectionConfig::Api { url } => {
+            let parsed =
+                crate::cli_config::model::validate_remote_url(url, "Space creation endpoint")?;
+            let base = parsed.as_str().trim_end_matches('/').to_string();
+            let result = step_up::execute_with_step_up(
+                &base,
+                "space.create",
+                serde_json::json!({}),
+                Some(serde_json::json!({"slug": requested_slug, "name": resolved_name})),
+                None,
+            )
+            .await?;
+            let uid_text = result
+                .get("space_uid")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| anyhow::anyhow!("Server response omitted the new Space UID"))?;
+            let space_uid = uuid::Uuid::parse_str(uid_text)
+                .map_err(|_| anyhow::anyhow!("Server returned an invalid Space UID"))?;
+            if space_uid.get_version() != Some(uuid::Version::SortRand) {
+                bail!("Server returned a non-UUIDv7 Space UID");
+            }
+            Created::Remote { space_uid }
+        }
+    };
+    let space_uid = match created {
+        Created::Core { space_uid } | Created::Remote { space_uid } => space_uid,
+    };
+
+    if no_context {
+        emit_create_output(fmt, &requested_slug, &space_uid, &connection_name, None);
+        return Ok(());
+    }
+
+    // Propagate the credential only when the override/current context already
+    // scopes the same connection; never invent one. An explicit --context
+    // selects the connection but never mutates current_context by itself.
+    let scope_context = context_override
+        .and_then(|name| files.effective.contexts.get(name))
+        .or_else(|| {
+            files
+                .effective
+                .current_context
+                .as_ref()
+                .and_then(|current| files.effective.contexts.get(&current.value))
+        });
+    let credential = scope_context
+        .filter(|context| context.value.connection == connection_name)
+        .and_then(|context| context.value.credential.clone());
+    let context_name = unique_context_name(&files.effective, &connection_name, &requested_slug);
+    let value = ContextConfig {
+        connection: connection_name.clone(),
+        space_uid,
+        credential,
+    };
+    let write_target = files.write_target.clone();
+    let name_for_closure = context_name.clone();
+    let value_for_closure = value.clone();
+    let write_result = mutate_write_target(&files, |config| {
+        config
+            .contexts
+            .insert(name_for_closure.clone(), value_for_closure.clone());
+        config.current_context = Some(name_for_closure.clone());
+    });
+    match write_result {
+        Ok(target) => {
+            emit_create_output(
+                fmt,
+                &requested_slug,
+                &space_uid,
+                &connection_name,
+                Some((&context_name, &target)),
+            );
+            Ok(())
+        }
+        Err(error) => {
+            // The Space already exists; never roll it back for a config
+            // failure. Report partial success with a non-zero exit.
+            let uid_view = serde_json::json!({ "space_uid": space_uid });
+            bail!(
+                "Space created successfully, but CLI context could not be saved.\nSpace:\n  {requested_slug}\n  {}\nConfig:\n  {}\nThe Space was not deleted.\nCause: {error}",
+                uid_view["space_uid"].as_str().unwrap_or_default(),
+                write_target.display(),
+            );
+        }
+    }
+}
+
+/// Human + structured output for canonical creation (plan sections 38-39).
+/// UIDs pass through the JSON-value output boundary used everywhere else.
+fn emit_create_output(
+    fmt: Format,
+    slug: &str,
+    space_uid: &uuid::Uuid,
+    connection_name: &str,
+    registered: Option<(&str, &std::path::Path)>,
+) {
+    // UIDs render through the JSON-value output boundary used by
+    // `context list/get`, `space list`, and `config current`: the Space UID
+    // is a non-secret immutable identifier, and the value boundary keeps
+    // every UID display on the single established output path.
+    let uid_view = serde_json::json!({ "space_uid": space_uid });
+    if fmt == Format::Json {
+        match registered {
+            Some((context_name, target)) => print_json(&serde_json::json!({
+                "space": { "space_uid": uid_view["space_uid"].clone(), "slug": slug },
+                "connection": connection_name,
+                "context": {
+                    "created": true,
+                    "name": context_name,
+                    "current": true,
+                    "config_path": target.to_string_lossy(),
+                },
+            })),
+            None => print_json(&serde_json::json!({
+                "space": { "space_uid": uid_view["space_uid"].clone(), "slug": slug },
+                "connection": connection_name,
+                "context": { "created": false, "reason": "disabled" },
+            })),
+        }
+        return;
+    }
+    println!("Created Space {slug:?}");
+    println!(
+        "  uid: {}",
+        uid_view["space_uid"].as_str().unwrap_or_default()
+    );
+    println!("  connection: {connection_name}");
+    match registered {
+        Some((context_name, target)) => {
+            println!("Added CLI context");
+            println!("  context: {context_name}");
+            println!("  config: {}", target.display());
+            println!("  current: yes");
+        }
+        None => {
+            println!("CLI context registration skipped (--no-context)");
+        }
+    }
+}
+
+pub async fn run(
+    cmd: SpaceCmd,
+    explicit_config: Option<&std::path::Path>,
+    context_override: Option<&str>,
+) -> Result<()> {
     let config = load_config()?;
     let fmt = effective_format(cmd.format);
     match cmd.sub {
-        SpaceSubCmd::Create { space_path, name } => {
+        SpaceSubCmd::Create {
+            space_path,
+            name,
+            connection,
+            no_context,
+        } => {
+            if should_use_canonical_create(explicit_config, connection.as_deref(), no_context) {
+                create_space_canonical(
+                    &space_path,
+                    name.as_deref(),
+                    connection.as_deref(),
+                    no_context,
+                    explicit_config,
+                    context_override,
+                    fmt,
+                )
+                .await?;
+                return Ok(());
+            }
             if let Some(base) = validated_base_url(&config)? {
                 // Backend/api creation takes a new human-readable slug; the
                 // server-generated Space UID in the response is the authority
