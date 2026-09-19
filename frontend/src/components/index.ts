@@ -1,6 +1,7 @@
 // Component exports
 export { ActionIconBar } from "./ActionIconBar";
 export { ButtonSpinner } from "./ButtonSpinner";
+export { ConfirmDestructiveAction } from "./ConfirmDestructiveAction";
 export { IconButton } from "./IconButton";
 export { IconLink } from "./IconLink";
 export { UiIcon } from "./UiIcon";

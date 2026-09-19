@@ -1,7 +1,7 @@
 import { useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
-import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { BackLink } from "~/components/BackLink";
+import { ConfirmDestructiveAction } from "~/components/ConfirmDestructiveAction";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateTimeLabel } from "~/lib/date-format";
@@ -71,7 +71,10 @@ export default function SpaceHistoryRoute() {
   const [notice, setNotice] = createSignal<string | null>(null);
   const [failure, setFailure] = createSignal<string | null>(null);
 
+  const pendingOpen = () => pending() !== null;
+
   const closeConfirm = () => {
+    if (working()) return;
     setPending(null);
     setMessage("");
   };
@@ -106,6 +109,9 @@ export default function SpaceHistoryRoute() {
       closeConfirm();
       await refetch();
     } catch (err) {
+      // The dialog closes and the single page-level failure reports that
+      // Knowledge is unchanged; the optional message is kept for retry.
+      setPending(null);
       setFailure(
         formatUserFacingError(err, "spaceHistory.operationFailed"),
       );
@@ -206,54 +212,6 @@ export default function SpaceHistoryRoute() {
                               </button>
                             </Show>
                           </span>
-                          <Show
-                            when={pending()?.change.change_id ===
-                              change.change_id}
-                          >
-                            <span class="mt-2 ui-stack-sm">
-                              <small>
-                                {t("spaceHistory.appendOnlyNotice")}
-                              </small>
-                              <Show when={pending()?.kind === "revert"}>
-                                <label
-                                  class="ui-label"
-                                  for={`revert-message-${change.change_id}`}
-                                >
-                                  {t("spaceHistory.messageLabel")}
-                                </label>
-                                <input
-                                  id={`revert-message-${change.change_id}`}
-                                  type="text"
-                                  class="ui-input mt-2 w-full"
-                                  value={message()}
-                                  onInput={(event) =>
-                                    setMessage(event.currentTarget.value)}
-                                />
-                              </Show>
-                              <span class="mt-2 flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  class="ui-button ui-button-primary text-sm"
-                                  disabled={working()}
-                                  aria-busy={working() || undefined}
-                                  onClick={() => void confirmRecovery()}
-                                >
-                                  <Show when={working()}>
-                                    <ButtonSpinner />
-                                  </Show>
-                                  {t("spaceHistory.confirmAppend")}
-                                </button>
-                                <button
-                                  type="button"
-                                  class="ui-button ui-button-secondary text-sm"
-                                  disabled={working()}
-                                  onClick={closeConfirm}
-                                >
-                                  {t("common.cancel")}
-                                </button>
-                              </span>
-                            </span>
-                          </Show>
                         </td>
                         <td class="ui-table-cell">
                           {actorName(change.actor_principal_id)}
@@ -291,6 +249,45 @@ export default function SpaceHistoryRoute() {
           </Show>
         )}
       </Show>
+      {
+        /*
+        Revert/undo confirmation (shared destructive-action dialog): the
+        append-only notice is explicit before the operation, with the
+        optional revert message as dialog content.
+      */
+      }
+      <ConfirmDestructiveAction
+        open={pendingOpen()}
+        title={pending()?.kind === "undo"
+          ? t("spaceHistory.undoRunAction")
+          : t("spaceHistory.revertAction")}
+        body={t("spaceHistory.appendOnlyNotice")}
+        confirmLabel={t("spaceHistory.confirmAppend")}
+        busy={working()}
+        onConfirm={() => void confirmRecovery()}
+        onClose={closeConfirm}
+      >
+        <Show when={pending()?.kind === "revert" && pending()?.change}>
+          {(change) => (
+            <div class="ui-stack-sm">
+              <label
+                class="ui-label"
+                for={`revert-message-${change().change_id}`}
+              >
+                {t("spaceHistory.messageLabel")}
+              </label>
+              <input
+                id={`revert-message-${change().change_id}`}
+                type="text"
+                class="ui-input mt-2 w-full"
+                value={message()}
+                disabled={working()}
+                onInput={(event) => setMessage(event.currentTarget.value)}
+              />
+            </div>
+          )}
+        </Show>
+      </ConfirmDestructiveAction>
     </>
   );
 }

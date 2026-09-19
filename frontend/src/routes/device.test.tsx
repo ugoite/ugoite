@@ -1,5 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import DeviceApprovalRoute from "./device";
 import { spaceApi } from "~/lib/ugoite-client";
@@ -20,7 +26,6 @@ describe("/device", () => {
   beforeEach(() => {
     fetchMock.mockReset();
     vi.stubGlobal("fetch", fetchMock);
-    vi.stubGlobal("confirm", vi.fn(() => true));
     vi.mocked(spaceApi.list).mockReset();
   });
 
@@ -91,6 +96,17 @@ describe("/device", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Approve CLI access" }),
     );
+    // Approval runs behind the shared confirmation dialog: nothing is sent
+    // until the explicit confirm action.
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveAccessibleName("Approve CLI access?");
+    expect(dialog).toHaveAccessibleDescription(
+      "Approve CLI for actions: read, create, update?",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Approve CLI access" }),
+    );
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/oauth/device/approve",
@@ -99,6 +115,39 @@ describe("/device", () => {
     );
     expect(await screen.findByText("CLI access approved. Return to the CLI."))
       .toBeInTheDocument();
+  });
+
+  it("cancelling the approval dialog sends nothing", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        device_name: "CLI",
+        requested_actions: ["read"],
+        resource: null,
+      }),
+    });
+    vi.mocked(spaceApi.list).mockResolvedValue([{
+      id: "space-1",
+      name: "Docs",
+      space_uid: "space-uid-1",
+    }]);
+
+    render(() => <DeviceApprovalRoute />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Approve CLI access" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Cancel" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByText("CLI access approved. Return to the CLI."),
+    ).toBeNull();
   });
 
   it("approves a supported MCP-scoped request", async () => {
@@ -128,6 +177,11 @@ describe("/device", () => {
 
     fireEvent.click(
       await screen.findByRole("button", { name: "Approve MCP access" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveAccessibleName("Approve MCP access?");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Approve MCP access" }),
     );
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(

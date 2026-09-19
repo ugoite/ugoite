@@ -1,5 +1,6 @@
 import { createSignal, For, onMount, Show } from "solid-js";
 import { useSearchParams } from "@solidjs/router";
+import { ConfirmDestructiveAction } from "~/components/ConfirmDestructiveAction";
 import { spaceApi } from "~/lib/ugoite-client";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceUid } from "~/lib/space-list";
@@ -21,6 +22,8 @@ export default function DeviceApprovalRoute() {
   const [done, setDone] = createSignal(false);
   const [unsupported, setUnsupported] = createSignal(false);
   const [error, setError] = createSignal("");
+  const [approveConfirmOpen, setApproveConfirmOpen] = createSignal(false);
+  const [approving, setApproving] = createSignal(false);
 
   onMount(async () => {
     if (!code().trim()) {
@@ -62,7 +65,9 @@ export default function DeviceApprovalRoute() {
         spaceUid(space) === pendingRequest.requested_space_uid
       );
       setSpaceUidValue(
-        requestedSpace ? spaceUid(requestedSpace) : values[0]
+        requestedSpace
+          ? spaceUid(requestedSpace)
+          : values[0]
           ? spaceUid(values[0])
           : "",
       );
@@ -73,20 +78,24 @@ export default function DeviceApprovalRoute() {
     }
   });
 
-  const approve = async (event: Event) => {
+  const requestApproval = (event: Event) => {
     event.preventDefault();
     const request = pending();
-    if (!request || !spaceUidValue()) return;
+    if (!request || !spaceUidValue() || approving()) return;
     setError("");
-    if (
-      !confirm(
-        `Approve ${request.device_name} for actions: ${
-          request.requested_actions.join(
-            ", ",
-          )
-        }?`,
-      )
-    ) return;
+    setApproveConfirmOpen(true);
+  };
+
+  const closeApproveConfirm = () => {
+    if (approving()) return;
+    setApproveConfirmOpen(false);
+  };
+
+  const approve = async () => {
+    const request = pending();
+    if (!request || !spaceUidValue() || approving()) return;
+    setError("");
+    setApproving(true);
     const response = await fetch("/api/oauth/device/approve", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -96,12 +105,24 @@ export default function DeviceApprovalRoute() {
         granted_actions: request.requested_actions,
       }),
     });
+    setApproving(false);
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
       setError(String(payload.message ?? payload.detail ?? "Approval failed"));
       return;
     }
+    setApproveConfirmOpen(false);
     setDone(true);
+  };
+
+  const approveSummary = () => {
+    const request = pending();
+    if (!request) return "";
+    return `Approve ${request.device_name} for actions: ${
+      request.requested_actions.join(
+        ", ",
+      )
+    }?`;
   };
 
   return (
@@ -140,7 +161,7 @@ export default function DeviceApprovalRoute() {
               fallback={<p class="ui-muted">Loading authorization request…</p>}
             >
               {(request) => (
-                <form class="ui-stack-sm" onSubmit={approve}>
+                <form class="ui-stack-sm" onSubmit={requestApproval}>
                   <p>
                     Approve <strong>{request().device_name}</strong> for{" "}
                     {request().resource ? "MCP" : "CLI"} actions:{" "}
@@ -174,6 +195,21 @@ export default function DeviceApprovalRoute() {
                       ? "Approve MCP access"
                       : "Approve CLI access"}
                   </button>
+                  <ConfirmDestructiveAction
+                    open={approveConfirmOpen()}
+                    title={request().resource
+                      ? "Approve MCP access?"
+                      : "Approve CLI access?"}
+                    body={approveSummary()}
+                    confirmLabel={request().resource
+                      ? "Approve MCP access"
+                      : "Approve CLI access"}
+                    busy={approving()}
+                    error={error() || null}
+                    onConfirm={() =>
+                      void approve()}
+                    onClose={closeApproveConfirm}
+                  />
                 </form>
               )}
             </Show>

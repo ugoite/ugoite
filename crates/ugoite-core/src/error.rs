@@ -24,6 +24,7 @@ pub enum ErrorCode {
     RevisionNotFound,
     RevisionConflict,
     AssetNotFound,
+    AssetContextRequired,
     InvitationExpired,
     InvitationNotFound,
     InvitationNotPending,
@@ -63,6 +64,7 @@ impl ErrorCode {
             Self::RevisionNotFound => "REVISION_NOT_FOUND",
             Self::RevisionConflict => "REVISION_CONFLICT",
             Self::AssetNotFound => "ASSET_NOT_FOUND",
+            Self::AssetContextRequired => "ASSET_CONTEXT_REQUIRED",
             Self::InvitationExpired => "INVITATION_EXPIRED",
             Self::InvitationNotFound => "INVITATION_NOT_FOUND",
             Self::InvitationNotPending => "INVITATION_NOT_PENDING",
@@ -163,6 +165,19 @@ impl AppError {
         Self::new(ErrorKind::Forbidden, ErrorCode::Forbidden, message)
     }
 
+    /// Fail-closed Asset read without a containing Form and Entry context.
+    ///
+    /// The message carries no hidden references: it names the missing
+    /// context only. Existing 403 behavior is unchanged; this only adds the
+    /// additive `ASSET_CONTEXT_REQUIRED` machine code.
+    pub fn asset_context_required() -> Self {
+        Self::new(
+            ErrorKind::Forbidden,
+            ErrorCode::AssetContextRequired,
+            "asset reads require a containing Form and Entry context",
+        )
+    }
+
     pub fn not_found(code: ErrorCode, message: impl Into<String>) -> Self {
         Self::new(ErrorKind::NotFound, code, message)
     }
@@ -258,5 +273,23 @@ impl AppError {
 
     pub fn detail(&self) -> Option<&Value> {
         self.detail.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn asset_context_required_is_an_additive_forbidden_code() {
+        let error = AppError::asset_context_required();
+        assert_eq!(error.kind(), ErrorKind::Forbidden);
+        assert_eq!(error.code(), ErrorCode::AssetContextRequired);
+        assert_eq!(error.code_str(), "ASSET_CONTEXT_REQUIRED");
+        // The message leaks no hidden references: context only, no IDs.
+        assert_eq!(
+            error.message(),
+            "asset reads require a containing Form and Entry context"
+        );
     }
 }

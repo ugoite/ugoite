@@ -2,8 +2,8 @@ import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createSignal, For, onMount, Show } from "solid-js";
 import {
   authApi,
-  oidcIssuerLabel,
   type AuthConfig,
+  oidcIssuerLabel,
   type OidcProvider,
 } from "~/lib/auth-api";
 import { clearPendingLoginPath, getSafeNextPath } from "~/lib/auth-route";
@@ -76,13 +76,23 @@ export default function LoginRoute() {
           <button
             type="button"
             class="btn primary"
+            autofocus
+            ref={(element) => {
+              // First-action autofocus: keyboard users land on the primary
+              // sign-in action as soon as the config renders it.
+              queueMicrotask(() => element.focus());
+            }}
             disabled={busy()}
             onClick={() => void login()}
           >
             {busy() ? "Waiting for passkey…" : "Sign in with a passkey"}
           </button>
           <Show when={providers().length > 0}>
-            <div class="or" aria-hidden="true"><span /><b>or</b><span /></div>
+            <div class="or" aria-hidden="true">
+              <span />
+              <b>or</b>
+              <span />
+            </div>
             <For each={providers()}>
               {(provider) => (
                 <button

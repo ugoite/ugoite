@@ -2320,6 +2320,40 @@ mod tests {
     }
 
     #[test]
+    fn asset_read_without_context_preserves_machine_code() {
+        // Additive contract (#2824): the 403 for an Asset read without
+        // Form/Entry context keeps its status and message, and the new
+        // ASSET_CONTEXT_REQUIRED code rides in the payload so browsers and
+        // the CLI read the same machine code.
+        let error = decode_response(
+            "asset.read",
+            ApiResponse {
+                status: 403,
+                status_text: "Forbidden".into(),
+                headers: vec![],
+                body: json!({
+                    "code": "ASSET_CONTEXT_REQUIRED",
+                    "message": "asset reads require a containing Form and Entry context"
+                })
+                .to_string(),
+            },
+        )
+        .expect_err("context-free asset reads must fail");
+
+        assert_eq!(error.kind, "forbidden");
+        assert_eq!(error.status, Some(403));
+        assert_eq!(
+            error
+                .payload
+                .as_deref()
+                .and_then(|payload| payload.get("code"))
+                .and_then(Value::as_str),
+            Some("ASSET_CONTEXT_REQUIRED")
+        );
+        assert!(error.message.contains("Failed to read asset"));
+    }
+
+    #[test]
     fn test_api_req_api_001_uses_status_text_for_non_message_detail_values() {
         let error = decode_response(
             "auth.get_config",

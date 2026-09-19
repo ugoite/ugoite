@@ -89,6 +89,34 @@ describe("/spaces/:space_id/search", () => {
     expect(sqlSessionCalls).toBe(0);
   });
 
+  it("PR6: a no-result search offers a clear action that resets query and filters", async () => {
+    server.use(
+      http.get(
+        testApiUrl("/spaces/default/search"),
+        () => HttpResponse.json([]),
+      ),
+    );
+
+    render(() => <SpaceSearchRoute />);
+
+    const keywords = screen.getByLabelText("Search keywords");
+    fireEvent.input(keywords, { target: { value: "nothing-matches" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search entries" }));
+
+    expect(await screen.findByText("No matching entries found."))
+      .toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Clear search" }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText("No matching entries found."),
+      ).not.toBeInTheDocument()
+    );
+    expect(screen.getByLabelText("Search keywords")).toHaveValue("");
+  });
+
   it("REQ-SRCH-005: advanced search sends logical criteria without SQL construction", async () => {
     const meetingForm: Form = {
       name: "Meeting",

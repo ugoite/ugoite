@@ -10760,16 +10760,10 @@ async fn get_asset(
     // An Asset ID alone is not a readable REST resource; the containing Entry is required.
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let form_name = query.form.ok_or_else(|| {
-        ApiError::new(
-            StatusCode::FORBIDDEN,
-            "asset reads require a containing Form and Entry context",
-        )
+        ApiError::from_core(anyhow::Error::from(AppError::asset_context_required()))
     })?;
     let entry_id = query.entry_id.ok_or_else(|| {
-        ApiError::new(
-            StatusCode::FORBIDDEN,
-            "asset reads require a containing Form and Entry context",
-        )
+        ApiError::from_core(anyhow::Error::from(AppError::asset_context_required()))
     })?;
     validate_id(&asset_id, "asset_id")?;
     validate_id(&entry_id, "entry_id")?;
@@ -16081,7 +16075,8 @@ mod authentication_regression_tests {
             .with_state(state);
 
         // The missing-context rejection is one stable fail-closed surface:
-        // every partial query combination returns the same 403 detail.
+        // every partial query combination returns the same 403 detail with
+        // the additive ASSET_CONTEXT_REQUIRED machine code.
         const MISSING_CONTEXT: &str = "asset reads require a containing Form and Entry context";
         for uri in [
             format!("/spaces/{space_id}/assets/asset-id"),
@@ -16095,7 +16090,10 @@ mod authentication_regression_tests {
             assert_eq!(response.status(), StatusCode::FORBIDDEN);
             let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
             let body: Value = serde_json::from_slice(&body)?;
-            assert_eq!(body["detail"], MISSING_CONTEXT);
+            assert_eq!(body["code"], "ASSET_CONTEXT_REQUIRED");
+            assert_eq!(body["message"], MISSING_CONTEXT);
+            // No hidden references leak into the rejection payload.
+            assert!(body.get("detail").is_none());
         }
         Ok(())
     }

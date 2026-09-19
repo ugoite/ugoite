@@ -24,6 +24,23 @@ beforeEach(() => {
 describe("CreateFormDialog", () => {
   const columnTypes = ["string", "number", "boolean"];
 
+  it("#2876: renders the no-columns empty state as plain FieldStack-adjacent text without card chrome", () => {
+    const { container } = render(() => (
+      <CreateFormDialog
+        open={true}
+        columnTypes={columnTypes}
+        formNames={[]}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />
+    ));
+
+    const empty = screen.getByText("No columns defined");
+    expect(empty.tagName).toBe("P");
+    expect(empty).toHaveClass("ui-muted");
+    expect(container.querySelector(".ui-card")).toBeNull();
+  });
+
   it("keeps form dialog actions at their intrinsic height", () => {
     const { container } = render(() => (
       <CreateFormDialog
