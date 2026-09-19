@@ -1,4 +1,4 @@
-use crate::cli_config::{resolve_command_triple, split_space_and_id};
+use crate::cli_config::{resolve_command_target, split_space_and_id, SpaceTarget};
 use crate::http;
 use crate::output::print_json;
 use anyhow::Result;
@@ -61,57 +61,63 @@ pub async fn run(
 ) -> Result<()> {
     match cmd.sub {
         FormSubCmd::List { space_path } => {
-            let (root, space_id, base) = resolve_command_triple(
+            let target = resolve_command_target(
                 space_path.as_deref(),
                 explicit_config,
                 context_override,
                 "form list",
             )?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let result = http::execute_for_target(
+                    &target,
                     "form.list",
-                    serde_json::json!({"space_id": space_id}),
+                    serde_json::json!({"space_id": space_uid}),
                     None,
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            let forms = service.list_forms(&space_id).await?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation form.list does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let forms = service.list_forms(space_id).await?;
             print_json(&forms);
         }
         FormSubCmd::Get { space_and_name } => {
             let (legacy_space, form_name) =
                 split_space_and_id(&space_and_name, "FORM_NAME", "form get")?;
             let form_name = form_name.to_string();
-            let (root, space_id, base) = resolve_command_triple(
+            let target = resolve_command_target(
                 legacy_space,
                 explicit_config,
                 context_override,
                 "form get",
             )?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let result = http::execute_for_target(
+                    &target,
                     "form.get",
-                    serde_json::json!({"space_id": space_id, "form_name": form_name}),
+                    serde_json::json!({"space_id": space_uid, "form_name": form_name}),
                     None,
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            let form = service.get_form(&space_id, &form_name).await?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation form.get does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let form = service.get_form(space_id, &form_name).await?;
             print_json(&form);
         }
         FormSubCmd::Update { space_and_file } => {
             let (legacy_space, form_file) =
                 split_space_and_id(&space_and_file, "FORM_FILE", "form update")?;
             let form_file = form_file.to_string();
-            let (root, space_id, base) = resolve_command_triple(
+            let target = resolve_command_target(
                 legacy_space,
                 explicit_config,
                 context_override,
@@ -119,19 +125,22 @@ pub async fn run(
             )?;
             let form_text = std::fs::read_to_string(&form_file)?;
             let form_def: serde_json::Value = serde_json::from_str(&form_text)?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let result = http::execute_for_target(
+                    &target,
                     "form.upsert",
-                    serde_json::json!({"space_id": space_id}),
+                    serde_json::json!({"space_id": space_uid}),
                     Some(form_def),
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            service.upsert_form(&space_id, &form_def).await?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation form.upsert does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            service.upsert_form(space_id, &form_def).await?;
             print_json(&serde_json::json!({"updated": true}));
         }
         FormSubCmd::ListTypes => {

@@ -1,4 +1,6 @@
-use crate::cli_config::{resolve_command_triple, split_space_and_id};
+use crate::cli_config::{
+    resolve_command_target, resolve_command_triple, split_space_and_id, SpaceTarget,
+};
 use crate::config::{effective_format, print_json, print_json_table, Format};
 use crate::http;
 use crate::output::{emit_success, UsageError};
@@ -134,27 +136,30 @@ pub async fn run(
             if name.trim().is_empty() {
                 return Err(UsageError("PIN_NAME must not be blank".to_string()).into());
             }
-            let (root, space_id, base) = resolve_command_triple(
+            let target = resolve_command_target(
                 legacy_space,
                 explicit_config,
                 context_override,
                 "pin create",
             )?;
-            if let Some(base) = base {
-                let result = step_up::execute_with_step_up(
-                    &base,
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let result = step_up::execute_with_step_up_for_target(
+                    &target,
                     "pin.create",
-                    serde_json::json!({"space_id": space_id}),
+                    serde_json::json!({"space_id": space_uid}),
                     Some(serde_json::json!({"name": name})),
-                    Some(space_id.as_str()),
+                    Some(space_uid.as_str()),
                 )
                 .await?;
                 emit_success(&result, &fmt, Some(format!("created pin {name}")));
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation pin.create does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
             let pin = service
-                .create_pin(&space_id, &name, "cli", &uuid::Uuid::now_v7().to_string())
+                .create_pin(space_id, &name, "cli", &uuid::Uuid::now_v7().to_string())
                 .await?;
             emit_success(&pin, &fmt, Some(format!("created pin {name}")));
         }
@@ -251,27 +256,30 @@ pub async fn run(
             let (legacy_space, name) =
                 split_space_and_id(&space_and_name, "PIN_NAME", "pin delete")?;
             let name = name.to_string();
-            let (root, space_id, base) = resolve_command_triple(
+            let target = resolve_command_target(
                 legacy_space,
                 explicit_config,
                 context_override,
                 "pin delete",
             )?;
-            if let Some(base) = base {
-                let result = step_up::execute_with_step_up(
-                    &base,
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let result = step_up::execute_with_step_up_for_target(
+                    &target,
                     "pin.delete",
-                    serde_json::json!({"space_id": space_id, "pin_name": name}),
+                    serde_json::json!({"space_id": space_uid, "pin_name": name}),
                     None,
-                    Some(space_id.as_str()),
+                    Some(space_uid.as_str()),
                 )
                 .await?;
                 emit_success(&result, &fmt, Some(format!("deleted pin {name}")));
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation pin.delete does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
             service
-                .delete_pin(&space_id, &name, &uuid::Uuid::now_v7().to_string())
+                .delete_pin(space_id, &name, &uuid::Uuid::now_v7().to_string())
                 .await?;
             emit_success(
                 &serde_json::json!({"name": name, "status": "deleted"}),

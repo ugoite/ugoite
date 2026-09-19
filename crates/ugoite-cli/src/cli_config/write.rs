@@ -12,7 +12,15 @@ use super::merge::EffectiveConfig;
 use super::model::{serialize_config, ConfigFile};
 
 /// Write `config` atomically via temp-file + rename in the same directory.
+///
+/// Single canonical write-boundary implementation: temp file in the same
+/// directory, write-all, fsync file, atomic rename, fsync parent dir. Never
+/// chmods the target directory (project-local `.ugoite/` keeps its existing
+/// permissions; `~/.ugoite` ownership is managed by the credential path).
 pub fn write_config_file_atomic(path: &Path, config: &ConfigFile) -> Result<()> {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)
@@ -25,9 +33,31 @@ pub fn write_config_file_atomic(path: &Path, config: &ConfigFile) -> Result<()> 
         Some(dir) => tempfile_named_in(dir)?,
         None => tempfile_named_in(Path::new("."))?,
     };
-    std::fs::write(&temp, text.as_bytes())
-        .with_context(|| format!("write temporary config {}", temp.display()))?;
-    std::fs::rename(&temp, path).with_context(|| format!("publish config {}", path.display()))?;
+    let write_result = (|| -> Result<()> {
+        // O_EXCL: uuid temp names never collide; a hit is a fail-closed error.
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temp)
+            .with_context(|| format!("write temporary config {}", temp.display()))?;
+        file.write_all(text.as_bytes())
+            .with_context(|| format!("write temporary config {}", temp.display()))?;
+        file.sync_all()
+            .with_context(|| format!("sync temporary config {}", temp.display()))?;
+        drop(file);
+        std::fs::rename(&temp, path)
+            .with_context(|| format!("publish config {}", path.display()))?;
+        Ok(())
+    })();
+    if write_result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    write_result?;
+    // fsync parent dir so the rename is durable; best-effort on non-unix.
+    let parent_dir = parent.unwrap_or(Path::new("."));
+    if let Ok(dir) = std::fs::File::open(parent_dir) {
+        let _ = dir.sync_all();
+    }
     Ok(())
 }
 
@@ -48,12 +78,20 @@ pub fn normalize_core_root_to_absolute(input: &str, cwd: &Path) -> String {
 /// Deterministic collision-free context name (plan sections 32-33):
 /// `<space>`, `<connection>-<space>`, `<connection>-2-<space>`, ...
 /// Collision is checked against the whole effective namespace.
+/// An empty slug never yields an empty context name: it falls back to the
+/// connection name (fail-closed against `validate_config_name`).
 pub fn unique_context_name(
     effective: &EffectiveConfig,
     connection_name: &str,
     space_slug: &str,
 ) -> String {
-    let slug = space_slug.trim();
+    let trimmed = space_slug.trim();
+    let slug = if trimmed.is_empty() {
+        connection_name.trim()
+    } else {
+        trimmed
+    };
+    let slug = if slug.is_empty() { "context" } else { slug };
     if !effective.contexts.contains_key(slug) {
         return slug.to_owned();
     }
