@@ -5,6 +5,7 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
+import { Portal } from "solid-js/web";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { t } from "~/lib/i18n";
 
@@ -103,59 +104,61 @@ export function ConfirmDestructiveAction(
   };
 
   return (
-    <Show when={props.open}>
-      <div
-        class="ui-backdrop"
-        onClick={(event) => {
-          if (event.target === event.currentTarget) close();
-        }}
-      >
+    <Portal>
+      <Show when={props.open}>
         <div
-          ref={dialogRef}
-          class="ui-dialog ui-confirm-destructive-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={titleId}
-          aria-describedby={bodyId}
-          onKeyDown={handleKeyDown}
+          class="ui-backdrop"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) close();
+          }}
         >
-          <h2 id={titleId} class="ui-dialog-title">
-            {props.title}
-          </h2>
-          <p id={bodyId} class="ui-confirm-destructive-body">
-            {props.body}
-          </p>
-          {props.children}
-          <div class="ui-dialog-actions">
-            <button
-              ref={cancelRef}
-              type="button"
-              class="ui-button ui-button-secondary"
-              disabled={busy()}
-              onClick={close}
-            >
-              {props.cancelLabel ?? t("common.cancel")}
-            </button>
-            <button
-              type="button"
-              class="ui-button ui-button-primary ui-button-danger"
-              aria-busy={busy() || undefined}
-              disabled={busy()}
-              onClick={props.onConfirm}
-            >
-              <Show when={busy()}>
-                <ButtonSpinner />
-              </Show>
-              {props.confirmLabel}
-            </button>
-          </div>
-          <Show when={props.error}>
-            <p class="ui-alert ui-alert-error mt-3" role="alert">
-              {props.error}
+          <div
+            ref={dialogRef}
+            class="ui-dialog ui-confirm-destructive-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            aria-describedby={bodyId}
+            onKeyDown={handleKeyDown}
+          >
+            <h2 id={titleId} class="ui-dialog-title">
+              {props.title}
+            </h2>
+            <p id={bodyId} class="ui-confirm-destructive-body">
+              {props.body}
             </p>
-          </Show>
+            {props.children}
+            <div class="ui-dialog-actions">
+              <button
+                ref={cancelRef}
+                type="button"
+                class="ui-button ui-button-secondary"
+                disabled={busy()}
+                onClick={close}
+              >
+                {props.cancelLabel ?? t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                class="ui-button ui-button-primary ui-button-danger"
+                aria-busy={busy() || undefined}
+                disabled={busy()}
+                onClick={props.onConfirm}
+              >
+                <Show when={busy()}>
+                  <ButtonSpinner />
+                </Show>
+                {props.confirmLabel}
+              </button>
+            </div>
+            <Show when={props.error}>
+              <p class="ui-alert ui-alert-error mt-3" role="alert">
+                {props.error}
+              </p>
+            </Show>
+          </div>
         </div>
-      </div>
-    </Show>
+      </Show>
+    </Portal>
   );
 }

@@ -105,6 +105,7 @@ describe("ConfirmDestructiveAction", () => {
     renderDialog();
     const app = document.getElementById("app")!;
     expect(app).toHaveAttribute("inert");
+    expect(screen.getByRole("dialog").closest("#app")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
