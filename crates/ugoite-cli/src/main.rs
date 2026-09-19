@@ -164,9 +164,11 @@ async fn run(cli: Cli) -> Result<()> {
         }
         Commands::Space(cmd) => commands::space::run(cmd, explicit_config, explicit_context).await,
         Commands::Entry(cmd) => commands::entry::run(cmd, explicit_config, explicit_context).await,
-        Commands::Form(cmd) => commands::form::run(cmd).await,
+        Commands::Form(cmd) => commands::form::run(cmd, explicit_config, explicit_context).await,
         Commands::Asset(cmd) => commands::asset::run(cmd).await,
-        Commands::Search(cmd) => commands::search::run(cmd).await,
+        Commands::Search(cmd) => {
+            commands::search::run(cmd, explicit_config, explicit_context).await
+        }
         Commands::Change(cmd) => commands::change::run(cmd).await,
         Commands::Pin(cmd) => commands::pin::run(cmd).await,
         Commands::Run(cmd) => commands::run::run(cmd).await,

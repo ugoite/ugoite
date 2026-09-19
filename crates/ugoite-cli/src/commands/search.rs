@@ -1,6 +1,8 @@
-use crate::config::{load_config, print_json, resolve_space_reference, validated_base_url};
+use crate::cli_config::{resolve_command_triple, split_space_and_id};
 use crate::http;
-use crate::output::{effective_format, emit_success, print_json_table, Format, UsageError};
+use crate::output::{
+    effective_format, emit_success, print_json, print_json_table, Format, UsageError,
+};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use ugoite_iceberg::service::UgoiteService;
@@ -18,19 +20,16 @@ pub struct SearchCmd {
 pub enum SearchSubCmd {
     /// Keyword search
     #[command(
-        long_about = "Run keyword search. Attachment text is searchable only after `index run` has rebuilt the derived index.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or a bare immutable `SPACE_UID`.\n\nExamples:\n  # Core mode\n  ugoite search keyword /root/spaces/my-space invoice\n\n  # Backend mode (immutable Space UID)\n  ugoite search keyword 019f1234-5678-7abc-8def-0123456789ab invoice"
+        long_about = "Run keyword search. Attachment text is searchable only after `index run` has rebuilt the derived index.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or a bare immutable `SPACE_UID`.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite search keyword invoice\n\n  # Legacy explicit Space (v0.1.x compatibility)\n  ugoite search keyword /root/spaces/my-space invoice\n  ugoite search keyword 019f1234-5678-7abc-8def-0123456789ab invoice"
     )]
     Keyword {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_UID_OR_PATH_OR_QUERY",
+            num_args(1..=2),
+            required = true,
+            help = "QUERY against the selected context (Plain-text query string to match against Entry content), or legacy SPACE_UID_OR_PATH QUERY."
         )]
-        space_path: String,
-        #[arg(
-            value_name = "QUERY",
-            help = "Plain-text query string to match against Entry content."
-        )]
-        query: String,
+        space_and_query: Vec<String>,
     },
     /// Typed structured search over Form fields
     #[command(
@@ -45,9 +44,9 @@ pub enum SearchSubCmd {
 pub struct SearchQueryArgs {
     #[arg(
         value_name = "SPACE_UID_OR_PATH",
-        help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+        help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
     )]
-    pub space_path: String,
+    pub space_path: Option<String>,
     #[arg(long, help = "Logical Form name to search.")]
     pub form: Option<String>,
     #[arg(
@@ -244,13 +243,24 @@ fn criteria_rows_table(rows: &[serde_json::Value]) -> Vec<serde_json::Value> {
         .collect()
 }
 
-pub async fn run(cmd: SearchCmd) -> Result<()> {
-    let config = load_config()?;
+pub async fn run(
+    cmd: SearchCmd,
+    explicit_config: Option<&std::path::Path>,
+    context_override: Option<&str>,
+) -> Result<()> {
     let fmt = effective_format(cmd.format);
     match cmd.sub {
-        SearchSubCmd::Keyword { space_path, query } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "search keyword")?;
-            if let Some(base) = validated_base_url(&config)? {
+        SearchSubCmd::Keyword { space_and_query } => {
+            let (legacy_space, query) =
+                split_space_and_id(&space_and_query, "QUERY", "search keyword")?;
+            let query = query.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "search keyword",
+            )?;
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "search.keyword",
@@ -310,8 +320,13 @@ pub async fn run(cmd: SearchCmd) -> Result<()> {
                 criteria_file,
             })
             .map_err(anyhow::Error::from)?;
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "search query")?;
-            if let Some(base) = validated_base_url(&config)? {
+            let (root, space_id, base) = resolve_command_triple(
+                space_path.as_deref(),
+                explicit_config,
+                context_override,
+                "search query",
+            )?;
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "search.query",
