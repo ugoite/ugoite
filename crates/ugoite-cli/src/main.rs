@@ -120,9 +120,9 @@ enum Commands {
     Query {
         #[arg(
             value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
         )]
-        space_path: String,
+        space_path: Option<String>,
         #[arg(
             long,
             help = "Read-only DataFusion SQL over authorized Iceberg Form relations. Use the backend-provided form_<FormId> relation and field_<FieldId> columns, plus _ugoite_* metadata columns.\n\nExample: \"SELECT _ugoite_id, field_100 FROM \\\"form_<FormId>\\\" LIMIT 10\""
@@ -165,15 +165,17 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Space(cmd) => commands::space::run(cmd, explicit_config, explicit_context).await,
         Commands::Entry(cmd) => commands::entry::run(cmd, explicit_config, explicit_context).await,
         Commands::Form(cmd) => commands::form::run(cmd, explicit_config, explicit_context).await,
-        Commands::Asset(cmd) => commands::asset::run(cmd).await,
+        Commands::Asset(cmd) => commands::asset::run(cmd, explicit_config, explicit_context).await,
         Commands::Search(cmd) => {
             commands::search::run(cmd, explicit_config, explicit_context).await
         }
-        Commands::Change(cmd) => commands::change::run(cmd).await,
-        Commands::Pin(cmd) => commands::pin::run(cmd).await,
-        Commands::Run(cmd) => commands::run::run(cmd).await,
-        Commands::Sql(cmd) => commands::sql::run(cmd).await,
-        Commands::Index(cmd) => commands::index::run(cmd).await,
+        Commands::Change(cmd) => {
+            commands::change::run(cmd, explicit_config, explicit_context).await
+        }
+        Commands::Pin(cmd) => commands::pin::run(cmd, explicit_config, explicit_context).await,
+        Commands::Run(cmd) => commands::run::run(cmd, explicit_config, explicit_context).await,
+        Commands::Sql(cmd) => commands::sql::run(cmd, explicit_config, explicit_context).await,
+        Commands::Index(cmd) => commands::index::run(cmd, explicit_config, explicit_context).await,
         Commands::Konase(cmd) => commands::konase::run(cmd).await,
         Commands::CreateSpace {
             root_path,
@@ -188,7 +190,15 @@ async fn run(cli: Cli) -> Result<()> {
             )
             .await
         }
-        Commands::Query { space_path, sql } => commands::index::query_cmd(&space_path, &sql).await,
+        Commands::Query { space_path, sql } => {
+            commands::index::query_cmd(
+                space_path.as_deref(),
+                &sql,
+                explicit_config,
+                explicit_context,
+            )
+            .await
+        }
     }
 }
 

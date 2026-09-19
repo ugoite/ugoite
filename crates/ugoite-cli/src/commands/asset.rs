@@ -1,7 +1,5 @@
-use crate::config::{
-    effective_format, load_config, print_json, print_json_table, resolve_space_reference,
-    validated_base_url, EndpointConfig, Format,
-};
+use crate::cli_config::{resolve_command_triple, split_space_and_id};
+use crate::config::{effective_format, print_json, print_json_table, Format};
 use crate::http;
 use anyhow::Result;
 use clap::{Args, Subcommand};
@@ -32,11 +30,12 @@ pub enum AssetSubCmd {
     )]
     Upload {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_OR_FILE",
+            num_args(1..=2),
+            required = true,
+            help = "FILE against the selected context (local file to upload), or legacy SPACE FILE."
         )]
-        space_path: String,
-        file_path: String,
+        space_and_file: Vec<String>,
         #[arg(long)]
         filename: Option<String>,
     },
@@ -46,11 +45,12 @@ pub enum AssetSubCmd {
     )]
     Delete {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_OR_ASSET_ID",
+            num_args(1..=2),
+            required = true,
+            help = "ASSET_ID against the selected context, or legacy SPACE ASSET_ID."
         )]
-        space_path: String,
-        asset_id: String,
+        space_and_id: Vec<String>,
         #[arg(long)]
         human_approval: Option<String>,
     },
@@ -61,9 +61,9 @@ pub enum AssetSubCmd {
     List {
         #[arg(
             value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
         )]
-        space_path: String,
+        space_path: Option<String>,
     },
     /// Read an asset referenced by an entry field
     #[command(
@@ -71,11 +71,12 @@ pub enum AssetSubCmd {
     )]
     Read {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_OR_ASSET_ID",
+            num_args(1..=2),
+            required = true,
+            help = "ASSET_ID against the selected context, or legacy SPACE ASSET_ID."
         )]
-        space_path: String,
-        asset_id: String,
+        space_and_id: Vec<String>,
         #[arg(long, help = "Containing entry that references the asset")]
         entry: String,
         #[arg(long, help = "Entry field that references the asset")]
@@ -87,11 +88,12 @@ pub enum AssetSubCmd {
     )]
     Download {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_OR_ASSET_ID",
+            num_args(1..=2),
+            required = true,
+            help = "ASSET_ID against the selected context, or legacy SPACE ASSET_ID."
         )]
-        space_path: String,
-        asset_id: String,
+        space_and_id: Vec<String>,
         #[arg(long, help = "Containing entry that references the asset")]
         entry: String,
         #[arg(long, help = "Entry field that references the asset")]
@@ -101,16 +103,26 @@ pub enum AssetSubCmd {
     },
 }
 
-pub async fn run(cmd: AssetCmd) -> Result<()> {
-    let config = load_config()?;
+pub async fn run(
+    cmd: AssetCmd,
+    explicit_config: Option<&std::path::Path>,
+    context_override: Option<&str>,
+) -> Result<()> {
     let fmt = effective_format(cmd.format);
     match cmd.sub {
         AssetSubCmd::Upload {
-            space_path,
-            file_path,
+            space_and_file,
             filename,
         } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "asset upload")?;
+            let (legacy_space, file_path) =
+                split_space_and_id(&space_and_file, "FILE", "asset upload")?;
+            let file_path = file_path.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "asset upload",
+            )?;
             let file_size = std::fs::metadata(&file_path)?.len();
             if file_size > ugoite_iceberg::asset::MAX_ASSET_BYTES as u64 {
                 anyhow::bail!(
@@ -136,7 +148,7 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
                     .unwrap_or("asset")
                     .to_string()
             });
-            if let Some(base) = validated_base_url(&config)? {
+            if let Some(base) = base {
                 let result = http::execute_multipart(
                     &base,
                     "asset.upload",
@@ -153,14 +165,21 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
             print_json(&asset);
         }
         AssetSubCmd::Delete {
-            space_path,
-            asset_id,
+            space_and_id,
             human_approval,
         } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "asset delete")?;
+            let (legacy_space, asset_id) =
+                split_space_and_id(&space_and_id, "ASSET_ID", "asset delete")?;
+            let asset_id = asset_id.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "asset delete",
+            )?;
             let human_approval =
                 human_approval.or_else(|| std::env::var("UGOITE_HUMAN_APPROVAL").ok());
-            if let Some(base) = validated_base_url(&config)? {
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "asset.delete",
@@ -179,8 +198,13 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
             print_json(&serde_json::json!({"deleted": true}));
         }
         AssetSubCmd::List { space_path } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "asset list")?;
-            let items = if let Some(base) = validated_base_url(&config)? {
+            let (root, space_id, base) = resolve_command_triple(
+                space_path.as_deref(),
+                explicit_config,
+                context_override,
+                "asset list",
+            )?;
+            let items = if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "asset.list",
@@ -210,20 +234,22 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
             print_json(&items);
         }
         AssetSubCmd::Read {
-            space_path,
-            asset_id,
+            space_and_id,
             entry,
             field,
         } => {
-            let context = resolve_asset_context(
-                &config,
-                &space_path,
-                &asset_id,
-                &entry,
-                &field,
+            let (legacy_space, asset_id) =
+                split_space_and_id(&space_and_id, "ASSET_ID", "asset read")?;
+            let asset_id = asset_id.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
                 "asset read",
-            )
-            .await?;
+            )?;
+            let context =
+                resolve_asset_context(&root, &space_id, base.as_deref(), &asset_id, &entry, &field)
+                    .await?;
             match inline_text(&context.bytes, reference_media_type(&context.reference)) {
                 Some(preview) => {
                     if fmt == Format::Json {
@@ -242,25 +268,27 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
             }
         }
         AssetSubCmd::Download {
-            space_path,
-            asset_id,
+            space_and_id,
             entry,
             field,
             out,
         } => {
+            let (legacy_space, asset_id) =
+                split_space_and_id(&space_and_id, "ASSET_ID", "asset download")?;
+            let asset_id = asset_id.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "asset download",
+            )?;
             let use_stdout = out.trim() == "-";
             if use_stdout && std::io::stdout().is_terminal() {
                 anyhow::bail!("refusing to write binary asset bytes to a terminal; use --out PATH");
             }
-            let context = resolve_asset_context(
-                &config,
-                &space_path,
-                &asset_id,
-                &entry,
-                &field,
-                "asset download",
-            )
-            .await?;
+            let context =
+                resolve_asset_context(&root, &space_id, base.as_deref(), &asset_id, &entry, &field)
+                    .await?;
             if use_stdout {
                 IoWrite::write_all(&mut std::io::stdout().lock(), &context.bytes)
                     .map_err(|error| anyhow::anyhow!("write asset bytes to stdout: {error}"))?;
@@ -295,16 +323,14 @@ struct AssetContext {
 }
 
 async fn resolve_asset_context(
-    config: &EndpointConfig,
-    space_path: &str,
+    root: &str,
+    space_id: &str,
+    base: Option<&str>,
     asset_id: &str,
     entry_id: &str,
     field: &str,
-    command_name: &str,
 ) -> Result<AssetContext> {
-    let (root, space_id) = resolve_space_reference(config, space_path, command_name)?;
-    let base = validated_base_url(config)?;
-    let items = if let Some(base) = &base {
+    let items = if let Some(base) = base {
         http::execute(
             base,
             "asset.list",
@@ -316,8 +342,8 @@ async fn resolve_asset_context(
         .cloned()
         .unwrap_or_default()
     } else {
-        let service = UgoiteService::new_without_background_refresh(&root)?;
-        service.list_assets(&space_id).await?
+        let service = UgoiteService::new_without_background_refresh(root)?;
+        service.list_assets(space_id).await?
     };
     let reference = items
         .iter()
@@ -338,7 +364,7 @@ async fn resolve_asset_context(
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default()
         .to_string();
-    let bytes = if let Some(base) = &base {
+    let bytes = if let Some(base) = base {
         http::execute_bytes(
             base,
             "asset.read",
@@ -351,11 +377,11 @@ async fn resolve_asset_context(
         )
         .await?
     } else {
-        let service = UgoiteService::new_without_background_refresh(&root)?;
+        let service = UgoiteService::new_without_background_refresh(root)?;
         service
-            .ensure_asset_reference_is_readable(&space_id, &form, entry_id, asset_id)
+            .ensure_asset_reference_is_readable(space_id, &form, entry_id, asset_id)
             .await?;
-        service.read_asset(&space_id, asset_id).await?.bytes
+        service.read_asset(space_id, asset_id).await?.bytes
     };
     Ok(AssetContext { reference, bytes })
 }

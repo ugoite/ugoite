@@ -86,9 +86,9 @@ pub enum SpaceSubCmd {
     Patch {
         #[arg(
             value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
         )]
-        space_path: String,
+        space_path: Option<String>,
         #[arg(long)]
         name: Option<String>,
         #[arg(long)]
@@ -182,9 +182,9 @@ pub enum SpaceSubCmd {
     AuditEvents {
         #[arg(
             value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
         )]
-        space_path: String,
+        space_path: Option<String>,
         #[arg(long, default_value_t = 0)]
         offset: u64,
         #[arg(
@@ -571,7 +571,6 @@ pub async fn run(
     explicit_config: Option<&std::path::Path>,
     context_override: Option<&str>,
 ) -> Result<()> {
-    let config = load_config()?;
     let fmt = effective_format(cmd.format);
     match cmd.sub {
         SpaceSubCmd::Create {
@@ -593,6 +592,9 @@ pub async fn run(
                 .await?;
                 return Ok(());
             }
+            // Legacy positional path only; migrated Get/Patch/AuditEvents
+            // resolve without touching the legacy endpoint file.
+            let config = load_config()?;
             if let Some(base) = validated_base_url(&config)? {
                 // Backend/api creation takes a new human-readable slug; the
                 // server-generated Space UID in the response is the authority
@@ -623,6 +625,7 @@ pub async fn run(
             );
         }
         SpaceSubCmd::List { root_path } => {
+            let config = load_config()?;
             if let Some(base) = validated_base_url(&config)? {
                 let result =
                     http::execute(&base, "space.list", serde_json::json!({}), None).await?;
@@ -681,7 +684,12 @@ pub async fn run(
             storage_config,
             settings,
         } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "space patch")?;
+            let (root, space_id, base) = crate::cli_config::resolve_command_triple(
+                space_path.as_deref(),
+                explicit_config,
+                context_override,
+                "space patch",
+            )?;
             let mut patch = serde_json::Map::new();
             if let Some(n) = name {
                 patch.insert("name".to_string(), serde_json::json!(n));
@@ -695,7 +703,7 @@ pub async fn run(
                 validate_patch_settings(&v)?;
                 patch.insert("settings".to_string(), v);
             }
-            if let Some(base) = validated_base_url(&config)? {
+            if let Some(base) = base {
                 let result = step_up::execute_with_step_up(
                     &base,
                     "space.patch",
@@ -788,6 +796,7 @@ pub async fn run(
             print_json(&result);
         }
         SpaceSubCmd::Members { space_path } => {
+            let config = load_config()?;
             let space_id = resolve_backend_space_uid(&space_path, "space members")?;
             if let Some(base) = validated_base_url(&config)? {
                 let result = http::execute(
@@ -807,9 +816,13 @@ pub async fn run(
             offset,
             limit,
         } => {
-            let (root, space_id) =
-                resolve_space_reference(&config, &space_path, "space audit-events")?;
-            if let Some(base) = validated_base_url(&config)? {
+            let (root, space_id, base) = crate::cli_config::resolve_command_triple(
+                space_path.as_deref(),
+                explicit_config,
+                context_override,
+                "space audit-events",
+            )?;
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "space.audit",

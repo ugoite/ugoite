@@ -1,4 +1,5 @@
-use crate::config::{load_config, print_json, resolve_space_reference, validated_base_url};
+use crate::cli_config::resolve_command_triple;
+use crate::config::print_json;
 use crate::http;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
@@ -17,14 +18,14 @@ pub struct IndexCmd {
 pub enum IndexSubCmd {
     /// Reindex a space
     #[command(
-        long_about = "Reindex a space.\n\nExamples:\n  # Core mode\n  ugoite index run /root/spaces/my-space\n\n  # Backend mode (immutable Space UID)\n  ugoite index run 019f1234-5678-7abc-8def-0123456789ab"
+        long_about = "Reindex a space.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite index run\n\n  # Legacy explicit Space (v0.1.x compatibility)\n  ugoite index run /root/spaces/my-space\n  ugoite index run 019f1234-5678-7abc-8def-0123456789ab"
     )]
     Run {
         #[arg(
             value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
         )]
-        space_path: String,
+        space_path: Option<String>,
         #[arg(
             long,
             value_name = "COMPONENT",
@@ -39,21 +40,29 @@ pub enum IndexSubCmd {
     Stats {
         #[arg(
             value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
         )]
-        space_path: String,
+        space_path: Option<String>,
     },
 }
 
-pub async fn run(cmd: IndexCmd) -> Result<()> {
-    let config = load_config()?;
+pub async fn run(
+    cmd: IndexCmd,
+    explicit_config: Option<&std::path::Path>,
+    context_override: Option<&str>,
+) -> Result<()> {
     match cmd.sub {
         IndexSubCmd::Run {
             space_path,
             component,
         } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "index run")?;
-            if validated_base_url(&config)?.is_some() {
+            let (root, space_id, base) = resolve_command_triple(
+                space_path.as_deref(),
+                explicit_config,
+                context_override,
+                "index run",
+            )?;
+            if base.is_some() {
                 bail!(
                     "index run is not available in backend/api mode in this release; use core mode for local reindexing"
                 );
@@ -74,8 +83,13 @@ pub async fn run(cmd: IndexCmd) -> Result<()> {
             print_json(&serde_json::json!({"reindexed": true}));
         }
         IndexSubCmd::Stats { space_path } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "index stats")?;
-            if validated_base_url(&config)?.is_some() {
+            let (root, space_id, base) = resolve_command_triple(
+                space_path.as_deref(),
+                explicit_config,
+                context_override,
+                "index stats",
+            )?;
+            if base.is_some() {
                 bail!(
                     "index stats is not available in backend/api mode in this release; use core mode for local index stats"
                 );
@@ -88,10 +102,15 @@ pub async fn run(cmd: IndexCmd) -> Result<()> {
     Ok(())
 }
 
-pub async fn query_cmd(space_path: &str, sql: &str) -> Result<()> {
-    let config = load_config()?;
-    let (root, space_id) = resolve_space_reference(&config, space_path, "query")?;
-    if let Some(base) = validated_base_url(&config)? {
+pub async fn query_cmd(
+    space_path: Option<&str>,
+    sql: &str,
+    explicit_config: Option<&std::path::Path>,
+    context_override: Option<&str>,
+) -> Result<()> {
+    let (root, space_id, base) =
+        resolve_command_triple(space_path, explicit_config, context_override, "query")?;
+    if let Some(base) = base {
         let session = http::execute(
             &base,
             "sql_session.create",

@@ -1,7 +1,5 @@
-use crate::config::{
-    effective_format, load_config, print_json, print_json_table, resolve_space_reference,
-    validated_base_url, Format,
-};
+use crate::cli_config::{resolve_command_triple, split_space_and_id};
+use crate::config::{effective_format, print_json, print_json_table, Format};
 use crate::http;
 use crate::output::{emit_success, UsageError};
 use crate::step_up;
@@ -27,12 +25,12 @@ pub enum PinSubCmd {
     )]
     Create {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_OR_PIN_NAME",
+            num_args(1..=2),
+            required = true,
+            help = "PIN_NAME against the selected context (New pin name), or legacy SPACE PIN_NAME."
         )]
-        space_path: String,
-        #[arg(value_name = "PIN_NAME", help = "New pin name")]
-        name: String,
+        space_and_name: Vec<String>,
     },
     /// List pins in a space
     #[command(
@@ -41,9 +39,9 @@ pub enum PinSubCmd {
     List {
         #[arg(
             value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
         )]
-        space_path: String,
+        space_path: Option<String>,
     },
     /// Read one pin without mutating knowledge
     #[command(
@@ -51,12 +49,12 @@ pub enum PinSubCmd {
     )]
     Read {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_OR_PIN_NAME",
+            num_args(1..=2),
+            required = true,
+            help = "PIN_NAME against the selected context (Pin name to read), or legacy SPACE PIN_NAME."
         )]
-        space_path: String,
-        #[arg(value_name = "PIN_NAME", help = "Pin name to read")]
-        name: String,
+        space_and_name: Vec<String>,
     },
     /// Diff two named pins explicitly
     #[command(
@@ -65,9 +63,9 @@ pub enum PinSubCmd {
     Diff {
         #[arg(
             value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
         )]
-        space_path: String,
+        space_path: Option<String>,
         #[arg(long, help = "Base pin name")]
         from: String,
         #[arg(long, help = "Target pin name")]
@@ -79,12 +77,12 @@ pub enum PinSubCmd {
     )]
     Delete {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_OR_PIN_NAME",
+            num_args(1..=2),
+            required = true,
+            help = "PIN_NAME against the selected context (Pin name to delete), or legacy SPACE PIN_NAME."
         )]
-        space_path: String,
-        #[arg(value_name = "PIN_NAME", help = "Pin name to delete")]
-        name: String,
+        space_and_name: Vec<String>,
     },
 }
 
@@ -122,16 +120,27 @@ fn pin_rows_table(pins: &serde_json::Value) -> Vec<serde_json::Value> {
         .unwrap_or_default()
 }
 
-pub async fn run(cmd: PinCmd) -> Result<()> {
-    let config = load_config()?;
+pub async fn run(
+    cmd: PinCmd,
+    explicit_config: Option<&std::path::Path>,
+    context_override: Option<&str>,
+) -> Result<()> {
     let fmt = effective_format(cmd.format);
     match cmd.sub {
-        PinSubCmd::Create { space_path, name } => {
+        PinSubCmd::Create { space_and_name } => {
+            let (legacy_space, name) =
+                split_space_and_id(&space_and_name, "PIN_NAME", "pin create")?;
+            let name = name.to_string();
             if name.trim().is_empty() {
                 return Err(UsageError("PIN_NAME must not be blank".to_string()).into());
             }
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "pin create")?;
-            if let Some(base) = validated_base_url(&config)? {
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "pin create",
+            )?;
+            if let Some(base) = base {
                 let result = step_up::execute_with_step_up(
                     &base,
                     "pin.create",
@@ -150,8 +159,13 @@ pub async fn run(cmd: PinCmd) -> Result<()> {
             emit_success(&pin, &fmt, Some(format!("created pin {name}")));
         }
         PinSubCmd::List { space_path } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "pin list")?;
-            if let Some(base) = validated_base_url(&config)? {
+            let (root, space_id, base) = resolve_command_triple(
+                space_path.as_deref(),
+                explicit_config,
+                context_override,
+                "pin list",
+            )?;
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "pin.list",
@@ -174,9 +188,16 @@ pub async fn run(cmd: PinCmd) -> Result<()> {
             }
             print_json(&pins);
         }
-        PinSubCmd::Read { space_path, name } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "pin read")?;
-            let pins = if let Some(base) = validated_base_url(&config)? {
+        PinSubCmd::Read { space_and_name } => {
+            let (legacy_space, name) = split_space_and_id(&space_and_name, "PIN_NAME", "pin read")?;
+            let name = name.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "pin read",
+            )?;
+            let pins = if let Some(base) = base {
                 http::execute(
                     &base,
                     "pin.list",
@@ -205,8 +226,13 @@ pub async fn run(cmd: PinCmd) -> Result<()> {
                     UsageError("--from and --to pin names must not be blank".to_string()).into(),
                 );
             }
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "pin diff")?;
-            if let Some(base) = validated_base_url(&config)? {
+            let (root, space_id, base) = resolve_command_triple(
+                space_path.as_deref(),
+                explicit_config,
+                context_override,
+                "pin diff",
+            )?;
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "space.pin_diff",
@@ -221,9 +247,17 @@ pub async fn run(cmd: PinCmd) -> Result<()> {
             let diff = service.diff_pins(&space_id, &from, &to).await?;
             emit_success(&diff, &fmt, None);
         }
-        PinSubCmd::Delete { space_path, name } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "pin delete")?;
-            if let Some(base) = validated_base_url(&config)? {
+        PinSubCmd::Delete { space_and_name } => {
+            let (legacy_space, name) =
+                split_space_and_id(&space_and_name, "PIN_NAME", "pin delete")?;
+            let name = name.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "pin delete",
+            )?;
+            if let Some(base) = base {
                 let result = step_up::execute_with_step_up(
                     &base,
                     "pin.delete",
