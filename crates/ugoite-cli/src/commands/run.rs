@@ -18,7 +18,7 @@ pub struct RunCmd {
 pub enum RunSubCmd {
     /// Undo a Run by appending inverses for its Changes
     #[command(
-        long_about = "Undo a Run by appending one inverse Change per Change correlated to the Run, in reverse publication order. The Run itself has no status record; repeating the request resumes it.\n\nThe command invocation itself is the explicit intent; no interactive prompt is shown. When the server requires human approval or reauthentication, the canonical step-up error is returned.\n\nExamples:\n  # Core mode\n  ugoite run undo /root/spaces/my-space run-1\n\n  # Backend mode (immutable Space UID)\n  ugoite run undo 019f1234-5678-7abc-8def-0123456789ab run-1"
+        long_about = "Undo a Run by appending one inverse Change per Change correlated to the Run, in reverse publication order. The Run itself has no status record; repeating the request resumes it.\n\nThe command invocation itself is the explicit intent; no interactive prompt is shown. When the server requires human approval or reauthentication, the canonical step-up error is returned.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite run undo run-1\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME run undo run-1\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite run undo /root/spaces/my-space run-1\n  ugoite run undo 019f1234-5678-7abc-8def-0123456789ab run-1"
     )]
     Undo {
         #[arg(
@@ -31,7 +31,7 @@ pub enum RunSubCmd {
         #[arg(
             long,
             default_value = "cli",
-            help = "Author name to record on the appended Changes (core mode only)"
+            help = "Author name to record on the appended Changes (local only)"
         )]
         author: String,
     },

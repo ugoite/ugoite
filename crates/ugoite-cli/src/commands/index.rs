@@ -18,7 +18,7 @@ pub struct IndexCmd {
 pub enum IndexSubCmd {
     /// Reindex a space
     #[command(
-        long_about = "Reindex a space.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite index run\n\n  # Legacy explicit Space (v0.1.x compatibility)\n  ugoite index run /root/spaces/my-space\n  ugoite index run 019f1234-5678-7abc-8def-0123456789ab"
+        long_about = "Reindex a space (local only).\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite index run\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME index run\n\n  # 0.1.x compatibility only: legacy explicit Space (local only)\n  ugoite index run /root/spaces/my-space"
     )]
     Run {
         #[arg(
@@ -35,7 +35,7 @@ pub enum IndexSubCmd {
     },
     /// Show aggregated stats for a space
     #[command(
-        long_about = "Show aggregated stats for a space.\n\nExamples:\n  # Core mode\n  ugoite index stats /root/spaces/my-space\n\n  # Backend mode (immutable Space UID)\n  ugoite index stats 019f1234-5678-7abc-8def-0123456789ab"
+        long_about = "Show aggregated stats for a space (local only).\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite index stats\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME index stats\n\n  # 0.1.x compatibility only: legacy explicit Space (local only)\n  ugoite index stats /root/spaces/my-space"
     )]
     Stats {
         #[arg(

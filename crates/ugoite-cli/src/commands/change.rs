@@ -18,7 +18,7 @@ pub struct ChangeCmd {
 pub enum ChangeSubCmd {
     /// List Space Change history
     #[command(
-        long_about = "List the append-only Change history of a Space.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or a bare immutable `SPACE_UID`.\n\nExamples:\n  # Core mode\n  ugoite change list /root/spaces/my-space\n\n  # Backend mode (immutable Space UID)\n  ugoite change list 019f1234-5678-7abc-8def-0123456789ab"
+        long_about = "List the append-only Change history of a Space.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite change list\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME change list\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite change list /root/spaces/my-space\n  ugoite change list 019f1234-5678-7abc-8def-0123456789ab"
     )]
     List {
         #[arg(
@@ -29,7 +29,7 @@ pub enum ChangeSubCmd {
     },
     /// Revert a Change by appending its inverse
     #[command(
-        long_about = "Revert a Change by appending its inverse as a new Change. The reverted Change is kept; history never shortens.\n\nThe command invocation itself is the explicit intent; no interactive prompt is shown. When the server requires human approval or reauthentication, the canonical step-up error is returned.\n\nExamples:\n  # Core mode\n  ugoite change revert /root/spaces/my-space change-1\n\n  # Backend mode (immutable Space UID)\n  ugoite change revert 019f1234-5678-7abc-8def-0123456789ab change-1"
+        long_about = "Revert a Change by appending its inverse as a new Change. The reverted Change is kept; history never shortens.\n\nThe command invocation itself is the explicit intent; no interactive prompt is shown. When the server requires human approval or reauthentication, the canonical step-up error is returned.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite change revert change-1\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME change revert change-1\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite change revert /root/spaces/my-space change-1\n  ugoite change revert 019f1234-5678-7abc-8def-0123456789ab change-1"
     )]
     Revert {
         #[arg(
@@ -42,7 +42,7 @@ pub enum ChangeSubCmd {
         #[arg(
             long,
             default_value = "cli",
-            help = "Author name to record on the appended Change (core mode only)"
+            help = "Author name to record on the appended Change (local only)"
         )]
         author: String,
     },

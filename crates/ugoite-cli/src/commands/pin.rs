@@ -23,7 +23,7 @@ pub struct PinCmd {
 pub enum PinSubCmd {
     /// Create a pin at the current knowledge state
     #[command(
-        long_about = "Create a pin capturing the current knowledge state.\n\nA pin is a read-only snapshot identity: it never becomes a mutable branch, and deleting it never deletes entries, revisions, assets, or changes.\n\nExamples:\n  # Core mode\n  ugoite pin create /root/spaces/my-space release-1\n\n  # Backend mode (immutable Space UID)\n  ugoite pin create 019f1234-5678-7abc-8def-0123456789ab release-1"
+        long_about = "Create a pin capturing the current knowledge state.\n\nA pin is a read-only snapshot identity: it never becomes a mutable branch, and deleting it never deletes entries, revisions, assets, or changes.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite pin create release-1\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME pin create release-1\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite pin create /root/spaces/my-space release-1\n  ugoite pin create 019f1234-5678-7abc-8def-0123456789ab release-1"
     )]
     Create {
         #[arg(
@@ -36,7 +36,7 @@ pub enum PinSubCmd {
     },
     /// List pins in a space
     #[command(
-        long_about = "List pins in a space.\n\nExamples:\n  # Core mode\n  ugoite pin list /root/spaces/my-space\n\n  # Backend mode (immutable Space UID)\n  ugoite pin list 019f1234-5678-7abc-8def-0123456789ab"
+        long_about = "List pins in a space.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite pin list\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME pin list\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite pin list /root/spaces/my-space\n  ugoite pin list 019f1234-5678-7abc-8def-0123456789ab"
     )]
     List {
         #[arg(
@@ -47,7 +47,7 @@ pub enum PinSubCmd {
     },
     /// Read one pin without mutating knowledge
     #[command(
-        long_about = "Read one pin by name.\n\nRead-only: entry history is unchanged by pin reads. The pin target revision is never confused with the current revision.\n\nExamples:\n  # Core mode\n  ugoite pin read /root/spaces/my-space release-1\n\n  # Backend mode (immutable Space UID)\n  ugoite pin read 019f1234-5678-7abc-8def-0123456789ab release-1"
+        long_about = "Read one pin by name.\n\nRead-only: entry history is unchanged by pin reads. The pin target revision is never confused with the current revision.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite pin read release-1\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME pin read release-1\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite pin read /root/spaces/my-space release-1\n  ugoite pin read 019f1234-5678-7abc-8def-0123456789ab release-1"
     )]
     Read {
         #[arg(
@@ -60,7 +60,7 @@ pub enum PinSubCmd {
     },
     /// Diff two named pins explicitly
     #[command(
-        long_about = "Diff two named pins.\n\nBoth pins are named explicitly; no implicit latest revision is ever selected. Pins never span spaces: a pin from another space is rejected.\n\nExamples:\n  # Core mode\n  ugoite pin diff /root/spaces/my-space --from release-1 --to release-2\n\n  # Backend mode (immutable Space UID)\n  ugoite pin diff 019f1234-5678-7abc-8def-0123456789ab --from release-1 --to release-2"
+        long_about = "Diff two named pins.\n\nBoth pins are named explicitly; no implicit latest revision is ever selected. Pins never span spaces: a pin from another space is rejected.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite pin diff --from release-1 --to release-2\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME pin diff --from release-1 --to release-2\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite pin diff /root/spaces/my-space --from release-1 --to release-2\n  ugoite pin diff 019f1234-5678-7abc-8def-0123456789ab --from release-1 --to release-2"
     )]
     Diff {
         #[arg(
@@ -75,7 +75,7 @@ pub enum PinSubCmd {
     },
     /// Delete a pin identity without deleting knowledge
     #[command(
-        long_about = "Delete a pin identity.\n\nOnly the pin identity is removed; entries, revisions, assets, and changes are untouched.\n\nExamples:\n  # Core mode\n  ugoite pin delete /root/spaces/my-space release-1\n\n  # Backend mode (immutable Space UID)\n  ugoite pin delete 019f1234-5678-7abc-8def-0123456789ab release-1"
+        long_about = "Delete a pin identity.\n\nOnly the pin identity is removed; entries, revisions, assets, and changes are untouched.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite pin delete release-1\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME pin delete release-1\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite pin delete /root/spaces/my-space release-1\n  ugoite pin delete 019f1234-5678-7abc-8def-0123456789ab release-1"
     )]
     Delete {
         #[arg(

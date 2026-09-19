@@ -20,7 +20,7 @@ pub struct SearchCmd {
 pub enum SearchSubCmd {
     /// Keyword search
     #[command(
-        long_about = "Run keyword search. Attachment text is searchable only after `index run` has rebuilt the derived index.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or a bare immutable `SPACE_UID`.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite search keyword invoice\n\n  # Legacy explicit Space (v0.1.x compatibility)\n  ugoite search keyword /root/spaces/my-space invoice\n  ugoite search keyword 019f1234-5678-7abc-8def-0123456789ab invoice"
+        long_about = "Run keyword search. Attachment text is searchable only after `index run` has rebuilt the derived index.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite search keyword invoice\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME search keyword invoice\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite search keyword /root/spaces/my-space invoice\n  ugoite search keyword 019f1234-5678-7abc-8def-0123456789ab invoice"
     )]
     Keyword {
         #[arg(
@@ -33,7 +33,7 @@ pub enum SearchSubCmd {
     },
     /// Typed structured search over Form fields
     #[command(
-        long_about = "Run typed structured search over Form fields.\n\nField conditions use logical Form field names; type checking, SQL generation, and column resolution stay in the trusted Rust layer. Core mode and backend mode accept the same DTO.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<slug>` path or a bare immutable `SPACE_UID`.\n\nExamples:\n  # Core mode\n  ugoite search query /root/spaces/my-space --form Task --eq status=open --gte priority=3\n\n  # Backend mode (immutable Space UID)\n  ugoite search query 019f1234-5678-7abc-8def-0123456789ab --form Task --contains title=release --limit 20\n\n  # Machine input from a file or stdin (exclusive with condition flags)\n  ugoite search query 019f1234-5678-7abc-8def-0123456789ab --criteria-file criteria.json\n  cat criteria.json | ugoite search query 019f1234-5678-7abc-8def-0123456789ab --criteria-file -"
+        long_about = "Run typed structured search over Form fields.\n\nField conditions use logical Form field names; type checking, SQL generation, and column resolution stay in the trusted Rust layer. Local and remote accept the same DTO.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite search query --form Task --eq status=open --gte priority=3\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME search query --form Task --contains title=release --limit 20\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite search query /root/spaces/my-space --form Task --eq status=open\n  ugoite search query 019f1234-5678-7abc-8def-0123456789ab --form Task --contains title=release --limit 20\n\n  # Machine input from a file or stdin (exclusive with condition flags)\n  ugoite search query --criteria-file criteria.json\n  cat criteria.json | ugoite search query --criteria-file -"
     )]
     Query(Box<SearchQueryArgs>),
 }

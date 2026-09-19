@@ -869,8 +869,22 @@ fn test_cli_help_req_sto_010_describes_space_uid_or_path_routing() {
         &["space", "--help"][..],
         &["form", "--help"][..],
         &["search", "--help"][..],
-        &["space", "create", "--help"][..],
-        &["space", "list", "--help"][..],
+    ] {
+        let help = Command::new(ugoite_bin())
+            .args(args)
+            .output()
+            .expect("failed to execute");
+        assert!(help.status.success());
+        let stdout = String::from_utf8_lossy(&help.stdout);
+        assert!(stdout.contains("ugoite config current"), "{stdout}");
+    }
+
+    // PR-04 help contract: Space-bound subcommand helps lead with the
+    // selected context, show the --context override second, and label the
+    // legacy explicit Space as 0.1.x compatibility third. (`space create`
+    // and `space list` are not selected-context commands: create registers
+    // a context, list takes a workspace root or nothing.)
+    for args in [
         &["space", "get", "--help"][..],
         &["space", "patch", "--help"][..],
         &["form", "list", "--help"][..],
@@ -884,7 +898,16 @@ fn test_cli_help_req_sto_010_describes_space_uid_or_path_routing() {
             .expect("failed to execute");
         assert!(help.status.success());
         let stdout = String::from_utf8_lossy(&help.stdout);
-        assert!(stdout.contains("ugoite config current"), "{stdout}");
+        for needle in [
+            "# Selected context",
+            "--context NAME",
+            "# 0.1.x compatibility",
+        ] {
+            assert!(
+                stdout.contains(needle),
+                "{args:?} help must carry the PR-04 tiers: {stdout}"
+            );
+        }
     }
 
     for args in [
@@ -930,13 +953,14 @@ fn test_entry_update_req_ops_006_help_describes_required_inputs() {
         "--parent-revision-id <PARENT_REVISION_ID>",
         "optimistic concurrency checks",
         "--author <AUTHOR>",
-        "Author name to record in the revision history (core mode only)",
+        "Author name to record in the revision history (local only)",
     ] {
         assert!(stdout.contains(needle), "{stdout}");
     }
 }
 
-/// REQ-OPS-006: entry create help must lead with the simplest Markdown-only example.
+/// REQ-OPS-006: entry create help leads with structured authoring; raw
+/// Markdown is the labeled 0.1.x compatibility surface (PR-04 help contract).
 #[test]
 fn test_entry_create_req_ops_006_help_leads_with_plain_markdown_example() {
     let help = Command::new(ugoite_bin())
@@ -946,23 +970,23 @@ fn test_entry_create_req_ops_006_help_leads_with_plain_markdown_example() {
     assert!(help.status.success());
     let stdout = String::from_utf8_lossy(&help.stdout);
 
-    let simple_example = "ugoite entry create /root/spaces/my-space my-note --content '# My Note'";
-    let structured_example = "form: Note";
+    let structured_example = "ugoite entry create task-01 --form Task --field status=open";
+    let compat_example = "ugoite entry create /root/spaces/my-space my-note --content '# My Note'";
 
     for needle in [
         "Frontmatter is optional",
-        simple_example,
         structured_example,
-        "Backend mode - immutable Space UID",
+        compat_example,
+        "0.1.x compatibility",
+        "Selected context",
+        "--context NAME",
     ] {
         assert!(stdout.contains(needle), "{stdout}");
     }
 
-    let simple_index = stdout.find(simple_example).expect("simple example");
-    let structured_index = stdout
-        .find(structured_example)
-        .expect("frontmatter example");
-    assert!(simple_index < structured_index, "{stdout}");
+    let structured_index = stdout.find(structured_example).expect("structured example");
+    let compat_index = stdout.find(compat_example).expect("compat example");
+    assert!(structured_index < compat_index, "{stdout}");
 }
 
 /// REQ-OPS-006: form and search help must describe required positional inputs before execution.
@@ -977,7 +1001,7 @@ fn test_form_and_search_req_ops_006_help_describes_required_inputs() {
     for needle in [
         "FORM_NAME",
         "Form name from the form definition",
-        "ugoite config current",
+        "Selected context",
     ] {
         assert!(form_get_stdout.contains(needle), "{form_get_stdout}");
     }
@@ -991,7 +1015,7 @@ fn test_form_and_search_req_ops_006_help_describes_required_inputs() {
     for needle in [
         "FORM_FILE",
         "Path to a JSON form definition file",
-        "ugoite config current",
+        "Selected context",
     ] {
         assert!(form_update_stdout.contains(needle), "{form_update_stdout}");
     }
@@ -1005,7 +1029,7 @@ fn test_form_and_search_req_ops_006_help_describes_required_inputs() {
     for needle in [
         "QUERY",
         "Plain-text query string to match against Entry content",
-        "ugoite config current",
+        "Selected context",
     ] {
         assert!(search_stdout.contains(needle), "{search_stdout}");
     }
