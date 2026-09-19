@@ -155,7 +155,7 @@ async fn run(cli: Cli) -> Result<()> {
     let explicit_config = cli.config.as_deref();
     let explicit_context = cli.context.as_deref();
     match cli.command {
-        Commands::Auth(cmd) => commands::auth::run(cmd).await,
+        Commands::Auth(cmd) => commands::auth::run(cmd, explicit_config, explicit_context).await,
         Commands::Config(cmd) => {
             commands::config::run(cmd, explicit_config, explicit_context).await
         }
