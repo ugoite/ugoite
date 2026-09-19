@@ -119,4 +119,27 @@ mod tests {
         let reparsed: CredentialStore = serde_json::from_str(&text).unwrap();
         assert_eq!(reparsed.version, CREDENTIALS_VERSION_V1);
     }
+
+    #[test]
+    fn multiple_profiles_coexist_and_remove_leaves_others() {
+        let mut store = CredentialStore::empty();
+        store.credentials.insert(
+            "alice-work".to_string(),
+            serde_json::json!({"access_token": "secret-a"}),
+        );
+        store.credentials.insert(
+            "alice-staging".to_string(),
+            serde_json::json!({"access_token": "secret-b"}),
+        );
+        // One profile is reusable bookkeeping: removal is scoped by name.
+        store.credentials.remove("alice-work");
+        assert!(!store.credentials.contains_key("alice-work"));
+        assert_eq!(
+            store.credentials.get("alice-staging").unwrap()["access_token"],
+            "secret-b"
+        );
+        let text = serde_json::to_string_pretty(&store).unwrap();
+        let reparsed: CredentialStore = serde_json::from_str(&text).unwrap();
+        assert_eq!(reparsed.credentials.len(), 1);
+    }
 }

@@ -90,7 +90,11 @@ pub struct AuthCmd {
 #[derive(Subcommand)]
 pub enum AuthSubCmd {
     /// Show the paired device and short-lived token state.
-    Profile,
+    Profile {
+        /// Named credential profile (canonical). Omit for the legacy singleton credential.
+        #[arg(long, value_name = "CREDENTIAL")]
+        credential: Option<String>,
+    },
     /// Pair this terminal without requiring a browser on the terminal itself.
     Login {
         #[arg(long, default_value = "Ugoite CLI")]
@@ -112,14 +116,34 @@ pub enum AuthSubCmd {
         /// its raw resource URL is not needed on the command line.
         #[arg(long = "for", value_enum, default_value_t = AuthLoginTarget::Rest)]
         target: AuthLoginTarget,
+        /// Canonical connection to authenticate against (named profile mode).
+        #[arg(long, value_name = "CONNECTION")]
+        connection: Option<String>,
+        /// Named credential profile to store (canonical). When omitted and
+        /// the selected context uniquely determines one, it is used.
+        /// Re-running login for an existing name replaces that profile.
+        #[arg(long, value_name = "CREDENTIAL")]
+        credential: Option<String>,
     },
     /// Revoke local access by deleting the local device credential.
-    Logout,
+    Logout {
+        /// Named credential profile (canonical). Omit for the legacy singleton credential.
+        #[arg(long, value_name = "CREDENTIAL")]
+        credential: Option<String>,
+    },
 }
 
-pub async fn run(cmd: AuthCmd) -> Result<()> {
+pub async fn run(
+    cmd: AuthCmd,
+    explicit_config: Option<&std::path::Path>,
+    context_override: Option<&str>,
+) -> Result<()> {
     match cmd.sub {
-        AuthSubCmd::Profile => {
+        AuthSubCmd::Profile { credential } => {
+            if let Some(name) = credential.as_deref() {
+                print_named_profile(name)?;
+                return Ok(());
+            }
             let profile = load_auth_session().map(|session| json!({
                 "paired": true,
                 "credential_id": session.credential_id,
@@ -136,7 +160,23 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
             space_uid,
             actions,
             target,
+            connection,
+            credential,
         } => {
+            if connection.is_some() || credential.is_some() {
+                login_named(
+                    device_name,
+                    space_uid,
+                    actions,
+                    target,
+                    connection.as_deref(),
+                    credential.as_deref(),
+                    explicit_config,
+                    context_override,
+                )
+                .await?;
+                return Ok(());
+            }
             let config = load_config()?;
             if config.mode == EndpointMode::Core {
                 bail!("auth login requires backend or api mode");
@@ -149,7 +189,11 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
             };
             login(&base, &device_name, space_uid, actions, resource).await?;
         }
-        AuthSubCmd::Logout => {
+        AuthSubCmd::Logout { credential } => {
+            if let Some(name) = credential.as_deref() {
+                logout_named(name)?;
+                return Ok(());
+            }
             if let Some(session) = load_auth_session() {
                 if session.private_key_pkcs8.is_none() {
                     let _ = keyring::Entry::new("ugoite-cli", &session.credential_id.to_string())
@@ -170,6 +214,214 @@ async fn login(
     actions: Vec<String>,
     resource: Option<String>,
 ) -> Result<()> {
+    let session = perform_device_login(base, device_name, space_uid, actions, resource).await?;
+    let path = save_auth_session(&session)?;
+    // IDs render through the JSON-value output boundary (same as every other
+    // UID display): identical text, single established output path.
+    let ids = serde_json::json!({
+        "credential_id": session.credential_id,
+        "space_uid": session.space_uid,
+    });
+    println!(
+        "Paired device {} for Space {}. Credential metadata saved to {}.",
+        ids["credential_id"].as_str().unwrap_or_default(),
+        ids["space_uid"].as_str().unwrap_or_default(),
+        path.display()
+    );
+    Ok(())
+}
+/// Named-profile login (plan section 44): authenticate against a canonical
+/// connection and store the credential under a profile name in the
+/// user-global credential store. Secrets never enter TOML; contexts reference
+/// the profile by name only.
+#[allow(clippy::too_many_arguments)]
+async fn login_named(
+    device_name: String,
+    space_uid: Option<Uuid>,
+    actions: Vec<String>,
+    target: AuthLoginTarget,
+    explicit_connection: Option<&str>,
+    explicit_credential: Option<&str>,
+    explicit_config: Option<&std::path::Path>,
+    context_override: Option<&str>,
+) -> Result<()> {
+    use crate::cli_config::{load_cli_config, resolve_cli_context, ConnectionConfig};
+
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let files = load_cli_config(explicit_config, &cwd)?;
+    if files.sources.is_empty() {
+        bail!("auth login --credential requires a canonical CLI config; run `ugoite config init` first.");
+    }
+    // Connection: explicit --connection, else the override/current context's
+    // connection (same rule as space create). Core connections cannot take
+    // device credentials.
+    let connection_name = if let Some(name) = explicit_connection {
+        let name = name.trim();
+        if !files.effective.connections.contains_key(name) {
+            bail!("Connection {name:?} is not defined.");
+        }
+        name.to_string()
+    } else if let Some(name) = context_override {
+        let context = files
+            .effective
+            .contexts
+            .get(name)
+            .ok_or_else(|| anyhow!("Context {name:?} is not defined."))?;
+        context.value.connection.clone()
+    } else if let Some(current) = files.effective.current_context.as_ref() {
+        let context = files
+            .effective
+            .contexts
+            .get(&current.value)
+            .ok_or_else(|| anyhow!("Current context {:?} is not defined.", current.value))?;
+        context.value.connection.clone()
+    } else {
+        bail!("Cannot determine a connection for `auth login`: pass --connection <NAME>.");
+    };
+    let connection = files
+        .effective
+        .connections
+        .get(&connection_name)
+        .ok_or_else(|| anyhow!("Connection {connection_name:?} is not defined."))?;
+    let base = match &connection.value {
+        ConnectionConfig::Core { .. } => {
+            bail!("auth login requires a backend or api connection, not core.");
+        }
+        ConnectionConfig::Backend { url } | ConnectionConfig::Api { url } => {
+            let parsed = crate::cli_config::model::validate_remote_url(url, "Login endpoint")?;
+            parsed.as_str().trim_end_matches('/').to_string()
+        }
+    };
+    // Credential: explicit --credential, else the uniquely determined profile
+    // from the selected context (plan 44: omittable when unambiguous).
+    let credential_name = if let Some(name) = explicit_credential {
+        let name = name.trim();
+        if name.is_empty() {
+            bail!("credential name must not be empty");
+        }
+        name.to_string()
+    } else {
+        let scope = context_override
+            .and_then(|name| files.effective.contexts.get(name))
+            .or_else(|| {
+                files
+                    .effective
+                    .current_context
+                    .as_ref()
+                    .and_then(|current| files.effective.contexts.get(&current.value))
+            });
+        match scope.and_then(|context| context.value.credential.clone()) {
+            Some(name) => name,
+            None => {
+                bail!("Cannot determine a credential for `auth login`: pass --credential <NAME>.")
+            }
+        }
+    };
+    if context_override.is_some() {
+        let _ = resolve_cli_context(&files.effective, context_override)?;
+    }
+    let resource = match target {
+        AuthLoginTarget::Rest => None,
+        AuthLoginTarget::Mcp => Some(mcp_resource(&base).await?),
+    };
+    let session = perform_device_login(&base, &device_name, space_uid, actions, resource).await?;
+    store_named_profile(&connection_name, &credential_name, &session)?;
+    // Never print secrets: only the profile identity is reported.
+    let stored_view = serde_json::json!({
+        "credential_id": session.credential_id,
+        "space_uid": session.space_uid,
+    });
+    print_json(&serde_json::json!({
+        "paired": true,
+        "connection": connection_name,
+        "credential": credential_name,
+        "credential_id": stored_view["credential_id"].clone(),
+        "space_uid": stored_view["space_uid"].clone(),
+    }));
+    Ok(())
+}
+
+/// Show one named profile without ever printing secrets.
+fn print_named_profile(name: &str) -> Result<()> {
+    let store = crate::cli_config::credentials::load_credentials()?;
+    let profile = store
+        .credentials
+        .get(name)
+        .ok_or_else(|| anyhow!("Credential profile {name:?} is not paired. Run `ugoite auth login --credential {name}`."))?;
+    print_json(&redacted_profile(name, profile));
+    Ok(())
+}
+
+/// Remove one named profile, leaving all others intact.
+fn logout_named(name: &str) -> Result<()> {
+    use crate::cli_config::credentials::{load_credentials, write_credentials};
+
+    let mut store = load_credentials()?;
+    let removed = store.credentials.remove(name);
+    let Some(profile) = removed else {
+        bail!("Credential profile {name:?} is not paired.");
+    };
+    // Best-effort OS-keychain cleanup for the removed profile only.
+    // A null private_key_pkcs8 counts as absent (same rule as the display
+    // projection), so hand-edited nulls cannot orphan a keychain entry.
+    if let Some(credential_id) = profile.get("credential_id").and_then(Value::as_str) {
+        if profile
+            .get("private_key_pkcs8")
+            .is_none_or(|value| value.is_null())
+        {
+            let _ = keyring::Entry::new("ugoite-cli", credential_id)
+                .and_then(|entry| entry.delete_credential());
+        }
+    }
+    write_credentials(&store)?;
+    println!("Credential profile {name:?} removed.");
+    Ok(())
+}
+
+/// Project a stored profile to its non-secret display shape.
+fn redacted_profile(name: &str, profile: &Value) -> Value {
+    let paired = !profile.is_null();
+    json!({
+        "paired": paired,
+        "credential": name,
+        "connection": profile.get("connection").cloned().unwrap_or(Value::Null),
+        "credential_id": profile.get("credential_id").cloned().unwrap_or(Value::Null),
+        "device_name": profile.get("device_name").cloned().unwrap_or(Value::Null),
+        "space_uid": profile.get("space_uid").cloned().unwrap_or(Value::Null),
+        "access_token_expires_at": profile.get("expires_at").cloned().unwrap_or(Value::Null),
+        "credential_target": if profile.get("resource").is_some_and(|value| !value.is_null()) { "mcp" } else { "rest" },
+        "private_key_storage": if profile.get("private_key_pkcs8").is_some_and(|value| !value.is_null()) { "owner_only_file" } else { "os_keychain" },
+    })
+}
+
+/// Persist a device session as an opaque named profile (secrets live only in
+/// the user-global credential store, never in TOML).
+fn store_named_profile(
+    connection_name: &str,
+    credential_name: &str,
+    session: &AuthSession,
+) -> Result<std::path::PathBuf> {
+    use crate::cli_config::credentials::{load_credentials, write_credentials};
+
+    let mut store = load_credentials()?;
+    let mut profile = serde_json::to_value(session).context("serialize CLI credential profile")?;
+    profile["connection"] = Value::String(connection_name.to_string());
+    store
+        .credentials
+        .insert(credential_name.to_string(), profile);
+    write_credentials(&store)
+}
+
+/// Device authorization flow returning the established session without
+/// persisting it; callers decide between the legacy singleton file and a
+/// named credential profile.
+async fn perform_device_login(
+    base: &str,
+    device_name: &str,
+    space_uid: Option<Uuid>,
+    actions: Vec<String>,
+    resource: Option<String>,
+) -> Result<AuthSession> {
     // UUIDv7 admission lives in exactly one place: the Clap value parser
     // (`parse_space_uid_arg`). No post-parse recheck here; the parser-level
     // regression test (`login_space_uid_accepts_only_uuid_v7`) pins rejection.
@@ -284,14 +536,7 @@ async fn login(
         resource,
         space_uid: granted_space_uid,
     };
-    let path = save_auth_session(&session)?;
-    println!(
-        "Paired device {} for Space {}. Credential metadata saved to {}.",
-        session.credential_id,
-        session.space_uid,
-        path.display()
-    );
-    Ok(())
+    Ok(session)
 }
 
 pub fn load_signing_key(session: &AuthSession) -> Result<SigningKey> {
@@ -861,5 +1106,54 @@ mod tests {
         } else {
             std::env::remove_var("UGOITE_CLI_CONFIG_PATH");
         }
+    }
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::redacted_profile;
+    use crate::config::AuthSession;
+
+    fn sample_session() -> AuthSession {
+        AuthSession {
+            credential_id: uuid::Uuid::now_v7(),
+            device_name: "test-device".to_string(),
+            public_key_jwk: serde_json::json!({"kty": "EC"}),
+            private_key_pkcs8: Some("inline-private-key-material".to_string()),
+            access_token: "secret-access-token".to_string(),
+            refresh_token: "secret-refresh-token".to_string(),
+            expires_at: 123,
+            base_url: "https://ugoite.example.com".to_string(),
+            resource: None,
+            space_uid: uuid::Uuid::now_v7(),
+        }
+    }
+
+    #[test]
+    fn redacted_profile_never_contains_secrets() {
+        let profile = serde_json::to_value(sample_session()).unwrap();
+        let shown = redacted_profile("alice-work", &profile);
+        let text = serde_json::to_string(&shown).unwrap();
+        assert!(!text.contains("secret-access-token"));
+        assert!(!text.contains("secret-refresh-token"));
+        assert!(!text.contains("inline-private-key-material"));
+        assert_eq!(shown["credential"], "alice-work");
+        assert_eq!(shown["paired"], true);
+    }
+
+    #[test]
+    fn named_profile_payload_carries_connection_without_toml() {
+        // The stored profile is an opaque JSON value (persisted to the
+        // user-global credential store, never to TOML): it must carry the
+        // connection name alongside the session fields, while its display
+        // projection still redacts every secret.
+        let mut profile = serde_json::to_value(sample_session()).unwrap();
+        profile["connection"] = serde_json::Value::String("work".to_string());
+        assert_eq!(profile["connection"], "work");
+        assert_eq!(profile["base_url"], "https://ugoite.example.com");
+        let shown = redacted_profile("alice-work", &profile);
+        let text = serde_json::to_string(&shown).unwrap();
+        assert!(!text.contains("secret-access-token"));
+        assert!(!text.contains("secret-refresh-token"));
     }
 }
