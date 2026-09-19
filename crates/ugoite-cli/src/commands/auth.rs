@@ -360,9 +360,9 @@ fn logout_named(name: &str) -> Result<()> {
     // A null private_key_pkcs8 counts as absent (same rule as the display
     // projection), so hand-edited nulls cannot orphan a keychain entry.
     if let Some(credential_id) = profile.get("credential_id").and_then(Value::as_str) {
-        if !profile
+        if profile
             .get("private_key_pkcs8")
-            .is_some_and(|value| !value.is_null())
+            .is_none_or(|value| value.is_null())
         {
             let _ = keyring::Entry::new("ugoite-cli", credential_id)
                 .and_then(|entry| entry.delete_credential());
