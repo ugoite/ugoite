@@ -150,6 +150,42 @@ describe("/device", () => {
     ).toBeNull();
   });
 
+  it("leaves the approval dialog retryable after a network failure", async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          device_name: "CLI",
+          requested_actions: ["read"],
+          resource: null,
+        }),
+      })
+      .mockRejectedValueOnce(new Error("network down"));
+    vi.mocked(spaceApi.list).mockResolvedValue([{
+      id: "space-1",
+      name: "Docs",
+      space_uid: "space-uid-1",
+    }]);
+
+    render(() => <DeviceApprovalRoute />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Approve CLI access" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Approve CLI access" }),
+    );
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Approve CLI access" }),
+      ).toBeEnabled()
+    );
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "The settings operation failed.",
+    );
+  });
+
   it("approves a supported MCP-scoped request", async () => {
     const resource = `${location.origin}/mcp`;
     fetchMock

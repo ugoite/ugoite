@@ -96,23 +96,30 @@ export default function DeviceApprovalRoute() {
     if (!request || !spaceUidValue() || approving()) return;
     setError("");
     setApproving(true);
-    const response = await fetch("/api/oauth/device/approve", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        user_code: code(),
-        space_id: spaceUidValue(),
-        granted_actions: request.requested_actions,
-      }),
-    });
-    setApproving(false);
-    if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      setError(String(payload.message ?? payload.detail ?? "Approval failed"));
-      return;
+    try {
+      const response = await fetch("/api/oauth/device/approve", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          user_code: code(),
+          space_id: spaceUidValue(),
+          granted_actions: request.requested_actions,
+        }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        setError(
+          String(payload.message ?? payload.detail ?? "Approval failed"),
+        );
+        return;
+      }
+      setApproveConfirmOpen(false);
+      setDone(true);
+    } catch (cause) {
+      setError(formatUserFacingError(cause, "errors.operation.settings"));
+    } finally {
+      setApproving(false);
     }
-    setApproveConfirmOpen(false);
-    setDone(true);
   };
 
   const approveSummary = () => {
