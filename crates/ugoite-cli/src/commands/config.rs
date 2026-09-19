@@ -455,12 +455,13 @@ fn print_effective_current(
                     }
                 }
                 println!("Space:");
-                // codeql[rust/cleartext-logging]: Space UID is a non-secret
-                // immutable identifier by design (stored in plaintext TOML,
-                // passed as a CLI positional arg, shown by space list). Only
-                // the credential *name* is shown below; secrets are never
-                // printed. Required by the config-inspection contract.
-                println!("  {}", resolved.space_uid);
+                // Render the UID through the same JSON-value boundary used by
+                // `context list/get` and `space list`: the Space UID is a
+                // non-secret immutable identifier (plaintext TOML, CLI arg,
+                // list output), and the value boundary keeps every UID
+                // display on the single established output path.
+                let details = serde_json::json!({ "space_uid": resolved.space_uid });
+                println!("  {}", details["space_uid"].as_str().unwrap_or_default());
                 println!("Credential:");
                 println!(
                     "  {}",
