@@ -98,7 +98,9 @@ describe("/spaces/join", () => {
       target: { value: "invitation-token" },
     });
     fireEvent.click(
-      await screen.findByRole("button", { name: "Continue with issuer.example" }),
+      await screen.findByRole("button", {
+        name: "Continue with issuer.example",
+      }),
     );
 
     expect(authApi.loginWithOidc).toHaveBeenCalledWith(
@@ -160,6 +162,119 @@ describe("/spaces/join", () => {
       expect(navigateMock).toHaveBeenCalledWith("/spaces", { replace: true });
     });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    // Session is re-checked after NOT_PENDING instead of trusting the
+    // submit-start snapshot alone.
+    expect(vi.mocked(authApi.getSession).mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it("issues at most one activation request while a submit is pending", async () => {
+    vi.mocked(authApi.getSession).mockResolvedValue({ authenticated: true });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.mocked(authApi.acceptInvitation).mockImplementation(() => gate);
+    render(() => <SpaceInvitationJoinRoute />);
+
+    fireEvent.input(screen.getByLabelText("Invitation token"), {
+      target: { value: "invitation-token" },
+    });
+    const submit = screen.getByRole("button", { name: "Accept invitation" });
+    fireEvent.click(submit);
+    fireEvent.click(submit);
+
+    await waitFor(() => {
+      expect(authApi.acceptInvitation).toHaveBeenCalledTimes(1);
+    });
+    expect(submit).toBeDisabled();
+    release();
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith("/spaces", { replace: true });
+    });
+    expect(authApi.acceptInvitation).toHaveBeenCalledTimes(1);
+  });
+
+  it("lands on Spaces when a concurrent activation consumed the invitation", async () => {
+    let consumed = false;
+    vi.mocked(authApi.getSession).mockImplementation(async () => ({
+      authenticated: consumed,
+    }));
+    vi.mocked(authApi.registerInvitation).mockImplementation(async () => {
+      consumed = true;
+      throw new UgoiteApiError({
+        kind: "conflict",
+        message: "Invitation is no longer pending",
+        code: "INVITATION_NOT_PENDING",
+        status: 409,
+      });
+    });
+    render(() => <SpaceInvitationJoinRoute />);
+
+    fireEvent.input(screen.getByLabelText("Invitation token"), {
+      target: { value: "invitation-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Accept invitation" }));
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith("/spaces", { replace: true });
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("stays fail-closed when NOT_PENDING and the visitor is still unauthenticated", async () => {
+    vi.mocked(authApi.getSession).mockResolvedValue({ authenticated: false });
+    vi.mocked(authApi.registerInvitation).mockRejectedValue(
+      new UgoiteApiError({
+        kind: "conflict",
+        message: "Invitation is no longer pending",
+        code: "INVITATION_NOT_PENDING",
+        status: 409,
+      }),
+    );
+    render(() => <SpaceInvitationJoinRoute />);
+
+    fireEvent.input(screen.getByLabelText("Invitation token"), {
+      target: { value: "invitation-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Accept invitation" }));
+
+    await screen.findByRole("alert");
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("link", { name: "Go to Spaces" }),
+    ).toBeInTheDocument();
+  });
+
+  it("strips the invitation token from the URL hash on success", async () => {
+    vi.mocked(authApi.getSession).mockResolvedValue({ authenticated: true });
+    vi.mocked(authApi.acceptInvitation).mockResolvedValue();
+    const replaceState = vi.spyOn(history, "replaceState");
+    window.location.hash = "#token=invitation-token";
+    try {
+      render(() => <SpaceInvitationJoinRoute />);
+      expect(screen.getByLabelText("Invitation token")).toHaveValue(
+        "invitation-token",
+      );
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Accept invitation" }),
+      );
+
+      await waitFor(() => {
+        expect(navigateMock).toHaveBeenCalledWith("/spaces", {
+          replace: true,
+        });
+      });
+      expect(replaceState).toHaveBeenCalledWith(
+        null,
+        "",
+        window.location.pathname,
+      );
+      expect(window.location.hash).toBe("");
+    } finally {
+      replaceState.mockRestore();
+      window.location.hash = "";
+    }
   });
 
   it("shows invalid invitations with resume guidance", async () => {
