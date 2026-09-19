@@ -44,12 +44,17 @@ variables but builds the image locally. Both mount the configured data root at
 ## Frontend and CLI variables
 
 `BACKEND_URL` selects the frontend's server proxy target during development.
-The CLI stores its endpoint configuration separately at, in order,
-`$UGOITE_CLI_CONFIG_PATH`, `$UGOITE_CONFIG_HOME/ugoite/cli-endpoints.json`,
+The CLI keeps disposable work-environment state separately: canonical TOML in
+`./.ugoite/config.toml` (project-local, preferred when present),
+`$UGOITE_CONFIG` (platform-separated list), then `~/.ugoite/config.toml`, with
+secrets only in `~/.ugoite/credentials.json`; use `ugoite config current` and
+`ugoite context --help` rather than treating server environment variables
+as CLI flags. The legacy single-mode file (`$UGOITE_CLI_CONFIG_PATH`,
+`$UGOITE_CONFIG_HOME/ugoite/cli-endpoints.json`,
 `$XDG_CONFIG_HOME/ugoite/cli-endpoints.json`, then
-`~/.ugoite/cli-endpoints.json`; use `ugoite config current` and
-`ugoite config set --help` rather than treating server environment variables
-as CLI flags. An invalid saved CLI config fails closed with the reported path
+`~/.ugoite/cli-endpoints.json`) remains readable in v0.1.x; `ugoite config
+migrate` normalizes it to canonical TOML without touching Knowledge. An
+invalid saved CLI config fails closed with the reported path
 and cause; recover with an explicit valid config and confirm with
 `ugoite config current` before requests, never with a silent fallback. See
 [invalid saved CLI config recovery](../operate/troubleshooting.md#invalid-saved-cli-config).

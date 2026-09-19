@@ -34,6 +34,25 @@ automation without checking the installed help. The [Spaces task
 page](../use/spaces.mdx) shows the corresponding local-path and remote-UID
 examples.
 
+## Contexts and connections
+
+Named connections (`ugoite config connection --help`) record how to reach
+Ugoite: `core` with a workspace root, or `backend`/`api` with an endpoint URL.
+Named contexts (`ugoite context --help`) select one connection plus one Space
+by its immutable Space UID, with an optional named credential profile. Most
+Space-bound commands use the selected context, so no Space path or UID is
+passed on every invocation; `--context <NAME>` overrides once without
+changing the selection, and `ugoite config current` inspects the resolved
+connection, Space UID, and credential name (never secrets).
+
+Start a local workspace with `ugoite config init`, then `ugoite space create
+demo`: creation registers the new Space as the current context automatically
+(`--no-context` opts out). CLI configuration is disposable work-environment
+state in `./.ugoite/config.toml` (project-local, preferred when present),
+`~/.ugoite/config.toml`, and `~/.ugoite/credentials.json`; deleting it never
+deletes Knowledge. The single-mode `config set` flow above remains available
+as the v0.1.x compatibility path.
+
 ## Authentication
 
 `ugoite auth login` starts browser-approved device authorization for backend
@@ -45,6 +64,13 @@ MCP credentials are a separate target. Use `ugoite auth login --for mcp` when
 pairing a Konase/MCP host; REST credentials cannot be used for MCP, and MCP
 credentials cannot be used for REST. The matching task and command help are the
 authority for the currently supported pairing flow.
+
+Named credential profiles (`ugoite auth login --connection work --credential
+alice-work`) store per-connection credentials in `~/.ugoite/credentials.json`
+for contexts to reference by name; `ugoite auth profile --credential
+alice-work` shows metadata without secrets, and `ugoite auth logout
+--credential alice-work` removes one profile while leaving the others intact.
+Secrets never enter `config.toml`.
 
 Agent principals and service-account automation are future design material, not
 current v0.1 client capabilities. Do not treat them as an alternative login
