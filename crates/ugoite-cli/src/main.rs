@@ -162,7 +162,7 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Context(cmd) => {
             commands::context::run(cmd, explicit_config, explicit_context).await
         }
-        Commands::Space(cmd) => commands::space::run(cmd).await,
+        Commands::Space(cmd) => commands::space::run(cmd, explicit_config, explicit_context).await,
         Commands::Entry(cmd) => commands::entry::run(cmd).await,
         Commands::Form(cmd) => commands::form::run(cmd).await,
         Commands::Asset(cmd) => commands::asset::run(cmd).await,
