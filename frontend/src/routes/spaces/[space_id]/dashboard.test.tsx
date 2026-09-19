@@ -94,6 +94,22 @@ describe("v5 space Home", () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/Konase is available/)).not.toBeInTheDocument();
   });
+
+  it("REQ-UX-NAV-001: states the Space context once without a competing header", async () => {
+    vi.mocked(formApi.list).mockResolvedValue([{
+      name: "Notes",
+      version: 1,
+      template: "",
+      fields: { body: { type: "markdown", required: false } },
+    }]);
+
+    render(() => <SpaceDashboardRoute />);
+
+    await screen.findByText("Local Knowledge", { selector: ".eyebrow" });
+    expect(screen.getAllByText("Local Knowledge", { selector: ".eyebrow" }))
+      .toHaveLength(1);
+    expect(screen.queryByText("Knowledge space")).not.toBeInTheDocument();
+  });
   it("REQ-FE-058: keeps the dashboard title calm while space metadata resolves", async () => {
     let resolveSpace: (
       space: { id: string; name: string; created_at: string },

@@ -280,6 +280,22 @@ describe("/spaces", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("REQ-UX-NAV-001: states the Spaces context once without a competing title", async () => {
+    (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: "default", name: "Default", created_at: "2025-01-01" },
+    ]);
+
+    render(() => <SpacesIndexRoute />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("list", { name: "Spaces" }))
+        .toBeInTheDocument();
+    });
+    expect(screen.getAllByRole("heading", { name: "Spaces" }))
+      .toHaveLength(1);
+    expect(screen.queryByText("Knowledge space")).not.toBeInTheDocument();
+  });
+
   it("REQ-FE-001: lists every authorized Space in one section", async () => {
     (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
