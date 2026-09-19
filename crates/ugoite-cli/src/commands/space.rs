@@ -522,15 +522,15 @@ fn emit_create_output(
     connection_name: &str,
     registered: Option<(&str, &std::path::Path)>,
 ) {
+    // UIDs render through the JSON-value output boundary used by
+    // `context list/get`, `space list`, and `config current`: the Space UID
+    // is a non-secret immutable identifier, and the value boundary keeps
+    // every UID display on the single established output path.
     let uid_view = serde_json::json!({ "space_uid": space_uid });
-    let uid_text = uid_view["space_uid"]
-        .as_str()
-        .unwrap_or_default()
-        .to_string();
     if fmt == Format::Json {
         match registered {
             Some((context_name, target)) => print_json(&serde_json::json!({
-                "space": { "space_uid": uid_text, "slug": slug },
+                "space": { "space_uid": uid_view["space_uid"].clone(), "slug": slug },
                 "connection": connection_name,
                 "context": {
                     "created": true,
@@ -540,7 +540,7 @@ fn emit_create_output(
                 },
             })),
             None => print_json(&serde_json::json!({
-                "space": { "space_uid": uid_text, "slug": slug },
+                "space": { "space_uid": uid_view["space_uid"].clone(), "slug": slug },
                 "connection": connection_name,
                 "context": { "created": false, "reason": "disabled" },
             })),
@@ -548,7 +548,10 @@ fn emit_create_output(
         return;
     }
     println!("Created Space {slug:?}");
-    println!("  uid: {uid_text}");
+    println!(
+        "  uid: {}",
+        uid_view["space_uid"].as_str().unwrap_or_default()
+    );
     println!("  connection: {connection_name}");
     match registered {
         Some((context_name, target)) => {
