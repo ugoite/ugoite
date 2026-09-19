@@ -216,15 +216,20 @@ async fn login(
 ) -> Result<()> {
     let session = perform_device_login(base, device_name, space_uid, actions, resource).await?;
     let path = save_auth_session(&session)?;
+    // IDs render through the JSON-value output boundary (same as every other
+    // UID display): identical text, single established output path.
+    let ids = serde_json::json!({
+        "credential_id": session.credential_id,
+        "space_uid": session.space_uid,
+    });
     println!(
         "Paired device {} for Space {}. Credential metadata saved to {}.",
-        session.credential_id,
-        session.space_uid,
+        ids["credential_id"].as_str().unwrap_or_default(),
+        ids["space_uid"].as_str().unwrap_or_default(),
         path.display()
     );
     Ok(())
 }
-
 /// Named-profile login (plan section 44): authenticate against a canonical
 /// connection and store the credential under a profile name in the
 /// user-global credential store. Secrets never enter TOML; contexts reference
