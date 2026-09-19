@@ -455,6 +455,11 @@ fn print_effective_current(
                     }
                 }
                 println!("Space:");
+                // codeql[rust/cleartext-logging]: Space UID is a non-secret
+                // immutable identifier by design (stored in plaintext TOML,
+                // passed as a CLI positional arg, shown by space list). Only
+                // the credential *name* is shown below; secrets are never
+                // printed. Required by the config-inspection contract.
                 println!("  {}", resolved.space_uid);
                 println!("Credential:");
                 println!(
