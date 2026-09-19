@@ -1,7 +1,8 @@
 version: '0.1'
 status: completed
 summary: 'Foundation release: operator-owned Knowledge, portable append-only history, and thin adapters. v0.1.1 is
-  published as a compatible patch; future Work and Experience capabilities must not become a second Knowledge authority.
+  published as a compatible patch; v0.1.2 is the final planned 0.1.x patch before v0.2. Future Work and Experience
+  capabilities must not become a second Knowledge authority.
 
   '
 milestones:
