@@ -75,9 +75,9 @@ pub enum SpaceSubCmd {
     Get {
         #[arg(
             value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
         )]
-        space_path: String,
+        space_path: Option<String>,
     },
     /// Patch space metadata
     #[command(
@@ -654,8 +654,13 @@ pub async fn run(
             }
         }
         SpaceSubCmd::Get { space_path } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "space get")?;
-            if let Some(base) = validated_base_url(&config)? {
+            let (root, space_id, base) = crate::cli_config::resolve_command_triple(
+                space_path.as_deref(),
+                explicit_config,
+                context_override,
+                "space get",
+            )?;
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "space.get",
