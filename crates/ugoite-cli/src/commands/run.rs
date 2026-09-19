@@ -1,4 +1,4 @@
-use crate::config::{load_config, resolve_space_reference, validated_base_url};
+use crate::cli_config::{resolve_command_triple, split_space_and_id};
 use crate::http;
 use crate::output::{effective_format, emit_success, Format, UsageError};
 use anyhow::Result;
@@ -22,15 +22,12 @@ pub enum RunSubCmd {
     )]
     Undo {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_OR_RUN_ID",
+            num_args(1..=2),
+            required = true,
+            help = "RUN_ID against the selected context (Run ID to undo; never inferred), or legacy SPACE RUN_ID."
         )]
-        space_path: String,
-        #[arg(
-            value_name = "RUN_ID",
-            help = "Run ID to undo. Take it from change list output; never inferred."
-        )]
-        run_id: String,
+        space_and_id: Vec<String>,
         #[arg(
             long,
             default_value = "cli",
@@ -40,20 +37,29 @@ pub enum RunSubCmd {
     },
 }
 
-pub async fn run(cmd: RunCmd) -> Result<()> {
-    let config = load_config()?;
+pub async fn run(
+    cmd: RunCmd,
+    explicit_config: Option<&std::path::Path>,
+    context_override: Option<&str>,
+) -> Result<()> {
     let fmt = effective_format(cmd.format);
     match cmd.sub {
         RunSubCmd::Undo {
-            space_path,
-            run_id,
+            space_and_id,
             author,
         } => {
+            let (legacy_space, run_id) = split_space_and_id(&space_and_id, "RUN_ID", "run undo")?;
+            let run_id = run_id.to_string();
             if run_id.trim().is_empty() {
                 return Err(UsageError("RUN_ID must not be blank".to_string()).into());
             }
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "run undo")?;
-            if let Some(base) = validated_base_url(&config)? {
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "run undo",
+            )?;
+            if let Some(base) = base {
                 if author != "cli" {
                     return Err(UsageError(
                         "run undo --author is only supported in core mode; backend/api derive author from the authenticated identity"

@@ -1,4 +1,5 @@
-use crate::config::{load_config, print_json, resolve_space_reference, validated_base_url};
+use crate::cli_config::{resolve_command_triple, split_space_and_id};
+use crate::config::print_json;
 use crate::http;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -25,12 +26,30 @@ pub enum SqlSubCmd {
     /// Validate SQL syntax without executing it
     Lint { sql_text: String },
     /// List saved SQL queries
-    SavedList { space_path: String },
+    SavedList {
+        #[arg(
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
+        )]
+        space_path: Option<String>,
+    },
     /// Get a saved SQL query
-    SavedGet { space_path: String, sql_id: String },
+    SavedGet {
+        #[arg(
+            value_name = "SPACE_OR_SQL_ID",
+            num_args(1..=2),
+            required = true,
+            help = "SQL_ID against the selected context, or legacy SPACE SQL_ID."
+        )]
+        space_and_id: Vec<String>,
+    },
     /// Create a saved SQL query
     SavedCreate {
-        space_path: String,
+        #[arg(
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
+        )]
+        space_path: Option<String>,
         #[arg(long)]
         name: String,
         #[arg(long)]
@@ -40,8 +59,13 @@ pub enum SqlSubCmd {
     },
     /// Update a saved SQL query
     SavedUpdate {
-        space_path: String,
-        sql_id: String,
+        #[arg(
+            value_name = "SPACE_OR_SQL_ID",
+            num_args(1..=2),
+            required = true,
+            help = "SQL_ID against the selected context, or legacy SPACE SQL_ID."
+        )]
+        space_and_id: Vec<String>,
         #[arg(long)]
         name: String,
         #[arg(long)]
@@ -53,8 +77,13 @@ pub enum SqlSubCmd {
     },
     /// Delete a saved SQL query
     SavedDelete {
-        space_path: String,
-        sql_id: String,
+        #[arg(
+            value_name = "SPACE_OR_SQL_ID",
+            num_args(1..=2),
+            required = true,
+            help = "SQL_ID against the selected context, or legacy SPACE SQL_ID."
+        )]
+        space_and_id: Vec<String>,
         #[arg(long)]
         human_approval: Option<String>,
     },
@@ -65,8 +94,13 @@ pub enum SqlSubCmd {
     /// with READ_ONLY_SQL_REQUIRED on every transport. Output is stable JSON
     /// with result/count/offset/limit metadata.
     SavedExecute {
-        space_path: String,
-        sql_id: String,
+        #[arg(
+            value_name = "SPACE_OR_SQL_ID",
+            num_args(1..=2),
+            required = true,
+            help = "SQL_ID against the selected context, or legacy SPACE SQL_ID."
+        )]
+        space_and_id: Vec<String>,
         #[arg(long)]
         offset: Option<usize>,
         #[arg(long)]
@@ -79,29 +113,53 @@ pub enum SqlSubCmd {
     /// admission and paged executor. Backend/api mode uses
     /// `sql_session.create`. Write SQL is rejected pre-execution.
     SessionCreate {
-        space_path: String,
+        #[arg(
+            value_name = "SPACE_UID_OR_PATH",
+            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
+        )]
+        space_path: Option<String>,
         #[arg(long)]
         sql: String,
     },
     /// Get SQL session metadata.
     SessionGet {
-        space_path: String,
-        session_id: String,
+        #[arg(
+            value_name = "SPACE_OR_SESSION_ID",
+            num_args(1..=2),
+            required = true,
+            help = "SESSION_ID against the selected context, or legacy SPACE SESSION_ID."
+        )]
+        space_and_id: Vec<String>,
     },
     /// Get SQL session metadata (explicit alias for session-get).
     SessionMetadata {
-        space_path: String,
-        session_id: String,
+        #[arg(
+            value_name = "SPACE_OR_SESSION_ID",
+            num_args(1..=2),
+            required = true,
+            help = "SESSION_ID against the selected context, or legacy SPACE SESSION_ID."
+        )]
+        space_and_id: Vec<String>,
     },
     /// Get the total row count for a SQL session.
     SessionCount {
-        space_path: String,
-        session_id: String,
+        #[arg(
+            value_name = "SPACE_OR_SESSION_ID",
+            num_args(1..=2),
+            required = true,
+            help = "SESSION_ID against the selected context, or legacy SPACE SESSION_ID."
+        )]
+        space_and_id: Vec<String>,
     },
     /// Read one bounded page of SQL session rows.
     SessionRows {
-        space_path: String,
-        session_id: String,
+        #[arg(
+            value_name = "SPACE_OR_SESSION_ID",
+            num_args(1..=2),
+            required = true,
+            help = "SESSION_ID against the selected context, or legacy SPACE SESSION_ID."
+        )]
+        space_and_id: Vec<String>,
         #[arg(long)]
         offset: Option<usize>,
         #[arg(long)]
@@ -329,8 +387,11 @@ fn saved_sql_text(saved: &serde_json::Value) -> Result<String> {
         })
 }
 
-pub async fn run(cmd: SqlCmd) -> Result<()> {
-    let config = load_config()?;
+pub async fn run(
+    cmd: SqlCmd,
+    explicit_config: Option<&std::path::Path>,
+    context_override: Option<&str>,
+) -> Result<()> {
     match cmd.sub {
         SqlSubCmd::Lint { sql_text } => match validate_sql_syntax(&sql_text) {
             Ok(()) => print_json(&serde_json::json!({
@@ -350,8 +411,13 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             })),
         },
         SqlSubCmd::SavedList { space_path } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "sql saved-list")?;
-            if let Some(base) = validated_base_url(&config)? {
+            let (root, space_id, base) = resolve_command_triple(
+                space_path.as_deref(),
+                explicit_config,
+                context_override,
+                "sql saved-list",
+            )?;
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "sql.list",
@@ -366,9 +432,17 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             let sqls = service.list_saved_sql_operator_unscoped(&space_id).await?;
             print_json(&sqls);
         }
-        SqlSubCmd::SavedGet { space_path, sql_id } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "sql saved-get")?;
-            if let Some(base) = validated_base_url(&config)? {
+        SqlSubCmd::SavedGet { space_and_id } => {
+            let (legacy_space, sql_id) =
+                split_space_and_id(&space_and_id, "SQL_ID", "sql saved-get")?;
+            let sql_id = sql_id.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "sql saved-get",
+            )?;
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "sql.get",
@@ -389,13 +463,17 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             sql,
             variables,
         } => {
-            let (root, space_id) =
-                resolve_space_reference(&config, &space_path, "sql saved-create")?;
+            let (root, space_id, base) = resolve_command_triple(
+                space_path.as_deref(),
+                explicit_config,
+                context_override,
+                "sql saved-create",
+            )?;
             let vars: serde_json::Value = variables
                 .map(|v| serde_json::from_str(&v))
                 .transpose()?
                 .unwrap_or(serde_json::json!([]));
-            if let Some(base) = validated_base_url(&config)? {
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "sql.create",
@@ -421,20 +499,26 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             print_json(&result);
         }
         SqlSubCmd::SavedUpdate {
-            space_path,
-            sql_id,
+            space_and_id,
             name,
             sql,
             variables,
             parent_revision_id,
         } => {
-            let (root, space_id) =
-                resolve_space_reference(&config, &space_path, "sql saved-update")?;
+            let (legacy_space, sql_id) =
+                split_space_and_id(&space_and_id, "SQL_ID", "sql saved-update")?;
+            let sql_id = sql_id.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "sql saved-update",
+            )?;
             let vars: serde_json::Value = variables
                 .map(|v| serde_json::from_str(&v))
                 .transpose()?
                 .unwrap_or(serde_json::json!([]));
-            if let Some(base) = validated_base_url(&config)? {
+            if let Some(base) = base {
                 let mut body = serde_json::json!({
                     "name": name,
                     "kind": "user-query",
@@ -466,15 +550,21 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             print_json(&result);
         }
         SqlSubCmd::SavedDelete {
-            space_path,
-            sql_id,
+            space_and_id,
             human_approval,
         } => {
-            let (root, space_id) =
-                resolve_space_reference(&config, &space_path, "sql saved-delete")?;
+            let (legacy_space, sql_id) =
+                split_space_and_id(&space_and_id, "SQL_ID", "sql saved-delete")?;
+            let sql_id = sql_id.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "sql saved-delete",
+            )?;
             let human_approval =
                 human_approval.or_else(|| std::env::var("UGOITE_HUMAN_APPROVAL").ok());
-            if let Some(base) = validated_base_url(&config)? {
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "sql.delete",
@@ -493,15 +583,21 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             print_json(&serde_json::json!({"deleted": true}));
         }
         SqlSubCmd::SavedExecute {
-            space_path,
-            sql_id,
+            space_and_id,
             offset,
             limit,
         } => {
+            let (legacy_space, sql_id) =
+                split_space_and_id(&space_and_id, "SQL_ID", "sql saved-execute")?;
+            let sql_id = sql_id.to_string();
             let (offset_value, limit_value) = parse_sql_page(offset, limit)?;
-            let (root, space_id) =
-                resolve_space_reference(&config, &space_path, "sql saved-execute")?;
-            if let Some(base) = validated_base_url(&config)? {
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "sql saved-execute",
+            )?;
+            if let Some(base) = base {
                 let saved = http::execute(
                     &base,
                     "sql.get",
@@ -560,11 +656,15 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             print_json(&output);
         }
         SqlSubCmd::SessionCreate { space_path, sql } => {
-            let (root, space_id) =
-                resolve_space_reference(&config, &space_path, "sql session-create")?;
+            let (root, space_id, base) = resolve_command_triple(
+                space_path.as_deref(),
+                explicit_config,
+                context_override,
+                "sql session-create",
+            )?;
             // Shared read-only admission before any state creation or network.
             validate_read_only_sql(&sql)?;
-            if let Some(base) = validated_base_url(&config)? {
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "sql_session.create",
@@ -578,13 +678,17 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             let meta = write_local_sql_session(&root, &space_id, &sql)?;
             print_json(&meta);
         }
-        SqlSubCmd::SessionGet {
-            space_path,
-            session_id,
-        } => {
-            let (root, space_id) =
-                resolve_space_reference(&config, &space_path, "sql session-get")?;
-            if let Some(base) = validated_base_url(&config)? {
+        SqlSubCmd::SessionGet { space_and_id } => {
+            let (legacy_space, session_id) =
+                split_space_and_id(&space_and_id, "SESSION_ID", "sql session-get")?;
+            let session_id = session_id.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "sql session-get",
+            )?;
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "sql_session.get",
@@ -598,13 +702,17 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             let meta = read_local_sql_session(&root, &space_id, &session_id)?;
             print_json(&meta);
         }
-        SqlSubCmd::SessionMetadata {
-            space_path,
-            session_id,
-        } => {
-            let (root, space_id) =
-                resolve_space_reference(&config, &space_path, "sql session-metadata")?;
-            if let Some(base) = validated_base_url(&config)? {
+        SqlSubCmd::SessionMetadata { space_and_id } => {
+            let (legacy_space, session_id) =
+                split_space_and_id(&space_and_id, "SESSION_ID", "sql session-metadata")?;
+            let session_id = session_id.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "sql session-metadata",
+            )?;
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "sql_session.get",
@@ -618,13 +726,17 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             let meta = read_local_sql_session(&root, &space_id, &session_id)?;
             print_json(&meta);
         }
-        SqlSubCmd::SessionCount {
-            space_path,
-            session_id,
-        } => {
-            let (root, space_id) =
-                resolve_space_reference(&config, &space_path, "sql session-count")?;
-            if let Some(base) = validated_base_url(&config)? {
+        SqlSubCmd::SessionCount { space_and_id } => {
+            let (legacy_space, session_id) =
+                split_space_and_id(&space_and_id, "SESSION_ID", "sql session-count")?;
+            let session_id = session_id.to_string();
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "sql session-count",
+            )?;
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "sql_session.count",
@@ -657,15 +769,21 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             }));
         }
         SqlSubCmd::SessionRows {
-            space_path,
-            session_id,
+            space_and_id,
             offset,
             limit,
         } => {
+            let (legacy_space, session_id) =
+                split_space_and_id(&space_and_id, "SESSION_ID", "sql session-rows")?;
+            let session_id = session_id.to_string();
             let (offset_value, limit_value) = parse_sql_page(offset, limit)?;
-            let (root, space_id) =
-                resolve_space_reference(&config, &space_path, "sql session-rows")?;
-            if let Some(base) = validated_base_url(&config)? {
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "sql session-rows",
+            )?;
+            if let Some(base) = base {
                 let rows_payload = http::execute(
                     &base,
                     "sql_session.rows",

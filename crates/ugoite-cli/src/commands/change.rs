@@ -1,4 +1,4 @@
-use crate::config::{load_config, resolve_space_reference, validated_base_url};
+use crate::cli_config::{resolve_command_triple, split_space_and_id};
 use crate::http;
 use crate::output::{effective_format, emit_success, print_json_table, Format, UsageError};
 use anyhow::Result;
@@ -23,9 +23,9 @@ pub enum ChangeSubCmd {
     List {
         #[arg(
             value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
         )]
-        space_path: String,
+        space_path: Option<String>,
     },
     /// Revert a Change by appending its inverse
     #[command(
@@ -33,15 +33,12 @@ pub enum ChangeSubCmd {
     )]
     Revert {
         #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Immutable Space UID in backend/api mode, or a local Space path in core mode."
+            value_name = "SPACE_OR_CHANGE_ID",
+            num_args(1..=2),
+            required = true,
+            help = "CHANGE_ID against the selected context (Change ID to revert; never inferred), or legacy SPACE CHANGE_ID."
         )]
-        space_path: String,
-        #[arg(
-            value_name = "CHANGE_ID",
-            help = "Change ID to revert. Take it from change list output; never inferred."
-        )]
-        change_id: String,
+        space_and_id: Vec<String>,
         #[arg(
             long,
             default_value = "cli",
@@ -82,13 +79,21 @@ fn change_rows_table(rows: &[serde_json::Value]) -> Vec<serde_json::Value> {
         .collect()
 }
 
-pub async fn run(cmd: ChangeCmd) -> Result<()> {
-    let config = load_config()?;
+pub async fn run(
+    cmd: ChangeCmd,
+    explicit_config: Option<&std::path::Path>,
+    context_override: Option<&str>,
+) -> Result<()> {
     let fmt = effective_format(cmd.format);
     match cmd.sub {
         ChangeSubCmd::List { space_path } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "change list")?;
-            if let Some(base) = validated_base_url(&config)? {
+            let (root, space_id, base) = resolve_command_triple(
+                space_path.as_deref(),
+                explicit_config,
+                context_override,
+                "change list",
+            )?;
+            if let Some(base) = base {
                 let result = http::execute(
                     &base,
                     "change.list",
@@ -136,15 +141,22 @@ pub async fn run(cmd: ChangeCmd) -> Result<()> {
             }
         }
         ChangeSubCmd::Revert {
-            space_path,
-            change_id,
+            space_and_id,
             author,
         } => {
+            let (legacy_space, change_id) =
+                split_space_and_id(&space_and_id, "CHANGE_ID", "change revert")?;
+            let change_id = change_id.to_string();
             if change_id.trim().is_empty() {
                 return Err(UsageError("CHANGE_ID must not be blank".to_string()).into());
             }
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "change revert")?;
-            if let Some(base) = validated_base_url(&config)? {
+            let (root, space_id, base) = resolve_command_triple(
+                legacy_space,
+                explicit_config,
+                context_override,
+                "change revert",
+            )?;
+            if let Some(base) = base {
                 if author != "cli" {
                     return Err(UsageError(
                         "change revert --author is only supported in core mode; backend/api derive author from the authenticated identity"
