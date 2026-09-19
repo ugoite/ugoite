@@ -714,8 +714,9 @@ pub async fn active_session_for(
 ///
 /// Named credential profiles share the legacy refresh policy (30s skew) but
 /// persist through the user-global credential store instead of
-/// `cli-credentials.json`. Returns `Ok(None)` when the server offers no
-/// refresh (caller keeps the existing session); the caller persists any
+/// `cli-credentials.json`. Always returns `Ok(Some(..))` on success: the
+/// input session unchanged when it is still fresh, else the rotated session
+/// (failures are errors, never a silent `None`). The caller persists any
 /// rotated session back to its named profile.
 pub async fn refresh_session(session: &AuthSession, base_url: &str) -> Result<Option<AuthSession>> {
     if session.expires_at > Utc::now().timestamp() + 30 {

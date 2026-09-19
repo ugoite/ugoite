@@ -1,4 +1,6 @@
-use crate::cli_config::{resolve_command_triple, split_space_and_id, split_space_id_and_revision};
+use crate::cli_config::{
+    resolve_command_target, split_space_and_id, split_space_id_and_revision, SpaceTarget,
+};
 use crate::http;
 use crate::output::{
     effective_format, emit_success, print_json_table, read_compat_input, render_receipt,
@@ -246,12 +248,12 @@ fn current_entry_revision_id(entry: &serde_json::Value) -> Result<String> {
 }
 
 async fn read_remote_entry_revision_id(
-    base_url: &str,
+    target: &SpaceTarget,
     space_id: &str,
     entry_id: &str,
 ) -> Result<String> {
-    let entry = http::execute(
-        base_url,
+    let entry = http::execute_for_target(
+        target,
         "entry.get",
         serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
         None,
@@ -368,9 +370,7 @@ fn merge_structured_fields(
 
 #[allow(clippy::too_many_arguments)]
 async fn create_structured_entry(
-    root: &str,
-    space_id: &str,
-    base: Option<&str>,
+    target: &SpaceTarget,
     fmt: &Format,
     entry_id: String,
     form: Option<String>,
@@ -385,7 +385,7 @@ async fn create_structured_entry(
         );
     };
     let merged = merge_structured_fields(fields, fields_files)?;
-    if let Some(base) = base {
+    if let SpaceTarget::Remote { space_uid, .. } = target {
         if author.is_some() {
             return Err(UsageError(
                 "entry create --author is only supported in core mode; backend/api derive author from the authenticated identity"
@@ -401,10 +401,10 @@ async fn create_structured_entry(
         if let Some(title) = title.as_deref() {
             body["title"] = serde_json::json!(title);
         }
-        let result = http::execute(
-            base,
+        let result = http::execute_for_target(
+            target,
             "entry.create",
-            serde_json::json!({"space_id": space_id}),
+            serde_json::json!({"space_id": space_uid}),
             Some(body),
         )
         .await?;
@@ -426,6 +426,9 @@ async fn create_structured_entry(
         );
         return Ok(());
     }
+    let SpaceTarget::Core { root, space_id } = target else {
+        anyhow::bail!("operation entry.create does not use the remote transport")
+    };
     let author = author.unwrap_or_else(|| "cli".to_string());
     let service = UgoiteService::new_without_background_refresh(root)?;
     let (meta, _commit_receipt) = service
@@ -455,9 +458,7 @@ async fn create_structured_entry(
 
 #[allow(clippy::too_many_arguments)]
 async fn update_structured_entry(
-    root: &str,
-    space_id: &str,
-    base: Option<&str>,
+    target: &SpaceTarget,
     fmt: &Format,
     entry_id: String,
     form: Option<String>,
@@ -475,7 +476,7 @@ async fn update_structured_entry(
         .into());
     }
     let fields = merge_structured_fields(fields, fields_files)?;
-    if let Some(base) = base {
+    if let SpaceTarget::Remote { space_uid, .. } = target {
         if author != "cli" {
             return Err(UsageError(
                 "entry update --author is only supported in core mode; backend/api derive author from the authenticated identity"
@@ -483,10 +484,10 @@ async fn update_structured_entry(
             )
             .into());
         }
-        let current = http::execute(
-            base,
+        let current = http::execute_for_target(
+            target,
             "entry.get",
-            serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
+            serde_json::json!({"space_id": space_uid, "entry_id": entry_id}),
             None,
         )
         .await?;
@@ -513,10 +514,10 @@ async fn update_structured_entry(
             body["title"] = serde_json::json!(title);
         }
         body["parent_revision_id"] = serde_json::json!(parent_revision_id);
-        let result = http::execute(
-            base,
+        let result = http::execute_for_target(
+            target,
             "entry.update",
-            serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
+            serde_json::json!({"space_id": space_uid, "entry_id": entry_id}),
             Some(body),
         )
         .await?;
@@ -538,6 +539,9 @@ async fn update_structured_entry(
         );
         return Ok(());
     }
+    let SpaceTarget::Core { root, space_id } = target else {
+        anyhow::bail!("operation entry.update does not use the remote transport")
+    };
     let service = UgoiteService::new_without_background_refresh(root)?;
     let current = service.get_entry(space_id, &entry_id).await?;
     let mut extra_attributes = entry_object_map(&current, "extra_attributes")?;
@@ -591,17 +595,17 @@ pub async fn run(
     let fmt = effective_format(cmd.format);
     match cmd.sub {
         EntrySubCmd::List { space_path } => {
-            let (root, space_id, base) = resolve_command_triple(
+            let target = resolve_command_target(
                 space_path.as_deref(),
                 explicit_config,
                 context_override,
                 "entry list",
             )?;
-            if let Some(base) = base.as_deref() {
-                let result = http::execute(
-                    base,
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let result = http::execute_for_target(
+                    &target,
                     "entry.list",
-                    serde_json::json!({"space_id": space_id}),
+                    serde_json::json!({"space_id": space_uid}),
                     None,
                 )
                 .await?;
@@ -614,8 +618,11 @@ pub async fn run(
                 emit_success(&result, &fmt, None);
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            let entries = service.list_entries(&space_id).await?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation entry.list does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let entries = service.list_entries(space_id).await?;
             if fmt != Format::Json {
                 let rows: Vec<serde_json::Value> = entries
                     .iter()
@@ -635,25 +642,28 @@ pub async fn run(
             let (legacy_space, entry_id) =
                 split_space_and_id(&space_and_id, "ENTRY_ID", "entry get")?;
             let entry_id = entry_id.to_string();
-            let (root, space_id, base) = resolve_command_triple(
+            let target = resolve_command_target(
                 legacy_space,
                 explicit_config,
                 context_override,
                 "entry get",
             )?;
-            if let Some(base) = base.as_deref() {
-                let result = http::execute(
-                    base,
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let result = http::execute_for_target(
+                    &target,
                     "entry.get",
-                    serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
+                    serde_json::json!({"space_id": space_uid, "entry_id": entry_id}),
                     None,
                 )
                 .await?;
                 emit_success(&result, &fmt, None);
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            let entry = service.get_entry(&space_id, &entry_id).await?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation entry.get does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let entry = service.get_entry(space_id, &entry_id).await?;
             emit_success(&entry, &fmt, None);
         }
         EntrySubCmd::Create {
@@ -669,13 +679,12 @@ pub async fn run(
             let (legacy_space, entry_id) =
                 split_space_and_id(&space_and_id, "ENTRY_ID", "entry create")?;
             let entry_id = entry_id.to_string();
-            let (root, space_id, base) = resolve_command_triple(
+            let target = resolve_command_target(
                 legacy_space,
                 explicit_config,
                 context_override,
                 "entry create",
             )?;
-            let base = base.as_deref();
             let has_structured =
                 form.is_some() || title.is_some() || !fields.is_empty() || !fields_files.is_empty();
             let has_markdown = content.is_some() || file.is_some();
@@ -687,9 +696,7 @@ pub async fn run(
                     );
                 }
                 return create_structured_entry(
-                    &root,
-                    &space_id,
-                    base,
+                    &target,
                     &fmt,
                     entry_id,
                     form,
@@ -713,7 +720,7 @@ pub async fn run(
                 (None, Some(path)) => read_compat_input(None, "--content", Some(path))?,
                 (None, None) => "# New Entry\n".to_string(),
             };
-            if let Some(base) = base {
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
                 if author.is_some() {
                     return Err(UsageError(
                         "entry create --author is only supported in core mode; backend/api derive author from the authenticated identity"
@@ -721,10 +728,10 @@ pub async fn run(
                     )
                     .into());
                 }
-                let result = http::execute(
-                    base,
+                let result = http::execute_for_target(
+                    &target,
                     "entry.create",
-                    serde_json::json!({"space_id": space_id}),
+                    serde_json::json!({"space_id": space_uid}),
                     Some(serde_json::json!({"id": entry_id, "markdown": content})),
                 )
                 .await?;
@@ -749,13 +756,16 @@ pub async fn run(
                 );
                 return Ok(());
             }
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation entry.create does not use the remote transport")
+            };
             let author = author.unwrap_or_else(|| "cli".to_string());
             // A mutation schedules the process-local coalesced refresh but
             // never drains it; the authoritative commit is the CLI latency
             // boundary and `ugoite index run` is the explicit repair command.
-            let service = UgoiteService::new_without_background_refresh(&root)?;
+            let service = UgoiteService::new_without_background_refresh(root)?;
             let (mut meta, commit_receipt) = service
-                .create_entry_with_receipt(&space_id, &entry_id, &content, &author)
+                .create_entry_with_receipt(space_id, &entry_id, &content, &author)
                 .await?;
             meta["change_id"] = serde_json::json!(commit_receipt.command_id);
             let receipt = entry_receipt(
@@ -783,7 +793,7 @@ pub async fn run(
             let (legacy_space, entry_id) =
                 split_space_and_id(&space_and_id, "ENTRY_ID", "entry update")?;
             let entry_id = entry_id.to_string();
-            let (root, space_id, base) = resolve_command_triple(
+            let target = resolve_command_target(
                 legacy_space,
                 explicit_config,
                 context_override,
@@ -800,9 +810,7 @@ pub async fn run(
                     );
                 }
                 return update_structured_entry(
-                    &root,
-                    &space_id,
-                    base.as_deref(),
+                    &target,
                     &fmt,
                     entry_id,
                     form,
@@ -815,7 +823,7 @@ pub async fn run(
                 .await;
             }
             let markdown = read_compat_input(markdown, "--markdown", file)?;
-            if let Some(base) = base {
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
                 if author != "cli" {
                     return Err(UsageError(
                         "entry update --author is only supported in core mode; backend/api derive author from the authenticated identity"
@@ -825,14 +833,14 @@ pub async fn run(
                 }
                 let parent_revision_id = match parent_revision_id {
                     Some(parent_revision_id) => parent_revision_id,
-                    None => read_remote_entry_revision_id(&base, &space_id, &entry_id).await?,
+                    None => read_remote_entry_revision_id(&target, space_uid, &entry_id).await?,
                 };
                 let mut body = serde_json::json!({"markdown": markdown});
                 body["parent_revision_id"] = serde_json::json!(parent_revision_id);
-                let result = http::execute(
-                    &base,
+                let result = http::execute_for_target(
+                    &target,
                     "entry.update",
-                    serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
+                    serde_json::json!({"space_id": space_uid, "entry_id": entry_id}),
                     Some(body),
                 )
                 .await?;
@@ -855,15 +863,18 @@ pub async fn run(
                 );
                 return Ok(());
             }
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation entry.update does not use the remote transport")
+            };
             // Do not wait for Derived refreshes in a one-shot mutation.
-            let service = UgoiteService::new_without_background_refresh(&root)?;
+            let service = UgoiteService::new_without_background_refresh(root)?;
             let parent_revision_id = match parent_revision_id {
                 Some(parent_revision_id) => parent_revision_id,
-                None => current_entry_revision_id(&service.get_entry(&space_id, &entry_id).await?)?,
+                None => current_entry_revision_id(&service.get_entry(space_id, &entry_id).await?)?,
             };
             let result = service
                 .update_entry(
-                    &space_id,
+                    space_id,
                     &entry_id,
                     &markdown,
                     Some(&parent_revision_id),
@@ -896,7 +907,7 @@ pub async fn run(
             let (legacy_space, entry_id) =
                 split_space_and_id(&space_and_id, "ENTRY_ID", "entry delete")?;
             let entry_id = entry_id.to_string();
-            let (root, space_id, base) = resolve_command_triple(
+            let target = resolve_command_target(
                 legacy_space,
                 explicit_config,
                 context_override,
@@ -904,7 +915,7 @@ pub async fn run(
             )?;
             let human_approval =
                 human_approval.or_else(|| std::env::var("UGOITE_HUMAN_APPROVAL").ok());
-            if let Some(base) = base {
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
                 if author != "cli" {
                     return Err(UsageError(
                         "entry delete --author is only supported in core mode; backend/api derive actor from the authenticated identity"
@@ -912,11 +923,11 @@ pub async fn run(
                     )
                     .into());
                 }
-                let result = http::execute(
-                    &base,
+                let result = http::execute_for_target(
+                    &target,
                     "entry.delete",
                     serde_json::json!({
-                        "space_id": space_id,
+                        "space_id": space_uid,
                         "entry_id": entry_id,
                         "hard_delete": hard_delete,
                         "human_approval": human_approval,
@@ -948,10 +959,13 @@ pub async fn run(
                 )
                 .into());
             }
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation entry.delete does not use the remote transport")
+            };
             // Do not wait for Derived refreshes in a one-shot mutation.
-            let service = UgoiteService::new_without_background_refresh(&root)?;
+            let service = UgoiteService::new_without_background_refresh(root)?;
             let result = service
-                .delete_entry_with_receipt(&space_id, &entry_id, hard_delete, &author)
+                .delete_entry_with_receipt(space_id, &entry_id, hard_delete, &author)
                 .await?;
             let receipt = entry_receipt(
                 entry_id,
@@ -974,25 +988,28 @@ pub async fn run(
             let (legacy_space, entry_id) =
                 split_space_and_id(&space_and_id, "ENTRY_ID", "entry history")?;
             let entry_id = entry_id.to_string();
-            let (root, space_id, base) = resolve_command_triple(
+            let target = resolve_command_target(
                 legacy_space,
                 explicit_config,
                 context_override,
                 "entry history",
             )?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let result = http::execute_for_target(
+                    &target,
                     "entry.history",
-                    serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
+                    serde_json::json!({"space_id": space_uid, "entry_id": entry_id}),
                     None,
                 )
                 .await?;
                 emit_success(&result, &fmt, None);
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            let history = service.entry_history(&space_id, &entry_id).await?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation entry.history does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let history = service.entry_history(space_id, &entry_id).await?;
             emit_success(&history, &fmt, None);
         }
         EntrySubCmd::Revision {
@@ -1002,18 +1019,18 @@ pub async fn run(
                 split_space_id_and_revision(&space_id_and_revision, "entry revision")?;
             let entry_id = entry_id.to_string();
             let revision_id = revision_id.to_string();
-            let (root, space_id, base) = resolve_command_triple(
+            let target = resolve_command_target(
                 legacy_space,
                 explicit_config,
                 context_override,
                 "entry revision",
             )?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let result = http::execute_for_target(
+                    &target,
                     "entry.revision",
                     serde_json::json!({
-                        "space_id": space_id,
+                        "space_id": space_uid,
                         "entry_id": entry_id,
                         "revision_id": revision_id,
                     }),
@@ -1023,9 +1040,12 @@ pub async fn run(
                 emit_success(&result, &fmt, None);
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation entry.revision does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
             let rev = service
-                .entry_revision(&space_id, &entry_id, &revision_id)
+                .entry_revision(space_id, &entry_id, &revision_id)
                 .await?;
             emit_success(&rev, &fmt, None);
         }
@@ -1037,13 +1057,13 @@ pub async fn run(
                 split_space_id_and_revision(&space_id_and_revision, "entry restore")?;
             let entry_id = entry_id.to_string();
             let revision_id = revision_id.to_string();
-            let (root, space_id, base) = resolve_command_triple(
+            let target = resolve_command_target(
                 legacy_space,
                 explicit_config,
                 context_override,
                 "entry restore",
             )?;
-            if let Some(base) = base {
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
                 if author != "cli" {
                     return Err(UsageError(
                         "entry restore --author is only supported in core mode; backend/api derive author from the authenticated identity"
@@ -1051,10 +1071,10 @@ pub async fn run(
                     )
                     .into());
                 }
-                let result = http::execute(
-                    &base,
+                let result = http::execute_for_target(
+                    &target,
                     "entry.restore",
-                    serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
+                    serde_json::json!({"space_id": space_uid, "entry_id": entry_id}),
                     Some(serde_json::json!({"revision_id": revision_id})),
                 )
                 .await?;
@@ -1076,10 +1096,13 @@ pub async fn run(
                 );
                 return Ok(());
             }
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation entry.restore does not use the remote transport")
+            };
             // Do not wait for Derived refreshes in a one-shot mutation.
-            let service = UgoiteService::new_without_background_refresh(&root)?;
+            let service = UgoiteService::new_without_background_refresh(root)?;
             let result = service
-                .restore_entry(&space_id, &entry_id, &revision_id, &author)
+                .restore_entry(space_id, &entry_id, &revision_id, &author)
                 .await?;
             let receipt = entry_receipt(
                 entry_id,

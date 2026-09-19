@@ -208,9 +208,19 @@ pub fn validate_remote_url(url: &str, label: &str) -> Result<url::Url> {
     // "path" under WHATWG rules, but the literal text has no authority at
     // all. Require the parsed host to appear literally after `scheme://`
     // (case-insensitive); this also rejects any hidden userinfo prefix.
+    // Bracket-aware: IPv6 literals appear bracketed in text (`[::1]`) while
+    // some parsers expose the host bare (`::1`), so accept either form and
+    // never require the port to be part of the match.
     let lowered = url.to_ascii_lowercase();
-    let expected_authority = format!("://{}", host.to_ascii_lowercase());
-    if !lowered.contains(&expected_authority) {
+    let host_lower = host.to_ascii_lowercase();
+    let bracketed_lower = if host_lower.starts_with('[') || !host_lower.contains(':') {
+        host_lower.clone()
+    } else {
+        format!("[{host_lower}]")
+    };
+    let expected_plain = format!("://{host_lower}");
+    let expected_bracketed = format!("://{bracketed_lower}");
+    if !lowered.contains(&expected_plain) && !lowered.contains(&expected_bracketed) {
         bail!("{label} URL {url:?} must include a host authority (for example https://host/path), not an empty authority");
     }
     if !parsed.username().is_empty() || parsed.password().is_some() {
@@ -344,5 +354,37 @@ type = "backend"
 url = "http://localhost:8000"
 "#;
         assert!(ConfigFile::parse_toml(text, "test").is_ok());
+    }
+
+    #[test]
+    fn accepts_ipv6_and_ipv4_loopback_http_with_and_without_port() {
+        for url in [
+            "http://[::1]/",
+            "http://[::1]:8000/",
+            "http://[::1]:8000",
+            "http://127.0.0.1/",
+            "http://127.0.0.1:8000/",
+            "http://127.0.0.1:8000",
+        ] {
+            assert!(
+                validate_remote_url(url, "Remote endpoint").is_ok(),
+                "loopback URL must pass: {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_empty_authority_and_hidden_userinfo() {
+        for url in [
+            "https:///path",
+            "https://user:pass@example.com",
+            "https://example.com/path#frag",
+            "https://example.com/path?query=1",
+        ] {
+            assert!(
+                validate_remote_url(url, "Remote endpoint").is_err(),
+                "malformed URL must fail: {url}"
+            );
+        }
     }
 }

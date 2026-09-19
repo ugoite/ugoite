@@ -10,10 +10,15 @@ use std::path::PathBuf;
 use std::process::Command;
 use ugoite_cli::cli_config::{
     merge::{merge_loaded_configs, LoadedConfigFile},
-    resolve_cli_context, resolve_context_target_with_overrides, resolve_named_profile,
-    validate_credential_name, write_config_file_atomic, ConfigFile, SpaceTarget,
+    resolve_cli_context, resolve_command_target_with_overrides,
+    resolve_context_target_with_overrides, resolve_named_profile, validate_credential_name,
+    write_config_file_atomic, ConfigFile, SpaceTarget,
 };
 use ugoite_cli::output::{project_error, UsageError};
+
+/// Serializes tests that mutate the process-global `HOME` environment
+/// variable (parallel test threads share one environment).
+static HOME_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn v7(id: &str) -> uuid::Uuid {
     uuid::Uuid::parse_str(id).unwrap()
@@ -79,7 +84,9 @@ fn credential_never_leaks_across_connections() {
 #[test]
 fn connection_override_never_silently_inherits_other_credential() {
     // Hermetic credential store: point HOME at an empty dir so the
-    // user-global store fallback sees no candidate.
+    // user-global store fallback sees no candidate. HOME is process-global,
+    // so hold the serial guard for the whole mutation window.
+    let _home_guard = HOME_ENV_LOCK.lock().unwrap();
     let fake_home = tempfile::tempdir().unwrap();
     let saved_home = std::env::var("HOME").ok();
     std::env::set_var("HOME", fake_home.path());
@@ -250,10 +257,20 @@ fn malformed_remote_urls_fail() {
             "malformed URL must fail: {url}"
         );
     }
-    // Loopback http stays allowed.
-    let ok =
-        "version = 1\n[connections.dev]\ntype = \"backend\"\nurl = \"http://localhost:8000\"\n";
-    assert!(ConfigFile::parse_toml(ok, "test").is_ok());
+    // Loopback http stays allowed, including IPv6 and IPv4 literals.
+    for url in [
+        "http://localhost:8000",
+        "http://[::1]/",
+        "http://[::1]:8000/",
+        "http://127.0.0.1/",
+        "http://127.0.0.1:8000/",
+    ] {
+        let ok = format!("version = 1\n[connections.dev]\ntype = \"backend\"\nurl = \"{url}\"\n");
+        assert!(
+            ConfigFile::parse_toml(&ok, "test").is_ok(),
+            "loopback URL must pass: {url}"
+        );
+    }
 }
 
 #[test]
@@ -390,6 +407,101 @@ credential = "work-cred"
         }
         other => panic!("expected remote target, got {other:?}"),
     }
+}
+
+#[test]
+fn context_first_remote_op_selects_target_aware_execute_without_global_fallback() {
+    // The entry/form command path resolves through
+    // `resolve_context_target_with_overrides` (the same function
+    // `resolve_command_target_with_overrides` delegates to after loading the
+    // config) and hands the resulting `SpaceTarget` to
+    // `http::execute_for_target` / `step_up::execute_with_step_up_for_target`:
+    // - `Remote` with `connection: Some` uses the named credential profile
+    //   for exactly that connection, never the implicit global session.
+    // - `connection: None` is reserved for the legacy explicit-Space
+    //   compatibility path (0.1.x global session lookup).
+    let uid = "019f1111-1111-7abc-8def-111111111111";
+    let effective = effective_from_toml(&format!(
+        r#"
+version = 1
+current_context = "work-ctx"
+[connections.work]
+type = "backend"
+url = "https://work.example.com"
+[contexts.work-ctx]
+connection = "work"
+space_uid = "{uid}"
+credential = "work-cred"
+"#
+    ));
+    let target = resolve_context_target_with_overrides(&effective, None, None, None).unwrap();
+    match &target {
+        SpaceTarget::Remote {
+            base,
+            space_uid,
+            connection,
+            credential,
+        } => {
+            assert_eq!(base, "https://work.example.com");
+            assert_eq!(space_uid, uid);
+            assert_eq!(
+                connection.as_deref(),
+                Some("work"),
+                "context-first remote must carry connection identity"
+            );
+            assert_eq!(
+                credential.as_deref(),
+                Some("work-cred"),
+                "context-first remote must carry credential identity"
+            );
+        }
+        other => panic!("expected remote target, got {other:?}"),
+    }
+    assert_eq!(target.connection_name(), Some("work"));
+    assert_eq!(target.credential_name(), Some("work-cred"));
+    // The identity the target-aware execute boundary resolves: the named
+    // profile for exactly ("work", "work-cred"). No implicit global pick:
+    // anonymous stays anonymous, and a different connection refuses.
+    let store = credential_store_with(&[("work-cred", "work")]);
+    let profile = resolve_named_profile(&store, "work", Some("work-cred"))
+        .unwrap()
+        .expect("named profile resolves for its own connection");
+    assert_eq!(profile["connection"], "work");
+    assert!(
+        resolve_named_profile(&store, "work", None)
+            .unwrap()
+            .is_none(),
+        "no requested credential must stay anonymous, never pick a global session"
+    );
+    let cross = resolve_named_profile(&store, "other", Some("work-cred")).unwrap_err();
+    assert!(
+        format!("{cross:#}").contains("refusing to reuse it across connections"),
+        "cross-connection reuse must fail, never fall back globally"
+    );
+    // Legacy explicit-Space shape keeps the 0.1.x global lookup: the
+    // compatibility target carries no connection identity, and explicit
+    // --connection/--credential with a legacy SPACE is a usage error.
+    let legacy = SpaceTarget::Remote {
+        base: "https://work.example.com".to_string(),
+        space_uid: uid.to_string(),
+        connection: None,
+        credential: None,
+    };
+    assert_eq!(legacy.connection_name(), None);
+    assert_eq!(legacy.credential_name(), None);
+    let usage = resolve_command_target_with_overrides(
+        Some("019f1111-1111-7abc-8def-111111111111"),
+        None,
+        None,
+        Some("work"),
+        None,
+        "entry list",
+    )
+    .unwrap_err();
+    assert!(
+        format!("{usage:#}").contains("does not accept --connection"),
+        "--connection with a legacy SPACE must be a usage error"
+    );
 }
 
 fn ugoite_bin() -> PathBuf {

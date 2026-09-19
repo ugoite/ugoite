@@ -173,8 +173,10 @@ pub fn uniquely_resolvable_credential(
 /// - explicit `--credential` wins (validated at the HTTP boundary);
 /// - otherwise, when the scoped context already targets the same connection,
 ///   its credential is reused;
-/// - otherwise, a uniquely-resolvable stored credential for the requested
-///   connection is used, else an actionable error.
+/// - otherwise, the uniquely-resolvable stored credential for the requested
+///   connection is used (`None` when zero or many match, so the caller can
+///   allow anonymous access or report an actionable error instead of
+///   guessing).
 pub fn resolve_credential_for_connection(
     store: &CredentialStore,
     requested_connection: &str,
@@ -200,12 +202,10 @@ pub fn resolve_credential_for_connection(
         // No scope connection to compare against; do not inherit blindly.
     }
     // No explicit credential and no safely-inheritable scope credential.
-    // Callers for core connections may accept `None`; remote callers should
-    // require unique resolution. We return `None` here only when the store
-    // has no candidate; callers needing auth convert that into an actionable
-    // error via `uniquely_resolvable_credential` or allow anonymous.
-    // To keep the safety boundary explicit, attempt unique resolution and
-    // let the caller decide: if the store has exactly one candidate, use it.
+    // Strict unique resolution only: `Some` when exactly one stored profile
+    // is paired for the requested connection; `None` for zero or many (the
+    // caller converts that into anonymous access or an actionable error).
+    // Never picks among several candidates.
     let candidates: Vec<&String> = {
         let mut names: Vec<&String> = store
             .credentials
