@@ -27,12 +27,12 @@ describe("spaceApi", () => {
 
     it("should return all spaces", async () => {
       const ws1: Space = {
-        id: "ws1",
+        space_uid: "ws1",
         name: "Space 1",
         created_at: "2025-01-01T00:00:00Z",
       };
       const ws2: Space = {
-        id: "ws2",
+        space_uid: "ws2",
         name: "Space 2",
         created_at: "2025-01-02T00:00:00Z",
       };
@@ -41,8 +41,8 @@ describe("spaceApi", () => {
 
       const spaces = await spaceApi.list();
       expect(spaces).toHaveLength(2);
-      expect(spaces.map((w) => w.id)).toContain("ws1");
-      expect(spaces.map((w) => w.id)).toContain("ws2");
+      expect(spaces.map((w) => w.space_uid)).toContain("ws1");
+      expect(spaces.map((w) => w.space_uid)).toContain("ws2");
     });
   });
 
@@ -52,7 +52,6 @@ describe("spaceApi", () => {
         name: "my-space",
         slug: "my-space",
       });
-      expect(result.id).toBe("my-space");
       expect(result.space_uid).toBe("my-space");
       expect(result.name).toBe("my-space");
 
@@ -119,7 +118,7 @@ describe("spaceApi", () => {
 
 describe("entryApi", () => {
   const testSpace: Space = {
-    id: "test-ws",
+    space_uid: "test-ws",
     name: "Test Space",
     created_at: "2025-01-01T00:00:00Z",
   };
@@ -228,7 +227,7 @@ describe("entryApi", () => {
           () =>
             HttpResponse.json({
               id: "entry-get",
-              markdown: content,
+              content,
               revision_id: "rev-get",
               created_at: "2025-01-01T00:00:00Z",
               updated_at: "2025-01-01T00:00:00Z",
@@ -239,6 +238,7 @@ describe("entryApi", () => {
           () =>
             HttpResponse.json({
               id: "entry-empty",
+              content: "",
               revision_id: "rev-empty",
               created_at: "2025-01-01T00:00:00Z",
               updated_at: "2025-01-01T00:00:00Z",
@@ -248,7 +248,6 @@ describe("entryApi", () => {
 
       const fetched = await entryApi.get("test-ws", "entry-get");
       expect(fetched.content).toBe(content);
-      expect(fetched.markdown).toBe(content);
       expect(fetched.revision_id).toBe("rev-get");
 
       const emptyFetched = await entryApi.get("test-ws", "entry-empty");
@@ -497,7 +496,7 @@ describe("entryApi", () => {
     it("#2824: rejects a context-free asset read with ASSET_CONTEXT_REQUIRED", async () => {
       resetMockData();
       seedSpace({
-        id: "ws-ctx",
+        space_uid: "ws-ctx",
         name: "Context Space",
         created_at: "2025-01-01T00:00:00Z",
       });
@@ -546,7 +545,7 @@ describe("entryApi", () => {
 
 describe("formApi", () => {
   const testSpace: Space = {
-    id: "form-ws",
+    space_uid: "form-ws",
     name: "Form Space",
     created_at: "2025-01-01T00:00:00Z",
   };
@@ -664,7 +663,7 @@ describe("error paths", () => {
     resetMockData();
     await spaceApi.create({ name: "existing-space", slug: "existing-space" });
     const space = await spaceApi.get("existing-space");
-    expect(space.id).toBe("existing-space");
+    expect(space.space_uid).toBe("existing-space");
   });
 
   it("spaceApi.patch throws on failure", async () => {
@@ -741,7 +740,7 @@ describe("error paths", () => {
   it("entryApi.history returns revisions", async () => {
     resetMockData();
     seedSpace({
-      id: "ws-history",
+      space_uid: "ws-history",
       name: "H",
       created_at: "2025-01-01T00:00:00Z",
     });
@@ -755,7 +754,11 @@ describe("error paths", () => {
 
   it("entryApi.getRevision returns a revision", async () => {
     resetMockData();
-    seedSpace({ id: "ws-rev", name: "R", created_at: "2025-01-01T00:00:00Z" });
+    seedSpace({
+      space_uid: "ws-rev",
+      name: "R",
+      created_at: "2025-01-01T00:00:00Z",
+    });
     const created = await entryApi.create("ws-rev", {
       form: "Entry",
       fields: { Body: "Entry" },
@@ -772,7 +775,7 @@ describe("error paths", () => {
   it("entryApi.restore succeeds", async () => {
     resetMockData();
     seedSpace({
-      id: "ws-restore",
+      space_uid: "ws-restore",
       name: "RR",
       created_at: "2025-01-01T00:00:00Z",
     });
@@ -791,7 +794,11 @@ describe("error paths", () => {
 
   it("entryApi.createFromWebform creates entry", async () => {
     resetMockData();
-    seedSpace({ id: "ws-wf", name: "WF", created_at: "2025-01-01T00:00:00Z" });
+    seedSpace({
+      space_uid: "ws-wf",
+      name: "WF",
+      created_at: "2025-01-01T00:00:00Z",
+    });
     const formDef = {
       name: "Task",
       template: "# Task\n\n## Status\n",
@@ -810,7 +817,7 @@ describe("error paths", () => {
   it("entryApi.createFromChat creates entry", async () => {
     resetMockData();
     seedSpace({
-      id: "ws-chat",
+      space_uid: "ws-chat",
       name: "Chat",
       created_at: "2025-01-01T00:00:00Z",
     });
@@ -832,7 +839,7 @@ describe("error paths", () => {
   it("entryApi.createFromChat uses the same structured payload as webform", async () => {
     resetMockData();
     seedSpace({
-      id: "ws-parity",
+      space_uid: "ws-parity",
       name: "Parity",
       created_at: "2025-01-01T00:00:00Z",
     });
@@ -1029,7 +1036,7 @@ describe("error paths", () => {
   it("formApi.listTypes returns types", async () => {
     resetMockData();
     seedSpace({
-      id: "ws-types",
+      space_uid: "ws-types",
       name: "T",
       created_at: "2025-01-01T00:00:00Z",
     });

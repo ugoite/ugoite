@@ -273,29 +273,28 @@ fn parse_entry_draft(
     let object = value
         .as_object()
         .ok_or_else(|| "draft must be an object".to_string())?;
-    // Accept the canonical StructuredEntryDraft shape, tolerating the
-    // frontend shorthand `form` for `form_name` and omitted collections.
+    // Accept only the canonical StructuredEntryDraft JSON shape. Omitted
+    // collections remain valid, but transitional casing/name aliases do not.
     // Present-but-malformed values are INVALID_INPUT so diagnostics parity
     // holds where it matters most (wrong code/detail is worse than strict).
-    let form_name_value = object.get("form_name");
-    let form_alias_value = object.get("form");
-    for candidate in [form_name_value, form_alias_value].into_iter().flatten() {
-        if !candidate.is_null() && candidate.as_str().is_none() {
-            return Err("draft.form must be a string".to_string());
-        }
+    if object.contains_key("form") {
+        return Err("draft.form is not supported; use draft.form_name".to_string());
     }
-    let form_name_text = form_name_value
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_string);
-    let form_alias_text = form_alias_value
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_string);
-    if let (Some(canonical), Some(alias)) = (&form_name_text, &form_alias_text) {
-        if canonical != alias {
-            return Err("draft.form_name and draft.form must agree".to_string());
-        }
+    if object.contains_key("extraAttributes") {
+        return Err(
+            "draft.extraAttributes is not supported; use draft.extra_attributes".to_string(),
+        );
     }
-    let form_name = form_name_text.or(form_alias_text);
+    let form_name = object
+        .get("form_name")
+        .filter(|value| !value.is_null())
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| "draft.form_name must be a string".to_string())
+        })
+        .transpose()?;
     let tags = match object.get("tags") {
         None | Some(serde_json::Value::Null) => Vec::new(),
         Some(serde_json::Value::Array(items)) => items
@@ -315,19 +314,7 @@ fn parse_entry_draft(
         }
         Some(_) => return Err("draft.fields must be an object".to_string()),
     };
-    let extra_key = if object.contains_key("extra_attributes") {
-        "extra_attributes"
-    } else {
-        "extraAttributes"
-    };
-    if object.contains_key("extra_attributes") && object.contains_key("extraAttributes") {
-        let canonical = &object["extra_attributes"];
-        let alias = &object["extraAttributes"];
-        if canonical != alias {
-            return Err("draft.extra_attributes and draft.extraAttributes must agree".to_string());
-        }
-    }
-    let extra_attributes = match object.get(extra_key) {
+    let extra_attributes = match object.get("extra_attributes") {
         None | Some(serde_json::Value::Null) => Default::default(),
         Some(serde_json::Value::Object(map)) => {
             map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
@@ -760,7 +747,7 @@ mod tests {
         let form = entry_test_form();
         let draft = serde_json::json!({
             "title": "T",
-            "form": "Note",
+            "form_name": "Note",
             "tags": [],
             "fields": {"Body": "hello", "Done": "maybe", "Count": 1}
         });

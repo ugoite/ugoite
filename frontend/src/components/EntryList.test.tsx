@@ -9,7 +9,7 @@ import { resetMockData, seedEntry, seedSpace } from "~/test/mocks/handlers";
 import type { Entry, EntryRecord, Space } from "~/lib/types";
 
 const testSpace: Space = {
-  id: "ui-test-ws",
+  space_uid: "ui-test-ws",
   name: "UI Test Space",
   created_at: "2025-01-01T00:00:00Z",
 };

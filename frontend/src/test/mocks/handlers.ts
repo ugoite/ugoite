@@ -153,8 +153,7 @@ const validateMockSqlPayload = (
 
 const normalizeMockEntry = (entry: Entry): Entry => ({
   ...entry,
-  content: entry.content ?? entry.markdown ?? "",
-  markdown: entry.markdown ?? entry.content,
+  content: entry.content ?? "",
 });
 
 const createTestApiPredicate = <Params extends PathParams = PathParams>(
@@ -303,7 +302,6 @@ export const handlers = [
     }
 
     const space: Space = {
-      id,
       space_uid: id,
       name: body.name,
       slug: body.slug,
@@ -317,7 +315,6 @@ export const handlers = [
     mockForms.set(key, new Map());
 
     return HttpResponse.json({
-      id,
       space_uid: space.space_uid,
       name: body.name,
       slug: body.slug,
@@ -478,7 +475,6 @@ export const handlers = [
     const entry: Entry = normalizeMockEntry({
       id: entryId,
       content: markdown,
-      markdown,
       revision_id: revisionId,
       created_at: now,
       updated_at: now,
@@ -531,8 +527,9 @@ export const handlers = [
       if (body.parent_revision_id !== entry.revision_id) {
         return HttpResponse.json(
           {
-            detail: "Revision mismatch",
-            current_revision_id: entry.revision_id,
+            code: "REVISION_CONFLICT",
+            message: "Revision mismatch",
+            detail: { current_revision_id: entry.revision_id },
           },
           { status: 409 },
         );
@@ -557,7 +554,6 @@ export const handlers = [
 
       // Update entry
       entry.content = markdown;
-      entry.markdown = markdown;
       entry.revision_id = newRevisionId;
       entry.updated_at = now;
 
@@ -634,8 +630,7 @@ export const handlers = [
     const entries = Array.from(mockEntries.get(spaceId)?.values() || []);
     const index = Array.from(mockEntryIndex.get(spaceId)?.values() || []);
     const matches = index.filter((record) => {
-      const entryContent = entries.find((n) => n.id === record.id)?.markdown ??
-        entries.find((n) => n.id === record.id)?.content ??
+      const entryContent = entries.find((n) => n.id === record.id)?.content ??
         "";
       const haystack = `${record.id}\n${
         JSON.stringify(record.properties)
@@ -827,7 +822,7 @@ export const handlers = [
         {
           code: "REVISION_CONFLICT",
           message: "Revision conflict",
-          current_revision_id: entry.revision_id,
+          detail: { current_revision_id: entry.revision_id },
         },
         { status: 409 },
       );

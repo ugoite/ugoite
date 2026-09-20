@@ -12,10 +12,7 @@ import { buildStructuredEntryFields } from "./entry-input";
 import type { DraftFields } from "./draft-values";
 import { protocolFetch, UgoiteApiError } from "./ugoite-client/protocol";
 
-type EntryResponse = Omit<Entry, "content"> & {
-  content?: string;
-  markdown?: string;
-};
+type EntryResponse = Entry;
 
 export type EntryRestoreReceipt = {
   revision_id: string;
@@ -27,7 +24,6 @@ export type EntryRestoreReceipt = {
 
 const normalizeEntry = (entry: EntryResponse): Entry => ({
   ...entry,
-  content: entry.content ?? entry.markdown ?? "",
   created_at: normalizeTimestamp(entry.created_at),
   updated_at: normalizeTimestamp(entry.updated_at),
 });
@@ -37,11 +33,8 @@ const currentRevisionIdFromError = (
 ): string | undefined => {
   if (!error.payload || typeof error.payload !== "object") return undefined;
   const payload = error.payload as Record<string, unknown>;
-  // Canonical contract carries `current_revision_id` under `detail`;
-  // top-level is kept for older payloads (0.1.x compat, never broken).
   const detail = payload.detail as Record<string, unknown> | undefined;
-  const value = payload["current_revision_id"] ??
-    detail?.["current_revision_id"];
+  const value = detail?.["current_revision_id"];
   return typeof value === "string" ? value : undefined;
 };
 

@@ -6,7 +6,7 @@ import { setLocale } from "~/lib/i18n";
 import type { Space } from "~/lib/types";
 
 const space: Space = {
-  id: "demo",
+  space_uid: "demo",
   name: "Demo",
   created_at: "2026-01-01T00:00:00Z",
   storage: { type: "local", root: "/var/lib/ugoite/demo" },

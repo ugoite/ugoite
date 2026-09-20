@@ -39,7 +39,6 @@ describe("/device", () => {
       }),
     });
     vi.mocked(spaceApi.list).mockResolvedValue([{
-      id: "space-1",
       name: "Docs",
       space_uid: "space-uid-1",
     }]);
@@ -86,7 +85,6 @@ describe("/device", () => {
       }),
     });
     vi.mocked(spaceApi.list).mockResolvedValue([{
-      id: "space-1",
       name: "Docs",
       space_uid: "space-uid-1",
     }]);
@@ -127,7 +125,6 @@ describe("/device", () => {
       }),
     });
     vi.mocked(spaceApi.list).mockResolvedValue([{
-      id: "space-1",
       name: "Docs",
       space_uid: "space-uid-1",
     }]);
@@ -162,7 +159,6 @@ describe("/device", () => {
       })
       .mockRejectedValueOnce(new Error("network down"));
     vi.mocked(spaceApi.list).mockResolvedValue([{
-      id: "space-1",
       name: "Docs",
       space_uid: "space-uid-1",
     }]);
@@ -200,11 +196,9 @@ describe("/device", () => {
       })
       .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
     vi.mocked(spaceApi.list).mockResolvedValue([{
-      id: "space-1",
       name: "Docs",
       space_uid: "space-uid-1",
     }, {
-      id: "space-2",
       name: "Current Space",
       space_uid: "space-uid-2",
     }]);

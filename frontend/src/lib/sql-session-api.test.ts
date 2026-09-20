@@ -8,7 +8,7 @@ import type { Space } from "./types";
 import { testApiUrl } from "~/test/http-origin";
 
 const testSpace: Space = {
-  id: "sess-ws",
+  space_uid: "sess-ws",
   name: "Session Space",
   created_at: "2025-01-01T00:00:00Z",
 };

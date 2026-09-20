@@ -8345,7 +8345,6 @@ async fn create_space(
             StatusCode::OK
         },
         Json(json!({
-            "id": space_uid,
             "slug": metadata["slug"],
             "space_uid": space_uid,
             "space_version": metadata["space_version"],
@@ -9074,6 +9073,9 @@ fn storage_connection_error(error: anyhow::Error) -> ApiError {
 
 fn sanitize_space_response(mut value: Value) -> Value {
     if let Some(object) = value.as_object_mut() {
+        // `id` remains in persisted Space 0.1 metadata, but REST consumers
+        // use the immutable remote identity explicitly named `space_uid`.
+        object.remove("id");
         for key in ["hmac_key", "hmac_key_id", "last_rotation"] {
             object.remove(key);
         }
@@ -9691,7 +9693,7 @@ async fn get_entry(
     validate_id(&entry_id, "entry_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
-    let mut value = if let Some(pin) = query.pin.as_deref() {
+    let value = if let Some(pin) = query.pin.as_deref() {
         state
             .service
             .entry_at_pin_authorized_for_principals(&space_id, &entry_id, pin, &principals)
@@ -9704,9 +9706,6 @@ async fn get_entry(
             .await
             .map_err(ApiError::from_core)?
     };
-    if let Some(content) = value.get("content").cloned() {
-        value["markdown"] = content;
-    }
     Ok(Json(value))
 }
 
@@ -13561,7 +13560,7 @@ mod authentication_regression_tests {
         let entry_path = format!("/spaces/{space_id}/entries/production-auth-entry");
         let (status, current_entry) = client.json(Method::GET, &entry_path, None).await?;
         assert_eq!(status, StatusCode::OK, "{current_entry}");
-        assert!(current_entry["markdown"]
+        assert!(current_entry["content"]
             .as_str()
             .is_some_and(|markdown| markdown.contains("updated")));
         let history_path = format!("{entry_path}/history");
@@ -14533,7 +14532,7 @@ mod authentication_regression_tests {
         let (entry_status, entry_before) = client.json(Method::GET, &entry_path, None).await?;
         assert_eq!(entry_status, StatusCode::OK, "{entry_before}");
         assert!(
-            entry_before["markdown"]
+            entry_before["content"]
                 .as_str()
                 .is_some_and(|markdown| markdown.contains("seeded-value")),
             "{entry_before}"
@@ -14589,13 +14588,13 @@ mod authentication_regression_tests {
         let (entry_status, entry_after) = client.json(Method::GET, &entry_path, None).await?;
         assert_eq!(entry_status, StatusCode::OK, "{entry_after}");
         assert!(
-            entry_after["markdown"]
+            entry_after["content"]
                 .as_str()
                 .is_some_and(|markdown| markdown.contains("seeded-value")),
             "{entry_after}"
         );
         assert!(
-            !entry_after["markdown"]
+            !entry_after["content"]
                 .as_str()
                 .unwrap_or_default()
                 .contains("changed"),
@@ -18232,7 +18231,7 @@ mod authentication_regression_tests {
         )
         .await?;
         assert_eq!(status, StatusCode::OK, "{current_entry}");
-        assert!(current_entry["markdown"]
+        assert!(current_entry["content"]
             .as_str()
             .is_some_and(|markdown| markdown.contains("created")));
 
@@ -18480,7 +18479,7 @@ mod authentication_regression_tests {
         )
         .await?;
         assert_eq!(status, StatusCode::OK, "{entry_a_after_failure}");
-        assert!(entry_a_after_failure["markdown"]
+        assert!(entry_a_after_failure["content"]
             .as_str()
             .is_some_and(|markdown| markdown.contains("changed externally")));
         let (status, entry_b_after_failure) = route_json(
@@ -18644,7 +18643,7 @@ mod authentication_regression_tests {
         )
         .await?;
         assert_eq!(status, StatusCode::OK, "{created_entry}");
-        assert!(created_entry["markdown"]
+        assert!(created_entry["content"]
             .as_str()
             .is_some_and(|markdown| markdown.contains("created")));
         assert_eq!(created_entry["revision_id"], create_revision);
@@ -18711,7 +18710,7 @@ mod authentication_regression_tests {
         )
         .await?;
         assert_eq!(status, StatusCode::OK, "{updated_entry}");
-        assert!(updated_entry["markdown"]
+        assert!(updated_entry["content"]
             .as_str()
             .is_some_and(|markdown| markdown.contains("updated")));
         assert_eq!(updated_entry["revision_id"], update_revision);
@@ -18933,7 +18932,7 @@ mod authentication_regression_tests {
         )
         .await?;
         assert_eq!(status, StatusCode::OK, "{current}");
-        assert!(current["markdown"]
+        assert!(current["content"]
             .as_str()
             .is_some_and(|markdown| markdown.contains("after update")));
         let (status, pinned) = route_json(
@@ -18945,7 +18944,7 @@ mod authentication_regression_tests {
         )
         .await?;
         assert_eq!(status, StatusCode::OK, "{pinned}");
-        assert!(pinned["markdown"]
+        assert!(pinned["content"]
             .as_str()
             .is_some_and(|markdown| markdown.contains("before update")));
 

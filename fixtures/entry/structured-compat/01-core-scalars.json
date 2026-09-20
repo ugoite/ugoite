@@ -18,7 +18,7 @@
   "markdown": "---\nform: Note\ntags:\n  - inbox\n  - review\n---\n# Shopping list\n\n## Body\n\nBuy milk.\n\n## Notes\n\nSome *markdown* body.\n\n## Done\nyes\n\n## Count\n42\n\n## Total\n9000000000\n\n## Rate\n3.14\n",
   "structured": {
     "title": "Shopping list",
-    "form": "Note",
+    "form_name": "Note",
     "tags": ["inbox", "review"],
     "fields": {
       "Body": "Buy milk.",

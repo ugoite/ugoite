@@ -74,7 +74,7 @@ describe("createSpaceStore", () => {
 
   it("should select existing default space", async () => {
     const defaultWs: Space = {
-      id: "default",
+      space_uid: "default",
       name: "default",
       created_at: "2025-01-01T00:00:00Z",
     };
@@ -95,7 +95,6 @@ describe("createSpaceStore", () => {
 
   it("uses the immutable Space UID for selection and persistence", async () => {
     const space: Space = {
-      id: "legacy-space-id",
       space_uid: "019f1234-5678-7abc-8def-0123456789ab",
       slug: "team-notes",
       name: "Team notes",
@@ -123,12 +122,12 @@ describe("createSpaceStore", () => {
 
   it("REQ-FE-001: selects the first ordinary Space when default is absent", async () => {
     const operationsSpace: Space = {
-      id: "operations",
+      space_uid: "operations",
       name: "Operations",
       created_at: "2025-01-01T00:00:00Z",
     };
     const workspace: Space = {
-      id: "workspace-a",
+      space_uid: "workspace-a",
       name: "Workspace A",
       created_at: "2025-01-01T00:00:00Z",
     };
@@ -141,7 +140,7 @@ describe("createSpaceStore", () => {
       const selectedId = await store.loadSpaces();
 
       expect(selectedId).toBe("operations");
-      expect(store.spaces().map((space) => space.id)).toEqual([
+      expect(store.spaces().map((space) => space.space_uid)).toEqual([
         "operations",
         "workspace-a",
       ]);
@@ -153,12 +152,12 @@ describe("createSpaceStore", () => {
 
   it("REQ-FE-001: restores any persisted authorized Space", async () => {
     const operationsSpace: Space = {
-      id: "operations",
+      space_uid: "operations",
       name: "Operations",
       created_at: "2025-01-01T00:00:00Z",
     };
     const workspace: Space = {
-      id: "workspace-a",
+      space_uid: "workspace-a",
       name: "Workspace A",
       created_at: "2025-01-01T00:00:00Z",
     };
@@ -180,12 +179,12 @@ describe("createSpaceStore", () => {
 
   it("REQ-FE-001: should sort blank space names by fallback id", async () => {
     const zetaSpace: Space = {
-      id: "zeta-space",
+      space_uid: "zeta-space",
       name: "",
       created_at: "2025-01-01T00:00:00Z",
     };
     const alphaSpace: Space = {
-      id: "alpha-space",
+      space_uid: "alpha-space",
       name: "",
       created_at: "2025-01-01T00:00:00Z",
     };
@@ -198,7 +197,7 @@ describe("createSpaceStore", () => {
       const selectedId = await store.loadSpaces();
 
       expect(selectedId).toBe("alpha-space");
-      expect(store.spaces().map((space) => space.id)).toEqual([
+      expect(store.spaces().map((space) => space.space_uid)).toEqual([
         "alpha-space",
         "zeta-space",
       ]);
@@ -209,12 +208,12 @@ describe("createSpaceStore", () => {
 
   it("should restore persisted space selection", async () => {
     const ws1: Space = {
-      id: "space-1",
+      space_uid: "space-1",
       name: "Space One",
       created_at: "2025-01-01T00:00:00Z",
     };
     const ws2: Space = {
-      id: "space-2",
+      space_uid: "space-2",
       name: "Space Two",
       created_at: "2025-01-01T00:00:00Z",
     };
@@ -237,12 +236,12 @@ describe("createSpaceStore", () => {
 
   it("REQ-FE-003: should prefer portable selected space preference", async () => {
     const ws1: Space = {
-      id: "space-1",
+      space_uid: "space-1",
       name: "Space One",
       created_at: "2025-01-01T00:00:00Z",
     };
     const ws2: Space = {
-      id: "space-2",
+      space_uid: "space-2",
       name: "Space Two",
       created_at: "2025-01-01T00:00:00Z",
     };
@@ -273,17 +272,17 @@ describe("createSpaceStore", () => {
 
   it("REQ-FE-003: portable preference may select any authorized Space", async () => {
     const operationsSpace: Space = {
-      id: "operations",
+      space_uid: "operations",
       name: "Operations",
       created_at: "2025-01-01T00:00:00Z",
     };
     const defaultSpace: Space = {
-      id: "default",
+      space_uid: "default",
       name: "default",
       created_at: "2025-01-01T00:00:00Z",
     };
     const workspace: Space = {
-      id: "workspace-a",
+      space_uid: "workspace-a",
       name: "Workspace A",
       created_at: "2025-01-01T00:00:00Z",
     };
@@ -315,7 +314,7 @@ describe("createSpaceStore", () => {
 
   it("REQ-FE-002: a single authorized Space remains selectable", async () => {
     const operationsSpace: Space = {
-      id: "operations",
+      space_uid: "operations",
       name: "Operations",
       created_at: "2025-01-01T00:00:00Z",
     };
@@ -336,12 +335,12 @@ describe("createSpaceStore", () => {
 
   it("should select space and persist choice", async () => {
     const ws1: Space = {
-      id: "space-1",
+      space_uid: "space-1",
       name: "Space One",
       created_at: "2025-01-01T00:00:00Z",
     };
     const ws2: Space = {
-      id: "space-2",
+      space_uid: "space-2",
       name: "Space Two",
       created_at: "2025-01-01T00:00:00Z",
     };
@@ -372,7 +371,7 @@ describe("createSpaceStore", () => {
 
   it("should not select non-existent space", async () => {
     const ws: Space = {
-      id: "existing",
+      space_uid: "existing",
       name: "existing",
       created_at: "2025-01-01T00:00:00Z",
     };

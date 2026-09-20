@@ -79,7 +79,6 @@ describe("/spaces", () => {
 
   it("REQ-FE-002: creates a space only after explicit user submission", async () => {
     (spaceApi.create as ReturnType<typeof vi.fn>).mockResolvedValue({
-      id: "legacy-space-id",
       space_uid: "019f1234-5678-7abc-8def-0123456789ab",
       name: "my-space",
     });
@@ -112,7 +111,6 @@ describe("/spaces", () => {
 
   it("REQ-FE-002: refuses to navigate when the server omits the Space UID", async () => {
     (spaceApi.create as ReturnType<typeof vi.fn>).mockResolvedValue({
-      id: "legacy-space-id",
       name: "my-space",
     });
 
@@ -217,7 +215,6 @@ describe("/spaces", () => {
         ),
       )
       .mockResolvedValueOnce({
-        id: "legacy-space-id",
         space_uid: "019f1234-5678-7abc-8def-0123456789ab",
         name: "my-space",
       });
@@ -260,7 +257,7 @@ describe("/spaces", () => {
 
   it("REQ-FE-056: does not show persistent auth guidance during normal space listing", async () => {
     (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: "default", name: "default" },
+      { space_uid: "default", name: "default" },
     ]);
 
     render(() => <SpacesIndexRoute />);
@@ -282,7 +279,7 @@ describe("/spaces", () => {
 
   it("REQ-UX-NAV-001: states the Spaces context once without a competing title", async () => {
     (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: "default", name: "Default", created_at: "2025-01-01" },
+      { space_uid: "default", name: "Default", created_at: "2025-01-01" },
     ]);
 
     render(() => <SpacesIndexRoute />);
@@ -299,12 +296,12 @@ describe("/spaces", () => {
   it("REQ-FE-001: lists every authorized Space in one section", async () => {
     (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
-        id: "operations",
+        space_uid: "operations",
         name: "Operations",
         created_at: "2025-01-01T00:00:00Z",
       },
       {
-        id: "default",
+        space_uid: "default",
         name: "default",
         created_at: "2025-01-01T00:00:00Z",
       },
@@ -331,7 +328,7 @@ describe("/spaces", () => {
   it("REQ-UX-LIST-001: opens spaces through full-row links with an unboxed secondary settings action", async () => {
     (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
-        id: "default",
+        space_uid: "default",
         name: "Default",
         slug: "default",
         created_at: "2025-01-01T00:00:00Z",
@@ -369,7 +366,7 @@ describe("/spaces", () => {
   it("REQ-UX-LIST-001: renders spaces as rows with icon-only secondary actions", async () => {
     (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
-        id: "default",
+        space_uid: "default",
         name: "Default",
         slug: "default",
         created_at: "2025-01-01T00:00:00Z",
@@ -408,7 +405,7 @@ describe("/spaces", () => {
   it("REQ-FE-002: treats any authorized Space as selectable content", async () => {
     (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
-        id: "operations",
+        space_uid: "operations",
         name: "Operations",
         created_at: "2025-01-01T00:00:00Z",
       },

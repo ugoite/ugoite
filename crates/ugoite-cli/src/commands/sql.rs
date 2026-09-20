@@ -346,16 +346,10 @@ pub async fn run(
         SqlSubCmd::Lint { sql_text } => match validate_sql_syntax(&sql_text) {
             Ok(()) => print_json(&serde_json::json!({
                 "syntax_valid": true,
-                // Keep the existing key as an additive alias for current CLI
-                // consumers; new consumers should use the explicit name.
-                "valid": true,
                 "sql": sql_text,
             })),
             Err(error) => print_json(&serde_json::json!({
                 "syntax_valid": false,
-                // Keep the existing key as an additive alias for current CLI
-                // consumers; new consumers should use the explicit name.
-                "valid": false,
                 "sql": sql_text,
                 "reason": error.to_string(),
             })),
