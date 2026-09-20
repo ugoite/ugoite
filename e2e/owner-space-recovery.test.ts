@@ -52,7 +52,7 @@ test.describe("Owner-approved Space access recovery", () => {
       data: { slug, name: `Recovery ${slug}` },
     });
     expect(created.status()).toBe(201);
-    return ((await created.json()) as { id: string }).id;
+    return ((await created.json()) as { space_uid: string }).space_uid;
   }
 
   async function createInvitation(
@@ -129,7 +129,7 @@ test.describe("Owner-approved Space access recovery", () => {
         data: { slug: spaceId, name: `Recovery ${spaceId}` },
       });
       expect(created.status()).toBe(201);
-      spaceIds.set(spaceId, ((await created.json()) as { id: string }).id);
+      spaceIds.set(spaceId, ((await created.json()) as { space_uid: string }).space_uid);
     }
     const recoveredSpaceId = spaceIds.get(recoveredSpace)!;
     const unrelatedSpaceId = spaceIds.get(unrelatedSpace)!;

@@ -51,7 +51,7 @@ test.describe("Invitation OIDC primary journey", () => {
       data: { slug, name: `OIDC journey ${slug}` },
     });
     expect(created.status()).toBe(201);
-    const spaceId = ((await created.json()) as { id: string }).id;
+    const spaceId = ((await created.json()) as { space_uid: string }).space_uid;
     const invitation = await request.post(
       getBackendUrl(`/spaces/${spaceId}/members/invitations`),
       { data: { label: "OIDC journey", role: "viewer" } },

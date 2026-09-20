@@ -14,7 +14,7 @@ test.describe("Space Membership", () => {
       data: { slug: spaceSlug, name: "Membership test" },
     });
     expect(created.status()).toBe(201);
-    const { id: spaceId } = await created.json() as { id: string };
+    const { space_uid: spaceId } = await created.json() as { space_uid: string };
     const invite = await request.post(
       getBackendUrl(`/spaces/${spaceId}/members/invitations`),
       { data: { label: "Invited viewer", role: "viewer" } },
@@ -79,7 +79,7 @@ test.describe("Space Membership", () => {
       data: { slug: spaceSlug, name: "Existing member test" },
     });
     expect(created.status()).toBe(201);
-    const { id: spaceId } = await created.json() as { id: string };
+    const { space_uid: spaceId } = await created.json() as { space_uid: string };
     const invite = await request.post(
       getBackendUrl(`/spaces/${spaceId}/members/invitations`),
       { data: { label: "Existing owner", role: "viewer" } },
