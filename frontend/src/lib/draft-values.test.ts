@@ -241,49 +241,4 @@ describe("draft-values", () => {
     }
   });
 
-  it("round-trips typed asset/reference/list values losslessly", async () => {
-    const { renderDraftToSourceViaWasm, parseSourceToDraftViaWasm } =
-      await import("~/lib/entry-compat");
-    const { toTransportFields } = await import("~/lib/draft-values");
-    const form = typedForm();
-    const knownForms = [taskForm()];
-    const fields = {
-      Title: "Website",
-      Ref: "task-01",
-      Tags: ["alpha", "beta"],
-      Rows: [{ step: "one" }],
-      File: { ...assetRef },
-      Files: [{ ...assetRef }],
-    };
-    // Wire keeps kinds: transport once here so the round-trip starts from
-    // the same typed normalized baseline the save path uses.
-    const transported = toTransportFields(
-      form,
-      fields as unknown as Parameters<typeof toTransportFields>[1],
-    );
-    expect(transported.File).toEqual(assetRef);
-    const source = await renderDraftToSourceViaWasm(
-      form,
-      "Website",
-      [],
-      fields,
-      knownForms,
-    );
-    const reparsed = await parseSourceToDraftViaWasm(source, "Website");
-    const first = await validateEntryDraftViaWasm(form, {
-      title: "Website",
-      tags: [],
-      fields,
-    }, knownForms);
-    const second = await validateEntryDraftViaWasm(form, {
-      title: reparsed.title,
-      tags: reparsed.tags,
-      fields: reparsed.fields,
-    }, knownForms);
-    expect(first.ok).toBe(true);
-    expect(second.ok).toBe(true);
-    if (first.ok && second.ok) {
-      expect(second.normalized).toEqual(first.normalized);
-    }
-  });
 });

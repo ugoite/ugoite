@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { setLocale } from "./i18n";
-import {
-  formatMarkdownConversionDiagnostic,
-  formatUserFacingError,
-} from "./user-facing-error";
+import { formatUserFacingError } from "./user-facing-error";
 import { UgoiteApiError } from "./ugoite-client/protocol";
 
 describe("formatUserFacingError", () => {
@@ -59,23 +56,4 @@ describe("formatUserFacingError", () => {
       .toContain("必要なサービスを利用できません。");
   });
 
-  it("localizes the Rust Markdown conversion diagnostic codes", () => {
-    setLocale("ja");
-    expect(formatMarkdownConversionDiagnostic({
-      code: "markdown_frontmatter_invalid",
-      message: "backend detail",
-    })).toBe("Markdownのfrontmatterが正しくありません。");
-    expect(formatMarkdownConversionDiagnostic({
-      code: "markdown_frontmatter_unclosed",
-      message: "backend detail",
-    })).toBe("Markdownのfrontmatterが閉じられていません。");
-    expect(formatMarkdownConversionDiagnostic({
-      code: "markdown_duplicate_field_section",
-      message: "backend detail",
-    })).toBe("Markdownに同じフィールドのセクションが重複しています。");
-    expect(formatMarkdownConversionDiagnostic({
-      code: "markdown_unassigned_preamble",
-      message: "backend detail",
-    })).toBe("最初のフィールドより前のMarkdown本文を割り当てられません。");
-  });
 });

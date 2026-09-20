@@ -1,7 +1,9 @@
 mod common;
 
 use chrono::{Duration, Utc};
+use common::legacy_entry as entry;
 use common::setup_operator;
+use common::LegacyServiceEntryExt;
 use std::collections::BTreeSet;
 use std::collections::{BTreeMap, HashSet};
 use ugoite_core::error::{AppError, ErrorKind};
@@ -10,7 +12,7 @@ use ugoite_domain::identity::{
 };
 use ugoite_iceberg::{
     authorization::{Authorizer, CreateAgentRequest, ResourceKind, ResourceRef},
-    entry, form, saved_sql,
+    form, saved_sql,
     service::UgoiteService,
     space, sql_session,
 };

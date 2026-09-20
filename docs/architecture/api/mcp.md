@@ -18,11 +18,9 @@ The stable surface is deliberately narrow:
   when requested, with stable `ugoite://entry/{id}` resource links. Entry bodies
   are loaded only when a resource is read.
 - `ugoite.save` creates an Entry without `id` or updates one opaque Entry with
-  `id`. A new Entry may use plain Markdown: the MCP semantic facade
-  canonicalizes it to the built-in `Entry` Form's `Body` field, using a leading
-  H1 as the title. Complete Entry Markdown with `form` frontmatter remains
-  supported for new Entries that select another Form. Updates must keep the
-  existing Entry's Form frontmatter.
+  `id`. Entry mutations use structured `form`, `fields`, `tags`, and optional
+  `extra_attributes` values. A declared Markdown Form field remains ordinary
+  Markdown text; the Entry itself is never submitted as a Markdown document.
 - Save validation failures are returned as semantic tool errors. For example,
   `INVALID_INPUT` identifies missing Entry/Form structure, `UNKNOWN_FORM_FIELDS`
   identifies unsupported sections, and `FORM_VALIDATION_FAILED` identifies

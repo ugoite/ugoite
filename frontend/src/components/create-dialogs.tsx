@@ -8,10 +8,7 @@ import {
   onMount,
   Show,
 } from "solid-js";
-import {
-  buildEntryMarkdownFromFields,
-  type EntryInputMode,
-} from "~/lib/entry-input";
+import { type EntryInputMode } from "~/lib/entry-input";
 import { FieldStack, FieldStackRow } from "~/components/FieldStack";
 import { FieldInput, fieldValueToText } from "~/components/fields";
 import { FormTargetSelect } from "~/components/FormTargetSelect";
@@ -101,9 +98,6 @@ const buildInputModeHints = (mode: EntryInputMode): string[] => {
   if (mode === "chat") {
     hints.push(t("entryGuidance.chatMode"));
   }
-  if (mode === "markdown") {
-    hints.push(t("entryGuidance.markdownMode"));
-  }
   return hints;
 };
 
@@ -115,13 +109,7 @@ const appendInputTypeHints = (
   if (types.has("list")) hints.push(t("entryGuidance.listValue"));
   if (types.has("boolean")) hints.push(t("entryGuidance.booleanValue"));
   if (types.has("row_reference")) {
-    hints.push(
-      t(
-        mode === "markdown"
-          ? "entryGuidance.rowReferenceMarkdown"
-          : "entryGuidance.rowReference",
-      ),
-    );
+    hints.push(t("entryGuidance.rowReference"));
   }
   if (types.has("asset_reference")) {
     hints.push(t("entryGuidance.assetReferenceMarkdown"));
@@ -267,8 +255,6 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
   const [fieldValues, setFieldValues] = createSignal<Record<string, unknown>>(
     {},
   );
-  const [markdownInput, setMarkdownInput] = createSignal("");
-  const [lastGeneratedMarkdown, setLastGeneratedMarkdown] = createSignal("");
   const [initializedFormName, setInitializedFormName] = createSignal("");
   // Unresolved row-reference searches per field (query names no saved entry
   // yet). Fed by the shared selector so required guards keep working.
@@ -394,8 +380,6 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     if (!props.open) return;
     setErrorMessage(null);
     setInputMode("webform");
-    setMarkdownInput("");
-    setLastGeneratedMarkdown("");
     setInitializedFormName("");
     setRowReferencePending({});
     setChatStep(0);
@@ -414,8 +398,6 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     const form = selectedFormDef();
     if (!form) {
       setFieldValues({});
-      setMarkdownInput("");
-      setLastGeneratedMarkdown("");
       setInitializedFormName("");
       setRowReferencePending({});
       return;
@@ -431,34 +413,9 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     }
     /* v8 ignore stop */
     setFieldValues(defaults);
-    // Title-less Entry: the preview carries no H1; names live in fields.
-    const generated = buildEntryMarkdownFromFields(
-      form,
-      "",
-      serializeCreateValues(defaults),
-    );
-    setMarkdownInput(generated);
-    setLastGeneratedMarkdown(generated);
     setInitializedFormName(form.name);
     setRowReferencePending({});
     setChatStep(0);
-  });
-
-  createEffect(() => {
-    const form = selectedFormDef();
-    if (!form) return;
-    if (inputMode() !== "markdown") return;
-    const generated = buildEntryMarkdownFromFields(
-      form,
-      "",
-      serializeCreateValues(fieldValues()),
-    );
-    const current = markdownInput();
-    const previousGenerated = lastGeneratedMarkdown();
-    if (current === "" || current === previousGenerated) {
-      setMarkdownInput(generated);
-    }
-    setLastGeneratedMarkdown(generated);
   });
 
   const setFieldValue = (name: string, nextValue: unknown) => {
@@ -480,75 +437,6 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 
   /** Display text for required/answered checks. Rust owns validity. */
   const fieldText = (name: string) => fieldValueToText(fieldValues()[name]);
-
-  /**
-   * Serialize the typed draft for the legacy string contract (submit payload
-   * and Markdown preview). Scalars pass through untouched; collections use
-   * the same display encoding the editors read back. Blanks drop out like
-   * before; object items are never filtered here — Rust rejects empty
-   * objects with field guidance.
-   */
-  const serializeCreateValues = (
-    values: Record<string, unknown>,
-  ): Record<string, string> => {
-    const serialized: Record<string, string> = {};
-    for (const [name, value] of Object.entries(values)) {
-      if (value === null || value === undefined) continue;
-      if (typeof value === "boolean") {
-        if (value) serialized[name] = "true";
-        continue;
-      }
-      if (typeof value === "number") {
-        serialized[name] = String(value);
-        continue;
-      }
-      if (Array.isArray(value)) {
-        if (value.length === 0) continue;
-        if (
-          value.every((item) => typeof item === "string" && item.trim() !== "")
-        ) {
-          const text = (value as string[])
-            .map((item) => `- ${item}`)
-            .join("\n");
-          if (text.trim()) serialized[name] = text;
-          continue;
-        }
-        if (
-          value.every((item) =>
-            typeof item === "string" || typeof item === "number" ||
-            typeof item === "boolean"
-          )
-        ) {
-          const items = (value as Array<string | number | boolean>).filter(
-            (item) => String(item).trim() !== "",
-          );
-          if (items.length === 0) continue;
-          serialized[name] = items.map((item) => `- ${String(item)}`).join(
-            "\n",
-          );
-          continue;
-        }
-        try {
-          serialized[name] = JSON.stringify(value);
-        } catch {
-          continue;
-        }
-        continue;
-      }
-      if (typeof value === "object") {
-        try {
-          serialized[name] = JSON.stringify(value);
-        } catch {
-          continue;
-        }
-        continue;
-      }
-      const text = value;
-      if (!text.trim()) continue;
-      serialized[name] = text;
-    }
-    return serialized;
-  };
 
   const rowReferenceSelectionPending = (
     name: string,
@@ -656,8 +544,6 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     setErrorMessage(null);
     setSelectedForm("");
     setRowReferencePending({});
-    setMarkdownInput("");
-    setLastGeneratedMarkdown("");
     setChatStep(0);
   };
 
@@ -683,23 +569,9 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
       : null;
   };
 
-  const validateMarkdownSubmission = () =>
-    markdownInput().trim()
-      ? null
-      : t("createDialog.entry.error.provideMarkdown");
-
-  // Title-less Entry: the legacy title argument is always empty; names
-  // live in Form fields. The callback shape is kept for compatibility.
+  // Title-less Entry: the legacy title argument is always empty; names live in
+  // Form fields. The callback shape remains shared with the chat/webform UX.
   const submitEntry = async (_entryTitle: string, formName: string) => {
-    if (inputMode() === "markdown") {
-      await props.onSubmit(
-        "",
-        formName,
-        { __markdown: markdownInput().trim() },
-        "markdown",
-      );
-      return;
-    }
     await props.onSubmit("", formName, fieldValues(), inputMode());
   };
 
@@ -713,9 +585,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     }
     /* v8 ignore stop */
     setErrorMessage(null);
-    const submitError = inputMode() === "markdown"
-      ? validateMarkdownSubmission()
-      : validateStructuredSubmission();
+    const submitError = validateStructuredSubmission();
     if (submitError) {
       setErrorMessage(submitError);
       return;
@@ -842,20 +712,6 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
                 <button
                   type="button"
                   class={`ui-button text-xs ${
-                    inputMode() === "markdown"
-                      ? "ui-button-primary"
-                      : "ui-button-secondary"
-                  }`}
-                  onClick={() => {
-                    setErrorMessage(null);
-                    setInputMode("markdown");
-                  }}
-                >
-                  {t("createDialog.entry.inputMode.markdown")}
-                </button>
-                <button
-                  type="button"
-                  class={`ui-button text-xs ${
                     inputMode() === "chat"
                       ? "ui-button-primary"
                       : "ui-button-secondary"
@@ -873,23 +729,6 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
             <Show when={selectedFormDef() && inputGuidance().length > 0}>
               <div class="ui-alert ui-alert-warning text-xs space-y-1">
                 <For each={inputGuidance()}>{(hint) => <p>{hint}</p>}</For>
-              </div>
-            </Show>
-
-            <Show when={inputMode() === "markdown" && selectedFormDef()}>
-              <div class="ui-card">
-                <p class="text-sm font-semibold">
-                  {t("createDialog.entry.markdownTitle")}
-                </p>
-                <textarea
-                  aria-label={t("createDialog.entry.markdownAria")}
-                  class="ui-input ui-textarea mt-3 min-h-56"
-                  value={markdownInput()}
-                  onInput={(e) => {
-                    setErrorMessage(null);
-                    setMarkdownInput(e.currentTarget.value);
-                  }}
-                />
               </div>
             </Show>
 

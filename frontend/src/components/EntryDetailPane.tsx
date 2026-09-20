@@ -27,13 +27,6 @@ import {
 } from "~/lib/asset-field-state";
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
-import { parseMarkdownH2Sections } from "~/lib/markdown";
-import {
-  buildEntryMarkdownFromFields,
-  parseEntryMarkdownPresentation,
-  readEntryTagsPresentation,
-  updateEntryMarkdownPresentation,
-} from "~/lib/entry-input";
 import {
   type DraftFields,
   draftValueToDisplayString,
@@ -43,18 +36,9 @@ import {
 import { entryApi, RevisionConflictError } from "~/lib/ugoite-client";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { validateEntryDraftViaWasm } from "~/lib/entry-validation";
-import {
-  type CompatDraft,
-  parseSourceToDraftViaWasm,
-  renderDraftToSourceViaWasm,
-} from "~/lib/entry-compat";
 import type { Entry, Form, FormField } from "~/lib/types";
-import type { MarkdownConversionDiagnostic } from "~/lib/ugoite-client/protocol";
 import { isAssetReferenceListField } from "~/lib/asset-reference";
-import {
-  formatMarkdownConversionDiagnostic,
-  formatUserFacingError,
-} from "~/lib/user-facing-error";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 import {
   clearCreateEntryDraftSession,
   createEntryDraftSessionKey,
@@ -125,10 +109,6 @@ function parseEntryValidationError(error: unknown) {
   return null;
 }
 
-function normalizeFieldName(fieldName: string) {
-  return fieldName.trim().toLowerCase();
-}
-
 function isMissingRequiredValue(fieldDef: FormField, content: string) {
   const value = content.trim();
   if (!value) return true;
@@ -161,7 +141,7 @@ function isMissingRequiredValue(fieldDef: FormField, content: string) {
   return false;
 }
 
-function buildEditorGuidance(form: Form | null, markdown: string) {
+function buildEditorGuidance(form: Form | null, fields: DraftFields) {
   // Presentation hints only. Saveability and canonical errors come from the
   // shared Rust boundary (`entry.validate_draft` + server mutation). When a
   // hint conflicts with Rust, the Rust result wins.
@@ -173,40 +153,23 @@ function buildEditorGuidance(form: Form | null, markdown: string) {
     };
   }
 
-  const sections = parseMarkdownH2Sections(markdown);
-  const sectionMap = new Map<string, { title: string; content: string }>();
-  for (const section of sections) {
-    sectionMap.set(normalizeFieldName(section.title), section);
-  }
-
   /* v8 ignore start */
   const formFields = Object.entries(form.fields || {});
   /* v8 ignore stop */
-  const knownFieldNames = new Set(
-    formFields.map(([fieldName]) => normalizeFieldName(fieldName)),
-  );
 
   const missingRequired = formFields
     .filter(([fieldName, fieldDef]) => {
       if (!isActiveRequiredField(fieldDef)) return false;
-      const section = sectionMap.get(normalizeFieldName(fieldName));
-      return isMissingRequiredValue(fieldDef, section?.content ?? "");
+      return isMissingRequiredValue(
+        fieldDef,
+        draftValueToDisplayString(fields[fieldName]),
+      );
     })
     .map(([fieldName]) => fieldName);
 
-  const unknownSections = sections
-    .filter(
-      (section) => !knownFieldNames.has(normalizeFieldName(section.title)),
-    )
-    /* v8 ignore start */
-    .map((section) => section.title);
-  /* v8 ignore stop */
-
   const typeIssues: string[] = [];
   for (const [fieldName, fieldDef] of formFields) {
-    const section = sectionMap.get(normalizeFieldName(fieldName));
-    if (!section) continue;
-    const value = section.content.trim();
+    const value = draftValueToDisplayString(fields[fieldName]).trim();
     if (!value) continue;
     /* v8 ignore start */
     if (fieldDef.type === "boolean" && !BOOLEAN_VALUE_REGEX.test(value)) {
@@ -237,7 +200,7 @@ function buildEditorGuidance(form: Form | null, markdown: string) {
     /* v8 ignore stop */
   }
 
-  return { missingRequired, unknownSections, typeIssues };
+  return { missingRequired, unknownSections: [], typeIssues };
 }
 
 class EntryLoadTimeoutError extends Error {
@@ -269,10 +232,9 @@ async function fetchWithTimeout<T>(
 
 export function EntryDetailPane(props: EntryDetailPaneProps) {
   const [editorContent, setEditorContent] = createSignal("");
-  // Structured draft is the single authority in this pane. Fields view edits
-  // it directly; source view is compatibility ingress that parses back into
-  // it; preview and save derive from it. `editorContent` remains as the
-  // source textarea buffer kept in sync.
+  // Structured draft is the only mutation authority in this pane. The stored
+  // representation is retained only for read-only compatibility and asset
+  // previews; it is never edited or sent back as a mutation payload.
   const [draftTitle, setDraftTitle] = createSignal("");
   const [draftFields, setDraftFields] = createSignal<DraftFields>({});
   const [draftTags, setDraftTags] = createSignal<string[]>([]);
@@ -341,27 +303,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   const [lastLoadedResourceRevisionId, setLastLoadedResourceRevisionId] =
     createSignal<string | null>(null);
   const [entryError, setEntryError] = createSignal<string | null>(null);
-  const [compatibilityDiagnostics, setCompatibilityDiagnostics] = createSignal<
-    MarkdownConversionDiagnostic[]
-  >([]);
-  const [pendingCanonicalDraft, setPendingCanonicalDraft] = createSignal<
-    CompatDraft | null
-  >(null);
   const [assetEditorGeneration, setAssetEditorGeneration] = createSignal(0);
-  const [showAdvancedSource, setShowAdvancedSource] = createSignal(false);
-  // Compat diagnostics block saving, so auto-open the Advanced source
-  // disclosure when they appear: the blocking Markdown stays visible for
-  // review. Latch semantics: auto-open on the empty->non-empty transition,
-  // remain open when the diagnostic clears, close only on user close, and
-  // auto-open again on a later diagnostic episode if closed.
-  let hadCompatDiagnostics = false;
-  createEffect(() => {
-    const has = compatibilityDiagnostics().length > 0;
-    if (has && !hadCompatDiagnostics) {
-      setShowAdvancedSource(true);
-    }
-    hadCompatDiagnostics = has;
-  });
   const [hasUserEdited, setHasUserEdited] = createSignal(false);
   const [createdEntry, setCreatedEntry] = createSignal<
     {
@@ -376,26 +318,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   );
   const draftSession = getCreateEntryDraftSession(draftSessionKey());
 
-  // Asset upload/read state belongs to this Entry draft. The fields view and
-  // the advanced source disclosure are separate conditional subtrees, so
-  // keeping this map in either child would lose provisional Files and read
-  // state when a subtree unmounts.
+  // Asset upload/read state belongs to this Entry draft. Keeping this map
+  // here preserves provisional Files and read state across field remounts.
   const assetFieldStates = new Map<string, AssetFieldState>();
-
-  // Pending Rust compat reconciliations (source<->draft). Saves settle them
-  // first so a rapid source-type + Ctrl+S can never persist TS-only semantics.
-  const pendingCompat = new Set<Promise<void>>();
-  const trackCompat = (promise: Promise<void>) => {
-    pendingCompat.add(promise);
-    void promise.finally(() => {
-      pendingCompat.delete(promise);
-    });
-  };
-  const settleCompat = async () => {
-    const pending = [...pendingCompat];
-    if (pending.length === 0) return;
-    await Promise.allSettled(pending);
-  };
 
   const [remoteEntry, { refetch: refetchEntry }] = createResource(
     () => {
@@ -438,8 +363,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   );
   // Save is strong only when there is dirty work and nothing blocks it;
   // a clean editor shows a weak disabled tool instead of a saved chip.
-  const saveReady = () =>
-    isDirty() && !isSaving() && compatibilityDiagnostics().length === 0;
+  const saveReady = () => isDirty() && !isSaving();
   const isAuthoringSession = createMemo(() =>
     !draftSessionFinished() &&
     (Boolean(props.createForm?.()) || Boolean(createdEntry()))
@@ -463,7 +387,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       id: "__new__",
       title: form.name,
       form: form.name,
-      content: buildEntryMarkdownFromFields(form, form.name, {}),
+      content: "",
       revision_id: `draft:${form.name}`,
       created_at: "",
       updated_at: "",
@@ -505,7 +429,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       title: draftTitle(),
       fields: draftFields(),
       tags: draftTags(),
-      source: editorContent(),
       assetFields: Object.fromEntries(
         Object.entries(draftFields()).filter(([name]) => name.startsWith("__")),
       ),
@@ -568,13 +491,11 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     return formName ? `${base}?form=${encodeURIComponent(formName)}` : base;
   });
 
-  const loadedForms = () => props.forms?.() ?? [];
-
   // Structured draft is the authority; empty stays empty so the heading
   // falls back to the stable entry ID (never a synthesized "Untitled").
   const editorTitle = createMemo(() => draftTitle());
   const editorGuidance = createMemo(() =>
-    buildEditorGuidance(currentForm(), editorContent())
+    buildEditorGuidance(currentForm(), draftFields())
   );
 
   const requiredFieldErrorId = (fieldId: string) => `${fieldId}-required`;
@@ -610,13 +531,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   const fieldValue = (fieldName: string): string =>
     draftValueToDisplayString(draftFields()[fieldName]);
 
-  const persistedFieldValue = (fieldName: string) => {
-    const sections = new Map<string, string>();
-    for (const section of parseMarkdownH2Sections(lastSavedContent())) {
-      sections.set(normalizeFieldName(section.title), section.content);
-    }
-    return sections.get(normalizeFieldName(fieldName)) ?? "";
-  };
+  const persistedFieldValue = (fieldName: string) =>
+    entry()?.sections?.[fieldName] ?? "";
 
   const fieldIssue = (fieldName: string) =>
     editorGuidance().typeIssues.find((issue) =>
@@ -654,18 +570,17 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     ) {
       return;
     }
-    const defaultContent = loadedEntry.content ?? "";
     const entryId = loadedEntry.id;
     const revisionId = loadedEntry.revision_id;
     const loadedTitle = loadedEntry.title || "";
     const saved = isCreateMode()
       ? draftSession.restore(loadedEntry.form ?? "")
       : undefined;
-    const content = saved?.source ?? defaultContent;
+    const content = loadedEntry.content ?? "";
     const draft = saved
       ? { title: saved.title, fields: saved.fields }
-      : parseEntryMarkdownPresentation(content);
-    const tags = saved?.tags ?? readEntryTagsPresentation(content) ?? [];
+      : { title: loadedTitle, fields: loadedEntry.sections ?? {} };
+    const tags = saved?.tags ?? loadedEntry.tags ?? [];
     setLastLoadedEntryId(entryId);
     setLastLoadedResourceRevisionId(revisionId);
     setCurrentRevisionId(
@@ -685,201 +600,18 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setShowLatest(false);
     setValidationError(null);
     setInvalidFields([]);
-    setCompatibilityDiagnostics([]);
-    setPendingCanonicalDraft(null);
-    // Reconcile the immediate parse through the Rust bridge (authority).
-    // Guard on the loaded buffer so late reconciliation never wipes user
-    // edits made after load.
-    trackCompat(
-      parseSourceToDraftViaWasm(content, loadedTitle).then(
-        (canonical) => {
-          if (
-            lastLoadedEntryId() !== entryId ||
-            lastLoadedResourceRevisionId() !== revisionId
-          ) {
-            return;
-          }
-          if (editorContent() !== content) return;
-          if (draftTitle() !== (draft.title || loadedTitle)) return;
-          if (
-            canonical.diagnostics.length > 0 &&
-            (currentForm() || props.createForm?.())
-          ) {
-            setCompatibilityDiagnostics(canonical.diagnostics);
-            setPendingCanonicalDraft(canonical);
-            return;
-          }
-          setDraftTitle(canonical.title || loadedTitle);
-          setDraftFields(canonical.fields);
-          setDraftTags(canonical.tags);
-          persistCreateDraft();
-        },
-        () => {},
-      ),
-    );
   });
-
-  const syncEditorFromDraft = (title: string, fields: DraftFields) => {
-    // Immediate TypeScript compatibility render keeps field editing and the
-    // source textarea responsive. The Rust compatibility bridge then
-    // reconciles to the canonical 0.1 representation (authority): when both
-    // agree nothing changes; when they disagree the Rust output wins.
-    const content = updateEntryMarkdownPresentation(
-      editorContent(),
-      title,
-      Object.fromEntries(
-        Object.entries(fields).map(([name, value]) => [
-          name,
-          draftValueToDisplayString(value),
-        ]),
-      ),
-    );
-    setEditorContent(content);
-    setIsDirty(content !== lastSavedContent());
-    setConflictMessage(null);
-    setValidationError(null);
-    setInvalidFields([]);
-    clearSaveNotice();
-    persistCreateDraft();
-
-    const formDef = currentForm() ?? props.createForm?.();
-    if (!formDef) return;
-    const requestTitle = title;
-    const requestFields = { ...fields };
-    const requestTags = [...draftTags()];
-    const requestBaseline = content;
-    trackCompat(
-      renderDraftToSourceViaWasm(
-        formDef,
-        requestTitle,
-        requestTags,
-        requestFields,
-        loadedForms(),
-      ).then(
-        (canonical) => {
-          if (editorContent() !== requestBaseline) return;
-          if (draftTitle() !== requestTitle) return;
-          const current = draftFields();
-          for (const [key, value] of Object.entries(requestFields)) {
-            if (current[key] !== value) return;
-          }
-          if (canonical === requestBaseline) return;
-          setEditorContent(canonical);
-          setIsDirty(canonical !== lastSavedContent());
-          persistCreateDraft();
-        },
-        () => {},
-      ),
-    );
-  };
-
-  const handleContentChange = (content: string) => {
-    // Immediate TypeScript compatibility parse keeps the textarea responsive.
-    // The Rust bridge then reconciles to the canonical draft (authority).
-    // TS failures never block the bridge: they fall back to preserving the
-    // previous draft until the canonical parse lands.
-    const fallbackTitle = entry()?.title || "";
-    try {
-      const draft = parseEntryMarkdownPresentation(content);
-      const tags = readEntryTagsPresentation(content);
-      setDraftTitle(draft.title || fallbackTitle);
-      setDraftFields(draft.fields);
-      if (tags !== null) setDraftTags(tags);
-    } catch {
-      // Ignore; the Rust reconciliation below remains authoritative.
-    }
-    setEditorContent(content);
-    setHasUserEdited(true);
-    setIsDirty(content !== lastSavedContent());
-    setConflictMessage(null);
-    setValidationError(null);
-    setInvalidFields([]);
-    setCompatibilityDiagnostics([]);
-    setPendingCanonicalDraft(null);
-    clearSaveNotice();
-    persistCreateDraft();
-    trackCompat(
-      parseSourceToDraftViaWasm(content, fallbackTitle).then(
-        (canonical) => {
-          if (editorContent() !== content) return;
-          if (
-            canonical.diagnostics.length > 0 &&
-            (currentForm() || props.createForm?.())
-          ) {
-            setCompatibilityDiagnostics(canonical.diagnostics);
-            setPendingCanonicalDraft(canonical);
-            return;
-          }
-          setDraftTitle(canonical.title || fallbackTitle);
-          setDraftFields(canonical.fields);
-          setDraftTags(canonical.tags);
-          persistCreateDraft();
-        },
-        () => {},
-      ),
-    );
-  };
-
-  const acceptCanonicalDraft = () => {
-    const canonical = pendingCanonicalDraft();
-    if (!canonical) return;
-    const title = canonical.title || entry()?.title || "";
-    const formDef = currentForm() ?? props.createForm?.();
-    const render = formDef
-      ? renderDraftToSourceViaWasm(
-        formDef,
-        title,
-        canonical.tags,
-        canonical.fields,
-        loadedForms(),
-      )
-      : Promise.resolve(
-        [
-          canonical.tags.length > 0
-            ? `---\ntags:\n${
-              canonical.tags.map((tag) => `  - ${tag}`).join("\n")
-            }\n---\n`
-            : "",
-          `# ${title}`,
-          ...Object.entries(canonical.fields).flatMap(([name, value]) => [
-            `## ${name}`,
-            value,
-          ]),
-        ].join("\n\n").trim(),
-      );
-
-    trackCompat(
-      render.then(
-        (source) => {
-          if (pendingCanonicalDraft() !== canonical) return;
-          setDraftTitle(title);
-          setDraftFields(canonical.fields);
-          setDraftTags(canonical.tags);
-          setEditorContent(source);
-          setCompatibilityDiagnostics([]);
-          setPendingCanonicalDraft(null);
-          setHasUserEdited(true);
-          setIsDirty(true);
-          persistCreateDraft();
-        },
-        (error) => {
-          setConflictMessage(
-            formatUserFacingError(
-              error,
-              "entryDetail.saveFailed",
-              "entry.update",
-            ),
-          );
-        },
-      ),
-    );
-  };
 
   const handleFieldChange = (fieldName: string, value: unknown) => {
     setHasUserEdited(true);
     const next = { ...draftFields(), [fieldName]: value };
     setDraftFields(next);
-    syncEditorFromDraft(draftTitle(), next);
+    setIsDirty(true);
+    setConflictMessage(null);
+    setValidationError(null);
+    setInvalidFields([]);
+    clearSaveNotice();
+    persistCreateDraft();
   };
 
   const assetFieldState = (fieldName: string, multiple: boolean) => {
@@ -912,13 +644,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       return [t("entryDetail.validation.assetUploadPending")];
     }
     return [];
-  };
-
-  const handleEditorKeyDown = (event: KeyboardEvent) => {
-    if ((event.metaKey || event.ctrlKey) && event.key === "s") {
-      event.preventDefault();
-      if (isDirty() && !isSaving()) void handleSave();
-    }
   };
 
   type SaveContext =
@@ -996,19 +721,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     /* v8 ignore stop */
 
     // Saveability is decided by the shared Rust boundary. TypeScript hints
-    // (required guidance, boolean/list formatting) never block a save;
-    // loss-producing compatibility conversion is an explicit exception.
+    // (required guidance, boolean/list formatting) never block a save.
     // Lock before async validation so rapid saves still yield one revision.
     setIsSaving(true);
     clearSaveNotice();
-    // Settle pending source<->draft reconciliations first so a rapid
-    // source-type + save can never persist TS-only semantics.
-    await settleCompat();
-    if (compatibilityDiagnostics().length > 0) {
-      setIsSaving(false);
-      setConflictMessage(t("entryDetail.compatibilityLossSaveBlocked"));
-      return;
-    }
     const assetIssues = await validateAssetFields();
     if (assetIssues.length > 0) {
       setIsSaving(false);
@@ -1020,24 +736,20 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       return;
     }
 
-    // Structured wire authority when the Form is known; formless notes keep
-    // the Markdown compatibility path. Field values share the webform builder
-    // so trimming and zoned-timestamp normalization agree.
+    // Structured wire authority: Entry mutations always carry the Form and
+    // field map. Markdown Form fields remain ordinary field values.
     const formDef = currentForm() ?? props.createForm?.();
     const formName = formDef?.name;
+    if (!formDef || !formName) {
+      setIsSaving(false);
+      setConflictMessage(t("entryDetail.savePrerequisite"));
+      return;
+    }
     const title = draftTitle();
-    const fields: Record<string, unknown> = formDef
-      ? toTransportFields(formDef, draftFields())
-      : Object.fromEntries(
-        Object.entries(draftFields()).filter(([name, value]) => {
-          if (name.startsWith("__")) return false;
-          const text = draftValueToDisplayString(value);
-          return text.trim().length > 0;
-        }).map(([name, value]) => [
-          name,
-          draftValueToDisplayString(value).trim(),
-        ]),
-      );
+    const fields: Record<string, unknown> = toTransportFields(
+      formDef,
+      draftFields(),
+    );
 
     // Pre-save Rust validation: same classification as the server mutation.
     // On conflict the Rust result wins over any TypeScript hint. Bridge
@@ -1049,7 +761,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           title,
           tags: draftTags(),
           fields,
-        }, loadedForms());
+        }, props.forms?.() ?? []);
       } catch (error) {
         setIsSaving(false);
         showRustValidationFailure(
@@ -1088,44 +800,33 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       title: draftTitle(),
       fields: JSON.stringify(fields),
       tags: JSON.stringify(draftTags()),
-      source: editorContent(),
     };
-    const contentToSave = requestSnapshot.source;
     const currentSnapshot = () => ({
       title: draftTitle(),
       fields: JSON.stringify(
         formDef ? toTransportFields(formDef, draftFields()) : fields,
       ),
       tags: JSON.stringify(draftTags()),
-      source: editorContent(),
     });
     try {
-      // Structured wire authority when the Form is known; the same
-      // `entry.create`/`entry.update` operations carry either shape.
-      const result = formName
-        ? context.create
-          ? await entryApi.create(context.wsId, {
-            form: formName,
-            tags: draftTags(),
-            fields,
-          })
-          : await entryApi.update(context.wsId, context.entryId!, {
-            form: formName,
-            tags: draftTags(),
-            fields,
-            parent_revision_id: context.revisionId!,
-          })
-        : context.create
-        ? await entryApi.create(context.wsId, { markdown: contentToSave })
+      const result = context.create
+        ? await entryApi.create(context.wsId, {
+          form: formName,
+          title,
+          tags: draftTags(),
+          fields,
+        })
         : await entryApi.update(context.wsId, context.entryId!, {
-          markdown: contentToSave,
+          form: formName,
+          title,
+          tags: draftTags(),
+          fields,
           parent_revision_id: context.revisionId!,
         });
       setCurrentRevisionId(result.revision_id);
       setServerRevisionId(null);
       setLatestEntry(null);
       setShowLatest(false);
-      setLastSavedContent(contentToSave);
       const unchanged = JSON.stringify(currentSnapshot()) ===
         JSON.stringify(requestSnapshot);
       setIsDirty(!unchanged);
@@ -1620,14 +1321,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                               </h3>
                               <FieldValuesView
                                 fields={Object.keys(
-                                  parseEntryMarkdownPresentation(
-                                    latest().content ?? "",
-                                  ).fields,
+                                  latest().sections ?? {},
                                 ).map((name) => ({ name }))}
                                 getValue={(name) =>
-                                  parseEntryMarkdownPresentation(
-                                    latest().content ?? "",
-                                  ).fields[name] ?? ""}
+                                  latest().sections?.[name] ?? ""}
                               />
                             </section>
                           </div>
@@ -1644,53 +1341,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 <Show
                   when={currentForm()}
                   fallback={
-                    <div
-                      id="entry-source-panel"
-                      class="ui-entry-source-body"
-                    >
-                      <Show when={compatibilityDiagnostics().length > 0}>
-                        <div
-                          class="ui-alert ui-alert-warning text-sm mb-3"
-                          role="alert"
-                        >
-                          <p class="font-semibold">
-                            {t("entryDetail.compatibilityLossTitle")}
-                          </p>
-                          <ul class="mt-2 list-disc pl-5 space-y-1">
-                            <For each={compatibilityDiagnostics()}>
-                              {(diagnostic) => (
-                                <li>
-                                  {formatMarkdownConversionDiagnostic(
-                                    diagnostic,
-                                  )}
-                                </li>
-                              )}
-                            </For>
-                          </ul>
-                          <p class="mt-2">
-                            {t("entryDetail.compatibilityLossDescription")}
-                          </p>
-                          <Show when={pendingCanonicalDraft()}>
-                            <button
-                              type="button"
-                              class="ui-button ui-button-secondary mt-3"
-                              onClick={acceptCanonicalDraft}
-                            >
-                              {t("entryDetail.acceptCanonicalVersion")}
-                            </button>
-                          </Show>
-                        </div>
-                      </Show>
-                      <textarea
-                        class="ui-editor ui-entry-source-editor"
-                        value={editorContent()}
-                        onInput={(event) =>
-                          handleContentChange(event.currentTarget.value)}
-                        onKeyDown={handleEditorKeyDown}
-                        aria-label={t("entryDetail.sourcePlaceholder")}
-                        placeholder={t("entryDetail.sourcePlaceholder")}
-                        spellcheck={false}
-                      />
+                    <div class="ui-card">
+                      <p class="text-sm ui-muted">
+                        {t("entryDetail.noFields")}
+                      </p>
                     </div>
                   }
                 >
@@ -1768,99 +1422,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                           <p class="font-medium">
                             {t("entryDetail.noFields")}
                           </p>
-                          <button
-                            type="button"
-                            class="ui-button ui-button-secondary mt-4"
-                            onClick={() =>
-                              setShowAdvancedSource((value) => !value)}
-                            aria-expanded={showAdvancedSource()}
-                            aria-controls="entry-source-panel-advanced"
-                          >
-                            {t("entryDetail.openSource")}
-                          </button>
                         </div>
                       </Show>
-
-                      <Show when={editorGuidance().unknownSections.length > 0}>
-                        <div class="ui-entry-advanced-note">
-                          <div>
-                            <p class="text-sm font-medium">
-                              {t("entryDetail.additionalContent")}
-                            </p>
-                            <p class="mt-1 text-xs ui-muted">
-                              {editorGuidance().unknownSections.join(", ")}
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            class="ui-button ui-button-secondary ui-button-sm text-xs"
-                            onClick={() =>
-                              setShowAdvancedSource((value) => !value)}
-                            aria-expanded={showAdvancedSource()}
-                            aria-controls="entry-source-panel-advanced"
-                          >
-                            {t("entryDetail.reviewSource")}
-                          </button>
-                        </div>
-                      </Show>
-                      <details
-                        class="ui-entry-source-disclosure"
-                        open={showAdvancedSource()}
-                        onToggle={(event) =>
-                          setShowAdvancedSource(event.currentTarget.open)}
-                      >
-                        <summary>{t("entryDetail.advanced")}</summary>
-                        <div
-                          id="entry-source-panel-advanced"
-                          class="ui-entry-source-body"
-                        >
-                          <Show when={compatibilityDiagnostics().length > 0}>
-                            <div
-                              class="ui-alert ui-alert-warning text-sm mb-3"
-                              role="alert"
-                            >
-                              <p class="font-semibold">
-                                {t("entryDetail.compatibilityLossTitle")}
-                              </p>
-                              <ul class="mt-2 list-disc pl-5 space-y-1">
-                                <For each={compatibilityDiagnostics()}>
-                                  {(diagnostic) => (
-                                    <li>
-                                      {formatMarkdownConversionDiagnostic(
-                                        diagnostic,
-                                      )}
-                                    </li>
-                                  )}
-                                </For>
-                              </ul>
-                              <p class="mt-2">
-                                {t("entryDetail.compatibilityLossDescription")}
-                              </p>
-                              <Show when={pendingCanonicalDraft()}>
-                                <button
-                                  type="button"
-                                  class="ui-button ui-button-secondary mt-3"
-                                  onClick={acceptCanonicalDraft}
-                                >
-                                  {t("entryDetail.acceptCanonicalVersion")}
-                                </button>
-                              </Show>
-                            </div>
-                          </Show>
-                          <textarea
-                            class="ui-editor ui-entry-source-editor"
-                            value={editorContent()}
-                            onInput={(event) =>
-                              handleContentChange(event.currentTarget.value)}
-                            onKeyDown={handleEditorKeyDown}
-                            aria-label={t(
-                              "entryDetail.advancedSourcePlaceholder",
-                            )}
-                            placeholder={t("entryDetail.sourcePlaceholder")}
-                            spellcheck={false}
-                          />
-                        </div>
-                      </details>
                     </div>
                   )}
                 </Show>

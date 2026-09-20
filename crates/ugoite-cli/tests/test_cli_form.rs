@@ -1,9 +1,7 @@
 //! Integration tests for CLI form commands.
 //! REQ-FORM-001, REQ-FORM-002
 
-use support::Command;
-
-mod support;
+use std::process::Command;
 
 fn ugoite_bin() -> std::path::PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {
@@ -68,16 +66,28 @@ fn test_cli_form_update() {
         .expect("connection set");
     assert!(
         connection.status.success(),
-        "connection set failed: {}",
+        "connection set failed: {} {}",
+        String::from_utf8_lossy(&connection.stdout),
         String::from_utf8_lossy(&connection.stderr)
     );
     let create = Command::new(ugoite_bin())
-        .args(["space", "create", "form-space"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "space",
+            "create",
+            "form-space",
+            "--connection",
+            "local",
+        ])
         .output()
         .expect("space create");
-    assert!(create.status.success());
-
+    assert!(
+        create.status.success(),
+        "space create failed: {} {}",
+        String::from_utf8_lossy(&create.stdout),
+        String::from_utf8_lossy(&create.stderr)
+    );
     // Create the form via form update
     let form_file = dir.path().join("entry-form.json");
     std::fs::write(
@@ -87,7 +97,13 @@ fn test_cli_form_update() {
     .unwrap();
 
     let update_output = Command::new(ugoite_bin())
-        .args(["form", "update", form_file.to_str().unwrap()])
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "form",
+            "update",
+            form_file.to_str().unwrap(),
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -100,7 +116,13 @@ fn test_cli_form_update() {
 
     // Get the form that was just created
     let get_output = Command::new(ugoite_bin())
-        .args(["form", "get", "Entry"])
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "form",
+            "get",
+            "Entry",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");

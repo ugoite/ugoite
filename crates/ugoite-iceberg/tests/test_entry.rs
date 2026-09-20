@@ -1,4 +1,5 @@
 mod common;
+use common::legacy_entry as entry;
 use common::setup_operator;
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode};
@@ -8,7 +9,6 @@ use ugoite_domain::change::ChangeCommand;
 use ugoite_domain::form::{FormChange, FormChangeSet};
 use ugoite_domain::id::{FieldId, FormId};
 use ugoite_iceberg::asset;
-use ugoite_iceberg::entry;
 use ugoite_iceberg::form;
 use ugoite_iceberg::iceberg_store;
 use ugoite_iceberg::index;

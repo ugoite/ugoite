@@ -4411,17 +4411,19 @@ mod tests {
         .await?;
         let orphan =
             crate::asset::save_asset(&op, ws_path, "orphan.txt", "未参照秘密".as_bytes()).await?;
-        let content = format!(
-            "---\nform: Notes\nAttachment: {}\n---\n# August meeting",
-            serde_json::to_string(&reference)?
-        );
-        crate::entry::create_entry(
+        crate::entry::create_structured_entry_with_scopes_and_change(
             &op,
             ws_path,
             "meeting-1",
-            &content,
+            Some("August meeting".into()),
+            "Notes".into(),
+            Vec::new(),
+            BTreeMap::from([("Attachment".to_string(), serde_json::to_value(&reference)?)]),
+            BTreeMap::new(),
             "author",
             &crate::integrity::FakeIntegrityProvider,
+            None,
+            None,
         )
         .await?;
         let catalog_head_path = format!("{ws_path}/_ugoite/catalog/head.json");

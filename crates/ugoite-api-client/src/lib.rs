@@ -2111,7 +2111,11 @@ mod tests {
         let request = prepare_request(
             "entry.create",
             &json!({"space_id": "demo"}),
-            Some(&json!({"id": "entry-1", "markdown": "# Hello"})),
+            Some(&json!({
+                "id": "entry-1",
+                "form": "Note",
+                "fields": {"Body": "Hello"}
+            })),
         )
         .expect("request");
 
@@ -2119,7 +2123,11 @@ mod tests {
         assert_eq!(request.headers[0].value, "application/json");
         assert_eq!(
             serde_json::from_str::<Value>(request.body.as_deref().expect("body")).unwrap(),
-            json!({"id": "entry-1", "markdown": "# Hello"})
+            json!({
+                "id": "entry-1",
+                "form": "Note",
+                "fields": {"Body": "Hello"}
+            })
         );
     }
 

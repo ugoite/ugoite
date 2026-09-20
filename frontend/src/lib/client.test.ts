@@ -789,7 +789,8 @@ describe("error paths", () => {
       created_at: "2025-01-01T00:00:00Z",
     });
     const created = await entryApi.create("ws-restore", {
-      markdown: "# Entry",
+      form: "Entry",
+      fields: { Body: "Entry" },
     });
     const entry = await entryApi.get("ws-restore", created.id);
     const restored = await entryApi.restore(
@@ -798,16 +799,6 @@ describe("error paths", () => {
       entry.revision_id,
     );
     expect(restored).toBeDefined();
-  });
-
-  it("entryApi.createFromMarkdown creates entry", async () => {
-    resetMockData();
-    seedSpace({ id: "ws-md", name: "MD", created_at: "2025-01-01T00:00:00Z" });
-    const result = await entryApi.createFromMarkdown(
-      "ws-md",
-      "# Markdown Entry",
-    );
-    expect(result.id).toBeDefined();
   });
 
   it("entryApi.createFromWebform creates entry", async () => {

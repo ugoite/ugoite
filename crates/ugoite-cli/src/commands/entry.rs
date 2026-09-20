@@ -1,8 +1,8 @@
 use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::http;
 use crate::output::{
-    effective_format, emit_success, print_json_table, read_compat_input, render_receipt,
-    stdout_style, Format, MutationReceipt, UsageError,
+    effective_format, emit_success, print_json_table, render_receipt, stdout_style, Format,
+    MutationReceipt, UsageError,
 };
 use anyhow::Result;
 use clap::{Args, Subcommand};
@@ -33,23 +33,7 @@ pub enum EntrySubCmd {
     Create {
         #[arg(value_name = "ENTRY_ID")]
         entry_id: String,
-        #[arg(
-            long,
-            allow_hyphen_values = true,
-            help = "Entry content as a Markdown string (supports frontmatter for form/tags)"
-        )]
-        content: Option<String>,
-        #[arg(
-            long,
-            value_name = "PATH",
-            help = "Read Markdown content from PATH, or from explicit stdin with --file - (cannot combine with --content)"
-        )]
-        file: Option<String>,
-        #[arg(
-            long,
-            value_name = "FORM",
-            help = "Form name for structured authoring (requires no --content/--file)"
-        )]
+        #[arg(long, value_name = "FORM", help = "Form name for structured authoring")]
         form: Option<String>,
         #[arg(
             long,
@@ -80,18 +64,6 @@ pub enum EntrySubCmd {
     Update {
         #[arg(value_name = "ENTRY_ID")]
         entry_id: String,
-        #[arg(
-            long,
-            allow_hyphen_values = true,
-            help = "Updated entry content as a Markdown string (must keep the same form frontmatter)"
-        )]
-        markdown: Option<String>,
-        #[arg(
-            long,
-            value_name = "PATH",
-            help = "Read Markdown content from PATH, or from explicit stdin with --file - (cannot combine with --markdown)"
-        )]
-        file: Option<String>,
         #[arg(
             long,
             value_name = "FORM",
@@ -192,21 +164,6 @@ fn current_entry_revision_id(entry: &serde_json::Value) -> Result<String> {
         .ok_or_else(|| anyhow::anyhow!("current entry response is missing revision_id"))
 }
 
-async fn read_remote_entry_revision_id(
-    target: &SpaceTarget,
-    space_id: &str,
-    entry_id: &str,
-) -> Result<String> {
-    let entry = http::execute_for_target(
-        target,
-        "entry.get",
-        serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
-        None,
-    )
-    .await?;
-    current_entry_revision_id(&entry)
-}
-
 fn entry_object_map(
     entry: &serde_json::Value,
     key: &str,
@@ -218,20 +175,6 @@ fn entry_object_map(
         .as_object()
         .ok_or_else(|| anyhow::anyhow!("current entry response field {key} must be an object"))?;
     Ok(object.clone().into_iter().collect())
-}
-
-fn validate_entry_input_style(
-    has_structured: bool,
-    has_markdown: bool,
-    markdown_flags: &str,
-) -> Result<()> {
-    if has_structured && has_markdown {
-        return Err(UsageError(format!(
-            "structured options (--form/--title/--field/--fields-file) and {markdown_flags} cannot be combined; specify exactly one input style"
-        ))
-        .into());
-    }
-    Ok(())
 }
 
 /// Parse one `--field KEY=VALUE` argument. Values stay strings; the shared
@@ -600,8 +543,6 @@ pub async fn run(
         }
         EntrySubCmd::Create {
             entry_id,
-            content,
-            file,
             form,
             title,
             fields,
@@ -609,104 +550,25 @@ pub async fn run(
             author,
         } => {
             let target = resolve_command_target(explicit_config, context_override, "entry create")?;
-            let has_structured =
-                form.is_some() || title.is_some() || !fields.is_empty() || !fields_files.is_empty();
-            let has_markdown = content.is_some() || file.is_some();
-            validate_entry_input_style(has_structured, has_markdown, "--content/--file")?;
-            if has_structured {
-                if title.is_some() {
-                    eprintln!(
-                        "note: --title is a 0.1.x legacy compatibility option; omit it for title-less entries (removed in 0.2)"
-                    );
-                }
-                return create_structured_entry(
-                    &target,
-                    &fmt,
-                    entry_id,
-                    form,
-                    title,
-                    fields,
-                    fields_files,
-                    author,
-                )
-                .await;
-            }
-            // Shell-safe compatibility ingress: inline and file are mutually
-            // exclusive; neither provided falls back to the default note.
-            let content = match (content, file) {
-                (Some(_), Some(_)) => {
-                    return Err(UsageError(
-                        "--content and --file cannot be combined; specify exactly one".to_string(),
-                    )
-                    .into());
-                }
-                (Some(text), None) => text,
-                (None, Some(path)) => read_compat_input(None, "--content", Some(path))?,
-                (None, None) => "# New Entry\n".to_string(),
-            };
-            if let SpaceTarget::Remote { space_uid, .. } = &target {
-                if author.is_some() {
-                    return Err(UsageError(
-                        "entry create --author is only supported in core mode; backend/api derive author from the authenticated identity"
-                            .to_string(),
-                    )
-                    .into());
-                }
-                let result = http::execute_for_target(
-                    &target,
-                    "entry.create",
-                    serde_json::json!({"space_id": space_uid}),
-                    Some(serde_json::json!({"id": entry_id, "markdown": content})),
-                )
-                .await?;
-                // 0.1.x machine contract: keep the existing output shape.
-                // The receipt is TTY display only; switching the machine
-                // default to the receipt is a v0.2 interface decision.
-                let receipt = entry_receipt(
-                    entry_id,
-                    result
-                        .get("revision_id")
-                        .and_then(|value| value.as_str())
-                        .map(str::to_string),
-                    result
-                        .get("change_id")
-                        .and_then(|value| value.as_str())
-                        .map(str::to_string),
+            if title.is_some() {
+                eprintln!(
+                    "note: --title remains a compatibility option until the title cleanup; prefer a Form field for new names"
                 );
-                emit_success(
-                    &result,
-                    &fmt,
-                    Some(render_receipt(&receipt, &stdout_style())),
-                );
-                return Ok(());
             }
-            let SpaceTarget::Core { root, space_id } = &target else {
-                anyhow::bail!("operation entry.create does not use the remote transport")
-            };
-            let author = author.unwrap_or_else(|| "cli".to_string());
-            // A mutation schedules the process-local coalesced refresh but
-            // never drains it; the authoritative commit is the CLI latency
-            // boundary and `ugoite index run` is the explicit repair command.
-            let service = UgoiteService::new_without_background_refresh(root)?;
-            let (mut meta, commit_receipt) = service
-                .create_entry_with_receipt(space_id, &entry_id, &content, &author)
-                .await?;
-            meta["change_id"] = serde_json::json!(commit_receipt.command_id);
-            let receipt = entry_receipt(
+            create_structured_entry(
+                &target,
+                &fmt,
                 entry_id,
-                meta.get("revision_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string),
-                meta.get("change_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string),
-            );
-            emit_success(&meta, &fmt, Some(render_receipt(&receipt, &stdout_style())));
+                form,
+                title,
+                fields,
+                fields_files,
+                author,
+            )
+            .await?;
         }
         EntrySubCmd::Update {
             entry_id,
-            markdown,
-            file,
             form,
             title,
             fields,
@@ -715,104 +577,23 @@ pub async fn run(
             author,
         } => {
             let target = resolve_command_target(explicit_config, context_override, "entry update")?;
-            let has_structured =
-                form.is_some() || title.is_some() || !fields.is_empty() || !fields_files.is_empty();
-            let has_markdown = markdown.is_some() || file.is_some();
-            validate_entry_input_style(has_structured, has_markdown, "--markdown/--file")?;
-            if has_structured {
-                if title.is_some() {
-                    eprintln!(
-                        "note: --title is a 0.1.x legacy compatibility option; omit it to leave titles untouched (removed in 0.2)"
-                    );
-                }
-                return update_structured_entry(
-                    &target,
-                    &fmt,
-                    entry_id,
-                    form,
-                    title,
-                    fields,
-                    fields_files,
-                    parent_revision_id,
-                    author,
-                )
-                .await;
-            }
-            let markdown = read_compat_input(markdown, "--markdown", file)?;
-            if let SpaceTarget::Remote { space_uid, .. } = &target {
-                if author != "cli" {
-                    return Err(UsageError(
-                        "entry update --author is only supported in core mode; backend/api derive author from the authenticated identity"
-                            .to_string(),
-                    )
-                    .into());
-                }
-                let parent_revision_id = match parent_revision_id {
-                    Some(parent_revision_id) => parent_revision_id,
-                    None => read_remote_entry_revision_id(&target, space_uid, &entry_id).await?,
-                };
-                let mut body = serde_json::json!({"markdown": markdown});
-                body["parent_revision_id"] = serde_json::json!(parent_revision_id);
-                let result = http::execute_for_target(
-                    &target,
-                    "entry.update",
-                    serde_json::json!({"space_id": space_uid, "entry_id": entry_id}),
-                    Some(body),
-                )
-                .await?;
-                // 0.1.x machine contract: keep the existing output shape (see create).
-                let receipt = entry_receipt(
-                    entry_id,
-                    result
-                        .get("revision_id")
-                        .and_then(|value| value.as_str())
-                        .map(str::to_string),
-                    result
-                        .get("change_id")
-                        .and_then(|value| value.as_str())
-                        .map(str::to_string),
+            if title.is_some() {
+                eprintln!(
+                    "note: --title remains a compatibility option until the title cleanup; prefer a Form field for new names"
                 );
-                emit_success(
-                    &result,
-                    &fmt,
-                    Some(render_receipt(&receipt, &stdout_style())),
-                );
-                return Ok(());
             }
-            let SpaceTarget::Core { root, space_id } = &target else {
-                anyhow::bail!("operation entry.update does not use the remote transport")
-            };
-            // Do not wait for Derived refreshes in a one-shot mutation.
-            let service = UgoiteService::new_without_background_refresh(root)?;
-            let parent_revision_id = match parent_revision_id {
-                Some(parent_revision_id) => parent_revision_id,
-                None => current_entry_revision_id(&service.get_entry(space_id, &entry_id).await?)?,
-            };
-            let result = service
-                .update_entry(
-                    space_id,
-                    &entry_id,
-                    &markdown,
-                    Some(&parent_revision_id),
-                    &author,
-                )
-                .await?;
-            let receipt = entry_receipt(
-                entry_id,
-                result
-                    .get("revision_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string),
-                result
-                    .get("change_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string),
-            );
-            emit_success(
-                &result,
+            update_structured_entry(
+                &target,
                 &fmt,
-                Some(render_receipt(&receipt, &stdout_style())),
-            );
+                entry_id,
+                form,
+                title,
+                fields,
+                fields_files,
+                parent_revision_id,
+                author,
+            )
+            .await?;
         }
         EntrySubCmd::Delete {
             entry_id,

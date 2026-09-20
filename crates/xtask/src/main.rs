@@ -315,10 +315,9 @@ fn architecture_check() -> Result<()> {
     let wasm_manifest = fs::read_to_string("crates/ugoite-wasm/Cargo.toml")
         .context("read ugoite-wasm Cargo.toml")?;
     // Lane 1 portable entry boundary: ugoite-wasm may depend on ugoite-core
-    // for read-only entry validation/compat (preview_structured_draft,
-    // legacy_markdown_to_draft, draft_to_legacy_representation). Core itself
-    // is storage/network/runtime free (checked above), so this keeps the
-    // browser boundary portable without a WASM-only parser.
+    // for read-only structured Entry validation. Core itself is
+    // storage/network/runtime free (checked above), so the browser boundary
+    // stays portable without a WASM-only validator.
     for forbidden in [
         "ugoite-storage",
         "ugoite-iceberg",

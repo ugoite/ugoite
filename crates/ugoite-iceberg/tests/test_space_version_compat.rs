@@ -1,6 +1,7 @@
 mod common;
 
 use common::setup_operator;
+use common::LegacyServiceEntryExt;
 use futures::TryStreamExt;
 use opendal::{EntryMode, Operator};
 use serde::Deserialize;

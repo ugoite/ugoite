@@ -122,25 +122,6 @@ export function createEntryStore(spaceId: () => string) {
     }
   }
 
-  /** Create a new entry */
-  async function createEntry(content: string, id?: string) {
-    clearError();
-    try {
-      const result = await entryApi.create(spaceId(), {
-        markdown: content,
-        id,
-      });
-      // Reload to get the indexed version
-      await loadEntries();
-      return result;
-    } catch (e) {
-      /* v8 ignore start */
-      reportError(e, "entriesPage.failedCreate", "entry.create");
-      /* v8 ignore stop */
-      throw e;
-    }
-  }
-
   /** Update a entry with optimistic updates */
   async function updateEntry(entryId: string, payload: EntryUpdatePayload) {
     clearError();
@@ -155,23 +136,10 @@ export function createEntryStore(spaceId: () => string) {
 
     const originalEntry = currentEntries[entryIndex];
 
-    // Extract title for optimistic update: structured payloads carry it
-    // directly; legacy Markdown falls back to H1 parsing.
-    // Use indexOf-based extraction to prevent ReDoS vulnerability
+    // Structured payloads carry the editable metadata directly.
     let title = originalEntry.title;
     if (payload.title !== undefined) {
       title = payload.title;
-    } else if (payload.markdown !== undefined) {
-      const lines = payload.markdown.split(/\r?\n/);
-      for (const line of lines) {
-        if (line.startsWith("# ") || line.startsWith("#\t")) {
-          const spaceIdx = line.indexOf(" ");
-          const tabIdx = line.indexOf("\t");
-          const idx = spaceIdx !== -1 ? spaceIdx : tabIdx;
-          title = line.slice(idx + 1).trim();
-          break;
-        }
-      }
     }
 
     // Create optimistic record
@@ -290,7 +258,6 @@ export function createEntryStore(spaceId: () => string) {
     // Actions
     loadEntries,
     loadMoreEntries,
-    createEntry,
     updateEntry,
     deleteEntry,
     selectEntry,

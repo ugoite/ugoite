@@ -5,7 +5,6 @@ export interface CreateEntryDraftState {
   title: string;
   fields: StructuredEntryFields;
   tags: string[];
-  source: string;
   /** Values used by provisional asset fields, including uploaded references. */
   assetFields: StructuredEntryFields;
   dirty: boolean;
@@ -64,4 +63,3 @@ export function clearCreateEntryDraftSession(key: string): void {
   sessions.get(key)?.clear();
   sessions.delete(key);
 }
-

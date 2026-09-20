@@ -1,5 +1,9 @@
 //! Phase 6 service-boundary coverage for server and CLI adapters.
 
+mod common;
+
+use common::LegacyServiceEntryExt;
+
 use anyhow::Result;
 use chrono::Utc;
 use serde_json::json;

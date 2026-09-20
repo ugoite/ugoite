@@ -11,11 +11,7 @@ pub use ugoite_domain as domain;
 pub use ugoite_konase as konase;
 
 const MAX_PROTOCOL_REQUEST_BYTES: usize = 256 * 1024;
-const ENTRY_OPERATIONS: &[&str] = &[
-    "entry.validate_draft",
-    "entry.compat.parse_markdown",
-    "entry.compat.render_markdown",
-];
+const ENTRY_OPERATIONS: &[&str] = &["entry.validate_draft"];
 
 fn is_entry_operation(action: &str) -> bool {
     ENTRY_OPERATIONS.contains(&action)
@@ -385,12 +381,6 @@ fn entry_error_envelope(error: serde_json::Value) -> String {
 /// - `entry.validate_draft` validates `{form, draft}` with the same
 ///   `preview_structured_draft` implementation used natively, preserving
 ///   `code` / `detail` so browser diagnostics match server mutations.
-/// - `entry.compat.parse_markdown` converts legacy Markdown to a
-///   `StructuredEntryDraft` plus conversion diagnostics via the shared core
-///   parser (no WASM-only parser). Passing `strict: true` projects conversion
-///   loss to the canonical `MARKDOWN_CONVERSION_LOSS` error envelope.
-/// - `entry.compat.render_markdown` converts `{form, draft}` back to the
-///   current 0.1 representation after Core validation.
 fn invoke_entry(request: serde_json::Value) -> String {
     let action = request
         .get("action")
@@ -423,70 +413,6 @@ fn invoke_entry(request: serde_json::Value) -> String {
                         .map_err(|error| serde_json::json!({"kind": "entry_validation", "code": "INVALID_INPUT", "message": error.to_string()})),
                     Err(error) => Err(entry_validation_error(&error)),
                 }
-            }
-            "entry.compat.parse_markdown" => {
-                let (markdown, fallback_title) = if let Some(text) = payload.as_str() {
-                    (text.to_string(), String::new())
-                } else {
-                    let markdown = payload
-                        .get("markdown")
-                        .and_then(serde_json::Value::as_str)
-                        .ok_or_else(|| serde_json::json!({"kind": "entry_validation", "code": "INVALID_INPUT", "message": "markdown is required"}))?
-                        .to_string();
-                    let fallback = payload
-                        .get("fallback_title")
-                        .or_else(|| payload.get("fallbackTitle"))
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or_default()
-                        .to_string();
-                    (markdown, fallback)
-                };
-                let conversion =
-                    ugoite_core::entry::legacy_markdown_to_draft(&markdown, &fallback_title);
-                if payload
-                    .get("strict")
-                    .and_then(serde_json::Value::as_bool)
-                    .unwrap_or(false)
-                    && !conversion.diagnostics.is_empty()
-                {
-                    return Err(entry_validation_error(
-                        &ugoite_core::entry::markdown_conversion_error(&conversion.diagnostics),
-                    ));
-                }
-                let mut value = serde_json::to_value(conversion.draft).map_err(|error| {
-                    serde_json::json!({"kind": "entry_validation", "code": "INVALID_INPUT", "message": error.to_string()})
-                })?;
-                value["diagnostics"] = serde_json::to_value(conversion.diagnostics).map_err(
-                    |error| {
-                        serde_json::json!({"kind": "entry_validation", "code": "INVALID_INPUT", "message": error.to_string()})
-                    },
-                )?;
-                Ok(value)
-            }
-            "entry.compat.render_markdown" => {
-                let form: ugoite_domain::form::FormDefinition = serde_json::from_value(
-                    payload
-                        .get("form")
-                        .cloned()
-                        .ok_or_else(|| serde_json::json!({"kind": "entry_validation", "code": "INVALID_INPUT", "message": "form is required"}))?,
-                )
-                .map_err(|error| serde_json::json!({"kind": "entry_validation", "code": "INVALID_INPUT", "message": error.to_string()}))?;
-                let draft = parse_entry_draft(
-                    &payload
-                        .get("draft")
-                        .cloned()
-                        .ok_or_else(|| serde_json::json!({"kind": "entry_validation", "code": "INVALID_INPUT", "message": "draft is required"}))?,
-                )
-                .map_err(|message| serde_json::json!({"kind": "entry_validation", "code": "INVALID_INPUT", "message": message}))?;
-                let normalized = ugoite_core::entry::preview_structured_draft(&form, &draft)
-                    .map_err(|error| entry_validation_error(&error))?;
-                let form_name = draft.form_name.as_deref().unwrap_or(form.name.as_str());
-                let markdown = ugoite_core::entry::normalized_to_legacy_representation(
-                    &form,
-                    form_name,
-                    &normalized,
-                );
-                Ok(serde_json::json!({"markdown": markdown}))
             }
             _ => Err(
                 serde_json::json!({"kind": "entry_validation", "code": "INVALID_INPUT", "message": format!("unsupported portable entry action: {action}")}),
@@ -598,7 +524,6 @@ mod abi {
 
 #[cfg(test)]
 mod tests {
-    use super::MAX_PROTOCOL_REQUEST_BYTES;
     use serde_json::Value;
 
     #[test]
@@ -943,14 +868,6 @@ mod tests {
                 "INVALID_INPUT",
             ),
             (
-                "missing markdown",
-                serde_json::json!({
-                    "action": "entry.compat.parse_markdown",
-                    "value": {}
-                }),
-                "INVALID_INPUT",
-            ),
-            (
                 "malformed payload",
                 serde_json::json!({
                     "action": "entry.validate_draft",
@@ -980,17 +897,6 @@ mod tests {
                 }),
                 "FORM_VALIDATION_FAILED",
             ),
-            (
-                "render validates before compatibility encoding",
-                serde_json::json!({
-                    "action": "entry.compat.render_markdown",
-                    "value": {
-                        "form": form.clone(),
-                        "draft": {"fields": {"Body": "ok", "Done": "maybe"}}
-                    }
-                }),
-                "FORM_VALIDATION_FAILED",
-            ),
         ];
         for (name, request, code) in cases {
             let response: Value =
@@ -1002,206 +908,6 @@ mod tests {
             );
             assert_eq!(response["error"]["code"], code, "{name}: {response}");
         }
-
-        let markdown_loss = serde_json::json!({
-            "action": "entry.compat.parse_markdown",
-            "value": {
-                "markdown": "---\nform: Note\n---\n# Title\n\nPreamble\n\n## Body\nhello\n",
-                "strict": true
-            }
-        });
-        let response: Value =
-            serde_json::from_str(&super::invoke_json(&markdown_loss.to_string())).unwrap();
-        assert_eq!(response["ok"], false, "{response}");
-        assert_eq!(response["error"]["kind"], "entry_validation", "{response}");
-        assert_eq!(
-            response["error"]["code"], "MARKDOWN_CONVERSION_LOSS",
-            "{response}"
-        );
-        assert_eq!(
-            response["error"]["detail"]["diagnostics"][0]["code"],
-            "markdown_unassigned_preamble"
-        );
-    }
-
-    #[test]
-    fn entry_protocol_rejects_oversized_input_and_output() {
-        let oversized_input = format!(
-            "{{\"action\":\"entry.compat.parse_markdown\",\"value\":{{\"markdown\":\"{}\"}}}}",
-            "x".repeat(MAX_PROTOCOL_REQUEST_BYTES)
-        );
-        let response: Value = serde_json::from_str(&super::invoke_json(&oversized_input)).unwrap();
-        assert_eq!(response["ok"], false, "{response}");
-        assert_eq!(response["error"]["kind"], "input_too_large", "{response}");
-
-        let base_request = serde_json::json!({
-            "action": "entry.compat.parse_markdown",
-            "value": {"markdown": ""}
-        })
-        .to_string();
-        let markdown_len = MAX_PROTOCOL_REQUEST_BYTES - 1 - base_request.len();
-        let heading = "## Body\n";
-        let markdown = format!("{heading}{}", "x".repeat(markdown_len - heading.len()));
-        let request = serde_json::json!({
-            "action": "entry.compat.parse_markdown",
-            "value": {"markdown": markdown}
-        })
-        .to_string();
-        assert!(request.len() <= MAX_PROTOCOL_REQUEST_BYTES);
-        let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
-        assert_eq!(response["ok"], false, "{response}");
-        assert_eq!(response["error"]["kind"], "entry_validation", "{response}");
-        assert_eq!(response["error"]["code"], "INVALID_INPUT", "{response}");
-        assert!(response["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("output exceeds"));
-
-        let duplicate_sections = format!("---\nform: Note\n---\n{}", "## Body\nx\n".repeat(4096));
-        let oversized_error = serde_json::json!({
-            "action": "entry.compat.parse_markdown",
-            "value": {"markdown": duplicate_sections, "strict": true}
-        })
-        .to_string();
-        assert!(oversized_error.len() < MAX_PROTOCOL_REQUEST_BYTES);
-        let response: Value = serde_json::from_str(&super::invoke_json(&oversized_error)).unwrap();
-        assert_eq!(response["ok"], false, "{response}");
-        assert_eq!(response["error"]["kind"], "entry_validation", "{response}");
-        assert_eq!(response["error"]["code"], "INVALID_INPUT", "{response}");
-        assert!(response["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("error output exceeds"));
-    }
-
-    #[test]
-    fn entry_compat_parse_render_round_trips_through_canonical_boundary() {
-        let form = entry_test_form();
-        let markdown =
-            "---\nform: Note\n---\n# Title\n\n## Body\n\nhello\n\n## Done\nyes\n\n## Count\n42\n";
-        let parse_request = serde_json::json!({
-            "action": "entry.compat.parse_markdown",
-            "value": {"markdown": markdown, "fallback_title": "fallback"}
-        })
-        .to_string();
-        let parsed: Value = serde_json::from_str(&super::invoke_json(&parse_request)).unwrap();
-        assert_eq!(parsed["ok"], true, "{parsed}");
-        assert_eq!(parsed["value"]["title"], "Title");
-        assert_eq!(parsed["value"]["form_name"], "Note");
-        assert_eq!(parsed["value"]["diagnostics"], serde_json::json!([]));
-        // No WASM-only parser: result equals the native Rust adapter output.
-        let native_draft = ugoite_core::entry::legacy_markdown_to_draft(markdown, "fallback");
-        let mut native_value = serde_json::to_value(native_draft.draft.clone()).unwrap();
-        native_value["diagnostics"] = serde_json::json!([]);
-        assert_eq!(parsed["value"], native_value);
-
-        let render_request = serde_json::json!({
-            "action": "entry.compat.render_markdown",
-            "value": {"form": form.clone(), "draft": parsed["value"]}
-        })
-        .to_string();
-        let rendered: Value = serde_json::from_str(&super::invoke_json(&render_request)).unwrap();
-        assert_eq!(rendered["ok"], true, "{rendered}");
-        let rendered_markdown = rendered["value"]["markdown"].as_str().unwrap();
-
-        // parse(render(draft)) normalizes to the same canonical value.
-        let form_def: ugoite_domain::form::FormDefinition = serde_json::from_value(form).unwrap();
-        let first = ugoite_core::entry::preview_structured_draft(
-            &form_def,
-            &super::parse_entry_draft(&parsed["value"]).unwrap(),
-        )
-        .unwrap();
-        let reparsed = ugoite_core::entry::legacy_markdown_to_draft(rendered_markdown, "fallback");
-        let second =
-            ugoite_core::entry::preview_structured_draft(&form_def, &reparsed.draft).unwrap();
-        assert_eq!(first, second);
-    }
-
-    #[test]
-    fn entry_compat_fixtures_agree_between_native_and_wasm() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let dir = root.join("../../fixtures/entry/structured-compat");
-        let raw = std::fs::read_to_string(dir.join("01-core-scalars.json")).expect("read");
-        let fixture: Value = serde_json::from_str(&raw).expect("json");
-        let form = fixture["form"].clone();
-        let markdown = fixture["markdown"].as_str().expect("markdown");
-
-        // WASM parse must equal native parse; WASM validate must equal native.
-        let parse_request = serde_json::json!({
-            "action": "entry.compat.parse_markdown",
-            "value": {"markdown": markdown, "fallback_title": "fallback"}
-        })
-        .to_string();
-        let parsed: Value = serde_json::from_str(&super::invoke_json(&parse_request)).unwrap();
-        assert_eq!(parsed["ok"], true, "{parsed}");
-        let native_draft = ugoite_core::entry::legacy_markdown_to_draft(markdown, "fallback");
-        let mut native_value = serde_json::to_value(native_draft.draft).unwrap();
-        native_value["diagnostics"] = serde_json::json!([]);
-        assert_eq!(parsed["value"], native_value);
-
-        let validate_request = serde_json::json!({
-            "action": "entry.validate_draft",
-            "value": {"form": form.clone(), "draft": parsed["value"]}
-        })
-        .to_string();
-        let validated: Value =
-            serde_json::from_str(&super::invoke_json(&validate_request)).unwrap();
-        assert_eq!(validated["ok"], true, "{validated}");
-
-        let form_def: ugoite_domain::form::FormDefinition = serde_json::from_value(form).unwrap();
-        let draft = super::parse_entry_draft(&parsed["value"]).unwrap();
-        let native = ugoite_core::entry::preview_structured_draft(&form_def, &draft).unwrap();
-        assert_eq!(validated["value"], serde_json::to_value(native).unwrap());
-
-        // Existing 0.1 representation is preserved: render then re-parse keeps
-        // the same normalized values (no silent rewrite of stored Entries).
-        let render_request = serde_json::json!({
-            "action": "entry.compat.render_markdown",
-            "value": {"form": fixture["form"], "draft": parsed["value"]}
-        })
-        .to_string();
-        let rendered: Value = serde_json::from_str(&super::invoke_json(&render_request)).unwrap();
-        assert_eq!(rendered["ok"], true, "{rendered}");
-        let reparsed = ugoite_core::entry::legacy_markdown_to_draft(
-            rendered["value"]["markdown"].as_str().unwrap(),
-            "fallback",
-        );
-        let renormalized =
-            ugoite_core::entry::preview_structured_draft(&form_def, &reparsed.draft).unwrap();
-        let draft_again = super::parse_entry_draft(&parsed["value"]).unwrap();
-        let original =
-            ugoite_core::entry::preview_structured_draft(&form_def, &draft_again).unwrap();
-        assert_eq!(original.values, renormalized.values);
-    }
-
-    #[test]
-    fn entry_compat_parse_reports_loss_and_strict_mode_rejects_it() {
-        let markdown = "---\nform: Note\n---\n# Title\n\nPreamble\n\n## Body\nhello\n";
-        let request = serde_json::json!({
-            "action": "entry.compat.parse_markdown",
-            "value": {"markdown": markdown, "fallback_title": "fallback"}
-        });
-        let response: Value =
-            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
-
-        assert_eq!(response["ok"], true, "{response}");
-        assert_eq!(
-            response["value"]["diagnostics"][0]["code"],
-            "markdown_unassigned_preamble"
-        );
-        assert_eq!(response["value"]["fields"]["Body"], "hello");
-
-        let strict_request = serde_json::json!({
-            "action": "entry.compat.parse_markdown",
-            "value": {"markdown": markdown, "strict": true}
-        });
-        let strict: Value =
-            serde_json::from_str(&super::invoke_json(&strict_request.to_string())).unwrap();
-        assert_eq!(strict["ok"], false, "{strict}");
-        assert_eq!(
-            strict["error"]["code"], "MARKDOWN_CONVERSION_LOSS",
-            "{strict}"
-        );
     }
 
     #[test]
@@ -1214,19 +920,11 @@ mod tests {
             std::fs::read_to_string(dir.join("10-structured-authoring-parity.json")).expect("read");
         let fixture: Value = serde_json::from_str(&raw).expect("json");
         let form = fixture["form"].clone();
-        let markdown = fixture["markdown"].as_str().expect("markdown");
-
-        let parse_request = serde_json::json!({
-            "action": "entry.compat.parse_markdown",
-            "value": {"markdown": markdown, "fallback_title": "fallback"}
-        })
-        .to_string();
-        let parsed: Value = serde_json::from_str(&super::invoke_json(&parse_request)).unwrap();
-        assert_eq!(parsed["ok"], true, "{parsed}");
+        let structured = fixture["structured"].clone();
 
         let validate_request = serde_json::json!({
             "action": "entry.validate_draft",
-            "value": {"form": form.clone(), "draft": parsed["value"]}
+            "value": {"form": form.clone(), "draft": structured}
         })
         .to_string();
         let validated: Value =
@@ -1234,7 +932,7 @@ mod tests {
         assert_eq!(validated["ok"], true, "{validated}");
 
         let form_def: ugoite_domain::form::FormDefinition = serde_json::from_value(form).unwrap();
-        let draft = super::parse_entry_draft(&parsed["value"]).unwrap();
+        let draft = super::parse_entry_draft(&fixture["structured"]).unwrap();
         let native = ugoite_core::entry::preview_structured_draft(&form_def, &draft).unwrap();
         assert_eq!(validated["value"], serde_json::to_value(native).unwrap());
 

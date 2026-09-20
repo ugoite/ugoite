@@ -1,4 +1,4 @@
-use crate::entry::{self, EntryCreateRequest};
+use crate::entry::{self, EntryDraftRequest};
 use crate::form;
 use crate::integrity::RealIntegrityProvider;
 use crate::service::UgoiteService;
@@ -9,7 +9,9 @@ use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use std::collections::BTreeMap;
 use std::io::{stderr, IsTerminal, Write};
+use ugoite_core::entry::StructuredEntryDraft;
 use ugoite_storage::{OpendalStorage, StorageBackend};
 use uuid::Uuid;
 
@@ -111,7 +113,85 @@ struct SampleEntryBatch<'a> {
     op: &'a Operator,
     ws_path: &'a str,
     integrity: &'a RealIntegrityProvider,
-    pending: Vec<EntryCreateRequest>,
+    pending: Vec<EntryDraftRequest>,
+}
+
+/// Sample generation is developer tooling and still emits the historical
+/// stored representation. Convert that generated representation locally into
+/// the same structured draft used by the product mutation path; production
+/// transports never accept a whole Entry Markdown document.
+fn sample_content_to_draft(content: &str) -> Result<StructuredEntryDraft> {
+    let mut frontmatter = Map::new();
+    let mut body = content;
+    if let Some(rest) = content.strip_prefix("---\n") {
+        let closing = rest
+            .find("\n---\n")
+            .ok_or_else(|| anyhow!("sample Entry frontmatter is not closed"))?;
+        let yaml = &rest[..closing];
+        let yaml_value = serde_yaml::from_str::<serde_yaml::Value>(yaml)
+            .map_err(|error| anyhow!("sample Entry frontmatter is invalid: {error}"))?;
+        let json_value = serde_json::to_value(yaml_value)
+            .map_err(|error| anyhow!("sample Entry frontmatter is invalid: {error}"))?;
+        frontmatter = json_value
+            .as_object()
+            .cloned()
+            .ok_or_else(|| anyhow!("sample Entry frontmatter must be an object"))?;
+        body = &rest[closing + "\n---\n".len()..];
+    }
+
+    let form_name = frontmatter
+        .get("form")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| anyhow!("sample Entry form is missing"))?;
+    let tags = match frontmatter.get("tags") {
+        Some(Value::Array(values)) => values
+            .iter()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+            .collect(),
+        Some(Value::String(value)) => vec![value.clone()],
+        _ => Vec::new(),
+    };
+    let title = body
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("# ")
+                .map(str::trim)
+                .map(ToOwned::to_owned)
+        })
+        .unwrap_or_default();
+    let mut fields = frontmatter
+        .into_iter()
+        .filter(|(key, _)| key != "form" && key != "tags")
+        .collect::<BTreeMap<_, _>>();
+    let mut section: Option<String> = None;
+    let mut value = Vec::new();
+    let finish_section = |fields: &mut BTreeMap<String, Value>,
+                          section: &mut Option<String>,
+                          value: &mut Vec<String>| {
+        if let Some(name) = section.take() {
+            fields.insert(name, Value::String(value.join("\n").trim().to_string()));
+        }
+        value.clear();
+    };
+    for line in body.lines() {
+        if let Some(name) = line.strip_prefix("## ") {
+            finish_section(&mut fields, &mut section, &mut value);
+            section = Some(name.trim().to_string());
+        } else if section.is_some() {
+            value.push(line.to_string());
+        }
+    }
+    finish_section(&mut fields, &mut section, &mut value);
+
+    Ok(StructuredEntryDraft {
+        title,
+        form_name: Some(form_name),
+        tags,
+        fields,
+        extra_attributes: BTreeMap::new(),
+    })
 }
 
 impl<'a> SampleEntryBatch<'a> {
@@ -125,8 +205,10 @@ impl<'a> SampleEntryBatch<'a> {
     }
 
     async fn push(&mut self, entry_id: impl Into<String>, content: String) -> Result<()> {
-        self.pending
-            .push(EntryCreateRequest::new(entry_id, content));
+        self.pending.push(EntryDraftRequest {
+            entry_id: entry_id.into(),
+            draft: sample_content_to_draft(&content)?,
+        });
         if self.pending.len() >= entry::MAX_ENTRY_CREATE_BATCH_SIZE {
             self.flush().await?;
         }
@@ -137,12 +219,14 @@ impl<'a> SampleEntryBatch<'a> {
         if self.pending.is_empty() {
             return Ok(());
         }
-        entry::create_entries(
+        entry::create_draft_entries_with_scopes_and_change(
             self.op,
             self.ws_path,
             std::mem::take(&mut self.pending),
             "sample-generator",
             self.integrity,
+            None,
+            None,
         )
         .await?;
         Ok(())

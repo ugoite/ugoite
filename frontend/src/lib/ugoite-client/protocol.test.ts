@@ -119,7 +119,7 @@ describe("portable Ugoite API protocol WASM", () => {
     const request = await prepareApiRequest(
       "entry.create",
       { space_id: "demo" },
-      { id: "entry-1", markdown: "# Hello" },
+      { id: "entry-1", form: "Note", fields: { Body: "Hello" } },
     );
 
     expect(request.method).toBe("POST");
@@ -130,7 +130,8 @@ describe("portable Ugoite API protocol WASM", () => {
     });
     expect(JSON.parse(request.body ?? "null")).toEqual({
       id: "entry-1",
-      markdown: "# Hello",
+      form: "Note",
+      fields: { Body: "Hello" },
     });
   });
 

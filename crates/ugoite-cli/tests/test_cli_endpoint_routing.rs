@@ -522,7 +522,7 @@ fn test_space_list_req_sto_010_accepts_backend_mode_without_local_root() {
 }
 
 #[test]
-fn test_cli_help_req_sto_010_describes_space_uid_or_path_routing() {
+fn test_cli_help_req_sto_010_describes_context_routing() {
     for args in [
         ["entry", "list", "--help"],
         ["form", "list", "--help"],
@@ -563,7 +563,7 @@ fn test_entry_update_req_ops_006_help_describes_required_inputs() {
 }
 
 #[test]
-fn test_entry_create_req_ops_006_help_leads_with_plain_markdown_example() {
+fn test_entry_create_req_ops_006_help_leads_with_structured_fields() {
     let output = Command::new(ugoite_bin())
         .args(["entry", "create", "--help"])
         .output()

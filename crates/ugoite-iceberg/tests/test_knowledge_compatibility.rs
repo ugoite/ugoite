@@ -1,4 +1,7 @@
+mod common;
+
 use anyhow::{Context, Result};
+use common::LegacyServiceEntryExt;
 use serde::Deserialize;
 use tempfile::tempdir;
 use ugoite_domain::entry::FieldValue;

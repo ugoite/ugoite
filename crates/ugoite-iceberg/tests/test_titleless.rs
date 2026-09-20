@@ -1,12 +1,13 @@
 mod common;
 
 use anyhow::{Context, Result};
+use common::legacy_entry as entry;
 use common::setup_operator;
 use std::collections::BTreeMap;
 use ugoite_domain::form::{FormDefinition, FormVersion};
 use ugoite_domain::id::{FormId, SpaceId};
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
-use ugoite_iceberg::{entry, form, publication_context, space, IcebergWorkspace};
+use ugoite_iceberg::{form, publication_context, space, IcebergWorkspace};
 use uuid::Uuid;
 
 const FIXTURE: &str = include_str!("fixtures/v0.1-knowledge.json");

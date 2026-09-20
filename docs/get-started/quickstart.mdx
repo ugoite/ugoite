@@ -113,7 +113,8 @@ Entry IDs are user-chosen slugs with ASCII letters, digits, `-`, and `_`.
 <Tabs>
 <TabItem label="Browser">
 
-1. Open the Entry, edit the fields or Markdown, and save again.
+1. Open the Entry, edit its Form fields, and save again. A declared Markdown
+   field is edited as a field value; the Entry itself is not a Markdown editor.
 2. Open **History** to confirm two revisions exist.
 
 </TabItem>
@@ -192,7 +193,7 @@ and can be rebuilt.
 
 ## If it fails
 
-- Entry rejected: check the Form name in frontmatter and typed field values,
+- Entry rejected: check the selected Form and typed field values,
   then retry with valid data.
 - Revision conflict: re-read history, use the newest revision as parent, and
   reapply the edit.

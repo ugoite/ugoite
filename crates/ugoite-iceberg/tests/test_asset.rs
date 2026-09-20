@@ -1,7 +1,8 @@
 mod common;
 use arrow_array::{Array, StringArray};
 use chrono::Utc;
-use common::setup_operator;
+use common::legacy_entry as entry;
+use common::{setup_operator, LegacyServiceEntryExt};
 use datafusion::prelude::SessionContext;
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
@@ -12,7 +13,6 @@ use ugoite_domain::identity::{
 use ugoite_iceberg::asset;
 use ugoite_iceberg::authorization::{Authorizer, ResourceKind, ResourceRef};
 use ugoite_iceberg::derived_relation;
-use ugoite_iceberg::entry;
 use ugoite_iceberg::form;
 use ugoite_iceberg::index;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;

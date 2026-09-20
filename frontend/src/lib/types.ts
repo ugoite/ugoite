@@ -255,10 +255,9 @@ export interface EntryRevision {
 /** Structured entry fields keyed by field name (typed JSON values). */
 export type StructuredEntryFields = Record<string, unknown>;
 
-/** Create entry payload: legacy `{ markdown }` or additive structured. */
+/** Structured Entry create payload. */
 export interface EntryCreatePayload {
   id?: string;
-  markdown?: string;
   form?: string;
   title?: string;
   tags?: string[];
@@ -266,9 +265,8 @@ export interface EntryCreatePayload {
   extra_attributes?: StructuredEntryFields;
 }
 
-/** Update entry payload: legacy `{ markdown }` or additive structured. */
+/** Structured Entry update payload. */
 export interface EntryUpdatePayload {
-  markdown?: string;
   parent_revision_id: string;
   frontmatter?: Record<string, unknown>;
   canvas_position?: CanvasPosition;

@@ -672,47 +672,6 @@ describe("CreateEntryDialog", () => {
     );
   });
 
-  it("REQ-FE-043: create-entry markdown dialog renders rejected submit errors inline", async () => {
-    const onSubmit = vi.fn().mockRejectedValue(
-      new Error("Markdown submit failed"),
-    );
-    const onClose = vi.fn();
-    const forms = [
-      {
-        name: "Meeting",
-        version: 1,
-        fields: { Date: { type: "date", required: true } },
-        template: "# Meeting\n\n## Date\n",
-      },
-    ];
-
-    render(() => (
-      <CreateEntryDialog
-        open={true}
-        forms={forms}
-        onClose={onClose}
-        onSubmit={onSubmit}
-      />
-    ));
-
-    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
-      target: { value: "Meeting" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
-    fireEvent.input(screen.getByRole("textbox", { name: "Markdown input" }), {
-      target: {
-        value:
-          "# Markdown Entry\n\n---\nform: Meeting\n---\n\n## Date\n2026-02-14",
-      },
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Create" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Markdown submit failed",
-    );
-  });
-
   it("REQ-FE-037: pre-fills defaults for required fields", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
@@ -995,120 +954,7 @@ describe("CreateEntryDialog", () => {
     expect(fallbackInput).toHaveAttribute("id", "webform-0-field");
   });
 
-  it("REQ-FE-037: supports markdown mode submission", async () => {
-    const onSubmit = vi.fn();
-    const onClose = vi.fn();
-    const forms = [
-      {
-        name: "Meeting",
-        version: 1,
-        fields: { Date: { type: "date", required: true } },
-        template: "# Meeting\n\n## Date\n",
-      },
-    ];
-
-    render(() => (
-      <CreateEntryDialog
-        open={true}
-        forms={forms}
-        onClose={onClose}
-        onSubmit={onSubmit}
-      />
-    ));
-
-    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
-      target: { value: "Meeting" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
-
-    const markdownArea = screen.getByRole("textbox", {
-      name: "Markdown input",
-    });
-    fireEvent.input(markdownArea, {
-      target: {
-        value:
-          "# My Markdown Entry\n\n---\nform: Meeting\n---\n\n## Date\n2026-02-14",
-      },
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Create" }));
-
-    expect(onSubmit).toHaveBeenCalledWith(
-      "",
-      "Meeting",
-      expect.objectContaining({
-        __markdown:
-          "# My Markdown Entry\n\n---\nform: Meeting\n---\n\n## Date\n2026-02-14",
-      }),
-      "markdown",
-    );
-  });
-
-  it("REQ-FE-037: clears the markdown flow after successful submission", async () => {
-    const onSubmit = vi.fn();
-    const onClose = vi.fn();
-    const forms = [
-      {
-        name: "Meeting",
-        version: 1,
-        fields: { Date: { type: "date", required: true } },
-        template: "# Meeting\n\n## Date\n",
-      },
-    ];
-
-    render(() => (
-      <CreateEntryDialog
-        open={true}
-        forms={forms}
-        onClose={onClose}
-        onSubmit={onSubmit}
-      />
-    ));
-
-    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
-      target: { value: "Meeting" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
-
-    const markdownArea = screen.getByRole("textbox", {
-      name: "Markdown input",
-    });
-    fireEvent.input(markdownArea, {
-      target: {
-        value: "# Reset Me\n\n---\nform: Meeting\n---\n\n## Date\n2026-02-14",
-      },
-    });
-
-    const form = screen.getByRole("button", { name: "Create" }).closest("form");
-    if (!form) throw new Error("Could not find create-entry form");
-    fireEvent.submit(form);
-
-    expect(onSubmit).toHaveBeenCalledWith(
-      "",
-      "Meeting",
-      expect.objectContaining({
-        __markdown:
-          "# Reset Me\n\n---\nform: Meeting\n---\n\n## Date\n2026-02-14",
-      }),
-      "markdown",
-    );
-    await waitFor(() => {
-      // Title-less Entry: no title input exists to reset.
-      expect(
-        screen.queryByPlaceholderText("Enter entry title..."),
-      ).not.toBeInTheDocument();
-      expect(
-        (screen.getByRole("combobox", { name: "Form *" }) as HTMLSelectElement)
-          .value,
-      ).toBe(
-        "",
-      );
-      expect(screen.queryByRole("textbox", { name: "Markdown input" })).not
-        .toBeInTheDocument();
-    });
-  });
-
-  it("REQ-FE-053: renders English entry guidance across input modes", async () => {
+  it("REQ-FE-053: renders English entry guidance across supported input modes", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
     const forms = [
@@ -1158,23 +1004,6 @@ describe("CreateEntryDialog", () => {
     expect(
       screen.getByText(
         "In web/chat mode, search the target form and choose a match. Ugoite still stores the stable entry_id underneath.",
-      ),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
-    expect(
-      screen.getByText(
-        "After creation, edit attributes under Markdown `## field name` headings.",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Markdown content is saved as-is (the backend validates frontmatter/form consistency).",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Markdown mode keeps row_reference values as stable entry_id strings under the matching `## field` heading.",
       ),
     ).toBeInTheDocument();
 
@@ -1869,58 +1698,11 @@ describe("CreateEntryDialog", () => {
       ),
     ).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
     expect(
-      screen.getByText(
+      screen.queryByText(
         "After creation, edit attributes under Markdown `## field name` headings.",
       ),
-    ).toBeInTheDocument();
-  });
-
-  it("REQ-FE-037: keeps user-edited markdown without a title input", async () => {
-    const onSubmit = vi.fn();
-    const onClose = vi.fn();
-    const forms = [
-      {
-        name: "Meeting",
-        version: 1,
-        fields: { Date: { type: "date", required: true } },
-        template: "# Meeting\n\n## Date\n",
-      },
-    ];
-
-    render(() => (
-      <CreateEntryDialog
-        open={true}
-        forms={forms}
-        onClose={onClose}
-        onSubmit={onSubmit}
-      />
-    ));
-
-    // Title-less Entry: no title input exists and generated markdown omits H1.
-    expect(
-      screen.queryByPlaceholderText("Enter entry title..."),
     ).not.toBeInTheDocument();
-    expect(document.querySelector("#entry-title")).toBeNull();
-
-    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
-      target: { value: "Meeting" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
-
-    const markdownArea = screen.getByRole("textbox", {
-      name: "Markdown input",
-    });
-    const customMarkdown =
-      "# Custom\n\n---\nform: Meeting\n---\n\n## Date\n2026-02-14\n";
-    fireEvent.input(markdownArea, { target: { value: customMarkdown } });
-
-    expect(
-      (screen.getByRole("textbox", {
-        name: "Markdown input",
-      }) as HTMLTextAreaElement).value,
-    ).toBe(customMarkdown);
   });
 
   it("REQ-FE-037: submits in webform mode successfully", async () => {
@@ -2332,45 +2114,6 @@ describe("CreateEntryDialog", () => {
       }),
       "chat",
     );
-  });
-
-  it("REQ-FE-037: shows error when markdown is empty in markdown mode", async () => {
-    const onSubmit = vi.fn();
-    const onClose = vi.fn();
-    const forms = [
-      {
-        name: "Meeting",
-        version: 1,
-        fields: {},
-        template: "",
-      },
-    ];
-
-    render(() => (
-      <CreateEntryDialog
-        open={true}
-        forms={forms}
-        onClose={onClose}
-        onSubmit={onSubmit}
-      />
-    ));
-
-    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
-      target: { value: "Meeting" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
-
-    // Set markdown to whitespace only (trims to empty, should show error)
-    const markdownArea = screen.getByRole("textbox", {
-      name: "Markdown input",
-    });
-    fireEvent.input(markdownArea, { target: { value: "   " } });
-
-    fireEvent.click(screen.getByRole("button", { name: "Create" }));
-
-    expect(onSubmit).not.toHaveBeenCalled();
-    expect(screen.getByText("Please provide markdown content."))
-      .toBeInTheDocument();
   });
 
   it("REQ-FE-037: keeps the form open and shows required-field errors on submit", async () => {

@@ -15,7 +15,6 @@ import {
   searchApi,
   spreadsheetCsvRequestBytes,
 } from "~/lib/ugoite-client";
-import { updateH2Section } from "~/lib/markdown";
 import { t } from "~/lib/i18n";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { formatDateLabel } from "~/lib/date-format";
@@ -442,22 +441,19 @@ export function FormTable(props: FormTableProps) {
     try {
       const currentRow = entries()?.find((item) => item.id === entryId);
 
-      // Fetch full entry to get content and revision_id
+      // Fetch the structured Entry to get its complete field map and revision.
       const entry = await entryApi.get(props.spaceId, entryId);
-      let updatedMarkdown = entry.content;
-
-      {
-        /* v8 ignore start */
-        const currentValue = formatValueForInput(
-          currentRow?.properties?.[field],
-        );
-        if (currentValue === value) return;
-        /* v8 ignore stop */
-        updatedMarkdown = updateH2Section(updatedMarkdown, field, value);
-      }
+      /* v8 ignore start */
+      const currentValue = formatValueForInput(
+        currentRow?.properties?.[field],
+      );
+      if (currentValue === value) return;
+      /* v8 ignore stop */
+      const fields = { ...(entry.sections ?? {}), [field]: value };
 
       const updatedEntry = await entryApi.update(props.spaceId, entryId, {
-        markdown: updatedMarkdown,
+        form: entry.form,
+        fields,
         parent_revision_id: entry.revision_id,
       });
       void updatedEntry;

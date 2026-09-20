@@ -10,7 +10,6 @@ import { ConfirmDestructiveAction } from "~/components/ConfirmDestructiveAction"
 import { FieldValuesView } from "~/components/fields/FieldValue";
 import { formatDateTimeLabel } from "~/lib/date-format";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
-import { parseEntryMarkdownPresentation } from "~/lib/entry-input";
 import {
   actorDisplayNameLookup,
   resolveActorDisplayName,
@@ -105,19 +104,10 @@ export default function SpaceEntryRevisionRoute() {
       : null
   );
 
-  // The stored Markdown is the revision content authority; the shared
-  // read-only renderer shows it as text (never disabled inputs — editing
-  // controls belong to the FieldInput family alone).
-  const parsedRevision = createMemo(() => {
-    const markdown = revision()?.markdown ?? "";
-    try {
-      return parseEntryMarkdownPresentation(markdown);
-    } catch {
-      return { title: "", fields: {} as Record<string, string> };
-    }
-  });
-  const revisionFields = createMemo(() =>
-    Object.keys(parsedRevision().fields).map((name) => ({ name }))
+  // Revision fields are read-only structured values; the stored Markdown is
+  // retained for the revision's integrity representation only.
+  const revisionFieldRows = createMemo(() =>
+    Object.keys(revision()?.sections ?? {}).map((name) => ({ name }))
   );
 
   const copyText = async (value: string) => {
@@ -190,8 +180,8 @@ export default function SpaceEntryRevisionRoute() {
             {t("entryRevision.actor")}: {actorName()}
           </p>
           <FieldValuesView
-            fields={revisionFields()}
-            getValue={(name) => parsedRevision().fields[name] ?? ""}
+            fields={revisionFieldRows()}
+            getValue={(name) => revision()?.sections?.[name] ?? ""}
           />
 
           <div class="revision-restore-row">

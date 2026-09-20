@@ -43,7 +43,7 @@ components:
       visibility: form-defined-entry
       items:
         - typed-form-fields
-      description: Form fields only. A Form-defined Title or Name renders as a normal field with no Entry-level semantics.
+      description: Form fields only. A Form-defined Title or Name renders as a normal field with no Entry-level semantics; a Markdown Form field remains an ordinary multiline field.
       field_controls:
         boolean: free-form-text-input
         date: native-date-input
@@ -52,19 +52,6 @@ components:
         row_reference: searchable-entry-picker
         scalar: free-form-text-input
       validation: inline
-      advanced:
-        - id: entry-source-disclosure
-          label: Advanced
-          content:
-            - id: source
-              label: Source
-              description: Full Markdown editing for advanced changes.
-            - id: entry-source-editor
-              mode: edit
-    - id: entry-source-editor
-      type: markdown-editor
-      mode: edit
-      visibility: formless-entry
 responsive:
   desktop: single-column
   mobile: stacked-primary-first

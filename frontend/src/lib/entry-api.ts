@@ -84,14 +84,6 @@ export const entryApi = {
     );
   },
 
-  async createFromMarkdown(
-    spaceId: string,
-    markdown: string,
-    id?: string,
-  ): Promise<{ id: string; revision_id: string }> {
-    return await this.create(spaceId, { id, markdown });
-  },
-
   async createStructured(
     spaceId: string,
     payload: EntryCreatePayload & { form: string },
