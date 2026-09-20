@@ -432,8 +432,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-cli/tests/test_cli_req_sec_011_endpoint_transport.rs
-  - file: crates/ugoite-cli/tests/test_endpoint_config.rs
+  - file: crates/ugoite-cli/tests/test_cli_context_safety.rs
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.

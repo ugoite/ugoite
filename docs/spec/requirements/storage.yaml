@@ -29,7 +29,6 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
-  - file: crates/ugoite-cli/tests/test_endpoint_config.rs
   - file: crates/ugoite-cli/tests/test_space.rs
   - file: crates/ugoite-domain/tests/test_coverage.rs
 - set_id: REQCAT-STORAGE
@@ -142,7 +141,6 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
-  - file: crates/ugoite-cli/tests/test_endpoint_config.rs
   - file: crates/ugoite-cli/tests/test_integrity.rs
   - file: crates/ugoite-cli/tests/test_space.rs
   - file: crates/ugoite-iceberg/tests/test_space.rs
