@@ -424,7 +424,6 @@ mod remote_asset_upload_tests {
             .create_structured_entry_with_receipt(
                 &space_id,
                 "seed-entry",
-                Some("Seed".to_string()),
                 "Media".to_string(),
                 Vec::new(),
                 BTreeMap::from([(
@@ -9129,7 +9128,6 @@ struct EntryCreate {
     // Structured payload; `form` is required and the remaining properties are
     // optional defaults for the complete initial draft.
     form: Option<String>,
-    title: Option<String>,
     tags: Option<Vec<String>>,
     fields: Option<BTreeMap<String, Value>>,
     #[serde(default)]
@@ -9150,7 +9148,6 @@ async fn create_entry(
             "structured entry form is required",
         ));
     };
-    let title = payload.title.clone();
     let tags = payload.tags.clone().unwrap_or_default();
     let fields = payload.fields.clone().unwrap_or_default();
     let extra = payload.extra_attributes.clone().unwrap_or_default();
@@ -9168,7 +9165,6 @@ async fn create_entry(
                 .create_structured_entry_authorized_for_principals(
                     &space_id_for_write,
                     &entry_id_for_write,
-                    title.clone(),
                     form.clone(),
                     tags.clone(),
                     fields.clone(),
@@ -9723,10 +9719,9 @@ struct EntryReadQuery {
 #[serde(deny_unknown_fields)]
 struct EntryUpdate {
     parent_revision_id: Option<String>,
-    // Structured update: full field replacement, title/tags fall back to
-    // stored values when omitted.
+    // Structured update: full field replacement; tags fall back to stored
+    // values when omitted.
     form: Option<String>,
-    title: Option<String>,
     tags: Option<Vec<String>>,
     fields: Option<BTreeMap<String, Value>>,
     #[serde(default)]
@@ -9750,7 +9745,6 @@ async fn update_entry(
     let entry_id_for_write = entry_id.clone();
     let parent_revision_id = payload.parent_revision_id.clone();
     let form = payload.form.clone();
-    let title = payload.title.clone();
     let tags = payload.tags.clone();
     let fields = payload.fields.clone().unwrap_or_default();
     let extra = payload.extra_attributes.clone().unwrap_or_default();
@@ -9771,7 +9765,6 @@ async fn update_entry(
                 .update_structured_entry_authorized_for_principals(
                     &space_id_for_write,
                     &entry_id_for_write,
-                    title.clone(),
                     form.clone(),
                     tags.clone(),
                     fields.clone(),
@@ -13528,7 +13521,6 @@ mod authentication_regression_tests {
                         "kind": "create",
                         "id": "production-auth-entry",
                         "form": "Entry",
-                        "title": "Production auth",
                         "tags": [],
                         "fields": {"Body": "created"},
                         "extra_attributes": {}
@@ -13555,7 +13547,6 @@ mod authentication_regression_tests {
                         "id": "production-auth-entry",
                         "version_token": create_revision,
                         "form": "Entry",
-                        "title": "Production auth",
                         "tags": [],
                         "fields": {"Body": "updated"},
                         "extra_attributes": {}
@@ -13799,7 +13790,7 @@ mod authentication_regression_tests {
             "Bearer",
             "tools/call",
             Some("ugoite.save"),
-            json!({"name":"ugoite.save","arguments":{"form":"Entry","title":"MCP Created","fields":{"Body":"created by MCP"}},"_meta":{"ugoite/runId":"konase-work-1"}}),
+            json!({"name":"ugoite.save","arguments":{"form":"Entry","fields":{"Body":"created by MCP"}},"_meta":{"ugoite/runId":"konase-work-1"}}),
             None,
         )
         .await;
@@ -13819,7 +13810,7 @@ mod authentication_regression_tests {
             "Bearer",
             "tools/call",
             Some("ugoite.save"),
-            json!({"name":"ugoite.save","arguments":{"id":entry_id,"form":"Entry","title":"MCP Updated","fields":{"Body":"updated by MCP"}},"_meta":{"ugoite/runId":"konase-work-1"}}),
+            json!({"name":"ugoite.save","arguments":{"id":entry_id,"form":"Entry","fields":{"Body":"updated by MCP"}},"_meta":{"ugoite/runId":"konase-work-1"}}),
             None,
         )
         .await;
@@ -13845,7 +13836,7 @@ mod authentication_regression_tests {
                 .expect("Entry resource text"),
         )?;
         assert_eq!(projection["form"], "Entry");
-        assert_eq!(projection["title"], "MCP Updated");
+        assert_eq!(projection["id"], entry_id);
         assert!(projection["content"]
             .as_str()
             .expect("Entry content")
@@ -14531,7 +14522,6 @@ mod authentication_regression_tests {
                 Some(json!({
                     "id": "dml-seed",
                     "form": "Entry",
-                    "title": "Seeded",
                     "fields": {"Body": "seeded-value"}
                 })),
             )
@@ -14705,7 +14695,6 @@ mod authentication_regression_tests {
                     Some(json!({
                         "id": entry_id,
                         "form": "Entry",
-                        "title": title,
                         "fields": {"Body": format!("harvest {title}")}
                     })),
                 )
@@ -14771,7 +14760,6 @@ mod authentication_regression_tests {
                 Some(json!({
                     "id": "history-seed",
                     "form": "Entry",
-                    "title": "History",
                     "fields": {"Body": "v1"}
                 })),
             )
@@ -14788,7 +14776,6 @@ mod authentication_regression_tests {
                     &format!("/spaces/{space_id}/entries/history-seed"),
                     Some(json!({
                         "form": "Entry",
-                        "title": "History",
                         "fields": {"Body": body},
                         "parent_revision_id": parent_revision,
                     })),
@@ -15123,7 +15110,6 @@ mod authentication_regression_tests {
             .create_structured_entry_with_receipt(
                 &space_id,
                 "authorized-entry",
-                Some("Authorized".to_string()),
                 "Entry".to_string(),
                 Vec::new(),
                 BTreeMap::from([("Body".to_string(), json!("secret keyword"))]),
@@ -15241,7 +15227,6 @@ mod authentication_regression_tests {
             .create_structured_entry_with_receipt(
                 &space_id,
                 "criteria-entry",
-                Some("Criteria".to_string()),
                 "Entry".to_string(),
                 Vec::new(),
                 BTreeMap::from([("Body".to_string(), json!("secret keyword"))]),
@@ -15768,7 +15753,6 @@ mod authentication_regression_tests {
                         json!({
                             "id": "invalid-entry",
                             "form": "Entry",
-                            "title": "Invalid",
                             "fields": {
                                 "Body": "Body",
                                 "test number": 0,
@@ -15795,7 +15779,6 @@ mod authentication_regression_tests {
                         json!({
                             "id": "missing-form-entry",
                             "form": "Missing",
-                            "title": "Missing form",
                             "fields": {}
                         })
                         .to_string(),
@@ -15819,7 +15802,6 @@ mod authentication_regression_tests {
                         json!({
                             "id": "created-entry",
                             "form": "Entry",
-                            "title": "Created",
                             "fields": {
                                 "Body": "Body",
                                 "test number": 0,
@@ -15847,7 +15829,6 @@ mod authentication_regression_tests {
                     .body(Body::from(
                         json!({
                             "form": "Entry",
-                            "title": "Created",
                             "fields": {
                                 "Body": "Body",
                                 "test number": 0,
@@ -15926,7 +15907,6 @@ mod authentication_regression_tests {
                         json!({
                             "id": "structured-note",
                             "form": "Note",
-                            "title": "Title",
                             "fields": {"Body": "hello", "Done": true}
                         })
                         .to_string(),
@@ -15940,7 +15920,6 @@ mod authentication_regression_tests {
             .service
             .get_entry(&space_id, "structured-note")
             .await?;
-        assert_eq!(structured["title"], "Title");
         assert_eq!(structured["sections"]["Body"], "hello");
 
         // Structured update replaces the complete field map.
@@ -15959,7 +15938,6 @@ mod authentication_regression_tests {
                     .body(Body::from(
                         json!({
                             "form": "Note",
-                            "title": "Title",
                             "fields": {"Body": "edited", "Done": false},
                             "parent_revision_id": revision_id
                         })
@@ -16095,7 +16073,6 @@ mod authentication_regression_tests {
                             json!({
                             "id": entry_id,
                             "form": "AssetReview",
-                            "title": entry_id,
                             "fields": {"thumbnail": thumbnail, "documents": documents}
                             })
                             .to_string(),
@@ -16125,7 +16102,6 @@ mod authentication_regression_tests {
                         json!({
                             "id": valid_id,
                             "form": "AssetReview",
-                            "title": valid_id,
                             "fields": {
                                 "thumbnail": reference.clone(),
                                 "documents": [reference.clone()]
@@ -16149,7 +16125,6 @@ mod authentication_regression_tests {
                     .body(Body::from(
                         json!({
                             "form": "AssetReview",
-                            "title": valid_id,
                             "fields": {
                                 "thumbnail": reference.clone(),
                                 "documents": [Value::Null]
@@ -16203,7 +16178,6 @@ mod authentication_regression_tests {
             .create_structured_entry_with_receipt(
                 &space_id,
                 "attribution-delete-entry",
-                Some("Created".to_string()),
                 "Entry".to_string(),
                 Vec::new(),
                 BTreeMap::from([("Body".to_string(), json!("Body"))]),
@@ -18067,25 +18041,28 @@ mod authentication_regression_tests {
         Ok(())
     }
 
-    fn knowledge_create_operation(id: &str, title: &str, body: &str) -> Value {
+    fn knowledge_create_operation(id: &str, _title: &str, body: &str) -> Value {
         json!({
             "kind": "create",
             "id": id,
             "form": "Entry",
-            "title": title,
             "tags": [],
             "fields": {"Body": body},
             "extra_attributes": {}
         })
     }
 
-    fn knowledge_update_operation(id: &str, version_token: &str, title: &str, body: &str) -> Value {
+    fn knowledge_update_operation(
+        id: &str,
+        version_token: &str,
+        _title: &str,
+        body: &str,
+    ) -> Value {
         json!({
             "kind": "update",
             "id": id,
             "version_token": version_token,
             "form": "Entry",
-            "title": title,
             "tags": [],
             "fields": {"Body": body},
             "extra_attributes": {}
@@ -19256,7 +19233,6 @@ mod authentication_regression_tests {
             .create_structured_entry_with_receipt(
                 &space_id,
                 "approval-entry",
-                Some("Approval entry".to_string()),
                 "Entry".to_string(),
                 Vec::new(),
                 BTreeMap::from([("Body".to_string(), json!("to remove"))]),

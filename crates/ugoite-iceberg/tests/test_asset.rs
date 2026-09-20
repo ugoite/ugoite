@@ -957,7 +957,6 @@ async fn structured_update_appending_second_attachment_preserves_first() -> anyh
         .create_structured_entry_with_receipt(
             &space_id,
             "album-1",
-            None,
             "Album".to_string(),
             Vec::new(),
             BTreeMap::from([(
@@ -980,7 +979,6 @@ async fn structured_update_appending_second_attachment_preserves_first() -> anyh
         .update_structured_entry(
             &space_id,
             "album-1",
-            None,
             None,
             BTreeMap::from([(
                 "Attachments".to_string(),

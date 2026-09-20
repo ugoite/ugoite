@@ -71,7 +71,6 @@ async fn append_entries_at_search_cap(op: &opendal::Operator, ws_path: &str) -> 
                 source_id: None,
                 entry: EntryMetadata {
                     external_id: format!("cap-{index:05}"),
-                    title: format!("Match {index:05}"),
                     created_at_micros: timestamp,
                     updated_at_micros: timestamp,
                     updated_by: "author".to_owned(),
@@ -135,7 +134,6 @@ async fn test_search_req_srch_001_keyword_search() -> anyhow::Result<()> {
     assert!(found_ids.contains(&"entry3".to_string()));
     assert!(!found_ids.contains(&"entry2".to_string()));
     let first = results.iter().find(|result| result.id == "entry1").unwrap();
-    assert_eq!(first.title, "entry1");
     assert_eq!(first.form, "Entry");
 
     let tag_results = search::search_entries(
@@ -187,7 +185,7 @@ async fn test_search_req_srch_001_keyword_search() -> anyhow::Result<()> {
         "project",
         &relation_scopes,
         1,
-        Some((&first.title, &first.id, &first.form)),
+        Some((&first.id, &first.form)),
     )
     .await?;
     assert_eq!(second_page.len(), 1);

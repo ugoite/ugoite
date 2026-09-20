@@ -65,7 +65,6 @@ async fn structured_search_filters_by_typed_conditions() -> anyhow::Result<()> {
         &op,
         &ws_path,
         "task-open",
-        Some("Release".to_owned()),
         "Task".to_owned(),
         Vec::new(),
         fields(vec![
@@ -88,7 +87,6 @@ async fn structured_search_filters_by_typed_conditions() -> anyhow::Result<()> {
         &op,
         &ws_path,
         "task-closed",
-        Some("Cleanup".to_owned()),
         "Task".to_owned(),
         Vec::new(),
         fields(vec![
@@ -179,7 +177,6 @@ async fn structured_search_contains_escapes_special_chars() -> anyhow::Result<()
             &op,
             &ws_path,
             id,
-            Some(title.to_owned()),
             "Task".to_owned(),
             Vec::new(),
             fields(vec![
@@ -291,7 +288,6 @@ async fn structured_search_preserves_timestamp_kind_precision_and_predicates() -
             &op,
             ws_path,
             entry_id,
-            Some(entry_id.to_owned()),
             "Temporal".to_owned(),
             Vec::new(),
             fields(vec![
@@ -447,7 +443,6 @@ async fn structured_search_applies_permission_filtering_first() -> anyhow::Resul
         &op,
         &ws_path,
         "task-1",
-        Some("Hello".to_owned()),
         "Task".to_owned(),
         Vec::new(),
         fields(vec![

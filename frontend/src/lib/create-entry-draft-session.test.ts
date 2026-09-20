@@ -5,7 +5,6 @@ import {
 } from "./create-entry-draft-session";
 
 const state: CreateEntryDraftState = {
-  title: "Meeting",
   fields: { Notes: "draft", "__asset:Notes": { asset_id: "asset-1" } },
   tags: ["work"],
   assetFields: { Notes: { asset_id: "asset-1" } },
@@ -16,13 +15,13 @@ describe("CreateEntryDraftSession", () => {
   it("keeps independent structured work for each Form and returns copies", () => {
     const session = new CreateEntryDraftSession();
     session.save("Meeting", state);
-    session.save("Task", { ...state, title: "Task", dirty: false });
+    session.save("Task", { ...state, dirty: false });
 
     const restored = session.restore("Meeting");
     expect(restored).toEqual(state);
     restored!.fields.Notes = "changed outside the session";
     expect(session.restore("Meeting")!.fields.Notes).toBe("draft");
-    expect(session.restore("Task")!.title).toBe("Task");
+    expect(session.restore("Task")!.fields).toEqual(state.fields);
     expect(session.hasDirtyWork()).toBe(true);
   });
 

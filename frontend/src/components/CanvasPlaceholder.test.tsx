@@ -9,14 +9,12 @@ describe("CanvasPlaceholder", () => {
   const mockEntries: EntryRecord[] = [
     {
       id: "entry-1",
-      title: "First Entry",
       updated_at: "2025-01-01T00:00:00Z",
       properties: { Status: "Active", Priority: "High" },
       tags: [],
     },
     {
       id: "entry-2",
-      title: "Second Entry",
       updated_at: "2025-01-02T00:00:00Z",
       properties: { Category: "Work" },
       tags: [],
@@ -33,8 +31,8 @@ describe("CanvasPlaceholder", () => {
   it("should display entries as cards", () => {
     render(() => <CanvasPlaceholder entries={mockEntries} />);
 
-    expect(screen.getByText("First Entry")).toBeInTheDocument();
-    expect(screen.getByText("Second Entry")).toBeInTheDocument();
+    expect(screen.getByText("entry-1")).toBeInTheDocument();
+    expect(screen.getByText("entry-2")).toBeInTheDocument();
   });
 
   it("should show entry properties on cards", () => {
@@ -53,7 +51,7 @@ describe("CanvasPlaceholder", () => {
       />
     ));
 
-    fireEvent.click(screen.getByText("First Entry"));
+    fireEvent.click(screen.getByText("entry-1"));
 
     expect(onSelect).toHaveBeenCalledWith("entry-1");
   });
@@ -77,7 +75,6 @@ describe("CanvasPlaceholder", () => {
   it("should use canvas_position if provided", () => {
     const entryWithPosition: EntryRecord = {
       id: "positioned-entry",
-      title: "Positioned Entry",
       updated_at: "2025-01-01T00:00:00Z",
       properties: {},
       tags: [],
@@ -92,10 +89,9 @@ describe("CanvasPlaceholder", () => {
     expect(card.style.top).toBe("360px");
   });
 
-  it("should show the entry ID when entry has no title", () => {
+  it("should show the entry ID", () => {
     const noTitleEntry: EntryRecord = {
       id: "no-title",
-      title: "",
       updated_at: "2025-01-01T00:00:00Z",
       properties: {},
       tags: [],
@@ -107,7 +103,6 @@ describe("CanvasPlaceholder", () => {
   it("should display entry with form badge and non-string properties and >3 properties", () => {
     const complexEntry: EntryRecord = {
       id: "complex",
-      title: "Complex Entry",
       form: "Report",
       updated_at: "2025-01-01T00:00:00Z",
       properties: {

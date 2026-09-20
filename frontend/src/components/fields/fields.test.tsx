@@ -19,8 +19,8 @@ vi.mock("~/lib/ugoite-client", () => ({
 const rowOptionsMock = vi.mocked(searchApi.rowReferenceOptions);
 
 const alphaEntries = [
-  { id: "project-alpha", title: "Alpha Project" },
-  { id: "project-beta", title: "Beta Project" },
+  { id: "project-alpha" },
+  { id: "project-beta" },
 ];
 
 beforeEach(() => {
@@ -30,9 +30,8 @@ beforeEach(() => {
       _spaceId: string,
       _form: string,
       query: string,
-    ): Promise<Array<{ id: string; title: string }>> =>
+    ): Promise<Array<{ id: string }>> =>
       alphaEntries.filter((entry) =>
-        entry.title.toLowerCase().includes(query.toLowerCase()) ||
         entry.id.includes(query)
       ),
   );
@@ -197,10 +196,12 @@ describe("shared RowReferenceSelect", () => {
       target: { value: "alpha" },
     });
     fireEvent.click(
-      await screen.findByRole("button", { name: /Alpha Project/ }),
+      await screen.findByRole("button", { name: /project-alpha/ }),
     );
     expect(onChange).toHaveBeenCalledWith("project-alpha");
-    expect(await screen.findByText("project-alpha")).toBeInTheDocument();
+    expect((await screen.findAllByText("project-alpha")).length).toBeGreaterThan(
+      0,
+    );
     expect(rowOptionsMock).toHaveBeenCalledWith(
       "default",
       "Project",
@@ -230,7 +231,7 @@ describe("shared RowReferenceSelect", () => {
 
     const input = screen.getByLabelText("Project");
     fireEvent.input(input, { target: { value: "project" } });
-    await screen.findByRole("button", { name: /Alpha Project/ });
+    await screen.findByRole("button", { name: /project-alpha/ });
 
     // ArrowDown highlights the second option; Enter confirms its stable id.
     fireEvent.keyDown(input, { key: "ArrowDown" });
@@ -241,7 +242,7 @@ describe("shared RowReferenceSelect", () => {
     onChange.mockClear();
     fireEvent.input(input, { target: { value: "zzz" } });
     fireEvent.keyDown(input, { key: "Escape" });
-    expect(input).toHaveValue("Beta Project");
+    expect(input).toHaveValue("project-beta");
     expect(onChange).toHaveBeenCalledWith("project-beta");
 
     // Clear removes the saved entry id.
@@ -254,7 +255,7 @@ describe("shared RowReferenceSelect", () => {
 
   it("renders loading, error, and empty states", async () => {
     let resolveOptions!: (
-      value: Array<{ id: string; title: string }>,
+      value: Array<{ id: string }>,
     ) => void;
     rowOptionsMock.mockReturnValue(
       new Promise((resolve) => {
@@ -329,7 +330,7 @@ describe("shared RowReferenceSelect", () => {
     });
     await waitFor(() => expect(onPending).toHaveBeenCalledWith(true));
     fireEvent.click(
-      await screen.findByRole("button", { name: /Alpha Project/ }),
+      await screen.findByRole("button", { name: /project-alpha/ }),
     );
     await waitFor(() => expect(onPending).toHaveBeenCalledWith(false));
   });
@@ -355,8 +356,8 @@ describe("list<row_reference> rows", () => {
       />
     ));
 
-    // Stored ids resolve to titles once options arrive.
-    expect(await screen.findByDisplayValue("Alpha Project"))
+    // Stored ids remain the deterministic display value.
+    expect(await screen.findByDisplayValue("project-alpha"))
       .toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Add/ }));
@@ -364,7 +365,7 @@ describe("list<row_reference> rows", () => {
     expect(inputs).toHaveLength(2);
     fireEvent.input(inputs[1], { target: { value: "beta" } });
     fireEvent.click(
-      await screen.findByRole("button", { name: /Beta Project/ }),
+      await screen.findByRole("button", { name: /project-beta/ }),
     );
     expect(onChange).toHaveBeenCalledWith(["project-alpha", "project-beta"]);
   });
@@ -374,14 +375,14 @@ describe("row-reference helpers", () => {
   it("builds sorted human-readable options with stable ids", () => {
     expect(
       buildRowReferenceOptions([
-        { id: "b", title: "Same" },
-        { id: "a", title: "Same" },
-        { id: "c", title: null },
+        { id: "b" },
+        { id: "a" },
+        { id: "c" },
       ]),
     ).toEqual([
+      { id: "a", title: "a", label: "a" },
+      { id: "b", title: "b", label: "b" },
       { id: "c", title: "c", label: "c" },
-      { id: "a", title: "Same", label: "Same (a)" },
-      { id: "b", title: "Same", label: "Same (b)" },
     ]);
   });
 

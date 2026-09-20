@@ -103,14 +103,12 @@ derived from the unique greatest version and is never a second source-of-truth
 table. Equal greatest versions are a visible corruption/conflict and never
 resolved by iteration order.
 
-An Entry has no intrinsic title. New Form tables carry no `ugoite_entry_title`
-column; a human-readable name exists only when the Form defines it as a normal
-field (for example a `name` string field). Tables created before the title-less
-change keep their legacy title column and are read without migration: readers
-resolve the legacy physical column first, then the reserved
-`extension_metadata["ugoite/legacy-title"]` compatibility value, then empty.
-The stable `entry_id` is the canonical identity; it is never synthesized into
-a stored title.
+An Entry has no intrinsic title. A human-readable name exists only when the
+Form defines it as a normal field (for example a `name` string field). Tables
+created before this boundary may contain unclaimed physical columns; the
+generic schema reader exposes those columns under their physical names without
+migration or semantic interpretation. The stable `entry_id` is the canonical
+identity and is never synthesized into a stored field.
 
 Date, time, timestamp, UUID, and binary Form fields use their corresponding
 Iceberg primitive types. Markdown, SQL, row references, and ordinary strings
@@ -123,25 +121,23 @@ local date-time. `timestamp_tz` and `timestamp_tz_ns` represent an instant,
 require an offset-bearing RFC3339 value at the domain boundary, and are stored
 normalized to UTC. The server never infers a timezone for a timezone-less value.
 
-## Markdown mapping
+## Structured presentation mapping
 
-The compatibility template is:
+When a structured Entry is rendered for a read-only content response, the
+Form-defined fields are represented as:
 
 ```markdown
-# {legacy_title}
-
 ## {field_name}
 
 {value}
 ```
 
-The H1 heading is optional and carries only the 0.1.x legacy compatibility
-title. Entries without an H1 are title-less, and rendering a title-less Entry
-emits no synthetic H1. H2 sections are parsed according to the Form field
-type. Supported types are
-exposed by `GET /spaces/{space_id}/forms/types`; the Rust Form implementation is
-the source of truth. Unknown sections are rejected or retained according to
-`allow_extra_attributes`.
+There is no Entry-level heading or title. Form-defined fields remain the
+authority, and a Markdown field's body is never reparsed as Entry metadata.
+H2 sections are rendered according to the Form field type. Supported types are
+exposed by `GET /spaces/{space_id}/forms/types`; the Rust Form implementation
+is the source of truth. Unknown sections are rejected or retained according
+to `allow_extra_attributes`.
 
 ## Search, query, and derived data
 

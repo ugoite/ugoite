@@ -236,7 +236,7 @@ describe("CreateFormDialog", () => {
     const columnInput = screen.getByPlaceholderText(
       "Column Name",
     ) as HTMLInputElement;
-    fireEvent.input(columnInput, { target: { value: "title" } });
+    fireEvent.input(columnInput, { target: { value: "id" } });
 
     expect(screen.getByText("Reserved metadata column name"))
       .toBeInTheDocument();
@@ -271,7 +271,7 @@ describe("CreateFormDialog", () => {
       ),
     ).not.toBeInTheDocument();
 
-    fireEvent.input(columnInput, { target: { value: "title" } });
+    fireEvent.input(columnInput, { target: { value: "id" } });
     expect(
       screen.getByText(
         /Reserved metadata columns are system-owned and cannot be used/,
@@ -285,7 +285,7 @@ describe("CreateFormDialog", () => {
       ),
     ).not.toBeInTheDocument();
 
-    fireEvent.input(columnInput, { target: { value: "title" } });
+    fireEvent.input(columnInput, { target: { value: "id" } });
     expect(
       screen.getByText(
         /Reserved metadata columns are system-owned and cannot be used/,
@@ -589,7 +589,7 @@ describe("CreateEntryDialog", () => {
       />
     ));
 
-    // Title-less Entry: no title input exists; the legacy title is always "".
+    // Entries have no intrinsic title, so no title input exists.
     expect(
       screen.queryByPlaceholderText("Enter entry title..."),
     ).not.toBeInTheDocument();
@@ -603,7 +603,7 @@ describe("CreateEntryDialog", () => {
     expect(createButton).toBeEnabled();
     fireEvent.click(createButton);
 
-    expect(onSubmit).toHaveBeenCalledWith("", "Notes", {}, "webform");
+    expect(onSubmit).toHaveBeenCalledWith("Notes", {}, "webform");
   });
 
   it("REQ-FE-037: blocks submission when required fields are empty", async () => {
@@ -749,7 +749,6 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "",
       "Task",
       { Summary: "Active summary" },
       "webform",
@@ -798,7 +797,6 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "",
       "Task",
       { Summary: "Active summary" },
       "webform",
@@ -847,7 +845,6 @@ describe("CreateEntryDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     expect(onSubmit).toHaveBeenCalledWith(
-      "",
       "Event",
       {
         Amount: "12.",
@@ -889,7 +886,6 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "",
       "Task",
       expect.objectContaining({ Summary: "Optional summary" }),
       "webform",
@@ -1021,7 +1017,6 @@ describe("CreateEntryDialog", () => {
     vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([
       {
         id: "project-alpha",
-        title: "Alpha Project",
         form: "Project",
         updated_at: "2026-02-14T09:30:00Z",
         properties: {},
@@ -1029,7 +1024,6 @@ describe("CreateEntryDialog", () => {
       },
       {
         id: "project-beta",
-        title: "Beta Project",
         form: "Project",
         updated_at: "2026-02-15T09:30:00Z",
         properties: {},
@@ -1081,12 +1075,11 @@ describe("CreateEntryDialog", () => {
     fireEvent.input(projectInput, { target: { value: "alpha" } });
 
     fireEvent.click(
-      await screen.findByRole("button", { name: /Alpha Project/i }),
+      await screen.findByRole("button", { name: /project-alpha/i }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "",
       "Task",
       expect.objectContaining({
         Summary: "Track the launch",
@@ -1110,7 +1103,6 @@ describe("CreateEntryDialog", () => {
     vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([
       {
         id: "project-alpha",
-        title: "Alpha Project",
         form: "Project",
         updated_at: "2026-02-14T09:30:00Z",
         properties: {},
@@ -1118,7 +1110,6 @@ describe("CreateEntryDialog", () => {
       },
       {
         id: "project-beta",
-        title: "Beta Project",
         form: "Project",
         updated_at: "2026-02-15T09:30:00Z",
         properties: {},
@@ -1173,12 +1164,11 @@ describe("CreateEntryDialog", () => {
       target: { value: "beta" },
     });
     fireEvent.click(
-      await screen.findByRole("button", { name: /Beta Project/i }),
+      await screen.findByRole("button", { name: /project-beta/i }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "",
       "Task",
       expect.objectContaining({
         Summary: "Use the picker inside chat mode",
@@ -1194,7 +1184,6 @@ describe("CreateEntryDialog", () => {
     vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([
       {
         id: "project-alpha",
-        title: "Alpha Project",
         form: "Project",
         updated_at: "2026-02-14T09:30:00Z",
         properties: {},
@@ -1245,13 +1234,12 @@ describe("CreateEntryDialog", () => {
       target: { value: "alpha" },
     });
     fireEvent.click(
-      await screen.findByRole("button", { name: /Alpha Project/i }),
+      await screen.findByRole("button", { name: /project-alpha/i }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "",
       "Task",
       {
         Summary: "Only keep the human summary",
@@ -1268,7 +1256,6 @@ describe("CreateEntryDialog", () => {
     vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([
       {
         id: "project-2",
-        title: "Alpha Project",
         form: "Project",
         updated_at: "2026-02-15T09:30:00Z",
         properties: {},
@@ -1276,7 +1263,6 @@ describe("CreateEntryDialog", () => {
       },
       {
         id: "project-blank",
-        title: "   ",
         form: "Project",
         updated_at: "2026-02-16T09:30:00Z",
         properties: {},
@@ -1284,7 +1270,6 @@ describe("CreateEntryDialog", () => {
       },
       {
         id: "project-1",
-        title: "Alpha Project",
         form: "Project",
         updated_at: "2026-02-14T09:30:00Z",
         properties: {},
@@ -1436,7 +1421,6 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "",
       "Task",
       {
         Summary: "Use a raw reference string",
@@ -1489,7 +1473,6 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "",
       "Task",
       {
         Summary: "Capture a raw reference without space context",
@@ -1558,7 +1541,6 @@ describe("CreateEntryDialog", () => {
     vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([
       {
         id: "project-alpha",
-        title: "Alpha Project",
         form: "Project",
         updated_at: "2026-02-14T09:30:00Z",
         properties: {},
@@ -1733,7 +1715,6 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "",
       "Task",
       expect.any(Object),
       "webform",
@@ -1843,7 +1824,6 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "",
       "Task",
       { Summary: "Conversation summary" },
       "chat",
@@ -2056,7 +2036,6 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "",
       "Task",
       expect.objectContaining({
         Summary: "Conversation summary",
@@ -2107,7 +2086,6 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      "",
       "Task",
       expect.not.objectContaining({
         Notes: "Draft note",
@@ -2527,7 +2505,7 @@ describe("EditFormDialog", () => {
       ),
     ).not.toBeInTheDocument();
 
-    fireEvent.input(newInput, { target: { value: "title" } });
+    fireEvent.input(newInput, { target: { value: "id" } });
     expect(
       screen.getByText(
         /Reserved metadata columns are system-owned and cannot be used/,
@@ -2543,10 +2521,10 @@ describe("EditFormDialog", () => {
 
     fireEvent.input(newInput, { target: { value: "title" } });
     expect(
-      screen.getByText(
+      screen.queryByText(
         /Reserved metadata columns are system-owned and cannot be used/,
       ),
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
   });
 
   it("submits the edited form successfully", async () => {

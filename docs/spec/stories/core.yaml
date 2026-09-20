@@ -2,28 +2,6 @@ version: '0.1'
 updated: 2026-06
 category: Core User Stories
 stories:
-- id: STORY-002
-  title: Structured Freedom
-  type: Form
-  as_a: user
-  i_want: to use standard Markdown headers to define data fields (e.g., `## Date`)
-  so_that: 'I can manage structured data with the ease of writing text, without complex forms.
-
-    '
-  acceptance_criteria:
-  - System parses H2 headers as property keys
-  - Users can define Forms to enforce required headers and data types
-  - Frontend provides validation warnings if an entry violates its Form definition
-  - Creating an entry from a Form uses the fixed global template
-  related_apis:
-  - rest: POST /spaces/{space_id}/entries
-  - rest: PUT /spaces/{space_id}/entries/{entry_id}
-  - rest: GET /spaces/{space_id}/forms
-  - mcp: ugoite://form/{id}
-  requirements:
-  - REQ-ENTRY-006
-  - REQ-FORM-011
-  status: implemented
 - id: STORY-003
   title: Bring Your Own Cloud
   type: Freedom

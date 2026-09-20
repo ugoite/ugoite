@@ -12699,9 +12699,6 @@
           "form": {
             "type": "string"
           },
-          "title": {
-            "type": "string"
-          },
           "tags": {
             "type": "array",
             "items": {
@@ -12901,9 +12898,6 @@
           "id": {
             "type": "string"
           },
-          "title": {
-            "type": "string"
-          },
           "form": {
             "type": "string"
           },
@@ -12940,9 +12934,6 @@
             "type": "string"
           },
           "version_token": {
-            "type": "string"
-          },
-          "title": {
             "type": "string"
           },
           "form": {

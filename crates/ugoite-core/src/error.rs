@@ -47,7 +47,6 @@ pub enum ErrorCode {
     CheckpointUnavailable,
     CheckpointIntegrity,
     CheckpointAlreadyExists,
-    MarkdownConversionLoss,
     FormDefinitionReadFailed,
     SpaceDiscoveryFailed,
 }
@@ -87,7 +86,6 @@ impl ErrorCode {
             Self::CheckpointUnavailable => "CHECKPOINT_UNAVAILABLE",
             Self::CheckpointIntegrity => "CHECKPOINT_INTEGRITY",
             Self::CheckpointAlreadyExists => "CHECKPOINT_ALREADY_EXISTS",
-            Self::MarkdownConversionLoss => "MARKDOWN_CONVERSION_LOSS",
             Self::FormDefinitionReadFailed => "FORM_DEFINITION_READ_FAILED",
             Self::SpaceDiscoveryFailed => "SPACE_DISCOVERY_FAILED",
         }

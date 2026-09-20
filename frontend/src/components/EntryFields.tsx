@@ -17,7 +17,7 @@ export interface EntryFieldsControlHelpers {
 
 export interface EntryFieldsProps {
   /**
-   * Form fields only. Title-less Entry: there is no Entry-level title
+   * Form fields only. Entries have no Entry-level title
    * control; a Form that defines Title/Name renders it as a normal field
    * through `fields`, exactly like any other string field.
    *

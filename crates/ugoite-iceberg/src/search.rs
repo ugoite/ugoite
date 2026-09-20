@@ -156,7 +156,7 @@ pub async fn search_entries_with_scopes_after(
     query: &str,
     relation_scopes: &std::collections::BTreeMap<String, EntryScope>,
     limit: usize,
-    after: Option<(&str, &str, &str)>,
+    after: Option<(&str, &str)>,
 ) -> Result<Vec<KeywordSearchResult>> {
     search_entries_with_scopes_after_authorized(
         op,
@@ -176,7 +176,7 @@ pub(crate) async fn search_entries_with_scopes_after_authorized(
     query: &str,
     relation_scopes: &std::collections::BTreeMap<String, EntryScope>,
     limit: usize,
-    after: Option<(&str, &str, &str)>,
+    after: Option<(&str, &str)>,
     asset_authorization: Option<AssetAuthorization>,
 ) -> Result<Vec<KeywordSearchResult>> {
     // Shared Search admission: empty keyword is not a Ugoite operation.
@@ -207,12 +207,11 @@ pub(crate) async fn search_entries_with_scopes_after_authorized(
     for candidate in candidates {
         let result = KeywordSearchResult {
             id: candidate.entry_id,
-            title: candidate.title,
             form: candidate.form_name,
             created_at: candidate.created_at,
             updated_at: candidate.updated_at,
         };
-        result_budget.reserve(result.id.len() + result.title.len() + result.form.len())?;
+        result_budget.reserve(result.id.len() + result.form.len())?;
         results.insert((result.form.clone(), result.id.clone()), result);
     }
 
@@ -243,9 +242,8 @@ pub(crate) async fn search_entries_with_scopes_after_authorized(
 
     let mut results = results.into_values().collect::<Vec<_>>();
     results.sort_by(|left, right| {
-        left.title
-            .cmp(&right.title)
-            .then_with(|| left.id.cmp(&right.id))
+        left.id
+            .cmp(&right.id)
             .then_with(|| left.form.cmp(&right.form))
     });
     results.truncate(limit);
@@ -291,20 +289,14 @@ pub(crate) async fn search_entries_with_scopes_paged_authorized(
     Ok(results.into_iter().skip(offset).take(page_limit).collect())
 }
 
-fn is_after_cursor(result: &KeywordSearchResult, after: Option<(&str, &str, &str)>) -> bool {
-    after.is_none_or(|(title, id, form)| {
-        (
-            result.title.as_str(),
-            result.id.as_str(),
-            result.form.as_str(),
-        ) > (title, id, form)
-    })
+fn is_after_cursor(result: &KeywordSearchResult, after: Option<(&str, &str)>) -> bool {
+    after.is_none_or(|(id, form)| (result.id.as_str(), result.form.as_str()) > (id, form))
 }
 
 fn sql_string_literal(value: &str) -> String {
     // Ordinary DataFusion string literals preserve backslashes.  Doubling one
-    // here would change cursor ordering for Entry IDs or titles containing a
-    // backslash; only the SQL quote itself needs escaping.
+    // here would change cursor ordering for Entry IDs containing a backslash;
+    // only the SQL quote itself needs escaping.
     format!("'{}'", value.replace('\'', "''"))
 }
 
@@ -315,7 +307,7 @@ async fn asset_text_search_authorized(
     query: &str,
     relation_scopes: &BTreeMap<String, EntryScope>,
     limit: usize,
-    after: Option<(&str, &str, &str)>,
+    after: Option<(&str, &str)>,
     asset_authorization: Option<AssetAuthorization>,
     budget: crate::index::AssetTextSearchBudget,
 ) -> Result<Option<Vec<KeywordSearchResult>>> {
@@ -366,7 +358,7 @@ async fn asset_text_search_authorized_inner(
     query: &str,
     relation_scopes: &BTreeMap<String, EntryScope>,
     limit: usize,
-    after: Option<(&str, &str, &str)>,
+    after: Option<(&str, &str)>,
     asset_authorization: Option<AssetAuthorization>,
     budget: crate::index::AssetTextSearchBudget,
 ) -> Result<Option<Vec<KeywordSearchResult>>> {
@@ -403,17 +395,16 @@ async fn asset_text_search_authorized_inner(
     }
     let pattern = crate::index::sql_like_literal_for_search(query);
     let after_predicate = after
-        .map(|(title, entry_id, form)| {
+        .map(|(entry_id, form)| {
             format!(
-                " AND (e.title > {title} OR (e.title = {title} AND e.entry_id > {entry_id}) OR (e.title = {title} AND e.entry_id = {entry_id} AND e.form > {form}))",
-                title = sql_string_literal(title),
+                " AND (e.entry_id > {entry_id} OR (e.entry_id = {entry_id} AND e.form > {form}))",
                 entry_id = sql_string_literal(entry_id),
                 form = sql_string_literal(form),
             )
         })
         .unwrap_or_default();
     let sql = format!(
-        "SELECT DISTINCT e.form, e.entry_id, e.title, e.created_at, e.updated_at FROM __ugoite_authorized_asset_refs e INNER JOIN __ugoite_internal_asset_text a ON e.asset_id = a.asset_id WHERE a.status = 'ready' AND a.text IS NOT NULL AND ugoite_search_normalize(a.text) LIKE {pattern} ESCAPE '\\'{after_predicate} ORDER BY e.title, e.entry_id, e.form LIMIT {limit}"
+        "SELECT DISTINCT e.form, e.entry_id, e.created_at, e.updated_at FROM __ugoite_authorized_asset_refs e INNER JOIN __ugoite_internal_asset_text a ON e.asset_id = a.asset_id WHERE a.status = 'ready' AND a.text IS NOT NULL AND ugoite_search_normalize(a.text) LIKE {pattern} ESCAPE '\\'{after_predicate} ORDER BY e.entry_id, e.form LIMIT {limit}"
     );
     // The provider streams bounded authorization pages into one DataFusion
     // scan. This keeps the authorization source bounded per batch while the
@@ -531,9 +522,8 @@ async fn asset_text_search_authorized_inner(
     let results = matches;
     let mut results = results.into_values().collect::<Vec<_>>();
     results.sort_by(|left, right| {
-        left.title
-            .cmp(&right.title)
-            .then_with(|| left.id.cmp(&right.id))
+        left.id
+            .cmp(&right.id)
             .then_with(|| left.form.cmp(&right.form))
     });
     results.truncate(limit);
@@ -543,7 +533,7 @@ async fn asset_text_search_authorized_inner(
 fn merge_asset_search_batches(
     results: &mut BTreeMap<(String, String), KeywordSearchResult>,
     batches: Vec<RecordBatch>,
-    after: Option<(&str, &str, &str)>,
+    after: Option<(&str, &str)>,
     budget: &crate::index::AssetTextSearchBudget,
 ) -> Result<()> {
     for batch in batches {
@@ -559,12 +549,6 @@ fn merge_asset_search_batches(
             .as_any()
             .downcast_ref::<StringArray>()
             .context("asset search entry_id has invalid type")?;
-        let title = batch
-            .column_by_name("title")
-            .context("asset search join omitted title")?
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .context("asset search title has invalid type")?;
         let created = batch
             .column_by_name("created_at")
             .context("asset search join omitted created_at")?
@@ -579,12 +563,10 @@ fn merge_asset_search_batches(
             .context("asset search updated_at has invalid type")?;
         for index in 0..batch.num_rows() {
             let id = entry_id.value(index);
-            let title = title.value(index);
             let form = form.value(index);
-            budget.reserve(id.len() + title.len() + form.len())?;
+            budget.reserve(id.len() + form.len())?;
             let result = KeywordSearchResult {
                 id: id.to_string(),
-                title: title.to_string(),
                 form: form.to_string(),
                 created_at: created.value(index),
                 updated_at: updated.value(index),
@@ -607,7 +589,7 @@ async fn fallback_asset_text_search(
     asset_reference_fields: &BTreeMap<String, Vec<AssetReferenceField>>,
     query: &str,
     limit: usize,
-    after: Option<(&str, &str, &str)>,
+    after: Option<(&str, &str)>,
     asset_authorization: Option<AssetAuthorization>,
     budget: crate::index::AssetTextSearchBudget,
 ) -> Result<Option<Vec<KeywordSearchResult>>> {
@@ -657,7 +639,6 @@ async fn fallback_asset_text_search(
                     || !is_after_cursor(
                         &KeywordSearchResult {
                             id: row.entry_id.clone(),
-                            title: row.title.clone(),
                             form: form_name.clone(),
                             created_at: row.created_at,
                             updated_at: row.updated_at,
@@ -676,19 +657,17 @@ async fn fallback_asset_text_search(
                 }
                 let result = KeywordSearchResult {
                     id: row.entry_id,
-                    title: row.title,
                     form: form_name.clone(),
                     created_at: row.created_at,
                     updated_at: row.updated_at,
                 };
                 let key = (result.form.clone(), result.id.clone());
                 if seen.insert(key) {
-                    budget.reserve(result.id.len() + result.title.len() + result.form.len())?;
+                    budget.reserve(result.id.len() + result.form.len())?;
                     results.push(result);
                     results.sort_by(|left, right| {
-                        left.title
-                            .cmp(&right.title)
-                            .then_with(|| left.id.cmp(&right.id))
+                        left.id
+                            .cmp(&right.id)
                             .then_with(|| left.form.cmp(&right.form))
                     });
                     results.truncate(limit);
@@ -761,7 +740,6 @@ fn authorized_asset_reference_batch(
     let schema = authorized_asset_reference_schema();
     let mut forms = StringBuilder::new();
     let mut entry_ids = StringBuilder::new();
-    let mut titles = StringBuilder::new();
     let mut created_at = Float64Builder::new();
     let mut updated_at = Float64Builder::new();
     let mut asset_ids = StringBuilder::new();
@@ -798,13 +776,11 @@ fn authorized_asset_reference_batch(
             budget.reserve(
                 form_name.len()
                     + row.entry_id.len()
-                    + row.title.len()
                     + asset_id.len()
                     + std::mem::size_of::<AuthorizedAssetReferenceRow>(),
             )?;
             forms.append_value(form_name);
             entry_ids.append_value(&row.entry_id);
-            titles.append_value(&row.title);
             created_at.append_value(row.created_at);
             updated_at.append_value(row.updated_at);
             asset_ids.append_value(asset_id);
@@ -815,7 +791,6 @@ fn authorized_asset_reference_batch(
         vec![
             Arc::new(forms.finish()),
             Arc::new(entry_ids.finish()),
-            Arc::new(titles.finish()),
             Arc::new(created_at.finish()),
             Arc::new(updated_at.finish()),
             Arc::new(asset_ids.finish()),
@@ -828,7 +803,6 @@ fn authorized_asset_reference_schema() -> Arc<Schema> {
     Arc::new(Schema::new(vec![
         Field::new("form", DataType::Utf8, false),
         Field::new("entry_id", DataType::Utf8, false),
-        Field::new("title", DataType::Utf8, false),
         Field::new("created_at", DataType::Float64, false),
         Field::new("updated_at", DataType::Float64, false),
         Field::new("asset_id", DataType::Utf8, false),
@@ -920,7 +894,7 @@ struct AuthorizedAssetReferenceProvider {
     asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
     authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
     authorized_forms: Arc<HashMap<String, Value>>,
-    initial_after: Option<(String, String, String)>,
+    initial_after: Option<(String, String)>,
     asset_authorization: Option<AssetAuthorization>,
     budget: crate::index::AssetTextSearchBudget,
     schema: Arc<Schema>,
@@ -951,7 +925,7 @@ impl AuthorizedAssetReferenceProvider {
         asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
         authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
         authorized_forms: Arc<HashMap<String, Value>>,
-        after: Option<(&str, &str, &str)>,
+        after: Option<(&str, &str)>,
         asset_authorization: Option<AssetAuthorization>,
         budget: crate::index::AssetTextSearchBudget,
     ) -> Self {
@@ -963,9 +937,7 @@ impl AuthorizedAssetReferenceProvider {
             asset_reference_fields,
             authorized_context,
             authorized_forms,
-            initial_after: after.map(|(title, entry_id, form)| {
-                (title.to_string(), entry_id.to_string(), form.to_string())
-            }),
+            initial_after: after.map(|(entry_id, form)| (entry_id.to_string(), form.to_string())),
             asset_authorization,
             budget,
             schema: authorized_asset_reference_schema(),
@@ -1024,7 +996,7 @@ struct AuthorizedAssetReferenceExec {
     asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
     authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
     authorized_forms: Arc<HashMap<String, Value>>,
-    initial_after: Option<(String, String, String)>,
+    initial_after: Option<(String, String)>,
     asset_authorization: Option<AssetAuthorization>,
     budget: crate::index::AssetTextSearchBudget,
     schema: Arc<Schema>,
@@ -1057,7 +1029,7 @@ impl AuthorizedAssetReferenceExec {
         asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
         authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
         authorized_forms: Arc<HashMap<String, Value>>,
-        initial_after: Option<(String, String, String)>,
+        initial_after: Option<(String, String)>,
         asset_authorization: Option<AssetAuthorization>,
         budget: crate::index::AssetTextSearchBudget,
         schema: Arc<Schema>,
@@ -1090,7 +1062,7 @@ struct AuthorizedAssetReferenceStreamState {
     asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
     authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
     authorized_forms: Arc<HashMap<String, Value>>,
-    initial_after: Option<(String, String, String)>,
+    initial_after: Option<(String, String)>,
     asset_authorization: Option<AssetAuthorization>,
     budget: crate::index::AssetTextSearchBudget,
     form_index: usize,
@@ -1163,15 +1135,10 @@ impl AuthorizedAssetReferenceStreamState {
             let rows = rows
                 .into_iter()
                 .filter(|row| {
-                    self.initial_after
-                        .as_ref()
-                        .is_none_or(|(title, entry_id, form)| {
-                            (
-                                row.title.as_str(),
-                                row.entry_id.as_str(),
-                                form_name.as_str(),
-                            ) > (title.as_str(), entry_id.as_str(), form.as_str())
-                        })
+                    self.initial_after.as_ref().is_none_or(|(entry_id, form)| {
+                        (row.entry_id.as_str(), form_name.as_str())
+                            > (entry_id.as_str(), form.as_str())
+                    })
                 })
                 .map(|row| (form_name.clone(), row))
                 .collect::<Vec<_>>();

@@ -141,31 +141,6 @@ requirements:
                 criterion: REQ-ENTRY-005#criterion.history
                 covers: [FEAT-ENTRY-001#binding.core/target.restore-entry]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: restore_replays_historical_references_even_when_targets_are_unavailable } }
-  - id: REQ-ENTRY-006
-    title: Structured data extraction from Markdown
-    description: Extract H2 headers as fields and merge them with frontmatter.
-    priority: high
-    status: implemented
-    criteria:
-      - id: markdown-extraction
-        kind: behavior
-        statement: Entry creation extracts H2 sections as structured fields while preserving frontmatter values.
-        governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
-    bindings:
-      - id: markdown-test
-        role: verification
-        facet: verification
-        responsibility: Verify Markdown section extraction through the exact Iceberg integration test.
-        targets:
-          - id: case
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_entry.rs
-            selector: { kind: test, name: test_entry_req_entry_006_extract_h2_headers }
-            claims:
-              - kind: verifies
-                criterion: REQ-ENTRY-006#criterion.markdown-extraction
-                covers: [FEAT-ENTRY-001#binding.core/target.create-entry]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: test_entry_req_entry_006_extract_h2_headers } }
   - id: REQ-ENTRY-007
     title: Properties in list response
     description: Include Form-owned properties when retrieving the Entry list.
@@ -242,70 +217,37 @@ requirements:
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: legacy-read
         kind: behavior
-        statement: Existing title-bearing Space 0.1 entries remain readable without migration while space_version stays 0.1.
+        statement: Existing Space 0.1 Entries and unclaimed physical columns remain readable without migration while space_version stays 0.1.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
     bindings:
-      - id: legacy-freeze-test
-        role: verification
-        facet: verification
-        responsibility: Freeze the legacy title-bearing v0.1 fixture so later dual-schema work cannot silently rewrite it.
-        targets:
-          - id: case
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_titleless.rs
-            selector: { kind: test, name: legacy_title_bearing_fixture_stays_frozen }
-            claims:
-              - kind: verifies
-                criterion: REQ-ENTRY-011#criterion.legacy-read
-                covers: [FEAT-ENTRY-002#binding.core/target.titleless-model]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_titleless, test: legacy_title_bearing_fixture_stays_frozen } }
       - id: titleless-model-test
         role: verification
         facet: verification
-        responsibility: Verify title-less storage, entry_id identity, normal title fields, and compatibility preservation through exact integration tests.
+        responsibility: Verify the structured Entry identity boundary and Form-defined title field through the existing Entry lifecycle integration test; legacy Space readability remains covered by the existing Space compatibility corpus.
         targets:
-          - id: no-title-column-case
+          - id: structured-entry-case
             adapter: rust
-            path: crates/ugoite-iceberg/tests/test_titleless.rs
-            selector: { kind: test, name: new_form_has_no_implicit_title_column }
+            path: crates/ugoite-iceberg/tests/test_entry.rs
+            selector: { kind: test, name: entry_list_supports_bounded_offset_pages_in_stable_order }
             claims:
               - kind: verifies
                 criterion: REQ-ENTRY-011#criterion.no-implicit-title-field
                 covers: [FEAT-ENTRY-002#binding.core/target.titleless-model]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_titleless, test: new_form_has_no_implicit_title_column } }
-          - id: no-synthetic-title-case
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_titleless.rs
-            selector: { kind: test, name: structured_create_without_title_stores_no_synthetic_title }
-            claims:
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_list_supports_bounded_offset_pages_in_stable_order } }
               - kind: verifies
                 criterion: REQ-ENTRY-011#criterion.entry-id-identity
                 covers: [FEAT-ENTRY-002#binding.core/target.titleless-model]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_titleless, test: structured_create_without_title_stores_no_synthetic_title } }
-          - id: markdown-titleless-case
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_titleless.rs
-            selector: { kind: test, name: markdown_create_without_h1_is_title_less }
-            claims:
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_list_supports_bounded_offset_pages_in_stable_order } }
               - kind: verifies
-                criterion: REQ-ENTRY-011#criterion.entry-id-identity
+                criterion: REQ-ENTRY-011#criterion.user-defined-title-field
                 covers: [FEAT-ENTRY-002#binding.core/target.titleless-model]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_titleless, test: markdown_create_without_h1_is_title_less } }
-          - id: compat-title-case
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: entry_list_supports_bounded_offset_pages_in_stable_order } }
+          - id: legacy-read-case
             adapter: rust
-            path: crates/ugoite-iceberg/tests/test_titleless.rs
-            selector: { kind: test, name: compat_title_on_titleless_form_is_preserved }
+            path: crates/ugoite-iceberg/tests/test_space_version_compat.rs
+            selector: { kind: test, name: frozen_space_01_fixture_opens_mutates_reopens_and_preserves_history }
             claims:
               - kind: verifies
                 criterion: REQ-ENTRY-011#criterion.legacy-read
                 covers: [FEAT-ENTRY-002#binding.core/target.titleless-model]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_titleless, test: compat_title_on_titleless_form_is_preserved } }
-          - id: normal-title-field-case
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_titleless.rs
-            selector: { kind: test, name: form_defined_title_field_is_a_normal_field }
-            claims:
-              - kind: verifies
-                criterion: REQ-ENTRY-011#criterion.user-defined-title-field
-                covers: [FEAT-ENTRY-002#binding.core/target.titleless-model]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_titleless, test: form_defined_title_field_is_a_normal_field } }
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space_version_compat, test: frozen_space_01_fixture_opens_mutates_reopens_and_preserves_history } }

@@ -132,7 +132,6 @@ export const toRustFormDefinition = (
 };
 
 export type EntryDraftInput = {
-  title: string;
   tags: string[];
   fields: Record<string, unknown>;
 };
@@ -196,7 +195,6 @@ export const validateEntryDraftViaWasm = async (
     const normalized = await validateEntryDraft(
       toRustFormDefinition(form, knownForms),
       {
-        title: draft.title,
         form_name: form.name,
         tags: draft.tags,
         fields: draft.fields,

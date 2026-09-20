@@ -277,11 +277,6 @@ fn parse_entry_draft(
     // frontend shorthand `form` for `form_name` and omitted collections.
     // Present-but-malformed values are INVALID_INPUT so diagnostics parity
     // holds where it matters most (wrong code/detail is worse than strict).
-    let title = match object.get("title") {
-        None | Some(serde_json::Value::Null) => String::new(),
-        Some(serde_json::Value::String(text)) => text.clone(),
-        Some(_) => return Err("draft.title must be a string".to_string()),
-    };
     let form_name_value = object.get("form_name");
     let form_alias_value = object.get("form");
     for candidate in [form_name_value, form_alias_value].into_iter().flatten() {
@@ -340,7 +335,6 @@ fn parse_entry_draft(
         Some(_) => return Err("draft.extra_attributes must be an object".to_string()),
     };
     Ok(ugoite_core::entry::StructuredEntryDraft {
-        title,
         form_name,
         tags,
         fields,
@@ -724,7 +718,6 @@ mod tests {
     fn entry_validate_draft_matches_native_preview() {
         let form = entry_test_form();
         let draft = serde_json::json!({
-            "title": "Title",
             "form_name": "Note",
             "tags": [],
             "fields": {"Body": "hello", "Done": true, "Count": 42},
@@ -742,7 +735,6 @@ mod tests {
         let form_def: ugoite_domain::form::FormDefinition =
             serde_json::from_value(form.clone()).unwrap();
         let native_draft = ugoite_core::entry::structured_fields_to_draft(
-            "Title",
             Some("Note"),
             Vec::new(),
             [
@@ -803,7 +795,7 @@ mod tests {
     fn entry_validate_draft_rejects_malformed_drafts_as_invalid_input() {
         let form = entry_test_form();
         let malformed = vec![
-            serde_json::json!({"title": 42, "fields": {}}),
+            serde_json::json!({"form_name": 42, "fields": {}}),
             serde_json::json!({"title": "T", "tags": "not-an-array", "fields": {}}),
             serde_json::json!({"title": "T", "tags": [1, 2], "fields": {}}),
             serde_json::json!({"title": "T", "fields": "oops"}),
@@ -947,7 +939,6 @@ mod tests {
                 fields.insert(key, value);
             }
             let draft = ugoite_core::entry::structured_fields_to_draft(
-                "T",
                 Some("Parity"),
                 Vec::new(),
                 fields.clone(),

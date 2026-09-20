@@ -145,7 +145,6 @@ describe("entryApi", () => {
       };
       const record: EntryRecord = {
         id: "entry-1",
-        title: "Test Entry",
         updated_at: "2025-01-01T00:00:00Z",
         properties: {},
         tags: [],
@@ -154,7 +153,7 @@ describe("entryApi", () => {
 
       const entries = await entryApi.list("test-ws");
       expect(entries).toHaveLength(1);
-      expect(entries[0].title).toBe("Test Entry");
+      expect(entries[0].id).toBe("entry-1");
     });
 
     it("REQ-FE-054: entryApi normalizes unix-second timestamps for entry lists", async () => {
@@ -205,7 +204,6 @@ describe("entryApi", () => {
     it("should create a structured entry", async () => {
       const result = await entryApi.create("test-ws", {
         form: "Meeting",
-        title: "My Meeting Entries",
         fields: { Date: "2025-01-15", Attendees: "Alice, Bob" },
       });
 
@@ -215,7 +213,7 @@ describe("entryApi", () => {
       // Verify the structured fields are indexed without a Markdown authoring step.
       const entries = await entryApi.list("test-ws");
       expect(entries).toHaveLength(1);
-      expect(entries[0].title).toBe("My Meeting Entries");
+      expect(entries[0].id).toBe(result.id);
       expect(entries[0].properties).toHaveProperty("Date");
       expect(entries[0].properties).toHaveProperty("Attendees");
     });
@@ -266,13 +264,11 @@ describe("entryApi", () => {
     it("should update entry with correct parent_revision_id", async () => {
       const createResult = await entryApi.create("test-ws", {
         form: "Task",
-        title: "Original",
         fields: { Status: "Draft" },
       });
 
       const updateResult = await entryApi.update("test-ws", createResult.id, {
         form: "Task",
-        title: "Updated",
         fields: { Status: "Published" },
         parent_revision_id: createResult.revision_id,
       });
@@ -282,21 +278,19 @@ describe("entryApi", () => {
       // Verify index was updated
       const entries = await entryApi.list("test-ws");
       const entry = entries.find((n) => n.id === createResult.id);
-      expect(entry?.title).toBe("Updated");
+      expect(entry?.id).toBe(createResult.id);
       expect(entry?.properties.Status).toBe("Published");
     });
 
     it("should throw RevisionConflictError (409) on revision mismatch", async () => {
       const createResult = await entryApi.create("test-ws", {
         form: "Task",
-        title: "Original",
         fields: { Status: "Draft" },
       });
 
       // First update succeeds
       await entryApi.update("test-ws", createResult.id, {
         form: "Task",
-        title: "First Update",
         fields: { Status: "Published" },
         parent_revision_id: createResult.revision_id,
       });
@@ -305,7 +299,6 @@ describe("entryApi", () => {
       await expect(
         entryApi.update("test-ws", createResult.id, {
           form: "Task",
-          title: "Stale Update",
           fields: { Status: "Stale" },
           parent_revision_id: createResult.revision_id, // Stale!
         }),
@@ -348,7 +341,6 @@ describe("entryApi", () => {
     it("should remove entry from list", async () => {
       const result = await entryApi.create("test-ws", {
         form: "Task",
-        title: "To Delete",
         fields: { Status: "Draft" },
       });
 
@@ -366,8 +358,7 @@ describe("entryApi", () => {
     it("searches entries by keyword", async () => {
       const created = await entryApi.create("test-ws", {
         form: "Project",
-        title: "Rocket Project",
-        fields: { Notes: "Entries about propulsion" },
+        fields: { Notes: "Rocket Project entries about propulsion" },
       });
 
       const matches = await searchApi.keyword("test-ws", "rocket");
@@ -419,7 +410,7 @@ describe("entryApi", () => {
             expect(url.searchParams.get("q")).toBe("alpha");
             expect(url.searchParams.get("limit")).toBe("8");
             return HttpResponse.json([
-              { id: "project-alpha", title: "Alpha Project", form: "Project" },
+              { id: "project-alpha", form: "Project" },
             ]);
           },
         ),
@@ -433,7 +424,6 @@ describe("entryApi", () => {
       );
       expect(matches).toEqual([{
         id: "project-alpha",
-        title: "Alpha Project",
         form: "Project",
       }]);
     });
@@ -448,7 +438,7 @@ describe("entryApi", () => {
             expect(url.searchParams.get("q")).toBeNull();
             expect(url.searchParams.get("limit")).toBe("8");
             return HttpResponse.json([
-              { id: "project-alpha", title: "Alpha Project", form: "Project" },
+              { id: "project-alpha", form: "Project" },
             ]);
           },
         ),
@@ -462,7 +452,6 @@ describe("entryApi", () => {
       );
       expect(matches).toEqual([{
         id: "project-alpha",
-        title: "Alpha Project",
         form: "Project",
       }]);
     });
@@ -811,7 +800,6 @@ describe("error paths", () => {
     const result = await entryApi.createFromWebform(
       "ws-wf",
       formDef as never,
-      "My Task",
       {
         Status: "Open",
       },
@@ -834,7 +822,6 @@ describe("error paths", () => {
     const result = await entryApi.createFromChat(
       "ws-chat",
       formDef as never,
-      "Chat Task",
       {
         Status: "Pending",
       },
@@ -889,13 +876,11 @@ describe("error paths", () => {
       await entryApi.createFromWebform(
         "ws-parity",
         formDef as never,
-        "Same Task",
         answers,
       );
       await entryApi.createFromChat(
         "ws-parity",
         formDef as never,
-        "Same Task",
         answers,
       );
     } finally {
@@ -908,10 +893,7 @@ describe("error paths", () => {
     expect(webformPayload.markdown).toBeUndefined();
     expect(chatPayload.markdown).toBeUndefined();
     expect(chatPayload.form).toBe("Task");
-    // Title-less Entry: the legacy title argument is never sent; names live
-    // in Form fields only.
-    expect(chatPayload.title).toBeUndefined();
-    expect(webformPayload.title).toBeUndefined();
+    // Entry mutations carry only structured Form fields.
     expect(chatPayload.fields).toEqual(webformPayload.fields);
     expect(chatPayload.fields).toMatchObject({
       Status: "Pending",
@@ -1165,7 +1147,6 @@ describe("error paths", () => {
           HttpResponse.json([
             {
               _ugoite_id: "entry-structured",
-              _ugoite_title: "Structured result",
               _ugoite_created_at: 1772960822.056,
               _ugoite_updated_at: 1772960823.056,
               _ugoite_form: "Task",
@@ -1184,7 +1165,6 @@ describe("error paths", () => {
 
     expect(entries[0]).toMatchObject({
       id: "entry-structured",
-      title: "Structured result",
       form: "Task",
       tags: ["search"],
       properties: { field_100: "alice" },

@@ -5,7 +5,6 @@ import { protocolFetch } from "./ugoite-client/protocol";
 
 export type EntrySummary = {
   id: string;
-  title: string;
   form: string;
 };
 

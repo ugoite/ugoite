@@ -32,20 +32,6 @@ requirements:
                 criterion: REQ-SRCH-001#criterion.keyword-search
                 covers: [FEAT-SRCH-001#binding.core/target.search-entries]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_search, test: test_search_req_srch_001_keyword_search } }
-      - id: titleless-keyword-test
-        role: verification
-        facet: verification
-        responsibility: Verify keyword search and pagination over title-less entries through Form-defined values.
-        targets:
-          - id: titleless-case
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_titleless.rs
-            selector: { kind: test, name: titleless_entries_are_searchable_and_paginatable }
-            claims:
-              - kind: verifies
-                criterion: REQ-SRCH-001#criterion.keyword-search
-                covers: [FEAT-SRCH-001#binding.core/target.search-entries]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_titleless, test: titleless_entries_are_searchable_and_paginatable } }
   - id: REQ-SRCH-002
     title: Content-scan search implementation
     description: Keyword search scans current Entry rows and the authorized AssetText projection. AssetText is an internal derived Iceberg relation; missing, stale, or corrupt derived state degrades to native Entry search. A persistent inverted index is still absent.

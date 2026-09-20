@@ -55,7 +55,7 @@ describe("sqlSessionApi", () => {
             rows: [
               {
                 _ugoite_id: "entry-1",
-                _ugoite_title: "Query Entry",
+                legacy_physical_column: "Query Entry",
                 _ugoite_updated_at: 1772960822.056,
                 field_100: "Active",
               },
@@ -75,7 +75,7 @@ describe("sqlSessionApi", () => {
   it("maps backend SQL system and field columns into an Entry card record", () => {
     const record = sqlSessionRowToEntryRecord({
       _ugoite_id: "entry-1",
-      _ugoite_title: "Query Entry",
+      legacy_physical_column: "Query Entry",
       _ugoite_created_at: "2026-03-01T00:00:00Z",
       _ugoite_updated_at: 1772960822.056,
       field_100: "Active",
@@ -83,10 +83,12 @@ describe("sqlSessionApi", () => {
 
     expect(record).toMatchObject({
       id: "entry-1",
-      title: "Query Entry",
       created_at: "2026-03-01T00:00:00Z",
       updated_at: new Date(1772960822.056 * 1000).toISOString(),
-      properties: { field_100: "Active" },
+      properties: {
+        legacy_physical_column: "Query Entry",
+        field_100: "Active",
+      },
     });
   });
 

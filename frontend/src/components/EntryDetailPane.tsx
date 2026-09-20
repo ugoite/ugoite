@@ -235,7 +235,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   // Structured draft is the only mutation authority in this pane. The stored
   // representation is retained only for read-only compatibility and asset
   // previews; it is never edited or sent back as a mutation payload.
-  const [draftTitle, setDraftTitle] = createSignal("");
   const [draftFields, setDraftFields] = createSignal<DraftFields>({});
   const [draftTags, setDraftTags] = createSignal<string[]>([]);
   const [lastSavedContent, setLastSavedContent] = createSignal("");
@@ -373,7 +372,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     if (created) {
       return {
         id: created.id,
-        title: draftTitle(),
         form: props.createForm?.()?.name,
         content: editorContent(),
         revision_id: created.revision_id,
@@ -385,7 +383,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     if (!form) return null;
     return {
       id: "__new__",
-      title: form.name,
       form: form.name,
       content: "",
       revision_id: `draft:${form.name}`,
@@ -426,7 +423,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     const formName = currentForm()?.name ?? props.createForm?.()?.name ?? "";
     if (!formName) return null;
     return {
-      title: draftTitle(),
       fields: draftFields(),
       tags: draftTags(),
       assetFields: Object.fromEntries(
@@ -491,9 +487,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     return formName ? `${base}?form=${encodeURIComponent(formName)}` : base;
   });
 
-  // Structured draft is the authority; empty stays empty so the heading
-  // falls back to the stable entry ID (never a synthesized "Untitled").
-  const editorTitle = createMemo(() => draftTitle());
   const editorGuidance = createMemo(() =>
     buildEditorGuidance(currentForm(), draftFields())
   );
@@ -539,7 +532,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       issue.startsWith(`${fieldName}:`)
     );
 
-  // Shared EntryFields descriptors: title/body/other fields share one
+  // Shared EntryFields descriptors: all Form fields share one
   // spacing contract. Structure only, memoized per form so row identities
   // stay stable across keystrokes (values flow through live bindings, never
   // snapshots); a new form still rebuilds rows for its own fields.
@@ -572,14 +565,13 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     }
     const entryId = loadedEntry.id;
     const revisionId = loadedEntry.revision_id;
-    const loadedTitle = loadedEntry.title || "";
     const saved = isCreateMode()
       ? draftSession.restore(loadedEntry.form ?? "")
       : undefined;
     const content = loadedEntry.content ?? "";
     const draft = saved
-      ? { title: saved.title, fields: saved.fields }
-      : { title: loadedTitle, fields: loadedEntry.sections ?? {} };
+      ? { fields: saved.fields }
+      : { fields: loadedEntry.sections ?? {} };
     const tags = saved?.tags ?? loadedEntry.tags ?? [];
     setLastLoadedEntryId(entryId);
     setLastLoadedResourceRevisionId(revisionId);
@@ -587,7 +579,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       createdEntry()?.revision_id ?? (isCreateMode() ? null : revisionId),
     );
     setAssetEditorGeneration((generation) => generation + 1);
-    setDraftTitle(draft.title || loadedTitle);
     setDraftFields(draft.fields);
     setDraftTags(tags);
     setEditorContent(content);
@@ -745,7 +736,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       setConflictMessage(t("entryDetail.savePrerequisite"));
       return;
     }
-    const title = draftTitle();
     const fields: Record<string, unknown> = toTransportFields(
       formDef,
       draftFields(),
@@ -758,7 +748,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       let precheck;
       try {
         precheck = await validateEntryDraftViaWasm(formDef, {
-          title,
           tags: draftTags(),
           fields,
         }, props.forms?.() ?? []);
@@ -797,12 +786,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     // This is the exact request-start snapshot. Any edits after this point
     // remain Work and must not trigger a route transition on create.
     const requestSnapshot = {
-      title: draftTitle(),
       fields: JSON.stringify(fields),
       tags: JSON.stringify(draftTags()),
     };
     const currentSnapshot = () => ({
-      title: draftTitle(),
       fields: JSON.stringify(
         formDef ? toTransportFields(formDef, draftFields()) : fields,
       ),
@@ -812,13 +799,11 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       const result = context.create
         ? await entryApi.create(context.wsId, {
           form: formName,
-          title,
           tags: draftTags(),
           fields,
         })
         : await entryApi.update(context.wsId, context.entryId!, {
           form: formName,
-          title,
           tags: draftTags(),
           fields,
           parent_revision_id: context.revisionId!,
@@ -1074,7 +1059,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 </Show>
                 <div class="mt-2 flex flex-wrap items-center gap-2">
                   <h1 class="ui-page-title truncate">
-                    {editorTitle().trim() || currentEntry().id}
+                    {currentEntry().id}
                   </h1>
                   <Show
                     when={currentEntry().form &&

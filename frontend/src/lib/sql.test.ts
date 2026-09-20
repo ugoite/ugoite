@@ -136,7 +136,6 @@ describe("sql helpers", () => {
     const columns = schema.tables?.form_00000000000000000000000000000001;
     expect(columns).toEqual([
       "_ugoite_id",
-      "_ugoite_title",
       "_ugoite_created_at",
       "_ugoite_updated_at",
       "field_104",

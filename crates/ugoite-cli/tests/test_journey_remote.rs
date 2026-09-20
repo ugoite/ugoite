@@ -46,7 +46,6 @@ fn ugoite_bin() -> std::path::PathBuf {
 
 fn structured_entry_args(markdown: &str) -> Vec<String> {
     let mut form = String::new();
-    let mut title = String::new();
     let mut fields: Vec<(String, String)> = Vec::new();
     let mut current: Option<String> = None;
     let mut value = Vec::new();
@@ -74,9 +73,7 @@ fn structured_entry_args(markdown: &str) -> Vec<String> {
             }
             continue;
         }
-        if let Some(value_title) = line.strip_prefix("# ") {
-            title = value_title.trim().to_string();
-        } else if let Some(name) = line.strip_prefix("## ") {
+        if let Some(name) = line.strip_prefix("## ") {
             finish(&mut fields, &mut current, &mut value);
             current = Some(name.trim().to_string());
         } else if current.is_some() {
@@ -85,9 +82,6 @@ fn structured_entry_args(markdown: &str) -> Vec<String> {
     }
     finish(&mut fields, &mut current, &mut value);
     let mut result = vec!["--form".to_string(), form];
-    if !title.is_empty() {
-        result.extend(["--title".to_string(), title]);
-    }
     for (name, value) in fields {
         result.extend(["--field".to_string(), format!("{name}={value}")]);
     }
@@ -1625,8 +1619,6 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
                 "parity-remote-entry",
                 "--form",
                 "ParityRemote",
-                "--title",
-                "Website",
                 "--fields-file",
                 fields_file.to_str().expect("fields path"),
             ],
@@ -1767,8 +1759,6 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
                 "update",
                 &fixture.space_id,
                 "parity-remote-entry",
-                "--title",
-                "Website v2",
                 "--fields-file",
                 updated_fields_file.to_str().expect("updated fields path"),
                 "--parent-revision-id",
@@ -1818,7 +1808,6 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         .await,
         "remote parity reopen",
     );
-    assert_eq!(reopened["title"], "Website v2");
     assert_eq!(reopened["sections"]["Count"], "43");
     assert!(reopened["sections"].get("Notes").is_none());
     assert!(reopened["sections"].get("Labels").is_none());
@@ -1882,7 +1871,6 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         "remote legacy parity entry get",
     );
     assert_eq!(legacy_entry["form"], entry["form"]);
-    assert_eq!(legacy_entry["title"], entry["title"]);
     for field in [
         "Headline", "Done", "Count", "At", "AtNs", "AtTz", "AtTzNs", "Labels", "Rows", "Ref",
     ] {

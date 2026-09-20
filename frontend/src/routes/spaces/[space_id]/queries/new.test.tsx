@@ -154,7 +154,7 @@ describe("/spaces/:space_id/queries/new", () => {
     fireEvent.input(editor, {
       target: {
         value:
-          'SELECT * FROM "form_entry" WHERE _ugoite_title = {{title}} ORDER BY _ugoite_id',
+          'SELECT * FROM "form_entry" WHERE Body = {{title}} ORDER BY _ugoite_id',
       },
     });
     fireEvent.input(screen.getByLabelText("Query name"), {
@@ -168,7 +168,7 @@ describe("/spaces/:space_id/queries/new", () => {
         kind: "user-query",
         metadata: undefined,
         sql:
-          'SELECT * FROM "form_entry" WHERE _ugoite_title = $title ORDER BY _ugoite_id',
+          'SELECT * FROM "form_entry" WHERE Body = $title ORDER BY _ugoite_id',
         variables: [{ type: "string", name: "title", description: "" }],
       });
     });

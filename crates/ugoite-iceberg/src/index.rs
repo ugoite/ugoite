@@ -4,6 +4,7 @@ use arrow_array::{
     TimestampMicrosecondArray, TimestampNanosecondArray,
 };
 use arrow_json::writer::ArrayWriter;
+use arrow_schema::Schema;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
@@ -153,7 +154,6 @@ impl SqlSessionEntryScope {
 #[serde(rename_all = "snake_case")]
 pub enum SqlSessionSystemColumn {
     ExternalId,
-    Title,
     CreatedAt,
     UpdatedAt,
     EntryId,
@@ -206,7 +206,6 @@ impl SqlSessionSystemColumn {
     fn as_query_system_column(self) -> QuerySystemColumn {
         match self {
             Self::ExternalId => QuerySystemColumn::ExternalId,
-            Self::Title => QuerySystemColumn::Title,
             Self::CreatedAt => QuerySystemColumn::CreatedAt,
             Self::UpdatedAt => QuerySystemColumn::UpdatedAt,
             Self::EntryId => QuerySystemColumn::EntryId,
@@ -591,7 +590,6 @@ pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Ve
 pub(crate) struct EntryCandidate {
     pub form_name: String,
     pub entry_id: String,
-    pub title: String,
     pub created_at: f64,
     pub updated_at: f64,
 }
@@ -599,7 +597,7 @@ pub(crate) struct EntryCandidate {
 struct EntryCandidatePage<'a> {
     limit: Option<usize>,
     offset: usize,
-    after: Option<(&'a str, &'a str, &'a str)>,
+    after: Option<(&'a str, &'a str)>,
 }
 
 /// Selects only the bounded, globally ordered current Entry candidates.
@@ -630,7 +628,7 @@ pub(crate) async fn query_entry_candidates_authorized_after(
     form_filter: Option<&str>,
     keyword: Option<&str>,
     limit: usize,
-    after: Option<(&str, &str, &str)>,
+    after: Option<(&str, &str)>,
 ) -> Result<Vec<EntryCandidate>> {
     if limit == 0 {
         return Ok(Vec::new());
@@ -712,7 +710,7 @@ async fn query_entry_candidates_in_context(
             .map(|predicate| format!(" WHERE {predicate}"))
             .unwrap_or_default();
         branches.push(format!(
-            "SELECT \"_ugoite_id\", \"_ugoite_title\", \"_ugoite_created_at\", \"_ugoite_updated_at\", {} AS \"_ugoite_form\" FROM {}{}",
+            "SELECT \"_ugoite_id\", \"_ugoite_created_at\", \"_ugoite_updated_at\", {} AS \"_ugoite_form\" FROM {}{}",
             sql_string_literal(form_name),
             quote_identifier(relation),
             where_clause,
@@ -721,16 +719,11 @@ async fn query_entry_candidates_in_context(
     if branches.is_empty() {
         return Ok(Vec::new());
     }
-    // Title-less Entry (REQ-ENTRY-011): candidate identity is
-    // (entry_id, form); the legacy title is display metadata only and must
-    // not drive pagination. The cursor triple keeps its shape for
-    // compatibility but orders on the stable identity.
     let after_clause = page
         .after
-        .map(|(title, id, form)| {
+        .map(|(id, form)| {
             format!(
-                " WHERE (\"_ugoite_title\" > {title} OR (\"_ugoite_title\" = {title} AND \"_ugoite_id\" > {id}) OR (\"_ugoite_title\" = {title} AND \"_ugoite_id\" = {id} AND \"_ugoite_form\" > {form}))",
-                title = sql_string_literal(title),
+                " WHERE (\"_ugoite_id\" > {id} OR (\"_ugoite_id\" = {id} AND \"_ugoite_form\" > {form}))",
                 id = sql_string_literal(id),
                 form = sql_string_literal(form),
             )
@@ -742,7 +735,7 @@ async fn query_entry_candidates_in_context(
         (None, offset) => format!(" OFFSET {offset}"),
     };
     let sql = format!(
-        "SELECT \"_ugoite_id\", \"_ugoite_title\", \"_ugoite_created_at\", \"_ugoite_updated_at\", \"_ugoite_form\" FROM ({}) AS \"_ugoite_entry_candidates\"{} ORDER BY \"_ugoite_title\", \"_ugoite_id\", \"_ugoite_form\"{}",
+        "SELECT \"_ugoite_id\", \"_ugoite_created_at\", \"_ugoite_updated_at\", \"_ugoite_form\" FROM ({}) AS \"_ugoite_entry_candidates\"{} ORDER BY \"_ugoite_id\", \"_ugoite_form\"{}",
         branches.join(" UNION ALL "),
         after_clause,
         pagination,
@@ -765,11 +758,6 @@ async fn query_entry_candidates_in_context(
                     .get("_ugoite_id")
                     .and_then(Value::as_str)
                     .context("candidate plan is missing Entry ID")?
-                    .to_string(),
-                title: value
-                    .get("_ugoite_title")
-                    .and_then(Value::as_str)
-                    .context("candidate plan is missing Entry title")?
                     .to_string(),
                 created_at: value
                     .get("_ugoite_created_at")
@@ -853,7 +841,6 @@ pub(crate) async fn query_entry_rows_authorized(
 #[derive(Debug, Clone)]
 pub(crate) struct AuthorizedAssetReferenceRow {
     pub entry_id: String,
-    pub title: String,
     pub created_at: f64,
     pub updated_at: f64,
     pub deleted: bool,
@@ -964,7 +951,7 @@ async fn query_entry_rows_authorized_internal(
     keyword: Option<&str>,
     limit: Option<usize>,
     offset: usize,
-    after: Option<(&str, &str, &str)>,
+    after: Option<(&str, &str)>,
     response_limit: Option<usize>,
 ) -> Result<Vec<(String, entry::EntryRow)>> {
     if limit == Some(0) {
@@ -1133,12 +1120,13 @@ async fn execute_payload_relation_plan(
         .iter()
         .map(|(input, _)| input.clone())
         .collect::<BTreeSet<_>>();
+    let relation_columns = context.relation_columns(relation).await?;
     context
         .execute_relation_plan(
             relation,
             &unnest_columns,
             predicates,
-            payload_projection(form, &preserved_inputs)?,
+            payload_projection(form, &preserved_inputs, &relation_columns)?,
             Vec::new(),
             distinct,
             !preserved_inputs.is_empty(),
@@ -1148,10 +1136,13 @@ async fn execute_payload_relation_plan(
         .map_err(map_sql_error)
 }
 
-fn payload_projection(form: &Value, preserved_inputs: &BTreeSet<String>) -> Result<Vec<Expr>> {
+fn payload_projection(
+    form: &Value,
+    preserved_inputs: &BTreeSet<String>,
+    relation_columns: &[String],
+) -> Result<Vec<Expr>> {
     let mut projection = vec![
         col("_ugoite_id"),
-        col("_ugoite_title"),
         col("_ugoite_tags"),
         col("_ugoite_created_at"),
         col("_ugoite_updated_at"),
@@ -1182,6 +1173,19 @@ fn payload_projection(form: &Value, preserved_inputs: &BTreeSet<String>) -> Resu
             }
         }
     }
+    let projected_names = projection
+        .iter()
+        .filter_map(|expression| match expression {
+            Expr::Column(column) => Some(column.name.clone()),
+            Expr::Alias(alias) => Some(alias.name.clone()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    for column in relation_columns {
+        if !projected_names.contains(column) {
+            projection.push(col(column).alias(column));
+        }
+    }
     Ok(projection)
 }
 
@@ -1191,7 +1195,6 @@ fn asset_reference_projection(
 ) -> Result<Vec<Expr>> {
     let mut projection = vec![
         col("_ugoite_id"),
-        col("_ugoite_title"),
         col("_ugoite_created_at"),
         col("_ugoite_updated_at"),
         col("_ugoite_deleted"),
@@ -1252,18 +1255,15 @@ fn asset_reference_rows_from_batches(
                 .collect::<Result<Map<_, _>>>()?;
             let entry_id_value =
                 required_string_value_column(batch, row, "_ugoite_id", "external ID")?;
-            let title_value = required_string_value_column(batch, row, "_ugoite_title", "title")?;
             let projected_value = Value::Object(projected_fields);
             validate_asset_reference_value(&projected_value, MAX_ASSET_REFERENCES_PER_ENTRY)?;
             budget.reserve(
                 entry_id_value.len()
-                    + title_value.len()
                     + estimated_json_bytes(&projected_value)
                     + std::mem::size_of::<AuthorizedAssetReferenceRow>(),
             )?;
             rows.push(AuthorizedAssetReferenceRow {
                 entry_id: entry_id_value.to_owned(),
-                title: title_value.to_owned(),
                 created_at: required_timestamp_seconds_column(
                     batch,
                     row,
@@ -1392,9 +1392,10 @@ fn entry_row_from_batch(
             ))
         })
         .collect::<Result<Map<_, _>>>()?;
+    let legacy_columns = unclaimed_columns_from_batch(form, batch, row)?;
     Ok(entry::EntryRow {
         entry_id: required_string_column(batch, row, "_ugoite_id", "external ID")?,
-        title: required_string_column(batch, row, "_ugoite_title", "title")?,
+        saved_query_name: String::new(),
         form: form_name.to_string(),
         tags: required_string_list_column(batch, row, "_ugoite_tags", "tags")?,
         created_at: required_timestamp_seconds_column(
@@ -1420,7 +1421,61 @@ fn entry_row_from_batch(
         updated_by: required_string_column(batch, row, "_ugoite_updated_by", "updated_by")?,
         deleted_by: optional_string_column(batch, row, "_ugoite_deleted_by")?,
         entry_version: required_u64_column(batch, row)?,
+        legacy_columns,
     })
+}
+
+fn unclaimed_columns_from_batch(
+    form: &Value,
+    batch: &arrow_array::RecordBatch,
+    row: usize,
+) -> Result<BTreeMap<String, Value>> {
+    let mut claimed = [
+        "_ugoite_id",
+        "_ugoite_tags",
+        "_ugoite_created_at",
+        "_ugoite_updated_at",
+        "_ugoite_revision_id",
+        "_ugoite_parent_revision_id",
+        "_ugoite_author",
+        "_ugoite_updated_by",
+        "_ugoite_deleted_by",
+        "_ugoite_extra_attributes",
+        "_ugoite_integrity",
+        "_ugoite_deleted",
+        "_ugoite_deleted_at",
+        "_ugoite_entry_version",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect::<BTreeSet<_>>();
+    if let Some(fields) = form.get("fields").and_then(Value::as_object) {
+        for field in fields.values() {
+            claimed.insert(field_sql_column(field)?);
+        }
+    }
+    let mut legacy = BTreeMap::new();
+    for field in batch.schema().fields() {
+        let name = field.name();
+        if claimed.contains(name.as_str()) {
+            continue;
+        }
+        let column = batch
+            .column_by_name(name)
+            .with_context(|| format!("Entry payload is missing legacy column {name}"))?;
+        let single = arrow_array::RecordBatch::try_new(
+            Arc::new(Schema::new(vec![field.as_ref().clone()])),
+            vec![column.slice(row, 1)],
+        )
+        .with_context(|| format!("materialize legacy column {name}"))?;
+        let value = record_batches_to_values(&[single])?
+            .into_iter()
+            .next()
+            .and_then(|row| row.get(name).cloned())
+            .unwrap_or(Value::Null);
+        legacy.insert(name.clone(), value);
+    }
+    Ok(legacy)
 }
 
 fn field_sql_column(field: &Value) -> Result<String> {
@@ -1653,10 +1708,6 @@ fn searchable_keyword_predicate(form: &Value, form_name: &str, query: &str) -> R
     let mut expressions = vec![
         format!(
             "ugoite_search_normalize(\"_ugoite_id\") LIKE {pattern} ESCAPE {}",
-            sql_string_literal("\\")
-        ),
-        format!(
-            "ugoite_search_normalize(\"_ugoite_title\") LIKE {pattern} ESCAPE {}",
             sql_string_literal("\\")
         ),
         format!(
@@ -2113,7 +2164,6 @@ pub(crate) async fn sql_session_query_policy_at_checkpoint(
                 .collect(),
             system_columns: [
                 SqlSessionSystemColumn::ExternalId,
-                SqlSessionSystemColumn::Title,
                 SqlSessionSystemColumn::CreatedAt,
                 SqlSessionSystemColumn::UpdatedAt,
             ]
@@ -2722,7 +2772,6 @@ async fn datafusion_sql_context_with_form_snapshot(
         }
         let mut system_columns = BTreeSet::from([
             QuerySystemColumn::ExternalId,
-            QuerySystemColumn::Title,
             QuerySystemColumn::Tags,
             QuerySystemColumn::CreatedAt,
             QuerySystemColumn::UpdatedAt,
@@ -3637,7 +3686,6 @@ fn filter_sql(form: &Value, filters: &Map<String, Value>) -> Result<FilterPlan> 
         }
         let (column, field_type, list_item_type) = match key.as_str() {
             "id" => ("_ugoite_id".to_string(), "string", None),
-            "title" => ("_ugoite_title".to_string(), "string", None),
             "tag" => ("_ugoite_tags".to_string(), "list", Some("string")),
             field_name => {
                 let Some(field) = form
@@ -3844,7 +3892,6 @@ async fn build_record(
     let word_count = compute_word_count(&serde_json::to_string(&properties)?);
     let record = serde_json::json!({
         "id": row.entry_id,
-        "title": row.title,
         "form": form_name,
         "updated_at": row.updated_at,
         "author": row.author,
@@ -4107,7 +4154,7 @@ mod tests {
             .iter()
             .map(|expression| format!("{expression:?}"))
             .collect::<Vec<_>>();
-        assert_eq!(projection.len(), 6);
+        assert_eq!(projection.len(), 5);
         assert!(rendered
             .iter()
             .any(|expression| expression.contains("field_1")));

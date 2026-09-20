@@ -11,7 +11,6 @@ export const SQL_SESSION_ORDER = "ORDER BY _ugoite_updated_at DESC, _ugoite_id";
 
 const SQL_SYSTEM_COLUMNS = [
   "_ugoite_id",
-  "_ugoite_title",
   "_ugoite_created_at",
   "_ugoite_updated_at",
 ];

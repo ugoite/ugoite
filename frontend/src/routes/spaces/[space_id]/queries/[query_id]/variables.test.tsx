@@ -43,7 +43,7 @@ describe("/spaces/:space_id/queries/:query_id/variables", () => {
       name: "Needs variables",
       kind: "user-query",
       sql:
-        "SELECT * FROM form_entry WHERE _ugoite_title = {{title}} AND enabled = $enabled AND count = $count AND score = $score AND day = $day AND happened = $happened AND optional = $optional ORDER BY _ugoite_id",
+        "SELECT * FROM form_entry WHERE Body = {{title}} AND enabled = $enabled AND count = $count AND score = $score AND day = $day AND happened = $happened AND optional = $optional ORDER BY _ugoite_id",
       variables: [
         { type: "string", name: "title", description: "Title" },
         { type: "boolean", name: "enabled", description: "Enabled" },
@@ -87,7 +87,7 @@ describe("/spaces/:space_id/queries/:query_id/variables", () => {
     await waitFor(() => {
       expect(sessionCreateMock).toHaveBeenCalledWith(
         "default",
-        "SELECT * FROM form_entry WHERE _ugoite_title = $title AND enabled = $enabled AND count = $count AND score = $score AND day = $day AND happened = $happened AND optional = $optional ORDER BY _ugoite_id",
+        "SELECT * FROM form_entry WHERE Body = $title AND enabled = $enabled AND count = $count AND score = $score AND day = $day AND happened = $happened AND optional = $optional ORDER BY _ugoite_id",
         {
           title: "Alpha",
           enabled: true,

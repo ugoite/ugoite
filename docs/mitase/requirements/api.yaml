@@ -302,7 +302,7 @@ requirements:
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
       - id: saved-sql-name-field
         kind: behavior
-        statement: The saved-SQL display name is a normal optional Form field; reads fall back to the legacy Entry title and nameless records remain valid without a table rewrite.
+        statement: The saved-SQL display name is a normal optional Form field; nameless historical records remain valid without a table rewrite.
         governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-007#rule.governance]
     bindings:
       - id: saved-sql-verification
@@ -327,12 +327,12 @@ requirements:
       - id: name-field-verification
         role: verification
         facet: verification
-        responsibility: Verify the saved-SQL name field with legacy title fallback through the exact Iceberg integration case.
+        responsibility: Verify the saved-SQL name field and nameless historical records through the exact Iceberg integration case.
         targets:
           - id: name-field-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_saved_sql.rs
-            selector: { kind: test, name: saved_sql_name_is_a_normal_field_with_legacy_fallback }
+            selector: { kind: test, name: saved_sql_name_is_a_normal_field }
             claims:
               - kind: verifies
                 criterion: REQ-API-006#criterion.saved-sql-name-field
@@ -341,7 +341,7 @@ requirements:
                   - FEAT-API-001#binding.core/target.get-sql
                   - FEAT-API-001#binding.core/target.create-sql
                   - FEAT-API-001#binding.core/target.update-sql
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_saved_sql, test: saved_sql_name_is_a_normal_field_with_legacy_fallback } }
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_saved_sql, test: saved_sql_name_is_a_normal_field } }
       - id: cli-verification
         role: verification
         facet: verification

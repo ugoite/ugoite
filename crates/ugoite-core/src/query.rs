@@ -55,7 +55,6 @@ pub enum EntryScope {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum QuerySystemColumn {
     ExternalId,
-    Title,
     Tags,
     CreatedAt,
     UpdatedAt,
@@ -76,12 +75,7 @@ pub enum QuerySystemColumn {
 impl QuerySystemColumn {
     pub const fn as_str(self) -> &'static str {
         match self {
-            // Form fields own the ordinary SQL namespace. Stable Entry
-            // metadata is deliberately namespaced so an otherwise valid
-            // Form with a `title`, `id`, or timestamp field can never make a
-            // query context fail at runtime.
             Self::ExternalId => "_ugoite_id",
-            Self::Title => "_ugoite_title",
             Self::Tags => "_ugoite_tags",
             Self::CreatedAt => "_ugoite_created_at",
             Self::UpdatedAt => "_ugoite_updated_at",

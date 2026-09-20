@@ -23,7 +23,7 @@ use ugoite_domain::id::validate_decoded_identifier;
 type HmacSha256 = Hmac<Sha256>;
 const VERSION: &str = "2026-07-28";
 const CURSOR_VERSION: &str = "mcp-search-cursor-v1";
-const ORDERING: &str = "mcp-search-v1-title-id-form";
+const ORDERING: &str = "mcp-search-v2-id-form";
 const CURSOR_DOMAIN: &[u8] = b"ugoite/mcp/search-cursor/v1";
 const TOOL_RATE_LIMIT: u32 = 60;
 const TOOL_RATE_WINDOW: Duration = Duration::from_secs(60);
@@ -68,7 +68,6 @@ struct SearchCursor {
     actor_principal_id: Option<Uuid>,
     actions: Vec<String>,
     authorization_revision: u64,
-    last_title: String,
     last_id: String,
     last_form: String,
     auth_scheme: String,
@@ -87,7 +86,6 @@ struct SearchInput {
 #[serde(deny_unknown_fields)]
 struct SaveInput {
     id: Option<String>,
-    title: Option<String>,
     form: Option<String>,
     tags: Option<Vec<String>>,
     fields: BTreeMap<String, Value>,
@@ -775,9 +773,6 @@ fn save_input_schema() -> Value {
                 "type": "string",
                 "description": "Opaque Entry id. Omit this field to create a new generic Entry."
             },
-            "title": {
-                "type": "string"
-            },
             "form": {
                 "type": "string",
                 "description": "Form name for a new Entry; updates may omit it because Form identity is immutable."
@@ -985,7 +980,8 @@ fn resource_result(uri: &str, projection: Value) -> Value {
 }
 
 fn entry_projection(entry: &Value) -> Value {
-    json!({"id":entry.get("id").and_then(Value::as_str).unwrap_or_default(),"title":sanitize_mcp_string(entry.get("title").and_then(Value::as_str).unwrap_or_default()),"form":entry.get("form").and_then(Value::as_str),"tags":entry.get("tags").and_then(Value::as_array).map(|v| v.iter().filter_map(Value::as_str).map(sanitize_mcp_string).collect::<Vec<_>>()).unwrap_or_default(),"content":sanitize_mcp_string(entry.get("content").and_then(Value::as_str).unwrap_or_default()),"created_at":unix_millis(entry.get("created_at")),"updated_at":unix_millis(entry.get("updated_at")),"uri":format!("ugoite://entry/{}",entry.get("id").and_then(Value::as_str).unwrap_or_default()),"_untrusted_content":true})
+    let id = entry.get("id").and_then(Value::as_str).unwrap_or_default();
+    json!({"id":id,"form":entry.get("form").and_then(Value::as_str),"tags":entry.get("tags").and_then(Value::as_array).map(|v| v.iter().filter_map(Value::as_str).map(sanitize_mcp_string).collect::<Vec<_>>()).unwrap_or_default(),"content":sanitize_mcp_string(entry.get("content").and_then(Value::as_str).unwrap_or_default()),"created_at":unix_millis(entry.get("created_at")),"updated_at":unix_millis(entry.get("updated_at")),"uri":format!("ugoite://entry/{id}"),"_untrusted_content":true})
 }
 fn unix_millis(value: Option<&Value>) -> i64 {
     value
@@ -1217,13 +1213,9 @@ async fn search(
         );
     }
     let principals = authorization_principal_ids(&auth.identity, auth.claims.sub);
-    let after = cursor.as_ref().map(|cursor| {
-        (
-            cursor.last_title.as_str(),
-            cursor.last_id.as_str(),
-            cursor.last_form.as_str(),
-        )
-    });
+    let after = cursor
+        .as_ref()
+        .map(|cursor| (cursor.last_id.as_str(), cursor.last_form.as_str()));
     let mut results = state
         .service
         .search_entries_authorized_for_principals_after(
@@ -1235,19 +1227,13 @@ async fn search(
         )
         .await
         .map_err(map_search_service_error)?;
-    results.sort_by(|a, b| {
-        (a.title.as_str(), a.id.as_str(), a.form.as_str()).cmp(&(
-            b.title.as_str(),
-            b.id.as_str(),
-            b.form.as_str(),
-        ))
-    });
+    results.sort_by(|a, b| (a.id.as_str(), a.form.as_str()).cmp(&(b.id.as_str(), b.form.as_str())));
     let has_next = results.len() > limit;
     results.truncate(limit);
     let mut items = Vec::with_capacity(results.len());
     let mut links = Vec::with_capacity(results.len());
     for result in &results {
-        let title = sanitize_mcp_string(&result.title);
+        let title = sanitize_mcp_string(&result.id);
         let summary = title.clone();
         let uri = format!("ugoite://entry/{}", result.id);
         items.push(json!({"title":title,"summary":summary,"uri":uri}));
@@ -1304,17 +1290,16 @@ async fn save(
     let input: SaveInput = serde_json::from_value(Value::Object(arguments.clone()))
         .map_err(|_| tool_error("INVALID_ARGUMENT", "Save arguments are invalid"))?;
     let actor_principal_id = auth.claims.actor_principal_id;
-    let (id, status, entry) = if let Some(id) = input.id {
+    let (id, status) = if let Some(id) = input.id {
         validate_id(&id, "entry_id")
             .map_err(|_| tool_error("INVALID_ARGUMENT", "Save arguments are invalid"))?;
         let id_for_write = id.clone();
         let run_id = run_id.clone();
-        let title = input.title.clone();
         let form = input.form.clone();
         let tags = input.tags.clone();
         let fields = input.fields.clone();
         let extra_attributes = input.extra_attributes.clone();
-        let entry = with_authorized_service_mutation(
+        with_authorized_service_mutation(
             state,
             &auth.space_id,
             &auth.identity,
@@ -1339,7 +1324,6 @@ async fn save(
                     .update_structured_entry_authorized_for_principals_with_change(
                         &auth.space_id,
                         &id_for_write,
-                        title,
                         form,
                         tags,
                         fields,
@@ -1355,7 +1339,7 @@ async fn save(
         )
         .await
         .map_err(|error| mcp_save_error(error, "updated"))?;
-        (id, "updated", entry)
+        (id, "updated")
     } else {
         let id = Uuid::now_v7().to_string();
         let id_for_write = id.clone();
@@ -1365,12 +1349,11 @@ async fn save(
                 "Save arguments are invalid: form is required",
             )
         })?;
-        let title = input.title.clone();
         let tags = input.tags.clone().unwrap_or_default();
         let fields = input.fields.clone();
         let extra_attributes = input.extra_attributes.clone();
         let run_id = run_id.clone();
-        let entry = with_authorized_service_mutation(
+        with_authorized_service_mutation(
             state,
             &auth.space_id,
             &auth.identity,
@@ -1391,7 +1374,6 @@ async fn save(
                     .create_structured_entry_authorized_for_principals_with_change(
                         &auth.space_id,
                         &id_for_write,
-                        title,
                         form,
                         tags,
                         fields,
@@ -1406,12 +1388,12 @@ async fn save(
         )
         .await
         .map_err(|error| mcp_save_error(error, "created"))?;
-        (id, "created", entry)
+        (id, "created")
     };
     let uri = format!("ugoite://entry/{id}");
     let payload = json!({"id":id,"uri":uri,"status":status,"_untrusted_content":true});
     Ok(
-        json!({"resultType":"complete","isError":false,"structuredContent":payload,"content":[{"type":"text","text":serde_json::to_string(&payload).unwrap_or_default()},{"type":"resource_link","uri":uri,"name":sanitize_mcp_string(entry.get("title").and_then(Value::as_str).unwrap_or(&id)),"description":"Read the affected Entry.","mimeType":"application/json"}],"ttlMs":5000,"cacheScope":"private"}),
+        json!({"resultType":"complete","isError":false,"structuredContent":payload,"content":[{"type":"text","text":serde_json::to_string(&payload).unwrap_or_default()},{"type":"resource_link","uri":uri,"name":sanitize_mcp_string(&id),"description":"Read the affected Entry.","mimeType":"application/json"}],"ttlMs":5000,"cacheScope":"private"}),
     )
 }
 
@@ -1577,7 +1559,6 @@ fn encode_cursor(
         actor_principal_id: auth.claims.actor_principal_id,
         actions: auth.claims.granted_actions.iter().cloned().collect(),
         authorization_revision: state.revision,
-        last_title: last.title.clone(),
         last_id: last.id.clone(),
         last_form: last.form.clone(),
         auth_scheme: auth.scheme.to_string(),
@@ -2004,7 +1985,6 @@ mod tests {
             .create_structured_entry_with_receipt(
                 &space_id,
                 "entry-sanitize",
-                Some("Visible".to_string()),
                 "Note".to_string(),
                 Vec::new(),
                 BTreeMap::from([(
@@ -2059,7 +2039,6 @@ mod tests {
         let auth = test_auth(space_uid, owner, &["read", "create"], "human", None);
         let run_id = RunId::new("mcp-save-plain-run".to_string()).expect("run id");
         let arguments = serde_json::Map::from_iter([
-            (String::from("title"), json!("Summary")),
             (String::from("form"), json!("Entry")),
             (String::from("fields"), json!({"Body": "Structured value"})),
         ]);
@@ -2089,7 +2068,7 @@ mod tests {
         )
         .expect("Entry projection");
         assert_eq!(projection["form"], "Entry");
-        assert_eq!(projection["title"], "Summary");
+        assert_eq!(projection["id"], entry_id);
         assert!(projection["content"]
             .as_str()
             .expect("Entry content")
@@ -2203,7 +2182,6 @@ mod tests {
         let authorization = test_authorization_state(space_uid, 7);
         let result = ugoite_domain::search::KeywordSearchResult {
             id: "entry-1".to_string(),
-            title: "Title".to_string(),
             form: "Note".to_string(),
             created_at: 1.0,
             updated_at: 1.0,

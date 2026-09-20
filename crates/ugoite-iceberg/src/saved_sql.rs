@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
 use uuid::Uuid;
@@ -193,10 +193,9 @@ fn sql_form_definition() -> Value {
         "name": SQL_FORM_NAME,
         "version": 1,
         "fields": {
-            // Title-less Entry (REQ-ENTRY-011): the saved-SQL display name is
-            // a normal optional Form field, not the Entry-level title. Older
-            // records without this field remain valid and fall back to the
-            // legacy Entry title on read; no table rewrite is performed.
+            // The saved-SQL display name is a normal optional Form field.
+            // Older records without this field remain valid; no table rewrite
+            // is performed.
             "name": {"type": "string", "required": false},
             "sql": {"type": "sql", "required": true},
             "variables": {"type": "object_list", "required": false}
@@ -370,15 +369,15 @@ fn sql_entry_from_row(row: &entry::EntryRow) -> Result<Value> {
                 .context("SQL row metadata is invalid")?,
         )
     };
-    // Title-less Entry: prefer the normal `name` field, then fall back to
-    // the legacy Entry title so records written before the `name` field
-    // existed (and nameless search-history records) keep working.
+    // Prefer the normal `name` field. Older nameless records remain valid.
     let name = fields
         .get("name")
         .and_then(|value| value.as_str())
         .filter(|name| !name.trim().is_empty())
         .map(str::to_owned)
-        .or_else(|| (!row.title.trim().is_empty()).then(|| row.title.clone()));
+        .or_else(|| {
+            (!row.saved_query_name.trim().is_empty()).then(|| row.saved_query_name.clone())
+        });
 
     Ok(serde_json::json!({
         "id": row.entry_id,
@@ -540,9 +539,9 @@ pub async fn create_sql<I: IntegrityProvider>(
 
     let row = entry::EntryRow {
         entry_id: sql_id.to_string(),
-        // Keep the legacy title carrier populated for readers that predate
-        // the normal `name` field. New readers prefer `fields.name`.
-        title: normalized_payload.name.clone().unwrap_or_default(),
+        // Preserve the historical saved-query name carrier while new readers
+        // use the normal `fields.name` field.
+        saved_query_name: normalized_payload.name.clone().unwrap_or_default(),
         form: SQL_FORM_NAME.to_string(),
         tags: Vec::new(),
         created_at: timestamp,
@@ -558,6 +557,7 @@ pub async fn create_sql<I: IntegrityProvider>(
         updated_by: author.to_string(),
         deleted_by: None,
         entry_version: 1,
+        legacy_columns: BTreeMap::new(),
     };
 
     let revision = entry::RevisionRow {
@@ -646,7 +646,7 @@ pub async fn update_sql<I: IntegrityProvider>(
     fields.insert("variables".to_string(), variables.clone());
     let extra_attributes = sql_extra_attributes(&normalized_payload);
 
-    row.title = normalized_payload.name.clone().unwrap_or_default();
+    row.saved_query_name = normalized_payload.name.clone().unwrap_or_default();
     row.updated_at = timestamp;
     row.fields = Value::Object(fields);
     row.extra_attributes = extra_attributes;
@@ -736,10 +736,10 @@ pub async fn delete_sql(op: &Operator, ws_path: &str, sql_id: &str, actor: &str)
 mod name_field_tests {
     use super::*;
 
-    fn row_with_title_and_fields(title: &str, fields: Value) -> entry::EntryRow {
+    fn row_with_saved_query_name(name: &str, fields: Value) -> entry::EntryRow {
         entry::EntryRow {
             entry_id: "sql-legacy".to_string(),
-            title: title.to_string(),
+            saved_query_name: name.to_string(),
             form: SQL_FORM_NAME.to_string(),
             tags: Vec::new(),
             created_at: 1.0,
@@ -761,6 +761,7 @@ mod name_field_tests {
             updated_by: "author".to_string(),
             deleted_by: None,
             entry_version: 1,
+            legacy_columns: BTreeMap::new(),
         }
     }
 
@@ -775,20 +776,22 @@ mod name_field_tests {
     }
 
     #[test]
-    fn name_read_prefers_field_then_legacy_title_then_null() {
-        let entry = sql_entry_from_row(&row_with_title_and_fields(
-            "Legacy Title",
+    fn name_read_prefers_field_then_saved_query_name_then_null() {
+        let entry = sql_entry_from_row(&row_with_saved_query_name(
+            "Saved Query Name",
             sql_fields(Some("Field Name")),
         ))
         .expect("field name must win");
         assert_eq!(entry["name"], Value::String("Field Name".to_string()));
 
-        let entry =
-            sql_entry_from_row(&row_with_title_and_fields("Legacy Title", sql_fields(None)))
-                .expect("legacy title must be kept");
-        assert_eq!(entry["name"], Value::String("Legacy Title".to_string()));
+        let entry = sql_entry_from_row(&row_with_saved_query_name(
+            "Saved Query Name",
+            sql_fields(None),
+        ))
+        .expect("saved query name must be kept");
+        assert_eq!(entry["name"], Value::String("Saved Query Name".to_string()));
 
-        let entry = sql_entry_from_row(&row_with_title_and_fields("", sql_fields(None)))
+        let entry = sql_entry_from_row(&row_with_saved_query_name("", sql_fields(None)))
             .expect("nameless records stay valid");
         assert!(entry["name"].is_null());
     }

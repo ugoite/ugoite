@@ -36,12 +36,6 @@ pub enum EntrySubCmd {
         #[arg(long, value_name = "FORM", help = "Form name for structured authoring")]
         form: Option<String>,
         #[arg(
-            long,
-            allow_hyphen_values = true,
-            help = "Legacy 0.1.x compatibility title for structured authoring (omit for title-less entries; removed in 0.2)"
-        )]
-        title: Option<String>,
-        #[arg(
             long = "field",
             value_name = "KEY=VALUE",
             help = "Structured field as KEY=VALUE (repeatable; VALUE stays a string and the shared Rust boundary coerces it)"
@@ -70,12 +64,6 @@ pub enum EntrySubCmd {
             help = "Form name for structured authoring (must match the stored form; changes are rejected)"
         )]
         form: Option<String>,
-        #[arg(
-            long,
-            allow_hyphen_values = true,
-            help = "Legacy 0.1.x compatibility title for structured authoring (omit to leave titles untouched; removed in 0.2)"
-        )]
-        title: Option<String>,
         #[arg(
             long = "field",
             value_name = "KEY=VALUE",
@@ -262,7 +250,6 @@ async fn create_structured_entry(
     fmt: &Format,
     entry_id: String,
     form: Option<String>,
-    title: Option<String>,
     fields: Vec<String>,
     fields_files: Vec<String>,
     author: Option<String>,
@@ -281,14 +268,11 @@ async fn create_structured_entry(
             )
             .into());
         }
-        let mut body = serde_json::json!({
+        let body = serde_json::json!({
             "id": entry_id,
             "form": form_name,
             "fields": merged,
         });
-        if let Some(title) = title.as_deref() {
-            body["title"] = serde_json::json!(title);
-        }
         let result = http::execute_for_target(
             target,
             "entry.create",
@@ -323,7 +307,6 @@ async fn create_structured_entry(
         .create_structured_entry_with_receipt(
             space_id,
             &entry_id,
-            title,
             form_name,
             Vec::new(),
             merged,
@@ -350,7 +333,6 @@ async fn update_structured_entry(
     fmt: &Format,
     entry_id: String,
     form: Option<String>,
-    title: Option<String>,
     fields: Vec<String>,
     fields_files: Vec<String>,
     parent_revision_id: Option<String>,
@@ -397,9 +379,6 @@ async fn update_structured_entry(
         });
         if let Some(form) = form.as_deref() {
             body["form"] = serde_json::json!(form);
-        }
-        if let Some(title) = title.as_deref() {
-            body["title"] = serde_json::json!(title);
         }
         body["parent_revision_id"] = serde_json::json!(parent_revision_id);
         let result = http::execute_for_target(
@@ -448,7 +427,6 @@ async fn update_structured_entry(
         .update_structured_entry(
             space_id,
             &entry_id,
-            title,
             form,
             fields,
             extra_attributes,
@@ -494,7 +472,7 @@ pub async fn run(
                 .await?;
                 if fmt != Format::Json {
                     if let Some(arr) = result.as_array() {
-                        print_json_table(arr, &[("ID", "id"), ("TITLE", "title")]);
+                        print_json_table(arr, &[("ID", "id")]);
                         return Ok(());
                     }
                 }
@@ -512,11 +490,10 @@ pub async fn run(
                     .map(|e| {
                         serde_json::json!({
                             "id": e.get("id").and_then(|v| v.as_str()).unwrap_or(""),
-                            "title": e.get("title").and_then(|v| v.as_str()).unwrap_or(""),
                         })
                     })
                     .collect();
-                print_json_table(&rows, &[("ID", "id"), ("TITLE", "title")]);
+                print_json_table(&rows, &[("ID", "id")]);
             } else {
                 emit_success(&entries, &fmt, None);
             }
@@ -544,50 +521,28 @@ pub async fn run(
         EntrySubCmd::Create {
             entry_id,
             form,
-            title,
             fields,
             fields_files,
             author,
         } => {
             let target = resolve_command_target(explicit_config, context_override, "entry create")?;
-            if title.is_some() {
-                eprintln!(
-                    "note: --title remains a compatibility option until the title cleanup; prefer a Form field for new names"
-                );
-            }
-            create_structured_entry(
-                &target,
-                &fmt,
-                entry_id,
-                form,
-                title,
-                fields,
-                fields_files,
-                author,
-            )
-            .await?;
+            create_structured_entry(&target, &fmt, entry_id, form, fields, fields_files, author)
+                .await?;
         }
         EntrySubCmd::Update {
             entry_id,
             form,
-            title,
             fields,
             fields_files,
             parent_revision_id,
             author,
         } => {
             let target = resolve_command_target(explicit_config, context_override, "entry update")?;
-            if title.is_some() {
-                eprintln!(
-                    "note: --title remains a compatibility option until the title cleanup; prefer a Form field for new names"
-                );
-            }
             update_structured_entry(
                 &target,
                 &fmt,
                 entry_id,
                 form,
-                title,
                 fields,
                 fields_files,
                 parent_revision_id,

@@ -2,7 +2,6 @@ import type { StructuredEntryFields } from "~/lib/types";
 
 /** The in-memory work state for one new Entry authoring session. */
 export interface CreateEntryDraftState {
-  title: string;
   fields: StructuredEntryFields;
   tags: string[];
   /** Values used by provisional asset fields, including uploaded references. */

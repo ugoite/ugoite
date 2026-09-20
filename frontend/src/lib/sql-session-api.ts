@@ -13,7 +13,7 @@ const isSqlSessionRow = (value: unknown): value is SqlSessionRow =>
 export class SqlSessionEntryProjectionError extends Error {
   constructor() {
     super(
-      "SQL session result is not an Entry projection: expected _ugoite_id, _ugoite_title, and valid _ugoite_updated_at.",
+      "SQL session result is not an Entry projection: expected _ugoite_id and valid _ugoite_updated_at.",
     );
     this.name = "SqlSessionEntryProjectionError";
   }
@@ -39,16 +39,23 @@ export const sqlSessionRowToEntryRecord = (
 ): EntryRecord => {
   if (
     typeof row._ugoite_id !== "string" ||
-    !row._ugoite_id.trim() ||
-    typeof row._ugoite_title !== "string"
+    !row._ugoite_id.trim()
   ) {
     throw new SqlSessionEntryProjectionError();
   }
   const updatedAt = timestampValue(row._ugoite_updated_at);
   if (!updatedAt) throw new SqlSessionEntryProjectionError();
 
+  const systemColumns = new Set([
+    "_ugoite_id",
+    "_ugoite_created_at",
+    "_ugoite_updated_at",
+    "_ugoite_form",
+    "_ugoite_tags",
+    "form",
+  ]);
   const properties = Object.fromEntries(
-    Object.entries(row).filter(([key]) => key.startsWith("field_")),
+    Object.entries(row).filter(([key]) => !systemColumns.has(key)),
   );
   const form = typeof row.form === "string"
     ? row.form
@@ -62,7 +69,6 @@ export const sqlSessionRowToEntryRecord = (
 
   return {
     id: row._ugoite_id,
-    title: row._ugoite_title,
     ...(form ? { form } : {}),
     ...(createdAt ? { created_at: createdAt } : {}),
     updated_at: updatedAt,

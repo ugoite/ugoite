@@ -212,8 +212,7 @@ test.describe("Owner-approved Space access recovery", () => {
         {
           data: {
             form: "Entry",
-            title: "Recovery ACL",
-            fields: {},
+            fields: { Body: "Recovery ACL" },
           },
         },
       );
