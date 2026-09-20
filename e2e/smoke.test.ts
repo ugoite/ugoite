@@ -55,10 +55,11 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
       getBackendUrl(`/spaces/${spaceId}/entries`),
       {
         data: {
-          markdown:
-            `---\nform: Entry\n---\n# E2E Detail Route Entry\n\n## Body\nCreated at ${
-              new Date().toISOString()
-            }`,
+          form: "Entry",
+          title: "E2E Detail Route Entry",
+          fields: {
+            Body: `Created at ${new Date().toISOString()}`,
+          },
         },
       },
     );
