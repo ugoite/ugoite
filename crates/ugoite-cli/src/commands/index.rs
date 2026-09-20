@@ -17,15 +17,8 @@ pub struct IndexCmd {
 #[derive(Subcommand)]
 pub enum IndexSubCmd {
     /// Reindex a space
-    #[command(
-        long_about = "Reindex a space (local only).\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite index run\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME index run\n\n  # 0.1.x compatibility only: legacy explicit Space (local only)\n  ugoite index run /root/spaces/my-space"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Run {
-        #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
-        )]
-        space_path: Option<String>,
         #[arg(
             long,
             value_name = "COMPONENT",
@@ -34,16 +27,8 @@ pub enum IndexSubCmd {
         component: Option<String>,
     },
     /// Show aggregated stats for a space
-    #[command(
-        long_about = "Show aggregated stats for a space (local only).\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite index stats\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME index stats\n\n  # 0.1.x compatibility only: legacy explicit Space (local only)\n  ugoite index stats /root/spaces/my-space"
-    )]
-    Stats {
-        #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
-        )]
-        space_path: Option<String>,
-    },
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
+    Stats,
 }
 
 pub async fn run(
@@ -52,16 +37,9 @@ pub async fn run(
     context_override: Option<&str>,
 ) -> Result<()> {
     match cmd.sub {
-        IndexSubCmd::Run {
-            space_path,
-            component,
-        } => {
-            let (root, space_id, base) = resolve_command_triple(
-                space_path.as_deref(),
-                explicit_config,
-                context_override,
-                "index run",
-            )?;
+        IndexSubCmd::Run { component } => {
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "index run")?;
             if base.is_some() {
                 bail!(
                     "index run is not available in backend/api mode in this release; use core mode for local reindexing"
@@ -82,13 +60,9 @@ pub async fn run(
             .map_err(|_| anyhow::anyhow!("index run timed out after 10 minutes"))??;
             print_json(&serde_json::json!({"reindexed": true}));
         }
-        IndexSubCmd::Stats { space_path } => {
-            let (root, space_id, base) = resolve_command_triple(
-                space_path.as_deref(),
-                explicit_config,
-                context_override,
-                "index stats",
-            )?;
+        IndexSubCmd::Stats => {
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "index stats")?;
             if base.is_some() {
                 bail!(
                     "index stats is not available in backend/api mode in this release; use core mode for local index stats"
@@ -103,16 +77,17 @@ pub async fn run(
 }
 
 pub async fn query_cmd(
-    space_path: Option<&str>,
     sql: &str,
     explicit_config: Option<&std::path::Path>,
     context_override: Option<&str>,
 ) -> Result<()> {
     let (root, space_id, base) =
-        resolve_command_triple(space_path, explicit_config, context_override, "query")?;
-    if let Some(base) = base {
-        let session = http::execute(
-            &base,
+        resolve_command_triple(explicit_config, context_override, "query")?;
+    if base.is_some() {
+        let target =
+            crate::cli_config::resolve_command_target(explicit_config, context_override, "query")?;
+        let session = http::execute_for_target(
+            &target,
             "sql_session.create",
             serde_json::json!({"space_id": space_id}),
             Some(serde_json::json!({"sql": sql})),
@@ -122,8 +97,8 @@ pub async fn query_cmd(
             .get("id")
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| anyhow::anyhow!("SQL session response did not include an id"))?;
-        let payload = http::execute(
-            &base,
+        let payload = http::execute_for_target(
+            &target,
             "sql_session.rows",
             serde_json::json!({
                 "space_id": space_id,

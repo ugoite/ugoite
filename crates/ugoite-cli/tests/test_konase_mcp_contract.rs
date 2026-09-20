@@ -25,7 +25,8 @@ use tempfile::tempdir;
 use tokio::net::TcpListener;
 use tokio::process::Command;
 use tokio::task::JoinHandle;
-use ugoite_cli::config::{AuthSession, EndpointConfig, EndpointMode};
+use ugoite_cli::cli_config::{ConfigFile, ConnectionConfig, ContextConfig};
+use ugoite_cli::config::AuthSession;
 use ugoite_server::{app, AppState};
 
 struct ServerGuard(JoinHandle<()>);
@@ -119,8 +120,8 @@ async fn issue_2072_contract() {
     assert_eq!(api_mcp.status(), reqwest::StatusCode::NOT_FOUND);
 
     let config_dir = tempdir().expect("config directory");
-    let config_path = config_dir.path().join("cli-endpoints.json");
-    let credentials_path = config_dir.path().join("cli-credentials.json");
+    let config_path = config_dir.path().join("config.toml");
+    let credentials_path = config_dir.path().join("home/.ugoite/credentials.json");
     let session = AuthSession {
         credential_id: access.credential_id,
         device_name: "Issue 2072 contract test".to_string(),
@@ -139,27 +140,48 @@ async fn issue_2072_contract() {
         resource: Some(access.resource),
         space_uid: access.space_uid,
     };
-    let config = EndpointConfig {
-        mode: EndpointMode::Api,
-        backend_url: server_url,
-        api_url: api_base,
-    };
+    let mut config = ConfigFile::empty();
+    config.connections.insert(
+        "remote-api".to_string(),
+        ConnectionConfig::Api { url: api_base },
+    );
+    config.contexts.insert(
+        "mcp".to_string(),
+        ContextConfig {
+            connection: "remote-api".to_string(),
+            space_uid: access.space_uid,
+            credential: Some("mcp".to_string()),
+        },
+    );
+    config.current_context = Some("mcp".to_string());
+    let mut profile = serde_json::to_value(&session).expect("serialize CLI credential");
+    profile["connection"] = serde_json::Value::String("remote-api".to_string());
+    let credentials = serde_json::json!({
+        "version": 1,
+        "credentials": { "mcp": profile },
+    });
     fs::write(
         &config_path,
-        serde_json::to_vec_pretty(&config).expect("serialize endpoint config"),
+        toml::to_string_pretty(&config).expect("serialize canonical config"),
     )
-    .expect("write endpoint config");
+    .expect("write canonical config");
+    fs::create_dir_all(credentials_path.parent().expect("credentials parent"))
+        .expect("create credentials directory");
     fs::write(
         &credentials_path,
-        serde_json::to_vec_pretty(&session).expect("serialize CLI credential"),
+        serde_json::to_vec_pretty(&credentials).expect("serialize credential store"),
     )
     .expect("write CLI credential");
 
     let child = Command::new(ugoite_bin())
-        .arg("konase")
+        .args([
+            "--config",
+            config_path.to_str().expect("config path"),
+            "konase",
+        ])
         .stdin(Stdio::null())
         .kill_on_drop(true)
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env("HOME", config_dir.path().join("home"))
         .env("UGOITE_MODEL_API_KEY", "contract-test-key")
         .spawn()
         .expect("start CLI Konase");

@@ -1,4 +1,4 @@
-use crate::config::{load_config, non_empty_env_value, validated_base_url, EndpointMode};
+use crate::config::non_empty_env_value;
 use crate::output::{emit_diagnostic, emit_success, emit_text, Format};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
@@ -547,15 +547,22 @@ fn resources_read_schema() -> Value {
 }
 
 impl RmcpMcpHost {
-    async fn connect(base_url: &str) -> Result<Self> {
+    async fn connect(
+        base_url: &str,
+        connection: Option<&str>,
+        credential: Option<&str>,
+    ) -> Result<Self> {
         let target = crate::commands::auth::mcp_target(base_url).await?;
-        let session = crate::commands::auth::active_session_for(base_url, Some(&target.resource))
-            .await?
-            .ok_or_else(|| {
-                anyhow!(
-                    "`ugoite konase` requires an MCP credential; run `ugoite auth login --for mcp`"
-                )
-            })?;
+        let session = if let Some(connection) = connection {
+            crate::http::named_session_for_target(base_url, connection, credential)
+                .await?
+                .filter(|session| session.resource.as_deref() == Some(target.resource.as_str()))
+        } else {
+            crate::commands::auth::active_session_for(base_url, Some(&target.resource)).await?
+        }
+        .ok_or_else(|| {
+            anyhow!("`ugoite konase` requires an MCP credential; run `ugoite auth login --for mcp`")
+        })?;
         let transport = StreamableHttpClientTransport::from_config(
             StreamableHttpClientTransportConfig::with_uri(target.endpoint)
                 .auth_header(session.access_token),
@@ -726,15 +733,21 @@ impl McpHost for RmcpMcpHost {
     }
 }
 
-pub async fn run(cmd: KonaseCmd) -> Result<()> {
+pub async fn run(
+    cmd: KonaseCmd,
+    explicit_config: Option<&std::path::Path>,
+    context_override: Option<&str>,
+) -> Result<()> {
     let interrupts = SignalCoordinator::install()?;
-    let config = load_config()?;
-    if config.mode == EndpointMode::Core {
-        bail!("`ugoite konase` currently requires backend or api mode with an MCP credential");
-    }
-    let base_url =
-        validated_base_url(&config)?.ok_or_else(|| anyhow!("remote endpoint is missing"))?;
-    let mut mcp = RmcpMcpHost::connect(&base_url).await?;
+    let target =
+        crate::cli_config::resolve_command_target(explicit_config, context_override, "konase")?;
+    let base_url = target.base_url().ok_or_else(|| {
+        anyhow!(
+            "`ugoite konase` currently requires a backend or api context with an MCP credential"
+        )
+    })?;
+    let mut mcp =
+        RmcpMcpHost::connect(base_url, target.connection_name(), target.credential_name()).await?;
     let mut model = OpenAiModelHost::from_env()?;
     let capabilities = mcp.capabilities().await;
     match cmd.prompt {

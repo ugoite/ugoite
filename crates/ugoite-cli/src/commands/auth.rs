@@ -1,6 +1,5 @@
 use crate::config::{
-    clear_auth_session, load_auth_session, load_config, print_json, save_auth_session,
-    validated_base_url, AuthSession, EndpointMode,
+    clear_auth_session, load_auth_session, print_json, save_auth_session, AuthSession,
 };
 use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -163,31 +162,17 @@ pub async fn run(
             connection,
             credential,
         } => {
-            if connection.is_some() || credential.is_some() {
-                login_named(
-                    device_name,
-                    space_uid,
-                    actions,
-                    target,
-                    connection.as_deref(),
-                    credential.as_deref(),
-                    explicit_config,
-                    context_override,
-                )
-                .await?;
-                return Ok(());
-            }
-            let config = load_config()?;
-            if config.mode == EndpointMode::Core {
-                bail!("auth login requires backend or api mode");
-            }
-            let base = validated_base_url(&config)?
-                .ok_or_else(|| anyhow!("remote endpoint is missing"))?;
-            let resource = match target {
-                AuthLoginTarget::Rest => None,
-                AuthLoginTarget::Mcp => Some(mcp_resource(&base).await?),
-            };
-            login(&base, &device_name, space_uid, actions, resource).await?;
+            login_named(
+                device_name,
+                space_uid,
+                actions,
+                target,
+                connection.as_deref(),
+                credential.as_deref(),
+                explicit_config,
+                context_override,
+            )
+            .await?;
         }
         AuthSubCmd::Logout { credential } => {
             if let Some(name) = credential.as_deref() {
@@ -207,29 +192,6 @@ pub async fn run(
     Ok(())
 }
 
-async fn login(
-    base: &str,
-    device_name: &str,
-    space_uid: Option<Uuid>,
-    actions: Vec<String>,
-    resource: Option<String>,
-) -> Result<()> {
-    let session = perform_device_login(base, device_name, space_uid, actions, resource).await?;
-    let path = save_auth_session(&session)?;
-    // IDs render through the JSON-value output boundary (same as every other
-    // UID display): identical text, single established output path.
-    let ids = serde_json::json!({
-        "credential_id": session.credential_id,
-        "space_uid": session.space_uid,
-    });
-    println!(
-        "Paired device {} for Space {}. Credential metadata saved to {}.",
-        ids["credential_id"].as_str().unwrap_or_default(),
-        ids["space_uid"].as_str().unwrap_or_default(),
-        path.display()
-    );
-    Ok(())
-}
 /// Named-profile login (plan section 44): authenticate against a canonical
 /// connection and store the credential under a profile name in the
 /// user-global credential store. Secrets never enter TOML; contexts reference
@@ -798,6 +760,19 @@ fn public_jwk(key: &SigningKey) -> Value {
         "x": URL_SAFE_NO_PAD.encode(point.x().expect("uncompressed x")),
         "y": URL_SAFE_NO_PAD.encode(point.y().expect("uncompressed y")),
     })
+}
+
+#[cfg(test)]
+async fn login(
+    base: &str,
+    device_name: &str,
+    space_uid: Option<Uuid>,
+    actions: Vec<String>,
+    resource: Option<String>,
+) -> Result<()> {
+    let session = perform_device_login(base, device_name, space_uid, actions, resource).await?;
+    save_auth_session(&session)?;
+    Ok(())
 }
 
 #[cfg(test)]

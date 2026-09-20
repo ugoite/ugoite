@@ -1,7 +1,6 @@
 //! Canonical CLI configuration v1 (TOML) foundation.
 //!
-//! This module is additive only: existing `crate::config` (legacy
-//! `cli-endpoints.json`) behavior is untouched. It implements plan sections
+//! It implements the canonical TOML configuration model:
 //! 5-8, 16-25, 47-48:
 //! - TOML `ConfigFile` model (`version = 1`, named connections/contexts)
 //! - CWD-only project-local discovery (no parent search)
@@ -16,7 +15,6 @@
 
 pub mod credentials;
 pub mod discover;
-pub mod legacy;
 pub mod merge;
 pub mod model;
 pub mod resolve;
@@ -32,10 +30,6 @@ pub use discover::{
     build_source_stack, canonical_global_config_path, project_local_config_path,
     resolve_write_target, source_stack_from_environment,
 };
-pub use legacy::{
-    legacy_config_path, normalize_legacy_to_config_file, read_legacy_config, LegacyEndpoint,
-    LegacyMode,
-};
 pub use merge::{
     load_effective_config, load_explicit_config_file, merge_loaded_configs, EffectiveConfig,
     EffectiveValue, LoadedConfigFile,
@@ -49,7 +43,6 @@ pub use runtime::{load_cli_config, mutate_write_target, read_write_target_file, 
 pub use target::{
     resolve_command_target, resolve_command_target_with_overrides, resolve_command_triple,
     resolve_command_triple_with_overrides, resolve_context_target,
-    resolve_context_target_with_overrides, split_space_and_id, split_space_id_and_revision,
-    SpaceTarget,
+    resolve_context_target_with_overrides, SpaceTarget,
 };
 pub use write::{normalize_core_root_to_absolute, unique_context_name, write_config_file_atomic};

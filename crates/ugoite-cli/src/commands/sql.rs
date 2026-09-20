@@ -1,4 +1,4 @@
-use crate::cli_config::{resolve_command_triple, split_space_and_id};
+use crate::cli_config::resolve_command_triple;
 use crate::config::print_json;
 use crate::http;
 use anyhow::{Context, Result};
@@ -26,39 +26,17 @@ pub enum SqlSubCmd {
     /// Validate SQL syntax without executing it
     Lint { sql_text: String },
     /// List saved SQL queries
-    #[command(
-        long_about = "List saved SQL queries.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql saved-list\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql saved-list\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql saved-list /root/spaces/my-space\n  ugoite sql saved-list 019f1234-5678-7abc-8def-0123456789ab"
-    )]
-    SavedList {
-        #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
-        )]
-        space_path: Option<String>,
-    },
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
+    SavedList,
     /// Get a saved SQL query
-    #[command(
-        long_about = "Get a saved SQL query.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql saved-get <sql-id>\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql saved-get <sql-id>\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql saved-get /root/spaces/my-space <sql-id>\n  ugoite sql saved-get 019f1234-5678-7abc-8def-0123456789ab <sql-id>"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     SavedGet {
-        #[arg(
-            value_name = "SPACE_OR_SQL_ID",
-            num_args(1..=2),
-            required = true,
-            help = "SQL_ID against the selected context, or legacy SPACE SQL_ID."
-        )]
-        space_and_id: Vec<String>,
+        #[arg(value_name = "SQL_ID")]
+        sql_id: String,
     },
     /// Create a saved SQL query
-    #[command(
-        long_about = "Create a saved SQL query.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql saved-create --name planning --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10'\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql saved-create --name planning --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10'\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql saved-create /root/spaces/my-space --name planning --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10'"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     SavedCreate {
-        #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
-        )]
-        space_path: Option<String>,
         #[arg(long)]
         name: String,
         #[arg(long)]
@@ -67,17 +45,10 @@ pub enum SqlSubCmd {
         variables: Option<String>,
     },
     /// Update a saved SQL query
-    #[command(
-        long_about = "Update a saved SQL query.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql saved-update <sql-id> --name planning --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10' --parent-revision-id rev-1\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql saved-update <sql-id> --name planning --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10' --parent-revision-id rev-1\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql saved-update /root/spaces/my-space <sql-id> --name planning --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10' --parent-revision-id rev-1"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     SavedUpdate {
-        #[arg(
-            value_name = "SPACE_OR_SQL_ID",
-            num_args(1..=2),
-            required = true,
-            help = "SQL_ID against the selected context, or legacy SPACE SQL_ID."
-        )]
-        space_and_id: Vec<String>,
+        #[arg(value_name = "SQL_ID")]
+        sql_id: String,
         #[arg(long)]
         name: String,
         #[arg(long)]
@@ -88,17 +59,10 @@ pub enum SqlSubCmd {
         parent_revision_id: String,
     },
     /// Delete a saved SQL query
-    #[command(
-        long_about = "Delete a saved SQL query.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql saved-delete <sql-id>\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql saved-delete <sql-id>\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql saved-delete /root/spaces/my-space <sql-id>"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     SavedDelete {
-        #[arg(
-            value_name = "SPACE_OR_SQL_ID",
-            num_args(1..=2),
-            required = true,
-            help = "SQL_ID against the selected context, or legacy SPACE SQL_ID."
-        )]
-        space_and_id: Vec<String>,
+        #[arg(value_name = "SQL_ID")]
+        sql_id: String,
         #[arg(long)]
         human_approval: Option<String>,
     },
@@ -109,17 +73,10 @@ pub enum SqlSubCmd {
     /// with READ_ONLY_SQL_REQUIRED on every transport. Output is stable JSON
     /// with result/count/offset/limit metadata. Local mode carries no
     /// `session_id`; remote mode adds the `session_id` continuation handle.
-    #[command(
-        long_about = "Execute a saved SQL query with bounded pagination.\n\nLocal mode carries no `session_id`; remote mode adds the `session_id` continuation handle (see the Saved SQL task page).\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql saved-execute <sql-id> --limit 20\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql saved-execute <sql-id> --limit 20\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql saved-execute /root/spaces/my-space <sql-id> --limit 20"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     SavedExecute {
-        #[arg(
-            value_name = "SPACE_OR_SQL_ID",
-            num_args(1..=2),
-            required = true,
-            help = "SQL_ID against the selected context, or legacy SPACE SQL_ID."
-        )]
-        space_and_id: Vec<String>,
+        #[arg(value_name = "SQL_ID")]
+        sql_id: String,
         #[arg(long)]
         offset: Option<usize>,
         #[arg(long)]
@@ -131,69 +88,28 @@ pub enum SqlSubCmd {
     /// under the workspace root and executes through the shared read-only
     /// admission and paged executor. Backend/api mode uses
     /// `sql_session.create`. Write SQL is rejected pre-execution.
-    #[command(
-        long_about = "Create a SQL session for a read-only SELECT.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql session-create --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10'\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql session-create --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10'\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql session-create /root/spaces/my-space --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10'"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     SessionCreate {
-        #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
-        )]
-        space_path: Option<String>,
         #[arg(long)]
         sql: String,
     },
     /// Get SQL session metadata.
-    #[command(
-        long_about = "Get SQL session metadata.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql session-get <session-id>\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql session-get <session-id>\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql session-get /root/spaces/my-space <session-id>"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     SessionGet {
-        #[arg(
-            value_name = "SPACE_OR_SESSION_ID",
-            num_args(1..=2),
-            required = true,
-            help = "SESSION_ID against the selected context, or legacy SPACE SESSION_ID."
-        )]
-        space_and_id: Vec<String>,
-    },
-    /// Get SQL session metadata (explicit alias for session-get).
-    #[command(
-        long_about = "Get SQL session metadata (explicit alias for session-get).\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql session-metadata <session-id>\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql session-metadata <session-id>\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql session-metadata /root/spaces/my-space <session-id>"
-    )]
-    SessionMetadata {
-        #[arg(
-            value_name = "SPACE_OR_SESSION_ID",
-            num_args(1..=2),
-            required = true,
-            help = "SESSION_ID against the selected context, or legacy SPACE SESSION_ID."
-        )]
-        space_and_id: Vec<String>,
+        #[arg(value_name = "SESSION_ID")]
+        session_id: String,
     },
     /// Get the total row count for a SQL session.
-    #[command(
-        long_about = "Get the total row count for a SQL session.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql session-count <session-id>\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql session-count <session-id>\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql session-count /root/spaces/my-space <session-id>"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     SessionCount {
-        #[arg(
-            value_name = "SPACE_OR_SESSION_ID",
-            num_args(1..=2),
-            required = true,
-            help = "SESSION_ID against the selected context, or legacy SPACE SESSION_ID."
-        )]
-        space_and_id: Vec<String>,
+        #[arg(value_name = "SESSION_ID")]
+        session_id: String,
     },
     /// Read one bounded page of SQL session rows.
-    #[command(
-        long_about = "Read one bounded page of SQL session rows.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite sql session-rows <session-id> --offset 0 --limit 1\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME sql session-rows <session-id> --offset 0 --limit 1\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite sql session-rows /root/spaces/my-space <session-id> --offset 0 --limit 1"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     SessionRows {
-        #[arg(
-            value_name = "SPACE_OR_SESSION_ID",
-            num_args(1..=2),
-            required = true,
-            help = "SESSION_ID against the selected context, or legacy SPACE SESSION_ID."
-        )]
-        space_and_id: Vec<String>,
+        #[arg(value_name = "SESSION_ID")]
+        session_id: String,
         #[arg(long)]
         offset: Option<usize>,
         #[arg(long)]
@@ -444,13 +360,9 @@ pub async fn run(
                 "reason": error.to_string(),
             })),
         },
-        SqlSubCmd::SavedList { space_path } => {
-            let (root, space_id, base) = resolve_command_triple(
-                space_path.as_deref(),
-                explicit_config,
-                context_override,
-                "sql saved-list",
-            )?;
+        SqlSubCmd::SavedList => {
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "sql saved-list")?;
             if let Some(base) = base {
                 let result = http::execute(
                     &base,
@@ -466,16 +378,9 @@ pub async fn run(
             let sqls = service.list_saved_sql_operator_unscoped(&space_id).await?;
             print_json(&sqls);
         }
-        SqlSubCmd::SavedGet { space_and_id } => {
-            let (legacy_space, sql_id) =
-                split_space_and_id(&space_and_id, "SQL_ID", "sql saved-get")?;
-            let sql_id = sql_id.to_string();
-            let (root, space_id, base) = resolve_command_triple(
-                legacy_space,
-                explicit_config,
-                context_override,
-                "sql saved-get",
-            )?;
+        SqlSubCmd::SavedGet { sql_id } => {
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "sql saved-get")?;
             if let Some(base) = base {
                 let result = http::execute(
                     &base,
@@ -492,17 +397,12 @@ pub async fn run(
             print_json(&sql);
         }
         SqlSubCmd::SavedCreate {
-            space_path,
             name,
             sql,
             variables,
         } => {
-            let (root, space_id, base) = resolve_command_triple(
-                space_path.as_deref(),
-                explicit_config,
-                context_override,
-                "sql saved-create",
-            )?;
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "sql saved-create")?;
             let vars: serde_json::Value = variables
                 .map(|v| serde_json::from_str(&v))
                 .transpose()?
@@ -533,21 +433,14 @@ pub async fn run(
             print_json(&result);
         }
         SqlSubCmd::SavedUpdate {
-            space_and_id,
+            sql_id,
             name,
             sql,
             variables,
             parent_revision_id,
         } => {
-            let (legacy_space, sql_id) =
-                split_space_and_id(&space_and_id, "SQL_ID", "sql saved-update")?;
-            let sql_id = sql_id.to_string();
-            let (root, space_id, base) = resolve_command_triple(
-                legacy_space,
-                explicit_config,
-                context_override,
-                "sql saved-update",
-            )?;
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "sql saved-update")?;
             let vars: serde_json::Value = variables
                 .map(|v| serde_json::from_str(&v))
                 .transpose()?
@@ -584,18 +477,11 @@ pub async fn run(
             print_json(&result);
         }
         SqlSubCmd::SavedDelete {
-            space_and_id,
+            sql_id,
             human_approval,
         } => {
-            let (legacy_space, sql_id) =
-                split_space_and_id(&space_and_id, "SQL_ID", "sql saved-delete")?;
-            let sql_id = sql_id.to_string();
-            let (root, space_id, base) = resolve_command_triple(
-                legacy_space,
-                explicit_config,
-                context_override,
-                "sql saved-delete",
-            )?;
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "sql saved-delete")?;
             let human_approval =
                 human_approval.or_else(|| std::env::var("UGOITE_HUMAN_APPROVAL").ok());
             if let Some(base) = base {
@@ -617,20 +503,13 @@ pub async fn run(
             print_json(&serde_json::json!({"deleted": true}));
         }
         SqlSubCmd::SavedExecute {
-            space_and_id,
+            sql_id,
             offset,
             limit,
         } => {
-            let (legacy_space, sql_id) =
-                split_space_and_id(&space_and_id, "SQL_ID", "sql saved-execute")?;
-            let sql_id = sql_id.to_string();
             let (offset_value, limit_value) = parse_sql_page(offset, limit)?;
-            let (root, space_id, base) = resolve_command_triple(
-                legacy_space,
-                explicit_config,
-                context_override,
-                "sql saved-execute",
-            )?;
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "sql saved-execute")?;
             if let Some(base) = base {
                 let saved = http::execute(
                     &base,
@@ -689,13 +568,9 @@ pub async fn run(
             output["sql_id"] = serde_json::json!(sql_id);
             print_json(&output);
         }
-        SqlSubCmd::SessionCreate { space_path, sql } => {
-            let (root, space_id, base) = resolve_command_triple(
-                space_path.as_deref(),
-                explicit_config,
-                context_override,
-                "sql session-create",
-            )?;
+        SqlSubCmd::SessionCreate { sql } => {
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "sql session-create")?;
             // Shared read-only admission before any state creation or network.
             validate_read_only_sql(&sql)?;
             if let Some(base) = base {
@@ -712,16 +587,9 @@ pub async fn run(
             let meta = write_local_sql_session(&root, &space_id, &sql)?;
             print_json(&meta);
         }
-        SqlSubCmd::SessionGet { space_and_id } => {
-            let (legacy_space, session_id) =
-                split_space_and_id(&space_and_id, "SESSION_ID", "sql session-get")?;
-            let session_id = session_id.to_string();
-            let (root, space_id, base) = resolve_command_triple(
-                legacy_space,
-                explicit_config,
-                context_override,
-                "sql session-get",
-            )?;
+        SqlSubCmd::SessionGet { session_id } => {
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "sql session-get")?;
             if let Some(base) = base {
                 let result = http::execute(
                     &base,
@@ -736,40 +604,9 @@ pub async fn run(
             let meta = read_local_sql_session(&root, &space_id, &session_id)?;
             print_json(&meta);
         }
-        SqlSubCmd::SessionMetadata { space_and_id } => {
-            let (legacy_space, session_id) =
-                split_space_and_id(&space_and_id, "SESSION_ID", "sql session-metadata")?;
-            let session_id = session_id.to_string();
-            let (root, space_id, base) = resolve_command_triple(
-                legacy_space,
-                explicit_config,
-                context_override,
-                "sql session-metadata",
-            )?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
-                    "sql_session.get",
-                    serde_json::json!({"space_id": space_id, "session_id": session_id}),
-                    None,
-                )
-                .await?;
-                print_json(&result);
-                return Ok(());
-            }
-            let meta = read_local_sql_session(&root, &space_id, &session_id)?;
-            print_json(&meta);
-        }
-        SqlSubCmd::SessionCount { space_and_id } => {
-            let (legacy_space, session_id) =
-                split_space_and_id(&space_and_id, "SESSION_ID", "sql session-count")?;
-            let session_id = session_id.to_string();
-            let (root, space_id, base) = resolve_command_triple(
-                legacy_space,
-                explicit_config,
-                context_override,
-                "sql session-count",
-            )?;
+        SqlSubCmd::SessionCount { session_id } => {
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "sql session-count")?;
             if let Some(base) = base {
                 let result = http::execute(
                     &base,
@@ -803,20 +640,13 @@ pub async fn run(
             }));
         }
         SqlSubCmd::SessionRows {
-            space_and_id,
+            session_id,
             offset,
             limit,
         } => {
-            let (legacy_space, session_id) =
-                split_space_and_id(&space_and_id, "SESSION_ID", "sql session-rows")?;
-            let session_id = session_id.to_string();
             let (offset_value, limit_value) = parse_sql_page(offset, limit)?;
-            let (root, space_id, base) = resolve_command_triple(
-                legacy_space,
-                explicit_config,
-                context_override,
-                "sql session-rows",
-            )?;
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "sql session-rows")?;
             if let Some(base) = base {
                 let rows_payload = http::execute(
                     &base,

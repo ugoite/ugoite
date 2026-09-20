@@ -173,8 +173,8 @@ features:
         targets:
           - id: config
             adapter: rust
-            path: crates/ugoite-cli/src/config.rs
-            selector: { kind: symbol, name: config_path }
+            path: crates/ugoite-cli/src/cli_config/discover.rs
+            selector: { kind: symbol, name: canonical_global_config_path }
             claims:
               - kind: satisfies
                 criterion: REQ-OPS-006#criterion.cli-surface

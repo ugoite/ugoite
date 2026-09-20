@@ -28,10 +28,8 @@ use crate::http;
 /// Same journey as [`execute_with_step_up`], but every leg (initial intent,
 /// `auth.step_up.start`, `auth.step_up.status` polling, and the single retry)
 /// resolves credentials through the [`crate::cli_config::SpaceTarget`]
-/// connection boundary: a context-first remote (`connection: Some`) uses
-/// exactly its named credential profile with no implicit global fallback,
-/// while the legacy explicit-Space shape (`connection: None`) keeps the
-/// 0.1.x global session lookup.
+/// connection boundary: a context-first remote uses exactly its named
+/// credential profile with no implicit global fallback.
 pub async fn execute_with_step_up_for_target(
     target: &crate::cli_config::SpaceTarget,
     operation: &str,

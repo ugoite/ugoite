@@ -2,10 +2,7 @@ use crate::cli_config::{
     load_cli_config, mutate_write_target, normalize_core_root_to_absolute, resolve_cli_context,
     ConfigFile, ConnectionConfig,
 };
-use crate::config::{
-    endpoint_transport_warning, load_config, print_json, save_config,
-    validate_active_remote_endpoint, validate_server_endpoint_url, EndpointMode,
-};
+use crate::config::print_json;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
 use std::path::{Path, PathBuf};
@@ -18,34 +15,8 @@ pub struct ConfigCmd {
 
 #[derive(Subcommand)]
 pub enum ConfigSubCmd {
-    /// Show saved endpoint config
-    Show,
-    /// Show the active endpoint mode in plain language
-    #[command(
-        long_about = "Show the active selection in plain language.\n\nMachine shape (canonical config present): `Config sources:` (one per line), `Write target:` (one line), `Current context:` (name or `(none)`), then for a selected context `Connection:` (name plus transport), `Root:` (local) or `Endpoint:` (remote), `Space:` (immutable Space UID), and `Credential:` (profile name or `none`). With no canonical config present, the legacy endpoint-mode text (`Current endpoint mode: ...`) is printed instead for 0.1.x compatibility."
-    )]
+    /// Show the effective canonical configuration and selected context.
     Current,
-    /// Save endpoint config (mode, backend URL, API URL)
-    #[command(
-        long_about = "Save endpoint configuration.\n\nWhich mode should you use?\n  core     - Default. Use when you are working directly with a local checkout or local spaces/ directory.\n  backend  - Use when you want the CLI to talk to a backend server directly.\n  api      - Use when you want the CLI to use the same proxied /api surface as the frontend.\n\nWhy core is the default:\n  core keeps the CLI local-first. Commands read and write your filesystem directly, with no server required.\n\nRemote credentialed endpoints MUST use HTTPS. Cleartext http:// is only accepted for loopback development hosts (`localhost`, `127.0.0.1`, `[::1]`).\n\nExamples:\n  # Core mode (default, uses local filesystem)\n  ugoite config set --mode core\n\n  # Backend mode (connect to local backend)\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\n  # API mode (same proxied /api surface as the frontend)\n  ugoite config set --mode api --api-url https://example.com/api\n\n  # Update only the backend URL (keep current mode)\n  ugoite config set --backend-url http://localhost:9000"
-    )]
-    Set {
-        #[arg(
-            long,
-            help = "Endpoint mode: core (local spaces/ on this machine, default), backend (direct backend server), or api (same proxied /api surface as the frontend)"
-        )]
-        mode: Option<String>,
-        #[arg(
-            long,
-            help = "Backend server URL (used in backend mode; use https:// for non-loopback hosts, e.g. http://localhost:8000)"
-        )]
-        backend_url: Option<String>,
-        #[arg(
-            long,
-            help = "API endpoint URL (used in api mode; use https:// for non-loopback hosts)"
-        )]
-        api_url: Option<String>,
-    },
     /// Initialize a canonical TOML config (default: ~/.ugoite/config.toml)
     Init {
         /// Create project-local ./.ugoite/config.toml instead of global
@@ -57,8 +28,6 @@ pub enum ConfigSubCmd {
         #[command(subcommand)]
         sub: ConnectionSubCmd,
     },
-    /// Migrate the legacy endpoint file to canonical TOML (v0.1.x read-only bridge)
-    Migrate,
 }
 
 #[derive(Subcommand)]
@@ -103,26 +72,6 @@ fn cwd() -> PathBuf {
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
-/// True when any canonical candidate file exists (project-local, global, or
-/// any UGOITE_CONFIG entry). Used to fail closed instead of silently falling
-/// back to legacy output.
-fn has_canonical_candidate(cwd: &Path) -> bool {
-    if crate::cli_config::discover::project_local_config_path(cwd).is_file() {
-        return true;
-    }
-    if crate::cli_config::discover::canonical_global_config_path().is_file() {
-        return true;
-    }
-    if let Ok(value) = std::env::var("UGOITE_CONFIG") {
-        for entry in std::env::split_paths(&value) {
-            if !entry.as_os_str().is_empty() && entry.is_file() {
-                return true;
-            }
-        }
-    }
-    false
-}
-
 fn build_connection(
     kind: &str,
     root: Option<String>,
@@ -154,68 +103,15 @@ pub async fn run(
     explicit_context: Option<&str>,
 ) -> Result<()> {
     match cmd.sub {
-        ConfigSubCmd::Show => {
-            let config = load_config()?;
-            print_json(&config);
-        }
         ConfigSubCmd::Current => {
-            // Canonical-first: when any canonical source exists, show the
-            // effective inspection (plan 46). Otherwise keep the legacy
-            // endpoint-mode output so v0.1.x usage is unchanged. A
-            // present-but-broken canonical file fails closed (no silent
-            // fallback to legacy).
             let cwd = cwd();
-            match load_cli_config(explicit_config, &cwd) {
-                Ok(files) if !files.sources.is_empty() => {
-                    print_effective_current(
-                        &files.effective,
-                        &files.sources,
-                        &files.write_target,
-                        explicit_context,
-                    )?;
-                    return Ok(());
-                }
-                Ok(_) => {}
-                Err(error) => {
-                    if explicit_config.is_some() || has_canonical_candidate(&cwd) {
-                        return Err(error);
-                    }
-                }
-            }
-            let config = load_config()?;
-            print_current_config(&config);
-        }
-        ConfigSubCmd::Set {
-            mode,
-            backend_url,
-            api_url,
-        } => {
-            let mut config = load_config()?;
-            let previous_mode = config.mode.clone();
-            if let Some(m) = mode {
-                config.mode = match m.as_str() {
-                    "core" => EndpointMode::Core,
-                    "backend" => EndpointMode::Backend,
-                    "api" => EndpointMode::Api,
-                    _ => anyhow::bail!("Invalid mode: {m}. Use core, backend, or api"),
-                };
-            }
-            if let Some(u) = backend_url {
-                validate_server_endpoint_url(&u, "Backend endpoint")?;
-                config.backend_url = u;
-            }
-            if let Some(u) = api_url {
-                validate_server_endpoint_url(&u, "API endpoint")?;
-                config.api_url = u;
-            }
-            validate_active_remote_endpoint(&config)?;
-            print_mode_transition_notice(&previous_mode, &config.mode, &config);
-            let path = save_config(&config)?;
-            print_json(&serde_json::json!({
-                "saved": true,
-                "path": path.to_string_lossy(),
-                "config": config,
-            }));
+            let files = load_cli_config(explicit_config, &cwd)?;
+            print_effective_current(
+                &files.effective,
+                &files.sources,
+                &files.write_target,
+                explicit_context,
+            )?;
         }
         ConfigSubCmd::Init { local } => {
             let cwd = cwd();
@@ -249,55 +145,7 @@ pub async fn run(
         ConfigSubCmd::Connection { sub } => {
             run_connection(sub, explicit_config).await?;
         }
-        ConfigSubCmd::Migrate => {
-            run_migrate(explicit_config)?;
-        }
     }
-    Ok(())
-}
-
-/// Migrate the legacy v0.1.x endpoint file to canonical TOML.
-///
-/// Read-only bridge: the legacy file is never modified or deleted, and an
-/// existing canonical write target is never silently overwritten. Only
-/// connections migrate — contexts are created afterwards by `space create`
-/// (automatic) or `context add`. Knowledge is never touched.
-fn run_migrate(explicit_config: Option<&Path>) -> Result<()> {
-    use crate::cli_config::{
-        legacy_config_path, normalize_legacy_to_config_file, read_legacy_config,
-    };
-
-    let cwd = cwd();
-    let write_target = if let Some(explicit) = explicit_config {
-        explicit.to_path_buf()
-    } else {
-        crate::cli_config::discover::live_write_target(None, &cwd)
-    };
-    if write_target.exists() {
-        bail!(
-            "Refusing to migrate over existing config at {}",
-            write_target.display()
-        );
-    }
-    let legacy_path = legacy_config_path();
-    let Some(legacy) = read_legacy_config()? else {
-        bail!(
-            "No legacy CLI configuration found at {}. Nothing to migrate.",
-            legacy_path.display()
-        );
-    };
-    let canonical = normalize_legacy_to_config_file(
-        &legacy,
-        &cwd,
-        &format!("legacy {}", legacy_path.display()),
-    )?;
-    crate::cli_config::write::write_config_file_atomic(&write_target, &canonical)?;
-    print_json(&serde_json::json!({
-        "migrated": true,
-        "from": legacy_path.to_string_lossy(),
-        "path": write_target.to_string_lossy(),
-        "connections": canonical.connections.keys().collect::<Vec<_>>(),
-    }));
     Ok(())
 }
 
@@ -524,92 +372,4 @@ fn print_effective_current(
         }
     }
     Ok(())
-}
-
-fn print_current_config(config: &crate::config::EndpointConfig) {
-    match config.mode {
-        EndpointMode::Core => {
-            println!("Current endpoint mode: core");
-            println!("Topology: local filesystem via ugoite-core.");
-            println!(
-                "Best when: you are working directly with a local checkout or local spaces/ directory."
-            );
-            println!("Why it stays the default: it is the shortest local-first path and does not require a running server.");
-            println!("Future commands read and write your local workspace directly.");
-            println!("To switch to a server-backed mode:");
-            println!("  ugoite config set --mode backend --backend-url http://localhost:8000");
-        }
-        EndpointMode::Backend => {
-            println!("Current endpoint mode: backend");
-            println!("Topology: direct backend server at {}", config.backend_url);
-            println!("Best when: you want the CLI to talk to a backend server directly.");
-            println!("Trade-off: future commands use the server's storage and auth behavior instead of your local filesystem.");
-            if let Some(warning) =
-                endpoint_transport_warning(&config.backend_url, "Backend endpoint")
-            {
-                println!("Warning: {warning}");
-            }
-            println!("Future commands use the server instead of your local filesystem.");
-            println!("To return to local-first mode:");
-            println!("  ugoite config set --mode core");
-        }
-        EndpointMode::Api => {
-            println!("Current endpoint mode: api");
-            println!("Topology: API endpoint at {}", config.api_url);
-            println!(
-                "Best when: you want the CLI to use the same proxied /api surface as the frontend."
-            );
-            println!("Trade-off: future commands follow the frontend-facing API path instead of direct local filesystem access.");
-            if let Some(warning) = endpoint_transport_warning(&config.api_url, "API endpoint") {
-                println!("Warning: {warning}");
-            }
-            println!("Future commands use the remote API instead of your local filesystem.");
-            println!("To return to local-first mode:");
-            println!("  ugoite config set --mode core");
-        }
-    }
-}
-
-fn print_mode_transition_notice(
-    previous_mode: &EndpointMode,
-    next_mode: &EndpointMode,
-    config: &crate::config::EndpointConfig,
-) {
-    if previous_mode == next_mode {
-        return;
-    }
-
-    match (previous_mode, next_mode) {
-        (EndpointMode::Core, EndpointMode::Backend) => {
-            eprintln!(
-                "Warning: switching from core mode to backend mode. Future commands will use {} instead of your local filesystem.",
-                config.backend_url
-            );
-            eprintln!("To return to local-first mode: ugoite config set --mode core");
-        }
-        (EndpointMode::Core, EndpointMode::Api) => {
-            eprintln!(
-                "Warning: switching from core mode to api mode. Future commands will use {} instead of your local filesystem.",
-                config.api_url
-            );
-            eprintln!("To return to local-first mode: ugoite config set --mode core");
-        }
-        (_, EndpointMode::Core) => {
-            eprintln!("Switched back to core mode. Future commands will use your local filesystem directly.");
-        }
-        (_, EndpointMode::Backend) => {
-            eprintln!(
-                "Switched to backend mode. Future commands will use {}.",
-                config.backend_url
-            );
-            eprintln!("To return to local-first mode: ugoite config set --mode core");
-        }
-        (_, EndpointMode::Api) => {
-            eprintln!(
-                "Switched to api mode. Future commands will use {}.",
-                config.api_url
-            );
-            eprintln!("To return to local-first mode: ugoite config set --mode core");
-        }
-    }
 }

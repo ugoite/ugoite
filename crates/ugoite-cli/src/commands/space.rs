@@ -1,7 +1,6 @@
 use crate::config::{
-    effective_format, load_config, normalize_space_root, operator_for_path, parse_space_path,
-    print_json, print_json_table, print_list_table, resolve_backend_space_uid,
-    resolve_space_reference, validated_base_url, EndpointConfig, Format,
+    effective_format, normalize_space_root, operator_for_path, print_json, print_json_table,
+    print_list_table, Format,
 };
 use crate::http;
 use crate::step_up;
@@ -11,11 +10,13 @@ use std::path::Path;
 use ugoite_iceberg::sample_data::SampleDataOptions;
 use ugoite_iceberg::service::{validate_public_space_patch, UgoiteService};
 
-fn backend_api_mode_error(config: &EndpointConfig, command_name: &str) -> String {
-    format!(
-        "{command_name} requires backend or api mode.\nRun `ugoite config current` to inspect the active mode, then switch with `ugoite config set --mode backend --backend-url {}` or `ugoite config set --mode api --api-url {}`.",
-        config.backend_url, config.api_url
-    )
+fn space_slug_from_input(value: &str) -> String {
+    Path::new(value)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or(value)
+        .to_string()
 }
 
 #[derive(Args)]
@@ -31,7 +32,7 @@ pub struct SpaceCmd {
 pub enum SpaceSubCmd {
     /// Create a new space
     #[command(
-        long_about = "Create a new space.\n\nWith a canonical config (see `ugoite config init`), the Space is created on the selected connection and automatically registered as the current CLI context by its immutable Space UID — no follow-up `context add/use` needed. Pass --no-context to skip registration, or --connection to pick the connection.\n\nRun `ugoite config current` to check whether you are in core, backend, or api mode. The positional value is a local Space path in core mode or the new human-readable Space slug in backend/api mode. A server-generated Space UID is returned after creation and is the authority for all later operations; the requested slug is never a UID.\n\nExamples:\n  # Canonical (auto-registers context \"demo\")\n  ugoite space create demo\n\n  # Core mode (full local Space path, optional display name)\n  ugoite space create /root/spaces/my-space --name \"My Space\"\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space create team-notes --name \"Team Notes\""
+        long_about = "Create a new space.\n\nWith a canonical config (see `ugoite config init`), the Space is created on the selected connection and automatically registered as the current CLI context by its immutable Space UID — no follow-up `context add/use` needed. Pass --no-context to skip registration, or --connection to pick the connection.\n\nRun `ugoite config current` to check whether you are in core, backend, or api mode. The positional value is a local Space path in core mode or the new human-readable Space slug in backend/api mode. A server-generated Space UID is returned after creation and is the authority for all later operations; the requested slug is never a UID.\n\nExamples:\n  # Canonical (auto-registers context \"demo\")\n  ugoite space create demo\n\n  # Core mode (full local Space path, optional display name)\n  ugoite space create /root/spaces/my-space --name \"My Space\"\n\n  # Backend mode (requires: ugoite config connection add NAME --type backend --url URL)\n  ugoite space create team-notes --name \"Team Notes\""
     )]
     Create {
         #[arg(
@@ -59,7 +60,7 @@ pub enum SpaceSubCmd {
     },
     /// List spaces
     #[command(
-        long_about = "List all spaces.\n\nRun `ugoite config current` to check whether you should pass a local `ROOT_PATH` or omit it entirely.\nUse `ROOT_PATH` in core mode and omit it in backend/api mode.\n\nExamples:\n  # Core mode (workspace root)\n  ugoite space list /root\n\n  # Core mode (spaces directory also accepted)\n  ugoite space list /root/spaces\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space list"
+        long_about = "List all spaces.\n\nRun `ugoite config current` to check whether you should pass a local `ROOT_PATH` or omit it entirely.\nUse `ROOT_PATH` in core mode and omit it in backend/api mode.\n\nExamples:\n  # Core mode (workspace root)\n  ugoite space list /root\n\n  # Core mode (spaces directory also accepted)\n  ugoite space list /root/spaces\n\n  # Backend mode (requires: ugoite config connection add NAME --type backend --url URL)\n  ugoite space list"
     )]
     List {
         #[arg(
@@ -69,26 +70,11 @@ pub enum SpaceSubCmd {
         root_path: Option<String>,
     },
     /// Get space metadata
-    #[command(
-        long_about = "Get space metadata.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite space get\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME space get\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite space get /root/spaces/my-space\n  ugoite space get 019f1234-5678-7abc-8def-0123456789ab"
-    )]
-    Get {
-        #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
-        )]
-        space_path: Option<String>,
-    },
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
+    Get,
     /// Patch space metadata
-    #[command(
-        long_about = "Patch space metadata.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite space patch --name \"Renamed Space\"\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME space patch --name \"Renamed Space\"\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite space patch /root/spaces/my-space --name \"Renamed Space\"\n  ugoite space patch 019f1234-5678-7abc-8def-0123456789ab --settings '{\"theme\":\"dark\"}'"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Patch {
-        #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
-        )]
-        space_path: Option<String>,
         #[arg(long)]
         name: Option<String>,
         #[arg(long)]
@@ -171,20 +157,9 @@ pub enum SpaceSubCmd {
     /// Test storage connection
     TestConnection { storage_config_json: String },
     /// List space members (backend/api mode only)
-    Members {
-        #[arg(
-            value_name = "SPACE_UID",
-            help = "Immutable Space UID in backend/api mode."
-        )]
-        space_path: String,
-    },
+    Members,
     /// List Space audit events (append-only evidence: event/change/revision/actor only, never paths or secrets)
     AuditEvents {
-        #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
-        )]
-        space_path: Option<String>,
         #[arg(long, default_value_t = 0)]
         offset: u64,
         #[arg(
@@ -194,22 +169,6 @@ pub enum SpaceSubCmd {
         )]
         limit: u64,
     },
-}
-
-fn require_local_root<'a>(root_path: Option<&'a str>, command_name: &str) -> Result<&'a str> {
-    root_path
-        .ok_or_else(|| anyhow::anyhow!("{command_name} requires --root <LOCAL_ROOT> in core mode"))
-}
-
-fn require_space_list_root(root_path: Option<&str>) -> Result<String> {
-    root_path
-        .map(normalize_space_root)
-        .filter(|path| !path.is_empty())
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "space list requires ROOT_PATH as /path/to/root or /path/to/root/spaces in core mode"
-            )
-        })
 }
 
 fn resolve_sample_owner_display_name(owner: Option<String>) -> Option<String> {
@@ -270,64 +229,6 @@ fn resolve_create_display_name(requested_slug: &str, display_name: Option<&str>)
         Some(name) => ugoite_domain::space::normalize_space_display_name(name)
             .map_err(|error| anyhow::anyhow!(error.to_string())),
     }
-}
-
-pub async fn create_space_cmd(
-    root_path: Option<&str>,
-    space_id: &str,
-    command_name: &str,
-) -> Result<()> {
-    create_space_cmd_with_name(root_path, space_id, None, command_name).await
-}
-
-pub async fn create_space_cmd_with_name(
-    root_path: Option<&str>,
-    space_id: &str,
-    display_name: Option<&str>,
-    command_name: &str,
-) -> Result<()> {
-    let config = load_config()?;
-    let requested_slug = parse_space_path(space_id).1;
-    let resolved_name = resolve_create_display_name(&requested_slug, display_name)?;
-    if let Some(base) = validated_base_url(&config)? {
-        // Remote Space creation may require fresh human presence; the
-        // step-up handoff (browser approval, one automatic retry) keeps the
-        // ceremony policy intact instead of weakening it.
-        let result = step_up::execute_with_step_up(
-            &base,
-            "space.create",
-            serde_json::json!({}),
-            Some(serde_json::json!({"slug": requested_slug, "name": resolved_name})),
-            None,
-        )
-        .await?;
-        print_json(&result);
-        return Ok(());
-    }
-    let root_path = require_local_root(root_path, command_name)?;
-    let service = UgoiteService::new_without_background_refresh(root_path)?;
-    let outcome = service
-        .ensure_operator_space_with_name(&requested_slug, &resolved_name)
-        .await?;
-    print_json(
-        &serde_json::json!({"created": outcome.created(), "id": outcome.space_id(), "slug": requested_slug, "name": resolved_name}),
-    );
-    Ok(())
-}
-
-/// Canonical path triggers: explicit connection selection, explicit opt-out,
-/// an explicit `--config` file, or any existing canonical source. Otherwise
-/// the legacy positional-path behavior is preserved unchanged.
-fn should_use_canonical_create(
-    explicit_config: Option<&std::path::Path>,
-    explicit_connection: Option<&str>,
-    no_context: bool,
-) -> bool {
-    if explicit_connection.is_some() || no_context || explicit_config.is_some() {
-        return true;
-    }
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    !crate::cli_config::discover::source_stack_from_environment(None, &cwd).is_empty()
 }
 
 /// Select the connection for `space create` (plan section 37):
@@ -397,7 +298,7 @@ async fn create_space_canonical(
         .connections
         .get(&connection_name)
         .ok_or_else(|| anyhow::anyhow!("Connection {connection_name:?} is not defined."))?;
-    let requested_slug = parse_space_path(space_path).1;
+    let requested_slug = space_slug_from_input(space_path);
     if requested_slug.trim().is_empty() {
         bail!("Space slug must not be empty");
     }
@@ -579,66 +480,52 @@ pub async fn run(
             connection,
             no_context,
         } => {
-            if should_use_canonical_create(explicit_config, connection.as_deref(), no_context) {
-                create_space_canonical(
-                    &space_path,
-                    name.as_deref(),
-                    connection.as_deref(),
-                    no_context,
-                    explicit_config,
-                    context_override,
-                    fmt,
-                )
-                .await?;
-                return Ok(());
-            }
-            // Legacy positional path only; migrated Get/Patch/AuditEvents
-            // resolve without touching the legacy endpoint file.
-            let config = load_config()?;
-            if let Some(base) = validated_base_url(&config)? {
-                // Backend/api creation takes a new human-readable slug; the
-                // server-generated Space UID in the response is the authority
-                // for all later operations. Never treat the requested slug as
-                // a UID and never fall back to another Space.
-                let requested_slug = parse_space_path(&space_path).1;
-                let resolved_name = resolve_create_display_name(&requested_slug, name.as_deref())?;
-                let result = step_up::execute_with_step_up(
-                    &base,
-                    "space.create",
-                    serde_json::json!({}),
-                    Some(serde_json::json!({"slug": requested_slug, "name": resolved_name})),
-                    None,
-                )
-                .await?;
-                print_json(&result);
-                return Ok(());
-            }
-            let requested_slug = parse_space_path(&space_path).1;
-            let resolved_name = resolve_create_display_name(&requested_slug, name.as_deref())?;
-            let (root, _) = resolve_space_reference(&config, &space_path, "space create")?;
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            let outcome = service
-                .ensure_operator_space_with_name(&requested_slug, &resolved_name)
-                .await?;
-            print_json(
-                &serde_json::json!({"created": outcome.created(), "id": outcome.space_id(), "slug": requested_slug, "name": resolved_name}),
-            );
+            create_space_canonical(
+                &space_path,
+                name.as_deref(),
+                connection.as_deref(),
+                no_context,
+                explicit_config,
+                context_override,
+                fmt,
+            )
+            .await?;
         }
         SpaceSubCmd::List { root_path } => {
-            let config = load_config()?;
-            if let Some(base) = validated_base_url(&config)? {
-                let result =
-                    http::execute(&base, "space.list", serde_json::json!({}), None).await?;
-                if fmt != Format::Json {
-                    if let Some(arr) = result.as_array() {
-                        print_json_table(arr, &[("SPACE_UID", "space_uid"), ("NAME", "name")]);
-                        return Ok(());
+            use crate::cli_config::{load_cli_config, ConnectionConfig};
+            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let files = load_cli_config(explicit_config, &cwd)?;
+            let connection_name =
+                select_create_connection(&files.effective, None, context_override)?;
+            let connection = files
+                .effective
+                .connections
+                .get(&connection_name)
+                .ok_or_else(|| anyhow::anyhow!("Connection {connection_name:?} is not defined."))?;
+            let root_path = match &connection.value {
+                ConnectionConfig::Core { root } => root_path
+                    .as_deref()
+                    .map(normalize_space_root)
+                    .filter(|path| !path.is_empty())
+                    .unwrap_or_else(|| normalize_space_root(root)),
+                ConnectionConfig::Backend { url } | ConnectionConfig::Api { url } => {
+                    let base =
+                        crate::cli_config::model::validate_remote_url(url, "Space list endpoint")?
+                            .as_str()
+                            .trim_end_matches('/')
+                            .to_string();
+                    let result =
+                        http::execute(&base, "space.list", serde_json::json!({}), None).await?;
+                    if fmt != Format::Json {
+                        if let Some(arr) = result.as_array() {
+                            print_json_table(arr, &[("SPACE_UID", "space_uid"), ("NAME", "name")]);
+                            return Ok(());
+                        }
                     }
+                    print_json(&result);
+                    return Ok(());
                 }
-                print_json(&result);
-                return Ok(());
-            }
-            let root_path = require_space_list_root(root_path.as_deref())?;
+            };
             let service = UgoiteService::new_without_background_refresh(&root_path)?;
             let spaces = service.list_space_ids().await?;
             if fmt != Format::Json {
@@ -656,36 +543,36 @@ pub async fn run(
                 print_json(&spaces);
             }
         }
-        SpaceSubCmd::Get { space_path } => {
-            let (root, space_id, base) = crate::cli_config::resolve_command_triple(
-                space_path.as_deref(),
+        SpaceSubCmd::Get => {
+            let target = crate::cli_config::resolve_command_target(
                 explicit_config,
                 context_override,
                 "space get",
             )?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
-                    "space.get",
-                    serde_json::json!({"space_id": space_id}),
-                    None,
-                )
-                .await?;
-                print_json(&result);
-                return Ok(());
+            match &target {
+                crate::cli_config::SpaceTarget::Remote { space_uid, .. } => {
+                    let result = http::execute_for_target(
+                        &target,
+                        "space.get",
+                        serde_json::json!({"space_id": space_uid}),
+                        None,
+                    )
+                    .await?;
+                    print_json(&result);
+                }
+                crate::cli_config::SpaceTarget::Core { root, space_id } => {
+                    let service = UgoiteService::new_without_background_refresh(root)?;
+                    let space = service.get_space(space_id).await?;
+                    print_json(&space);
+                }
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            let space = service.get_space(&space_id).await?;
-            print_json(&space);
         }
         SpaceSubCmd::Patch {
-            space_path,
             name,
             storage_config,
             settings,
         } => {
             let (root, space_id, base) = crate::cli_config::resolve_command_triple(
-                space_path.as_deref(),
                 explicit_config,
                 context_override,
                 "space patch",
@@ -795,36 +682,38 @@ pub async fn run(
             .await?;
             print_json(&result);
         }
-        SpaceSubCmd::Members { space_path } => {
-            let config = load_config()?;
-            let space_id = resolve_backend_space_uid(&space_path, "space members")?;
-            if let Some(base) = validated_base_url(&config)? {
-                let result = http::execute(
-                    &base,
-                    "space.members.list",
-                    serde_json::json!({"space_id": space_id}),
-                    None,
-                )
-                .await?;
-                print_json(&result);
-                return Ok(());
-            }
-            bail!("{}", backend_api_mode_error(&config, "members"));
+        SpaceSubCmd::Members => {
+            let target = crate::cli_config::resolve_command_target(
+                explicit_config,
+                context_override,
+                "space members",
+            )?;
+            let crate::cli_config::SpaceTarget::Remote { space_uid, .. } = &target else {
+                bail!("space members requires a backend or api context");
+            };
+            let result = http::execute_for_target(
+                &target,
+                "space.members.list",
+                serde_json::json!({"space_id": space_uid}),
+                None,
+            )
+            .await?;
+            print_json(&result);
         }
-        SpaceSubCmd::AuditEvents {
-            space_path,
-            offset,
-            limit,
-        } => {
+        SpaceSubCmd::AuditEvents { offset, limit } => {
             let (root, space_id, base) = crate::cli_config::resolve_command_triple(
-                space_path.as_deref(),
                 explicit_config,
                 context_override,
                 "space audit-events",
             )?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+            if base.is_some() {
+                let target = crate::cli_config::resolve_command_target(
+                    explicit_config,
+                    context_override,
+                    "space audit-events",
+                )?;
+                let result = http::execute_for_target(
+                    &target,
                     "space.audit",
                     serde_json::json!({"space_id": space_id, "offset": offset, "limit": limit}),
                     None,

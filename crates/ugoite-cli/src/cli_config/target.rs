@@ -1,21 +1,13 @@
 //! Context-first resolution for Space-bound commands (plan sections 52-54).
 //!
-//! Migrated commands resolve their Space through the selected context by
-//! default and keep the explicit positional as a v0.1.x compatibility path:
-//! - `entry get ENTRY_ID` → selected context (new)
-//! - `entry get SPACE ENTRY_ID` → legacy explicit Space (compat, unchanged)
-//!
-//! The compatibility parsing lives in this CLI adapter layer only; domain
-//! semantics never branch per connection type. Local and remote keep the
-//! same command meaning — only transport and trust boundary differ
-//! (core/backend/api transport detail).
+//! Every Space-bound command resolves its Space through the selected context.
+//! Domain semantics never branch per connection type; local and remote keep
+//! the same command meaning and differ only in transport and trust boundary.
 //!
 //! Context path rule: an immutable Space UID resolves to exactly one local
 //! directory (`<root>/spaces/<SPACE_UID>`) and the shared domain-owned Space
 //! compatibility classifier decides compatibility. Legacy slug-named
-//! directories and implicit path/slug discovery are never consulted on the
-//! context path; they stay reachable only through the explicit legacy
-//! positional, which is not reintroduced here.
+//! directories and implicit path/slug discovery are never consulted.
 
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
@@ -33,21 +25,19 @@ pub enum SpaceTarget {
     Remote {
         base: String,
         space_uid: String,
-        /// `None` marks the legacy explicit-Space compatibility path (0.1.x
-        /// global session lookup). `Some` marks the context-first path with
-        /// explicit connection identity and no implicit fallback.
-        connection: Option<String>,
+        /// Named connection identity used for credential scoping.
+        connection: String,
         /// Optional named credential profile identity (never a secret).
         credential: Option<String>,
     },
 }
 
 impl SpaceTarget {
-    /// Connection identity for context-first remotes; `None` for legacy.
+    /// Connection identity for context-first remotes.
     pub fn connection_name(&self) -> Option<&str> {
         match self {
             SpaceTarget::Core { .. } => None,
-            SpaceTarget::Remote { connection, .. } => connection.as_deref(),
+            SpaceTarget::Remote { connection, .. } => Some(connection.as_str()),
         }
     }
 
@@ -68,20 +58,12 @@ impl SpaceTarget {
     }
 }
 
-/// Resolve the Space for a Space-bound command.
-///
-/// - `legacy_space = Some(..)` → v0.1.x compatibility path: the exact legacy
-///   resolution (single global endpoint mode) with unchanged error shapes.
-/// - `legacy_space = None` → selected context (`--context` override, else
-///   `current_context`; never guessed).
 pub fn resolve_command_target(
-    legacy_space: Option<&str>,
     explicit_config: Option<&Path>,
     context_override: Option<&str>,
     command_name: &str,
 ) -> Result<SpaceTarget> {
     resolve_command_target_with_overrides(
-        legacy_space,
         explicit_config,
         context_override,
         None,
@@ -99,22 +81,13 @@ pub fn resolve_command_target(
 /// credential or the uniquely-resolvable credential for that connection,
 /// else an actionable error.
 pub fn resolve_command_target_with_overrides(
-    legacy_space: Option<&str>,
     explicit_config: Option<&Path>,
     context_override: Option<&str>,
     connection_override: Option<&str>,
     credential_override: Option<&str>,
     command_name: &str,
 ) -> Result<SpaceTarget> {
-    if let Some(space) = legacy_space {
-        if connection_override.is_some() || credential_override.is_some() {
-            return Err(crate::output::UsageError(format!(
-                "{command_name} does not accept --connection/--credential with an explicit legacy SPACE; use the selected context instead"
-            ))
-            .into());
-        }
-        return resolve_legacy_target(space, command_name);
-    }
+    let _ = command_name;
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let files = super::runtime::load_cli_config(explicit_config, &cwd)?;
     resolve_context_target_with_overrides(
@@ -261,7 +234,7 @@ pub fn resolve_context_target_with_overrides(
             Ok(SpaceTarget::Remote {
                 base: parsed.as_str().trim_end_matches('/').to_string(),
                 space_uid: resolved.space_uid.to_string(),
-                connection: Some(connection_name),
+                connection: connection_name,
                 credential: credential_name,
             })
         }
@@ -318,74 +291,18 @@ fn validate_core_space(root: &Path, space_uid: &uuid::Uuid) -> Result<String> {
         bail!("Context space_uid must be a UUIDv7");
     }
     // The directory name is the authority key; the stored UID must agree.
-    // (Legacy slug-named directories are reachable only through the explicit
-    // legacy positional path, never through a context UID.)
     Ok(space_uid.to_string())
-}
-
-/// v0.1.x compatibility path: byte-for-byte the legacy resolution behavior.
-fn resolve_legacy_target(space: &str, command_name: &str) -> Result<SpaceTarget> {
-    let config = crate::config::load_config()?;
-    let base = crate::config::validated_base_url(&config)?;
-    if base.is_some() {
-        let space_uid = crate::config::parse_space_uid(space)
-            .with_context(|| format!("{command_name} requires SPACE_UID in backend/api mode"))?;
-        return Ok(SpaceTarget::Remote {
-            base: base.unwrap_or_default(),
-            space_uid,
-            connection: None,
-            credential: None,
-        });
-    }
-    let (root, space_id) = crate::config::resolve_space_reference(&config, space, command_name)?;
-    Ok(SpaceTarget::Core { root, space_id })
-}
-
-/// Split transitional positionals (plan section 54): one value is the bare
-/// ID against the selected context; two values are the legacy explicit
-/// `(SPACE, ID)` pair. Anything else is a usage error.
-pub fn split_space_and_id<'a>(
-    values: &'a [String],
-    id_label: &str,
-    command_name: &str,
-) -> Result<(Option<&'a str>, &'a str)> {
-    match values {
-        [id] => Ok((None, id.as_str())),
-        [space, id] => Ok((Some(space.as_str()), id.as_str())),
-        _ => bail!("{command_name} requires {id_label} (and optional legacy SPACE first)"),
-    }
-}
-
-/// Three-positional variant: `(ID, REVISION)` against the context, or legacy
-/// `(SPACE, ID, REVISION)`.
-pub fn split_space_id_and_revision<'a>(
-    values: &'a [String],
-    command_name: &str,
-) -> Result<(Option<&'a str>, &'a str, &'a str)> {
-    match values {
-        [id, revision] => Ok((None, id.as_str(), revision.as_str())),
-        [space, id, revision] => Ok((Some(space.as_str()), id.as_str(), revision.as_str())),
-        _ => {
-            bail!("{command_name} requires ENTRY_ID REVISION_ID (and optional legacy SPACE first)")
-        }
-    }
 }
 
 /// Legacy-shaped triple for mechanical migration of existing handlers:
 /// `(root, space_id, Option<base>)`. New code should match on
 /// [`SpaceTarget`] directly.
 pub fn resolve_command_triple(
-    legacy_space: Option<&str>,
     explicit_config: Option<&Path>,
     context_override: Option<&str>,
     command_name: &str,
 ) -> Result<(String, String, Option<String>)> {
-    match resolve_command_target(
-        legacy_space,
-        explicit_config,
-        context_override,
-        command_name,
-    )? {
+    match resolve_command_target(explicit_config, context_override, command_name)? {
         SpaceTarget::Remote {
             base, space_uid, ..
         } => Ok((String::new(), space_uid, Some(base))),
@@ -396,7 +313,6 @@ pub fn resolve_command_triple(
 /// Override-aware triple for callers that already accept `--connection` /
 /// `--credential` but still need the legacy shape.
 pub fn resolve_command_triple_with_overrides(
-    legacy_space: Option<&str>,
     explicit_config: Option<&Path>,
     context_override: Option<&str>,
     connection_override: Option<&str>,
@@ -404,7 +320,6 @@ pub fn resolve_command_triple_with_overrides(
     command_name: &str,
 ) -> Result<(String, String, Option<String>)> {
     match resolve_command_target_with_overrides(
-        legacy_space,
         explicit_config,
         context_override,
         connection_override,
@@ -421,36 +336,6 @@ pub fn resolve_command_triple_with_overrides(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn split_two_positionals_prefers_context_for_bare_id() {
-        let one = vec!["meeting-001".to_string()];
-        assert_eq!(
-            split_space_and_id(&one, "ENTRY_ID", "entry get").unwrap(),
-            (None, "meeting-001")
-        );
-        let two = vec!["myspace".to_string(), "meeting-001".to_string()];
-        assert_eq!(
-            split_space_and_id(&two, "ENTRY_ID", "entry get").unwrap(),
-            (Some("myspace"), "meeting-001")
-        );
-        let none: Vec<String> = vec![];
-        assert!(split_space_and_id(&none, "ENTRY_ID", "entry get").is_err());
-    }
-
-    #[test]
-    fn split_restore_positionals() {
-        let two = vec!["e1".to_string(), "r1".to_string()];
-        assert_eq!(
-            split_space_id_and_revision(&two, "entry restore").unwrap(),
-            (None, "e1", "r1")
-        );
-        let three = vec!["s".to_string(), "e1".to_string(), "r1".to_string()];
-        assert_eq!(
-            split_space_id_and_revision(&three, "entry restore").unwrap(),
-            (Some("s"), "e1", "r1")
-        );
-    }
 
     #[test]
     fn core_validation_rejects_missing_directory() {

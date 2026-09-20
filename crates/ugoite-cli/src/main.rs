@@ -21,7 +21,7 @@ const QUIET_ACCENT_STYLES: clap::builder::Styles = clap::builder::Styles::styled
     name = "ugoite",
     about = "Ugoite CLI - Knowledge base management",
     version = env!("CARGO_PKG_VERSION"),
-    long_about = "Ugoite CLI - Knowledge base management\n\nQuick start (named contexts):\n  # New local workspace: init, create (auto-registers the context), work without repeated paths\n  mkdir knowledge\n  cd knowledge\n  ugoite config init\n  ugoite space create demo\n  ugoite entry list\n  ugoite search keyword planning\n\n  # Switch or run once elsewhere\n  ugoite context use work\n  ugoite --context research search keyword catalyst\n\nQuick start (local-first / core mode):\n  # Inspect the spaces in your current workspace\n  ugoite space list .\n\n  # Create your first space with an explicit local spaces path\n  ugoite space create /path/to/workspace/spaces/demo\n\nQuick start (backend / API mode):\n  # Point the CLI at your backend\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\n  # Authenticate, then list spaces from the backend\n  ugoite auth login\n  ugoite space list",
+    long_about = "Ugoite CLI - Knowledge base management\n\nQuick start:\n  mkdir knowledge\n  cd knowledge\n  ugoite config init\n  ugoite space create demo\n  ugoite entry list\n  ugoite search keyword planning\n\nSwitch contexts or select one for a single invocation:\n  ugoite context use work\n  ugoite --context research search keyword catalyst\n\nManage remote connections with `ugoite config connection` and pair a named credential with `ugoite auth login --connection NAME --credential NAME`.",
     styles = QUIET_ACCENT_STYLES
 )]
 struct Cli {
@@ -39,37 +39,37 @@ struct Cli {
 enum Commands {
     /// Authentication helpers
     Auth(commands::auth::AuthCmd),
-    /// CLI endpoint routing settings
+    /// Canonical CLI configuration and named connections
     Config(commands::config::ConfigCmd),
     /// Named CLI execution contexts (connection + Space UID + credential)
     Context(commands::context::ContextCmd),
     /// Space management commands.
     ///
-    /// Space-bound commands use the selected context by default (see `ugoite config current`); the legacy explicit Space positional (`/root/spaces/<slug>` locally, bare immutable `SPACE_UID` for remote) is 0.1.x compatibility only.
+    /// Space-bound commands use the selected context by default (see `ugoite config current`).
     Space(commands::space::SpaceCmd),
     /// Entry management commands
     Entry(commands::entry::EntryCmd),
     /// Form management commands.
     ///
-    /// Space-bound commands use the selected context by default (see `ugoite config current`); the legacy explicit Space positional (`/root/spaces/<slug>` locally, bare immutable `SPACE_UID` for remote) is 0.1.x compatibility only.
+    /// Space-bound commands use the selected context by default (see `ugoite config current`).
     Form(commands::form::FormCmd),
     /// Asset management commands
     Asset(commands::asset::AssetCmd),
     /// Search commands.
     ///
-    /// Space-bound commands use the selected context by default (see `ugoite config current`); the legacy explicit Space positional (`/root/spaces/<slug>` locally, bare immutable `SPACE_UID` for remote) is 0.1.x compatibility only.
+    /// Space-bound commands use the selected context by default (see `ugoite config current`).
     Search(commands::search::SearchCmd),
     /// Space Change history and revert commands.
     ///
-    /// Space-bound commands use the selected context by default (see `ugoite config current`); the legacy explicit Space positional (`/root/spaces/<slug>` locally, bare immutable `SPACE_UID` for remote) is 0.1.x compatibility only.
+    /// Space-bound commands use the selected context by default (see `ugoite config current`).
     Change(commands::change::ChangeCmd),
     /// Knowledge snapshot (pin) commands.
     ///
-    /// Space-bound commands use the selected context by default (see `ugoite config current`); the legacy explicit Space positional (`/root/spaces/<slug>` locally, bare immutable `SPACE_UID` for remote) is 0.1.x compatibility only.
+    /// Space-bound commands use the selected context by default (see `ugoite config current`).
     Pin(commands::pin::PinCmd),
     /// Run undo commands.
     ///
-    /// Space-bound commands use the selected context by default (see `ugoite config current`); the legacy explicit Space positional (`/root/spaces/<slug>` locally, bare immutable `SPACE_UID` for remote) is 0.1.x compatibility only.
+    /// Space-bound commands use the selected context by default (see `ugoite config current`).
     Run(commands::run::RunCmd),
     /// SQL syntax linting and completion commands
     Sql(commands::sql::SqlCmd),
@@ -77,49 +77,12 @@ enum Commands {
     Index(commands::index::IndexCmd),
     /// Start the Konase assistant
     Konase(commands::konase::KonaseCmd),
-    /// Create a new space (deprecated: use `space create` instead)
-    /// Create a new space
-    #[command(
-        hide = true,
-        long_about = "Create a new space.\n\nThe positional value is a local Space slug in core mode or the new human-readable Space slug in backend/api mode. A server-generated Space UID is returned after creation.\n\nExamples:\n  # Core mode (workspace root)\n  ugoite create-space my-space --root /root\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite create-space team-notes"
-    )]
-    CreateSpace {
-        #[arg(
-            long = "root",
-            value_name = "LOCAL_ROOT",
-            help = "Workspace root that contains the spaces/ directory in core mode."
-        )]
-        root_path: Option<String>,
-        #[arg(
-            value_name = "SPACE_SLUG",
-            help = "New Space slug (alphanumeric + hyphens, e.g. 'my-project')"
-        )]
-        space_id: String,
-        #[arg(
-            long,
-            value_name = "DISPLAY_NAME",
-            help = "Display name for the new Space; defaults to the requested slug."
-        )]
-        name: Option<String>,
-    },
-    /// Query the index using SQL
-    ///
-    /// Examples:
-    ///   # List all entries in a space (core mode)
-    ///   ugoite query /root/spaces/my-space --sql "SELECT _ugoite_id, field_100 FROM \"form_<FormId>\" LIMIT 10"
-    ///
-    ///   # Filter by form type
-    ///   ugoite query /root/spaces/my-space --sql "SELECT _ugoite_id FROM \"form_<FormId>\" WHERE field_100 = 'Daily note'"
+    /// Query the selected context using SQL
     ///
     #[command(
-        long_about = "Query a Space with DataFusion SQL.\n\nThe backend returns a stable Form relation (form_<FormId>) and stable field columns (field_<FieldId>) alongside _ugoite_* metadata columns. Only authorized Form relations are resolvable.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite query --sql \"SELECT _ugoite_id, field_100 FROM \\\"form_<FormId>\\\" LIMIT 10\"\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME query --sql \"SELECT _ugoite_id FROM \\\"form_<FormId>\\\" WHERE field_100 = 'Daily note'\"\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite query /root/spaces/my-space --sql \"SELECT _ugoite_id, field_100 FROM \\\"form_<FormId>\\\" LIMIT 10\"\n  ugoite query 019f1234-5678-7abc-8def-0123456789ab --sql \"SELECT _ugoite_id FROM \\\"form_<FormId>\\\" WHERE field_100 = 'Daily note'\""
+        long_about = "Query a Space with DataFusion SQL through the selected context. The backend returns a stable Form relation (form_<FormId>) and stable field columns (field_<FieldId>) alongside _ugoite_* metadata columns. Only authorized Form relations are resolvable."
     )]
     Query {
-        #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
-        )]
-        space_path: Option<String>,
         #[arg(
             long,
             help = "Read-only DataFusion SQL over authorized Iceberg Form relations. Use the backend-provided form_<FormId> relation and field_<FieldId> columns, plus _ugoite_* metadata columns.\n\nExample: \"SELECT _ugoite_id, field_100 FROM \\\"form_<FormId>\\\" LIMIT 10\""
@@ -151,6 +114,12 @@ fn main() {
 async fn run(cli: Cli) -> Result<()> {
     let explicit_config = cli.config.as_deref();
     let explicit_context = cli.context.as_deref();
+    if let Some(path) = explicit_config {
+        std::env::set_var("UGOITE_CLI_ACTIVE_CONFIG", path);
+    }
+    if let Some(context) = explicit_context {
+        std::env::set_var("UGOITE_CLI_ACTIVE_CONTEXT", context);
+    }
     match cli.command {
         Commands::Auth(cmd) => commands::auth::run(cmd, explicit_config, explicit_context).await,
         Commands::Config(cmd) => {
@@ -173,28 +142,11 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Run(cmd) => commands::run::run(cmd, explicit_config, explicit_context).await,
         Commands::Sql(cmd) => commands::sql::run(cmd, explicit_config, explicit_context).await,
         Commands::Index(cmd) => commands::index::run(cmd, explicit_config, explicit_context).await,
-        Commands::Konase(cmd) => commands::konase::run(cmd).await,
-        Commands::CreateSpace {
-            root_path,
-            space_id,
-            name,
-        } => {
-            commands::space::create_space_cmd_with_name(
-                root_path.as_deref(),
-                &space_id,
-                name.as_deref(),
-                "create-space",
-            )
-            .await
+        Commands::Konase(cmd) => {
+            commands::konase::run(cmd, explicit_config, explicit_context).await
         }
-        Commands::Query { space_path, sql } => {
-            commands::index::query_cmd(
-                space_path.as_deref(),
-                &sql,
-                explicit_config,
-                explicit_context,
-            )
-            .await
+        Commands::Query { sql } => {
+            commands::index::query_cmd(&sql, explicit_config, explicit_context).await
         }
     }
 }

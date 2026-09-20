@@ -1,4 +1,4 @@
-use crate::cli_config::{resolve_command_triple, split_space_and_id};
+use crate::cli_config::{resolve_command_target, resolve_command_triple};
 use crate::config::{effective_format, print_json, print_json_table, Format};
 use crate::http;
 use anyhow::Result;
@@ -25,75 +25,39 @@ pub struct AssetCmd {
 #[derive(Subcommand)]
 pub enum AssetSubCmd {
     /// Upload an asset
-    #[command(
-        long_about = "Upload an asset.\n\nUploading stores bytes only and never attaches them to an Entry. To attach, place the returned asset object (asset_id, name, media_type, size_bytes, sha256) as a field value through `entry create --fields-file` or `entry update --fields-file`; there is no dedicated attach flag. An uploaded-but-unreferenced object is not Space-visible Knowledge and never appears in `asset list`.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite asset upload ./logo.png\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME asset upload ./logo.png\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite asset upload /root/spaces/my-space ./logo.png\n  ugoite asset upload 019f1234-5678-7abc-8def-0123456789ab ./logo.png"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Upload {
-        #[arg(
-            value_name = "SPACE_OR_FILE",
-            num_args(1..=2),
-            required = true,
-            help = "FILE against the selected context (local file to upload), or legacy SPACE FILE."
-        )]
-        space_and_file: Vec<String>,
+        #[arg(value_name = "FILE")]
+        file: String,
         #[arg(long)]
         filename: Option<String>,
     },
     /// Delete an asset
-    #[command(
-        long_about = "Delete an asset.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite asset delete asset-123\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME asset delete asset-123\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite asset delete /root/spaces/my-space asset-123\n  ugoite asset delete 019f1234-5678-7abc-8def-0123456789ab asset-123"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Delete {
-        #[arg(
-            value_name = "SPACE_OR_ASSET_ID",
-            num_args(1..=2),
-            required = true,
-            help = "ASSET_ID against the selected context, or legacy SPACE ASSET_ID."
-        )]
-        space_and_id: Vec<String>,
+        #[arg(value_name = "ASSET_ID")]
+        asset_id: String,
         #[arg(long)]
         human_approval: Option<String>,
     },
     /// List Form-owned asset references visible in a space
-    #[command(
-        long_about = "List asset reference metadata visible in a space.\n\nMetadata only, never bytes: names, media types, and sizes belong to the referencing Entry fields. Each row carries the owning form, entry, and field identity.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite asset list\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME asset list\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite asset list /root/spaces/my-space\n  ugoite asset list 019f1234-5678-7abc-8def-0123456789ab"
-    )]
-    List {
-        #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
-        )]
-        space_path: Option<String>,
-    },
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
+    List,
     /// Read an asset referenced by an entry field
-    #[command(
-        long_about = "Read an asset through its owning Entry field context.\n\nAn asset ID alone grants no read authority: the containing entry and field must reference it, otherwise the read fails as not found. --entry and --field are required; omitting them is a usage error, and on the server the form/entry_id query context is required (reads without it fail closed). Safely displayable text content is printed; anything else is metadata only and needs `asset download`.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite asset read asset-123 --entry note-1 --field Document\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME asset read asset-123 --entry note-1 --field Document\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite asset read /root/spaces/my-space asset-123 --entry note-1 --field Document\n  ugoite asset read 019f1234-5678-7abc-8def-0123456789ab asset-123 --entry note-1 --field Document"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Read {
-        #[arg(
-            value_name = "SPACE_OR_ASSET_ID",
-            num_args(1..=2),
-            required = true,
-            help = "ASSET_ID against the selected context, or legacy SPACE ASSET_ID."
-        )]
-        space_and_id: Vec<String>,
+        #[arg(value_name = "ASSET_ID")]
+        asset_id: String,
         #[arg(long, help = "Containing entry that references the asset")]
         entry: String,
         #[arg(long, help = "Entry field that references the asset")]
         field: String,
     },
     /// Download an asset referenced by an entry field
-    #[command(
-        long_about = "Download asset bytes through its owning Entry field context.\n\nSame context rules as `asset read`, but always writes exact bytes: either to --out PATH or to stdout with `--out -` (refused when stdout is a terminal, so binary content is never sprayed across a terminal).\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite asset download asset-123 --entry note-1 --field Document --out ./logo.png\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME asset download asset-123 --entry note-1 --field Document --out ./logo.png\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite asset download /root/spaces/my-space asset-123 --entry note-1 --field Document --out ./logo.png\n  ugoite asset download 019f1234-5678-7abc-8def-0123456789ab asset-123 --entry note-1 --field Document --out ./logo.png"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Download {
-        #[arg(
-            value_name = "SPACE_OR_ASSET_ID",
-            num_args(1..=2),
-            required = true,
-            help = "ASSET_ID against the selected context, or legacy SPACE ASSET_ID."
-        )]
-        space_and_id: Vec<String>,
+        #[arg(value_name = "ASSET_ID")]
+        asset_id: String,
         #[arg(long, help = "Containing entry that references the asset")]
         entry: String,
         #[arg(long, help = "Entry field that references the asset")]
@@ -110,19 +74,10 @@ pub async fn run(
 ) -> Result<()> {
     let fmt = effective_format(cmd.format);
     match cmd.sub {
-        AssetSubCmd::Upload {
-            space_and_file,
-            filename,
-        } => {
-            let (legacy_space, file_path) =
-                split_space_and_id(&space_and_file, "FILE", "asset upload")?;
-            let file_path = file_path.to_string();
-            let (root, space_id, base) = resolve_command_triple(
-                legacy_space,
-                explicit_config,
-                context_override,
-                "asset upload",
-            )?;
+        AssetSubCmd::Upload { file, filename } => {
+            let file_path = file;
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "asset upload")?;
             let file_size = std::fs::metadata(&file_path)?.len();
             if file_size > ugoite_iceberg::asset::MAX_ASSET_BYTES as u64 {
                 anyhow::bail!(
@@ -148,9 +103,11 @@ pub async fn run(
                     .unwrap_or("asset")
                     .to_string()
             });
-            if let Some(base) = base {
-                let result = http::execute_multipart(
-                    &base,
+            if base.is_some() {
+                let target =
+                    resolve_command_target(explicit_config, context_override, "asset upload")?;
+                let result = http::execute_multipart_for_target(
+                    &target,
                     "asset.upload",
                     serde_json::json!({"space_id": space_id}),
                     name,
@@ -165,23 +122,18 @@ pub async fn run(
             print_json(&asset);
         }
         AssetSubCmd::Delete {
-            space_and_id,
+            asset_id,
             human_approval,
         } => {
-            let (legacy_space, asset_id) =
-                split_space_and_id(&space_and_id, "ASSET_ID", "asset delete")?;
-            let asset_id = asset_id.to_string();
-            let (root, space_id, base) = resolve_command_triple(
-                legacy_space,
-                explicit_config,
-                context_override,
-                "asset delete",
-            )?;
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "asset delete")?;
             let human_approval =
                 human_approval.or_else(|| std::env::var("UGOITE_HUMAN_APPROVAL").ok());
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+            if base.is_some() {
+                let target =
+                    resolve_command_target(explicit_config, context_override, "asset delete")?;
+                let result = http::execute_for_target(
+                    &target,
                     "asset.delete",
                     serde_json::json!({"space_id": space_id, "asset_id": asset_id, "human_approval": human_approval}),
                     None,
@@ -197,16 +149,14 @@ pub async fn run(
             service.delete_asset(&space_id, &asset_id).await?;
             print_json(&serde_json::json!({"deleted": true}));
         }
-        AssetSubCmd::List { space_path } => {
-            let (root, space_id, base) = resolve_command_triple(
-                space_path.as_deref(),
-                explicit_config,
-                context_override,
-                "asset list",
-            )?;
-            let items = if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+        AssetSubCmd::List => {
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "asset list")?;
+            let items = if base.is_some() {
+                let target =
+                    resolve_command_target(explicit_config, context_override, "asset list")?;
+                let result = http::execute_for_target(
+                    &target,
                     "asset.list",
                     serde_json::json!({"space_id": space_id}),
                     None,
@@ -234,22 +184,26 @@ pub async fn run(
             print_json(&items);
         }
         AssetSubCmd::Read {
-            space_and_id,
+            asset_id,
             entry,
             field,
         } => {
-            let (legacy_space, asset_id) =
-                split_space_and_id(&space_and_id, "ASSET_ID", "asset read")?;
-            let asset_id = asset_id.to_string();
-            let (root, space_id, base) = resolve_command_triple(
-                legacy_space,
-                explicit_config,
-                context_override,
-                "asset read",
-            )?;
-            let context =
-                resolve_asset_context(&root, &space_id, base.as_deref(), &asset_id, &entry, &field)
-                    .await?;
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "asset read")?;
+            let target = base
+                .as_ref()
+                .map(|_| resolve_command_target(explicit_config, context_override, "asset read"))
+                .transpose()?;
+            let context = resolve_asset_context(
+                &root,
+                &space_id,
+                base.as_deref(),
+                target.as_ref(),
+                &asset_id,
+                &entry,
+                &field,
+            )
+            .await?;
             match inline_text(&context.bytes, reference_media_type(&context.reference)) {
                 Some(preview) => {
                     if fmt == Format::Json {
@@ -268,27 +222,33 @@ pub async fn run(
             }
         }
         AssetSubCmd::Download {
-            space_and_id,
+            asset_id,
             entry,
             field,
             out,
         } => {
-            let (legacy_space, asset_id) =
-                split_space_and_id(&space_and_id, "ASSET_ID", "asset download")?;
-            let asset_id = asset_id.to_string();
-            let (root, space_id, base) = resolve_command_triple(
-                legacy_space,
-                explicit_config,
-                context_override,
-                "asset download",
-            )?;
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "asset download")?;
+            let target = base
+                .as_ref()
+                .map(|_| {
+                    resolve_command_target(explicit_config, context_override, "asset download")
+                })
+                .transpose()?;
             let use_stdout = out.trim() == "-";
             if use_stdout && std::io::stdout().is_terminal() {
                 anyhow::bail!("refusing to write binary asset bytes to a terminal; use --out PATH");
             }
-            let context =
-                resolve_asset_context(&root, &space_id, base.as_deref(), &asset_id, &entry, &field)
-                    .await?;
+            let context = resolve_asset_context(
+                &root,
+                &space_id,
+                base.as_deref(),
+                target.as_ref(),
+                &asset_id,
+                &entry,
+                &field,
+            )
+            .await?;
             if use_stdout {
                 IoWrite::write_all(&mut std::io::stdout().lock(), &context.bytes)
                     .map_err(|error| anyhow::anyhow!("write asset bytes to stdout: {error}"))?;
@@ -326,13 +286,14 @@ async fn resolve_asset_context(
     root: &str,
     space_id: &str,
     base: Option<&str>,
+    target: Option<&crate::cli_config::SpaceTarget>,
     asset_id: &str,
     entry_id: &str,
     field: &str,
 ) -> Result<AssetContext> {
-    let items = if let Some(base) = base {
-        http::execute(
-            base,
+    let items = if base.is_some() {
+        http::execute_for_target(
+            target.ok_or_else(|| anyhow::anyhow!("remote asset target is missing"))?,
             "asset.list",
             serde_json::json!({"space_id": space_id}),
             None,
@@ -364,9 +325,9 @@ async fn resolve_asset_context(
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default()
         .to_string();
-    let bytes = if let Some(base) = base {
-        http::execute_bytes(
-            base,
+    let bytes = if base.is_some() {
+        http::execute_bytes_for_target(
+            target.ok_or_else(|| anyhow::anyhow!("remote asset target is missing"))?,
             "asset.read",
             serde_json::json!({
                 "space_id": space_id,

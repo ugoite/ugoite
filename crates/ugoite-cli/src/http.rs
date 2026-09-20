@@ -64,11 +64,8 @@ pub async fn execute(
 /// Execute against an explicit [`crate::cli_config::SpaceTarget`].
 ///
 /// - `Core` is a programming error (callers handle local transports).
-/// - `Remote` with `connection: None` is the legacy explicit-Space path and
-///   keeps the 0.1.x global session lookup.
-/// - `Remote` with `connection: Some` is the context-first path: the named
-///   credential profile for exactly that connection is used, never an
-///   implicit global lookup.
+/// - Remote targets are always resolved from the canonical named context; the
+///   named credential profile for exactly that connection is used.
 pub async fn execute_for_target(
     target: &crate::cli_config::SpaceTarget,
     operation: &str,
@@ -92,7 +89,7 @@ pub async fn execute_for_target(
     }
     execute_prepared_for_target(
         &base,
-        connection.as_deref(),
+        Some(connection.as_str()),
         credential.as_deref(),
         prepared,
     )
@@ -122,7 +119,7 @@ pub async fn execute_bytes_for_target(
     }
     let (_, request) = authenticated_request_for_target(
         &base,
-        connection.as_deref(),
+        Some(connection.as_str()),
         credential.as_deref(),
         &prepared,
     )
@@ -181,7 +178,7 @@ pub async fn execute_multipart_for_target(
     }
     let (_, request) = authenticated_request_for_target(
         &base,
-        connection.as_deref(),
+        Some(connection.as_str()),
         credential.as_deref(),
         &prepared,
     )
@@ -251,9 +248,7 @@ async fn execute_prepared_for_target(
 }
 
 /// Context-first authentication: resolve `credential` for exactly
-/// `connection` from the user-global credential store. `connection: None`
-/// is the legacy path and delegates to the 0.1.x global session lookup.
-/// `connection: Some` never falls back to the implicit global credential.
+/// `connection` from the user-global credential store.
 async fn authenticated_request_for_target(
     base_url: &str,
     connection: Option<&str>,
@@ -264,7 +259,7 @@ async fn authenticated_request_for_target(
         return authenticated_request(base_url, prepared).await;
     };
     let url = join_base_and_path(base_url, &prepared.path);
-    crate::config::validate_server_endpoint_url(&url, "Remote request")?;
+    crate::config::validate_server_endpoint_url(base_url, "Remote request")?;
     let mut request = match prepared.method {
         HttpMethod::Get => client().get(&url),
         HttpMethod::Post => client().post(&url),
@@ -291,7 +286,7 @@ async fn authenticated_request_for_target(
 /// Returns `None` when the context carries no credential (anonymous remote).
 /// A present profile must exist and its stored `connection` must match;
 /// cross-connection reuse is an actionable error.
-async fn named_session_for_target(
+pub(crate) async fn named_session_for_target(
     base_url: &str,
     connection_name: &str,
     credential_name: Option<&str>,
@@ -342,7 +337,7 @@ async fn authenticated_request(
     prepared: &PreparedRequest,
 ) -> Result<(String, reqwest::RequestBuilder)> {
     let url = join_base_and_path(base_url, &prepared.path);
-    crate::config::validate_server_endpoint_url(&url, "Remote request")?;
+    crate::config::validate_server_endpoint_url(base_url, "Remote request")?;
     let mut request = match prepared.method {
         HttpMethod::Get => client().get(&url),
         HttpMethod::Post => client().post(&url),
@@ -353,7 +348,17 @@ async fn authenticated_request(
     for header in &prepared.headers {
         request = request.header(header.name.as_str(), header.value.as_str());
     }
-    if let Some(session) = crate::commands::auth::active_session(base_url).await? {
+    let session = if let Some(target) = configured_target_for_base(base_url) {
+        named_session_for_target(
+            base_url,
+            target.connection_name().expect("remote target connection"),
+            target.credential_name(),
+        )
+        .await?
+    } else {
+        crate::commands::auth::active_session(base_url).await?
+    };
+    if let Some(session) = session {
         request = request
             .header("Authorization", format!("DPoP {}", session.access_token))
             .header(
@@ -362,6 +367,29 @@ async fn authenticated_request(
             );
     }
     Ok((url, request))
+}
+
+/// Resolve the active canonical context for call sites that still only carry
+/// a validated base URL (for example read-only SQL and asset helpers). This
+/// keeps their transport boundary on the same named credential as the
+/// context-aware mutation paths.
+fn configured_target_for_base(base_url: &str) -> Option<crate::cli_config::SpaceTarget> {
+    let config = std::env::var_os("UGOITE_CLI_ACTIVE_CONFIG").map(std::path::PathBuf::from);
+    let context = std::env::var("UGOITE_CLI_ACTIVE_CONTEXT").ok();
+    let target = crate::cli_config::resolve_command_target(
+        config.as_deref(),
+        context.as_deref(),
+        "remote request",
+    )
+    .ok()?;
+    match &target {
+        crate::cli_config::SpaceTarget::Remote { base, .. }
+            if base.trim_end_matches('/') == base_url.trim_end_matches('/') =>
+        {
+            Some(target)
+        }
+        _ => None,
+    }
 }
 
 async fn send_and_decode(operation: &str, request: reqwest::RequestBuilder) -> Result<Value> {

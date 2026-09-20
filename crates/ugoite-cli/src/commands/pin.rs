@@ -1,6 +1,4 @@
-use crate::cli_config::{
-    resolve_command_target, resolve_command_triple, split_space_and_id, SpaceTarget,
-};
+use crate::cli_config::{resolve_command_target, resolve_command_triple, SpaceTarget};
 use crate::config::{effective_format, print_json, print_json_table, Format};
 use crate::http;
 use crate::output::{emit_success, UsageError};
@@ -22,69 +20,33 @@ pub struct PinCmd {
 #[derive(Subcommand)]
 pub enum PinSubCmd {
     /// Create a pin at the current knowledge state
-    #[command(
-        long_about = "Create a pin capturing the current knowledge state.\n\nA pin is a read-only snapshot identity: it never becomes a mutable branch, and deleting it never deletes entries, revisions, assets, or changes.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite pin create release-1\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME pin create release-1\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite pin create /root/spaces/my-space release-1\n  ugoite pin create 019f1234-5678-7abc-8def-0123456789ab release-1"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Create {
-        #[arg(
-            value_name = "SPACE_OR_PIN_NAME",
-            num_args(1..=2),
-            required = true,
-            help = "PIN_NAME against the selected context (New pin name), or legacy SPACE PIN_NAME."
-        )]
-        space_and_name: Vec<String>,
+        #[arg(value_name = "PIN_NAME")]
+        name: String,
     },
     /// List pins in a space
-    #[command(
-        long_about = "List pins in a space.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite pin list\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME pin list\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite pin list /root/spaces/my-space\n  ugoite pin list 019f1234-5678-7abc-8def-0123456789ab"
-    )]
-    List {
-        #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
-        )]
-        space_path: Option<String>,
-    },
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
+    List,
     /// Read one pin without mutating knowledge
-    #[command(
-        long_about = "Read one pin by name.\n\nRead-only: entry history is unchanged by pin reads. The pin target revision is never confused with the current revision.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite pin read release-1\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME pin read release-1\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite pin read /root/spaces/my-space release-1\n  ugoite pin read 019f1234-5678-7abc-8def-0123456789ab release-1"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Read {
-        #[arg(
-            value_name = "SPACE_OR_PIN_NAME",
-            num_args(1..=2),
-            required = true,
-            help = "PIN_NAME against the selected context (Pin name to read), or legacy SPACE PIN_NAME."
-        )]
-        space_and_name: Vec<String>,
+        #[arg(value_name = "PIN_NAME")]
+        name: String,
     },
     /// Diff two named pins explicitly
-    #[command(
-        long_about = "Diff two named pins.\n\nBoth pins are named explicitly; no implicit latest revision is ever selected. Pins never span spaces: a pin from another space is rejected.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite pin diff --from release-1 --to release-2\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME pin diff --from release-1 --to release-2\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite pin diff /root/spaces/my-space --from release-1 --to release-2\n  ugoite pin diff 019f1234-5678-7abc-8def-0123456789ab --from release-1 --to release-2"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Diff {
-        #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
-        )]
-        space_path: Option<String>,
         #[arg(long, help = "Base pin name")]
         from: String,
         #[arg(long, help = "Target pin name")]
         to: String,
     },
     /// Delete a pin identity without deleting knowledge
-    #[command(
-        long_about = "Delete a pin identity.\n\nOnly the pin identity is removed; entries, revisions, assets, and changes are untouched.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite pin delete release-1\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME pin delete release-1\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite pin delete /root/spaces/my-space release-1\n  ugoite pin delete 019f1234-5678-7abc-8def-0123456789ab release-1"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Delete {
-        #[arg(
-            value_name = "SPACE_OR_PIN_NAME",
-            num_args(1..=2),
-            required = true,
-            help = "PIN_NAME against the selected context (Pin name to delete), or legacy SPACE PIN_NAME."
-        )]
-        space_and_name: Vec<String>,
+        #[arg(value_name = "PIN_NAME")]
+        name: String,
     },
 }
 
@@ -129,19 +91,11 @@ pub async fn run(
 ) -> Result<()> {
     let fmt = effective_format(cmd.format);
     match cmd.sub {
-        PinSubCmd::Create { space_and_name } => {
-            let (legacy_space, name) =
-                split_space_and_id(&space_and_name, "PIN_NAME", "pin create")?;
-            let name = name.to_string();
+        PinSubCmd::Create { name } => {
             if name.trim().is_empty() {
                 return Err(UsageError("PIN_NAME must not be blank".to_string()).into());
             }
-            let target = resolve_command_target(
-                legacy_space,
-                explicit_config,
-                context_override,
-                "pin create",
-            )?;
+            let target = resolve_command_target(explicit_config, context_override, "pin create")?;
             if let SpaceTarget::Remote { space_uid, .. } = &target {
                 let result = step_up::execute_with_step_up_for_target(
                     &target,
@@ -163,16 +117,13 @@ pub async fn run(
                 .await?;
             emit_success(&pin, &fmt, Some(format!("created pin {name}")));
         }
-        PinSubCmd::List { space_path } => {
-            let (root, space_id, base) = resolve_command_triple(
-                space_path.as_deref(),
-                explicit_config,
-                context_override,
-                "pin list",
-            )?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+        PinSubCmd::List => {
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "pin list")?;
+            if base.is_some() {
+                let target = resolve_command_target(explicit_config, context_override, "pin list")?;
+                let result = http::execute_for_target(
+                    &target,
                     "pin.list",
                     serde_json::json!({"space_id": space_id}),
                     None,
@@ -193,18 +144,13 @@ pub async fn run(
             }
             print_json(&pins);
         }
-        PinSubCmd::Read { space_and_name } => {
-            let (legacy_space, name) = split_space_and_id(&space_and_name, "PIN_NAME", "pin read")?;
-            let name = name.to_string();
-            let (root, space_id, base) = resolve_command_triple(
-                legacy_space,
-                explicit_config,
-                context_override,
-                "pin read",
-            )?;
-            let pins = if let Some(base) = base {
-                http::execute(
-                    &base,
+        PinSubCmd::Read { name } => {
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "pin read")?;
+            let pins = if base.is_some() {
+                let target = resolve_command_target(explicit_config, context_override, "pin read")?;
+                http::execute_for_target(
+                    &target,
                     "pin.list",
                     serde_json::json!({"space_id": space_id}),
                     None,
@@ -221,25 +167,18 @@ pub async fn run(
             }
             emit_success(&value, &fmt, None);
         }
-        PinSubCmd::Diff {
-            space_path,
-            from,
-            to,
-        } => {
+        PinSubCmd::Diff { from, to } => {
             if from.trim().is_empty() || to.trim().is_empty() {
                 return Err(
                     UsageError("--from and --to pin names must not be blank".to_string()).into(),
                 );
             }
-            let (root, space_id, base) = resolve_command_triple(
-                space_path.as_deref(),
-                explicit_config,
-                context_override,
-                "pin diff",
-            )?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "pin diff")?;
+            if base.is_some() {
+                let target = resolve_command_target(explicit_config, context_override, "pin diff")?;
+                let result = http::execute_for_target(
+                    &target,
                     "space.pin_diff",
                     serde_json::json!({"space_id": space_id, "from": from, "to": to}),
                     None,
@@ -252,16 +191,8 @@ pub async fn run(
             let diff = service.diff_pins(&space_id, &from, &to).await?;
             emit_success(&diff, &fmt, None);
         }
-        PinSubCmd::Delete { space_and_name } => {
-            let (legacy_space, name) =
-                split_space_and_id(&space_and_name, "PIN_NAME", "pin delete")?;
-            let name = name.to_string();
-            let target = resolve_command_target(
-                legacy_space,
-                explicit_config,
-                context_override,
-                "pin delete",
-            )?;
+        PinSubCmd::Delete { name } => {
+            let target = resolve_command_target(explicit_config, context_override, "pin delete")?;
             if let SpaceTarget::Remote { space_uid, .. } = &target {
                 let result = step_up::execute_with_step_up_for_target(
                     &target,
