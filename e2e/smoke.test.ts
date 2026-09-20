@@ -56,10 +56,7 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
       {
         data: {
           form: "Entry",
-          title: "E2E Detail Route Entry",
-          fields: {
-            Body: `Created at ${new Date().toISOString()}`,
-          },
+          fields: { Body: `Created at ${new Date().toISOString()}` },
         },
       },
     );
@@ -70,7 +67,7 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
     await page.waitForLoadState("networkidle");
     const body = await page.content();
     expect(body.toLowerCase()).toContain("<!doctype html>");
-    await expect(page.getByRole("heading", { name: "E2E Detail Route Entry" }))
+    await expect(page.getByRole("heading", { name: created.id }))
       // Opening a freshly published Iceberg table can require one cold metadata
       // read. Keep this UI assertion within the test's 60-second budget rather
       // than Playwright's unrelated five-second matcher default.

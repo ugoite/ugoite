@@ -27,7 +27,6 @@ fn ugoite_bin() -> std::path::PathBuf {
 
 fn structured_entry_args(markdown: &str) -> Vec<String> {
     let mut form = String::new();
-    let mut title = String::new();
     let mut fields: Vec<(String, String)> = Vec::new();
     let mut current: Option<String> = None;
     let mut value = Vec::new();
@@ -56,9 +55,7 @@ fn structured_entry_args(markdown: &str) -> Vec<String> {
             }
             continue;
         }
-        if let Some(value_title) = line.strip_prefix("# ") {
-            title = value_title.trim().to_string();
-        } else if let Some(name) = line.strip_prefix("## ") {
+        if let Some(name) = line.strip_prefix("## ") {
             finish(&mut fields, &mut current, &mut value);
             current = Some(name.trim().to_string());
         } else if current.is_some() {
@@ -68,9 +65,6 @@ fn structured_entry_args(markdown: &str) -> Vec<String> {
     finish(&mut fields, &mut current, &mut value);
 
     let mut result = vec!["--form".to_string(), form];
-    if !title.is_empty() {
-        result.extend(["--title".to_string(), title]);
-    }
     for (name, value) in fields {
         result.extend(["--field".to_string(), format!("{name}={value}")]);
     }

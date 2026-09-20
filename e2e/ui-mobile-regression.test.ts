@@ -62,7 +62,6 @@ test.describe("Mobile UI regression @screenshot", () => {
       {
         data: {
           form: "Entry",
-          title: `Mobile regression ${Date.now()}`,
           fields: { Body: "Mobile layout fixture." },
         },
       },
