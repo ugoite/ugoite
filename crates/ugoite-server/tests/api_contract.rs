@@ -1032,7 +1032,7 @@ fn issue_2212_openapi_documents_space_creation_outcomes() {
         operation["responses"]["409"]["content"]["application/json"]["schema"]["$ref"],
         "#/components/schemas/ErrorResponse"
     );
-    for field in ["id", "slug", "space_uid", "name", "path"] {
+    for field in ["slug", "space_uid", "name", "path"] {
         assert!(
             snapshot["components"]["schemas"]["SpaceCreateResponse"]["required"]
                 .as_array()

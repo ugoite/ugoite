@@ -43,12 +43,12 @@ test.describe("JOURNEY-KNOWLEDGE-001", () => {
     const listRes = await request.get(getBackendUrl("/spaces"));
     expect(listRes.ok()).toBe(true);
     const spaces = (await listRes.json()) as Array<{
-      id: string;
+      space_uid: string;
       slug?: string;
     }>;
     const space = spaces.find((candidate) => candidate.slug === slug);
     expect(space).toBeDefined();
-    return space!.id;
+    return space!.space_uid;
   }
 
   test("JOURNEY-KNOWLEDGE-001: Space create is durable and reopenable", async ({ request }) => {
@@ -59,9 +59,9 @@ test.describe("JOURNEY-KNOWLEDGE-001", () => {
     if (createRes.status() === 409) {
       spaceId = await resolveSpaceId(request, spaceSlug);
     } else {
-      const created = (await createRes.json()) as { id?: string };
-      expect(created.id).toBeTruthy();
-      spaceId = created.id!;
+      const created = (await createRes.json()) as { space_uid?: string };
+      expect(created.space_uid).toBeTruthy();
+      spaceId = created.space_uid!;
     }
     expect(spaceId).not.toBe(spaceSlug);
 
@@ -69,10 +69,10 @@ test.describe("JOURNEY-KNOWLEDGE-001", () => {
     const getRes = await request.get(getBackendUrl(`/spaces/${spaceId}`));
     expect(getRes.ok()).toBe(true);
     const reopened = (await getRes.json()) as {
-      id?: string;
+      space_uid?: string;
       slug?: string;
     };
-    expect(reopened.id).toBe(spaceId);
+    expect(reopened.space_uid).toBe(spaceId);
     expect(reopened.slug).toBe(spaceSlug);
   });
 
@@ -242,8 +242,8 @@ test.describe("JOURNEY-KNOWLEDGE-001", () => {
   test("JOURNEY-KNOWLEDGE-001: Reopen reads identical durable state", async ({ request }) => {
     const spaceRes = await request.get(getBackendUrl(`/spaces/${spaceId}`));
     expect(spaceRes.ok()).toBe(true);
-    const space = (await spaceRes.json()) as { id?: string };
-    expect(space.id).toBe(spaceId);
+    const space = (await spaceRes.json()) as { space_uid?: string };
+    expect(space.space_uid).toBe(spaceId);
 
     const historyRes = await request.get(
       getBackendUrl(`/spaces/${spaceId}/entries/${entryId}/history`),
@@ -426,7 +426,7 @@ test.describe("JOURNEY-KNOWLEDGE-001", () => {
 
     const spaceRes = await request.get(getBackendUrl(`/spaces/${spaceId}`));
     expect(spaceRes.ok()).toBe(true);
-    const space = (await spaceRes.json()) as { id?: string };
-    expect(space.id).toBe(spaceId);
+    const space = (await spaceRes.json()) as { space_uid?: string };
+    expect(space.space_uid).toBe(spaceId);
   });
 });

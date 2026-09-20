@@ -31,12 +31,12 @@ test.describe("Dashboard starter-entry onboarding", () => {
 		expect([200, 201, 409]).toContain(createSpace.status());
 		let createdSpaceId = "";
 		if (createSpace.status() === 201 || createSpace.status() === 200) {
-			createdSpaceId = ((await createSpace.json()) as { id: string }).id;
+			createdSpaceId = ((await createSpace.json()) as { space_uid: string }).space_uid;
 		} else {
 			const spaces = await request.get(getBackendUrl("/spaces"));
 			expect(spaces.ok()).toBeTruthy();
-			const existing = (await spaces.json()) as Array<{ id: string; slug: string }>;
-			createdSpaceId = existing.find((space) => space.slug === spaceId)?.id ?? "";
+			const existing = (await spaces.json()) as Array<{ space_uid: string; slug: string }>;
+			createdSpaceId = existing.find((space) => space.slug === spaceId)?.space_uid ?? "";
 		}
 		expect(createdSpaceId).not.toBe("");
 

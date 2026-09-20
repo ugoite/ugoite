@@ -50,7 +50,7 @@ describe("v5 space Home", () => {
     entryStoreMock.loadEntries.mockResolvedValue(undefined);
     entryStoreMock.error.mockReturnValue(null);
     vi.mocked(spaceApi.get).mockResolvedValue({
-      id: "default",
+      space_uid: "default",
       name: "Local Knowledge",
       created_at: "2026-01-01",
     });
@@ -133,7 +133,7 @@ describe("v5 space Home", () => {
     expect(screen.queryByText(/loading space/i)).not.toBeInTheDocument();
 
     resolveSpace!({
-      id: "default",
+      space_uid: "default",
       name: "Local Knowledge",
       created_at: "2026-01-01",
     });

@@ -64,7 +64,7 @@ const forms: Form[] = [
   },
 ];
 const space: Space = {
-  id: "default",
+  space_uid: "default",
   name: "Default",
   created_at: "2026-01-01T00:00:00Z",
   // Legacy preference: entry creation must ignore it and offer the

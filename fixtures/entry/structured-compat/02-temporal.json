@@ -20,7 +20,7 @@
   "markdown": "---\nform: Event\n---\n# Launch\n\n## Day\n2025-01-02\n\n## At\n13:45:30.123456\n\n## Wall\n2025-01-02T03:04:05\n\n## Instant\n2025-01-02T12:04:05+09:00\n\n## WallNs\n2025-01-02T03:04:05.123456789\n\n## InstantNs\n2025-01-02T12:04:05.123456789+09:00\n\n## Uid\nA7F9F5D2-8B7E-4DB1-9B0A-0E9A2B3F4C5D\n\n## Blob\nhex:64617461\n",
   "structured": {
     "title": "Launch",
-    "form": "Event",
+    "form_name": "Event",
     "tags": [],
     "fields": {
       "Day": "2025-01-02",

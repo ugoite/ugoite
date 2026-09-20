@@ -221,17 +221,17 @@ test.describe("Entries CRUD", () => {
 			const spacesResponse = await request.get(getBackendUrl("/spaces"));
 			expect(spacesResponse.ok()).toBe(true);
 			const spaces = await spacesResponse.json() as Array<{
-				id: string;
+				space_uid: string;
 				slug: string;
 				name: string;
 			}>;
 			const existingSpace = spaces.find((space) => space.slug === spaceName);
 			expect(existingSpace).toBeDefined();
-			spaceId = existingSpace!.id;
+			spaceId = existingSpace!.space_uid;
 		} else {
-			const createdSpace = await createSpace.json() as { id?: string };
-			expect(createdSpace.id).toBeTruthy();
-			spaceId = createdSpace.id!;
+			const createdSpace = await createSpace.json() as { space_uid?: string };
+			expect(createdSpace.space_uid).toBeTruthy();
+			spaceId = createdSpace.space_uid!;
 		}
 		expect(spaceId).not.toBe(spaceName);
 
@@ -399,17 +399,17 @@ test.describe("Entries CRUD", () => {
 			const spacesResponse = await request.get(getBackendUrl("/spaces"));
 			expect(spacesResponse.ok()).toBe(true);
 			const spaces = await spacesResponse.json() as Array<{
-				id: string;
+				space_uid: string;
 				slug: string;
 				name: string;
 			}>;
 			const existingSpace = spaces.find((space) => space.slug === spaceName);
 			expect(existingSpace).toBeDefined();
-			spaceId = existingSpace!.id;
+			spaceId = existingSpace!.space_uid;
 		} else {
-			const createdSpace = await createSpace.json() as { id?: string };
-			expect(createdSpace.id).toBeTruthy();
-			spaceId = createdSpace.id!;
+			const createdSpace = await createSpace.json() as { space_uid?: string };
+			expect(createdSpace.space_uid).toBeTruthy();
+			spaceId = createdSpace.space_uid!;
 		}
 		expect(spaceId).not.toBe(spaceName);
 
@@ -523,8 +523,8 @@ test.describe("Entries CRUD", () => {
 			data: { slug: spaceSlug, name: "Entries media test" },
 		});
 		expect([200, 201, 409]).toContain(createSpace.status());
-		const createdSpace = (await createSpace.json()) as { id: string };
-		const spaceId = createdSpace.id;
+		const createdSpace = (await createSpace.json()) as { space_uid: string };
+		const spaceId = createdSpace.space_uid;
 
 		const createForm = async (
 			name: string,

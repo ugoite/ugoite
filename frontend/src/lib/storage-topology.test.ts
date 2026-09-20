@@ -4,7 +4,7 @@ import { summarizeSpaceStorage } from "./storage-topology";
 import type { Space } from "~/lib/types";
 
 const baseSpace: Space = {
-  id: "demo",
+  space_uid: "demo",
   name: "Demo Space",
   created_at: "2025-01-01T00:00:00Z",
 };

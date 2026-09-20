@@ -122,9 +122,9 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
 
   test("GET /spaces includes the resolved fixture Space", async ({ request }) => {
     const res = await request.get(getBackendUrl("/spaces"));
-    const spaces = (await res.json()) as Array<{ id: string; name: string }>;
+    const spaces = (await res.json()) as Array<{ space_uid: string; name: string }>;
     expect(
-      spaces.some((space) => space.id === spaceId && space.name === "default"),
+      spaces.some((space) => space.space_uid === spaceId && space.name === "default"),
     )
       .toBe(true);
   });

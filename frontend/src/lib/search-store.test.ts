@@ -9,7 +9,7 @@ import type { Entry, EntryRecord, Space } from "./types";
 import { testApiUrl } from "~/test/http-origin";
 
 const testSpace: Space = {
-  id: "search-store-ws",
+  space_uid: "search-store-ws",
   name: "Search Store Space",
   created_at: "2025-01-01T00:00:00Z",
 };

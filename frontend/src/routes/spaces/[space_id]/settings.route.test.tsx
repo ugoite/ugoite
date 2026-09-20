@@ -70,13 +70,13 @@ describe("SpaceSettingsRoute", () => {
     for (const key of Object.keys(searchParams)) delete searchParams[key];
     setSearchParams.mockReset();
     vi.mocked(spaceApi.get).mockResolvedValue({
-      id: "space-1",
+      space_uid: "space-1",
       name: "Operations",
       created_at: "2026-01-01T00:00:00Z",
       storage_config: { uri: "file:///tmp/operations" },
     });
     vi.mocked(spaceApi.patch).mockResolvedValue({
-      id: "space-1",
+      space_uid: "space-1",
       name: "Operations",
       created_at: "2026-01-01T00:00:00Z",
     });

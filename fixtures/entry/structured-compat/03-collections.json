@@ -18,7 +18,7 @@
   "markdown": "---\nform: Project\n---\n# Website\n\n## Tags\n- alpha\n- beta\n\n## Owner\ntask-01\n\n## Spec\n{\"asset_id\": \"01900000-0000-7000-8000-000000000001\", \"name\": \"spec.pdf\", \"media_type\": \"application/pdf\", \"size_bytes\": 12, \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
   "structured": {
     "title": "Website",
-    "form": "Project",
+    "form_name": "Project",
     "tags": [],
     "fields": {
       "Tags": ["alpha", "beta"],

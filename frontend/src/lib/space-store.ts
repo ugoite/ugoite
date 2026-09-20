@@ -70,8 +70,7 @@ export function createSpaceStore() {
 
       // If default space exists, select it
       const defaultSpace = selectableSpaces.find((space) =>
-        space.slug === DEFAULT_SPACE_SLUG ||
-        (!space.slug && space.id === DEFAULT_SPACE_SLUG)
+        space.slug === DEFAULT_SPACE_SLUG
       );
       if (defaultSpace) {
         const defaultUid = spaceUid(defaultSpace);

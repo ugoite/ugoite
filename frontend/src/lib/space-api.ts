@@ -22,7 +22,6 @@ export const spaceApi = {
   async create(
     payload: { name: string; slug: string },
   ): Promise<{
-    id: string;
     space_uid: string;
     space_version?: string;
     name: string;
@@ -30,7 +29,6 @@ export const spaceApi = {
     path?: string;
   }> {
     return await protocolFetch<{
-      id: string;
       space_uid: string;
       space_version?: string;
       name: string;

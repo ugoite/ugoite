@@ -18,13 +18,11 @@ vi.mock("~/lib/space-store", () => ({
   createSpaceStore: () => ({
     spaces: () => [
       {
-        id: "legacy-my-space",
         space_uid: "my-space-uid",
         name: "My Space",
         created_at: "",
       },
       {
-        id: "legacy-other-space",
         space_uid: "other-space-uid",
         name: "Other Space",
         created_at: "",

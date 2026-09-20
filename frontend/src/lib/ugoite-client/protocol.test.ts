@@ -190,7 +190,7 @@ describe("portable Ugoite API protocol WASM", () => {
     server.use(
       http.get(testApiUrl("/spaces/demo"), ({ request }) => {
         expect(request.headers.get("x-test-header")).toBe("kept");
-        return HttpResponse.json({ id: "demo", name: "Demo" });
+        return HttpResponse.json({ space_uid: "demo", name: "Demo" });
       }),
       http.post(testApiUrl("/spaces/demo/entries"), async ({ request }) => {
         expect(request.headers.get("content-type")).toBe("application/json");
@@ -206,7 +206,7 @@ describe("portable Ugoite API protocol WASM", () => {
         undefined,
         { headers: { "x-test-header": "kept" } },
       ),
-    ).resolves.toEqual({ id: "demo", name: "Demo" });
+    ).resolves.toEqual({ space_uid: "demo", name: "Demo" });
 
     await expect(
       protocolFetch(

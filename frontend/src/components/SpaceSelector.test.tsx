@@ -9,13 +9,11 @@ import type { Space } from "~/lib/types";
 describe("SpaceSelector", () => {
   const mockSpaces: Space[] = [
     {
-      id: "legacy-ws-1",
       space_uid: "ws-1",
       name: "Space One",
       created_at: "2025-01-01T00:00:00Z",
     },
     {
-      id: "legacy-ws-2",
       space_uid: "ws-2",
       name: "Space Two",
       created_at: "2025-01-01T00:00:00Z",
@@ -104,7 +102,6 @@ describe("SpaceSelector", () => {
 
   it("should show the Space UID when name is not available", () => {
     const spaces = [{
-      id: "legacy-space-1",
       space_uid: "space-uid-1",
       created_at: "2025-01-01T00:00:00Z",
     }];

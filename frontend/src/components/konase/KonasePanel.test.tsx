@@ -107,7 +107,6 @@ vi.mock("~/lib/konase/browser-mcp-auth", () => ({
 
 const mockConnection = () => {
   getSpaceMock.mockImplementation(async (spaceId: string) => ({
-    id: spaceId,
     space_uid: `${spaceId}-uid`,
     name: spaceId,
     created_at: "",
@@ -140,7 +139,6 @@ describe("KonasePanel Space authority", () => {
   it("starts MCP authorization from the rendered Space and drops the host when the Space changes", async () => {
     const [spaceId, setSpaceId] = createSignal("space-a");
     getSpaceMock.mockResolvedValue({
-      id: "space-a",
       space_uid: "space-a-uid",
       name: "Space A",
       created_at: "",
@@ -251,7 +249,6 @@ describe("KonasePanel Space authority", () => {
       spaceUid: string;
     }) => void;
     getSpaceMock.mockResolvedValue({
-      id: "space-a",
       space_uid: "space-a-uid",
       name: "Space A",
       created_at: "",

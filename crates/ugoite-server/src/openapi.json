@@ -12423,7 +12423,6 @@
       "SpaceSummary": {
         "type": "object",
         "required": [
-          "id",
           "space_uid",
           "space_version",
           "slug",
@@ -12431,10 +12430,6 @@
           "created_at"
         ],
         "properties": {
-          "id": {
-            "type": "string",
-            "description": "Compatibility field equal to space_uid; remote clients use the immutable Space UID."
-          },
           "space_uid": {
             "type": "string",
             "format": "uuid",
@@ -12566,7 +12561,6 @@
       "SpaceCreateResponse": {
         "type": "object",
         "required": [
-          "id",
           "slug",
           "space_uid",
           "space_version",
@@ -12574,10 +12568,6 @@
           "path"
         ],
         "properties": {
-          "id": {
-            "type": "string",
-            "description": "Compatibility field equal to space_uid; remote clients use the immutable Space UID."
-          },
           "slug": {
             "type": "string",
             "description": "Human-readable mutable Space metadata; it is not a remote route identity."

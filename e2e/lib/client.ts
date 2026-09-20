@@ -105,13 +105,13 @@ export async function getDefaultSpaceId(
   request: APIRequestContext,
 ): Promise<string> {
 	// The display name/slug are only fixture-discovery keys. All callers must use
-	// the returned immutable ID for subsequent routes and API requests.
+	// the returned immutable Space UID for subsequent routes and API requests.
 	const response = await request.get(getBackendUrl("/spaces"));
 	if (!response.ok()) throw new Error(`Failed to list Spaces: ${response.status()}`);
-	const spaces = await response.json() as Array<{ id: string; slug?: string; name: string }>;
+	const spaces = await response.json() as Array<{ space_uid: string; slug?: string; name: string }>;
 	const space = spaces.find((candidate) =>
 		candidate.name === "default" || candidate.slug === "default"
 	);
 	if (!space) throw new Error("Default Space was not created during setup");
-	return space.id;
+	return space.space_uid;
 }

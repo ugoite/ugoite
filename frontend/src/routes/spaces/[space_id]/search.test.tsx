@@ -28,7 +28,7 @@ vi.mock("~/components/SpaceShell", () => ({
 
 describe("/spaces/:space_id/search", () => {
   const testSpace: Space = {
-    id: "default",
+    space_uid: "default",
     name: "Default",
     created_at: "2025-01-01T00:00:00Z",
   };

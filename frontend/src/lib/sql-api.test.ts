@@ -9,7 +9,7 @@ import type { SqlUpdatePayload } from "./types";
 import { testApiUrl } from "~/test/http-origin";
 
 const testSpace: Space = {
-  id: "sql-ws",
+  space_uid: "sql-ws",
   name: "SQL Space",
   created_at: "2025-01-01T00:00:00Z",
 };
