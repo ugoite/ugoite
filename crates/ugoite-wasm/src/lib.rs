@@ -795,7 +795,7 @@ mod tests {
     fn entry_validate_draft_rejects_malformed_drafts_as_invalid_input() {
         let form = entry_test_form();
         let malformed = vec![
-            serde_json::json!({"title": 42, "fields": {}}),
+            serde_json::json!({"form_name": 42, "fields": {}}),
             serde_json::json!({"title": "T", "tags": "not-an-array", "fields": {}}),
             serde_json::json!({"title": "T", "tags": [1, 2], "fields": {}}),
             serde_json::json!({"title": "T", "fields": "oops"}),
