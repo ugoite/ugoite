@@ -29,31 +29,6 @@ async fn ensure_entry_form(op: &opendal::Operator, ws_path: &str) -> anyhow::Res
 }
 
 #[tokio::test]
-/// Issue 2141: Entry titles are optional across the local Entry contract.
-async fn entry_create_allows_an_empty_title() -> anyhow::Result<()> {
-    let op = setup_operator()?;
-    space::create_space(&op, "optional-entry-title", "/tmp").await?;
-    let ws_path = "spaces/optional-entry-title";
-    ensure_entry_form(&op, ws_path).await?;
-
-    entry::create_entry(
-        &op,
-        ws_path,
-        "untitled-entry",
-        "---\nform: Entry\n---\n# \n\n## Body\ncontent",
-        "author",
-        &FakeIntegrityProvider,
-    )
-    .await?;
-
-    let entries = entry::list_entries(&op, ws_path).await?;
-    assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0]["id"], "untitled-entry");
-    assert_eq!(entries[0]["title"], "");
-    Ok(())
-}
-
-#[tokio::test]
 async fn explicit_change_command_identity_reaches_entry_history() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "explicit-change-entry", "/tmp").await?;
@@ -348,15 +323,59 @@ async fn test_entry_req_entry_001_create_entry_basic() -> anyhow::Result<()> {
     space::create_space(&op, "test-space", "/tmp").await?;
     let ws_path = "spaces/test-space";
     ensure_entry_form(&op, ws_path).await?;
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Entry",
+            "template": "# Entry\n\n## Body\n\n## Title\n",
+            "fields": {
+                "Body": {"type": "markdown"},
+                "Title": {"type": "string"},
+            },
+            "allow_extra_attributes": "allow_columns",
+        }),
+    )
+    .await?;
 
     let integrity = FakeIntegrityProvider;
-    let content = "---\nform: Entry\n---\n# My Entry\n\n## Body\nHello World";
     let entry_id = "entry-1";
 
-    entry::create_entry(&op, ws_path, entry_id, content, "test-author", &integrity).await?;
+    let fields = BTreeMap::from([
+        (
+            "Body".to_string(),
+            serde_json::Value::String("Hello World".to_string()),
+        ),
+        (
+            "Title".to_string(),
+            serde_json::Value::String("My Entry".to_string()),
+        ),
+    ]);
+    entry::create_structured_entry_with_scopes_and_change(
+        &op,
+        ws_path,
+        entry_id,
+        "Entry".to_string(),
+        Vec::new(),
+        fields,
+        BTreeMap::new(),
+        "test-author",
+        &integrity,
+        None,
+        None,
+    )
+    .await?;
 
     let content_info = entry::get_entry_content(&op, ws_path, entry_id).await?;
     assert!(!content_info.revision_id.is_empty());
+    let record = entry::list_entries(&op, ws_path)
+        .await?
+        .into_iter()
+        .find(|record| record["id"] == entry_id)
+        .expect("created Entry");
+    assert_eq!(record["id"], entry_id);
+    assert_eq!(record["properties"]["Title"], "My Entry");
+    assert!(record.get("title").is_none());
     let history = entry::get_entry_history(&op, ws_path, entry_id).await?;
     let revisions = history.get("revisions").and_then(|v| v.as_array()).unwrap();
     assert_eq!(revisions.len(), 1);
@@ -370,16 +389,45 @@ async fn entry_list_supports_bounded_offset_pages_in_stable_order() -> anyhow::R
     space::create_space(&op, "paged-entry-list", "/tmp").await?;
     let ws_path = "spaces/paged-entry-list";
     ensure_entry_form(&op, ws_path).await?;
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Entry",
+            "template": "# Entry\n\n## Body\n\n## Title\n",
+            "fields": {
+                "Body": {"type": "markdown"},
+                "Title": {"type": "string"},
+            },
+            "allow_extra_attributes": "allow_columns",
+        }),
+    )
+    .await?;
     let integrity = FakeIntegrityProvider;
 
     for (entry_id, title) in [("entry-a", "A"), ("entry-b", "B"), ("entry-c", "C")] {
-        entry::create_entry(
+        let fields = BTreeMap::from([
+            (
+                "Body".to_string(),
+                serde_json::Value::String(title.to_string()),
+            ),
+            (
+                "Title".to_string(),
+                serde_json::Value::String(title.to_string()),
+            ),
+        ]);
+        entry::create_structured_entry_with_scopes_and_change(
             &op,
             ws_path,
             entry_id,
-            &format!("---\nform: Entry\n---\n# {title}"),
+            "Entry".to_string(),
+            Vec::new(),
+            fields,
+            BTreeMap::new(),
             "author",
             &integrity,
+            None,
+            None,
         )
         .await?;
     }
@@ -777,7 +825,7 @@ async fn publication_restore_appends_current_head_with_provenance() -> anyhow::R
 
     let current = entry::get_entry_content(&op, ws_path, "checkpoint-entry").await?;
     assert!(current.markdown.contains("Original"));
-    assert!(current.markdown.contains("Before checkpoint"));
+    assert!(current.markdown.contains("## Body\nOriginal"));
     assert_ne!(current.revision_id, original.revision_id);
 
     let revision = entry::get_entry_revision(
@@ -1603,7 +1651,10 @@ async fn test_entry_req_entry_003_update_entry_success() -> anyhow::Result<()> {
     assert_ne!(meta.updated_at, updated_at);
 
     let current_content = entry::get_entry_content(&op, ws_path, entry_id).await?;
-    assert_eq!(current_content.markdown, new_content);
+    assert_eq!(
+        current_content.markdown,
+        "---\nform: Entry\n---\n## Body\nContent"
+    );
     assert_eq!(current_content.parent_revision_id, Some(initial_revision));
 
     Ok(())
@@ -1857,7 +1908,6 @@ async fn entry_attribution_is_consistent_across_lifecycle() -> anyhow::Result<()
     assert_eq!(restored.author, "creator");
     assert_eq!(restored.updated_by, "restorer");
     assert_eq!(restored.deleted_by, None);
-    assert_eq!(restored.title, "Original");
     assert_eq!(restored.tags, vec!["original"]);
     assert!(restored.markdown.contains("Created"));
 
@@ -1866,42 +1916,6 @@ async fn entry_attribution_is_consistent_across_lifecycle() -> anyhow::Result<()
     assert_eq!(historical_delete["author"], "creator");
     assert_eq!(historical_delete["updated_by"], "deleter");
     assert_eq!(historical_delete["deleted_by"], "deleter");
-    Ok(())
-}
-
-#[tokio::test]
-/// REQ-ENTRY-006
-async fn test_entry_req_entry_006_extract_h2_headers() -> anyhow::Result<()> {
-    let op = setup_operator()?;
-    space::create_space(&op, "test-extract", "/tmp").await?;
-    let ws_path = "spaces/test-extract";
-    let integrity = FakeIntegrityProvider;
-    let entry_id = "entry-extract";
-
-    let class_def = serde_json::json!({
-        "name": "Meeting",
-        "template": "# Meeting\n\n## Date\n\n## Summary\n",
-        "fields": {
-            "Date": {"type": "date"},
-            "Summary": {"type": "string"},
-        },
-    });
-    form::upsert_form(&op, ws_path, &class_def).await?;
-    let content = "---\nform: Meeting\n---\n# Title\n\n## Date\n2025-01-01\n\n## Summary\nText";
-    entry::create_entry(&op, ws_path, entry_id, content, "author", &integrity).await?;
-
-    let list = entry::list_entries(&op, ws_path).await?;
-    let props = list
-        .iter()
-        .find(|entry| entry.get("id").and_then(|value| value.as_str()) == Some(entry_id))
-        .and_then(|entry| entry.get("properties"))
-        .and_then(|value| value.as_object())
-        .expect("persisted extracted properties");
-
-    assert!(props.contains_key("Date"));
-    assert_eq!(props.get("Date").unwrap().as_str().unwrap(), "2025-01-01");
-    assert!(props.contains_key("Summary"));
-
     Ok(())
 }
 

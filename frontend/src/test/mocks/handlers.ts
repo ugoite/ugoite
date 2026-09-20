@@ -461,7 +461,6 @@ export const handlers = [
     const revisionId = generateRevisionId();
     const now = new Date().toISOString();
 
-    const title = body.title ?? "Untitled";
     const tags = body.tags || [];
     const properties: Record<string, string> = {};
     const rawFields = (body.fields || {}) as Record<string, unknown>;
@@ -474,7 +473,7 @@ export const handlers = [
     const sections = Object.entries(properties)
       .map(([key, value]) => `## ${key}\n${value}\n`)
       .join("\n");
-    const markdown = `${frontmatter}# ${title}\n\n${sections}`.trimEnd();
+    const markdown = `${frontmatter}${sections}`.trimEnd();
 
     const entry: Entry = normalizeMockEntry({
       id: entryId,
@@ -487,7 +486,6 @@ export const handlers = [
 
     const record: EntryRecord = {
       id: entryId,
-      title,
       updated_at: now,
       properties,
       tags,
@@ -543,8 +541,6 @@ export const handlers = [
       const newRevisionId = generateRevisionId();
       const now = new Date().toISOString();
 
-      const existing = mockEntryIndex.get(spaceId)?.get(entryId);
-      const title = body.title ?? existing?.title ?? "Untitled";
       const properties: Record<string, string> = {};
       const rawFields = (body.fields || {}) as Record<string, unknown>;
       for (const [key, value] of Object.entries(rawFields)) {
@@ -557,7 +553,7 @@ export const handlers = [
       const sections = Object.entries(properties)
         .map(([key, value]) => `## ${key}\n${value}\n`)
         .join("\n");
-      const markdown = `${frontmatter}# ${title}\n\n${sections}`.trimEnd();
+      const markdown = `${frontmatter}${sections}`.trimEnd();
 
       // Update entry
       entry.content = markdown;
@@ -568,7 +564,6 @@ export const handlers = [
       // Update index
       const record = mockEntryIndex.get(spaceId)?.get(entryId);
       if (record) {
-        record.title = title;
         record.updated_at = now;
         record.properties = properties;
         if (body.tags !== undefined) record.tags = body.tags;
@@ -642,7 +637,7 @@ export const handlers = [
       const entryContent = entries.find((n) => n.id === record.id)?.markdown ??
         entries.find((n) => n.id === record.id)?.content ??
         "";
-      const haystack = `${record.title}\n${
+      const haystack = `${record.id}\n${
         JSON.stringify(record.properties)
       }\n${entryContent}`.toLowerCase();
       return haystack.includes(q);

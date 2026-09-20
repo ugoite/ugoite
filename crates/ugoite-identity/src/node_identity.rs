@@ -8105,7 +8105,6 @@ mod tests {
             .create_structured_entry_with_receipt(
                 "drill-space",
                 "drill-entry",
-                Some("Recovery drill".to_string()),
                 "Entry".to_string(),
                 Vec::new(),
                 std::collections::BTreeMap::from([(

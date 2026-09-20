@@ -219,12 +219,7 @@ fn criteria_rows_table(rows: &[serde_json::Value]) -> Vec<serde_json::Value> {
                 .or_else(|| row.get("id"))
                 .and_then(|value| value.as_str())
                 .unwrap_or_default();
-            let title = row
-                .get("_ugoite_title")
-                .or_else(|| row.get("title"))
-                .and_then(|value| value.as_str())
-                .unwrap_or_default();
-            serde_json::json!({"id": id, "title": title})
+            serde_json::json!({"id": id})
         })
         .collect()
 }
@@ -255,7 +250,7 @@ pub async fn run(
                 if fmt != Format::Json {
                     if let Some(rows) = result.as_array() {
                         let table = criteria_rows_table(rows);
-                        print_json_table(&table, &[("ID", "id"), ("TITLE", "title")]);
+                        print_json_table(&table, &[("ID", "id")]);
                         return Ok(());
                     }
                 }
@@ -270,7 +265,7 @@ pub async fn run(
                     .map(|result| serde_json::to_value(result).expect("keyword result is JSON"))
                     .collect();
                 let table = criteria_rows_table(&rows);
-                print_json_table(&table, &[("ID", "id"), ("TITLE", "title")]);
+                print_json_table(&table, &[("ID", "id")]);
             } else {
                 print_json(&results);
             }
@@ -321,7 +316,7 @@ pub async fn run(
                 if fmt != Format::Json {
                     if let Some(rows) = result.as_array() {
                         let table = criteria_rows_table(rows);
-                        print_json_table(&table, &[("ID", "id"), ("TITLE", "title")]);
+                        print_json_table(&table, &[("ID", "id")]);
                         return Ok(());
                     }
                 }
@@ -336,7 +331,7 @@ pub async fn run(
             let rows = service.search_structured(&space_id, &criteria).await?;
             if fmt != Format::Json {
                 let table = criteria_rows_table(&rows);
-                print_json_table(&table, &[("ID", "id"), ("TITLE", "title")]);
+                print_json_table(&table, &[("ID", "id")]);
             } else {
                 emit_success(&rows, &fmt, None);
             }

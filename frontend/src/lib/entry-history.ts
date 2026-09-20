@@ -7,7 +7,6 @@ export type RevisionMetadata = {
   actor?: string;
   updated_by?: string;
   author?: string;
-  title?: string;
   form?: string;
 };
 

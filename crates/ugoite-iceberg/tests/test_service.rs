@@ -103,7 +103,6 @@ async fn raw_and_structured_denied_principal_share_semantic_error_code() -> Resu
         .create_structured_entry_authorized_for_principals(
             &space_id,
             "denied-structured",
-            Some("Denied".to_string()),
             "Note".to_string(),
             Vec::new(),
             structured_fields,
@@ -135,7 +134,6 @@ async fn raw_and_structured_denied_principal_share_semantic_error_code() -> Resu
         .update_structured_entry_authorized_for_principals(
             &space_id,
             "denied-note",
-            None,
             None,
             None,
             structured_update_fields,
@@ -200,7 +198,6 @@ async fn raw_and_structured_admissible_updates_reach_same_durable_outcome() -> R
         .update_structured_entry_authorized_for_principals(
             &space_id,
             "parity-structured",
-            None,
             None,
             None,
             fields,

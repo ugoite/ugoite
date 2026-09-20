@@ -5,7 +5,7 @@ use opendal::services::Memory;
 use opendal::Operator;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use ugoite_core::entry::{self as core_entry, StructuredEntryDraft};
+use ugoite_core::entry::StructuredEntryDraft;
 use ugoite_domain::change::ChangeCommand;
 use ugoite_iceberg::entry;
 use ugoite_iceberg::integrity::IntegrityProvider;
@@ -19,16 +19,70 @@ pub fn setup_operator() -> Result<Operator> {
     Ok(op)
 }
 
-/// Test-only adapter for fixtures that historically used whole-Entry Markdown
-/// to seed the storage layer. Product mutation APIs are structured-only; these
-/// helpers keep older low-level tests focused on the behavior they cover while
-/// constructing the same structured draft used by production.
+/// Test-only fixture parser. Product mutation APIs are structured-only; these
+/// helpers keep low-level storage tests readable without restoring a Markdown
+/// mutation adapter to production.
 fn structured_draft(markdown: &str) -> Result<StructuredEntryDraft> {
-    let conversion = core_entry::legacy_markdown_to_draft(markdown, "");
-    if !conversion.diagnostics.is_empty() {
-        return Err(core_entry::markdown_conversion_error(&conversion.diagnostics).into());
+    let (frontmatter, body) = if let Some(rest) = markdown.strip_prefix("---\n") {
+        let (yaml, body) = rest
+            .split_once("\n---\n")
+            .context("fixture frontmatter is not closed")?;
+        (
+            serde_yaml::from_str::<serde_json::Value>(yaml)
+                .context("fixture frontmatter is invalid")?,
+            body,
+        )
+    } else {
+        (serde_json::json!({}), markdown)
+    };
+    let form_name = frontmatter
+        .get("form")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let tags = frontmatter
+        .get("tags")
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut fields = BTreeMap::new();
+    if let Some(values) = frontmatter.as_object() {
+        for (key, value) in values {
+            if key != "form" && key != "tags" {
+                fields.insert(key.clone(), value.clone());
+            }
+        }
     }
-    Ok(conversion.draft)
+    let mut current: Option<String> = None;
+    let mut lines = Vec::new();
+    let flush = |current: &mut Option<String>,
+                 lines: &mut Vec<String>,
+                 fields: &mut BTreeMap<String, Value>| {
+        if let Some(key) = current.take() {
+            fields.insert(key, Value::String(lines.join("\n").trim().to_string()));
+        }
+        lines.clear();
+    };
+    for line in body.lines() {
+        if let Some(key) = line.strip_prefix("## ") {
+            flush(&mut current, &mut lines, &mut fields);
+            current = Some(key.trim().to_string());
+        } else if current.is_some() {
+            lines.push(line.to_string());
+        }
+    }
+    flush(&mut current, &mut lines, &mut fields);
+    Ok(StructuredEntryDraft {
+        form_name,
+        tags,
+        fields,
+        extra_attributes: BTreeMap::new(),
+    })
 }
 
 pub async fn legacy_create_entry<I: IntegrityProvider>(
@@ -121,7 +175,6 @@ pub async fn legacy_update_entry<I: IntegrityProvider>(
         op,
         ws_path,
         entry_id,
-        Some(draft.title),
         draft.form_name,
         Some(draft.tags),
         draft.fields,
@@ -152,7 +205,6 @@ pub async fn legacy_update_entry_authorized_with_change<I: IntegrityProvider>(
         op,
         ws_path,
         entry_id,
-        Some(draft.title),
         draft.form_name,
         Some(draft.tags),
         draft.fields,
@@ -270,7 +322,6 @@ impl LegacyServiceEntryExt for UgoiteService {
         self.create_structured_entry_with_receipt(
             space_id,
             entry_id,
-            Some(draft.title),
             draft.form_name.context("test Entry form is missing")?,
             draft.tags,
             draft.fields,
@@ -293,7 +344,6 @@ impl LegacyServiceEntryExt for UgoiteService {
         self.create_structured_entry_authorized_for_principals(
             space_id,
             entry_id,
-            Some(draft.title),
             draft.form_name.context("test Entry form is missing")?,
             draft.tags,
             draft.fields,
@@ -316,7 +366,6 @@ impl LegacyServiceEntryExt for UgoiteService {
         self.update_structured_entry(
             space_id,
             entry_id,
-            Some(draft.title),
             draft.form_name,
             draft.fields,
             draft.extra_attributes,
@@ -339,7 +388,6 @@ impl LegacyServiceEntryExt for UgoiteService {
         self.update_structured_entry_authorized_for_principals(
             space_id,
             entry_id,
-            Some(draft.title),
             draft.form_name,
             Some(draft.tags),
             draft.fields,

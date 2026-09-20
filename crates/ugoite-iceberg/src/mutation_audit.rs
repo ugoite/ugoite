@@ -732,7 +732,6 @@ mod tests {
             service.operator(),
             &service.workspace_path(space_id),
             "entry-1",
-            Some("hello".into()),
             "Entry".into(),
             Vec::new(),
             entry_fields(body),
@@ -755,7 +754,6 @@ mod tests {
             .create_structured_entry_authorized_for_principals(
                 space_id,
                 "entry-1",
-                Some("hello".into()),
                 "Entry".into(),
                 Vec::new(),
                 entry_fields("content"),
@@ -774,7 +772,6 @@ mod tests {
             .create_structured_entry_with_receipt(
                 &space_id,
                 "entry-1",
-                Some("hello".into()),
                 "Entry".into(),
                 Vec::new(),
                 entry_fields("content"),
@@ -791,7 +788,6 @@ mod tests {
             .update_structured_entry(
                 &space_id,
                 "entry-1",
-                Some("hello".into()),
                 Some("Entry".into()),
                 entry_fields("updated"),
                 BTreeMap::new(),
@@ -850,7 +846,6 @@ mod tests {
             .create_structured_entry_with_receipt(
                 &space_id,
                 "entry-1",
-                Some("hello".into()),
                 "Entry".into(),
                 Vec::new(),
                 entry_fields("content"),
@@ -908,7 +903,6 @@ mod tests {
             .create_structured_entry_with_receipt(
                 &space_id,
                 "entry-1",
-                Some("hello".into()),
                 "Entry".into(),
                 Vec::new(),
                 entry_fields("content"),
@@ -1020,7 +1014,6 @@ mod tests {
             service.operator(),
             &service.workspace_path(&space_id),
             "entry-1",
-            Some("hello".into()),
             "Entry".into(),
             Vec::new(),
             entry_fields("content"),
@@ -1045,7 +1038,6 @@ mod tests {
             service.operator(),
             &service.workspace_path(&space_id),
             "entry-1",
-            Some("hello".into()),
             Some("Entry".into()),
             None,
             entry_fields("updated"),

@@ -1299,7 +1299,6 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
         source_kind: "test".into(),
         source_id: None,
         entry: EntryMetadata {
-            title: "before rename".into(),
             updated_by: "human:owner".into(),
             ..Default::default()
         },
@@ -1452,7 +1451,6 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
         source_kind: "test".into(),
         source_id: None,
         entry: EntryMetadata {
-            title: "after rename".into(),
             updated_by: "human:owner".into(),
             ..Default::default()
         },
@@ -1551,7 +1549,6 @@ async fn typed_forms_and_fixed_entry_metadata_round_trip_without_json_payloads(
         source_id: Some("import-1".into()),
         entry: EntryMetadata {
             external_id: "task-71".into(),
-            title: "typed metadata".into(),
             tags: vec!["important".into(), "today".into()],
             created_at_micros: 10,
             updated_at_micros: 11,

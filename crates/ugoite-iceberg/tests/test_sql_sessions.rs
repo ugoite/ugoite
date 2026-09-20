@@ -81,13 +81,11 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
         name: Some("Alpha Query".to_string()),
         kind: saved_sql::SqlKind::UserQuery,
         metadata: None,
-        sql: format!(
-            "SELECT * FROM \"{entry_relation}\" WHERE _ugoite_title = $title ORDER BY _ugoite_id"
-        ),
+        sql: format!("SELECT * FROM \"{entry_relation}\" WHERE Body = $body ORDER BY _ugoite_id"),
         variables: serde_json::json!([{
-            "name": "title",
+            "name": "body",
             "type": "string",
-            "description": "Entry title",
+            "description": "Entry body",
         }]),
     };
     saved_sql::create_sql(
@@ -442,7 +440,7 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
         format!("SELECT * FROM \"{task_relation}\""),
         format!("SELECT * FROM \"{task_relation}\" ORDER BY _ugoite_updated_at"),
         format!("SELECT DISTINCT _ugoite_id FROM \"{task_relation}\" ORDER BY _ugoite_id"),
-        format!("SELECT _ugoite_title AS _ugoite_id FROM \"{task_relation}\" ORDER BY _ugoite_id"),
+        format!("SELECT _ugoite_missing AS _ugoite_id FROM \"{task_relation}\" ORDER BY _ugoite_id"),
         format!("SELECT * FROM \"{task_relation}\" WHERE EXISTS (SELECT 1 FROM \"{task_relation}\" t2 WHERE t2._ugoite_id = \"{task_relation}\"._ugoite_id) ORDER BY _ugoite_id"),
         format!("SELECT (SELECT _ugoite_id FROM \"{task_relation}\" LIMIT 1) FROM \"{task_relation}\" ORDER BY _ugoite_id"),
         format!("SELECT * FROM \"{task_relation}\" WHERE _ugoite_id IN (SELECT _ugoite_id FROM \"{task_relation}\") ORDER BY _ugoite_id"),

@@ -102,12 +102,9 @@ export const entryApi = {
   async createFromWebform(
     spaceId: string,
     formDef: Form,
-    _legacyTitle: string | null | undefined,
     fieldValues: DraftFields,
     id?: string,
   ): Promise<{ id: string; revision_id: string }> {
-    // Title-less Entry: the human-readable name lives in Form fields only.
-    // The legacy title argument is accepted for compatibility but never sent.
     const fields = buildStructuredEntryFields(formDef, fieldValues);
     return await this.create(spaceId, {
       id,
@@ -119,14 +116,13 @@ export const entryApi = {
   async createFromChat(
     spaceId: string,
     formDef: Form,
-    legacyTitle: string | null | undefined,
     answers: DraftFields,
     id?: string,
   ): Promise<{ id: string; revision_id: string }> {
     // Chat answers ride the same structured path as webforms (no Markdown
     // detour). Input UX and answer content are unchanged; delegate so the
     // two paths cannot drift.
-    return await this.createFromWebform(spaceId, formDef, legacyTitle, answers, id);
+    return await this.createFromWebform(spaceId, formDef, answers, id);
   },
 
   async update(

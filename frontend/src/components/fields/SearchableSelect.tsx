@@ -36,7 +36,7 @@ export interface SearchableSelectProps {
 /**
  * Generic searchable single-select shared by every row-reference control.
  *
- * Display/interaction only: options render human-readable titles, selection
+ * Display/interaction only: options render deterministic labels, selection
  * stores the stable option id through `onSelect`, and validity stays in
  * Rust. Keyboard: ArrowDown/ArrowUp move the highlight (wrapping),
  * Enter confirms the highlighted (or first) option, Escape dismisses the

@@ -1,7 +1,6 @@
 export const RESERVED_METADATA_COLUMNS = [
   "id",
   "entry_id",
-  "title",
   "form",
   "tags",
   "created_at",

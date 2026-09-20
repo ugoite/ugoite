@@ -22,11 +22,9 @@ Create an Entry in [Create and Edit Entries](entries.mdx) and confirm the
 Form name with `ugoite form get`. Each Form is exposed as the
 backend-provided `form_<FormId>` relation (the Form UUID without dashes, as
 returned in the `id` field of `ugoite form get`) with `field_<FieldId>`
-columns plus `_ugoite_id`, `_ugoite_title`, `_ugoite_created_at`, and
-`_ugoite_updated_at` columns. `_ugoite_title` is a 0.1.x compatibility
-projection (legacy physical title, then the reserved legacy-title metadata,
-then empty): new queries should use Form-defined fields and `_ugoite_id`
-for identity instead of relying on it.
+columns plus `_ugoite_id`, `_ugoite_created_at`, and `_ugoite_updated_at`
+columns. Entry identity is `_ugoite_id`; human-readable labels are ordinary
+Form-defined fields.
 
 ## Steps
 
@@ -42,14 +40,14 @@ for identity instead of relying on it.
 <TabItem label="CLI">
 
 ```bash
-ugoite sql lint 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> LIMIT 10'
+ugoite sql lint 'SELECT _ugoite_id, field_<FieldId> FROM form_<FormId> LIMIT 10'
 ugoite sql saved-list
 ugoite sql saved-create \
   --name planning --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10'
 ugoite sql saved-get <sql-id>
 ugoite sql saved-execute <sql-id> --limit 20
 ugoite query \
-  --sql 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> LIMIT 10'
+  --sql 'SELECT _ugoite_id, field_<FieldId> FROM form_<FormId> LIMIT 10'
 ```
 
 `sql lint` checks syntax only; it does not resolve Forms or authorize
@@ -70,7 +68,7 @@ not durable Knowledge.
 
 ```bash
 ugoite sql session-create \
-  --sql 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> ORDER BY _ugoite_id'
+  --sql 'SELECT _ugoite_id, field_<FieldId> FROM form_<FormId> ORDER BY _ugoite_id'
 ```
 
 ```json
@@ -83,7 +81,7 @@ ugoite sql session-create \
     "strategy": "offset"
   },
   "space_id": "<space-id>",
-  "sql": "SELECT _ugoite_id, _ugoite_title FROM form_<FormId> ORDER BY _ugoite_id",
+  "sql": "SELECT _ugoite_id, field_<FieldId> FROM form_<FormId> ORDER BY _ugoite_id",
   "status": "ready"
 }
 ```
@@ -118,8 +116,8 @@ ugoite sql session-rows <session-id> --offset 0 --limit 1
   "count": 1,
   "limit": 1,
   "offset": 0,
-  "result": [{ "_ugoite_id": "task-a", "_ugoite_title": "Alpha" }],
-  "rows": [{ "_ugoite_id": "task-a", "_ugoite_title": "Alpha" }],
+  "result": [{ "_ugoite_id": "task-a", "field_<FieldId>": "Alpha" }],
+  "rows": [{ "_ugoite_id": "task-a", "field_<FieldId>": "Alpha" }],
   "session_id": "<session-id>",
   "total_count": 2
 }
@@ -137,8 +135,8 @@ ugoite sql saved-execute <sql-id> --limit 1
   "count": 1,
   "limit": 1,
   "offset": 0,
-  "result": [{ "_ugoite_id": "task-a", "_ugoite_title": "Alpha" }],
-  "rows": [{ "_ugoite_id": "task-a", "_ugoite_title": "Alpha" }],
+  "result": [{ "_ugoite_id": "task-a", "field_<FieldId>": "Alpha" }],
+  "rows": [{ "_ugoite_id": "task-a", "field_<FieldId>": "Alpha" }],
   "sql_id": "<sql-id>",
   "total_count": 2
 }
@@ -156,8 +154,8 @@ ugoite sql saved-execute <sql-id> --limit 1
   "count": 1,
   "limit": 1,
   "offset": 0,
-  "result": [{ "_ugoite_id": "task-a", "_ugoite_title": "Alpha" }],
-  "rows": [{ "_ugoite_id": "task-a", "_ugoite_title": "Alpha" }],
+  "result": [{ "_ugoite_id": "task-a", "field_<FieldId>": "Alpha" }],
+  "rows": [{ "_ugoite_id": "task-a", "field_<FieldId>": "Alpha" }],
   "session_id": "<session-id>",
   "sql_id": "<sql-id>",
   "total_count": 2

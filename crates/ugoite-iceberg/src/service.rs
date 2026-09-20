@@ -411,7 +411,6 @@ impl SpaceCreateOutcome {
 pub enum ApplyOperation {
     Create {
         id: Option<String>,
-        title: Option<String>,
         form: String,
         tags: Vec<String>,
         fields: std::collections::BTreeMap<String, Value>,
@@ -420,7 +419,6 @@ pub enum ApplyOperation {
     Update {
         id: String,
         version_token: String,
-        title: Option<String>,
         form: Option<String>,
         tags: Option<Vec<String>>,
         fields: std::collections::BTreeMap<String, Value>,
@@ -2095,7 +2093,6 @@ impl UgoiteService {
             match operation {
                 ApplyOperation::Create {
                     id,
-                    title,
                     form,
                     tags,
                     fields,
@@ -2114,7 +2111,6 @@ impl UgoiteService {
                         .create_structured_entry_authorized_for_principals_with_change(
                             space_id,
                             &entry_id,
-                            title,
                             form,
                             tags,
                             fields,
@@ -2134,7 +2130,6 @@ impl UgoiteService {
                 ApplyOperation::Update {
                     id,
                     version_token,
-                    title,
                     form,
                     tags,
                     fields,
@@ -2152,12 +2147,11 @@ impl UgoiteService {
                         .update_structured_entry_authorized_for_principals_with_change(
                             space_id,
                             &id,
-                            title,
                             form,
                             tags,
                             fields,
                             extra_attributes,
-                            Some(&version_token),
+                            Some(version_token.as_str()),
                             actor_principal_id,
                             principal_ids,
                             Some(change),
@@ -2450,7 +2444,6 @@ impl UgoiteService {
         &self,
         space_id: &str,
         entry_id: &str,
-        title: Option<String>,
         form_name: String,
         tags: Vec<String>,
         fields: std::collections::BTreeMap<String, Value>,
@@ -2461,7 +2454,6 @@ impl UgoiteService {
         self.create_structured_entry_authorized_for_principals_with_change(
             space_id,
             entry_id,
-            title,
             form_name,
             tags,
             fields,
@@ -2484,7 +2476,6 @@ impl UgoiteService {
         &self,
         space_id: &str,
         entry_id: &str,
-        title: Option<String>,
         form_name: String,
         tags: Vec<String>,
         fields: std::collections::BTreeMap<String, Value>,
@@ -2500,7 +2491,6 @@ impl UgoiteService {
             &self.operator,
             &prelude.workspace,
             entry_id,
-            title,
             form_name,
             tags,
             fields,
@@ -2535,7 +2525,6 @@ impl UgoiteService {
         &self,
         space_id: &str,
         entry_id: &str,
-        title: Option<String>,
         form_name: String,
         tags: Vec<String>,
         fields: std::collections::BTreeMap<String, Value>,
@@ -2551,7 +2540,6 @@ impl UgoiteService {
             &self.operator,
             &workspace,
             entry_id,
-            title,
             form_name,
             tags,
             fields,
@@ -2628,8 +2616,7 @@ impl UgoiteService {
     /// Update a Form-backed Entry in core (local filesystem) mode without
     /// regenerating Markdown. `fields` is the complete post-update field map;
     /// omitted fields are intentionally cleared. Callers do read → modify →
-    /// full update; there is no metadata-only patch variant. `title`/`tags`
-    /// fall back to stored values when `None`, and `extra_attributes` is
+    /// full update; there is no metadata-only patch variant. `extra_attributes` is
     /// carried through unchanged because the CLI has no extra-attribute
     /// editing surface (an explicit field value replaces a preserved extra
     /// with the same key before calling). Form identity is immutable;
@@ -2641,7 +2628,6 @@ impl UgoiteService {
         &self,
         space_id: &str,
         entry_id: &str,
-        title: Option<String>,
         form_name: Option<String>,
         fields: std::collections::BTreeMap<String, Value>,
         extra_attributes: std::collections::BTreeMap<String, Value>,
@@ -2659,7 +2645,6 @@ impl UgoiteService {
             &self.operator,
             &self.workspace_path(space_id),
             entry_id,
-            title,
             form_name,
             None,
             fields,
@@ -2685,8 +2670,8 @@ impl UgoiteService {
 
     /// Update a Form-backed Entry without regenerating Markdown. `fields`
     /// is the complete post-update field map (full replacement: omitted
-    /// fields clear, never patch); `title`/`tags` fall back to stored values
-    /// when `None`. Form identity is immutable. A key in both `fields` and
+    /// fields clear, never patch); tags fall back to stored values when
+    /// `None`. Form identity is immutable. A key in both `fields` and
     /// `extra_attributes` is an `InvalidInput` diagnostic, never a silent
     /// precedence.
     #[allow(clippy::too_many_arguments)]
@@ -2694,7 +2679,6 @@ impl UgoiteService {
         &self,
         space_id: &str,
         entry_id: &str,
-        title: Option<String>,
         form_name: Option<String>,
         tags: Option<Vec<String>>,
         fields: std::collections::BTreeMap<String, Value>,
@@ -2706,7 +2690,6 @@ impl UgoiteService {
         self.update_structured_entry_authorized_for_principals_with_change(
             space_id,
             entry_id,
-            title,
             form_name,
             tags,
             fields,
@@ -2729,7 +2712,6 @@ impl UgoiteService {
         &self,
         space_id: &str,
         entry_id: &str,
-        title: Option<String>,
         form_name: Option<String>,
         tags: Option<Vec<String>>,
         fields: std::collections::BTreeMap<String, Value>,
@@ -2752,7 +2734,6 @@ impl UgoiteService {
             &self.operator,
             &prelude.workspace,
             entry_id,
-            title,
             form_name,
             tags,
             fields,
@@ -4110,7 +4091,7 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         query: &str,
         limit: usize,
-        after: Option<(&str, &str, &str)>,
+        after: Option<(&str, &str)>,
     ) -> Result<Vec<search::KeywordSearchResult>> {
         ugoite_core::query::validate_keyword_query(query)?;
         require_nonempty_authorized_principals(principal_ids)?;
@@ -5719,7 +5700,6 @@ mod tests {
                 .create_structured_entry_with_receipt(
                     "remote-space",
                     "entry-1",
-                    Some("Entry".into()),
                     "Entry".into(),
                     Vec::new(),
                     std::collections::BTreeMap::new(),
@@ -6299,7 +6279,6 @@ mod tests {
     fn batch_create(entry_id: &str) -> ApplyOperation {
         ApplyOperation::Create {
             id: Some(entry_id.to_string()),
-            title: Some("hello".to_string()),
             form: "Entry".to_string(),
             tags: Vec::new(),
             fields: [("Body".to_string(), Value::String("content".to_string()))]
@@ -6392,7 +6371,6 @@ mod tests {
                     ApplyOperation::Update {
                         id: "batch-entry-2".to_string(),
                         version_token: String::new(),
-                        title: Some("hello".to_string()),
                         form: Some("Entry".to_string()),
                         tags: Some(Vec::new()),
                         fields: [("Body".to_string(), Value::String("content".to_string()))]

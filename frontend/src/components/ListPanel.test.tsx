@@ -30,7 +30,6 @@ describe("ListPanel", () => {
   const mockEntries: EntryRecord[] = [
     {
       id: "entry-1",
-      title: "Test Entry 1",
       form: "Meeting",
       updated_at: "2026-01-01T00:00:00Z",
       created_at: "2026-01-01T00:00:00Z",
@@ -38,7 +37,6 @@ describe("ListPanel", () => {
     },
     {
       id: "entry-2",
-      title: "Test Entry 2",
       form: null,
       updated_at: "2026-01-02T00:00:00Z",
       created_at: "2026-01-02T00:00:00Z",
@@ -136,8 +134,8 @@ describe("ListPanel", () => {
           entries={mockEntries}
         />
       ));
-      expect(screen.getByText("Test Entry 1")).toBeInTheDocument();
-      expect(screen.getByText("Test Entry 2")).toBeInTheDocument();
+      expect(screen.getByText("entry-1")).toBeInTheDocument();
+      expect(screen.getByText("entry-2")).toBeInTheDocument();
     });
 
     it("does not coerce structured properties into object text", () => {
@@ -171,7 +169,7 @@ describe("ListPanel", () => {
           selectedId="entry-1"
         />
       ));
-      const selectedButton = screen.getByText("Test Entry 1").closest("button");
+      const selectedButton = screen.getByText("entry-1").closest("button");
       expect(selectedButton).toHaveClass("ui-card-selected");
     });
 
@@ -188,7 +186,7 @@ describe("ListPanel", () => {
           onSelectEntry={onSelectEntry}
         />
       ));
-      fireEvent.click(screen.getByText("Test Entry 1"));
+      fireEvent.click(screen.getByText("entry-1"));
       expect(onSelectEntry).toHaveBeenCalledWith("entry-1");
     });
 
@@ -227,7 +225,7 @@ describe("ListPanel", () => {
           loading={true}
         />
       ));
-      expect(screen.getByText("Test Entry 1")).toBeInTheDocument();
+      expect(screen.getByText("entry-1")).toBeInTheDocument();
       expect(screen.getByRole("status")).toBeInTheDocument();
     });
 
@@ -276,18 +274,16 @@ describe("ListPanel", () => {
       expect(screen.getByPlaceholderText(/search/i)).toBeInTheDocument();
     });
 
-    it("renders entries with no title and non-string properties and null properties", () => {
+    it("renders entries with non-string properties and null properties", () => {
       const [filterForm, setFilterForm] = createSignal("");
       const entry: EntryRecord = {
         id: "complex-entry",
-        title: null,
         updated_at: "2025-01-01T00:00:00Z",
         properties: { count: 42, flag: true },
         tags: [],
       };
       const noPropsEntry: EntryRecord = {
         id: "no-props",
-        title: "Has Props",
         updated_at: "2025-01-01T00:00:00Z",
         properties: null as unknown as Record<string, unknown>,
         tags: [],

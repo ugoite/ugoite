@@ -136,16 +136,9 @@ export function createEntryStore(spaceId: () => string) {
 
     const originalEntry = currentEntries[entryIndex];
 
-    // Structured payloads carry the editable metadata directly.
-    let title = originalEntry.title;
-    if (payload.title !== undefined) {
-      title = payload.title;
-    }
-
     // Create optimistic record
     const optimisticEntry: EntryRecord = {
       ...originalEntry,
-      title,
       updated_at: new Date().toISOString(),
       canvas_position: payload.canvas_position || originalEntry.canvas_position,
     };

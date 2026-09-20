@@ -2,7 +2,7 @@
  * Shared row-reference helpers.
  *
  * Both the create dialog and the Entry detail editor resolve reference
- * options through this module so title display, stable-ID storage, and
+ * options through this module so label display, stable-ID storage, and
  * target-Form scoping stay identical. Validity authority stays in Rust;
  * nothing here decides saveability.
  */
@@ -28,19 +28,17 @@ export const hasRowReferencePicker = (
   normalizeRowReferenceTargetForm(def) !== "";
 
 export const buildRowReferenceOptions = (
-  entries: Array<{ id: string; title?: string | null }>,
+  entries: Array<{ id: string }>,
 ): RowReferenceOption[] =>
   entries
     .map((entry) => {
-      const title = entry.title?.trim() || entry.id;
       return {
         id: entry.id,
-        title,
-        label: title === entry.id ? entry.id : `${title} (${entry.id})`,
+        title: entry.id,
+        label: entry.id,
       };
     })
     .sort(
       (left, right) =>
-        left.title.localeCompare(right.title) ||
         left.id.localeCompare(right.id),
     );

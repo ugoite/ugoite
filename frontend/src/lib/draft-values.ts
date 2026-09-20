@@ -53,7 +53,7 @@ export const normalizeEntryFieldValue = (
  * - list stays a string array (Markdown-list text is only the textarea
  *   presentation; transport keeps the typed form when already parsed)
  * - object_list stays an object array
- * - row_reference stays the stable Entry ID string (display title lives in
+ * - row_reference stays the stable Entry ID string (display label lives in
  *   the picker, never in the saved value)
  * - asset_reference stays the canonical AssetReference object
  * - asset_reference_list stays an AssetReference array

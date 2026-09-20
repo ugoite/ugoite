@@ -80,7 +80,6 @@ describe("/spaces/:space_id/entries", () => {
         () =>
           HttpResponse.json([{
             id: "entry-1",
-            title: "Entry one",
             updated_at: "2026-03-01T00:00:00Z",
             properties: {},
             tags: [],
@@ -92,7 +91,7 @@ describe("/spaces/:space_id/entries", () => {
 
     expect(await screen.findByRole("heading", { name: "Entries" }))
       .toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /Entry one/ }))
+    expect(await screen.findByRole("button", { name: /entry-1/ }))
       .toBeInTheDocument();
     expect(screen.queryByTestId("redirect")).not.toBeInTheDocument();
   });
@@ -105,7 +104,6 @@ describe("/spaces/:space_id/entries", () => {
           HttpResponse.json([
             {
               id: "entry-1",
-              title: "Zebra note",
               form: "Notes",
               updated_at: "2026-03-01T00:00:00Z",
               properties: {},
@@ -113,7 +111,6 @@ describe("/spaces/:space_id/entries", () => {
             },
             {
               id: "entry-2",
-              title: "Alpha note",
               form: "Notes",
               updated_at: "2026-03-02T00:00:00Z",
               properties: {},
@@ -121,7 +118,6 @@ describe("/spaces/:space_id/entries", () => {
             },
             {
               id: "entry-3",
-              title: null,
               form: "Notes",
               updated_at: "2026-03-03T00:00:00Z",
               properties: {},
@@ -133,30 +129,29 @@ describe("/spaces/:space_id/entries", () => {
 
     renderRoute();
 
-    // Labels: titles where present, IDs otherwise.
-    expect(await screen.findByRole("button", { name: /Zebra note/ }))
+    expect(await screen.findByRole("button", { name: /entry-1/ }))
       .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Alpha note/ }))
+    expect(screen.getByRole("button", { name: /entry-2/ }))
       .toBeInTheDocument();
     expect(screen.getByRole("button", { name: /entry-3/ }))
       .toBeInTheDocument();
     const filter = screen.getByRole("search");
     expect(filter).toBeInTheDocument();
     fireEvent.input(screen.getByLabelText("Filter entries"), {
-      target: { value: "Alpha" },
+      target: { value: "entry-2" },
     });
-    expect(screen.queryByRole("button", { name: /Zebra note/ }))
+    expect(screen.queryByRole("button", { name: /entry-1/ }))
       .not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /entry-3/ }))
       .not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Alpha note/ }))
+    expect(screen.getByRole("button", { name: /entry-2/ }))
       .toBeInTheDocument();
 
-    // Filter matches the ID label for title-less entries.
+    // Filter matches the ID label.
     fireEvent.input(screen.getByLabelText("Filter entries"), {
       target: { value: "entry-3" },
     });
-    expect(screen.queryByRole("button", { name: /Alpha note/ }))
+    expect(screen.queryByRole("button", { name: /entry-2/ }))
       .not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /entry-3/ }))
       .toBeInTheDocument();
@@ -165,9 +160,9 @@ describe("/spaces/:space_id/entries", () => {
     fireEvent.input(screen.getByLabelText("Filter entries"), {
       target: { value: "Notes" },
     });
-    expect(screen.getByRole("button", { name: /Zebra note/ }))
+    expect(screen.getByRole("button", { name: /entry-1/ }))
       .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Alpha note/ }))
+    expect(screen.getByRole("button", { name: /entry-2/ }))
       .toBeInTheDocument();
     expect(screen.getByRole("button", { name: /entry-3/ }))
       .toBeInTheDocument();
@@ -182,7 +177,7 @@ describe("/spaces/:space_id/entries", () => {
       [...document.querySelectorAll(".entryRowTitle")].map((node) =>
         node.textContent
       ),
-    ).toEqual(["Zebra note", "Alpha note", "entry-3"]);
+    ).toEqual(["entry-1", "entry-2", "entry-3"]);
     fireEvent.change(screen.getByLabelText("Sort entries"), {
       target: { value: "updated" },
     });
@@ -190,7 +185,7 @@ describe("/spaces/:space_id/entries", () => {
       [...document.querySelectorAll(".entryRowTitle")].map((node) =>
         node.textContent
       ),
-    ).toEqual(["entry-3", "Alpha note", "Zebra note"]);
+    ).toEqual(["entry-3", "entry-2", "entry-1"]);
     expect(document.querySelector(".entryRow")).toBeInTheDocument();
     expect(document.querySelector(".entryRow .ui-card")).toBeNull();
   });
@@ -217,7 +212,6 @@ describe("/spaces/:space_id/entries", () => {
           HttpResponse.json({
             rows: [{
               _ugoite_id: "query-entry",
-              _ugoite_title: "Query Entry",
               _ugoite_updated_at: 1772960822.056,
               field_100: "Active",
             }],
@@ -231,10 +225,10 @@ describe("/spaces/:space_id/entries", () => {
     renderRoute();
 
     const expectedDate = new Date(1772960822.056 * 1000).toLocaleDateString();
-    expect(await screen.findByText("Query Entry")).toBeInTheDocument();
+    expect(await screen.findByText("query-entry")).toBeInTheDocument();
     expect(await screen.findByText(expectedDate)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Query Entry/ }));
+    fireEvent.click(screen.getByRole("button", { name: /query-entry/ }));
     expect(navigate).toHaveBeenCalledWith(
       "/spaces/default/entries/query-entry",
     );
@@ -316,7 +310,6 @@ describe("/spaces/:space_id/entries", () => {
         () =>
           HttpResponse.json([{
             id: "other-1",
-            title: "Other form entry",
             form: "Projects",
             updated_at: "2026-03-01T00:00:00Z",
             properties: {},
@@ -331,7 +324,6 @@ describe("/spaces/:space_id/entries", () => {
           };
           return HttpResponse.json([{
             id: "scoped-1",
-            title: "Scoped note",
             form: "Notes",
             updated_at: "2026-03-01T00:00:00Z",
             properties: {},
@@ -347,9 +339,9 @@ describe("/spaces/:space_id/entries", () => {
       .toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to Forms" }))
       .toHaveAttribute("href", "/spaces/default/forms");
-    expect(await screen.findByRole("button", { name: /Scoped note/ }))
+    expect(await screen.findByRole("button", { name: /scoped-1/ }))
       .toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Other form entry/ })).not
+    expect(screen.queryByRole("button", { name: /other-1/ })).not
       .toBeInTheDocument();
     expect(queryBody?.filter).toMatchObject({ form: "Notes" });
 
@@ -367,7 +359,6 @@ describe("/spaces/:space_id/entries", () => {
         () =>
           HttpResponse.json([{
             id: "scoped-1",
-            title: "Scoped note",
             form: "Notes",
             updated_at: "2026-03-01T00:00:00Z",
             properties: {},
@@ -405,7 +396,6 @@ describe("/spaces/:space_id/entries", () => {
         () =>
           HttpResponse.json([{
             id: "scoped-1",
-            title: "Scoped note",
             form: "Notes",
             updated_at: "2026-03-01T00:00:00Z",
             properties: {},
@@ -416,14 +406,13 @@ describe("/spaces/:space_id/entries", () => {
 
     renderRoute([noteForm]);
 
-    expect(await screen.findByRole("button", { name: /Scoped note/ }))
+    expect(await screen.findByRole("button", { name: /scoped-1/ }))
       .toBeInTheDocument();
     // The form is already the list context: no per-row type chip repeats it.
     expect(document.querySelector(".entryRow .ui-pill")).toBeNull();
     expect(document.querySelector(".entryRowForm")).toBeNull();
-    // Raw identifiers stay out of normal rows; the row shows the title only.
-    const row = screen.getByRole("button", { name: /Scoped note/ });
-    expect(row.textContent).not.toContain("scoped-1");
+    const row = screen.getByRole("button", { name: /scoped-1/ });
+    expect(row.textContent).toContain("scoped-1");
     // Compact right-meta date without a repeated "Updated" label.
     const date = document.querySelector(".entryRowDate")!;
     expect(date.textContent).not.toMatch(/Updated/);
@@ -468,7 +457,7 @@ describe("/spaces/:space_id/entries", () => {
     await waitFor(() =>
       expect(document.querySelector(".ui-text-danger")).toBeInTheDocument()
     );
-    expect(screen.queryByRole("button", { name: /Scoped note/ })).not
+    expect(screen.queryByRole("button", { name: /scoped-1/ })).not
       .toBeInTheDocument();
   });
 
@@ -512,7 +501,6 @@ describe("/spaces/:space_id/entries", () => {
           HttpResponse.json({
             rows: [{
               _ugoite_id: "session-entry",
-              _ugoite_title: "Session Entry",
               _ugoite_updated_at: 1772960822.056,
             }],
             offset: 0,
@@ -533,7 +521,7 @@ describe("/spaces/:space_id/entries", () => {
 
     expect(await screen.findByRole("heading", { name: "Query Results" }))
       .toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /Session Entry/ }))
+    expect(await screen.findByRole("button", { name: /session-entry/ }))
       .toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Notes" })).not
       .toBeInTheDocument();
@@ -568,7 +556,6 @@ describe("/spaces/:space_id/entries", () => {
           requestedPath = new URL(request.url).pathname;
           return HttpResponse.json([{
             id: "entry-1",
-            title: "Entry one",
             updated_at: "2026-03-01T00:00:00Z",
             properties: {},
             tags: [],
@@ -579,7 +566,7 @@ describe("/spaces/:space_id/entries", () => {
 
     renderRoute([], spaceId);
 
-    fireEvent.click(await screen.findByRole("button", { name: /Entry one/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /entry-1/ }));
     expect(navigate).toHaveBeenCalledWith(
       "/spaces/space%2Fwith%20space/entries/entry-1",
     );
@@ -620,7 +607,6 @@ describe("/spaces/:space_id/entries", () => {
           HttpResponse.json([
             {
               id: "entry-1",
-              title: "Zebra note",
               form: "Notes",
               updated_at: "2026-03-01T00:00:00Z",
               properties: {},
@@ -628,7 +614,6 @@ describe("/spaces/:space_id/entries", () => {
             },
             {
               id: "entry-2",
-              title: "Project plan",
               form: "Projects",
               updated_at: "2026-03-02T00:00:00Z",
               properties: {},
@@ -640,10 +625,10 @@ describe("/spaces/:space_id/entries", () => {
 
     renderRoute([noteForm]);
 
-    expect(await screen.findByRole("button", { name: /Zebra note/ }))
+    expect(await screen.findByRole("button", { name: /entry-1/ }))
       .toBeInTheDocument();
-    const zebra = screen.getByRole("button", { name: /Zebra note/ });
-    const plan = screen.getByRole("button", { name: /Project plan/ });
+    const zebra = screen.getByRole("button", { name: /entry-1/ });
+    const plan = screen.getByRole("button", { name: /entry-2/ });
     expect(zebra.textContent).toContain("Notes");
     expect(plan.textContent).toContain("Projects");
     expect(document.querySelector(".entryRowForm")).not.toBeNull();

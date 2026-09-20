@@ -4415,7 +4415,6 @@ mod tests {
             &op,
             ws_path,
             "meeting-1",
-            Some("August meeting".into()),
             "Notes".into(),
             Vec::new(),
             BTreeMap::from([("Attachment".to_string(), serde_json::to_value(&reference)?)]),

@@ -138,9 +138,8 @@ async fn advanced_search_sql_is_saved_and_materialized() -> anyhow::Result<()> {
 
 #[tokio::test]
 /// REQ-API-006 saved-sql-name-field: the display name is a normal optional
-/// Form field; reads fall back to the legacy Entry title and nameless
-/// records stay valid.
-async fn saved_sql_name_is_a_normal_field_with_legacy_fallback() -> anyhow::Result<()> {
+/// Form field; nameless historical records remain valid.
+async fn saved_sql_name_is_a_normal_field() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "sql-name-field", "/tmp").await?;
     let ws_path = "spaces/sql-name-field";
@@ -265,7 +264,6 @@ async fn saved_sql_evolves_legacy_form_without_rewriting_entries() -> anyhow::Re
         &op,
         ws_path,
         "legacy-sql",
-        Some("Legacy SQL".to_string()),
         "SQL".to_string(),
         Vec::new(),
         legacy_fields,
@@ -280,7 +278,7 @@ async fn saved_sql_evolves_legacy_form_without_rewriting_entries() -> anyhow::Re
     let legacy_revision = before_evolution["revision_id"].clone();
 
     let legacy = saved_sql::get_sql(&op, ws_path, "legacy-sql").await?;
-    assert_eq!(legacy["name"], json!("Legacy SQL"));
+    assert!(legacy["name"].is_null());
     assert_eq!(legacy["revision_id"], legacy_revision);
 
     let evolved_form = form::get_form(&op, ws_path, "SQL").await?;

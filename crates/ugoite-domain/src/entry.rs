@@ -128,28 +128,14 @@ impl AssetReference {
     }
 }
 
-/// Reserved `extension_metadata` key carrying a 0.1.x compatibility title.
-///
-/// New Form storage has no `ugoite_entry_title` physical column. When an old
-/// 0.1.x client sends a non-empty title to a title-less Form, the value is
-/// preserved here instead of recreating a title column. Readers resolve a
-/// display title as: legacy physical column, then this key, then empty.
-pub const LEGACY_TITLE_EXTENSION_KEY: &str = "ugoite/legacy-title";
-
 /// Fixed metadata that accompanies every revision independently of a Form's
 /// typed columns. It is part of the canonical revision model, not an opaque
 /// JSON payload.
-///
-/// `title` is 0.1.x compatibility display metadata, not a canonical Entry
-/// property. New Entries leave it empty; existing title-bearing Space 0.1
-/// values remain readable without migration.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EntryMetadata {
     /// Stable API-facing identity stored beside the UUID revision key.
     #[serde(default)]
     pub external_id: String,
-    #[serde(default)]
-    pub title: String,
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]

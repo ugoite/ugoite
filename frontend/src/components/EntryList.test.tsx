@@ -38,17 +38,15 @@ describe("EntryList", () => {
       expect(screen.getByText(/no entries/i)).toBeInTheDocument();
     });
 
-    it("should render list of entries with titles", async () => {
+    it("should render list of entries with IDs", async () => {
       const record1: EntryRecord = {
         id: "entry-1",
-        title: "First Entry",
         updated_at: "2025-01-01T00:00:00Z",
         properties: {},
         tags: [],
       };
       const record2: EntryRecord = {
         id: "entry-2",
-        title: "Second Entry",
         updated_at: "2025-01-02T00:00:00Z",
         properties: { Status: "Active" },
         tags: [],
@@ -62,14 +60,13 @@ describe("EntryList", () => {
         <EntryList entries={entries} loading={loading} error={error} />
       ));
 
-      expect(screen.getByText("First Entry")).toBeInTheDocument();
-      expect(screen.getByText("Second Entry")).toBeInTheDocument();
+      expect(screen.getByText("entry-1")).toBeInTheDocument();
+      expect(screen.getByText("entry-2")).toBeInTheDocument();
     });
 
     it("should display extracted properties in entry cards", async () => {
       const record: EntryRecord = {
         id: "prop-entry",
-        title: "Meeting",
         updated_at: "2025-01-01T00:00:00Z",
         properties: { Date: "2025-01-15", Status: "Completed" },
         tags: [],
@@ -80,7 +77,7 @@ describe("EntryList", () => {
         <EntryList entries={entries} loading={loading} error={error} />
       ));
 
-      expect(screen.getByText("Meeting")).toBeInTheDocument();
+      expect(screen.getByText("prop-entry")).toBeInTheDocument();
       // Check for the property key (Date:) and value (2025-01-15)
       expect(screen.getByText("Date:")).toBeInTheDocument();
       expect(screen.getByText("2025-01-15")).toBeInTheDocument();
@@ -90,7 +87,6 @@ describe("EntryList", () => {
       // Simulate API response where properties may be null/undefined
       const recordWithNullProperties = {
         id: "null-prop-entry",
-        title: "Entry without properties",
         updated_at: "2025-01-01T00:00:00Z",
         properties: null as unknown as Record<string, unknown>,
         tags: [],
@@ -98,7 +94,6 @@ describe("EntryList", () => {
 
       const recordWithUndefinedProperties = {
         id: "undefined-prop-entry",
-        title: "Entry with undefined properties",
         updated_at: "2025-01-02T00:00:00Z",
         tags: [],
       } as EntryRecord;
@@ -113,15 +108,14 @@ describe("EntryList", () => {
         <EntryList entries={entries} loading={loading} error={error} />
       ));
 
-      expect(screen.getByText("Entry without properties")).toBeInTheDocument();
-      expect(screen.getByText("Entry with undefined properties"))
+      expect(screen.getByText("null-prop-entry")).toBeInTheDocument();
+      expect(screen.getByText("undefined-prop-entry"))
         .toBeInTheDocument();
     });
 
     it("should call onSelect when a entry is clicked", async () => {
       const record: EntryRecord = {
         id: "click-entry",
-        title: "Clickable Entry",
         updated_at: "2025-01-01T00:00:00Z",
         properties: {},
         tags: [],
@@ -138,7 +132,7 @@ describe("EntryList", () => {
         />
       ));
 
-      fireEvent.click(screen.getByText("Clickable Entry"));
+      fireEvent.click(screen.getByText("click-entry"));
 
       expect(onSelect).toHaveBeenCalledWith("click-entry");
     });
@@ -166,7 +160,6 @@ describe("EntryList", () => {
     it("should keep existing rows mounted while loading", () => {
       const record: EntryRecord = {
         id: "kept-entry",
-        title: "Kept Entry",
         updated_at: "2025-01-01T00:00:00Z",
         properties: {},
         tags: [],
@@ -179,14 +172,13 @@ describe("EntryList", () => {
         <EntryList entries={entries} loading={loading} error={error} />
       ));
 
-      expect(screen.getByText("Kept Entry")).toBeInTheDocument();
+      expect(screen.getByText("kept-entry")).toBeInTheDocument();
       expect(screen.getByRole("status")).toBeInTheDocument();
     });
 
     it("should highlight selected entry", async () => {
       const record: EntryRecord = {
         id: "selected-entry",
-        title: "Selected Entry",
         updated_at: "2025-01-01T00:00:00Z",
         properties: {},
         tags: [],
@@ -206,10 +198,9 @@ describe("EntryList", () => {
       expect(button).toHaveClass("ui-card-selected");
     });
 
-    it("should display form badge and handle no title and non-string properties", () => {
+    it("should display form badge and non-string properties", () => {
       const record: EntryRecord = {
         id: "form-entry",
-        title: null,
         form: "Meeting",
         updated_at: "2025-01-01T00:00:00Z",
         properties: {
@@ -239,7 +230,7 @@ describe("EntryList", () => {
       });
     });
 
-    it("should render list of entries with titles", async () => {
+    it("should render list of entries with IDs", async () => {
       const entry1: Entry = {
         id: "entry-1",
         content: "# First Entry",
@@ -249,7 +240,6 @@ describe("EntryList", () => {
       };
       const record1: EntryRecord = {
         id: "entry-1",
-        title: "First Entry",
         updated_at: "2025-01-01T00:00:00Z",
         properties: {},
         tags: [],
@@ -263,7 +253,6 @@ describe("EntryList", () => {
       };
       const record2: EntryRecord = {
         id: "entry-2",
-        title: "Second Entry",
         updated_at: "2025-01-02T00:00:00Z",
         properties: { Status: "Active" },
         tags: [],
@@ -275,8 +264,8 @@ describe("EntryList", () => {
       render(() => <EntryList spaceId="ui-test-ws" />);
 
       await waitFor(() => {
-        expect(screen.getByText("First Entry")).toBeInTheDocument();
-        expect(screen.getByText("Second Entry")).toBeInTheDocument();
+        expect(screen.getByText("entry-1")).toBeInTheDocument();
+        expect(screen.getByText("entry-2")).toBeInTheDocument();
       });
     });
 
@@ -290,7 +279,6 @@ describe("EntryList", () => {
       };
       const record: EntryRecord = {
         id: "click-entry",
-        title: "Clickable Entry",
         updated_at: "2025-01-01T00:00:00Z",
         properties: {},
         tags: [],
@@ -302,10 +290,10 @@ describe("EntryList", () => {
       render(() => <EntryList spaceId="ui-test-ws" onSelect={onSelect} />);
 
       await waitFor(() => {
-        expect(screen.getByText("Clickable Entry")).toBeInTheDocument();
+        expect(screen.getByText("click-entry")).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByText("Clickable Entry"));
+      fireEvent.click(screen.getByText("click-entry"));
 
       expect(onSelect).toHaveBeenCalledWith("click-entry");
     });

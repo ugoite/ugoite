@@ -231,7 +231,6 @@ export interface CreateEntryDialogProps {
   spaceId?: string;
   onClose: () => void;
   onSubmit: (
-    title: string,
     formName: string,
     requiredValues: Record<string, string>,
     inputMode?: EntryInputMode,
@@ -569,10 +568,8 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
       : null;
   };
 
-  // Title-less Entry: the legacy title argument is always empty; names live in
-  // Form fields. The callback shape remains shared with the chat/webform UX.
-  const submitEntry = async (_entryTitle: string, formName: string) => {
-    await props.onSubmit("", formName, fieldValues(), inputMode());
+  const submitEntry = async (formName: string) => {
+    await props.onSubmit(formName, fieldValues(), inputMode());
   };
 
   const handleSubmit = async (e: Event) => {
@@ -591,7 +588,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
       return;
     }
     try {
-      await submitEntry("", formName);
+      await submitEntry(formName);
       resetEntryDraft();
     } catch (error) {
       setErrorMessage(

@@ -11,7 +11,7 @@ features:
       - id: core
         role: implementation
         facet: core
-        responsibility: Implement the immutable Entry lifecycle, revision history, Markdown extraction, and attribution behavior.
+        responsibility: Implement the immutable Entry lifecycle, revision history, and attribution behavior.
         targets:
           - id: create-entry
             adapter: rust
@@ -20,8 +20,6 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-ENTRY-001#criterion.creation
-              - kind: satisfies
-                criterion: REQ-ENTRY-006#criterion.markdown-extraction
               - kind: satisfies
                 criterion: REQ-FORM-004#criterion.extra-attributes
               - kind: satisfies
@@ -340,13 +338,13 @@ features:
         guarantees: [REQ-ENTRY-005#criterion.history]
   - id: FEAT-ENTRY-002
     title: Title-less Entry model
-    summary: Converge the canonical Entry on entry_id identity with Form-defined values only; legacy titles remain readable as compatibility metadata without migration.
+    summary: Converge the canonical Entry on entry_id identity with Form-defined values only; unclaimed legacy physical columns remain readable without title semantics or migration.
     status: implemented
     bindings:
       - id: core
         role: implementation
         facet: core
-        responsibility: Implement dual-schema Form storage and title-less Entry lifecycle without synthesizing entry_id into a stored title.
+        responsibility: Implement Form storage and title-less Entry lifecycle without synthesizing entry_id into a stored title; preserve unclaimed legacy columns by physical name.
         targets:
           - id: titleless-model
             adapter: rust

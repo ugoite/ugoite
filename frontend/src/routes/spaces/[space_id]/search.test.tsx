@@ -45,7 +45,6 @@ describe("/spaces/:space_id/search", () => {
   it("REQ-SRCH-004: runs a direct keyword search and renders matching entries", async () => {
     const record: KeywordSearchResult = {
       id: "entry-1",
-      title: "Alpha Entry",
       created_at: "2025-01-01T00:00:00Z",
       updated_at: "2025-01-02T00:00:00Z",
     };
@@ -82,7 +81,7 @@ describe("/spaces/:space_id/search", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Search entries" }));
 
-    expect(await screen.findByRole("button", { name: /Alpha Entry/ }))
+    expect(await screen.findByRole("button", { name: /entry-1/ }))
       .toBeInTheDocument();
     expect(screen.getByText("1 result")).toBeInTheDocument();
     expect(entryListCalls).toBe(0);
@@ -146,10 +145,9 @@ describe("/spaces/:space_id/search", () => {
     server.use(
       http.post(testApiUrl("/spaces/default/query"), async ({ request }) => {
         queryBody = (await request.json()) as typeof queryBody;
-        return HttpResponse.json([
+          return HttpResponse.json([
           {
             id: "entry-1",
-            title: "Active Meeting",
             form: "Meeting",
             updated_at: "2025-03-02T00:00:00Z",
             properties: { Status: "Active" },
@@ -213,10 +211,10 @@ describe("/spaces/:space_id/search", () => {
     expect(sqlSessionCalls).toBe(0);
     expect(savedSqlCalls).toBe(0);
 
-    expect(await screen.findByRole("button", { name: /Active Meeting/ }))
+    expect(await screen.findByRole("button", { name: /entry-1/ }))
       .toBeInTheDocument();
     expect(screen.getByText("1 result")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Active Meeting/ }));
+    fireEvent.click(screen.getByRole("button", { name: /entry-1/ }));
     expect(navigateMock).toHaveBeenCalledWith(
       "/spaces/default/entries/entry-1",
     );
@@ -457,7 +455,6 @@ describe("/spaces/:space_id/search", () => {
   it("PR6: renders result rows through RowList with full-row activation", async () => {
     const record: KeywordSearchResult = {
       id: "entry-9",
-      title: "Row Entry",
       created_at: "2025-01-01T00:00:00Z",
       updated_at: "2025-01-02T00:00:00Z",
     };
@@ -475,7 +472,7 @@ describe("/spaces/:space_id/search", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Search entries" }));
 
-    const row = await screen.findByRole("button", { name: /Row Entry/ });
+    const row = await screen.findByRole("button", { name: /entry-9/ });
     expect(row).toHaveClass("rowListMain");
     expect(container.querySelector(".rowList")).toBeInTheDocument();
     expect(container.querySelector(".searchResultRow")).toBeNull();
@@ -488,13 +485,11 @@ describe("/spaces/:space_id/search", () => {
   it("PR4: keeps previous results and the count visible during re-search", async () => {
     const alpha: KeywordSearchResult = {
       id: "entry-1",
-      title: "Alpha Entry",
       created_at: "2025-01-01T00:00:00Z",
       updated_at: "2025-01-02T00:00:00Z",
     };
     const beta: KeywordSearchResult = {
       id: "entry-2",
-      title: "Beta Entry",
       created_at: "2025-01-01T00:00:00Z",
       updated_at: "2025-01-03T00:00:00Z",
     };
@@ -514,7 +509,7 @@ describe("/spaces/:space_id/search", () => {
       target: { value: "first" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Search entries" }));
-    expect(await screen.findByRole("button", { name: /Alpha Entry/ }))
+    expect(await screen.findByRole("button", { name: /entry-1/ }))
       .toBeInTheDocument();
     expect(screen.getByText("1 result")).toBeInTheDocument();
 
@@ -525,7 +520,7 @@ describe("/spaces/:space_id/search", () => {
 
     // Previous results and the count stay mounted while reloading; only
     // spinner indicators (role=status, sr-only label) signal the reload.
-    expect(screen.getByRole("button", { name: /Alpha Entry/ }))
+    expect(screen.getByRole("button", { name: /entry-1/ }))
       .toBeInTheDocument();
     expect(screen.getByText("1 result")).toBeInTheDocument();
     // No visible loading copy: the submit button keeps its static label and
@@ -541,7 +536,7 @@ describe("/spaces/:space_id/search", () => {
       expect(node).toHaveClass("ui-sr-only");
     }
 
-    expect(await screen.findByRole("button", { name: /Beta Entry/ }))
+    expect(await screen.findByRole("button", { name: /entry-2/ }))
       .toBeInTheDocument();
   });
   it("REQ-FE-044: keeps search controls and state messages in Japanese", () => {

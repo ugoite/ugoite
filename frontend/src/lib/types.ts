@@ -178,8 +178,6 @@ export interface AssetReference {
 /** Entry record (from index) */
 export interface EntryRecord {
   id: string;
-  /** 0.1.x legacy compatibility display metadata; absent for title-less entries. */
-  title?: string | null;
   form?: string;
   created_at?: string;
   updated_at: string;
@@ -201,7 +199,6 @@ export interface CanvasPosition {
 /** Full entry content */
 export interface Entry {
   id: string;
-  title?: string;
   frontmatter?: Record<string, unknown>;
   sections?: Record<string, string>;
   form?: string;
@@ -222,7 +219,6 @@ export interface EntryRevisionContent {
   revision_id: string;
   parent_revision_id?: string | null;
   timestamp?: string | number;
-  title?: string;
   form?: string;
   tags?: string[];
   operation?: string;
@@ -241,7 +237,6 @@ export interface EntryRevision {
   change_id?: string;
   timestamp: string | number;
   checksum: string;
-  title?: string;
   form?: string;
   actor?: string;
   operation?: string;
@@ -259,7 +254,6 @@ export type StructuredEntryFields = Record<string, unknown>;
 export interface EntryCreatePayload {
   id?: string;
   form?: string;
-  title?: string;
   tags?: string[];
   fields?: StructuredEntryFields;
   extra_attributes?: StructuredEntryFields;
@@ -271,7 +265,6 @@ export interface EntryUpdatePayload {
   frontmatter?: Record<string, unknown>;
   canvas_position?: CanvasPosition;
   form?: string;
-  title?: string;
   tags?: string[];
   fields?: StructuredEntryFields;
   extra_attributes?: StructuredEntryFields;
@@ -431,8 +424,6 @@ export interface ApiError {
 /** Minimal keyword-search result returned by the backend Entry scan. */
 export interface KeywordSearchResult {
   id: string;
-  /** 0.1.x legacy compatibility display metadata; empty for title-less entries. */
-  title?: string | null;
   form: string;
   created_at: string | number;
   updated_at: string | number;

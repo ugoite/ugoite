@@ -12,7 +12,7 @@ import {
 export interface RowReferenceSelectProps {
   spaceId: string;
   targetForm: string;
-  /** Stable entry id. Display titles resolve through the option lookup. */
+  /** Stable entry id. Display labels are the deterministic entry ID. */
   value: string;
   onChange: (id: string) => void;
   fieldId: string;
@@ -26,7 +26,7 @@ export interface RowReferenceSelectProps {
 /**
  * Shared row-reference control for create and edit.
  *
- * Shows human-readable titles, saves the stable entry id, and scopes every
+ * Shows deterministic entry IDs, saves the stable entry id, and scopes every
  * lookup to the exact target Form. Keyboard arrows/Enter/Escape, clear,
  * and loading/error/empty states come from the generic SearchableSelect.
  */
@@ -96,8 +96,8 @@ export function RowReferenceSelect(props: RowReferenceSelectProps) {
     { initialValue: [] as RowReferenceOption[] },
   );
 
-  // Resolve a human-readable title once options arrive. A stored id that
-  // matches an option adopts its title; the saved value never changes here.
+  // Resolve the display label once options arrive. The saved value never
+  // changes here.
   createEffect(() => {
     const current = selected();
     if (!current) return;

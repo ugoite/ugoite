@@ -153,14 +153,6 @@ fn sample_content_to_draft(content: &str) -> Result<StructuredEntryDraft> {
         Some(Value::String(value)) => vec![value.clone()],
         _ => Vec::new(),
     };
-    let title = body
-        .lines()
-        .find_map(|line| {
-            line.strip_prefix("# ")
-                .map(str::trim)
-                .map(ToOwned::to_owned)
-        })
-        .unwrap_or_default();
     let mut fields = frontmatter
         .into_iter()
         .filter(|(key, _)| key != "form" && key != "tags")
@@ -186,7 +178,6 @@ fn sample_content_to_draft(content: &str) -> Result<StructuredEntryDraft> {
     finish_section(&mut fields, &mut section, &mut value);
 
     Ok(StructuredEntryDraft {
-        title,
         form_name: Some(form_name),
         tags,
         fields,
@@ -682,10 +673,6 @@ fn retail_ops_forms() -> Vec<Value> {
     ]
 }
 
-fn entry_title(form_name: &str, label: &str) -> String {
-    format!("{} {}", form_name, label)
-}
-
 fn date_from_offset(base: NaiveDate, offset: i64) -> String {
     (base + Duration::days(offset))
         .format("%Y-%m-%d")
@@ -1016,12 +1003,11 @@ async fn generate_renewable_ops(
             "CommissionedOn": date_from_offset(base_date, commission_offset),
             "Status": pick(rng, &statuses)
         });
-        let title = entry_title("Site", &site_id.to_uppercase());
         let form_def = forms_map
             .get("Site")
             .ok_or_else(|| anyhow!("Missing Site form definition"))?;
         let markdown =
-            entry::render_markdown_for_form(&title, "Site", &[], &fields, &empty_extra, form_def);
+            entry::render_markdown_for_form("Site", &[], &fields, &empty_extra, form_def);
         entries.push(site_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Sites").await?;
@@ -1041,12 +1027,11 @@ async fn generate_renewable_ops(
             "InstalledOn": date_from_offset(base_date, install_offset)
         });
         let entry_id = format!("array-{:05}", idx + 1);
-        let title = entry_title("Array", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("Array")
             .ok_or_else(|| anyhow!("Missing Array form definition"))?;
         let markdown =
-            entry::render_markdown_for_form(&title, "Array", &[], &fields, &empty_extra, form_def);
+            entry::render_markdown_for_form("Array", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Arrays").await?;
@@ -1069,18 +1054,11 @@ async fn generate_renewable_ops(
             "Findings": findings
         });
         let entry_id = format!("inspection-{:05}", idx + 1);
-        let title = entry_title("Inspection", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("Inspection")
             .ok_or_else(|| anyhow!("Missing Inspection form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "Inspection",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("Inspection", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Inspections").await?;
@@ -1108,12 +1086,10 @@ async fn generate_renewable_ops(
             "ResolutionNotes": resolution
         });
         let entry_id = format!("maintenance-{:05}", idx + 1);
-        let title = entry_title("Maintenance", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("MaintenanceTicket")
             .ok_or_else(|| anyhow!("Missing MaintenanceTicket form definition"))?;
         let markdown = entry::render_markdown_for_form(
-            &title,
             "MaintenanceTicket",
             &[],
             &fields,
@@ -1141,18 +1117,11 @@ async fn generate_renewable_ops(
             "WeatherNotes": pick(rng, &weather_notes)
         });
         let entry_id = format!("report-{:05}", idx + 1);
-        let title = entry_title("EnergyReport", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("EnergyReport")
             .ok_or_else(|| anyhow!("Missing EnergyReport form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "EnergyReport",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("EnergyReport", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1216,18 +1185,11 @@ async fn generate_supply_chain(
             "OpenedOn": date_from_offset(base_date, opened_offset),
             "Status": pick(rng, &statuses)
         });
-        let title = entry_title("Warehouse", &warehouse_id.to_uppercase());
         let form_def = forms_map
             .get("Warehouse")
             .ok_or_else(|| anyhow!("Missing Warehouse form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "Warehouse",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("Warehouse", &[], &fields, &empty_extra, form_def);
         entries.push(warehouse_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Warehouses").await?;
@@ -1247,18 +1209,11 @@ async fn generate_supply_chain(
             "OnTimeRate": (on_time * 10.0).round() / 10.0
         });
         let entry_id = format!("shipment-{:05}", idx + 1);
-        let title = entry_title("Shipment", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("Shipment")
             .ok_or_else(|| anyhow!("Missing Shipment form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "Shipment",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("Shipment", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Shipments").await?;
@@ -1277,18 +1232,11 @@ async fn generate_supply_chain(
             "Notes": "Cycle count completed with standard variance.".to_string()
         });
         let entry_id = format!("inventory-{:05}", idx + 1);
-        let title = entry_title("InventoryCheck", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("InventoryCheck")
             .ok_or_else(|| anyhow!("Missing InventoryCheck form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "InventoryCheck",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("InventoryCheck", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1309,18 +1257,11 @@ async fn generate_supply_chain(
             "RiskLevel": pick(rng, &risk_levels)
         });
         let entry_id = format!("supplier-score-{:05}", idx + 1);
-        let title = entry_title("SupplierScore", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("SupplierScore")
             .ok_or_else(|| anyhow!("Missing SupplierScore form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "SupplierScore",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("SupplierScore", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1341,18 +1282,11 @@ async fn generate_supply_chain(
             "Status": pick(rng, &order_statuses)
         });
         let entry_id = format!("po-{:05}", idx + 1);
-        let title = entry_title("PurchaseOrder", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("PurchaseOrder")
             .ok_or_else(|| anyhow!("Missing PurchaseOrder form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "PurchaseOrder",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("PurchaseOrder", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1411,12 +1345,11 @@ async fn generate_municipal_infra(
             "Status": pick(rng, &statuses),
             "ConditionScore": (score * 10.0).round() / 10.0
         });
-        let title = entry_title("Asset", &asset_id.to_uppercase());
         let form_def = forms_map
             .get("Asset")
             .ok_or_else(|| anyhow!("Missing Asset form definition"))?;
         let markdown =
-            entry::render_markdown_for_form(&title, "Asset", &[], &fields, &empty_extra, form_def);
+            entry::render_markdown_for_form("Asset", &[], &fields, &empty_extra, form_def);
         entries.push(asset_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Assets").await?;
@@ -1434,18 +1367,11 @@ async fn generate_municipal_infra(
             "ConditionScore": (score * 10.0).round() / 10.0
         });
         let entry_id = format!("inspection-{:05}", idx + 1);
-        let title = entry_title("Inspection", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("Inspection")
             .ok_or_else(|| anyhow!("Missing Inspection form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "Inspection",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("Inspection", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Inspections").await?;
@@ -1462,18 +1388,11 @@ async fn generate_municipal_infra(
             "Summary": "Preventive maintenance scheduled.".to_string()
         });
         let entry_id = format!("work-{:05}", idx + 1);
-        let title = entry_title("WorkOrder", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("WorkOrder")
             .ok_or_else(|| anyhow!("Missing WorkOrder form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "WorkOrder",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("WorkOrder", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Work orders").await?;
@@ -1493,18 +1412,11 @@ async fn generate_municipal_infra(
             "CrewSize": (crew * 10.0).round() / 10.0
         });
         let entry_id = format!("service-{:05}", idx + 1);
-        let title = entry_title("ServiceReport", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("ServiceReport")
             .ok_or_else(|| anyhow!("Missing ServiceReport form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "ServiceReport",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("ServiceReport", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1556,18 +1468,11 @@ async fn generate_fleet_ops(
             "OdometerKm": (odometer * 10.0).round() / 10.0,
             "Status": pick(rng, &statuses)
         });
-        let title = entry_title("Vehicle", &vehicle_id.to_uppercase());
         let form_def = forms_map
             .get("Vehicle")
             .ok_or_else(|| anyhow!("Missing Vehicle form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "Vehicle",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("Vehicle", &[], &fields, &empty_extra, form_def);
         entries.push(vehicle_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Vehicles").await?;
@@ -1587,18 +1492,11 @@ async fn generate_fleet_ops(
             "OnTimeRate": (on_time * 10.0).round() / 10.0
         });
         let entry_id = format!("route-{:05}", idx + 1);
-        let title = entry_title("RouteLog", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("RouteLog")
             .ok_or_else(|| anyhow!("Missing RouteLog form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "RouteLog",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("RouteLog", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Route logs").await?;
@@ -1619,18 +1517,11 @@ async fn generate_fleet_ops(
             "IssueSummary": issue
         });
         let entry_id = format!("service-{:05}", idx + 1);
-        let title = entry_title("ServiceTicket", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("ServiceTicket")
             .ok_or_else(|| anyhow!("Missing ServiceTicket form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "ServiceTicket",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("ServiceTicket", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1652,18 +1543,11 @@ async fn generate_fleet_ops(
             "Efficiency": (efficiency * 10.0).round() / 10.0
         });
         let entry_id = format!("fuel-{:05}", idx + 1);
-        let title = entry_title("FuelReport", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("FuelReport")
             .ok_or_else(|| anyhow!("Missing FuelReport form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "FuelReport",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("FuelReport", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1723,12 +1607,11 @@ async fn generate_lab_qa(
             "Status": pick(rng, &statuses),
             "YieldPct": (yield_pct * 10.0).round() / 10.0
         });
-        let title = entry_title("Batch", &batch_id.to_uppercase());
         let form_def = forms_map
             .get("Batch")
             .ok_or_else(|| anyhow!("Missing Batch form definition"))?;
         let markdown =
-            entry::render_markdown_for_form(&title, "Batch", &[], &fields, &empty_extra, form_def);
+            entry::render_markdown_for_form("Batch", &[], &fields, &empty_extra, form_def);
         entries.push(batch_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Batches").await?;
@@ -1746,18 +1629,11 @@ async fn generate_lab_qa(
             "Notes": "QA sampling completed.".to_string()
         });
         let entry_id = format!("test-{:05}", idx + 1);
-        let title = entry_title("TestRun", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("TestRun")
             .ok_or_else(|| anyhow!("Missing TestRun form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "TestRun",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("TestRun", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Test runs").await?;
@@ -1774,18 +1650,11 @@ async fn generate_lab_qa(
             "Summary": "Variance observed in batch samples.".to_string()
         });
         let entry_id = format!("nc-{:05}", idx + 1);
-        let title = entry_title("Nonconformance", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("Nonconformance")
             .ok_or_else(|| anyhow!("Missing Nonconformance form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "Nonconformance",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("Nonconformance", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1805,12 +1674,10 @@ async fn generate_lab_qa(
             "Notes": "Calibration logged.".to_string()
         });
         let entry_id = format!("cal-{:05}", idx + 1);
-        let title = entry_title("CalibrationRecord", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("CalibrationRecord")
             .ok_or_else(|| anyhow!("Missing CalibrationRecord form definition"))?;
         let markdown = entry::render_markdown_for_form(
-            &title,
             "CalibrationRecord",
             &[],
             &fields,
@@ -1870,12 +1737,11 @@ async fn generate_retail_ops(
             "FloorAreaSqm": (area * 10.0).round() / 10.0,
             "Status": pick(rng, &statuses)
         });
-        let title = entry_title("Store", &store_id.to_uppercase());
         let form_def = forms_map
             .get("Store")
             .ok_or_else(|| anyhow!("Missing Store form definition"))?;
         let markdown =
-            entry::render_markdown_for_form(&title, "Store", &[], &fields, &empty_extra, form_def);
+            entry::render_markdown_for_form("Store", &[], &fields, &empty_extra, form_def);
         entries.push(store_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Stores").await?;
@@ -1892,18 +1758,11 @@ async fn generate_retail_ops(
             "Notes": "Reorder threshold reached.".to_string()
         });
         let entry_id = format!("alert-{:05}", idx + 1);
-        let title = entry_title("StockAlert", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("StockAlert")
             .ok_or_else(|| anyhow!("Missing StockAlert form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "StockAlert",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("StockAlert", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1924,18 +1783,11 @@ async fn generate_retail_ops(
             "Notes": "Price audit completed.".to_string()
         });
         let entry_id = format!("audit-{:05}", idx + 1);
-        let title = entry_title("PriceAudit", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("PriceAudit")
             .ok_or_else(|| anyhow!("Missing PriceAudit form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "PriceAudit",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("PriceAudit", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1957,18 +1809,11 @@ async fn generate_retail_ops(
             "ReturnRate": (return_rate * 10.0).round() / 10.0
         });
         let entry_id = format!("sales-{:05}", idx + 1);
-        let title = entry_title("DailySales", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("DailySales")
             .ok_or_else(|| anyhow!("Missing DailySales form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "DailySales",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("DailySales", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Daily sales").await?;
@@ -1986,18 +1831,11 @@ async fn generate_retail_ops(
             "OnTime": pick(rng, &on_time)
         });
         let entry_id = format!("delivery-{:05}", idx + 1);
-        let title = entry_title("VendorDelivery", &format!("{:05}", idx + 1));
         let form_def = forms_map
             .get("VendorDelivery")
             .ok_or_else(|| anyhow!("Missing VendorDelivery form definition"))?;
-        let markdown = entry::render_markdown_for_form(
-            &title,
-            "VendorDelivery",
-            &[],
-            &fields,
-            &empty_extra,
-            form_def,
-        );
+        let markdown =
+            entry::render_markdown_for_form("VendorDelivery", &[], &fields, &empty_extra, form_def);
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress

@@ -103,7 +103,6 @@ pub struct EntryContent {
     pub parent_revision_id: Option<String>,
     #[serde(default)]
     pub timestamp: f64,
-    pub title: String,
     pub form: String,
     #[serde(default)]
     pub tags: Vec<String>,
@@ -131,8 +130,6 @@ pub struct EntryMeta {
     #[serde(default)]
     pub space_id: String,
     #[serde(default)]
-    pub title: String,
-    #[serde(default)]
     pub form: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
@@ -159,7 +156,8 @@ pub struct EntryMeta {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EntryRow {
     pub entry_id: String,
-    pub title: String,
+    #[serde(default)]
+    pub saved_query_name: String,
     pub form: String,
     #[serde(default)]
     pub tags: Vec<String>,
@@ -185,6 +183,8 @@ pub struct EntryRow {
     pub deleted_by: Option<String>,
     #[serde(default = "initial_entry_version")]
     pub entry_version: u64,
+    #[serde(default)]
+    pub legacy_columns: BTreeMap<String, Value>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -240,7 +240,6 @@ fn default_source_kind() -> String {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct EntrySummary {
     pub id: String,
-    pub title: String,
     pub form: String,
 }
 
@@ -256,9 +255,8 @@ fn from_timestamp_micros(micros: i64) -> f64 {
     micros as f64 / 1_000_000.0
 }
 
-// Markdown compatibility parsing lives in `ugoite-core::entry` (D1). This
-// persistence adapter only renders the existing 0.1 representation for reads
-// and delegates every mutation through the shared draft boundary.
+// The persistence adapter reads the existing 0.1 representation and delegates
+// every mutation through the shared structured draft boundary.
 
 pub(crate) fn merge_entry_fields(fields: &Value, extra_attributes: &Value) -> Value {
     let mut merged = Map::new();
@@ -273,6 +271,16 @@ pub(crate) fn merge_entry_fields(fields: &Value, extra_attributes: &Value) -> Va
         }
     }
     Value::Object(merged)
+}
+
+fn row_properties(row: &EntryRow) -> Value {
+    let mut properties = merge_entry_fields(&row.fields, &row.extra_attributes);
+    if let Value::Object(values) = &mut properties {
+        for (name, value) in &row.legacy_columns {
+            values.entry(name.clone()).or_insert_with(|| value.clone());
+        }
+    }
+    properties
 }
 
 fn form_field_names(form_def: &Value) -> Vec<String> {
@@ -298,13 +306,12 @@ fn form_field_names(form_def: &Value) -> Vec<String> {
 }
 
 pub(crate) fn render_markdown(
-    title: &str,
     form_name: &str,
     tags: &[String],
     fields: &Value,
     field_order: &[String],
 ) -> String {
-    core_entry::render_markdown(title, form_name, tags, fields, field_order)
+    core_entry::render_markdown(form_name, tags, fields, field_order)
 }
 
 fn sections_from_fields(fields: &Value) -> Value {
@@ -312,7 +319,6 @@ fn sections_from_fields(fields: &Value) -> Value {
 }
 
 pub(crate) fn render_markdown_for_form(
-    title: &str,
     form_name: &str,
     tags: &[String],
     fields: &Value,
@@ -321,7 +327,7 @@ pub(crate) fn render_markdown_for_form(
 ) -> String {
     let field_order = form_field_names(form_def);
     let merged_fields = merge_entry_fields(fields, extra_attributes);
-    render_markdown(title, form_name, tags, &merged_fields, &field_order)
+    render_markdown(form_name, tags, &merged_fields, &field_order)
 }
 
 async fn append_revision_rows_to_workspace(
@@ -548,7 +554,6 @@ fn restore_revision_payload(
 fn entry_metadata_from_row(row: &EntryRow) -> EntryMetadata {
     EntryMetadata {
         external_id: row.entry_id.clone(),
-        title: row.title.clone(),
         tags: row.tags.clone(),
         created_at_micros: to_timestamp_micros(row.created_at),
         updated_at_micros: to_timestamp_micros(row.updated_at),
@@ -589,7 +594,7 @@ fn revision_row_from_domain(
         } else {
             revision.entry.external_id.clone()
         },
-        title: revision.entry.title.clone(),
+        saved_query_name: String::new(),
         form: form_name.to_string(),
         tags: revision.entry.tags.clone(),
         created_at: from_timestamp_micros(revision.entry.created_at_micros),
@@ -605,6 +610,7 @@ fn revision_row_from_domain(
         updated_by: revision.entry.updated_by.clone(),
         deleted_by: revision.entry.deleted_by.clone(),
         entry_version: revision.entry_version,
+        legacy_columns: BTreeMap::new(),
     };
     Ok(RevisionRow {
         revision_id: revision.revision_id.to_string(),
@@ -871,17 +877,12 @@ pub struct EntryDraftRequest {
     pub draft: core_entry::StructuredEntryDraft,
 }
 
-/// Structured single create converging on the same D1 draft path as Markdown.
-///
-/// Title-less Entry (REQ-ENTRY-011): `title` defaults to empty when `None`.
-/// The `entry_id` is identity only and is never synthesized into a stored
-/// title. A non-empty compatibility title is preserved as legacy metadata.
+/// Structured single create converging on the shared structured draft path.
 #[allow(clippy::too_many_arguments)]
 pub async fn create_structured_entry_with_scopes_and_change<I: IntegrityProvider>(
     op: &Operator,
     ws_path: &str,
     entry_id: &str,
-    title: Option<String>,
     form_name: String,
     tags: Vec<String>,
     fields: BTreeMap<String, Value>,
@@ -895,7 +896,6 @@ pub async fn create_structured_entry_with_scopes_and_change<I: IntegrityProvider
         op,
         ws_path,
         entry_id,
-        title,
         form_name,
         tags,
         fields,
@@ -914,7 +914,6 @@ pub async fn create_structured_entry_with_scopes_and_change_with_receipt<I: Inte
     op: &Operator,
     ws_path: &str,
     entry_id: &str,
-    title: Option<String>,
     form_name: String,
     tags: Vec<String>,
     fields: BTreeMap<String, Value>,
@@ -924,13 +923,8 @@ pub async fn create_structured_entry_with_scopes_and_change_with_receipt<I: Inte
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
     change: Option<ChangeCommand>,
 ) -> Result<(EntryMeta, CommitReceipt)> {
-    let draft = core_entry::structured_fields_to_draft(
-        title.unwrap_or_default(),
-        Some(form_name),
-        tags,
-        fields,
-        extra_attributes,
-    );
+    let draft =
+        core_entry::structured_fields_to_draft(Some(form_name), tags, fields, extra_attributes);
     let (mut entries, mut receipts) = create_draft_entries_with_scopes_and_change_with_receipts(
         op,
         ws_path,
@@ -1237,10 +1231,9 @@ fn reject_cross_form_forward_references(
 
 /// Single D1-backed prepare path for creates.
 ///
-/// Both legacy Markdown and structured payloads converge here via
-/// [`ugoite_core::entry::StructuredEntryDraft`]; there is no second mutation
-/// implementation. Storage encoding, Space version, and history semantics are
-/// unchanged.
+/// Structured payloads converge here via
+/// [`ugoite_core::entry::StructuredEntryDraft`]. Storage encoding, Space
+/// version, and history semantics are unchanged.
 async fn prepare_entry_from_draft<I: IntegrityProvider>(
     op: &Operator,
     ws_path: &str,
@@ -1274,12 +1267,10 @@ async fn prepare_entry_from_draft<I: IntegrityProvider>(
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect(),
     );
-    let title = normalized.title.clone();
     let tags = normalized.tags.clone();
     let fields = Value::Object(fields);
     let form_fields = form_field_names(&form_def);
     let reconstructed_markdown = render_markdown(
-        &title,
         &form_name,
         &tags,
         &merge_entry_fields(&fields, &extra_attributes),
@@ -1292,7 +1283,7 @@ async fn prepare_entry_from_draft<I: IntegrityProvider>(
 
     let entry_row = EntryRow {
         entry_id: entry_id.to_string(),
-        title: title.clone(),
+        saved_query_name: String::new(),
         form: form_name.clone(),
         tags,
         created_at: timestamp,
@@ -1311,6 +1302,7 @@ async fn prepare_entry_from_draft<I: IntegrityProvider>(
         updated_by: author.to_string(),
         deleted_by: None,
         entry_version: 1,
+        legacy_columns: BTreeMap::new(),
     };
 
     let revision = RevisionRow {
@@ -1348,7 +1340,6 @@ async fn prepare_entry_from_draft<I: IntegrityProvider>(
     let entry = EntryMeta {
         id: entry_id.to_string(),
         space_id: ws_id,
-        title,
         form: Some(form_name.clone()),
         tags: entry_row.tags.clone(),
         created_at: timestamp,
@@ -1402,10 +1393,9 @@ fn list_entries_from_rows(rows: Vec<(String, EntryRow)>) -> Result<Vec<Value>> {
         if row.deleted {
             continue;
         }
-        let merged_fields = merge_entry_fields(&row.fields, &row.extra_attributes);
+        let merged_fields = row_properties(&row);
         entries.push(serde_json::json!({
             "id": row.entry_id,
-            "title": row.title,
             "form": form_name,
             "tags": row.tags,
             "properties": merged_fields,
@@ -1455,7 +1445,6 @@ pub async fn list_entry_summaries_with_scopes(
         .into_iter()
         .map(|candidate| EntrySummary {
             id: candidate.entry_id,
-            title: candidate.title,
             form: candidate.form_name,
         })
         .collect())
@@ -1473,13 +1462,8 @@ pub async fn get_entry(op: &Operator, ws_path: &str, entry_id: &str) -> Result<V
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
     let field_order = form_field_names(&form_def);
     let merged_fields = merge_entry_fields(&row.fields, &row.extra_attributes);
-    let markdown = render_markdown(
-        &row.title,
-        &form_name,
-        &row.tags,
-        &merged_fields,
-        &field_order,
-    );
+    let properties = row_properties(&row);
+    let markdown = render_markdown(&form_name, &row.tags, &merged_fields, &field_order);
     let frontmatter = serde_json::json!({
         "form": form_name,
         "tags": row.tags,
@@ -1493,7 +1477,7 @@ pub async fn get_entry(op: &Operator, ws_path: &str, entry_id: &str) -> Result<V
         "frontmatter": frontmatter,
         "sections": sections,
         "computed": Value::Object(Map::new()),
-        "title": row.title,
+        "properties": properties,
         "form": row.form,
         "tags": row.tags,
         // Preserve non-editable structured metadata for lossless CLI
@@ -1540,13 +1524,8 @@ pub async fn get_entry_authorized(
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
     let field_order = form_field_names(&form_def);
     let merged_fields = merge_entry_fields(&row.fields, &row.extra_attributes);
-    let markdown = render_markdown(
-        &row.title,
-        &form_name,
-        &row.tags,
-        &merged_fields,
-        &field_order,
-    );
+    let properties = row_properties(&row);
+    let markdown = render_markdown(&form_name, &row.tags, &merged_fields, &field_order);
     let frontmatter = serde_json::json!({
         "form": form_name,
         "tags": row.tags,
@@ -1560,7 +1539,7 @@ pub async fn get_entry_authorized(
         "frontmatter": frontmatter,
         "sections": sections,
         "computed": Value::Object(Map::new()),
-        "title": row.title,
+        "properties": properties,
         "form": row.form,
         "tags": row.tags,
         "extra_attributes": row.extra_attributes,
@@ -1585,18 +1564,11 @@ pub async fn get_entry_content(
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
     let field_order = form_field_names(&form_def);
     let merged_fields = merge_entry_fields(&row.fields, &row.extra_attributes);
-    let markdown = render_markdown(
-        &row.title,
-        &form_name,
-        &row.tags,
-        &merged_fields,
-        &field_order,
-    );
+    let markdown = render_markdown(&form_name, &row.tags, &merged_fields, &field_order);
     Ok(EntryContent {
         revision_id: row.revision_id,
         parent_revision_id: row.parent_revision_id,
         timestamp: row.updated_at,
-        title: row.title,
         form: form_name.clone(),
         tags: row.tags.clone(),
         operation: "upsert".to_string(),
@@ -1640,28 +1612,17 @@ pub async fn get_entry_revision_content(
     })?;
     let field_order = form_field_names(&form::from_domain_form(revision_form));
     let merged_fields = merge_entry_fields(&revision.fields, &revision.extra_attributes);
-    let revision_title = revision
-        .state
-        .as_ref()
-        .map_or(row.title.as_str(), |state| state.title.as_str());
     let revision_tags = revision
         .state
         .as_ref()
         .map_or(row.tags.as_slice(), |state| state.tags.as_slice());
-    let markdown = render_markdown(
-        revision_title,
-        &form_name,
-        revision_tags,
-        &merged_fields,
-        &field_order,
-    );
+    let markdown = render_markdown(&form_name, revision_tags, &merged_fields, &field_order);
     let operation = revision.operation.clone();
     let restored_from = revision.restored_from.clone();
     Ok(EntryContent {
         revision_id: revision.revision_id,
         parent_revision_id: revision.parent_revision_id,
         timestamp: revision.timestamp,
-        title: revision_title.to_string(),
         form: form_name.clone(),
         tags: revision_tags.to_vec(),
         operation,
@@ -1751,7 +1712,6 @@ fn entry_value_from_checkpoint_revision(
     let row = row.ok_or_else(|| entry_not_found(entry_id))?;
     let merged_fields = merge_entry_fields(&row.fields, &row.extra_attributes);
     let markdown = render_markdown(
-        &row.title,
         &form.name,
         &row.tags,
         &merged_fields,
@@ -1764,7 +1724,6 @@ fn entry_value_from_checkpoint_revision(
         "frontmatter": {"form": form.name, "tags": row.tags},
         "sections": sections_from_fields(&merged_fields),
         "computed": Value::Object(Map::new()),
-        "title": row.title,
         "form": row.form,
         "tags": row.tags,
         "created_at": row.created_at,
@@ -1874,7 +1833,6 @@ pub(crate) async fn get_entry_history_at_checkpoint_paged(
                 "updated_by": revision.entry.updated_by,
                 "actor": actor,
                 "deleted_by": revision.entry.deleted_by,
-                "title": revision.entry.title,
                 "form": form.name.clone(),
             })
         }).collect::<Vec<_>>(),
@@ -1970,7 +1928,6 @@ pub(crate) async fn get_entry_revision_at_checkpoint(
     let form_name = form.name;
     let merged_fields = merge_entry_fields(&row.fields, &row.extra_attributes);
     let markdown = render_markdown(
-        &row.title,
         &form_name,
         &row.tags,
         &merged_fields,
@@ -1980,7 +1937,6 @@ pub(crate) async fn get_entry_revision_at_checkpoint(
         revision_id: row.revision_id,
         parent_revision_id: row.parent_revision_id,
         timestamp,
-        title: row.title,
         form: form_name.clone(),
         tags: row.tags.clone(),
         operation,
@@ -2076,7 +2032,6 @@ async fn restore_entry_from_resolved_authorized<I: IntegrityProvider>(
         &serde_json::to_value(&source.extra_attributes)?,
     );
     let markdown = render_markdown(
-        &source.entry.title,
         &form_name,
         &source.entry.tags,
         &merged_fields,
@@ -2084,7 +2039,6 @@ async fn restore_entry_from_resolved_authorized<I: IntegrityProvider>(
     );
     let checksum = integrity.checksum(&markdown);
     let signature = integrity.signature(&markdown);
-    row.title = source.entry.title.clone();
     row.tags = source.entry.tags.clone();
     row.updated_at = timestamp;
     row.fields = Value::Object(values);
@@ -2194,16 +2148,15 @@ pub async fn restore_entry_from_publication_authorized<I: IntegrityProvider>(
     .await
 }
 
-/// Structured update converging on the same D1 draft path as Markdown.
+/// Structured update through the shared D1 draft path.
 ///
-/// `title`/`tags` fall back to the stored row when `None`; `form_name` must
-/// match the stored Form when `Some`. Fields replace the stored field set.
+/// `tags` fall back to the stored row when `None`; `form_name` must match the
+/// stored Form when `Some`. Fields replace the stored field set.
 #[allow(clippy::too_many_arguments)]
 pub async fn update_structured_entry_authorized_with_change<I: IntegrityProvider>(
     op: &Operator,
     ws_path: &str,
     entry_id: &str,
-    title: Option<String>,
     form_name: Option<String>,
     tags: Option<Vec<String>>,
     fields: BTreeMap<String, Value>,
@@ -2225,7 +2178,6 @@ pub async fn update_structured_entry_authorized_with_change<I: IntegrityProvider
         }
     }
     let draft = core_entry::structured_fields_to_draft(
-        title.unwrap_or_else(|| stored_row.title.clone()),
         Some(form_name.unwrap_or_else(|| stored_form.clone())),
         tags.unwrap_or_else(|| stored_row.tags.clone()),
         fields,
@@ -2289,11 +2241,6 @@ async fn apply_update_from_draft<I: IntegrityProvider>(
 
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
     let domain_form = form::to_domain_form(&form_def)?;
-    // Fill title fallback for drafts that arrive without an H1/title.
-    let mut draft = draft;
-    if draft.title.is_empty() {
-        draft.title.clone_from(&row.title);
-    }
     let normalized = core_entry::normalize_and_validate_draft(&domain_form, &draft)
         .map_err(anyhow::Error::from)?;
     let mut fields = Map::new();
@@ -2312,12 +2259,10 @@ async fn apply_update_from_draft<I: IntegrityProvider>(
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect(),
     );
-    let title = normalized.title.clone();
     let tags = normalized.tags.clone();
     let fields = Value::Object(fields);
     let form_fields = form_field_names(&form_def);
     let reconstructed_markdown = render_markdown(
-        &title,
         &form_name,
         &tags,
         &merge_entry_fields(&fields, &extra_attributes),
@@ -2332,7 +2277,6 @@ async fn apply_update_from_draft<I: IntegrityProvider>(
     let checksum = integrity.checksum(&reconstructed_markdown);
     let signature = integrity.signature(&reconstructed_markdown);
 
-    row.title = title;
     row.updated_at = timestamp;
     row.tags = tags;
     row.fields = fields;
@@ -2528,7 +2472,6 @@ pub async fn get_entry_history_paged(
                 "operation": rev.operation,
                 "entry_version": rev.entry_version,
                 "restored_from": rev.restored_from,
-                "title": state.map(|state| state.title.clone()).unwrap_or_default(),
                 "form": state.map(|state| state.form.clone()).unwrap_or_else(|| form_name.clone()),
             })
         })
@@ -2617,7 +2560,6 @@ pub async fn get_entry_history_authorized_paged(
                 "operation": revision.operation,
                 "entry_version": revision.entry_version,
                 "restored_from": revision.restored_from,
-                "title": state.map(|state| state.title.clone()).unwrap_or_default(),
                 "form": state.map(|state| state.form.clone()).unwrap_or_else(|| form_name.clone()),
             })
         })
@@ -2722,18 +2664,11 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
     // with the current Form names. This keeps a renamed field's value attached
     // to the same durable field instead of treating the old name as unknown.
     if revision.state.is_some() {
-        row.title = historical_revision.entry.title.clone();
         row.tags = historical_revision.entry.tags.clone();
     }
     let field_order = form_field_names(&form_def);
     let merged_fields = merge_entry_fields(&fields, &extra_attributes);
-    let markdown = render_markdown(
-        &row.title,
-        &form_name,
-        &row.tags,
-        &merged_fields,
-        &field_order,
-    );
+    let markdown = render_markdown(&form_name, &row.tags, &merged_fields, &field_order);
     let checksum = integrity.checksum(&markdown);
     let signature = integrity.signature(&markdown);
 
