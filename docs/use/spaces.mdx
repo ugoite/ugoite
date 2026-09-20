@@ -17,10 +17,8 @@ Browser and CLI.
 
 ## Before you begin
 
-Decide the address. Core mode takes a local path such as
-`/path/to/workspace/spaces/demo`. Backend mode takes the immutable Space UID
-returned by the server, such as
-`019f1234-5678-7abc-8def-0123456789ab`.
+Configure a named connection, then select a Space through its named context.
+Core connections use a workspace root; remote connections use an endpoint.
 
 ## Steps
 
@@ -50,18 +48,16 @@ is the stable Space key. `--name` seeds the durable
 display name only on first creation: omit it to default to the slug, and pass
 a non-empty value otherwise (a whitespace-only name fails before any write).
 Retrying `space create` for an existing Space converges to the same durable
-identity and never renames it. The legacy explicit-path form (`ugoite space
-create /path/to/workspace/spaces/demo`) still works as the v0.1.x
-compatibility path.
+identity and never renames it.
 
 Context path rule: a context's immutable Space UID resolves to exactly one
 local directory (`<root>/spaces/<SPACE_UID>`) and the shared Space
 compatibility classifier decides compatibility. Legacy slug-named directories
 and implicit path/slug discovery are never consulted on the context path.
 
-In backend mode, pass the immutable Space UID and omit the workspace path. A
-human Space slug is creation metadata, not a remote identity. See the [CLI
-Reference](../reference/cli.md).
+For a remote Space, add a context with its immutable Space UID and use the
+named connection's credential. A human Space slug is creation metadata, not a
+remote identity. See the [CLI Reference](../reference/cli.md).
 
 </TabItem>
 </Tabs>
@@ -78,8 +74,8 @@ portable history. The switcher selection is runtime state.
 
 ## If it fails
 
-- Space not found: check local path versus immutable Space UID for the active
-  endpoint mode.
+- Space not found: check the selected context's connection and immutable Space
+  UID.
 - Remote create rejected: a node-admin human presence is required; plain token
   identities are rejected.
 

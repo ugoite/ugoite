@@ -47,17 +47,13 @@ variables but builds the image locally. Both mount the configured data root at
 The CLI keeps disposable work-environment state separately: canonical TOML in
 `./.ugoite/config.toml` (project-local, preferred when present),
 `$UGOITE_CONFIG` (platform-separated list), then `~/.ugoite/config.toml`, with
-secrets only in `~/.ugoite/credentials.json`; use `ugoite config current` and
-`ugoite context --help` rather than treating server environment variables
-as CLI flags. The legacy single-mode file (`$UGOITE_CLI_CONFIG_PATH`,
-`$UGOITE_CONFIG_HOME/ugoite/cli-endpoints.json`,
-`$XDG_CONFIG_HOME/ugoite/cli-endpoints.json`, then
-`~/.ugoite/cli-endpoints.json`) remains readable in v0.1.x; `ugoite config
-migrate` normalizes it to canonical TOML without touching Knowledge. An
-invalid saved CLI config fails closed with the reported path
-and cause; recover with an explicit valid config and confirm with
-`ugoite config current` before requests, never with a silent fallback. See
-[invalid saved CLI config recovery](../operate/troubleshooting.md#invalid-saved-cli-config).
+secrets only in `~/.ugoite/credentials.json`. Initialize and inspect it with
+`ugoite config init` and `ugoite config current`; use
+`ugoite config connection --help` and `ugoite context --help` for the
+canonical model. An invalid saved CLI config fails closed with the reported
+path and cause; recover by selecting or creating a valid canonical TOML file
+and confirm with `ugoite config current` before requests, never with a silent
+fallback. See [invalid saved CLI config recovery](../operate/troubleshooting.md#invalid-saved-cli-config).
 
 Model-assisted local Work may use `UGOITE_MODEL_API_KEY`,
 `UGOITE_MODEL_BASE_URL`, `UGOITE_MODEL_NAME`, and

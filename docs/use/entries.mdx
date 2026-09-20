@@ -49,27 +49,15 @@ ugoite --context NAME entry create meeting-2026-09-12 \
   --form Meeting --field Notes=Agenda
 ```
 
-0.1.x compatibility only (legacy explicit Space):
-
-```bash
-ugoite entry create /path/to/workspace/spaces/demo meeting-2026-09-12 \
-  --form Meeting --field Notes=Agenda
-```
-
-The H1 heading in raw Markdown carries only the 0.1.x legacy compatibility
-title; entries created without one are title-less, and `--title` is a legacy
-compatibility option (removed in 0.2). Existing title-bearing entries keep
-their titles without migration.
-
 Updates accept `--parent-revision-id` for optimistic conflict checks. A stale
 parent conflicts instead of overwriting. `entry delete` appends a deletion
 tombstone; permanent removal is unavailable. Run `ugoite entry <command>
 --help` for exact flags.
 
 Structured authoring (`--form` with `--field KEY=VALUE` or `--fields-file`)
-goes through the same shared validation as raw Markdown. Supply each field
-once: a key in both structured fields and preserved extra attributes (or an
-extra shadowing a real field name) is rejected with
+goes through the shared validation path. Supply each field once: a key in both
+structured fields and extra attributes (or an extra shadowing a real field
+name) is rejected with
 `{"code": "INVALID_INPUT", "detail": {"duplicate_fields": [...]}}`, where the
 array is lexically sorted and message text is not contract.
 

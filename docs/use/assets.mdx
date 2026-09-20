@@ -35,9 +35,9 @@ credential that is authorized to mutate that Space.
 <TabItem label="CLI">
 
 ```bash
-# Core mode
-ugoite asset upload /path/to/workspace/spaces/demo ./diagram.png
-ugoite asset delete /path/to/workspace/spaces/demo asset-id
+# Selected context
+ugoite asset upload ./diagram.png
+ugoite asset delete asset-id
 
 # Backend or API mode, using the immutable Space UID
 ugoite asset upload 019f1234-5678-7abc-8def-0123456789ab ./diagram.png

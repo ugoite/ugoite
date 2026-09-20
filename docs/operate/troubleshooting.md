@@ -98,59 +98,50 @@ explicit protection of append-only history.
 
 ## Invalid saved CLI config
 
-The CLI fails closed on an unreadable or invalid saved endpoint config. It
+The CLI fails closed on an unreadable or invalid canonical TOML config. It
 reports the config path and the cause, exits non-zero, and never silently
-falls back to core mode.
+selects another connection.
 
 **Check:** Run any CLI command and read the reported path and cause:
 
 ```text
-cannot load CLI configuration at /home/you/.ugoite/cli-endpoints.json: configuration file contains invalid JSON
+cannot load CLI configuration at /home/you/.ugoite/config.toml: configuration file contains invalid TOML
 ```
 
 ```text
-cannot load CLI configuration at /home/you/.ugoite/cli-endpoints.json: configuration contains invalid endpoint configuration
+cannot load CLI configuration at /home/you/.ugoite/config.toml: configuration contains invalid connection
 ```
 
-A missing config file is not an error: the CLI uses the default core-mode
-endpoint. Only an unreadable file, invalid JSON, an invalid endpoint
-configuration, or an invalid server URL fails this way. The saved config
-path is, in order, `$UGOITE_CLI_CONFIG_PATH`, `$UGOITE_CONFIG_HOME/ugoite/cli-endpoints.json`,
-`$XDG_CONFIG_HOME/ugoite/cli-endpoints.json`, then `~/.ugoite/cli-endpoints.json`.
+A missing config file is not an error until a command needs a configured
+connection. The canonical search order is project-local `./.ugoite/config.toml`,
+the files in `$UGOITE_CONFIG`, then `~/.ugoite/config.toml`.
 
 **Recovery:** Explicitly choose a valid config, profile, or path, or create
 a new valid config. Do not delete Space data or rotate secrets to fix a CLI
 config error.
 
-1. Confirm which path the error reported, and inspect it with
-   `ugoite config show`. If the reported path is overridden by the
+1. Confirm which path the error reported, and inspect the effective state with
+   `ugoite config current`. If the reported path is overridden by the
    environment, decide which location should win before editing.
 2. Create a new valid config or point at a known-good one:
 
 ```bash
-ugoite config set --mode core
-ugoite config set --mode backend --backend-url http://localhost:8000
-ugoite config set --mode api --api-url https://example.com/api
-```
-
-```bash
-UGOITE_CLI_CONFIG_PATH=/path/to/known-good/cli-endpoints.json ugoite config current
+ugoite config init
+ugoite config connection add local --type core --root /path/to/workspace
+ugoite config connection add remote --type api --url https://example.com/api
 ```
 
 3. Confirm the active target before sending requests:
 
 ```bash
 ugoite config current
-ugoite config show
-ugoite auth profile
+ugoite config connection list
+ugoite context list
 ```
 
-`ugoite config current` names the active endpoint mode in plain language;
-`ugoite config show` prints the saved endpoint JSON. In backend or API mode,
-use the immutable Space UID and a valid device credential; in core mode, use
-the local Space path. Never assume core mode after a config error: the
-failure means the active target is unknown until `config current` confirms
-it.
+`ugoite config current` shows the effective canonical configuration. Add or
+select a context with `ugoite context add` and `ugoite context use`; remote
+contexts use an immutable Space UID and a named device credential.
 
 **What remains durable?** The Space prefix, its history, and the node
 control state are untouched by a CLI config failure. Only local CLI routing
