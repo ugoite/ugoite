@@ -39,13 +39,14 @@ work-environment state in `./.ugoite/config.toml` (project-local, preferred
 when present), `~/.ugoite/config.toml`, and `~/.ugoite/credentials.json`;
 deleting it never deletes Knowledge.
 
-For a `core` connection, a context's immutable Space UID resolves to exactly
-one local directory (`<root>/spaces/<SPACE_UID>`) and the shared Space
-compatibility classifier decides compatibility. `ugoite config current` prints
-the resolved connection, Space UID, and credential name (never secrets) in a
-stable section order: `Config sources:`, `Write target:`, `Current context:`,
-`Connection:`, `Root:` (local) or `Endpoint:` (remote), `Space:`,
-`Credential:`.
+For a `core` connection, a context's immutable Space UID resolves to one local
+directory. New Spaces use `<root>/spaces/<SPACE_UID>`; existing Space 0.1
+directories are located by their read-only metadata identity without being
+renamed. The shared Space compatibility classifier decides compatibility.
+`ugoite config current` prints the resolved connection, Space UID, and
+credential name (never secrets) in a stable section order: `Config sources:`,
+`Write target:`, `Current context:`, `Connection:`, `Root:` (local) or
+`Endpoint:` (remote), `Space:`, `Credential:`.
 
 ## Authentication
 

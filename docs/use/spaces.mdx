@@ -50,10 +50,10 @@ a non-empty value otherwise (a whitespace-only name fails before any write).
 Retrying `space create` for an existing Space converges to the same durable
 identity and never renames it.
 
-Context path rule: a context's immutable Space UID resolves to exactly one
-local directory (`<root>/spaces/<SPACE_UID>`) and the shared Space
-compatibility classifier decides compatibility. Legacy slug-named directories
-and implicit path/slug discovery are never consulted on the context path.
+Context path rule: a context's immutable Space UID resolves to one local
+directory. New Spaces use `<root>/spaces/<SPACE_UID>`; existing Space 0.1
+directories are located by their read-only metadata identity without being
+renamed. The shared Space compatibility classifier decides compatibility.
 
 For a remote Space, add a context with its immutable Space UID and use the
 named connection's credential. A human Space slug is creation metadata, not a

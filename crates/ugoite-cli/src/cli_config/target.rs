@@ -5,9 +5,10 @@
 //! the same command meaning and differ only in transport and trust boundary.
 //!
 //! Context path rule: an immutable Space UID resolves to exactly one local
-//! directory (`<root>/spaces/<SPACE_UID>`) and the shared domain-owned Space
-//! compatibility classifier decides compatibility. Legacy slug-named
-//! directories and implicit path/slug discovery are never consulted.
+//! Space by metadata identity. New Spaces use `<root>/spaces/<SPACE_UID>`;
+//! existing Space 0.1 directories may retain their slug name and are located
+//! by read-only metadata inspection. The shared domain-owned Space
+//! compatibility classifier decides compatibility; no directory is renamed.
 
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
@@ -263,19 +264,79 @@ fn unique_context_credential_for_connection(
     }
 }
 
-/// Validate `root/spaces/<uid>` against the shared domain-owned Space
-/// compatibility classifier. No CLI-local compatibility semantics are
-/// introduced here; failures close without guessing another Space.
+/// Resolve an immutable Space UID to its local directory without changing the
+/// portable Space layout. New UUID-addressed Spaces use `spaces/<uid>`;
+/// existing Space 0.1 data may still be stored under `spaces/<slug>`, so the
+/// fallback scans metadata identities read-only. A matching UID is required;
+/// the CLI never guesses from a slug or rewrites the directory.
 fn validate_core_space(root: &Path, space_uid: &uuid::Uuid) -> Result<String> {
-    let dir = root.join("spaces").join(space_uid.to_string());
-    let raw = std::fs::read(dir.join("meta.json"))
-        .map_err(|_| anyhow::anyhow!("Space directory {} is missing", dir.display()))?;
+    if space_uid.get_version() != Some(uuid::Version::SortRand) {
+        bail!("Context space_uid must be a UUIDv7");
+    }
+    let spaces = root.join("spaces");
+    let direct_name = space_uid.to_string();
+    let direct = spaces.join(&direct_name);
+    if direct.is_dir() {
+        validate_core_space_metadata(&direct, space_uid)?;
+        return Ok(direct_name);
+    }
+
+    let entries = std::fs::read_dir(&spaces)
+        .map_err(|_| anyhow::anyhow!("Space directory {} is missing", direct.display()))?;
+    let mut matches = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let directory = entry.path();
+        let raw = match std::fs::read(directory.join("meta.json")) {
+            Ok(raw) => raw,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
+        };
+        let metadata: serde_json::Value = match serde_json::from_slice(&raw) {
+            Ok(metadata) => metadata,
+            Err(_) => continue,
+        };
+        let Some(stored) = metadata
+            .get("space_uid")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|value| uuid::Uuid::parse_str(value).ok())
+        else {
+            continue;
+        };
+        if stored != *space_uid {
+            continue;
+        }
+        validate_core_space_metadata(&directory, space_uid)?;
+        let directory_name = entry.file_name().to_string_lossy().into_owned();
+        matches.push(directory_name);
+    }
+    match matches.as_slice() {
+        [] => bail!(
+            "Space {} is missing under {} and no existing Space metadata claims that UID",
+            space_uid,
+            spaces.display()
+        ),
+        [directory] => Ok(directory.clone()),
+        _ => bail!(
+            "Space UID {} is claimed by multiple local directories",
+            space_uid
+        ),
+    }
+}
+
+fn validate_core_space_metadata(directory: &Path, space_uid: &uuid::Uuid) -> Result<()> {
+    let meta_path = directory.join("meta.json");
+    let raw = std::fs::read(&meta_path)
+        .map_err(|_| anyhow::anyhow!("Space metadata at {} is missing", meta_path.display()))?;
     let metadata: serde_json::Value = serde_json::from_slice(&raw)
-        .map_err(|_| anyhow::anyhow!("Space metadata at {} is invalid", dir.display()))?;
+        .map_err(|_| anyhow::anyhow!("Space metadata at {} is invalid", meta_path.display()))?;
     ugoite_domain::space::classify_space_version(&metadata).map_err(|error| {
         anyhow::anyhow!(
             "Space at {} is incompatible (detected {:?})",
-            dir.display(),
+            directory.display(),
             error.detected()
         )
     })?;
@@ -287,11 +348,7 @@ fn validate_core_space(root: &Path, space_uid: &uuid::Uuid) -> Result<String> {
     if stored != *space_uid {
         bail!("Space directory and metadata space_uid disagree");
     }
-    if space_uid.get_version() != Some(uuid::Version::SortRand) {
-        bail!("Context space_uid must be a UUIDv7");
-    }
-    // The directory name is the authority key; the stored UID must agree.
-    Ok(space_uid.to_string())
+    Ok(())
 }
 
 /// Legacy-shaped triple for mechanical migration of existing handlers:
@@ -342,5 +399,27 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let uid = uuid::Uuid::now_v7();
         assert!(validate_core_space(dir.path(), &uid).is_err());
+    }
+
+    #[test]
+    fn core_validation_finds_uid_in_existing_slug_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("spaces/legacy-slug");
+        std::fs::create_dir_all(&directory).unwrap();
+        let uid = uuid::Uuid::now_v7();
+        std::fs::write(
+            directory.join("meta.json"),
+            serde_json::json!({
+                "space_version": "0.1",
+                "space_uid": uid,
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            validate_core_space(root.path(), &uid).unwrap(),
+            "legacy-slug"
+        );
     }
 }
