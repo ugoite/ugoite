@@ -202,42 +202,22 @@ describe("entryApi", () => {
   });
 
   describe("create", () => {
-    it("should create a entry and extract title from markdown", async () => {
+    it("should create a structured entry", async () => {
       const result = await entryApi.create("test-ws", {
-        markdown:
-          "# My Meeting Entries\n\n## Date\n2025-01-15\n\n## Attendees\nAlice, Bob",
+        form: "Meeting",
+        title: "My Meeting Entries",
+        fields: { Date: "2025-01-15", Attendees: "Alice, Bob" },
       });
 
       expect(result.id).toBeDefined();
       expect(result.revision_id).toBeDefined();
 
-      // Verify the entry was indexed with extracted properties
+      // Verify the structured fields are indexed without a Markdown authoring step.
       const entries = await entryApi.list("test-ws");
       expect(entries).toHaveLength(1);
       expect(entries[0].title).toBe("My Meeting Entries");
       expect(entries[0].properties).toHaveProperty("Date");
       expect(entries[0].properties).toHaveProperty("Attendees");
-    });
-
-    it("should preserve an empty H1 title in the mock response", async () => {
-      await entryApi.create("test-ws", {
-        markdown: "# \n\n## Status\nReady",
-      });
-
-      const entries = await entryApi.list("test-ws");
-      expect(entries).toHaveLength(1);
-      expect(entries[0].title).toBe("");
-    });
-
-    it("should extract H2 headers as properties", async () => {
-      const result = await entryApi.create("test-ws", {
-        markdown: "# Task\n\n## Status\nPending\n\n## Priority\nHigh",
-      });
-
-      const entries = await entryApi.list("test-ws");
-      const entry = entries.find((n) => n.id === result.id);
-      expect(entry?.properties.Status).toBe("Pending");
-      expect(entry?.properties.Priority).toBe("High");
     });
   });
 
@@ -285,11 +265,15 @@ describe("entryApi", () => {
   describe("update", () => {
     it("should update entry with correct parent_revision_id", async () => {
       const createResult = await entryApi.create("test-ws", {
-        markdown: "# Original\n\n## Status\nDraft",
+        form: "Task",
+        title: "Original",
+        fields: { Status: "Draft" },
       });
 
       const updateResult = await entryApi.update("test-ws", createResult.id, {
-        markdown: "# Updated\n\n## Status\nPublished",
+        form: "Task",
+        title: "Updated",
+        fields: { Status: "Published" },
         parent_revision_id: createResult.revision_id,
       });
 
@@ -304,19 +288,25 @@ describe("entryApi", () => {
 
     it("should throw RevisionConflictError (409) on revision mismatch", async () => {
       const createResult = await entryApi.create("test-ws", {
-        markdown: "# Original",
+        form: "Task",
+        title: "Original",
+        fields: { Status: "Draft" },
       });
 
       // First update succeeds
       await entryApi.update("test-ws", createResult.id, {
-        markdown: "# First Update",
+        form: "Task",
+        title: "First Update",
+        fields: { Status: "Published" },
         parent_revision_id: createResult.revision_id,
       });
 
       // Second update with stale revision should fail
       await expect(
         entryApi.update("test-ws", createResult.id, {
-          markdown: "# Stale Update",
+          form: "Task",
+          title: "Stale Update",
+          fields: { Status: "Stale" },
           parent_revision_id: createResult.revision_id, // Stale!
         }),
       ).rejects.toMatchObject({
@@ -343,7 +333,8 @@ describe("entryApi", () => {
 
       await expect(
         entryApi.update("test-ws", "nested-conflict", {
-          markdown: "# Stale Update",
+          form: "Task",
+          fields: { Status: "Stale" },
           parent_revision_id: "client-rev",
         }),
       ).rejects.toMatchObject({
@@ -356,7 +347,9 @@ describe("entryApi", () => {
   describe("delete", () => {
     it("should remove entry from list", async () => {
       const result = await entryApi.create("test-ws", {
-        markdown: "# To Delete",
+        form: "Task",
+        title: "To Delete",
+        fields: { Status: "Draft" },
       });
 
       let entries = await entryApi.list("test-ws");
@@ -372,7 +365,9 @@ describe("entryApi", () => {
   describe("search and Form-owned references", () => {
     it("searches entries by keyword", async () => {
       const created = await entryApi.create("test-ws", {
-        markdown: "# Rocket Project\nEntries about propulsion",
+        form: "Project",
+        title: "Rocket Project",
+        fields: { Notes: "Entries about propulsion" },
       });
 
       const matches = await searchApi.keyword("test-ws", "rocket");
@@ -762,7 +757,8 @@ describe("error paths", () => {
       created_at: "2025-01-01T00:00:00Z",
     });
     const created = await entryApi.create("ws-history", {
-      markdown: "# Entry",
+      form: "Entry",
+      fields: { Body: "Entry" },
     });
     const history = await entryApi.history("ws-history", created.id);
     expect(history.revisions).toBeDefined();
@@ -771,7 +767,10 @@ describe("error paths", () => {
   it("entryApi.getRevision returns a revision", async () => {
     resetMockData();
     seedSpace({ id: "ws-rev", name: "R", created_at: "2025-01-01T00:00:00Z" });
-    const created = await entryApi.create("ws-rev", { markdown: "# Entry" });
+    const created = await entryApi.create("ws-rev", {
+      form: "Entry",
+      fields: { Body: "Entry" },
+    });
     const entry = await entryApi.get("ws-rev", created.id);
     const revision = await entryApi.getRevision(
       "ws-rev",
@@ -789,7 +788,8 @@ describe("error paths", () => {
       created_at: "2025-01-01T00:00:00Z",
     });
     const created = await entryApi.create("ws-restore", {
-      markdown: "# Entry",
+      form: "Entry",
+      fields: { Body: "Entry" },
     });
     const entry = await entryApi.get("ws-restore", created.id);
     const restored = await entryApi.restore(
@@ -798,16 +798,6 @@ describe("error paths", () => {
       entry.revision_id,
     );
     expect(restored).toBeDefined();
-  });
-
-  it("entryApi.createFromMarkdown creates entry", async () => {
-    resetMockData();
-    seedSpace({ id: "ws-md", name: "MD", created_at: "2025-01-01T00:00:00Z" });
-    const result = await entryApi.createFromMarkdown(
-      "ws-md",
-      "# Markdown Entry",
-    );
-    expect(result.id).toBeDefined();
   });
 
   it("entryApi.createFromWebform creates entry", async () => {
@@ -972,7 +962,8 @@ describe("error paths", () => {
     );
     await expect(
       entryApi.update("ws-err", "bad-id", {
-        markdown: "# X",
+        form: "Note",
+        fields: { Body: "X" },
         parent_revision_id: "r1",
       }),
     ).rejects.toThrow("Server error");

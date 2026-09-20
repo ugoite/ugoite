@@ -1,13 +1,15 @@
-//! Single structured Entry application boundary for 0.1.x.
+//! Single structured Entry application boundary for the current product
+//! surface.
 //!
 //! Canonical path:
 //!
-//! - Markdown compatibility input -> [`legacy_markdown_to_draft`]
 //! - Structured payload -> [`structured_fields_to_draft`]
 //! - Draft -> [`normalize_and_validate_draft`] -> existing 0.1 persistence
 //!
-//! Markdown is a compatibility adapter. The [`StructuredEntryDraft`] is the
-//! only application input shape; storage owns no conversion rules.
+//! The [`StructuredEntryDraft`] is the only product mutation input shape;
+//! storage owns no conversion rules. The legacy Markdown decoder below is
+//! retained only for test fixtures that exercise reading existing Space 0.1
+//! data, not as a user-facing mutation adapter.
 //! `EntryRevision::validate_payload` remains the final authority for typed
 //! values. Space format/version, storage encoding, and revision/history
 //! semantics are unchanged.
@@ -64,8 +66,8 @@ pub struct ValidationWarning {
     pub message: String,
 }
 
-/// A loss or ambiguity found while converting compatibility Markdown into the
-/// canonical structured draft.
+/// A loss or ambiguity found while decoding legacy Markdown test fixtures into
+/// the canonical structured draft.
 ///
 /// These diagnostics are deliberately separate from Form validation. A
 /// Markdown document can be valid Markdown and still contain structure that
@@ -76,7 +78,7 @@ pub struct MarkdownConversionDiagnostic {
     pub message: String,
 }
 
-/// Result of the shared Markdown compatibility conversion boundary.
+/// Result of the legacy Markdown fixture decoder.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MarkdownConversion {
     pub draft: StructuredEntryDraft,
@@ -100,9 +102,8 @@ pub fn structured_fields_to_draft(
     }
 }
 
-/// Parse legacy Markdown into the shared draft shape with conversion
-/// diagnostics. Callers that persist the draft must reject non-empty
-/// diagnostics before mutation.
+/// Parse legacy Markdown into the shared draft shape for fixture decoding.
+/// Product transports must use [`structured_fields_to_draft`] instead.
 ///
 /// Frontmatter supplies `form` and `tags`; the first `# ` line supplies the
 /// title; every `## ` section supplies one raw string field. Frontmatter keys

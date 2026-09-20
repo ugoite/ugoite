@@ -1,9 +1,9 @@
 mod common;
 use base64::{engine::general_purpose, Engine as _};
+use common::legacy_entry as entry;
 use common::setup_operator;
 use serde_json::json;
 use ugoite_domain::integrity::{checksum_hex, HmacIntegrityProvider};
-use ugoite_iceberg::entry;
 use ugoite_iceberg::form;
 use ugoite_iceberg::integrity::{FakeIntegrityProvider, IntegrityProvider, RealIntegrityProvider};
 use ugoite_iceberg::space;

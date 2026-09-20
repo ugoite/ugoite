@@ -8,7 +8,6 @@ const state: CreateEntryDraftState = {
   title: "Meeting",
   fields: { Notes: "draft", "__asset:Notes": { asset_id: "asset-1" } },
   tags: ["work"],
-  source: "# Meeting\n\n## Notes\ndraft",
   assetFields: { Notes: { asset_id: "asset-1" } },
   dirty: true,
 };

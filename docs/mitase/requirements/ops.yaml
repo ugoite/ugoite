@@ -245,12 +245,12 @@ requirements:
           - id: entry-create-help-case
             adapter: rust
             path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
-            selector: { kind: test, name: test_entry_create_req_ops_006_help_leads_with_plain_markdown_example }
+            selector: { kind: test, name: test_entry_create_req_ops_006_help_leads_with_structured_fields }
             claims:
               - kind: verifies
                 criterion: REQ-OPS-006#criterion.cli-surface
                 covers: [FEAT-OPS-001#binding.cli/target.help]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_entry_create_req_ops_006_help_leads_with_plain_markdown_example } }
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_entry_create_req_ops_006_help_leads_with_structured_fields } }
           - id: form-search-help-case
             adapter: rust
             path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs

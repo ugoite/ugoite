@@ -25,6 +25,102 @@ fn ugoite_bin() -> std::path::PathBuf {
     path
 }
 
+fn structured_entry_args(markdown: &str) -> Vec<String> {
+    let mut form = String::new();
+    let mut title = String::new();
+    let mut fields: Vec<(String, String)> = Vec::new();
+    let mut current: Option<String> = None;
+    let mut value = Vec::new();
+    let mut in_frontmatter = false;
+    let mut frontmatter_seen = false;
+
+    let finish = |fields: &mut Vec<(String, String)>,
+                  current: &mut Option<String>,
+                  value: &mut Vec<String>| {
+        if let Some(name) = current.take() {
+            fields.push((name, value.join("\n").trim().to_string()));
+        }
+        value.clear();
+    };
+    for line in markdown.lines() {
+        if line.trim() == "---" && !frontmatter_seen {
+            frontmatter_seen = true;
+            in_frontmatter = true;
+            continue;
+        }
+        if in_frontmatter {
+            if line.trim() == "---" {
+                in_frontmatter = false;
+            } else if let Some(name) = line.strip_prefix("form:") {
+                form = name.trim().to_string();
+            }
+            continue;
+        }
+        if let Some(value_title) = line.strip_prefix("# ") {
+            title = value_title.trim().to_string();
+        } else if let Some(name) = line.strip_prefix("## ") {
+            finish(&mut fields, &mut current, &mut value);
+            current = Some(name.trim().to_string());
+        } else if current.is_some() {
+            value.push(line.to_string());
+        }
+    }
+    finish(&mut fields, &mut current, &mut value);
+
+    let mut result = vec!["--form".to_string(), form];
+    if !title.is_empty() {
+        result.extend(["--title".to_string(), title]);
+    }
+    for (name, value) in fields {
+        result.extend(["--field".to_string(), format!("{name}={value}")]);
+    }
+    result
+}
+
+fn replace_legacy_entry_input(args: Vec<String>) -> Vec<String> {
+    let Some(entry_index) = args.iter().position(|arg| arg == "entry") else {
+        return args;
+    };
+    let Some(operation) = args.get(entry_index + 1).map(String::as_str) else {
+        return args;
+    };
+    let raw_index = args[entry_index + 2..].iter().position(|arg| {
+        (operation == "create" && arg == "--content")
+            || (operation == "update" && arg.starts_with("--markdown="))
+    });
+    let Some(relative_raw_index) = raw_index else {
+        return args;
+    };
+    let raw_index = entry_index + 2 + relative_raw_index;
+    let (markdown, entry_id, suffix_start) = if operation == "create" {
+        let Some(markdown) = args.get(raw_index + 1) else {
+            return args;
+        };
+        let Some(entry_id) = args[raw_index + 2..]
+            .iter()
+            .find(|arg| !arg.contains("/spaces/") && !arg.starts_with("--"))
+        else {
+            return args;
+        };
+        (markdown.clone(), (*entry_id).clone(), raw_index + 3)
+    } else {
+        let markdown = args[raw_index].trim_start_matches("--markdown=");
+        let Some(entry_id) = args[entry_index + 2..raw_index]
+            .iter()
+            .rev()
+            .find(|arg| !arg.contains("/spaces/") && !arg.starts_with("--"))
+        else {
+            return args;
+        };
+        (markdown.to_string(), (*entry_id).clone(), raw_index + 1)
+    };
+    let mut canonical = args[..entry_index].to_vec();
+    canonical.extend(["entry".to_string(), operation.to_string(), entry_id]);
+    canonical.extend(structured_entry_args(&markdown));
+    canonical.extend(args[suffix_start..].iter().cloned());
+    canonical
+}
+
 fn run_cli(config: &std::path::Path, args: &[&str]) -> Output {
     let bin = ugoite_bin();
     if !config.exists() && args.first().copied() != Some("config") {
@@ -72,7 +168,7 @@ fn run_cli(config: &std::path::Path, args: &[&str]) -> Output {
         index += 1;
     }
     Command::new(bin)
-        .args(canonical)
+        .args(replace_legacy_entry_input(canonical))
         .output()
         .expect("run ugoite")
 }

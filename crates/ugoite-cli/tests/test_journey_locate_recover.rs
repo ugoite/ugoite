@@ -175,17 +175,20 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
     for (entry_id, status, priority) in
         [("locate-task-a", "open", 3), ("locate-task-b", "closed", 7)]
     {
-        let markdown = format!(
-            "---\nform: Task\n---\n# {entry_id}\n\n## status\n{status}\n\n## priority\n{priority}\n"
-        );
+        let priority = priority.to_string();
+        let status_field = format!("status={status}");
+        let priority_field = format!("priority={priority}");
         let output = run_cli(
             &config_path,
             &[
                 "entry",
                 "create",
-                "--content",
-                &markdown,
-                &space_path,
+                "--form",
+                "Task",
+                "--field",
+                &status_field,
+                "--field",
+                &priority_field,
                 entry_id,
             ],
         );
@@ -249,9 +252,8 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
         "entry history after create",
     );
     assert_eq!(revision_ids(&history).len(), 1);
-    let updated_markdown =
-        "---\nform: Task\n---\n# locate-task-a\n\n## status\nin-progress\n\n## priority\n3\n";
-    let markdown_arg = format!("--markdown={updated_markdown}");
+    let status_field = "status=in-progress";
+    let priority_field = "priority=3";
     let rev1 = revision_ids(&history)[0].clone();
     let updated = stdout_json(
         &run_cli(
@@ -259,9 +261,13 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
             &[
                 "entry",
                 "update",
-                &space_path,
                 "locate-task-a",
-                markdown_arg.as_str(),
+                "--form",
+                "Task",
+                "--field",
+                status_field,
+                "--field",
+                priority_field,
                 "--parent-revision-id",
                 &rev1,
             ],

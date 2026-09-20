@@ -12688,15 +12688,9 @@
       "EntryMutationRequest": {
         "type": "object",
         "required": [],
-        "description": "Legacy `{ markdown }` (alias `content`) or additive structured `{ form, title, tags, fields, extra_attributes }`. Both together are rejected; server normalizes either to the same structured draft.",
+        "description": "Structured Entry mutation payload. Create requires `form`; update replaces the structured field map and may omit values that should fall back to the stored Entry metadata.",
         "properties": {
           "id": {
-            "type": "string"
-          },
-          "markdown": {
-            "type": "string"
-          },
-          "content": {
             "type": "string"
           },
           "parent_revision_id": {
@@ -12897,7 +12891,8 @@
         "type": "object",
         "required": [
           "kind",
-          "markdown"
+          "form",
+          "fields"
         ],
         "properties": {
           "kind": {
@@ -12906,8 +12901,25 @@
           "id": {
             "type": "string"
           },
-          "markdown": {
+          "title": {
             "type": "string"
+          },
+          "form": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "extra_attributes": {
+            "type": "object",
+            "additionalProperties": true
           }
         },
         "additionalProperties": false
@@ -12918,7 +12930,7 @@
           "kind",
           "id",
           "version_token",
-          "markdown"
+          "fields"
         ],
         "properties": {
           "kind": {
@@ -12930,8 +12942,25 @@
           "version_token": {
             "type": "string"
           },
-          "markdown": {
+          "title": {
             "type": "string"
+          },
+          "form": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "extra_attributes": {
+            "type": "object",
+            "additionalProperties": true
           }
         },
         "additionalProperties": false

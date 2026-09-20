@@ -72,7 +72,6 @@ requirements:
                 criterion: REQ-INT-002#criterion.reconstructed-entry-checksum
                 covers:
                   - FEAT-INT-001#binding.storage/target.entry-integrity
-                  - FEAT-INT-001#binding.storage/target.entry-update-integrity
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_integrity, test: test_integrity_req_int_002_reconstructed_entry_checksum_is_stored } }
 
   - id: REQ-INT-003

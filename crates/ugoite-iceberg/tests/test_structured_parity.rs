@@ -1,8 +1,9 @@
 mod common;
+use common::legacy_entry as entry;
 use common::setup_operator;
 use std::collections::BTreeMap;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
-use ugoite_iceberg::{entry, form, space};
+use ugoite_iceberg::{form, space};
 
 async fn ensure_note_form(op: &opendal::Operator, ws_path: &str) -> anyhow::Result<()> {
     form::upsert_form(

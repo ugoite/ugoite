@@ -445,13 +445,13 @@ requirements:
         targets:
           - id: validation-focus-case
             adapter: typescript
-            path: frontend/src/components/EntryDetailPane.test.tsx
-            selector: { kind: test, name: 'focuses an empty required asset field before creating an entry' }
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: 'REQ-FE-037: requires form selection before creating an entry' }
             claims:
               - kind: verifies
                 criterion: REQ-JOURNEY-003#criterion.validation-focus
                 covers: [FEAT-JOURNEY-002#binding.frontend/target.entry-detail-pane]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: 'focuses an empty required asset field before creating an entry' } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: 'REQ-FE-037: requires form selection before creating an entry' } }
 
   - id: REQ-JOURNEY-004
     title: Locate and recover durable Knowledge

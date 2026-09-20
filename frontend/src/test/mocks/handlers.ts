@@ -157,14 +157,6 @@ const normalizeMockEntry = (entry: Entry): Entry => ({
   markdown: entry.markdown ?? entry.content,
 });
 
-const extractMockEntryTitle = (markdown: string): string => {
-  const titleLine = markdown.split(/\r?\n/).find((line) =>
-    /^#[ \t]+/.test(line)
-  );
-  if (titleLine !== undefined) return titleLine.replace(/^#[ \t]+/, "");
-  return markdown.split(/\r?\n/)[0] || "Untitled";
-};
-
 const createTestApiPredicate = <Params extends PathParams = PathParams>(
   path: string,
 ) => {
@@ -455,9 +447,9 @@ export const handlers = [
     return HttpResponse.json(page);
   }),
 
-  // Create entry: legacy `{ markdown }` or additive structured
-  // `{ form, title, tags, fields }`. Structured is synthesized into the same
-  // mock Markdown storage so reads keep working.
+  // Create entry through the structured payload contract. The mock keeps a
+  // rendered representation only so existing read/search fixtures can inspect
+  // the same stored values.
   testHttp.post("/spaces/:spaceId/entries", async ({ params, request }) => {
     const spaceId = params.spaceId as string;
     if (!mockSpaces.has(spaceId)) {
@@ -469,39 +461,20 @@ export const handlers = [
     const revisionId = generateRevisionId();
     const now = new Date().toISOString();
 
-    let title: string;
-    let markdown: string;
-    let properties: Record<string, string>;
-    let tags: string[] = [];
-    if (body.markdown !== undefined) {
-      // Extract title from markdown (first H1 or first line)
-      title = extractMockEntryTitle(body.markdown);
-      markdown = body.markdown;
-
-      // Extract properties from H2 headers
-      properties = {};
-      const h2Regex = /^##\s+(.+)\n([\s\S]*?)(?=^##\s|$(?![\r\n]))/gm;
-      for (const match of body.markdown.matchAll(h2Regex)) {
-        const key = match[1].trim();
-        const value = match[2].trim();
-        properties[key] = value;
-      }
-    } else {
-      title = body.title ?? "Untitled";
-      tags = body.tags || [];
-      properties = {};
-      const rawFields = (body.fields || {}) as Record<string, unknown>;
-      for (const [key, value] of Object.entries(rawFields)) {
-        properties[key] = typeof value === "string"
-          ? value
-          : JSON.stringify(value);
-      }
-      const frontmatter = body.form ? `---\nform: ${body.form}\n---\n` : "";
-      const sections = Object.entries(properties)
-        .map(([key, value]) => `## ${key}\n${value}\n`)
-        .join("\n");
-      markdown = `${frontmatter}# ${title}\n\n${sections}`.trimEnd();
+    const title = body.title ?? "Untitled";
+    const tags = body.tags || [];
+    const properties: Record<string, string> = {};
+    const rawFields = (body.fields || {}) as Record<string, unknown>;
+    for (const [key, value] of Object.entries(rawFields)) {
+      properties[key] = typeof value === "string"
+        ? value
+        : JSON.stringify(value);
     }
+    const frontmatter = body.form ? `---\nform: ${body.form}\n---\n` : "";
+    const sections = Object.entries(properties)
+      .map(([key, value]) => `## ${key}\n${value}\n`)
+      .join("\n");
+    const markdown = `${frontmatter}# ${title}\n\n${sections}`.trimEnd();
 
     const entry: Entry = normalizeMockEntry({
       id: entryId,
@@ -570,39 +543,21 @@ export const handlers = [
       const newRevisionId = generateRevisionId();
       const now = new Date().toISOString();
 
-      let title: string;
-      let markdown: string;
-      let properties: Record<string, string>;
-      if (body.markdown !== undefined) {
-        // Extract title from markdown
-        title = extractMockEntryTitle(body.markdown);
-        markdown = body.markdown;
-
-        // Extract properties from H2 headers
-        properties = {};
-        const h2Regex = /^##\s+(.+)\n([\s\S]*?)(?=^##\s|$(?![\r\n]))/gm;
-        for (const match of body.markdown.matchAll(h2Regex)) {
-          const key = match[1].trim();
-          const value = match[2].trim();
-          properties[key] = value;
-        }
-      } else {
-        const existing = mockEntryIndex.get(spaceId)?.get(entryId);
-        title = body.title ?? existing?.title ?? "Untitled";
-        properties = {};
-        const rawFields = (body.fields || {}) as Record<string, unknown>;
-        for (const [key, value] of Object.entries(rawFields)) {
-          properties[key] = typeof value === "string"
-            ? value
-            : JSON.stringify(value);
-        }
-        const formName = body.form || "";
-        const frontmatter = formName ? `---\nform: ${formName}\n---\n` : "";
-        const sections = Object.entries(properties)
-          .map(([key, value]) => `## ${key}\n${value}\n`)
-          .join("\n");
-        markdown = `${frontmatter}# ${title}\n\n${sections}`.trimEnd();
+      const existing = mockEntryIndex.get(spaceId)?.get(entryId);
+      const title = body.title ?? existing?.title ?? "Untitled";
+      const properties: Record<string, string> = {};
+      const rawFields = (body.fields || {}) as Record<string, unknown>;
+      for (const [key, value] of Object.entries(rawFields)) {
+        properties[key] = typeof value === "string"
+          ? value
+          : JSON.stringify(value);
       }
+      const formName = body.form || "";
+      const frontmatter = formName ? `---\nform: ${formName}\n---\n` : "";
+      const sections = Object.entries(properties)
+        .map(([key, value]) => `## ${key}\n${value}\n`)
+        .join("\n");
+      const markdown = `${frontmatter}# ${title}\n\n${sections}`.trimEnd();
 
       // Update entry
       entry.content = markdown;

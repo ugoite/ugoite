@@ -156,21 +156,6 @@ pub struct EntryMeta {
     pub properties: Value,
 }
 
-#[derive(Debug, Clone)]
-pub struct EntryCreateRequest {
-    pub entry_id: String,
-    pub content: String,
-}
-
-impl EntryCreateRequest {
-    pub fn new(entry_id: impl Into<String>, content: impl Into<String>) -> Self {
-        Self {
-            entry_id: entry_id.into(),
-            content: content.into(),
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EntryRow {
     pub entry_id: String,
@@ -879,103 +864,6 @@ pub async fn append_revision_batch_for_form(
     append_revision_rows_to_workspace(op, ws_path, rows, &form_def).await
 }
 
-pub async fn create_entry<I: IntegrityProvider>(
-    op: &Operator,
-    ws_path: &str,
-    entry_id: &str,
-    content: &str,
-    author: &str,
-    integrity: &I,
-) -> Result<EntryMeta> {
-    create_entry_with_scopes(op, ws_path, entry_id, content, author, integrity, None).await
-}
-
-pub async fn create_entry_with_scopes<I: IntegrityProvider>(
-    op: &Operator,
-    ws_path: &str,
-    entry_id: &str,
-    content: &str,
-    author: &str,
-    integrity: &I,
-    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
-) -> Result<EntryMeta> {
-    create_entry_with_scopes_and_change(
-        op,
-        ws_path,
-        entry_id,
-        content,
-        author,
-        integrity,
-        relation_scopes,
-        None,
-    )
-    .await
-}
-
-#[allow(clippy::too_many_arguments)]
-pub async fn create_entry_with_scopes_and_change<I: IntegrityProvider>(
-    op: &Operator,
-    ws_path: &str,
-    entry_id: &str,
-    content: &str,
-    author: &str,
-    integrity: &I,
-    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
-    change: Option<ChangeCommand>,
-) -> Result<EntryMeta> {
-    let (entry, _) = create_entry_with_scopes_and_change_with_receipt(
-        op,
-        ws_path,
-        entry_id,
-        content,
-        author,
-        integrity,
-        relation_scopes,
-        change,
-    )
-    .await?;
-    Ok(entry)
-}
-
-#[allow(clippy::too_many_arguments)]
-pub async fn create_entry_with_scopes_and_change_with_receipt<I: IntegrityProvider>(
-    op: &Operator,
-    ws_path: &str,
-    entry_id: &str,
-    content: &str,
-    author: &str,
-    integrity: &I,
-    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
-    change: Option<ChangeCommand>,
-) -> Result<(EntryMeta, CommitReceipt)> {
-    // Title-less Entry: a missing H1 yields an empty compatibility title.
-    // The entry_id is identity only and is never copied into the title.
-    let conversion = core_entry::legacy_markdown_to_draft(content, "");
-    if !conversion.diagnostics.is_empty() {
-        return Err(core_entry::markdown_conversion_error(&conversion.diagnostics).into());
-    }
-    let (mut entries, mut receipts) = create_draft_entries_with_scopes_and_change_with_receipts(
-        op,
-        ws_path,
-        vec![EntryDraftRequest {
-            entry_id: entry_id.to_string(),
-            draft: conversion.draft,
-        }],
-        author,
-        integrity,
-        relation_scopes,
-        change,
-    )
-    .await?;
-    let entry = entries
-        .pop()
-        .expect("a one-entry create batch must return one entry");
-    let receipt = receipts
-        .pop()
-        .context("a one-entry create batch must return one commit receipt")?;
-    Ok((entry, receipt))
-}
-
 /// Draft-based create request converging on the single D1 prepare path.
 #[derive(Debug, Clone)]
 pub struct EntryDraftRequest {
@@ -1063,76 +951,6 @@ pub async fn create_structured_entry_with_scopes_and_change_with_receipt<I: Inte
         .pop()
         .context("a one-entry structured batch must return one commit receipt")?;
     Ok((entry, receipt))
-}
-
-/// Creates one explicit batch. Each Form represented in the batch publishes
-/// one upstream Iceberg snapshot after all entries have been validated.
-pub async fn create_entries<I: IntegrityProvider>(
-    op: &Operator,
-    ws_path: &str,
-    requests: Vec<EntryCreateRequest>,
-    author: &str,
-    integrity: &I,
-) -> Result<Vec<EntryMeta>> {
-    create_entries_with_scopes(op, ws_path, requests, author, integrity, None).await
-}
-
-pub async fn create_entries_with_scopes<I: IntegrityProvider>(
-    op: &Operator,
-    ws_path: &str,
-    requests: Vec<EntryCreateRequest>,
-    author: &str,
-    integrity: &I,
-    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
-) -> Result<Vec<EntryMeta>> {
-    create_entries_with_scopes_and_change(
-        op,
-        ws_path,
-        requests,
-        author,
-        integrity,
-        relation_scopes,
-        None,
-    )
-    .await
-}
-
-pub async fn create_entries_with_scopes_and_change<I: IntegrityProvider>(
-    op: &Operator,
-    ws_path: &str,
-    requests: Vec<EntryCreateRequest>,
-    author: &str,
-    integrity: &I,
-    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
-    change: Option<ChangeCommand>,
-) -> Result<Vec<EntryMeta>> {
-    // Legacy batch is compatibility ingress: every Markdown request becomes a
-    // draft first so it shares the single D1 path with structured creates.
-    // A missing H1 yields a title-less Entry; entry_id is never copied.
-    let drafts: Result<Vec<_>> = requests
-        .into_iter()
-        .map(|request| {
-            let conversion = core_entry::legacy_markdown_to_draft(&request.content, "");
-            if !conversion.diagnostics.is_empty() {
-                return Err(core_entry::markdown_conversion_error(&conversion.diagnostics).into());
-            }
-            Ok(EntryDraftRequest {
-                draft: conversion.draft,
-                entry_id: request.entry_id,
-            })
-        })
-        .collect();
-    let drafts = drafts?;
-    create_draft_entries_with_scopes_and_change(
-        op,
-        ws_path,
-        drafts,
-        author,
-        integrity,
-        relation_scopes,
-        change,
-    )
-    .await
 }
 
 pub async fn create_draft_entries_with_scopes_and_change<I: IntegrityProvider>(
@@ -2376,54 +2194,6 @@ pub async fn restore_entry_from_publication_authorized<I: IntegrityProvider>(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
-pub async fn update_entry<I: IntegrityProvider>(
-    op: &Operator,
-    ws_path: &str,
-    entry_id: &str,
-    content: &str,
-    parent_revision_id: Option<&str>,
-    author: &str,
-    integrity: &I,
-) -> Result<Value> {
-    update_entry_authorized(
-        op,
-        ws_path,
-        entry_id,
-        content,
-        parent_revision_id,
-        author,
-        integrity,
-        None,
-    )
-    .await
-}
-
-#[allow(clippy::too_many_arguments)]
-pub async fn update_entry_authorized<I: IntegrityProvider>(
-    op: &Operator,
-    ws_path: &str,
-    entry_id: &str,
-    content: &str,
-    parent_revision_id: Option<&str>,
-    author: &str,
-    integrity: &I,
-    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
-) -> Result<Value> {
-    update_entry_authorized_with_change(
-        op,
-        ws_path,
-        entry_id,
-        content,
-        parent_revision_id,
-        author,
-        integrity,
-        relation_scopes,
-        None,
-    )
-    .await
-}
-
 /// Structured update converging on the same D1 draft path as Markdown.
 ///
 /// `title`/`tags` fall back to the stored row when `None`; `form_name` must
@@ -2461,59 +2231,6 @@ pub async fn update_structured_entry_authorized_with_change<I: IntegrityProvider
         fields,
         extra_attributes,
     );
-    apply_update_from_draft(
-        op,
-        ws_path,
-        entry_id,
-        draft,
-        parent_revision_id,
-        author,
-        integrity,
-        relation_scopes,
-        change,
-    )
-    .await
-}
-
-#[allow(clippy::too_many_arguments)]
-pub async fn update_entry_authorized_with_change<I: IntegrityProvider>(
-    op: &Operator,
-    ws_path: &str,
-    entry_id: &str,
-    content: &str,
-    parent_revision_id: Option<&str>,
-    author: &str,
-    integrity: &I,
-    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
-    change: Option<ChangeCommand>,
-) -> Result<Value> {
-    // Legacy Markdown is compatibility ingress: title falls back to the stored
-    // title and missing `tags` keeps stored tags, then shares the D1 path.
-    // Tag presence is asked from core so storage never parses Markdown itself.
-    let stored_form = find_entry_form(op, ws_path, entry_id).await?;
-    let fallback_title = match stored_form.as_deref() {
-        Some(form_name) => match read_entry_row(op, ws_path, form_name, entry_id).await {
-            Ok(row) => row.title.clone(),
-            Err(_) => entry_id.to_string(),
-        },
-        None => entry_id.to_string(),
-    };
-    let conversion = core_entry::legacy_markdown_to_draft(content, &fallback_title);
-    if !conversion.diagnostics.is_empty() {
-        return Err(core_entry::markdown_conversion_error(&conversion.diagnostics).into());
-    }
-    let mut draft = conversion.draft;
-    if !core_entry::markdown_frontmatter_has_tags(content) {
-        if let Some(form_name) = stored_form.as_deref() {
-            if let Ok(row) = read_entry_row(op, ws_path, form_name, entry_id).await {
-                draft.tags = row.tags.clone();
-            }
-        }
-    }
-    // `legacy_markdown_to_draft` requires form; surface the legacy message.
-    if draft.form_name.is_none() {
-        return Err(invalid_entry_input("Form is required for entry update"));
-    }
     apply_update_from_draft(
         op,
         ws_path,

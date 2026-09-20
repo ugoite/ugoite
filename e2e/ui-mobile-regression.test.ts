@@ -61,8 +61,9 @@ test.describe("Mobile UI regression @screenshot", () => {
       getBackendUrl(`/spaces/${spaceId}/entries`),
       {
         data: {
-          markdown:
-            `---\nform: Entry\n---\n# Mobile regression ${Date.now()}\n\n## Body\nMobile layout fixture.`,
+          form: "Entry",
+          title: `Mobile regression ${Date.now()}`,
+          fields: { Body: "Mobile layout fixture." },
         },
       },
     );
@@ -240,7 +241,10 @@ async function runMobileRegression(
         expect(columns).toHaveLength(1);
         await expect(page.locator(".ui-entry-action-bar")).toBeVisible();
         await expect(page.getByRole("link", { name: "Info" }))
-          .toHaveAttribute("href", `/spaces/${spaceId}/entries/${entryId}/info`);
+          .toHaveAttribute(
+            "href",
+            `/spaces/${spaceId}/entries/${entryId}/info`,
+          );
         await expect(page.locator(".ui-entry-mode-tabs")).toHaveCount(0);
         await expectMobileTouchTargets(page);
       },

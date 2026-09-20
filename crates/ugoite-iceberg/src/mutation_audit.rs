@@ -618,6 +618,7 @@ impl UgoiteService {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     fn test_uid() -> Uuid {
         Uuid::parse_str("0198a1b2-c3d4-7e5f-8901-23456789abcd").expect("fixed test UIDv7")
@@ -697,8 +698,9 @@ mod tests {
         assert_eq!(subject, space_uid.to_string());
     }
 
-    const ENTRY_MARKDOWN: &str = "---\nform: Entry\n---\n# hello\n\n## Body\ncontent";
-    const ENTRY_MARKDOWN_V2: &str = "---\nform: Entry\n---\n# hello\n\n## Body\nupdated";
+    fn entry_fields(body: &str) -> BTreeMap<String, Value> {
+        BTreeMap::from([(String::from("Body"), Value::String(body.to_string()))])
+    }
 
     async fn audit_test_space(slug_suffix: &str) -> anyhow::Result<(UgoiteService, String)> {
         let service = UgoiteService::new(format!("memory://mutation-audit-{slug_suffix}"))?;
@@ -718,11 +720,67 @@ mod tests {
         Ok(listed.get("total").and_then(Value::as_u64).unwrap_or(0) as usize)
     }
 
+    async fn write_untracked_entry(
+        service: &UgoiteService,
+        space_id: &str,
+        body: &str,
+    ) -> anyhow::Result<()> {
+        let integrity =
+            crate::integrity::RealIntegrityProvider::from_space(service.operator(), space_id)
+                .await?;
+        crate::entry::create_structured_entry_with_scopes_and_change(
+            service.operator(),
+            &service.workspace_path(space_id),
+            "entry-1",
+            Some("hello".into()),
+            "Entry".into(),
+            Vec::new(),
+            entry_fields(body),
+            BTreeMap::new(),
+            "author",
+            &integrity,
+            None,
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn write_authorized_entry(
+        service: &UgoiteService,
+        space_id: &str,
+        principal: Uuid,
+    ) -> anyhow::Result<()> {
+        service
+            .create_structured_entry_authorized_for_principals(
+                space_id,
+                "entry-1",
+                Some("hello".into()),
+                "Entry".into(),
+                Vec::new(),
+                entry_fields("content"),
+                BTreeMap::new(),
+                &principal.to_string(),
+                &[principal],
+            )
+            .await?;
+        Ok(())
+    }
+
     #[tokio::test]
     async fn committed_entry_mutations_leave_evidence() -> anyhow::Result<()> {
         let (service, space_id) = audit_test_space("evidence").await?;
-        let created = service
-            .create_entry(&space_id, "entry-1", ENTRY_MARKDOWN, "author")
+        let (created, _) = service
+            .create_structured_entry_with_receipt(
+                &space_id,
+                "entry-1",
+                Some("hello".into()),
+                "Entry".into(),
+                Vec::new(),
+                entry_fields("content"),
+                BTreeMap::new(),
+                "author",
+            )
             .await?;
         let revision_id = created
             .get("revision_id")
@@ -730,7 +788,16 @@ mod tests {
             .expect("revision id")
             .to_string();
         let updated = service
-            .update_entry(&space_id, "entry-1", ENTRY_MARKDOWN_V2, None, "author")
+            .update_structured_entry(
+                &space_id,
+                "entry-1",
+                Some("hello".into()),
+                Some("Entry".into()),
+                entry_fields("updated"),
+                BTreeMap::new(),
+                None,
+                "author",
+            )
             .await?;
         let updated_revision_id = updated
             .get("revision_id")
@@ -779,8 +846,17 @@ mod tests {
     #[tokio::test]
     async fn redelivering_the_same_revision_never_duplicates() -> anyhow::Result<()> {
         let (service, space_id) = audit_test_space("dedupe").await?;
-        let created = service
-            .create_entry(&space_id, "entry-1", ENTRY_MARKDOWN, "author")
+        let (created, _) = service
+            .create_structured_entry_with_receipt(
+                &space_id,
+                "entry-1",
+                Some("hello".into()),
+                "Entry".into(),
+                Vec::new(),
+                entry_fields("content"),
+                BTreeMap::new(),
+                "author",
+            )
             .await?;
         let revision_id = created
             .get("revision_id")
@@ -828,8 +904,17 @@ mod tests {
         // from committed truth, so reconcile after success converges instead
         // of failing closed on a payload conflict.
         let (service, space_id) = audit_test_space("reconcile-ok").await?;
-        service
-            .create_entry(&space_id, "entry-1", ENTRY_MARKDOWN, "author")
+        let _ = service
+            .create_structured_entry_with_receipt(
+                &space_id,
+                "entry-1",
+                Some("hello".into()),
+                "Entry".into(),
+                Vec::new(),
+                entry_fields("content"),
+                BTreeMap::new(),
+                "author",
+            )
             .await?;
         assert_eq!(audit_total(&service, &space_id).await?, 1);
         let delivered = service
@@ -866,18 +951,7 @@ mod tests {
         let (service, space_id) = audit_test_space("crash").await?;
         // Simulate commit-without-delivery by writing through the low-level
         // entry layer, bypassing the audited service method.
-        let integrity =
-            crate::integrity::RealIntegrityProvider::from_space(service.operator(), &space_id)
-                .await?;
-        crate::entry::create_entry(
-            service.operator(),
-            &service.workspace_path(&space_id),
-            "entry-1",
-            ENTRY_MARKDOWN,
-            "author",
-            &integrity,
-        )
-        .await?;
+        write_untracked_entry(&service, &space_id, "content").await?;
         assert_eq!(audit_total(&service, &space_id).await?, 0);
 
         // Reopen the Space (fresh service over the same storage) and
@@ -911,15 +985,7 @@ mod tests {
             .create_space_for_principal("audit-principal", principal, "Owner")
             .await?
             .to_string();
-        service
-            .create_entry_authorized_for_principals(
-                &space_id,
-                "entry-1",
-                ENTRY_MARKDOWN,
-                &principal.to_string(),
-                &[principal],
-            )
-            .await?;
+        write_authorized_entry(&service, &space_id, principal).await?;
         assert_eq!(audit_total(&service, &space_id).await?, 1);
         let delivered = service
             .reconcile_entry_audit(&space_id, "entry-1", &[principal], &principal.to_string())
@@ -945,17 +1011,24 @@ mod tests {
     async fn space_sweep_restores_every_missing_revision_once() -> anyhow::Result<()> {
         let (service, space_id) = audit_test_space("sweep").await?;
         // Simulate two commit-without-delivery mutations through the
-        // low-level entry layer, bypassing the audited service methods.
+        // low-level structured entry layer, bypassing the audited service
+        // methods.
         let integrity =
             crate::integrity::RealIntegrityProvider::from_space(service.operator(), &space_id)
                 .await?;
-        crate::entry::create_entry(
+        crate::entry::create_structured_entry_with_scopes_and_change(
             service.operator(),
             &service.workspace_path(&space_id),
             "entry-1",
-            ENTRY_MARKDOWN,
+            Some("hello".into()),
+            "Entry".into(),
+            Vec::new(),
+            entry_fields("content"),
+            BTreeMap::new(),
             "author",
             &integrity,
+            None,
+            None,
         )
         .await?;
         let created_history = crate::entry::get_entry_history(
@@ -968,14 +1041,20 @@ mod tests {
             .as_str()
             .expect("created revision")
             .to_string();
-        crate::entry::update_entry(
+        crate::entry::update_structured_entry_authorized_with_change(
             service.operator(),
             &service.workspace_path(&space_id),
             "entry-1",
-            ENTRY_MARKDOWN_V2,
+            Some("hello".into()),
+            Some("Entry".into()),
+            None,
+            entry_fields("updated"),
+            BTreeMap::new(),
             Some(&created_revision_id),
             "author",
             &integrity,
+            None,
+            None,
         )
         .await?;
         // A tombstone without delivery must converge too: enumeration reads
@@ -1220,15 +1299,7 @@ mod tests {
             .create_space_for_principal("audit-hard-delete", principal, "Owner")
             .await?
             .to_string();
-        service
-            .create_entry_authorized_for_principals(
-                &space_id,
-                "entry-1",
-                ENTRY_MARKDOWN,
-                &principal.to_string(),
-                &[principal],
-            )
-            .await?;
+        write_authorized_entry(&service, &space_id, principal).await?;
         let delete_change = ChangeCommand {
             change_id: Uuid::now_v7().to_string(),
             run_id: Some(RunId::new("run-hard-delete")?),
@@ -1307,18 +1378,7 @@ mod tests {
         let (service, space_id) = audit_test_space("open-heal").await?;
         // Simulate commit-without-delivery through the low-level entry
         // layer, bypassing the audited service method.
-        let integrity =
-            crate::integrity::RealIntegrityProvider::from_space(service.operator(), &space_id)
-                .await?;
-        crate::entry::create_entry(
-            service.operator(),
-            &service.workspace_path(&space_id),
-            "entry-1",
-            ENTRY_MARKDOWN,
-            "author",
-            &integrity,
-        )
-        .await?;
+        write_untracked_entry(&service, &space_id, "content").await?;
         assert_eq!(audit_total(&service, &space_id).await?, 0);
         // Reopen the Space and run only the open hook: no explicit
         // reconcile call anywhere in this test.
@@ -1340,18 +1400,7 @@ mod tests {
         let (service, space_id) = audit_test_space("light-read").await?;
         // Crash-gap space: committed revision, no evidence. Repeated light
         // reads report the gap without healing it.
-        let integrity =
-            crate::integrity::RealIntegrityProvider::from_space(service.operator(), &space_id)
-                .await?;
-        crate::entry::create_entry(
-            service.operator(),
-            &service.workspace_path(&space_id),
-            "entry-1",
-            ENTRY_MARKDOWN,
-            "author",
-            &integrity,
-        )
-        .await?;
+        write_untracked_entry(&service, &space_id, "content").await?;
         for _ in 0..2 {
             let listed = service.list_space_audit(&space_id, 0, 100).await?;
             assert_eq!(listed.get("total").and_then(Value::as_u64), Some(0));

@@ -1,8 +1,9 @@
 mod common;
+use common::legacy_entry as entry;
 use common::setup_operator;
 use std::collections::HashSet;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
-use ugoite_iceberg::{entry, form, index, space};
+use ugoite_iceberg::{form, index, space};
 
 #[tokio::test]
 /// REQ-SRCH-007

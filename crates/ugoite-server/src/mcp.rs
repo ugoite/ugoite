@@ -11,7 +11,7 @@ use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fs,
     sync::OnceLock,
     time::{Duration, Instant},
@@ -87,7 +87,12 @@ struct SearchInput {
 #[serde(deny_unknown_fields)]
 struct SaveInput {
     id: Option<String>,
-    content: String,
+    title: Option<String>,
+    form: Option<String>,
+    tags: Option<Vec<String>>,
+    fields: BTreeMap<String, Value>,
+    #[serde(default)]
+    extra_attributes: BTreeMap<String, Value>,
 }
 
 #[derive(Deserialize)]
@@ -743,7 +748,7 @@ async fn tools_list(state: &AppState, auth: &AuthContext) -> Result<Value, Respo
     if has_action(state, auth, Action::Create).await
         || has_action(state, auth, Action::Update).await
     {
-        tools.push(json!({"name":"ugoite.save","description":"Save a Knowledge Entry. For a new Entry, plain Markdown is canonicalized to the built-in Entry form; when updating an existing Entry, provide complete Entry Markdown with the same form frontmatter.","inputSchema":save_input_schema(),"outputSchema":save_output_schema(),"annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":false}}));
+        tools.push(json!({"name":"ugoite.save","description":"Save a structured Knowledge Entry. Create requires a Form; updates replace the structured field map.","inputSchema":save_input_schema(),"outputSchema":save_output_schema(),"annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":false}}));
     }
     if has_action(state, auth, Action::Update).await {
         tools.push(json!({"name":"ugoite.undo","description":"Undo all Entry changes made by the current Konase Work.","inputSchema":{"type":"object","properties":{},"additionalProperties":false},"outputSchema":undo_output_schema(),"annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":false}}));
@@ -770,12 +775,28 @@ fn save_input_schema() -> Value {
                 "type": "string",
                 "description": "Opaque Entry id. Omit this field to create a new generic Entry."
             },
-            "content": {
+            "title": {
+                "type": "string"
+            },
+            "form": {
                 "type": "string",
-                "description": "Markdown to save. For a new Entry, plain Markdown is accepted and stored in the built-in Entry form's Body field. A leading H1 is used as the title; use complete Entry Markdown with form frontmatter when selecting a different Form. Updates must keep the existing Entry's form frontmatter."
+                "description": "Form name for a new Entry; updates may omit it because Form identity is immutable."
+            },
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"}
+            },
+            "fields": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Structured field values keyed by Form field name."
+            },
+            "extra_attributes": {
+                "type": "object",
+                "additionalProperties": true
             }
         },
-        "required": ["content"],
+        "required": ["fields"],
         "additionalProperties": false
     })
 }
@@ -1286,9 +1307,13 @@ async fn save(
     let (id, status, entry) = if let Some(id) = input.id {
         validate_id(&id, "entry_id")
             .map_err(|_| tool_error("INVALID_ARGUMENT", "Save arguments are invalid"))?;
-        let content = input.content.clone();
         let id_for_write = id.clone();
         let run_id = run_id.clone();
+        let title = input.title.clone();
+        let form = input.form.clone();
+        let tags = input.tags.clone();
+        let fields = input.fields.clone();
+        let extra_attributes = input.extra_attributes.clone();
         let entry = with_authorized_service_mutation(
             state,
             &auth.space_id,
@@ -1311,10 +1336,14 @@ async fn save(
                 };
                 state
                     .service
-                    .update_entry_authorized_for_principals_with_change(
+                    .update_structured_entry_authorized_for_principals_with_change(
                         &auth.space_id,
                         &id_for_write,
-                        &content,
+                        title,
+                        form,
+                        tags,
+                        fields,
+                        extra_attributes,
                         None,
                         &mutation_actor,
                         &principals,
@@ -1330,7 +1359,16 @@ async fn save(
     } else {
         let id = Uuid::now_v7().to_string();
         let id_for_write = id.clone();
-        let content = canonicalize_new_entry_content(&input.content);
+        let form = input.form.clone().ok_or_else(|| {
+            tool_error(
+                "INVALID_ARGUMENT",
+                "Save arguments are invalid: form is required",
+            )
+        })?;
+        let title = input.title.clone();
+        let tags = input.tags.clone().unwrap_or_default();
+        let fields = input.fields.clone();
+        let extra_attributes = input.extra_attributes.clone();
         let run_id = run_id.clone();
         let entry = with_authorized_service_mutation(
             state,
@@ -1350,10 +1388,14 @@ async fn save(
                 };
                 state
                     .service
-                    .create_entry_authorized_for_principals_with_change(
+                    .create_structured_entry_authorized_for_principals_with_change(
                         &auth.space_id,
                         &id_for_write,
-                        &content,
+                        title,
+                        form,
+                        tags,
+                        fields,
+                        extra_attributes,
                         &mutation_actor,
                         &principals,
                         Some(change),
@@ -1373,54 +1415,15 @@ async fn save(
     )
 }
 
-fn canonicalize_new_entry_content(content: &str) -> String {
-    if starts_with_frontmatter(content) {
-        return content.to_owned();
-    }
-
-    let mut canonical = String::from("---\nform: Entry\n---\n");
-    if contains_body_section(content) {
-        canonical.push_str(content);
-    } else if let Some((title, body)) = split_leading_title(content) {
-        canonical.push_str(title);
-        canonical.push_str("\n\n## Body\n");
-        canonical.push_str(body);
-    } else {
-        canonical.push_str("## Body\n");
-        canonical.push_str(content);
-    }
-    canonical
-}
-
-fn starts_with_frontmatter(content: &str) -> bool {
-    let mut lines = content.lines();
-    lines.next().is_some_and(|line| line.trim() == "---") && lines.any(|line| line.trim() == "---")
-}
-
-fn split_leading_title(content: &str) -> Option<(&str, &str)> {
-    let (title, body) = content.split_once('\n').unwrap_or((content, ""));
-    let title = title.strip_suffix('\r').unwrap_or(title);
-    title
-        .strip_prefix("# ")
-        .map(|_| (title, body.strip_prefix('\n').unwrap_or(body)))
-}
-
-fn contains_body_section(content: &str) -> bool {
-    content.lines().any(|line| line.trim() == "## Body")
-}
-
 fn mcp_save_error(error: ApiError, operation: &str) -> Response {
     let code = error.detail.get("code").and_then(Value::as_str);
     let message = error.detail.get("message").and_then(Value::as_str);
     let detail = error.detail.get("detail").cloned();
 
     match code {
-        Some(
-            code @ ("INVALID_INPUT"
-            | "FORM_VALIDATION_FAILED"
-            | "UNKNOWN_FORM_FIELDS"
-            | "MARKDOWN_CONVERSION_LOSS"),
-        ) => tool_error_with_detail(code, message.unwrap_or("Entry content is invalid"), detail),
+        Some(code @ ("INVALID_INPUT" | "FORM_VALIDATION_FAILED" | "UNKNOWN_FORM_FIELDS")) => {
+            tool_error_with_detail(code, message.unwrap_or("Entry content is invalid"), detail)
+        }
         Some("FORM_NOT_FOUND") => {
             tool_error("FORM_NOT_FOUND", "The requested Entry form is unavailable")
         }
@@ -1998,10 +2001,17 @@ mod tests {
             .expect("test Form");
         state
             .service
-            .create_entry(
+            .create_structured_entry_with_receipt(
                 &space_id,
                 "entry-sanitize",
-                "---\nform: Note\n---\n# Visible\n\n## Body\nhello <script>alert(1)</script> JaVaScRiPt:run() data:text/html,<svg>",
+                Some("Visible".to_string()),
+                "Note".to_string(),
+                Vec::new(),
+                BTreeMap::from([(
+                    "Body".to_string(),
+                    json!("hello <script>alert(1)</script> JaVaScRiPt:run() data:text/html,<svg>"),
+                )]),
+                BTreeMap::new(),
                 "owner",
             )
             .await
@@ -2036,9 +2046,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn save_accepts_plain_markdown_for_new_generic_entries() {
-        let state = AppState::new_for_tests(format!("memory://mcp-save-plain-{}", Uuid::now_v7()))
-            .expect("test state");
+    async fn save_accepts_structured_entries() {
+        let state =
+            AppState::new_for_tests(format!("memory://mcp-save-structured-{}", Uuid::now_v7()))
+                .expect("test state");
         let owner = Uuid::now_v7();
         let space_uid = state
             .service
@@ -2047,14 +2058,15 @@ mod tests {
             .expect("test Space");
         let auth = test_auth(space_uid, owner, &["read", "create"], "human", None);
         let run_id = RunId::new("mcp-save-plain-run".to_string()).expect("run id");
-        let arguments = serde_json::Map::from_iter([(
-            String::from("content"),
-            json!("# Summary\n\nPlain Markdown saved by the model."),
-        )]);
+        let arguments = serde_json::Map::from_iter([
+            (String::from("title"), json!("Summary")),
+            (String::from("form"), json!("Entry")),
+            (String::from("fields"), json!({"Body": "Structured value"})),
+        ]);
 
         let result = save(&state, &auth, &arguments, &run_id)
             .await
-            .expect("plain Markdown save");
+            .expect("structured save");
         assert_eq!(result["structuredContent"]["status"], "created");
         let entry_id = result["structuredContent"]["id"]
             .as_str()
@@ -2081,7 +2093,7 @@ mod tests {
         assert!(projection["content"]
             .as_str()
             .expect("Entry content")
-            .contains("## Body Plain Markdown saved by the model."));
+            .contains("Structured value"));
     }
 
     #[tokio::test]
@@ -2109,22 +2121,23 @@ mod tests {
         let auth = test_auth(space_uid, owner, &["read", "create"], "human", None);
         let run_id = RunId::new("mcp-save-errors-run".to_string()).expect("run id");
 
-        let missing_form = serde_json::Map::from_iter([(
-            String::from("content"),
-            json!("---\ntags:\n  - model\n---\n# Missing form"),
-        )]);
+        let missing_form =
+            serde_json::Map::from_iter([(String::from("fields"), json!({"Required": "value"}))]);
         let response = save(&state, &auth, &missing_form, &run_id)
             .await
             .expect_err("missing form must fail");
         let body = response_json(response).await;
         let payload = &body["result"]["structuredContent"];
-        assert_eq!(payload["code"], "INVALID_INPUT");
-        assert_eq!(payload["message"], "Form is required for entry creation");
+        assert_eq!(payload["code"], "INVALID_ARGUMENT");
+        assert_eq!(
+            payload["message"],
+            "Save arguments are invalid: form is required"
+        );
 
-        let unknown_field = serde_json::Map::from_iter([(
-            String::from("content"),
-            json!("---\nform: Strict\n---\n# Unknown\n\n## Unexpected\nvalue"),
-        )]);
+        let unknown_field = serde_json::Map::from_iter([
+            (String::from("form"), json!("Strict")),
+            (String::from("fields"), json!({"Unexpected": "value"})),
+        ]);
         let response = save(&state, &auth, &unknown_field, &run_id)
             .await
             .expect_err("unknown field must fail");
@@ -2133,10 +2146,10 @@ mod tests {
         assert_eq!(payload["code"], "UNKNOWN_FORM_FIELDS");
         assert_eq!(payload["detail"]["fields"][0], "Unexpected");
 
-        let missing_required = serde_json::Map::from_iter([(
-            String::from("content"),
-            json!("---\nform: Strict\n---\n# Missing required field"),
-        )]);
+        let missing_required = serde_json::Map::from_iter([
+            (String::from("form"), json!("Strict")),
+            (String::from("fields"), json!({})),
+        ]);
         let response = save(&state, &auth, &missing_required, &run_id)
             .await
             .expect_err("missing required field must fail");
@@ -2296,10 +2309,7 @@ mod tests {
         assert_eq!(search["properties"]["limit"]["default"], Value::from(5));
         assert_eq!(search["properties"]["limit"]["maximum"], Value::from(25));
         let save = save_input_schema();
-        assert!(save["properties"]["content"]["description"]
-            .as_str()
-            .expect("save content description")
-            .contains("plain Markdown is accepted"));
+        assert!(save["properties"]["fields"].is_object());
         assert_eq!(
             save_output_schema()["properties"]["status"]["enum"][0],
             "created"
@@ -2308,20 +2318,6 @@ mod tests {
             delete_output_schema()["properties"]["status"]["enum"][0],
             "deleted"
         );
-    }
-
-    #[test]
-    fn new_entry_markdown_is_canonicalized_at_the_mcp_boundary() {
-        assert_eq!(
-            canonicalize_new_entry_content("# Summary\n\nPlain body"),
-            "---\nform: Entry\n---\n# Summary\n\n## Body\nPlain body"
-        );
-        assert_eq!(
-            canonicalize_new_entry_content("# Summary\n\n## Body\nPlain body"),
-            "---\nform: Entry\n---\n# Summary\n\n## Body\nPlain body"
-        );
-        let complete = "---\nform: Note\n---\n# Note\n\n## Body\nBody";
-        assert_eq!(canonicalize_new_entry_content(complete), complete);
     }
 
     async fn response_json(response: Response) -> Value {

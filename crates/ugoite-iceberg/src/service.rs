@@ -411,12 +411,20 @@ impl SpaceCreateOutcome {
 pub enum ApplyOperation {
     Create {
         id: Option<String>,
-        markdown: String,
+        title: Option<String>,
+        form: String,
+        tags: Vec<String>,
+        fields: std::collections::BTreeMap<String, Value>,
+        extra_attributes: std::collections::BTreeMap<String, Value>,
     },
     Update {
         id: String,
         version_token: String,
-        markdown: String,
+        title: Option<String>,
+        form: Option<String>,
+        tags: Option<Vec<String>>,
+        fields: std::collections::BTreeMap<String, Value>,
+        extra_attributes: std::collections::BTreeMap<String, Value>,
     },
     Remove {
         id: String,
@@ -600,8 +608,8 @@ async fn acquire_local_space_slug_claim_lock(
     Ok(Some(file))
 }
 
-/// The admitted write context shared by raw Markdown and structured Entry
-/// mutations. `scopes` is the authorized form/entry scope map, `integrity`
+/// The admitted write context shared by structured Entry mutations. `scopes`
+/// is the authorized form/entry scope map, `integrity`
 /// and `workspace` are the mutation context, and the held lease keeps the
 /// authorization snapshot pinned across the write.
 struct EntryAuthorizedWritePrelude {
@@ -2085,7 +2093,14 @@ impl UgoiteService {
         let mut results = Vec::with_capacity(operations.len());
         for operation in operations {
             match operation {
-                ApplyOperation::Create { id, markdown } => {
+                ApplyOperation::Create {
+                    id,
+                    title,
+                    form,
+                    tags,
+                    fields,
+                    extra_attributes,
+                } => {
                     let entry_id = id.unwrap_or_else(|| Uuid::new_v4().to_string());
                     let change = ChangeCommand {
                         change_id: Uuid::new_v4().to_string(),
@@ -2096,10 +2111,14 @@ impl UgoiteService {
                         created_at_micros: Utc::now().timestamp_micros(),
                     };
                     let value = self
-                        .create_entry_authorized_for_principals_with_change(
+                        .create_structured_entry_authorized_for_principals_with_change(
                             space_id,
                             &entry_id,
-                            &markdown,
+                            title,
+                            form,
+                            tags,
+                            fields,
+                            extra_attributes,
                             actor_principal_id,
                             principal_ids,
                             Some(change),
@@ -2115,7 +2134,11 @@ impl UgoiteService {
                 ApplyOperation::Update {
                     id,
                     version_token,
-                    markdown,
+                    title,
+                    form,
+                    tags,
+                    fields,
+                    extra_attributes,
                 } => {
                     let change = ChangeCommand {
                         change_id: Uuid::new_v4().to_string(),
@@ -2126,10 +2149,14 @@ impl UgoiteService {
                         created_at_micros: Utc::now().timestamp_micros(),
                     };
                     let value = self
-                        .update_entry_authorized_for_principals_with_change(
+                        .update_structured_entry_authorized_for_principals_with_change(
                             space_id,
                             &id,
-                            &markdown,
+                            title,
+                            form,
+                            tags,
+                            fields,
+                            extra_attributes,
                             Some(&version_token),
                             actor_principal_id,
                             principal_ids,
@@ -2365,107 +2392,7 @@ impl UgoiteService {
         Ok(())
     }
 
-    pub async fn create_entry(
-        &self,
-        space_id: &str,
-        entry_id: &str,
-        markdown: &str,
-        author: &str,
-    ) -> Result<Value> {
-        let (result, _receipt) = self
-            .create_entry_with_receipt(space_id, entry_id, markdown, author)
-            .await?;
-        Ok(result)
-    }
-
-    /// Create an Entry and return the durable commit receipt alongside the
-    /// existing Entry representation. Callers that expose mutation receipts
-    /// should use this boundary rather than deriving the Change ID from
-    /// history after the commit.
-    pub async fn create_entry_with_receipt(
-        &self,
-        space_id: &str,
-        entry_id: &str,
-        markdown: &str,
-        author: &str,
-    ) -> Result<(Value, crate::CommitReceipt)> {
-        self.ensure_mutation_admitted(space_id).await?;
-        self.validate_complete_space(space_id).await?;
-        validate_storage_id(validate_entry_id(entry_id))?;
-        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
-        let workspace = self.workspace_path(space_id);
-        let (_, receipt) = entry::create_entry_with_scopes_and_change_with_receipt(
-            &self.operator,
-            &workspace,
-            entry_id,
-            markdown,
-            author,
-            &integrity,
-            None,
-            None,
-        )
-        .await?;
-        self.schedule_asset_text_refresh(space_id);
-        let result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
-        self.record_committed_entry_revision(
-            space_id,
-            entry_id,
-            crate::mutation_audit::ENTRY_CREATED_ACTION,
-            &[],
-            author,
-        )
-        .await;
-        Ok((result, receipt))
-    }
-
-    pub async fn create_entry_authorized(
-        &self,
-        space_id: &str,
-        entry_id: &str,
-        markdown: &str,
-        author: &str,
-        principal_id: Uuid,
-    ) -> Result<Value> {
-        self.create_entry_authorized_for_principals(
-            space_id,
-            entry_id,
-            markdown,
-            author,
-            &[principal_id],
-        )
-        .await
-    }
-
-    pub async fn create_entry_authorized_for_principals(
-        &self,
-        space_id: &str,
-        entry_id: &str,
-        markdown: &str,
-        author: &str,
-        principal_ids: &[Uuid],
-    ) -> Result<Value> {
-        self.create_entry_authorized_for_principals_with_change(
-            space_id,
-            entry_id,
-            markdown,
-            author,
-            principal_ids,
-            None,
-        )
-        .await
-    }
-
-    /// Shared admission/auth prelude for raw Markdown and structured Entry
-    /// writes (authorized creates and updates).
-    ///
-    /// Raw and structured paths converge here in the existing order: (1)
-    /// Space/request admission, (2) Entry identity normalization, (3) parent
-    /// revision checks, (4) principal/scope authorization, (5) mutation
-    /// context creation. Both transports therefore reach the same durable
-    /// revision representation with identical auth failure codes. The helper
-    /// never parses Markdown and never constructs structured fields; the
-    /// `ChangeCommand` flows through untouched (the entry boundary owns its
-    /// default), and the authorization lease is held for the whole mutation.
+    /// Shared admission/auth prelude for structured Entry writes.
     ///
     async fn entry_authorized_write_prelude(
         &self,
@@ -2510,48 +2437,9 @@ impl UgoiteService {
         })
     }
 
-    pub async fn create_entry_authorized_for_principals_with_change(
-        &self,
-        space_id: &str,
-        entry_id: &str,
-        markdown: &str,
-        author: &str,
-        principal_ids: &[Uuid],
-        change: Option<ChangeCommand>,
-    ) -> Result<Value> {
-        let prelude = self
-            .entry_authorized_write_prelude(space_id, entry_id, Action::Create, None, principal_ids)
-            .await?;
-        let (_, receipt) = entry::create_entry_with_scopes_and_change_with_receipt(
-            &self.operator,
-            &prelude.workspace,
-            entry_id,
-            markdown,
-            author,
-            &prelude.integrity,
-            Some(&prelude.scopes),
-            change,
-        )
-        .await?;
-        self.schedule_asset_text_refresh(space_id);
-        let mut result = entry::get_entry(&self.operator, &prelude.workspace, entry_id).await?;
-        result["change_id"] = json!(receipt.command_id);
-        self.record_committed_entry_revision(
-            space_id,
-            entry_id,
-            crate::mutation_audit::ENTRY_CREATED_ACTION,
-            principal_ids,
-            author,
-        )
-        .await;
-        Ok(result)
-    }
-
     /// Create a Form-backed Entry without regenerating Markdown.
     ///
-    /// Structured create converges on the same shared draft path as raw
-    /// Markdown: the Change/Run grouping context flows through the entry
-    /// boundary untouched (no separate mutation implementation). `fields`
+    /// Structured create converges on the shared draft path. `fields`
     /// is the complete initial field map; there is no metadata-only patch
     /// variant. Unknown keys are preserved as extra attributes only when
     /// the Form allows them, otherwise `UnknownFormFields` rejects
@@ -2588,10 +2476,9 @@ impl UgoiteService {
     /// Create a Form-backed Entry carrying an existing mutation/Change
     /// context (Change ID propagation and Run grouping). This is the
     /// structured counterpart to
-    /// [`Self::create_entry_authorized_for_principals_with_change`]:
+    /// the authorized mutation path:
     /// admission, authorization, and audit are identical, and the `change`
-    /// is forwarded to the same shared entry boundary the raw Markdown
-    /// path uses.
+    /// is forwarded to the same shared entry boundary.
     #[allow(clippy::too_many_arguments)]
     pub async fn create_structured_entry_authorized_for_principals_with_change(
         &self,
@@ -2738,43 +2625,6 @@ impl UgoiteService {
             .await
     }
 
-    pub async fn update_entry(
-        &self,
-        space_id: &str,
-        entry_id: &str,
-        markdown: &str,
-        parent_revision_id: Option<&str>,
-        author: &str,
-    ) -> Result<Value> {
-        self.ensure_mutation_admitted(space_id).await?;
-        self.validate_complete_space(space_id).await?;
-        validate_storage_id(validate_entry_id(entry_id))?;
-        if let Some(parent_revision_id) = parent_revision_id {
-            validate_storage_id(validate_revision_id(parent_revision_id))?;
-        }
-        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
-        let result = entry::update_entry(
-            &self.operator,
-            &self.workspace_path(space_id),
-            entry_id,
-            markdown,
-            parent_revision_id,
-            author,
-            &integrity,
-        )
-        .await?;
-        self.schedule_asset_text_refresh(space_id);
-        self.record_committed_entry_revision(
-            space_id,
-            entry_id,
-            crate::mutation_audit::ENTRY_UPDATED_ACTION,
-            &[],
-            author,
-        )
-        .await;
-        Ok(result)
-    }
-
     /// Update a Form-backed Entry in core (local filesystem) mode without
     /// regenerating Markdown. `fields` is the complete post-update field map;
     /// omitted fields are intentionally cleared. Callers do read → modify →
@@ -2833,71 +2683,6 @@ impl UgoiteService {
         Ok(result)
     }
 
-    pub async fn update_entry_authorized_for_principals(
-        &self,
-        space_id: &str,
-        entry_id: &str,
-        markdown: &str,
-        parent_revision_id: Option<&str>,
-        author: &str,
-        principal_ids: &[Uuid],
-    ) -> Result<Value> {
-        self.update_entry_authorized_for_principals_with_change(
-            space_id,
-            entry_id,
-            markdown,
-            parent_revision_id,
-            author,
-            principal_ids,
-            None,
-        )
-        .await
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub async fn update_entry_authorized_for_principals_with_change(
-        &self,
-        space_id: &str,
-        entry_id: &str,
-        markdown: &str,
-        parent_revision_id: Option<&str>,
-        author: &str,
-        principal_ids: &[Uuid],
-        change: Option<ChangeCommand>,
-    ) -> Result<Value> {
-        let prelude = self
-            .entry_authorized_write_prelude(
-                space_id,
-                entry_id,
-                Action::Update,
-                parent_revision_id,
-                principal_ids,
-            )
-            .await?;
-        let result = entry::update_entry_authorized_with_change(
-            &self.operator,
-            &prelude.workspace,
-            entry_id,
-            markdown,
-            parent_revision_id,
-            author,
-            &prelude.integrity,
-            Some(&prelude.scopes),
-            change,
-        )
-        .await?;
-        self.schedule_asset_text_refresh(space_id);
-        self.record_committed_entry_revision(
-            space_id,
-            entry_id,
-            crate::mutation_audit::ENTRY_UPDATED_ACTION,
-            principal_ids,
-            author,
-        )
-        .await;
-        Ok(result)
-    }
-
     /// Update a Form-backed Entry without regenerating Markdown. `fields`
     /// is the complete post-update field map (full replacement: omitted
     /// fields clear, never patch); `title`/`tags` fall back to stored values
@@ -2936,11 +2721,9 @@ impl UgoiteService {
 
     /// Update a Form-backed Entry carrying an existing mutation/Change
     /// context (Change ID propagation, revision parentage, Run grouping).
-    /// This is the structured counterpart to
-    /// [`Self::update_entry_authorized_for_principals_with_change`]:
-    /// admission, authorization, and audit are identical, and the `change`
-    /// is forwarded to the same shared entry boundary the raw Markdown
-    /// path uses (no separate mutation implementation).
+    /// Admission, authorization, and audit are identical to ordinary
+    /// structured updates, and the `change` is forwarded to the same shared
+    /// entry boundary.
     #[allow(clippy::too_many_arguments)]
     pub async fn update_structured_entry_authorized_for_principals_with_change(
         &self,
@@ -5933,7 +5716,16 @@ mod tests {
         );
         assert_unavailable(
             service
-                .create_entry("remote-space", "entry-1", "# Entry", "author")
+                .create_structured_entry_with_receipt(
+                    "remote-space",
+                    "entry-1",
+                    Some("Entry".into()),
+                    "Entry".into(),
+                    Vec::new(),
+                    std::collections::BTreeMap::new(),
+                    std::collections::BTreeMap::new(),
+                    "author",
+                )
                 .await
                 .expect_err("Entry mutation must fail before any remote write"),
         );
@@ -6504,7 +6296,18 @@ mod tests {
         Ok(())
     }
 
-    const BATCH_MARKDOWN: &str = "---\nform: Entry\n---\n# hello\n\n## Body\ncontent";
+    fn batch_create(entry_id: &str) -> ApplyOperation {
+        ApplyOperation::Create {
+            id: Some(entry_id.to_string()),
+            title: Some("hello".to_string()),
+            form: "Entry".to_string(),
+            tags: Vec::new(),
+            fields: [("Body".to_string(), Value::String("content".to_string()))]
+                .into_iter()
+                .collect(),
+            extra_attributes: Default::default(),
+        }
+    }
 
     async fn batch_test_space(slug_suffix: &str) -> anyhow::Result<(UgoiteService, String, Uuid)> {
         let service = UgoiteService::new(format!("memory://batch-safety-{slug_suffix}"))?;
@@ -6525,10 +6328,7 @@ mod tests {
             .apply_operations(
                 &space_id,
                 vec![
-                    ApplyOperation::Create {
-                        id: Some("batch-entry-1".to_string()),
-                        markdown: BATCH_MARKDOWN.to_string(),
-                    },
+                    batch_create("batch-entry-1"),
                     ApplyOperation::Remove {
                         id: "batch-entry-1".to_string(),
                     },
@@ -6588,14 +6388,17 @@ mod tests {
             .apply_operations(
                 &space_id,
                 vec![
-                    ApplyOperation::Create {
-                        id: Some("batch-entry-2".to_string()),
-                        markdown: BATCH_MARKDOWN.to_string(),
-                    },
+                    batch_create("batch-entry-2"),
                     ApplyOperation::Update {
                         id: "batch-entry-2".to_string(),
                         version_token: String::new(),
-                        markdown: BATCH_MARKDOWN.to_string(),
+                        title: Some("hello".to_string()),
+                        form: Some("Entry".to_string()),
+                        tags: Some(Vec::new()),
+                        fields: [("Body".to_string(), Value::String("content".to_string()))]
+                            .into_iter()
+                            .collect(),
+                        extra_attributes: Default::default(),
                     },
                 ],
                 &principal.to_string(),
@@ -6634,10 +6437,7 @@ mod tests {
             service
                 .apply_operations(
                     &space_id,
-                    vec![ApplyOperation::Create {
-                        id: Some(entry_id.to_string()),
-                        markdown: BATCH_MARKDOWN.to_string(),
-                    }],
+                    vec![batch_create(entry_id)],
                     &principal.to_string(),
                     &[principal],
                     Some("run-batch-undo"),

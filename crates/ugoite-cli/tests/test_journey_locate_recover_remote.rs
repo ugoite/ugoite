@@ -304,17 +304,20 @@ async fn journey_cli_remote_locate_recover() {
     for (entry_id, status, priority) in
         [("locate-task-a", "open", 3), ("locate-task-b", "closed", 7)]
     {
-        let markdown = format!(
-            "---\nform: {form_name}\n---\n# {entry_id}\n\n## status\n{status}\n\n## priority\n{priority}\n"
-        );
+        let priority = priority.to_string();
+        let status_field = format!("status={status}");
+        let priority_field = format!("priority={priority}");
         let output = run_cli(
             config_path,
             &[
                 "entry",
                 "create",
-                "--content",
-                &markdown,
-                space_id,
+                "--form",
+                form_name,
+                "--field",
+                &status_field,
+                "--field",
+                &priority_field,
                 entry_id,
             ],
         )
@@ -367,18 +370,21 @@ async fn journey_cli_remote_locate_recover() {
     );
     assert_eq!(revision_ids(&history).len(), 1);
     let rev1 = revision_ids(&history)[0].clone();
-    let updated_markdown =
-        format!("---\nform: {form_name}\n---\n# locate-task-a\n\n## status\nin-progress\n\n## priority\n3\n");
-    let markdown_arg = format!("--markdown={updated_markdown}");
+    let status_field = "status=in-progress";
+    let priority_field = "priority=3";
     let updated = stdout_json(
         &run_cli(
             config_path,
             &[
                 "entry",
                 "update",
-                space_id,
                 "locate-task-a",
-                markdown_arg.as_str(),
+                "--form",
+                form_name,
+                "--field",
+                status_field,
+                "--field",
+                priority_field,
                 "--parent-revision-id",
                 &rev1,
             ],

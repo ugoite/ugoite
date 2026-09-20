@@ -2383,38 +2383,7 @@ textarea {
   border-bottom-color: var(--brand);
   color: var(--ink);
 }
-.ui-entry-source-disclosure {
-  min-width: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--ui-foreground-muted);
-  font-size: 13px;
-  font-weight: 650;
-}
-.ui-entry-source-disclosure summary {
-  min-height: 39px;
-  padding: 0 2px;
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  list-style-position: inside;
-}
-.ui-entry-source-disclosure[open] summary {
-  border-bottom: 1px solid var(--ui-border);
-}
-.ui-entry-source-trigger {
-  width: 100%;
-  padding: 8px 11px;
-  color: var(--ui-foreground);
-  font-size: 13px;
-  font-weight: 650;
-  text-align: left;
-}
-.ui-entry-source-trigger[aria-pressed="true"] {
-  color: var(--ui-focus);
-}
-.ui-entry-form-body, .ui-entry-field-list, .ui-entry-source-body {
+.ui-entry-form-body, .ui-entry-field-list {
   display: grid;
 }
 .ui-entry-field {
@@ -2664,16 +2633,6 @@ textarea {
   font-size: 12px;
   font-weight: 700;
 }
-.ui-entry-source-editor {
-  width: 100%;
-  min-height: 34rem;
-  resize: vertical;
-}
-.ui-entry-source-footer {
-  padding: 10px 16px;
-  border-top: 1px solid var(--ui-border);
-  background: var(--ui-surface-3);
-}
 .ui-entry-sidebar {
   position: sticky;
   top: 78px;
@@ -2832,9 +2791,6 @@ textarea {
     display: grid;
   }
   .ui-entry-mode-tabs {
-    width: 100%;
-  }
-  .ui-entry-source-disclosure {
     width: 100%;
   }
   .ui-entry-mode-tab {

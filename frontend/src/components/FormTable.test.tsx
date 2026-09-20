@@ -569,7 +569,8 @@ describe("FormTable", () => {
     vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
     const getSpy = vi.spyOn(entryApi, "get").mockResolvedValue({
       id: "1",
-      content: "---\nform: Test\n---\n\n## col\nval",
+      form: "Test",
+      sections: { col: "val" },
       revision_id: "rev1",
     } as any);
     const updateSpy = vi.spyOn(entryApi, "update").mockResolvedValue({} as any);
@@ -603,7 +604,8 @@ describe("FormTable", () => {
         "ws",
         "1",
         expect.objectContaining({
-          markdown: expect.stringContaining("new-val"),
+          form: "Test",
+          fields: { col: "new-val" },
           parent_revision_id: "rev1",
         }),
       );
@@ -1001,7 +1003,8 @@ describe("FormTable", () => {
     }] as any);
     vi.spyOn(entryApi, "get").mockResolvedValue({
       id: "1",
-      content: "---\nform: Test\n---\n\n## notes\nOld",
+      form: "Test",
+      sections: { notes: "Old" },
       revision_id: "rev1",
     } as any);
     const updateSpy = vi.spyOn(entryApi, "update").mockResolvedValue({} as any);
@@ -1030,7 +1033,8 @@ describe("FormTable", () => {
         "ws",
         "1",
         expect.objectContaining({
-          markdown: expect.stringContaining("New"),
+          form: "Test",
+          fields: { notes: "New" },
           parent_revision_id: "rev1",
         }),
       );

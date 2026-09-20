@@ -209,7 +209,13 @@ test.describe("Owner-approved Space access recovery", () => {
 
       const createdEntry = await request.post(
         getBackendUrl(`/spaces/${recoveredSpaceId}/entries`),
-        { data: { markdown: "---\nform: Entry\n---\n# Recovery ACL\n" } },
+        {
+          data: {
+            form: "Entry",
+            title: "Recovery ACL",
+            fields: {},
+          },
+        },
       );
       expect(createdEntry.status()).toBe(201);
       const entryId = ((await createdEntry.json()) as { id: string }).id;

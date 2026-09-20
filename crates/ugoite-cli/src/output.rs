@@ -390,7 +390,6 @@ fn protocol_kind(code: &str, fallback: &str) -> &'static str {
         | "INVALID_INPUT"
         | "FORM_VALIDATION_FAILED"
         | "UNKNOWN_FORM_FIELDS"
-        | "MARKDOWN_CONVERSION_LOSS"
         | "SEARCH_QUERY_EMPTY"
         | "READ_ONLY_SQL_REQUIRED"
         | "UNSUPPORTED_SPACE_VERSION"
@@ -524,37 +523,6 @@ impl MutationReceipt {
             lines.push(format!("run: {run}"));
         }
         lines.join("\n")
-    }
-}
-
-/// Read a Markdown compatibility ingress from `--file` (E2).
-///
-/// - `--content`/`--markdown` stays inline.
-/// - `--file PATH` reads the file; `--file -` reads explicit stdin.
-/// - Inline and file together are rejected deterministically.
-/// - Stdin is never consumed implicitly, so output pipes never collide.
-pub fn read_compat_input(
-    inline: Option<String>,
-    inline_flag: &str,
-    file: Option<String>,
-) -> anyhow::Result<String> {
-    match (inline, file) {
-        (Some(_), Some(_)) => Err(UsageError(format!(
-            "{inline_flag} and --file cannot be combined; specify exactly one"
-        ))
-        .into()),
-        (Some(text), None) => Ok(text),
-        (None, Some(path)) if path == "-" => {
-            use std::io::Read;
-            let mut text = String::new();
-            std::io::stdin()
-                .read_to_string(&mut text)
-                .map_err(|error| anyhow::anyhow!("read stdin: {error}"))?;
-            Ok(text)
-        }
-        (None, Some(path)) => std::fs::read_to_string(&path)
-            .map_err(|error| UsageError(format!("read --file {path}: {error}")).into()),
-        (None, None) => Err(UsageError(format!("{inline_flag} or --file is required")).into()),
     }
 }
 
@@ -793,17 +761,5 @@ mod tests {
             }
         }
         output
-    }
-
-    #[test]
-    fn inline_and_file_inputs_are_mutually_exclusive() {
-        assert!(
-            read_compat_input(Some("a".to_string()), "--content", Some("b.md".to_string()))
-                .is_err()
-        );
-        assert_eq!(
-            read_compat_input(Some("a".to_string()), "--content", None).unwrap(),
-            "a"
-        );
     }
 }

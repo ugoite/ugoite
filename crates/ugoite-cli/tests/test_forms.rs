@@ -1,9 +1,7 @@
 //! Integration tests for form schema management via ugoite-core.
 //! REQ-FORM-001, REQ-FORM-002
 
-use support::Command;
-
-mod support;
+use std::process::Command;
 
 fn ugoite_bin() -> std::path::PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {
@@ -50,14 +48,29 @@ fn setup_space_with_form(
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("connection set");
-    assert!(connection.status.success());
+    assert!(
+        connection.status.success(),
+        "connection set failed: {} {}",
+        String::from_utf8_lossy(&connection.stdout),
+        String::from_utf8_lossy(&connection.stderr)
+    );
     let create = Command::new(ugoite_bin())
-        .args(["space", "create", space_id])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "space",
+            "create",
+            space_id,
+            "--connection",
+            "local",
+        ])
         .output()
         .expect("space create");
-    assert!(create.status.success());
-
+    assert!(
+        create.status.success(),
+        "space create failed: {}",
+        String::from_utf8_lossy(&create.stderr)
+    );
     let form_file = dir.path().join("entry-form.json");
     std::fs::write(
         &form_file,
@@ -100,7 +113,13 @@ fn test_form_get_after_update() {
 
     // Get the form that was just created
     let get_output = Command::new(ugoite_bin())
-        .args(["form", "get", "Entry"])
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "form",
+            "get",
+            "Entry",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -130,7 +149,13 @@ fn test_form_update_applies_column_change() {
     .unwrap();
 
     let update_output = Command::new(ugoite_bin())
-        .args(["form", "update", form_file2.to_str().unwrap()])
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "form",
+            "update",
+            form_file2.to_str().unwrap(),
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -143,7 +168,13 @@ fn test_form_update_applies_column_change() {
 
     // Verify form still accessible
     let get_output = Command::new(ugoite_bin())
-        .args(["form", "get", "Entry"])
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "form",
+            "get",
+            "Entry",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");

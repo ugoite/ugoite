@@ -1,9 +1,10 @@
 mod common;
+use common::legacy_entry as entry;
 use common::setup_operator;
 use std::collections::BTreeMap;
 use ugoite_domain::change::ChangeCommand;
 use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
-use ugoite_iceberg::{entry, form, iceberg_store, publication_context_for_change, search, space};
+use ugoite_iceberg::{form, iceberg_store, publication_context_for_change, search, space};
 use uuid::Uuid;
 
 async fn create_test_entry(

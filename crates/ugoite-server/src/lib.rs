@@ -419,13 +419,19 @@ mod remote_asset_upload_tests {
             .save_asset(&space_id, "seed.txt", b"seed")
             .await
             .expect("seed asset");
-        let seed_json = serde_json::to_string(&seed).expect("seed reference");
         state
             .service
-            .create_entry(
+            .create_structured_entry_with_receipt(
                 &space_id,
                 "seed-entry",
-                &format!("---\nform: Media\nAttachment: {seed_json}\n---\n# Seed"),
+                Some("Seed".to_string()),
+                "Media".to_string(),
+                Vec::new(),
+                BTreeMap::from([(
+                    "Attachment".to_string(),
+                    serde_json::to_value(&seed).expect("seed reference"),
+                )]),
+                BTreeMap::new(),
                 "owner",
             )
             .await
@@ -9117,13 +9123,11 @@ fn redact_sensitive_storage_config(value: &mut Value) {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct EntryCreate {
     id: Option<String>,
-    #[serde(alias = "content")]
-    markdown: Option<String>,
-    // Additive structured payload converging on the same D1 draft path.
-    // Either `markdown` (legacy) or structured `form` (+ optional title/tags/
-    // fields) is required; both together are rejected deterministically.
+    // Structured payload; `form` is required and the remaining properties are
+    // optional defaults for the complete initial draft.
     form: Option<String>,
     title: Option<String>,
     tags: Option<Vec<String>>,
@@ -9140,69 +9144,16 @@ async fn create_entry(
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let entry_id = payload.id.unwrap_or_else(|| Uuid::new_v4().to_string());
     validate_id(&entry_id, "entry_id")?;
-    // Presence, not emptiness, selects the path: an explicit `markdown: ""`
-    // is still a legacy payload with title fallback, not a missing payload.
-    let has_markdown = payload.markdown.is_some();
-    let has_structured = payload.form.is_some()
-        || payload.title.is_some()
-        || payload.tags.is_some()
-        || payload.fields.is_some()
-        || payload.extra_attributes.is_some();
-    if has_markdown && has_structured {
+    let Some(form) = payload.form.clone() else {
         return Err(ApiError::new(
             StatusCode::UNPROCESSABLE_ENTITY,
-            "specify either markdown or structured fields, not both",
-        ));
-    }
-    let Some(markdown) = payload.markdown.clone() else {
-        // Structured path: form is required, everything else defaults.
-        let Some(form) = payload.form.clone() else {
-            return Err(ApiError::new(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "either markdown or structured form/fields is required",
-            ));
-        };
-        let title = payload.title.clone();
-        let tags = payload.tags.clone().unwrap_or_default();
-        let fields = payload.fields.clone().unwrap_or_default();
-        let extra = payload.extra_attributes.clone().unwrap_or_default();
-        let entry_id_for_write = entry_id.clone();
-        let service = state.service.clone();
-        let space_id_for_write = space_id.clone();
-        let created = with_authorized_service_mutation(
-            &state,
-            &space_id,
-            &identity,
-            Action::Create,
-            None,
-            |principal_id, principals| async move {
-                service
-                    .create_structured_entry_authorized_for_principals(
-                        &space_id_for_write,
-                        &entry_id_for_write,
-                        title.clone(),
-                        form.clone(),
-                        tags.clone(),
-                        fields.clone(),
-                        extra.clone(),
-                        &principal_id.to_string(),
-                        &principals,
-                    )
-                    .await
-                    .map_err(ApiError::from_core)
-            },
-        )
-        .await?;
-        return Ok((
-            StatusCode::CREATED,
-            Json(json!({
-                "id": entry_id,
-                "revision_id": created["revision_id"],
-                "change_id": created["change_id"],
-            })),
+            "structured entry form is required",
         ));
     };
-    let _ = has_markdown;
+    let title = payload.title.clone();
+    let tags = payload.tags.clone().unwrap_or_default();
+    let fields = payload.fields.clone().unwrap_or_default();
+    let extra = payload.extra_attributes.clone().unwrap_or_default();
     let entry_id_for_write = entry_id.clone();
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
@@ -9214,10 +9165,14 @@ async fn create_entry(
         None,
         |principal_id, principals| async move {
             service
-                .create_entry_authorized_for_principals(
+                .create_structured_entry_authorized_for_principals(
                     &space_id_for_write,
                     &entry_id_for_write,
-                    &markdown,
+                    title.clone(),
+                    form.clone(),
+                    tags.clone(),
+                    fields.clone(),
+                    extra.clone(),
                     &principal_id.to_string(),
                     &principals,
                 )
@@ -9765,12 +9720,11 @@ struct EntryReadQuery {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct EntryUpdate {
-    markdown: Option<String>,
     parent_revision_id: Option<String>,
-    // Additive structured update: full field replacement, title/tags fall back
-    // to stored values when omitted. Either `markdown` or structured fields is
-    // required; both together are rejected deterministically.
+    // Structured update: full field replacement, title/tags fall back to
+    // stored values when omitted.
     form: Option<String>,
     title: Option<String>,
     tags: Option<Vec<String>>,
@@ -9786,59 +9740,11 @@ async fn update_entry(
     Json(payload): Json<EntryUpdate>,
 ) -> ApiResult<Json<Value>> {
     validate_id(&entry_id, "entry_id")?;
-    let has_markdown = payload.markdown.is_some();
-    let has_structured = payload.form.is_some()
-        || payload.title.is_some()
-        || payload.tags.is_some()
-        || payload.fields.is_some()
-        || payload.extra_attributes.is_some();
-    if has_markdown && has_structured {
-        return Err(ApiError::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "specify either markdown or structured fields, not both",
-        ));
-    }
-    if let Some(markdown) = payload.markdown.clone() {
-        let entry_id_for_write = entry_id.clone();
-        let parent_revision_id = payload.parent_revision_id.clone();
-        let service = state.service.clone();
-        let space_id_for_write = space_id.clone();
-        let value = with_authorized_service_mutation(
-            &state,
-            &space_id,
-            &identity,
-            Action::Update,
-            Some(ResourceRef {
-                kind: ResourceKind::Entry,
-                id: entry_id.clone(),
-                parent: None,
-            }),
-            |principal_id, principals| async move {
-                service
-                    .update_entry_authorized_for_principals(
-                        &space_id_for_write,
-                        &entry_id_for_write,
-                        &markdown,
-                        parent_revision_id.as_deref(),
-                        &principal_id.to_string(),
-                        &principals,
-                    )
-                    .await
-                    .map_err(ApiError::from_core)
-            },
-        )
-        .await?;
-        return Ok(Json(json!({
-            "id": entry_id,
-            "revision_id": value["revision_id"],
-            "change_id": value["change_id"],
-        })));
-    }
     // Structured path.
     if payload.fields.is_none() && payload.extra_attributes.is_none() {
         return Err(ApiError::new(
             StatusCode::UNPROCESSABLE_ENTITY,
-            "either markdown or structured fields is required",
+            "structured fields are required",
         ));
     }
     let entry_id_for_write = entry_id.clone();
@@ -13621,7 +13527,11 @@ mod authentication_regression_tests {
                     "operations": [{
                         "kind": "create",
                         "id": "production-auth-entry",
-                        "markdown": knowledge_markdown("Production auth", "created")
+                        "form": "Entry",
+                        "title": "Production auth",
+                        "tags": [],
+                        "fields": {"Body": "created"},
+                        "extra_attributes": {}
                     }],
                     "run_id": "run-2075-production-auth",
                     "message": "production auth create"
@@ -13644,7 +13554,11 @@ mod authentication_regression_tests {
                         "kind": "update",
                         "id": "production-auth-entry",
                         "version_token": create_revision,
-                        "markdown": knowledge_markdown("Production auth", "updated")
+                        "form": "Entry",
+                        "title": "Production auth",
+                        "tags": [],
+                        "fields": {"Body": "updated"},
+                        "extra_attributes": {}
                     }],
                     "run_id": "run-2075-production-auth",
                     "message": "production auth update"
@@ -13715,6 +13629,18 @@ mod authentication_regression_tests {
         let space_uid = state
             .service
             .create_space_for_principal("mcp-authenticated-route", owner, "MCP owner")
+            .await?;
+        let space_id = space_uid.to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
             .await?;
         state
             .identity
@@ -13792,7 +13718,7 @@ mod authentication_regression_tests {
                 scheme: "Bearer",
                 method: "tools/call",
                 name: Some("ugoite.save"),
-                params: json!({"name":"ugoite.save","arguments":{"content":"# Missing Run ID"}}),
+                params: json!({"name":"ugoite.save","arguments":{"form":"Entry","fields":{"Body":"Missing Run ID"}}}),
                 dpop: None,
             },
         )
@@ -13873,7 +13799,7 @@ mod authentication_regression_tests {
             "Bearer",
             "tools/call",
             Some("ugoite.save"),
-            json!({"name":"ugoite.save","arguments":{"content":"# MCP Created\n\ncreated by MCP"},"_meta":{"ugoite/runId":"konase-work-1"}}),
+            json!({"name":"ugoite.save","arguments":{"form":"Entry","title":"MCP Created","fields":{"Body":"created by MCP"}},"_meta":{"ugoite/runId":"konase-work-1"}}),
             None,
         )
         .await;
@@ -13893,7 +13819,7 @@ mod authentication_regression_tests {
             "Bearer",
             "tools/call",
             Some("ugoite.save"),
-            json!({"name":"ugoite.save","arguments":{"id":entry_id,"content":"---\nform: Entry\n---\n# MCP Updated\n\n## Body\nupdated by MCP"},"_meta":{"ugoite/runId":"konase-work-1"}}),
+            json!({"name":"ugoite.save","arguments":{"id":entry_id,"form":"Entry","title":"MCP Updated","fields":{"Body":"updated by MCP"}},"_meta":{"ugoite/runId":"konase-work-1"}}),
             None,
         )
         .await;
@@ -14598,12 +14524,16 @@ mod authentication_regression_tests {
             .expect("seeded Form SQL relation")
             .to_owned();
 
-        let seed_markdown = "---\nform: Entry\n---\n# Seeded\n\n## Body\nseeded-value\n";
         let (create_status, created) = client
             .json(
                 Method::POST,
                 &format!("/spaces/{space_id}/entries"),
-                Some(json!({"id": "dml-seed", "markdown": seed_markdown})),
+                Some(json!({
+                    "id": "dml-seed",
+                    "form": "Entry",
+                    "title": "Seeded",
+                    "fields": {"Body": "seeded-value"}
+                })),
             )
             .await?;
         assert_eq!(create_status, StatusCode::CREATED, "{created}");
@@ -14768,13 +14698,16 @@ mod authentication_regression_tests {
             ("search-b", "Harvest Beta"),
             ("search-c", "Harvest Gamma"),
         ] {
-            let markdown =
-                format!("---\nform: Entry\n---\n# {title}\n\n## Body\nharvest {title}\n");
             let (status, body) = client
                 .json(
                     Method::POST,
                     &format!("/spaces/{space_id}/entries"),
-                    Some(json!({"id": entry_id, "markdown": markdown})),
+                    Some(json!({
+                        "id": entry_id,
+                        "form": "Entry",
+                        "title": title,
+                        "fields": {"Body": format!("harvest {title}")}
+                    })),
                 )
                 .await?;
             assert_eq!(status, StatusCode::CREATED, "{body}");
@@ -14837,7 +14770,9 @@ mod authentication_regression_tests {
                 &format!("/spaces/{space_id}/entries"),
                 Some(json!({
                     "id": "history-seed",
-                    "markdown": "---\nform: Entry\n---\n# History\n\n## Body\nv1\n",
+                    "form": "Entry",
+                    "title": "History",
+                    "fields": {"Body": "v1"}
                 })),
             )
             .await?;
@@ -14852,9 +14787,9 @@ mod authentication_regression_tests {
                     Method::PUT,
                     &format!("/spaces/{space_id}/entries/history-seed"),
                     Some(json!({
-                        "markdown": format!(
-                            "---\nform: Entry\n---\n# History\n\n## Body\n{body}\n"
-                        ),
+                        "form": "Entry",
+                        "title": "History",
+                        "fields": {"Body": body},
                         "parent_revision_id": parent_revision,
                     })),
                 )
@@ -15185,10 +15120,14 @@ mod authentication_regression_tests {
             .await?;
         state
             .service
-            .create_entry(
+            .create_structured_entry_with_receipt(
                 &space_id,
                 "authorized-entry",
-                "---\nform: Entry\n---\n# Authorized\n\n## Body\nsecret keyword",
+                Some("Authorized".to_string()),
+                "Entry".to_string(),
+                Vec::new(),
+                BTreeMap::from([("Body".to_string(), json!("secret keyword"))]),
+                BTreeMap::new(),
                 &owner.to_string(),
             )
             .await?;
@@ -15299,10 +15238,14 @@ mod authentication_regression_tests {
             .await?;
         state
             .service
-            .create_entry(
+            .create_structured_entry_with_receipt(
                 &space_id,
                 "criteria-entry",
-                "---\nform: Entry\n---\n# Criteria\n\n## Body\nsecret keyword",
+                Some("Criteria".to_string()),
+                "Entry".to_string(),
+                Vec::new(),
+                BTreeMap::from([("Body".to_string(), json!("secret keyword"))]),
+                BTreeMap::new(),
                 &owner.to_string(),
             )
             .await?;
@@ -15824,7 +15767,13 @@ mod authentication_regression_tests {
                     .body(Body::from(
                         json!({
                             "id": "invalid-entry",
-                            "markdown": "---\nform: Entry\n---\n# Invalid\n\n## Body\nBody\n\n## test number\n0\n\n## ts\nnot-a-timestamp"
+                            "form": "Entry",
+                            "title": "Invalid",
+                            "fields": {
+                                "Body": "Body",
+                                "test number": 0,
+                                "ts": "not-a-timestamp"
+                            }
                         })
                         .to_string(),
                     ))?,
@@ -15845,7 +15794,9 @@ mod authentication_regression_tests {
                     .body(Body::from(
                         json!({
                             "id": "missing-form-entry",
-                            "markdown": "---\nform: Missing\n---\n# Missing form"
+                            "form": "Missing",
+                            "title": "Missing form",
+                            "fields": {}
                         })
                         .to_string(),
                     ))?,
@@ -15867,7 +15818,13 @@ mod authentication_regression_tests {
                     .body(Body::from(
                         json!({
                             "id": "created-entry",
-                            "markdown": "---\nform: Entry\n---\n# Created\n\n## Body\nBody\n\n## test number\n0\n\n## ts\n2026-08-21T10:48"
+                            "form": "Entry",
+                            "title": "Created",
+                            "fields": {
+                                "Body": "Body",
+                                "test number": 0,
+                                "ts": "2026-08-21T10:48"
+                            }
                         })
                         .to_string(),
                     ))?,
@@ -15885,17 +15842,21 @@ mod authentication_regression_tests {
         let invalid_update_response = route
             .clone()
             .oneshot(
-                Request::put(format!(
-                    "/spaces/{space_id}/entries/created-entry"
-                ))
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    json!({
-                        "markdown": "---\nform: Entry\n---\n# Created\n\n## Body\nBody\n\n## test number\n0\n\n## ts\nnot-a-timestamp",
-                        "parent_revision_id": created_revision_id
-                    })
-                    .to_string(),
-                ))?,
+                Request::put(format!("/spaces/{space_id}/entries/created-entry"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "form": "Entry",
+                            "title": "Created",
+                            "fields": {
+                                "Body": "Body",
+                                "test number": 0,
+                                "ts": "not-a-timestamp"
+                            },
+                            "parent_revision_id": created_revision_id
+                        })
+                        .to_string(),
+                    ))?,
             )
             .await
             .expect("invalid entry update response");
@@ -15927,7 +15888,7 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
-    async fn structured_entry_routes_share_the_draft_path_with_markdown() -> anyhow::Result<()> {
+    async fn structured_entry_routes_use_the_draft_path() -> anyhow::Result<()> {
         let state = AppState::new_for_tests("memory://server-structured-entry")?;
         let principal_id = Uuid::from_u128(1873);
         let space_id = state
@@ -15956,24 +15917,6 @@ mod authentication_regression_tests {
             .layer(Extension(content_identity(principal_id, space_uid)))
             .with_state(state.clone());
 
-        // Legacy and structured creates agree on durable content.
-        let legacy_response = route
-            .clone()
-            .oneshot(
-                Request::post(format!("/spaces/{space_id}/entries"))
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(
-                        json!({
-                            "id": "legacy-note",
-                            "markdown": "---\nform: Note\n---\n# Title\n\n## Body\nhello\n\n## Done\ntrue\n"
-                        })
-                        .to_string(),
-                    ))?,
-            )
-            .await
-            .expect("legacy create");
-        assert_eq!(legacy_response.status(), StatusCode::CREATED);
-
         let structured_response = route
             .clone()
             .oneshot(
@@ -15993,35 +15936,14 @@ mod authentication_regression_tests {
             .expect("structured create");
         assert_eq!(structured_response.status(), StatusCode::CREATED);
 
-        let legacy = state.service.get_entry(&space_id, "legacy-note").await?;
         let structured = state
             .service
             .get_entry(&space_id, "structured-note")
             .await?;
-        assert_eq!(legacy["title"], structured["title"]);
-        assert_eq!(legacy["sections"], structured["sections"]);
+        assert_eq!(structured["title"], "Title");
+        assert_eq!(structured["sections"]["Body"], "hello");
 
-        // Mixed payloads are rejected deterministically.
-        let mixed_response = route
-            .clone()
-            .oneshot(
-                Request::post(format!("/spaces/{space_id}/entries"))
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(
-                        json!({
-                            "id": "mixed-note",
-                            "markdown": "---\nform: Note\n---\n# T\n",
-                            "form": "Note",
-                            "fields": {"Body": "x"}
-                        })
-                        .to_string(),
-                    ))?,
-            )
-            .await
-            .expect("mixed create");
-        assert_eq!(mixed_response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-
-        // Structured update replaces fields like legacy update.
+        // Structured update replaces the complete field map.
         let current = state
             .service
             .get_entry(&space_id, "structured-note")
@@ -16143,14 +16065,6 @@ mod authentication_regression_tests {
                 .save_asset_with_media_type(&space_id, "report.pdf", b"report", "application/pdf")
                 .await?,
         )?;
-        let markdown = |entry_id: &str, thumbnail: Value, documents: Value| {
-            format!(
-                "---\nform: AssetReview\n---\n# {entry_id}\n\n## thumbnail\n{}\n\n## documents\n{}\n",
-                serde_json::to_string(&thumbnail).expect("thumbnail JSON"),
-                serde_json::to_string(&documents).expect("documents JSON"),
-            )
-        };
-
         let invalid_requests = [
             (
                 "invalid-asset-scalar",
@@ -16178,8 +16092,13 @@ mod authentication_regression_tests {
                     Request::post(format!("/spaces/{space_id}/entries"))
                         .header(header::CONTENT_TYPE, "application/json")
                         .body(Body::from(
-                            json!({"id": entry_id, "markdown": markdown(entry_id, thumbnail, documents)})
-                                .to_string(),
+                            json!({
+                            "id": entry_id,
+                            "form": "AssetReview",
+                            "title": entry_id,
+                            "fields": {"thumbnail": thumbnail, "documents": documents}
+                            })
+                            .to_string(),
                         ))?,
                 )
                 .await
@@ -16205,7 +16124,12 @@ mod authentication_regression_tests {
                     .body(Body::from(
                         json!({
                             "id": valid_id,
-                            "markdown": markdown(valid_id, reference.clone(), json!([reference.clone()]))
+                            "form": "AssetReview",
+                            "title": valid_id,
+                            "fields": {
+                                "thumbnail": reference.clone(),
+                                "documents": [reference.clone()]
+                            }
                         })
                         .to_string(),
                     ))?,
@@ -16224,7 +16148,12 @@ mod authentication_regression_tests {
                     .header(header::CONTENT_TYPE, "application/json")
                     .body(Body::from(
                         json!({
-                            "markdown": markdown(valid_id, reference.clone(), json!([Value::Null])),
+                            "form": "AssetReview",
+                            "title": valid_id,
+                            "fields": {
+                                "thumbnail": reference.clone(),
+                                "documents": [Value::Null]
+                            },
                             "parent_revision_id": revision_id
                         })
                         .to_string(),
@@ -16271,10 +16200,14 @@ mod authentication_regression_tests {
             .await?;
         state
             .service
-            .create_entry(
+            .create_structured_entry_with_receipt(
                 &space_id,
                 "attribution-delete-entry",
-                "---\nform: Entry\n---\n# Created\n\n## Body\nBody",
+                Some("Created".to_string()),
+                "Entry".to_string(),
+                Vec::new(),
+                BTreeMap::from([("Body".to_string(), json!("Body"))]),
+                BTreeMap::new(),
                 "creator",
             )
             .await?;
@@ -18134,8 +18067,29 @@ mod authentication_regression_tests {
         Ok(())
     }
 
-    fn knowledge_markdown(title: &str, body: &str) -> String {
-        format!("---\nform: Entry\n---\n# {title}\n\n## Body\n{body}")
+    fn knowledge_create_operation(id: &str, title: &str, body: &str) -> Value {
+        json!({
+            "kind": "create",
+            "id": id,
+            "form": "Entry",
+            "title": title,
+            "tags": [],
+            "fields": {"Body": body},
+            "extra_attributes": {}
+        })
+    }
+
+    fn knowledge_update_operation(id: &str, version_token: &str, title: &str, body: &str) -> Value {
+        json!({
+            "kind": "update",
+            "id": id,
+            "version_token": version_token,
+            "form": "Entry",
+            "title": title,
+            "tags": [],
+            "fields": {"Body": body},
+            "extra_attributes": {}
+        })
     }
 
     fn json_request(method: Method, uri: String, payload: Value) -> Request<Body> {
@@ -18152,7 +18106,11 @@ mod authentication_regression_tests {
     ) -> anyhow::Result<(StatusCode, Value)> {
         let status = response.status();
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
-        Ok((status, serde_json::from_slice(&body)?))
+        let body_text = String::from_utf8_lossy(&body);
+        let value = serde_json::from_slice(&body).map_err(|error| {
+            anyhow::anyhow!("status {status}, non-JSON body: {body_text:?}: {error}")
+        })?;
+        Ok((status, value))
     }
 
     async fn route_json(
@@ -18198,11 +18156,7 @@ mod authentication_regression_tests {
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
                 json!({
-                    "operations": [{
-                        "kind": "create",
-                        "id": "revert-entry",
-                        "markdown": knowledge_markdown("Revert entry", "created")
-                    }],
+                    "operations": [knowledge_create_operation("revert-entry", "Revert entry", "created")],
                     "run_id": "run-2037-revert-create",
                     "message": "create before selective revert"
                 }),
@@ -18222,12 +18176,12 @@ mod authentication_regression_tests {
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
                 json!({
-                    "operations": [{
-                        "kind": "update",
-                        "id": "revert-entry",
-                        "version_token": create_revision,
-                        "markdown": knowledge_markdown("Revert entry", "target update")
-                    }],
+                    "operations": [knowledge_update_operation(
+                        "revert-entry",
+                        &create_revision,
+                        "Revert entry",
+                        "target update",
+                    )],
                     "run_id": "run-2037-revert-target",
                     "message": "target selective update"
                 }),
@@ -18311,12 +18265,12 @@ mod authentication_regression_tests {
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
                 json!({
-                    "operations": [{
-                        "kind": "update",
-                        "id": "revert-entry",
-                        "version_token": inverse_revision,
-                        "markdown": knowledge_markdown("Revert entry", "changed later")
-                    }],
+                    "operations": [knowledge_update_operation(
+                        "revert-entry",
+                        &inverse_revision,
+                        "Revert entry",
+                        "changed later",
+                    )],
                     "run_id": "run-2037-revert-later",
                     "message": "later change after inverse"
                 }),
@@ -18376,11 +18330,7 @@ mod authentication_regression_tests {
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
                 json!({
-                    "operations": [{
-                        "kind": "create",
-                        "id": "undo-entry",
-                        "markdown": knowledge_markdown("Undo entry", "created")
-                    }],
+                    "operations": [knowledge_create_operation("undo-entry", "Undo entry", "created")],
                     "run_id": "run-2037-undo",
                     "message": "run create"
                 }),
@@ -18399,12 +18349,12 @@ mod authentication_regression_tests {
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
                 json!({
-                    "operations": [{
-                        "kind": "update",
-                        "id": "undo-entry",
-                        "version_token": create_revision,
-                        "markdown": knowledge_markdown("Undo entry", "updated")
-                    }],
+                    "operations": [knowledge_update_operation(
+                        "undo-entry",
+                        &create_revision,
+                        "Undo entry",
+                        "updated",
+                    )],
                     "run_id": "run-2037-undo",
                     "message": "run update"
                 }),
@@ -18497,16 +18447,8 @@ mod authentication_regression_tests {
                 format!("/spaces/{space_id}/apply"),
                 json!({
                     "operations": [
-                        {
-                            "kind": "create",
-                            "id": "partial-a",
-                            "markdown": knowledge_markdown("Partial A", "original A")
-                        },
-                        {
-                            "kind": "create",
-                            "id": "partial-b",
-                            "markdown": knowledge_markdown("Partial B", "original B")
-                        }
+                        knowledge_create_operation("partial-a", "Partial A", "original A"),
+                        knowledge_create_operation("partial-b", "Partial B", "original B")
                     ],
                     "run_id": run_id,
                     "message": "partial run create"
@@ -18527,12 +18469,12 @@ mod authentication_regression_tests {
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
                 json!({
-                    "operations": [{
-                        "kind": "update",
-                        "id": "partial-a",
-                        "version_token": entry_a_revision,
-                        "markdown": knowledge_markdown("Partial A", "changed externally")
-                    }],
+                    "operations": [knowledge_update_operation(
+                        "partial-a",
+                        &entry_a_revision,
+                        "Partial A",
+                        "changed externally",
+                    )],
                     "run_id": "run-2075-external",
                     "message": "external change blocks undo"
                 }),
@@ -18609,12 +18551,12 @@ mod authentication_regression_tests {
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
                 json!({
-                    "operations": [{
-                        "kind": "update",
-                        "id": "partial-a",
-                        "version_token": external_revision,
-                        "markdown": knowledge_markdown("Partial A", "original A")
-                    }],
+                    "operations": [knowledge_update_operation(
+                        "partial-a",
+                        &external_revision,
+                        "Partial A",
+                        "original A",
+                    )],
                     "run_id": "run-2075-conflict-resolution",
                     "message": "restore the expected reachable value"
                 }),
@@ -18696,11 +18638,11 @@ mod authentication_regression_tests {
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
                 json!({
-                    "operations": [{
-                        "kind": "create",
-                        "id": "apply-crud-entry",
-                        "markdown": knowledge_markdown("Apply CRUD", "created")
-                    }],
+                    "operations": [knowledge_create_operation(
+                        "apply-crud-entry",
+                        "Apply CRUD",
+                        "created",
+                    )],
                     "run_id": "run-2037-apply-crud",
                     "message": "apply create"
                 }),
@@ -18762,12 +18704,12 @@ mod authentication_regression_tests {
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
                 json!({
-                    "operations": [{
-                        "kind": "update",
-                        "id": "apply-crud-entry",
-                        "version_token": create_revision,
-                        "markdown": knowledge_markdown("Apply CRUD", "updated")
-                    }],
+                    "operations": [knowledge_update_operation(
+                        "apply-crud-entry",
+                        &create_revision,
+                        "Apply CRUD",
+                        "updated",
+                    )],
                     "run_id": "run-2037-apply-crud",
                     "message": "apply update"
                 }),
@@ -18949,11 +18891,11 @@ mod authentication_regression_tests {
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
                 json!({
-                    "operations": [{
-                        "kind": "create",
-                        "id": "pinned-entry",
-                        "markdown": knowledge_markdown("Pinned entry", "before update")
-                    }]
+                    "operations": [knowledge_create_operation(
+                        "pinned-entry",
+                        "Pinned entry",
+                        "before update",
+                    )]
                 }),
             ),
         )
@@ -18984,12 +18926,12 @@ mod authentication_regression_tests {
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
                 json!({
-                    "operations": [{
-                        "kind": "update",
-                        "id": "pinned-entry",
-                        "version_token": create_revision,
-                        "markdown": knowledge_markdown("Pinned entry", "after update")
-                    }]
+                    "operations": [knowledge_update_operation(
+                        "pinned-entry",
+                        &create_revision,
+                        "Pinned entry",
+                        "after update",
+                    )]
                 }),
             ),
         )
@@ -19091,11 +19033,11 @@ mod authentication_regression_tests {
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
                 json!({
-                    "operations": [{
-                        "kind": "create",
-                        "id": "diff-entry",
-                        "markdown": knowledge_markdown("Diff entry", "before update")
-                    }]
+                    "operations": [knowledge_create_operation(
+                        "diff-entry",
+                        "Diff entry",
+                        "before update",
+                    )]
                 }),
             ),
         )
@@ -19124,12 +19066,12 @@ mod authentication_regression_tests {
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
                 json!({
-                    "operations": [{
-                        "kind": "update",
-                        "id": "diff-entry",
-                        "version_token": create_revision,
-                        "markdown": knowledge_markdown("Diff entry", "after update")
-                    }]
+                    "operations": [knowledge_update_operation(
+                        "diff-entry",
+                        &create_revision,
+                        "Diff entry",
+                        "after update",
+                    )]
                 }),
             ),
         )
@@ -19209,11 +19151,11 @@ mod authentication_regression_tests {
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
                 json!({
-                    "operations": [{
-                        "kind": "create",
-                        "id": "apply-entry",
-                        "markdown": knowledge_markdown("Apply entry", "created")
-                    }],
+                    "operations": [knowledge_create_operation(
+                        "apply-entry",
+                        "Apply entry",
+                        "created",
+                    )],
                     "run_id": "run-2037",
                     "message": "public apply contract"
                 }),
@@ -19233,12 +19175,12 @@ mod authentication_regression_tests {
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
                 json!({
-                    "operations": [{
-                        "kind": "update",
-                        "id": "apply-entry",
-                        "version_token": version_token,
-                        "markdown": knowledge_markdown("Apply entry", "updated")
-                    }],
+                    "operations": [knowledge_update_operation(
+                        "apply-entry",
+                        &version_token,
+                        "Apply entry",
+                        "updated",
+                    )],
                     "run_id": "run-2037"
                 }),
             ))
@@ -19311,10 +19253,14 @@ mod authentication_regression_tests {
             .await?;
         state
             .service
-            .create_entry(
+            .create_structured_entry_with_receipt(
                 &space_id,
                 "approval-entry",
-                &knowledge_markdown("Approval entry", "to remove"),
+                Some("Approval entry".to_string()),
+                "Entry".to_string(),
+                Vec::new(),
+                BTreeMap::from([("Body".to_string(), json!("to remove"))]),
+                BTreeMap::new(),
                 &issuer_principal_id.to_string(),
             )
             .await?;

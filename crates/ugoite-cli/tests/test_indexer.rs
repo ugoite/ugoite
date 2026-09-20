@@ -19,6 +19,24 @@ fn ugoite_bin() -> std::path::PathBuf {
     path
 }
 
+fn create_structured_entry(
+    config_path: &std::path::Path,
+    entry_id: &str,
+    form: &str,
+    fields: &[(&str, &str)],
+) -> std::process::Output {
+    let mut command = Command::new(ugoite_bin());
+    command.args(["entry", "create", "--form", form]);
+    for (key, value) in fields {
+        command.arg("--field").arg(format!("{key}={value}"));
+    }
+    command
+        .arg(entry_id)
+        .env("UGOITE_CLI_CONFIG_PATH", config_path)
+        .output()
+        .expect("create structured entry")
+}
+
 fn setup_space_with_entries(
     dir: &tempfile::TempDir,
 ) -> (String, String, std::path::PathBuf, String) {
@@ -55,19 +73,16 @@ fn setup_space_with_entries(
         .expect("backend SQL relation")
         .to_string();
 
-    let content1 = "---\nform: Entry\n---\n# Alpha Entry\n\n## Body\n\nsome words here";
-    Command::new(ugoite_bin())
-        .args(["entry", "create", "--content", content1, &space_path, "e1"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create entry 1");
-
-    let content2 = "---\nform: Entry\n---\n# Beta Entry\n\n## Body\n\nmore words";
-    Command::new(ugoite_bin())
-        .args(["entry", "create", "--content", content2, &space_path, "e2"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create entry 2");
+    assert!(
+        create_structured_entry(&config_path, "e1", "Entry", &[("Body", "some words here")])
+            .status
+            .success()
+    );
+    assert!(
+        create_structured_entry(&config_path, "e2", "Entry", &[("Body", "more words")])
+            .status
+            .success()
+    );
 
     (root, space_path, config_path, relation)
 }
@@ -154,19 +169,14 @@ fn test_extract_properties_h2_sections() {
         .output()
         .expect("create form");
 
-    let content = "---\nform: Entry\n---\n# My Entry\n\n## Summary\n\nThis is the summary.\n\n## Status\n\nactive";
-    Command::new(ugoite_bin())
-        .args([
-            "entry",
-            "create",
-            "--content",
-            content,
-            &space_path,
-            "entry-h2",
-        ])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create entry");
+    assert!(create_structured_entry(
+        &config_path,
+        "entry-h2",
+        "Entry",
+        &[("Summary", "This is the summary."), ("Status", "active")],
+    )
+    .status
+    .success());
 
     let get_output = Command::new(ugoite_bin())
         .args(["entry", "get", &space_path, "entry-h2"])
@@ -208,19 +218,14 @@ fn test_extract_properties_precedence() {
         .output()
         .expect("create form");
 
-    let content = "---\nform: Entry\n---\n# Title Here\n\n## Section A\n\nValue A.";
-    Command::new(ugoite_bin())
-        .args([
-            "entry",
-            "create",
-            "--content",
-            content,
-            &space_path,
-            "entry-prec",
-        ])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create entry");
+    assert!(create_structured_entry(
+        &config_path,
+        "entry-prec",
+        "Entry",
+        &[("Section A", "Value A.")],
+    )
+    .status
+    .success());
 
     let get_output = Command::new(ugoite_bin())
         .args(["entry", "get", &space_path, "entry-prec"])
@@ -306,19 +311,14 @@ fn test_validate_properties_missing_required() {
         .output()
         .expect("create form");
 
-    let content = "---\nform: Entry\n---\ncontent without title section";
-    Command::new(ugoite_bin())
-        .args([
-            "entry",
-            "create",
-            "--content",
-            content,
-            &space_path,
-            "no-title-entry",
-        ])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create entry");
+    assert!(create_structured_entry(
+        &config_path,
+        "no-title-entry",
+        "Entry",
+        &[("Body", "content without title section")],
+    )
+    .status
+    .success());
 
     let output = Command::new(ugoite_bin())
         .args(["entry", "get", &space_path, "no-title-entry"])
@@ -357,20 +357,14 @@ fn test_validate_properties_valid() {
         .output()
         .expect("create form");
 
-    let content =
-        "---\nform: Entry\n---\n# Valid Entry\n\n## Body\n\nAll required sections present.";
-    Command::new(ugoite_bin())
-        .args([
-            "entry",
-            "create",
-            "--content",
-            content,
-            &space_path,
-            "valid-entry",
-        ])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create entry");
+    assert!(create_structured_entry(
+        &config_path,
+        "valid-entry",
+        "Entry",
+        &[("Body", "All required sections present.")],
+    )
+    .status
+    .success());
 
     let output = Command::new(ugoite_bin())
         .args(["entry", "get", &space_path, "valid-entry"])

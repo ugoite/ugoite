@@ -93,6 +93,7 @@ const storedEntry = (overrides: Record<string, unknown> = {}) => ({
   title: "Team notes",
   form: "Notes",
   content: "---\nform: Notes\n---\n\n# Team notes\n\n## Notes\nhello\n",
+  sections: { Notes: "hello" },
   revision_id: "rev-1",
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
@@ -149,6 +150,7 @@ describe("EntryDetailPane safety/recovery", () => {
       storedEntry({
         content:
           "---\nform: Notes\n---\n\n# Team notes\n\n## Notes\nteammate version\n",
+        sections: { Notes: "teammate version" },
         revision_id: "server-rev",
       }),
     );
