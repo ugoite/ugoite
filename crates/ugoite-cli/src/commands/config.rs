@@ -329,14 +329,20 @@ fn print_effective_current(
     }
     println!("Write target:");
     println!("  {}", write_target.display());
-    match effective.current_context.as_ref() {
+    let selected_context = explicit_context.or_else(|| {
+        effective
+            .current_context
+            .as_ref()
+            .map(|current| current.value.as_str())
+    });
+    match selected_context {
         None => {
             println!("Current context:");
             println!("  (none)");
         }
         Some(current) => {
             println!("Current context:");
-            println!("  {}", current.value);
+            println!("  {current}");
             if let Ok(resolved) = resolve_cli_context(effective, explicit_context) {
                 println!("Connection:");
                 println!(

@@ -1,7 +1,9 @@
 //! Integration tests for form schema management via ugoite-core.
 //! REQ-FORM-001, REQ-FORM-002
 
-use std::process::Command;
+use support::Command;
+
+mod support;
 
 fn ugoite_bin() -> std::path::PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {
@@ -26,11 +28,35 @@ fn setup_space_with_form(
     let config_path = dir.path().join("cli-config.json");
     let space_path = format!("{root}/spaces/{space_id}");
 
-    Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, space_id])
+    let init = Command::new(ugoite_bin())
+        .args(["--config", config_path.to_str().unwrap(), "config", "init"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
-        .expect("create space");
+        .expect("config init");
+    assert!(init.status.success());
+    let connection = Command::new(ugoite_bin())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "config",
+            "connection",
+            "set",
+            "local",
+            "--type",
+            "core",
+            "--root",
+            &root,
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("connection set");
+    assert!(connection.status.success());
+    let create = Command::new(ugoite_bin())
+        .args(["space", "create", space_id])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("space create");
+    assert!(create.status.success());
 
     let form_file = dir.path().join("entry-form.json");
     std::fs::write(
@@ -40,7 +66,7 @@ fn setup_space_with_form(
     .unwrap();
 
     Command::new(ugoite_bin())
-        .args(["form", "update", &space_path, form_file.to_str().unwrap()])
+        .args(["form", "update", form_file.to_str().unwrap()])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create form");
@@ -70,11 +96,11 @@ fn test_list_column_types() {
 #[test]
 fn test_form_get_after_update() {
     let dir = tempfile::tempdir().unwrap();
-    let (_root, space_path, config_path) = setup_space_with_form(&dir, "form-space");
+    let (_root, _space_path, config_path) = setup_space_with_form(&dir, "form-space");
 
     // Get the form that was just created
     let get_output = Command::new(ugoite_bin())
-        .args(["form", "get", &space_path, "Entry"])
+        .args(["form", "get", "Entry"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -93,7 +119,7 @@ fn test_form_get_after_update() {
 #[test]
 fn test_form_update_applies_column_change() {
     let dir = tempfile::tempdir().unwrap();
-    let (root, space_path, config_path) = setup_space_with_form(&dir, "form-space");
+    let (_root, _space_path, config_path) = setup_space_with_form(&dir, "form-space");
 
     // Add a second column to the form
     let form_file2 = dir.path().join("entry-form2.json");
@@ -104,7 +130,7 @@ fn test_form_update_applies_column_change() {
     .unwrap();
 
     let update_output = Command::new(ugoite_bin())
-        .args(["form", "update", &space_path, form_file2.to_str().unwrap()])
+        .args(["form", "update", form_file2.to_str().unwrap()])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -117,7 +143,7 @@ fn test_form_update_applies_column_change() {
 
     // Verify form still accessible
     let get_output = Command::new(ugoite_bin())
-        .args(["form", "get", &format!("{root}/spaces/form-space"), "Entry"])
+        .args(["form", "get", "Entry"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");

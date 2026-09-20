@@ -83,17 +83,34 @@ pub async fn execute_for_target(
             ..
         } => (base.clone(), connection.clone(), credential.clone()),
     };
+    execute_for_connection(
+        &base,
+        &connection,
+        credential.as_deref(),
+        operation,
+        arguments,
+        body,
+    )
+    .await
+}
+
+/// Execute a remote operation for a named connection before a Space context
+/// exists. This is used by connection-scoped commands such as `space create`
+/// and `space list`; it still resolves the credential by the named connection
+/// and never falls back to an unscoped session.
+pub async fn execute_for_connection(
+    base_url: &str,
+    connection: &str,
+    credential: Option<&str>,
+    operation: &str,
+    arguments: Value,
+    body: Option<Value>,
+) -> Result<Value> {
     let prepared = prepare_request(operation, &arguments, body.as_ref())?;
     if prepared.body_kind == RequestBodyKind::Multipart {
         bail!("operation {operation} requires the multipart transport");
     }
-    execute_prepared_for_target(
-        &base,
-        Some(connection.as_str()),
-        credential.as_deref(),
-        prepared,
-    )
-    .await
+    execute_prepared_for_target(base_url, Some(connection), credential, prepared).await
 }
 
 /// Bytes variant of [`execute_for_target`] with the same safety boundary.
@@ -314,7 +331,7 @@ pub(crate) async fn named_session_for_target(
             "Credential profile {name:?} belongs to a different server; run `ugoite auth login --connection {connection_name} --credential {name}`"
         );
     }
-    // Refresh expired tokens (same policy as the legacy singleton), then
+    // Refresh expired tokens using the named credential policy, then
     // persist the rotation back to the named profile.
     if session.expires_at <= chrono::Utc::now().timestamp() + 30 {
         if let Some(refreshed) = crate::commands::auth::refresh_session(&session, base_url).await? {

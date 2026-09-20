@@ -8,9 +8,12 @@
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::process::{Command, Output};
+use std::process::Output;
 use std::thread;
 use std::time::{Duration, Instant};
+use support::Command;
+
+mod support;
 
 fn ugoite_bin() -> std::path::PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {

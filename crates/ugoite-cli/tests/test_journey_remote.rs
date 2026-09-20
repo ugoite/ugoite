@@ -1108,26 +1108,26 @@ async fn test_parity_remote_unauthenticated_mutation_rejected_without_mutation()
     create_parity_entry(fixture, "parity-auth", &v1).await;
 
     let bare_dir = tempfile::tempdir().expect("bare config directory");
-    let bare_config = bare_dir.path().join("cli-endpoints.json");
+    let bare_config = bare_dir.path().join("config.toml");
     let api_url = {
         let raw = std::fs::read_to_string(&fixture.config_path).expect("read endpoint config");
-        let parsed: serde_json::Value = serde_json::from_str(&raw).expect("parse endpoint config");
+        let parsed: toml::Value = toml::from_str(&raw).expect("parse canonical config");
         parsed
-            .get("api_url")
+            .get("connections")
+            .and_then(|connections| connections.get("remote-api"))
+            .and_then(|connection| connection.get("url"))
             .and_then(|url| url.as_str())
-            .expect("api_url")
+            .expect("remote-api URL")
             .to_string()
     };
+    let bare_space_uid = fixture.space_id.parse::<uuid::Uuid>().expect("Space UID");
     std::fs::write(
         &bare_config,
-        serde_json::to_vec_pretty(&serde_json::json!({
-            "mode": "api",
-            "backend_url": api_url,
-            "api_url": api_url,
-        }))
-        .expect("serialize bare endpoint config"),
+        format!(
+            "version = 1\ncurrent_context = \"bare\"\n\n[connections.remote-api]\ntype = \"api\"\nurl = \"{api_url}\"\n\n[contexts.bare]\nconnection = \"remote-api\"\nspace_uid = \"{bare_space_uid}\"\n"
+        ),
     )
-    .expect("write bare endpoint config");
+    .expect("write bare canonical config");
 
     let v2 = parity_markdown("ParityRemoteForm", "Parity auth v2", Some("ok"), "v2");
     let markdown_arg = format!("--markdown={v2}");

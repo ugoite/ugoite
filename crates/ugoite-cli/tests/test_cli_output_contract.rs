@@ -10,7 +10,10 @@
 //! - Help examples are parse smoke fixtures.
 
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
+use support::Command;
+
+mod support;
 
 fn ugoite_bin() -> std::path::PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {
@@ -222,13 +225,13 @@ fn representative_help_and_invalid_arguments_are_plain_when_piped() {
     let help = run(&config_path, &["--help"]);
     assert_success(&help, "top-level help");
     let help_text = String::from_utf8_lossy(&help.stdout);
-    assert!(help_text.contains("Quick start (local-first / core mode):"));
-    assert!(help_text.contains("ugoite space list ."));
+    assert!(help_text.contains("Quick start:"));
+    assert!(help_text.contains("ugoite config init"));
     assert!(!help.stdout.contains(&0x1b), "piped help must be plain");
 
     let current = run(&config_path, &["config", "current"]);
     assert_success(&current, "config current");
-    assert!(String::from_utf8_lossy(&current.stdout).starts_with("Current endpoint mode: core\n"));
+    assert!(String::from_utf8_lossy(&current.stdout).contains("Config sources:"));
     assert!(
         !current.stdout.contains(&0x1b),
         "piped config must be plain"
@@ -472,9 +475,9 @@ fn explicit_stdin_file_ingress_creates_entry() {
     assert_eq!(stdout["id"], "stdin-1");
 }
 
-/// E3: help examples are executable documentation, not prose.
+/// E3: help exposes canonical structured authoring and context selection.
 #[test]
-fn help_examples_are_present_and_local_example_runs() {
+fn help_exposes_canonical_entry_inputs() {
     for args in [
         vec!["entry", "create", "--help"],
         vec!["entry", "update", "--help"],
@@ -485,33 +488,8 @@ fn help_examples_are_present_and_local_example_runs() {
             .expect("help");
         assert!(output.status.success());
         let text = String::from_utf8_lossy(&output.stdout).to_string();
-        // PR-04 help contract: context-first tiers with labeled compatibility.
-        assert!(text.contains("Examples"), "help: {text}");
-        assert!(text.contains("# Selected context"), "help: {text}");
-        assert!(text.contains("--context NAME"), "help: {text}");
-        assert!(text.contains("# 0.1.x compatibility"), "help: {text}");
-        assert!(text.contains("--file"), "help: {text}");
+        assert!(text.contains("--context <NAME>"), "help: {text}");
+        assert!(text.contains("--form <FORM>"), "help: {text}");
+        assert!(text.contains("--field <KEY=VALUE>"), "help: {text}");
     }
-
-    // The documented core-mode create runs on a temp Space.
-    let dir = tempfile::tempdir().unwrap();
-    let (root, config_path) = setup_space_with_form(&dir, "help-space");
-    let space_path = format!("{root}/spaces/help-space");
-    let output = Command::new(ugoite_bin())
-        .args([
-            "entry",
-            "create",
-            &space_path,
-            "help-1",
-            "--content",
-            "---\nform: Entry\n---\n# Help\n\n## Body\n\nok\n",
-        ])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("help example create");
-    assert!(
-        output.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
 }

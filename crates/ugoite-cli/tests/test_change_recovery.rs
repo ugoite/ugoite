@@ -26,9 +26,46 @@ fn ugoite_bin() -> std::path::PathBuf {
 }
 
 fn run_cli(config: &std::path::Path, args: &[&str]) -> Output {
-    Command::new(ugoite_bin())
-        .args(args)
-        .env("UGOITE_CLI_CONFIG_PATH", config)
+    let bin = ugoite_bin();
+    if !config.exists() {
+        let initialized = Command::new(&bin)
+            .args(["--config", config.to_str().unwrap(), "config", "init"])
+            .output()
+            .expect("initialize canonical config");
+        assert!(initialized.status.success(), "config init failed");
+        let configured = Command::new(&bin)
+            .args([
+                "--config",
+                config.to_str().unwrap(),
+                "config",
+                "connection",
+                "set",
+                "local",
+                "--type",
+                "core",
+                "--root",
+                config.parent().unwrap().to_str().unwrap(),
+            ])
+            .output()
+            .expect("configure canonical connection");
+        assert!(configured.status.success(), "connection set failed");
+    }
+    let mut canonical = vec![
+        "--config".to_string(),
+        config.to_string_lossy().into_owned(),
+    ];
+    let mut index = 0;
+    while index < args.len() {
+        match args[index] {
+            "create-space" => canonical.extend(["space".into(), "create".into()]),
+            "--root" => index += 1,
+            arg if arg.contains("/spaces/") => {}
+            arg => canonical.push(arg.to_string()),
+        }
+        index += 1;
+    }
+    Command::new(bin)
+        .args(canonical)
         .output()
         .expect("run ugoite")
 }
@@ -280,38 +317,70 @@ fn change_recovery_remote_uses_canonical_routes() {
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("cli-config.json");
     let set_output = Command::new(ugoite_bin())
-        .args([
-            "config",
-            "set",
-            "--mode",
-            "backend",
-            "--backend-url",
-            &base_url,
-        ])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .args(["--config", config_path.to_str().unwrap(), "config", "init"])
         .output()
-        .expect("config set");
+        .expect("config init");
     assert!(set_output.status.success());
 
     let remote_space_uid = uuid::Uuid::now_v7().to_string();
-    let output = run_cli(&config_path, &["change", "list", &remote_space_uid]);
+    let add_output = Command::new(ugoite_bin())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "config",
+            "connection",
+            "set",
+            "local",
+            "--type",
+            "backend",
+            "--url",
+            &base_url,
+        ])
+        .output()
+        .expect("connection set");
+    assert!(add_output.status.success());
+    let context_output = Command::new(ugoite_bin())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "context",
+            "add",
+            "remote",
+            "--connection",
+            "local",
+            "--space",
+            &remote_space_uid,
+        ])
+        .output()
+        .expect("context add");
+    assert!(context_output.status.success());
+    let use_output = Command::new(ugoite_bin())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "context",
+            "use",
+            "remote",
+        ])
+        .output()
+        .expect("context use");
+    assert!(use_output.status.success());
+
+    let output = run_cli(&config_path, &["change", "list"]);
     assert!(
         output.status.success(),
         "remote change list: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let output = run_cli(
-        &config_path,
-        &["change", "revert", &remote_space_uid, "change-1"],
-    );
+    let output = run_cli(&config_path, &["change", "revert", "change-1"]);
     assert!(
         output.status.success(),
         "remote change revert: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let output = run_cli(&config_path, &["run", "undo", &remote_space_uid, "run-1"]);
+    let output = run_cli(&config_path, &["run", "undo", "run-1"]);
     assert!(
         output.status.success(),
         "remote run undo: {}",

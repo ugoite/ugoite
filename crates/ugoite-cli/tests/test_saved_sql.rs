@@ -1,7 +1,9 @@
 //! Integration tests for saved SQL queries.
 //! REQ-API-006, REQ-API-007
 
-use std::process::Command;
+use support::Command;
+
+mod support;
 
 fn ugoite_bin() -> std::path::PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {

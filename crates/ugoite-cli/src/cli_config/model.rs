@@ -191,7 +191,7 @@ fn validate_context_fields(context: &ContextConfig) -> Result<()> {
     Ok(())
 }
 
-/// Shared endpoint rule with the legacy config path: `https://` always OK,
+/// Shared endpoint rule: `https://` is always OK,
 /// `http://` only for loopback development hosts.
 ///
 /// Fail-closed base-endpoint rules: non-empty host, no embedded userinfo, no

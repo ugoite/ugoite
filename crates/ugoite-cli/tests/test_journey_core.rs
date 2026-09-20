@@ -26,9 +26,53 @@ fn ugoite_bin() -> std::path::PathBuf {
 }
 
 fn run_cli(config: &std::path::Path, args: &[&str]) -> Output {
-    Command::new(ugoite_bin())
-        .args(args)
-        .env("UGOITE_CLI_CONFIG_PATH", config)
+    let bin = ugoite_bin();
+    if !config.exists() && args.first().copied() != Some("config") {
+        let initialized = Command::new(&bin)
+            .args(["--config", config.to_str().unwrap(), "config", "init"])
+            .output()
+            .expect("initialize canonical config");
+        assert!(initialized.status.success(), "config init failed");
+        let configured = Command::new(&bin)
+            .args([
+                "--config",
+                config.to_str().unwrap(),
+                "config",
+                "connection",
+                "set",
+                "local",
+                "--type",
+                "core",
+                "--root",
+                config.parent().unwrap().to_str().unwrap(),
+            ])
+            .output()
+            .expect("configure canonical core connection");
+        assert!(configured.status.success(), "connection set failed");
+    }
+    let mut canonical = vec![
+        "--config".to_string(),
+        config.to_string_lossy().into_owned(),
+    ];
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index];
+        if arg == "create-space" {
+            canonical.extend(["space".to_string(), "create".to_string()]);
+        } else if arg == "--root" {
+            index += 1;
+        } else if arg.contains("/spaces/") {
+            // Old test invocations carried the Space path. The product CLI
+            // now resolves it from the current canonical context.
+        } else if arg == "session-metadata" {
+            canonical.push("session-get".to_string());
+        } else {
+            canonical.push(arg.to_string());
+        }
+        index += 1;
+    }
+    Command::new(bin)
+        .args(canonical)
         .output()
         .expect("run ugoite")
 }

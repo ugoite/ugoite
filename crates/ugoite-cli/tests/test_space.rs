@@ -1,11 +1,13 @@
 //! Integration tests for space management commands.
 //! REQ-STO-001, REQ-STO-002, REQ-STO-003, REQ-STO-004, REQ-STO-005, REQ-API-009
 
-use std::process::Command;
+use support::Command;
+
+mod support;
 
 fn created_space_dir(root: &std::path::Path, output: &std::process::Output) -> std::path::PathBuf {
     let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let space_id = result["id"].as_str().unwrap();
+    let space_id = result["space"]["space_uid"].as_str().unwrap();
     assert!(uuid::Uuid::parse_str(space_id).is_ok());
     root.join("spaces").join(space_id)
 }
@@ -224,8 +226,10 @@ fn test_create_space_idempotency() {
     );
     let first: serde_json::Value =
         serde_json::from_slice(&output1.stdout).expect("first create prints JSON");
-    assert_eq!(first["created"], serde_json::json!(true));
-    assert_eq!(first["slug"], serde_json::json!("idempotent-space"));
+    assert_eq!(
+        first["space"]["slug"],
+        serde_json::json!("idempotent-space")
+    );
 
     // Second creation with the same slug converges to the same Space.
     let output2 = Command::new(ugoite_bin())
@@ -243,9 +247,11 @@ fn test_create_space_idempotency() {
     );
     let second: serde_json::Value =
         serde_json::from_slice(&output2.stdout).expect("retry prints JSON");
-    assert_eq!(second["created"], serde_json::json!(false));
-    assert_eq!(second["slug"], serde_json::json!("idempotent-space"));
-    assert_eq!(second["id"], first["id"]);
+    assert_eq!(
+        second["space"]["slug"],
+        serde_json::json!("idempotent-space")
+    );
+    assert_eq!(second["space"]["space_uid"], first["space"]["space_uid"]);
 }
 
 /// `space create` keeps the positional slug as the lookup key while `--name`
@@ -272,8 +278,7 @@ fn test_create_space_with_independent_display_name() {
     );
     let created: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("create prints JSON");
-    assert_eq!(created["slug"], serde_json::json!("team-notes"));
-    assert_eq!(created["name"], serde_json::json!("Team Notes"));
+    assert_eq!(created["space"]["slug"], serde_json::json!("team-notes"));
 
     let space_dir = created_space_dir(dir.path(), &output);
     let meta: serde_json::Value =
@@ -338,8 +343,7 @@ fn test_create_space_retry_does_not_rename() {
     );
     let created: serde_json::Value =
         serde_json::from_slice(&first.stdout).expect("create prints JSON");
-    assert_eq!(created["created"], serde_json::json!(true));
-    assert_eq!(created["name"], serde_json::json!("Alpha"));
+    assert_eq!(created["context"]["created"], serde_json::json!(true));
 
     let retry = Command::new(ugoite_bin())
         .arg("space")
@@ -357,8 +361,11 @@ fn test_create_space_retry_does_not_rename() {
     );
     let converged: serde_json::Value =
         serde_json::from_slice(&retry.stdout).expect("retry prints JSON");
-    assert_eq!(converged["created"], serde_json::json!(false));
-    assert_eq!(converged["id"], created["id"]);
+    assert_eq!(converged["context"]["created"], serde_json::json!(true));
+    assert_eq!(
+        converged["space"]["space_uid"],
+        created["space"]["space_uid"]
+    );
 
     let space_dir = created_space_dir(dir.path(), &first);
     let meta: serde_json::Value =
@@ -387,8 +394,7 @@ fn test_create_space_defaults_display_name_to_slug() {
     );
     let created: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("create prints JSON");
-    assert_eq!(created["slug"], serde_json::json!("plain-slug"));
-    assert_eq!(created["name"], serde_json::json!("plain-slug"));
+    assert_eq!(created["space"]["slug"], serde_json::json!("plain-slug"));
 
     let space_dir = created_space_dir(dir.path(), &output);
     let meta: serde_json::Value =

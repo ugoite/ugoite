@@ -3,9 +3,11 @@
 
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use support::Command;
+
+mod support;
 
 fn ugoite_bin() -> PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {

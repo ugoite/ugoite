@@ -8,10 +8,13 @@
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::process::{Command, Output};
+use std::process::Output;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
+use support::Command;
+
+mod support;
 
 fn ugoite_bin() -> std::path::PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {
@@ -300,9 +303,9 @@ fn sql_session_lifecycle_in_core_mode() {
     let metadata = stdout_json(
         &run_cli(
             &config_path,
-            &["sql", "session-metadata", &space_path, &session_id],
+            &["sql", "session-get", &space_path, &session_id],
         ),
-        "session-metadata",
+        "session-get",
     );
     assert_eq!(metadata["id"].as_str(), Some(session_id.as_str()));
 

@@ -25,7 +25,7 @@ use crate::http;
 
 /// Connection-bound step-up handoff for Space-bound remote mutations.
 ///
-/// Same journey as [`execute_with_step_up`], but every leg (initial intent,
+/// Same journey as the connection-bound remote mutation, but every leg (initial intent,
 /// `auth.step_up.start`, `auth.step_up.status` polling, and the single retry)
 /// resolves credentials through the [`crate::cli_config::SpaceTarget`]
 /// connection boundary: a context-first remote uses exactly its named
@@ -37,13 +37,92 @@ pub async fn execute_with_step_up_for_target(
     body: Option<Value>,
     space_id: Option<&str>,
 ) -> Result<Value> {
-    match http::execute_for_target(target, operation, arguments.clone(), body.clone()).await {
+    execute_with_step_up_internal(
+        StepUpTarget::Space(target),
+        operation,
+        arguments,
+        body,
+        space_id,
+    )
+    .await
+}
+
+/// Connection-bound step-up handoff for a remote operation that does not yet
+/// have a Space context, such as creating the first Space on a connection.
+pub async fn execute_with_step_up_for_connection(
+    base_url: &str,
+    connection: &str,
+    credential: Option<&str>,
+    operation: &str,
+    arguments: Value,
+    body: Option<Value>,
+    space_id: Option<&str>,
+) -> Result<Value> {
+    execute_with_step_up_internal(
+        StepUpTarget::Connection {
+            base_url,
+            connection,
+            credential,
+        },
+        operation,
+        arguments,
+        body,
+        space_id,
+    )
+    .await
+}
+
+enum StepUpTarget<'a> {
+    Space(&'a crate::cli_config::SpaceTarget),
+    Connection {
+        base_url: &'a str,
+        connection: &'a str,
+        credential: Option<&'a str>,
+    },
+}
+
+async fn execute_step_up_target(
+    target: &StepUpTarget<'_>,
+    operation: &str,
+    arguments: Value,
+    body: Option<Value>,
+) -> Result<Value> {
+    match target {
+        StepUpTarget::Space(target) => {
+            http::execute_for_target(target, operation, arguments, body).await
+        }
+        StepUpTarget::Connection {
+            base_url,
+            connection,
+            credential,
+        } => {
+            http::execute_for_connection(
+                base_url,
+                connection,
+                *credential,
+                operation,
+                arguments,
+                body,
+            )
+            .await
+        }
+    }
+}
+
+async fn execute_with_step_up_internal(
+    target: StepUpTarget<'_>,
+    operation: &str,
+    arguments: Value,
+    body: Option<Value>,
+    space_id: Option<&str>,
+) -> Result<Value> {
+    match execute_step_up_target(&target, operation, arguments.clone(), body.clone()).await {
         Ok(value) => return Ok(value),
         Err(error) if !recent_passkey_required(&error) => return Err(error),
         Err(_) => {}
     }
-    let started = http::execute_for_target(
-        target,
+    let started = execute_step_up_target(
+        &target,
         "auth.step_up.start",
         json!({}),
         Some(json!({"operation": operation, "space_id": space_id})),
@@ -92,8 +171,8 @@ pub async fn execute_with_step_up_for_target(
         // Unknown, expired, and consumed challenges fail closed with
         // 403 STEP_UP_INVALID (no 404 branch): polling ends terminally and
         // the caller starts a new challenge for a retry.
-        let status = match http::execute_for_target(
-            target,
+        let status = match execute_step_up_target(
+            &target,
             "auth.step_up.status",
             json!({"challenge_id": challenge_id}),
             None,
@@ -118,7 +197,7 @@ pub async fn execute_with_step_up_for_target(
     if let Some(object) = retry_arguments.as_object_mut() {
         object.insert("step_up".to_string(), Value::String(challenge_id));
     }
-    http::execute_for_target(target, operation, retry_arguments, body).await
+    execute_step_up_target(&target, operation, retry_arguments, body).await
 }
 
 /// Reports whether a remote failure is the fresh-ceremony gate (and only
@@ -150,110 +229,6 @@ fn step_up_string(field: &Value, name: &str) -> Result<String> {
         .filter(|value| !value.trim().is_empty())
         .map(str::to_string)
         .with_context(|| format!("step-up challenge response is missing {name}"))
-}
-
-/// Executes a remote Space mutation, completing the browser step-up handoff
-/// when the server requires fresh human presence.
-///
-/// Legacy explicit-Space transport: resolves credentials through the 0.1.x
-/// global session lookup. Space-bound callers with a resolved
-/// [`crate::cli_config::SpaceTarget`] must use
-/// [`execute_with_step_up_for_target`] instead so context-first remotes stay
-/// on the connection-bound credential boundary (no implicit global fallback).
-///
-/// TTY callers get guidance plus polling and one automatic retry of the
-/// identical intent with the approved challenge. Non-TTY callers get a
-/// deterministic `STEP_UP_REQUIRED` error carrying the verification URI and
-/// expiry instead of an interactive prompt.
-pub async fn execute_with_step_up(
-    base_url: &str,
-    operation: &str,
-    arguments: Value,
-    body: Option<Value>,
-    space_id: Option<&str>,
-) -> Result<Value> {
-    match http::execute(base_url, operation, arguments.clone(), body.clone()).await {
-        Ok(value) => return Ok(value),
-        Err(error) if !recent_passkey_required(&error) => return Err(error),
-        Err(_) => {}
-    }
-    let started = http::execute(
-        base_url,
-        "auth.step_up.start",
-        json!({}),
-        Some(json!({"operation": operation, "space_id": space_id})),
-    )
-    .await
-    .context("start step-up challenge for the remote mutation")?;
-    let challenge_id = step_up_string(&started["challenge_id"], "challenge_id")?;
-    let verification_uri = step_up_string(&started["verification_uri"], "verification_uri")?;
-    // The server returns both `verification_uri` and
-    // `verification_uri_complete`; prefer the complete handoff URI and fall
-    // back to the plain URI when the server omits it.
-    let verification_uri_complete = started["verification_uri_complete"]
-        .as_str()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or(&verification_uri)
-        .to_string();
-    let expires_in = started["expires_in"].as_u64().unwrap_or(600);
-    let interval = started["interval"].as_u64().unwrap_or(5).clamp(1, 60);
-
-    if !std::io::stdout().is_terminal() {
-        eprintln!(
-            "{}",
-            json!({
-                "code": "STEP_UP_REQUIRED",
-                "operation": operation,
-                "verification_uri": verification_uri,
-                "verification_uri_complete": verification_uri_complete,
-                "expires_in": expires_in,
-                "challenge_id": challenge_id,
-            })
-        );
-        bail!(
-            "remote mutation requires a fresh Passkey ceremony (STEP_UP_REQUIRED): open {verification_uri_complete} in a signed-in browser within {expires_in}s, approve the step-up, then retry"
-        );
-    }
-
-    eprintln!("Remote mutation needs a fresh Passkey ceremony to continue.");
-    eprintln!("Open {verification_uri_complete} in a signed-in browser and approve the step-up,");
-    eprintln!("then return here: this command retries the identical mutation once.");
-    let deadline = Instant::now() + Duration::from_secs(expires_in.min(600));
-    loop {
-        if Instant::now() >= deadline {
-            bail!("step-up challenge expired before browser approval");
-        }
-        tokio::time::sleep(Duration::from_secs(interval)).await;
-        // Unknown, expired, and consumed challenges fail closed with
-        // 403 STEP_UP_INVALID (no 404 branch): polling ends terminally and
-        // the caller starts a new challenge for a retry.
-        let status = match http::execute(
-            base_url,
-            "auth.step_up.status",
-            json!({"challenge_id": challenge_id}),
-            None,
-        )
-        .await
-        {
-            Ok(status) => status,
-            Err(error) if step_up_invalid(&error) => {
-                bail!("step-up challenge is no longer available")
-            }
-            Err(error) => return Err(error).context("check step-up challenge status"),
-        };
-        match status["status"].as_str().unwrap_or_default() {
-            "approved" => break,
-            "pending" => continue,
-            "expired" => bail!("step-up challenge expired before browser approval"),
-            "consumed" => bail!("step-up challenge was already consumed"),
-            _ => bail!("step-up challenge is no longer available"),
-        }
-    }
-    let mut retry_arguments = arguments;
-    if let Some(object) = retry_arguments.as_object_mut() {
-        object.insert("step_up".to_string(), Value::String(challenge_id));
-    }
-    http::execute(base_url, operation, retry_arguments, body).await
 }
 
 #[cfg(test)]
