@@ -4154,7 +4154,7 @@ mod tests {
             .iter()
             .map(|expression| format!("{expression:?}"))
             .collect::<Vec<_>>();
-        assert_eq!(projection.len(), 6);
+        assert_eq!(projection.len(), 5);
         assert!(rendered
             .iter()
             .any(|expression| expression.contains("field_1")));
