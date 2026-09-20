@@ -8101,7 +8101,7 @@ mod tests {
         let space_uri = source_space.to_string_lossy().into_owned();
         let space = UgoiteService::new(&space_uri)?;
         space.create_space("drill-space").await?;
-        let (entry, _) = space
+        let (mut entry, _) = space
             .create_structured_entry_with_receipt(
                 "drill-space",
                 "drill-entry",
@@ -8116,6 +8116,12 @@ mod tests {
                 "drill-owner",
             )
             .await?;
+        // The structured service receipt is returned on mutation, while the
+        // persisted/read path intentionally exposes the Entry only.
+        entry
+            .as_object_mut()
+            .expect("structured create returns an object")
+            .remove("change_id");
         let entries_before = space.list_entries("drill-space").await?;
         let health_before = space.space_health("drill-space", &[]).await?;
 
