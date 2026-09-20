@@ -3508,18 +3508,30 @@ fn revision_batch_from_values(
     // preserve their physical names and values, but do not assign Entry
     // semantics to any particular name.
     let known_ids = known_revision_field_ids(form);
-    let mut known_position = 0usize;
+    let mut array_ids = vec![
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 17, 19, 20, 21, 22, 23, 24, 25, 26,
+    ];
+    array_ids.extend(form.fields.iter().map(|field| field.id.get()));
+    let mut arrays_by_id = array_ids
+        .into_iter()
+        .zip(arrays)
+        .collect::<BTreeMap<_, _>>();
+    let mut arrays = Vec::with_capacity(table_schema.as_struct().fields().len());
     for (iceberg_field, field) in table_schema
         .as_struct()
         .fields()
         .iter()
         .zip(schema.fields())
     {
-        if known_ids.contains(&iceberg_field.id) {
-            known_position += 1;
+        if let Some(array) = arrays_by_id.remove(&iceberg_field.id) {
+            arrays.push(array);
         } else {
-            arrays.insert(known_position, legacy_field_array(field, revisions)?);
+            debug_assert!(!known_ids.contains(&iceberg_field.id));
+            arrays.push(legacy_field_array(field, revisions)?);
         }
+    }
+    if !arrays_by_id.is_empty() {
+        bail!("revision batch contains fields absent from the physical schema");
     }
     Ok(RecordBatch::try_new(schema, arrays)?)
 }
@@ -3536,6 +3548,7 @@ fn legacy_field_array(
     field: &arrow_schema::Field,
     revisions: &[EntryRevision],
 ) -> Result<ArrayRef> {
+    let required = !field.is_nullable();
     let values = revisions
         .iter()
         .map(|revision| revision.extra_attributes.get(field.name()))
@@ -3544,13 +3557,21 @@ fn legacy_field_array(
         arrow_schema::DataType::Utf8 => Arc::new(StringArray::from(
             values
                 .iter()
-                .map(|value| value.and_then(|value| value.as_str()))
+                .map(|value| {
+                    value
+                        .and_then(|value| value.as_str())
+                        .or_else(|| required.then_some(""))
+                })
                 .collect::<Vec<_>>(),
         )),
         arrow_schema::DataType::Boolean => Arc::new(BooleanArray::from(
             values
                 .iter()
-                .map(|value| value.and_then(serde_json::Value::as_bool))
+                .map(|value| {
+                    value
+                        .and_then(serde_json::Value::as_bool)
+                        .or_else(|| required.then_some(false))
+                })
                 .collect::<Vec<_>>(),
         )),
         arrow_schema::DataType::Int32 => Arc::new(Int32Array::from(
@@ -3560,27 +3581,47 @@ fn legacy_field_array(
                     value
                         .and_then(serde_json::Value::as_i64)
                         .and_then(|v| i32::try_from(v).ok())
+                        .or_else(|| required.then_some(0))
                 })
                 .collect::<Vec<_>>(),
         )),
         arrow_schema::DataType::Int64 => Arc::new(Int64Array::from(
             values
                 .iter()
-                .map(|value| value.and_then(serde_json::Value::as_i64))
+                .map(|value| {
+                    value
+                        .and_then(serde_json::Value::as_i64)
+                        .or_else(|| required.then_some(0))
+                })
                 .collect::<Vec<_>>(),
         )),
         arrow_schema::DataType::Float32 => Arc::new(Float32Array::from(
             values
                 .iter()
-                .map(|value| value.and_then(serde_json::Value::as_f64).map(|v| v as f32))
+                .map(|value| {
+                    value
+                        .and_then(serde_json::Value::as_f64)
+                        .map(|v| v as f32)
+                        .or_else(|| required.then_some(0.0))
+                })
                 .collect::<Vec<_>>(),
         )),
         arrow_schema::DataType::Float64 => Arc::new(Float64Array::from(
             values
                 .iter()
-                .map(|value| value.and_then(serde_json::Value::as_f64))
+                .map(|value| {
+                    value
+                        .and_then(serde_json::Value::as_f64)
+                        .or_else(|| required.then_some(0.0))
+                })
                 .collect::<Vec<_>>(),
         )),
+        _ if required => {
+            return Err(anyhow!(
+                "unsupported required unclaimed physical column type for {}",
+                field.name()
+            ));
+        }
         _ => new_null_array(field.data_type(), revisions.len()),
     };
     Ok(array)
