@@ -64,24 +64,30 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     let form_def = serde_json::json!({
         "name": "Entry",
         "template": "# Entry\n\n## Body\n",
-        "fields": {"Body": {"type": "markdown"}}
+        "fields": {"Body": {"id": 1, "type": "markdown"}}
     });
     form::upsert_form(&op, ws_path, &form_def).await?;
-    let entry_relation = form::get_form(&op, ws_path, "Entry").await?["sql_relation"]
+    let stored_form = form::get_form(&op, ws_path, "Entry").await?;
+    let entry_relation = stored_form["sql_relation"]
         .as_str()
         .expect("Form SQL relation")
         .to_string();
+    let body_column = stored_form["fields"]["Body"]["sql_column"]
+        .as_str()
+        .expect("Body SQL column");
 
-    let entry_one = "---\nform: Entry\n---\n# Alpha\n\n## Body\nalpha";
+    let entry_one = "---\nform: Entry\n---\n## Body\nalpha";
     entry::create_entry(&op, ws_path, "entry-1", entry_one, "author", &MockIntegrity).await?;
-    let entry_two = "---\nform: Entry\n---\n# Beta\n\n## Body\nbeta";
+    let entry_two = "---\nform: Entry\n---\n## Body\nbeta";
     entry::create_entry(&op, ws_path, "entry-2", entry_two, "author", &MockIntegrity).await?;
 
     let sql_payload = saved_sql::SqlPayload {
         name: Some("Alpha Query".to_string()),
         kind: saved_sql::SqlKind::UserQuery,
         metadata: None,
-        sql: format!("SELECT * FROM \"{entry_relation}\" WHERE Body = $body ORDER BY _ugoite_id"),
+        sql: format!(
+            "SELECT * FROM \"{entry_relation}\" WHERE {body_column} = $body ORDER BY _ugoite_id"
+        ),
         variables: serde_json::json!([{
             "name": "body",
             "type": "string",
@@ -150,10 +156,10 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
         .to_string()
         .contains("authorization scope exceeds the configured maximum"));
 
-    let parameters = [("title".to_string(), serde_json::json!("Alpha"))]
+    let parameters = [("body".to_string(), serde_json::json!("alpha"))]
         .into_iter()
         .collect();
-    let parameter_types = [("title".to_string(), "string".to_string())]
+    let parameter_types = [("body".to_string(), "string".to_string())]
         .into_iter()
         .collect();
     let session =
@@ -168,10 +174,10 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
         )
         .await?;
     assert_eq!(session["status"], "ready");
-    assert_eq!(session["parameters"], serde_json::json!({"title": "Alpha"}));
+    assert_eq!(session["parameters"], serde_json::json!({"body": "alpha"}));
     assert_eq!(
         session["parameter_types"],
-        serde_json::json!({"title": "string"})
+        serde_json::json!({"body": "string"})
     );
     let session_id = session["id"].as_str().unwrap();
     let query_policy = serde_json::from_value(session["query_policy"].clone())?;
@@ -193,7 +199,7 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
         &op,
         ws_path,
         "entry-3",
-        "---\nform: Entry\n---\n# After checkpoint\n\n## Body\nnew",
+        "---\nform: Entry\n---\n## Body\nnew",
         "author",
         &MockIntegrity,
     )
@@ -222,10 +228,10 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     assert_eq!(rows_list.len(), 1);
     assert_eq!(rows_list[0]["_ugoite_id"], "entry-1");
 
-    let injection_parameters = [("title".to_string(), serde_json::json!("Alpha' OR 1=1 --"))]
+    let injection_parameters = [("body".to_string(), serde_json::json!("alpha' OR 1=1 --"))]
         .into_iter()
         .collect();
-    let injection_parameter_types = [("title".to_string(), "string".to_string())]
+    let injection_parameter_types = [("body".to_string(), "string".to_string())]
         .into_iter()
         .collect();
     let injection_session =
@@ -863,7 +869,6 @@ async fn sql_sessions_apply_sparse_entry_denials_in_the_provider() -> anyhow::Re
     let mut extra_system_columns = original_policy.clone();
     extra_system_columns["forms"][0]["system_columns"] = serde_json::json!([
         "external_id",
-        "title",
         "created_at",
         "updated_at",
         "entry_id",
