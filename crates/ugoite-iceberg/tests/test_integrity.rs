@@ -69,7 +69,7 @@ async fn test_integrity_req_int_002_reconstructed_entry_checksum_is_stored() -> 
     )
     .await?;
 
-    let content = "---\nform: Entry\n---\n# Checksum\n\n## Body\nReconstructed\n\n";
+    let content = "---\nform: Entry\n---\n## Body\nReconstructed\n\n";
     let integrity = HmacIntegrityProvider::new(b"integrity-test-key".to_vec());
     entry::create_entry(
         &op,
@@ -98,7 +98,7 @@ async fn test_integrity_req_int_002_reconstructed_entry_checksum_is_stored() -> 
         integrity.signature(&reconstructed.markdown)
     );
 
-    let updated_content = "---\nform: Entry\n---\n# Updated checksum\n\n## Body\nUpdated\n\n";
+    let updated_content = "---\nform: Entry\n---\n## Body\nUpdated\n\n";
     entry::update_entry(
         &op,
         ws_path,
