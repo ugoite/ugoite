@@ -1,7 +1,9 @@
 //! Integration tests for integrity provider functionality.
 //! REQ-INT-001, REQ-STO-004
 
-use std::process::Command;
+use support::Command;
+
+mod support;
 
 fn ugoite_bin() -> std::path::PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {

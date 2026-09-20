@@ -43,12 +43,12 @@ for identity instead of relying on it.
 
 ```bash
 ugoite sql lint 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> LIMIT 10'
-ugoite sql saved-list /path/to/workspace/spaces/demo
-ugoite sql saved-create /path/to/workspace/spaces/demo \
+ugoite sql saved-list
+ugoite sql saved-create \
   --name planning --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10'
-ugoite sql saved-get /path/to/workspace/spaces/demo <sql-id>
-ugoite sql saved-execute /path/to/workspace/spaces/demo <sql-id> --limit 20
-ugoite query /path/to/workspace/spaces/demo \
+ugoite sql saved-get <sql-id>
+ugoite sql saved-execute <sql-id> --limit 20
+ugoite query \
   --sql 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> LIMIT 10'
 ```
 
@@ -69,7 +69,7 @@ Run `ugoite sql --help` and `ugoite query --help` for exact flags.
 not durable Knowledge.
 
 ```bash
-ugoite sql session-create /path/to/workspace/spaces/demo \
+ugoite sql session-create \
   --sql 'SELECT _ugoite_id, _ugoite_title FROM form_<FormId> ORDER BY _ugoite_id'
 ```
 
@@ -91,7 +91,7 @@ ugoite sql session-create /path/to/workspace/spaces/demo \
 `sql session-count` returns the total row count for the session:
 
 ```bash
-ugoite sql session-count /path/to/workspace/spaces/demo <session-id>
+ugoite sql session-count <session-id>
 ```
 
 ```json
@@ -110,7 +110,7 @@ and `limit`, plus the `session_id` continuation handle. Pages default to
 above.
 
 ```bash
-ugoite sql session-rows /path/to/workspace/spaces/demo <session-id> --offset 0 --limit 1
+ugoite sql session-rows <session-id> --offset 0 --limit 1
 ```
 
 ```json
@@ -129,7 +129,7 @@ ugoite sql session-rows /path/to/workspace/spaces/demo <session-id> --offset 0 -
 executed definition. Local/core mode carries no `session_id`:
 
 ```bash
-ugoite sql saved-execute /path/to/workspace/spaces/demo <sql-id> --limit 1
+ugoite sql saved-execute <sql-id> --limit 1
 ```
 
 ```json
@@ -148,7 +148,7 @@ Remote mode (CLI pointed at a server) returns the same envelope plus a
 `session_id` continuation handle:
 
 ```bash
-ugoite sql saved-execute /path/to/workspace/spaces/demo <sql-id> --limit 1
+ugoite sql saved-execute <sql-id> --limit 1
 ```
 
 ```json

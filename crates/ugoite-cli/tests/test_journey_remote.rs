@@ -18,7 +18,8 @@ use tempfile::tempdir;
 use tokio::net::TcpListener;
 use tokio::process::Command;
 use tokio::task::JoinHandle;
-use ugoite_cli::config::{AuthSession, EndpointConfig, EndpointMode};
+use ugoite_cli::cli_config::{ConfigFile, ConnectionConfig, ContextConfig};
+use ugoite_cli::config::AuthSession;
 use ugoite_server::{app, AppState};
 
 struct ServerGuard(JoinHandle<()>);
@@ -56,9 +57,26 @@ fn test_key_and_jwk() -> (SigningKey, serde_json::Value) {
 }
 
 async fn run_cli(config_path: &std::path::Path, args: &[&str]) -> Output {
+    let space_uid = std::fs::read_to_string(config_path).ok().and_then(|text| {
+        text.lines().find_map(|line| {
+            line.trim()
+                .strip_prefix("space_uid = \"")
+                .and_then(|value| value.strip_suffix('\"'))
+                .map(str::to_owned)
+        })
+    });
+    let mut command_args = vec!["--config", config_path.to_str().expect("config path")];
+    command_args.extend(
+        args.iter()
+            .copied()
+            .filter(|arg| Some(*arg) != space_uid.as_deref()),
+    );
     Command::new(ugoite_bin())
-        .args(args)
-        .env("UGOITE_CLI_CONFIG_PATH", config_path)
+        .args(command_args)
+        .env(
+            "HOME",
+            config_path.parent().expect("config parent").join("home"),
+        )
         .output()
         .await
         .expect("run ugoite")
@@ -167,8 +185,8 @@ async fn setup_remote() -> RemoteFixture {
     }
 
     let config_dir = tempdir().expect("config directory");
-    let config_path = config_dir.path().join("cli-endpoints.json");
-    let credentials_path = config_dir.path().join("cli-credentials.json");
+    let config_path = config_dir.path().join("config.toml");
+    let credentials_path = config_dir.path().join("home/.ugoite/credentials.json");
     let session = AuthSession {
         credential_id: access.credential_id,
         device_name: "Journey remote test".to_string(),
@@ -187,19 +205,36 @@ async fn setup_remote() -> RemoteFixture {
         resource: None,
         space_uid: access.space_uid,
     };
-    let config = EndpointConfig {
-        mode: EndpointMode::Api,
-        backend_url: server_url,
-        api_url: api_base,
-    };
+    let mut config = ConfigFile::empty();
+    config.connections.insert(
+        "remote-api".to_string(),
+        ConnectionConfig::Api { url: api_base },
+    );
+    config.contexts.insert(
+        "journey".to_string(),
+        ContextConfig {
+            connection: "remote-api".to_string(),
+            space_uid: access.space_uid,
+            credential: Some("journey".to_string()),
+        },
+    );
+    config.current_context = Some("journey".to_string());
+    let mut profile = serde_json::to_value(&session).expect("serialize CLI credential");
+    profile["connection"] = serde_json::Value::String("remote-api".to_string());
+    let credentials = serde_json::json!({
+        "version": 1,
+        "credentials": { "journey": profile },
+    });
     std::fs::write(
         &config_path,
-        serde_json::to_vec_pretty(&config).expect("serialize endpoint config"),
+        toml::to_string_pretty(&config).expect("serialize canonical config"),
     )
-    .expect("write endpoint config");
+    .expect("write canonical config");
+    std::fs::create_dir_all(credentials_path.parent().expect("credentials parent"))
+        .expect("create credentials directory");
     std::fs::write(
         &credentials_path,
-        serde_json::to_vec_pretty(&session).expect("serialize CLI credential"),
+        serde_json::to_vec_pretty(&credentials).expect("serialize credential store"),
     )
     .expect("write CLI credential");
 
@@ -1073,26 +1108,26 @@ async fn test_parity_remote_unauthenticated_mutation_rejected_without_mutation()
     create_parity_entry(fixture, "parity-auth", &v1).await;
 
     let bare_dir = tempfile::tempdir().expect("bare config directory");
-    let bare_config = bare_dir.path().join("cli-endpoints.json");
+    let bare_config = bare_dir.path().join("config.toml");
     let api_url = {
         let raw = std::fs::read_to_string(&fixture.config_path).expect("read endpoint config");
-        let parsed: serde_json::Value = serde_json::from_str(&raw).expect("parse endpoint config");
+        let parsed: toml::Value = toml::from_str(&raw).expect("parse canonical config");
         parsed
-            .get("api_url")
+            .get("connections")
+            .and_then(|connections| connections.get("remote-api"))
+            .and_then(|connection| connection.get("url"))
             .and_then(|url| url.as_str())
-            .expect("api_url")
+            .expect("remote-api URL")
             .to_string()
     };
+    let bare_space_uid = fixture.space_id.parse::<uuid::Uuid>().expect("Space UID");
     std::fs::write(
         &bare_config,
-        serde_json::to_vec_pretty(&serde_json::json!({
-            "mode": "api",
-            "backend_url": api_url,
-            "api_url": api_url,
-        }))
-        .expect("serialize bare endpoint config"),
+        format!(
+            "version = 1\ncurrent_context = \"bare\"\n\n[connections.remote-api]\ntype = \"api\"\nurl = \"{api_url}\"\n\n[contexts.bare]\nconnection = \"remote-api\"\nspace_uid = \"{bare_space_uid}\"\n"
+        ),
     )
-    .expect("write bare endpoint config");
+    .expect("write bare canonical config");
 
     let v2 = parity_markdown("ParityRemoteForm", "Parity auth v2", Some("ok"), "v2");
     let markdown_arg = format!("--markdown={v2}");

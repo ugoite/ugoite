@@ -10,9 +10,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use ugoite_cli::cli_config::{
     merge::{merge_loaded_configs, LoadedConfigFile},
-    resolve_cli_context, resolve_command_target_with_overrides,
-    resolve_context_target_with_overrides, resolve_named_profile, validate_credential_name,
-    write_config_file_atomic, ConfigFile, SpaceTarget,
+    resolve_cli_context, resolve_context_target_with_overrides, resolve_named_profile,
+    validate_credential_name, write_config_file_atomic, ConfigFile, SpaceTarget,
 };
 use ugoite_cli::output::{project_error, UsageError};
 
@@ -127,7 +126,7 @@ credential = "work-cred"
                 credential,
                 ..
             } => {
-                assert_eq!(connection.as_deref(), Some("work"));
+                assert_eq!(connection, "work");
                 assert_eq!(
                     credential.as_deref(),
                     Some("work-cred"),
@@ -186,7 +185,7 @@ credential = "work-cred-b"
                 credential,
                 ..
             } => {
-                assert_eq!(connection.as_deref(), Some("work"));
+                assert_eq!(connection, "work");
                 assert_eq!(credential.as_deref(), Some("work-cred"));
             }
             other => panic!("expected remote target, got {other:?}"),
@@ -402,7 +401,7 @@ credential = "work-cred"
         } => {
             assert_eq!(base, "https://work.example.com");
             assert_eq!(space_uid, uid);
-            assert_eq!(connection.as_deref(), Some("work"));
+            assert_eq!(connection, "work");
             assert_eq!(credential.as_deref(), Some("work-cred"));
         }
         other => panic!("expected remote target, got {other:?}"),
@@ -445,8 +444,7 @@ credential = "work-cred"
             assert_eq!(base, "https://work.example.com");
             assert_eq!(space_uid, uid);
             assert_eq!(
-                connection.as_deref(),
-                Some("work"),
+                connection, "work",
                 "context-first remote must carry connection identity"
             );
             assert_eq!(
@@ -478,30 +476,6 @@ credential = "work-cred"
         format!("{cross:#}").contains("refusing to reuse it across connections"),
         "cross-connection reuse must fail, never fall back globally"
     );
-    // Legacy explicit-Space shape keeps the 0.1.x global lookup: the
-    // compatibility target carries no connection identity, and explicit
-    // --connection/--credential with a legacy SPACE is a usage error.
-    let legacy = SpaceTarget::Remote {
-        base: "https://work.example.com".to_string(),
-        space_uid: uid.to_string(),
-        connection: None,
-        credential: None,
-    };
-    assert_eq!(legacy.connection_name(), None);
-    assert_eq!(legacy.credential_name(), None);
-    let usage = resolve_command_target_with_overrides(
-        Some("019f1111-1111-7abc-8def-111111111111"),
-        None,
-        None,
-        Some("work"),
-        None,
-        "entry list",
-    )
-    .unwrap_err();
-    assert!(
-        format!("{usage:#}").contains("does not accept --connection"),
-        "--connection with a legacy SPACE must be a usage error"
-    );
 }
 
 fn ugoite_bin() -> PathBuf {
@@ -521,13 +495,13 @@ fn ugoite_bin() -> PathBuf {
 fn empty_context_flag_exits_2_on_cli() {
     let home = tempfile::tempdir().unwrap();
     let work = tempfile::tempdir().unwrap();
-    let legacy = home.path().join("legacy-endpoints.json");
+    let config_path = home.path().join("config.toml");
     let bin = ugoite_bin();
     // Init first so config exists; then empty --context must be usage error.
     let init = Command::new(&bin)
         .env("HOME", home.path())
         .env("UGOITE_CONFIG", "")
-        .env("UGOITE_CLI_CONFIG_PATH", &legacy)
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .env("UGOITE_CONFIG_HOME", "")
         .env("XDG_CONFIG_HOME", "")
         .current_dir(work.path())
@@ -538,7 +512,7 @@ fn empty_context_flag_exits_2_on_cli() {
     let output = Command::new(&bin)
         .env("HOME", home.path())
         .env("UGOITE_CONFIG", "")
-        .env("UGOITE_CLI_CONFIG_PATH", &legacy)
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .env("UGOITE_CONFIG_HOME", "")
         .env("XDG_CONFIG_HOME", "")
         .current_dir(work.path())

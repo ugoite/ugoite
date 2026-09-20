@@ -4,8 +4,7 @@
 //! `Write target:`, `Current context:`, `Connection:`, `Root:` local or
 //! `Endpoint:` remote, `Space:`, `Credential:`) carrying the selected
 //! context's connection, immutable Space UID, and credential name (never
-//! secrets). No canonical config: the legacy endpoint-mode text stays the
-//! 0.1.x compatibility output.
+//! secrets).
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -26,7 +25,6 @@ fn ugoite_bin() -> PathBuf {
 struct Sandbox {
     home: PathBuf,
     work: PathBuf,
-    legacy_config: PathBuf,
     _home_dir: tempfile::TempDir,
     _work_dir: tempfile::TempDir,
 }
@@ -35,11 +33,9 @@ impl Sandbox {
     fn fresh() -> Self {
         let home_dir = tempfile::tempdir().unwrap();
         let work_dir = tempfile::tempdir().unwrap();
-        let legacy_config = home_dir.path().join("legacy-endpoints.json");
         Self {
             home: home_dir.path().to_path_buf(),
             work: work_dir.path().to_path_buf(),
-            legacy_config,
             _home_dir: home_dir,
             _work_dir: work_dir,
         }
@@ -47,13 +43,7 @@ impl Sandbox {
 
     fn command(&self, bin: &std::path::Path) -> Command {
         let mut command = Command::new(bin);
-        command
-            .env("HOME", &self.home)
-            .env("UGOITE_CONFIG", "")
-            .env("UGOITE_CLI_CONFIG_PATH", &self.legacy_config)
-            .env("UGOITE_CONFIG_HOME", "")
-            .env("XDG_CONFIG_HOME", "")
-            .current_dir(&self.work);
+        command.env("HOME", &self.home).current_dir(&self.work);
         command
     }
 }
@@ -173,23 +163,4 @@ fn config_current_pins_canonical_machine_shape() {
         .unwrap();
     assert_success(&current, "context current");
     assert_eq!(String::from_utf8_lossy(&current.stdout).trim(), "demo");
-}
-
-/// No canonical config: legacy endpoint-mode text stays the compatibility output.
-#[test]
-fn config_current_without_canonical_keeps_legacy_shape() {
-    let sandbox = Sandbox::fresh();
-    let bin = ugoite_bin();
-
-    let output = sandbox
-        .command(&bin)
-        .args(["config", "current"])
-        .output()
-        .unwrap();
-    assert_success(&output, "config current");
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    assert!(
-        stdout.starts_with("Current endpoint mode: core\n"),
-        "legacy shape must stay the 0.1.x compatibility output: {stdout}"
-    );
 }

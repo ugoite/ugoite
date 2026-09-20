@@ -6,6 +6,31 @@
 
 use std::path::PathBuf;
 use std::process::Command;
+use ugoite_cli::cli_config::{ConfigFile, ConnectionConfig, ContextConfig};
+
+fn write_remote_config(path: &std::path::Path, endpoint: &str, space_uid: &str) {
+    let mut config = ConfigFile::empty();
+    config.connections.insert(
+        "remote".to_string(),
+        ConnectionConfig::Backend {
+            url: endpoint.to_string(),
+        },
+    );
+    config.contexts.insert(
+        "pin-test".to_string(),
+        ContextConfig {
+            connection: "remote".to_string(),
+            space_uid: space_uid.parse().expect("valid Space UID"),
+            credential: None,
+        },
+    );
+    config.current_context = Some("pin-test".to_string());
+    std::fs::write(
+        path,
+        toml::to_string_pretty(&config).expect("serialize config"),
+    )
+    .expect("write canonical config");
+}
 
 fn ugoite_bin() -> PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {
@@ -22,11 +47,54 @@ fn ugoite_bin() -> PathBuf {
 }
 
 fn run_cli(config_path: &std::path::Path, args: &[&str]) -> std::process::Output {
-    Command::new(ugoite_bin())
-        .args(args)
-        .env("UGOITE_CLI_CONFIG_PATH", config_path)
-        .output()
-        .expect("run CLI")
+    let bin = ugoite_bin();
+    if !config_path.exists() {
+        let initialized = Command::new(&bin)
+            .args(["--config", config_path.to_str().unwrap(), "config", "init"])
+            .output()
+            .expect("initialize canonical config");
+        assert!(initialized.status.success(), "config init failed");
+        let configured = Command::new(&bin)
+            .args([
+                "--config",
+                config_path.to_str().unwrap(),
+                "config",
+                "connection",
+                "set",
+                "local",
+                "--type",
+                "core",
+                "--root",
+                config_path.parent().unwrap().to_str().unwrap(),
+            ])
+            .output()
+            .expect("configure canonical connection");
+        assert!(configured.status.success(), "connection set failed");
+    }
+    let mut canonical = vec![
+        "--config".to_string(),
+        config_path.to_string_lossy().into_owned(),
+    ];
+    let configured_space_uid = std::fs::read_to_string(config_path).ok().and_then(|text| {
+        text.lines().find_map(|line| {
+            line.trim()
+                .strip_prefix("space_uid = \"")
+                .and_then(|value| value.strip_suffix('"'))
+                .map(str::to_owned)
+        })
+    });
+    let mut index = 0;
+    while index < args.len() {
+        match args[index] {
+            "create-space" => canonical.extend(["space".into(), "create".into()]),
+            "--root" => index += 1,
+            arg if arg.contains("/spaces/") => {}
+            arg if Some(arg) == configured_space_uid.as_deref() => {}
+            arg => canonical.push(arg.to_string()),
+        }
+        index += 1;
+    }
+    Command::new(bin).args(canonical).output().expect("run CLI")
 }
 
 fn json_of(output: &std::process::Output) -> serde_json::Value {
@@ -276,16 +344,7 @@ fn test_pin_lifecycle_backend_uses_shared_operations() {
 
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("cli-config.json");
-    std::fs::write(
-        &config_path,
-        serde_json::json!({
-            "mode": "backend",
-            "backend_url": endpoint,
-            "api_url": "http://127.0.0.1:3000/api"
-        })
-        .to_string(),
-    )
-    .unwrap();
+    write_remote_config(&config_path, &endpoint, &space_uid);
 
     let list = run_cli(&config_path, &["pin", "list", &space_uid, "-o", "json"]);
     assert!(
@@ -374,16 +433,7 @@ fn test_pin_lifecycle_backend_uses_shared_operations() {
         );
         stream.write_all(response.as_bytes()).unwrap();
     });
-    std::fs::write(
-        &config_path,
-        serde_json::json!({
-            "mode": "backend",
-            "backend_url": delete_endpoint,
-            "api_url": "http://127.0.0.1:3000/api"
-        })
-        .to_string(),
-    )
-    .unwrap();
+    write_remote_config(&config_path, &delete_endpoint, &space_uid);
     let delete = run_cli(&config_path, &["pin", "delete", &space_uid, "v1"]);
     assert!(
         delete.status.success(),

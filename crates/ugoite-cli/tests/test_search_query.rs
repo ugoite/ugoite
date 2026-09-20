@@ -27,9 +27,46 @@ fn ugoite_bin() -> std::path::PathBuf {
 }
 
 fn run_cli(config: &std::path::Path, args: &[&str]) -> Output {
-    Command::new(ugoite_bin())
-        .args(args)
-        .env("UGOITE_CLI_CONFIG_PATH", config)
+    let bin = ugoite_bin();
+    if !config.exists() {
+        let initialized = Command::new(&bin)
+            .args(["--config", config.to_str().unwrap(), "config", "init"])
+            .output()
+            .expect("initialize canonical config");
+        assert!(initialized.status.success(), "config init failed");
+        let configured = Command::new(&bin)
+            .args([
+                "--config",
+                config.to_str().unwrap(),
+                "config",
+                "connection",
+                "set",
+                "local",
+                "--type",
+                "core",
+                "--root",
+                config.parent().unwrap().to_str().unwrap(),
+            ])
+            .output()
+            .expect("configure canonical connection");
+        assert!(configured.status.success(), "connection set failed");
+    }
+    let mut canonical = vec![
+        "--config".to_string(),
+        config.to_string_lossy().into_owned(),
+    ];
+    let mut index = 0;
+    while index < args.len() {
+        match args[index] {
+            "create-space" => canonical.extend(["space".into(), "create".into()]),
+            "--root" => index += 1,
+            arg if arg.contains("/spaces/") => {}
+            arg => canonical.push(arg.to_string()),
+        }
+        index += 1;
+    }
+    Command::new(bin)
+        .args(canonical)
         .output()
         .expect("run ugoite")
 }
@@ -431,27 +468,68 @@ fn search_query_remote_sends_identical_criteria_dto() {
     });
 
     let dir = tempfile::tempdir().unwrap();
-    let config_path = dir.path().join("cli-config.json");
+    let config_path = dir.path().join("cli-config.toml");
+    let init_output = Command::new(ugoite_bin())
+        .args(["--config", config_path.to_str().unwrap(), "config", "init"])
+        .output()
+        .expect("config init");
+    assert!(init_output.status.success());
     let set_output = Command::new(ugoite_bin())
         .args([
+            "--config",
+            config_path.to_str().unwrap(),
             "config",
+            "connection",
             "set",
-            "--mode",
+            "local",
+            "--type",
             "backend",
-            "--backend-url",
+            "--url",
             &base_url,
         ])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
-        .expect("config set");
+        .expect("connection set");
     assert!(set_output.status.success());
+    let output = Command::new(ugoite_bin())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "context",
+            "add",
+            "test",
+            "--connection",
+            "local",
+            "--space",
+            "019f1234-5678-7abc-8def-0123456789ab",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "context setup failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let output = Command::new(ugoite_bin())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "context",
+            "use",
+            "test",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "context setup failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let output = run_cli(
         &config_path,
         &[
             "search",
             "query",
-            "019f1234-5678-7abc-8def-0123456789ab",
             "--form",
             "Task",
             "--eq",

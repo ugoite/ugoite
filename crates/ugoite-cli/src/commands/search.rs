@@ -1,4 +1,4 @@
-use crate::cli_config::{resolve_command_triple, split_space_and_id};
+use crate::cli_config::resolve_command_triple;
 use crate::http;
 use crate::output::{
     effective_format, emit_success, print_json, print_json_table, Format, UsageError,
@@ -19,22 +19,13 @@ pub struct SearchCmd {
 #[derive(Subcommand)]
 pub enum SearchSubCmd {
     /// Keyword search
-    #[command(
-        long_about = "Run keyword search. Attachment text is searchable only after `index run` has rebuilt the derived index.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite search keyword invoice\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME search keyword invoice\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite search keyword /root/spaces/my-space invoice\n  ugoite search keyword 019f1234-5678-7abc-8def-0123456789ab invoice"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Keyword {
-        #[arg(
-            value_name = "SPACE_UID_OR_PATH_OR_QUERY",
-            num_args(1..=2),
-            required = true,
-            help = "QUERY against the selected context (Plain-text query string to match against Entry content), or legacy SPACE_UID_OR_PATH QUERY."
-        )]
-        space_and_query: Vec<String>,
+        #[arg(value_name = "QUERY")]
+        query: String,
     },
     /// Typed structured search over Form fields
-    #[command(
-        long_about = "Run typed structured search over Form fields.\n\nField conditions use logical Form field names; type checking, SQL generation, and column resolution stay in the trusted Rust layer. Local and remote accept the same DTO.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite search query --form Task --eq status=open --gte priority=3\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME search query --form Task --contains title=release --limit 20\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite search query /root/spaces/my-space --form Task --eq status=open\n  ugoite search query 019f1234-5678-7abc-8def-0123456789ab --form Task --contains title=release --limit 20\n\n  # Machine input from a file or stdin (exclusive with condition flags)\n  ugoite search query --criteria-file criteria.json\n  cat criteria.json | ugoite search query --criteria-file -"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Query(Box<SearchQueryArgs>),
 }
 
@@ -42,11 +33,6 @@ pub enum SearchSubCmd {
 /// subcommand enum size balanced.
 #[derive(Args)]
 pub struct SearchQueryArgs {
-    #[arg(
-        value_name = "SPACE_UID_OR_PATH",
-        help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
-    )]
-    pub space_path: Option<String>,
     #[arg(long, help = "Logical Form name to search.")]
     pub form: Option<String>,
     #[arg(
@@ -250,19 +236,17 @@ pub async fn run(
 ) -> Result<()> {
     let fmt = effective_format(cmd.format);
     match cmd.sub {
-        SearchSubCmd::Keyword { space_and_query } => {
-            let (legacy_space, query) =
-                split_space_and_id(&space_and_query, "QUERY", "search keyword")?;
-            let query = query.to_string();
-            let (root, space_id, base) = resolve_command_triple(
-                legacy_space,
-                explicit_config,
-                context_override,
-                "search keyword",
-            )?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+        SearchSubCmd::Keyword { query } => {
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "search keyword")?;
+            if base.is_some() {
+                let target = crate::cli_config::resolve_command_target(
+                    explicit_config,
+                    context_override,
+                    "search keyword",
+                )?;
+                let result = http::execute_for_target(
+                    &target,
                     "search.keyword",
                     serde_json::json!({"space_id": space_id, "q": query}),
                     None,
@@ -293,7 +277,6 @@ pub async fn run(
         }
         SearchSubCmd::Query(args) => {
             let SearchQueryArgs {
-                space_path,
                 form,
                 eq,
                 contains,
@@ -320,15 +303,16 @@ pub async fn run(
                 criteria_file,
             })
             .map_err(anyhow::Error::from)?;
-            let (root, space_id, base) = resolve_command_triple(
-                space_path.as_deref(),
-                explicit_config,
-                context_override,
-                "search query",
-            )?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "search query")?;
+            if base.is_some() {
+                let target = crate::cli_config::resolve_command_target(
+                    explicit_config,
+                    context_override,
+                    "search query",
+                )?;
+                let result = http::execute_for_target(
+                    &target,
                     "search.query",
                     serde_json::json!({"space_id": space_id}),
                     Some(serde_json::json!({"criteria": criteria_value})),

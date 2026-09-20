@@ -1,6 +1,6 @@
 ---
 title: "CLI"
-description: Command families, endpoint modes, authentication, and output conventions.
+description: Command families, connections, contexts, authentication, and output conventions.
 sidebar:
   order: 2
 ---
@@ -10,54 +10,39 @@ arguments, output fields, and exit behavior. This page explains how to choose a
 mode and find the right command; task steps live in [Use
 Ugoite](../use/index.md).
 
-## Endpoint modes
+## Connections and contexts
 
-Core mode opens an operator-owned Space directory directly. It is the local,
-server-free path and does not require human login. Commands that address a
-Space use its local path, and `ugoite space list` takes the workspace root.
+Named connections describe how the CLI reaches Knowledge. A `core` connection
+opens an operator-owned Space directory directly; it is the local, server-free
+path and does not require human login. A `backend` or `api` connection points
+at a remote endpoint and uses the server's authentication and authorization.
 
-Backend mode sends the same portable operations to the configured Rust server.
-It addresses an existing Space by its immutable Space UID; a human-readable
-slug is creation metadata and is not a remote identity. Backend mode uses the
-server's authentication and authorization checks.
+Create connections with the canonical TOML model:
 
-API mode sends requests to the configured REST API endpoint. It also addresses
-remote Spaces by immutable Space UID and uses the server's authentication and
-authorization checks. Backend mode and API mode are separate endpoint
-configurations; use the mode that matches the server surface you intend to
-call.
+```bash
+ugoite config init
+ugoite config connection add local --type core --root /path/to/workspace
+ugoite config connection add remote --type api --url https://example.com/api
+```
 
-Inspect the active mode and endpoint with `ugoite config current`. Change them
-with `ugoite config set --help`; use `--backend-url` for backend mode and
-`--api-url` for API mode. Do not copy an example endpoint or flag set into
-automation without checking the installed help. The [Spaces task
-page](../use/spaces.mdx) shows the corresponding local-path and remote-UID
-examples.
-
-## Contexts and connections
-
-Named connections (`ugoite config connection --help`) record how to reach
-Ugoite: `core` with a workspace root, or `backend`/`api` with an endpoint URL.
 Named contexts (`ugoite context --help`) select one connection plus one Space
 by its immutable Space UID, with an optional named credential profile. Most
 Space-bound commands use the selected context, so no Space path or UID is
-passed on every invocation; `--context <NAME>` overrides once without
-changing the selection, and `ugoite config current` inspects the resolved
-connection, Space UID, and credential name (never secrets).
+passed on every invocation. `--context <NAME>` overrides once without changing
+the selection, and `ugoite config current` inspects the resolved connection,
+Space UID, and credential name (never secrets).
 
-Start a local workspace with `ugoite config init`, then `ugoite space create
-demo`: creation registers the new Space as the current context automatically
-(`--no-context` opts out). CLI configuration is disposable work-environment
-state in `./.ugoite/config.toml` (project-local, preferred when present),
-`~/.ugoite/config.toml`, and `~/.ugoite/credentials.json`; deleting it never
-deletes Knowledge. The single-mode `config set` flow above remains available
-as the v0.1.x compatibility path.
+Start a local workspace with `ugoite space create demo` after selecting a
+connection. Creation registers the new Space as the current context
+automatically (`--no-context` opts out). CLI configuration is disposable
+work-environment state in `./.ugoite/config.toml` (project-local, preferred
+when present), `~/.ugoite/config.toml`, and `~/.ugoite/credentials.json`;
+deleting it never deletes Knowledge.
 
-Context path rule: a context's immutable Space UID resolves to exactly one
-local directory (`<root>/spaces/<SPACE_UID>`) and the shared Space
-compatibility classifier decides compatibility. Legacy slug-named directories
-and implicit path/slug discovery are never consulted on the context path;
-reach those only through the 0.1.x compatibility explicit-Space positional.
+For a `core` connection, a context's immutable Space UID resolves to one local
+directory. New Spaces use `<root>/spaces/<SPACE_UID>`; existing Space 0.1
+directories are located by their read-only metadata identity without being
+renamed. The shared Space compatibility classifier decides compatibility.
 `ugoite config current` prints the resolved connection, Space UID, and
 credential name (never secrets) in a stable section order: `Config sources:`,
 `Write target:`, `Current context:`, `Connection:`, `Root:` (local) or

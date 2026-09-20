@@ -22,7 +22,6 @@ fn ugoite_bin() -> PathBuf {
 struct Sandbox {
     home: PathBuf,
     work: PathBuf,
-    legacy_config: PathBuf,
     _home_dir: tempfile::TempDir,
     _work_dir: tempfile::TempDir,
 }
@@ -31,11 +30,9 @@ impl Sandbox {
     fn fresh() -> Self {
         let home_dir = tempfile::tempdir().unwrap();
         let work_dir = tempfile::tempdir().unwrap();
-        let legacy_config = home_dir.path().join("legacy-endpoints.json");
         Self {
             home: home_dir.path().to_path_buf(),
             work: work_dir.path().to_path_buf(),
-            legacy_config,
             _home_dir: home_dir,
             _work_dir: work_dir,
         }
@@ -46,7 +43,6 @@ impl Sandbox {
         command
             .env("HOME", &self.home)
             .env("UGOITE_CONFIG", "")
-            .env("UGOITE_CLI_CONFIG_PATH", &self.legacy_config)
             .env("UGOITE_CONFIG_HOME", "")
             .env("XDG_CONFIG_HOME", "")
             .current_dir(&self.work);
@@ -157,8 +153,7 @@ fn config_operations_never_mutate_knowledge() {
             .unwrap(),
         "space create demo",
     );
-    let root = crate_root_of(&sandbox);
-    let before = sandbox.spaces_snapshot(&root);
+    let before = sandbox.spaces_snapshot(&sandbox.work);
     assert!(!before.is_empty(), "expected a created Space on disk");
 
     // Config-only mutations.
@@ -228,7 +223,7 @@ fn config_operations_never_mutate_knowledge() {
         "connection remove",
     );
     assert_eq!(
-        sandbox.spaces_snapshot(&root),
+        sandbox.spaces_snapshot(&sandbox.work),
         before,
         "config mutations changed Space storage"
     );
@@ -236,67 +231,8 @@ fn config_operations_never_mutate_knowledge() {
     // Deleting every config file leaves Knowledge intact.
     std::fs::remove_file(sandbox.home.join(".ugoite").join("config.toml")).unwrap();
     assert_eq!(
-        sandbox.spaces_snapshot(&root),
+        sandbox.spaces_snapshot(&sandbox.work),
         before,
         "config deletion changed Space storage"
     );
-}
-
-/// Legacy migrate: refuse on existing canonical, migrate endpoint URLs.
-#[test]
-fn legacy_migrate_produces_canonical_connections() {
-    let sandbox = Sandbox::fresh();
-    let bin = ugoite_bin();
-
-    std::fs::create_dir_all(sandbox.home.join(".ugoite")).unwrap();
-    let legacy_path = legacy_path_of(&sandbox);
-    std::fs::write(
-        &legacy_path,
-        serde_json::json!({
-            "mode": "backend",
-            "backend_url": "https://ugoite.example.com",
-            "api_url": "https://ugoite.example.com/api",
-        })
-        .to_string(),
-    )
-    .unwrap();
-
-    let migrated = sandbox
-        .command(&bin)
-        .args(["config", "migrate"])
-        .env("UGOITE_CLI_CONFIG_PATH", &legacy_path)
-        .output()
-        .unwrap();
-    assert_success(&migrated, "config migrate");
-    let stdout = String::from_utf8_lossy(&migrated.stdout);
-    assert!(stdout.contains("backend"), "{stdout}");
-
-    // Second run refuses to overwrite.
-    let again = sandbox
-        .command(&bin)
-        .args(["config", "migrate"])
-        .env("UGOITE_CLI_CONFIG_PATH", &legacy_path)
-        .output()
-        .unwrap();
-    assert!(!again.status.success(), "migrate must not overwrite");
-    assert!(
-        String::from_utf8_lossy(&again.stderr).contains("Refusing"),
-        "refusal must name the existing file: {}",
-        String::from_utf8_lossy(&again.stderr),
-    );
-}
-
-fn crate_root_of(sandbox: &Sandbox) -> PathBuf {
-    let text = std::fs::read_to_string(sandbox.home.join(".ugoite").join("config.toml")).unwrap();
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if let Some(root) = trimmed.strip_prefix("root = ") {
-            return PathBuf::from(root.trim_matches('"'));
-        }
-    }
-    panic!("migrated config has no core root");
-}
-
-fn legacy_path_of(sandbox: &Sandbox) -> PathBuf {
-    sandbox.legacy_config.clone()
 }

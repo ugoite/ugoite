@@ -46,7 +46,7 @@ fn auth_login_help_exposes_named_mcp_target() {
     assert!(stdout.contains("mcp"), "stdout:\n{stdout}");
 }
 
-/// REQ-OPS-018: top-level help must show a task-oriented quick-start path.
+/// REQ-OPS-018: top-level help must show the canonical context-first path.
 #[test]
 fn test_help_req_ops_018_shows_task_oriented_quick_start() {
     let output = Command::new(ugoite_bin())
@@ -57,13 +57,13 @@ fn test_help_req_ops_018_shows_task_oriented_quick_start() {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     for expected in [
-        "Quick start (local-first / core mode):",
-        "ugoite space list .",
-        "ugoite space create /path/to/workspace/spaces/demo",
-        "Quick start (backend / API mode):",
-        "ugoite config set --mode backend --backend-url http://localhost:8000",
-        "ugoite auth login",
-        "ugoite space list",
+        "Quick start:",
+        "ugoite config init",
+        "ugoite space create demo",
+        "ugoite context use work",
+        "ugoite --context research search keyword catalyst",
+        "ugoite config connection",
+        "ugoite auth login --connection NAME --credential NAME",
     ] {
         assert!(
             stdout.contains(expected),
@@ -88,64 +88,25 @@ fn test_version_req_ops_018_reports_installed_version() {
 }
 
 #[test]
-fn test_config_show() {
-    let dir = tempfile::tempdir().unwrap();
-    let output = Command::new(ugoite_bin())
-        .arg("config")
-        .arg("show")
-        .env("UGOITE_CLI_CONFIG_PATH", dir.path().join("config.json"))
-        .output()
-        .expect("failed to execute process");
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let v: serde_json::Value = serde_json::from_str(&stdout).expect("should be JSON");
-    assert_eq!(v.get("mode").and_then(|m| m.as_str()), Some("core"));
-}
-
-#[test]
-fn test_config_set_and_show() {
-    let dir = tempfile::tempdir().unwrap();
-    let config_path = dir.path().join("config.json");
-
-    let output = Command::new(ugoite_bin())
-        .args([
-            "config",
-            "set",
-            "--mode",
-            "backend",
-            "--backend-url",
-            "http://localhost:9000",
-        ])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
-    assert!(output.status.success());
-
-    let output = Command::new(ugoite_bin())
-        .args(["config", "show"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let v: serde_json::Value = serde_json::from_str(&stdout).expect("should be JSON");
-    assert_eq!(v.get("mode").and_then(|m| m.as_str()), Some("backend"));
-    assert_eq!(
-        v.get("backend_url").and_then(|m| m.as_str()),
-        Some("http://localhost:9000")
-    );
-}
-
-#[test]
 fn test_space_create_and_list() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = format!("{root}/spaces/test-space");
+    let config_path = dir.path().join("cli-config.toml");
 
     let output = Command::new(ugoite_bin())
-        .args(["space", "create", &space_path])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .args(["config", "init"])
+        .arg("--config")
+        .arg(&config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let output = Command::new(ugoite_bin())
+        .args(["space", "create", "test-space"])
+        .arg("--config")
+        .arg(&config_path)
         .output()
         .expect("failed to execute");
     assert!(
@@ -155,16 +116,19 @@ fn test_space_create_and_list() {
     );
     let created: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("create response should be JSON");
-    let created_id = created["id"].as_str().expect("immutable Space id");
+    let created_id = created["space"]["space_uid"]
+        .as_str()
+        .expect("immutable Space UID");
     assert_eq!(
         uuid::Uuid::parse_str(created_id).unwrap().get_version_num(),
         7
     );
-    assert_eq!(created["slug"], "test-space");
+    assert_eq!(created["space"]["slug"], "test-space");
 
     let output = Command::new(ugoite_bin())
-        .args(["space", "list", &root])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .args(["space", "list"])
+        .arg("--config")
+        .arg(&config_path)
         .output()
         .expect("failed to execute");
     assert!(

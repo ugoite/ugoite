@@ -1,7 +1,9 @@
 //! Integration tests for entry management commands.
 //! REQ-ENTRY-001, REQ-ENTRY-002, REQ-ENTRY-003, REQ-ENTRY-004, REQ-ENTRY-005
 
-use std::process::Command;
+use support::Command;
+
+mod support;
 
 fn ugoite_bin() -> std::path::PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {
@@ -865,11 +867,11 @@ fn test_structured_update_appends_revision() {
     let dir = tempfile::tempdir().unwrap();
     let (root, config_path) = setup_space_with_form(&dir, "update-space");
     let space_path = format!("{root}/spaces/update-space");
-    let env = |cmd: &mut std::process::Command| {
+    let env = |cmd: &mut Command| {
         cmd.env("UGOITE_CLI_CONFIG_PATH", &config_path);
     };
 
-    let mut create = std::process::Command::new(ugoite_bin());
+    let mut create = Command::new(ugoite_bin());
     create.args([
         "entry",
         "create",
@@ -888,7 +890,7 @@ fn test_structured_update_appends_revision() {
         String::from_utf8_lossy(&created.stderr)
     );
 
-    let mut history = std::process::Command::new(ugoite_bin());
+    let mut history = Command::new(ugoite_bin());
     history.args(["entry", "history", &space_path, "up-entry"]);
     env(&mut history);
     let history = history.output().unwrap();
@@ -902,7 +904,7 @@ fn test_structured_update_appends_revision() {
 
     let fields_file = dir.path().join("update-fields.json");
     std::fs::write(&fields_file, r#"{"Body":"v2"}"#).unwrap();
-    let mut update = std::process::Command::new(ugoite_bin());
+    let mut update = Command::new(ugoite_bin());
     update.args([
         "entry",
         "update",
@@ -921,7 +923,7 @@ fn test_structured_update_appends_revision() {
         String::from_utf8_lossy(&updated.stderr)
     );
 
-    let mut history2 = std::process::Command::new(ugoite_bin());
+    let mut history2 = Command::new(ugoite_bin());
     history2.args(["entry", "history", &space_path, "up-entry"]);
     env(&mut history2);
     let history2 = history2.output().unwrap();
@@ -930,7 +932,7 @@ fn test_structured_update_appends_revision() {
     assert_eq!(history2_json["revisions"].as_array().unwrap().len(), 2);
 
     // Existing revision is unchanged.
-    let mut rev = std::process::Command::new(ugoite_bin());
+    let mut rev = Command::new(ugoite_bin());
     rev.args(["entry", "revision", &space_path, "up-entry", &rev1]);
     env(&mut rev);
     let rev = rev.output().unwrap();
@@ -944,11 +946,11 @@ fn test_structured_update_stale_parent_conflicts() {
     let dir = tempfile::tempdir().unwrap();
     let (root, config_path) = setup_space_with_form(&dir, "conflict-space");
     let space_path = format!("{root}/spaces/conflict-space");
-    let env = |cmd: &mut std::process::Command| {
+    let env = |cmd: &mut Command| {
         cmd.env("UGOITE_CLI_CONFIG_PATH", &config_path);
     };
 
-    let mut create = std::process::Command::new(ugoite_bin());
+    let mut create = Command::new(ugoite_bin());
     create.args([
         "entry",
         "create",
@@ -962,7 +964,7 @@ fn test_structured_update_stale_parent_conflicts() {
     env(&mut create);
     assert!(create.output().unwrap().status.success());
 
-    let mut history = std::process::Command::new(ugoite_bin());
+    let mut history = Command::new(ugoite_bin());
     history.args(["entry", "history", &space_path, "c-entry"]);
     env(&mut history);
     let history = history.output().unwrap();
@@ -974,7 +976,7 @@ fn test_structured_update_stale_parent_conflicts() {
         .to_string();
 
     // Advance once so rev1 goes stale.
-    let mut advance = std::process::Command::new(ugoite_bin());
+    let mut advance = Command::new(ugoite_bin());
     advance.args([
         "entry",
         "update",
@@ -986,7 +988,7 @@ fn test_structured_update_stale_parent_conflicts() {
     env(&mut advance);
     assert!(advance.output().unwrap().status.success());
 
-    let mut update = std::process::Command::new(ugoite_bin());
+    let mut update = Command::new(ugoite_bin());
     update.args([
         "entry",
         "update",
@@ -1003,7 +1005,7 @@ fn test_structured_update_stale_parent_conflicts() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("REVISION_CONFLICT"));
 
     // Failed conflicts append no revision.
-    let mut history_after = std::process::Command::new(ugoite_bin());
+    let mut history_after = Command::new(ugoite_bin());
     history_after.args(["entry", "history", &space_path, "c-entry"]);
     env(&mut history_after);
     let history_after = history_after.output().unwrap();
@@ -1018,12 +1020,12 @@ fn test_raw_and_structured_update_parity() {
     let dir = tempfile::tempdir().unwrap();
     let (root, config_path) = setup_space_with_form(&dir, "parity-space");
     let space_path = format!("{root}/spaces/parity-space");
-    let env = |cmd: &mut std::process::Command| {
+    let env = |cmd: &mut Command| {
         cmd.env("UGOITE_CLI_CONFIG_PATH", &config_path);
     };
     let markdown = "---\nform: Entry\n---\n# T\n\n## Body\n\nsame\n";
     for entry_id in ["raw-entry", "st-entry"] {
-        let mut create = std::process::Command::new(ugoite_bin());
+        let mut create = Command::new(ugoite_bin());
         create.args([
             "entry",
             "create",
@@ -1036,7 +1038,7 @@ fn test_raw_and_structured_update_parity() {
         assert!(create.output().unwrap().status.success());
     }
 
-    let mut raw_update = std::process::Command::new(ugoite_bin());
+    let mut raw_update = Command::new(ugoite_bin());
     raw_update.args([
         "entry",
         "update",
@@ -1048,7 +1050,7 @@ fn test_raw_and_structured_update_parity() {
     env(&mut raw_update);
     assert!(raw_update.output().unwrap().status.success());
 
-    let mut st_update = std::process::Command::new(ugoite_bin());
+    let mut st_update = Command::new(ugoite_bin());
     st_update.args([
         "entry",
         "update",
@@ -1067,10 +1069,10 @@ fn test_raw_and_structured_update_parity() {
         String::from_utf8_lossy(&st_out.stderr)
     );
 
-    let mut raw_get = std::process::Command::new(ugoite_bin());
+    let mut raw_get = Command::new(ugoite_bin());
     raw_get.args(["entry", "get", &space_path, "raw-entry"]);
     env(&mut raw_get);
-    let mut st_get = std::process::Command::new(ugoite_bin());
+    let mut st_get = Command::new(ugoite_bin());
     st_get.args(["entry", "get", &space_path, "st-entry"]);
     env(&mut st_get);
     let raw_json: serde_json::Value =
@@ -1090,7 +1092,7 @@ fn test_structured_update_form_change_rejected() {
     let (root, config_path) = setup_space_with_form(&dir, "form-space");
     let space_path = format!("{root}/spaces/form-space");
 
-    let mut create = std::process::Command::new(ugoite_bin());
+    let mut create = Command::new(ugoite_bin());
     create.args([
         "entry",
         "create",
@@ -1104,7 +1106,7 @@ fn test_structured_update_form_change_rejected() {
     create.env("UGOITE_CLI_CONFIG_PATH", &config_path);
     assert!(create.output().unwrap().status.success());
 
-    let mut update = std::process::Command::new(ugoite_bin());
+    let mut update = Command::new(ugoite_bin());
     update.args([
         "entry",
         "update",
@@ -1127,11 +1129,11 @@ fn test_structured_update_usage_errors() {
     let dir = tempfile::tempdir().unwrap();
     let (root, config_path) = setup_space_with_form(&dir, "update-usage-space");
     let space_path = format!("{root}/spaces/update-usage-space");
-    let env = |cmd: &mut std::process::Command| {
+    let env = |cmd: &mut Command| {
         cmd.env("UGOITE_CLI_CONFIG_PATH", &config_path);
     };
 
-    let mut create = std::process::Command::new(ugoite_bin());
+    let mut create = Command::new(ugoite_bin());
     create.args([
         "entry",
         "create",
@@ -1146,7 +1148,7 @@ fn test_structured_update_usage_errors() {
     assert!(create.output().unwrap().status.success());
 
     // Structured + Markdown together.
-    let mut both = std::process::Command::new(ugoite_bin());
+    let mut both = Command::new(ugoite_bin());
     both.args([
         "entry",
         "update",
@@ -1163,7 +1165,7 @@ fn test_structured_update_usage_errors() {
     assert!(String::from_utf8_lossy(&both.stderr).contains("cannot be combined"));
 
     // Bare --title without field inputs would silently clear; it is rejected.
-    let mut bare = std::process::Command::new(ugoite_bin());
+    let mut bare = Command::new(ugoite_bin());
     bare.args(["entry", "update", &space_path, "u-entry", "--title", "New"]);
     env(&mut bare);
     let bare = bare.output().unwrap();

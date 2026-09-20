@@ -1,4 +1,4 @@
-use crate::cli_config::{resolve_command_triple, split_space_and_id};
+use crate::cli_config::resolve_command_triple;
 use crate::http;
 use crate::output::{effective_format, emit_success, print_json_table, Format, UsageError};
 use anyhow::Result;
@@ -17,28 +17,13 @@ pub struct ChangeCmd {
 #[derive(Subcommand)]
 pub enum ChangeSubCmd {
     /// List Space Change history
-    #[command(
-        long_about = "List the append-only Change history of a Space.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite change list\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME change list\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite change list /root/spaces/my-space\n  ugoite change list 019f1234-5678-7abc-8def-0123456789ab"
-    )]
-    List {
-        #[arg(
-            value_name = "SPACE_UID_OR_PATH",
-            help = "Legacy explicit Space (immutable UID or local path). Omit to use the selected context."
-        )]
-        space_path: Option<String>,
-    },
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
+    List,
     /// Revert a Change by appending its inverse
-    #[command(
-        long_about = "Revert a Change by appending its inverse as a new Change. The reverted Change is kept; history never shortens.\n\nThe command invocation itself is the explicit intent; no interactive prompt is shown. When the server requires human approval or reauthentication, the canonical step-up error is returned.\n\nExamples:\n  # Selected context (no Space argument)\n  ugoite change revert change-1\n\n  # Selected context override for one invocation (does not change the selection)\n  ugoite --context NAME change revert change-1\n\n  # 0.1.x compatibility only: legacy explicit Space\n  ugoite change revert /root/spaces/my-space change-1\n  ugoite change revert 019f1234-5678-7abc-8def-0123456789ab change-1"
-    )]
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Revert {
-        #[arg(
-            value_name = "SPACE_OR_CHANGE_ID",
-            num_args(1..=2),
-            required = true,
-            help = "CHANGE_ID against the selected context (Change ID to revert; never inferred), or legacy SPACE CHANGE_ID."
-        )]
-        space_and_id: Vec<String>,
+        #[arg(value_name = "CHANGE_ID")]
+        change_id: String,
         #[arg(
             long,
             default_value = "cli",
@@ -86,16 +71,17 @@ pub async fn run(
 ) -> Result<()> {
     let fmt = effective_format(cmd.format);
     match cmd.sub {
-        ChangeSubCmd::List { space_path } => {
-            let (root, space_id, base) = resolve_command_triple(
-                space_path.as_deref(),
-                explicit_config,
-                context_override,
-                "change list",
-            )?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+        ChangeSubCmd::List => {
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "change list")?;
+            if base.is_some() {
+                let target = crate::cli_config::resolve_command_target(
+                    explicit_config,
+                    context_override,
+                    "change list",
+                )?;
+                let result = http::execute_for_target(
+                    &target,
                     "change.list",
                     serde_json::json!({"space_id": space_id}),
                     None,
@@ -140,23 +126,13 @@ pub async fn run(
                 emit_success(&changes, &fmt, None);
             }
         }
-        ChangeSubCmd::Revert {
-            space_and_id,
-            author,
-        } => {
-            let (legacy_space, change_id) =
-                split_space_and_id(&space_and_id, "CHANGE_ID", "change revert")?;
-            let change_id = change_id.to_string();
+        ChangeSubCmd::Revert { change_id, author } => {
             if change_id.trim().is_empty() {
                 return Err(UsageError("CHANGE_ID must not be blank".to_string()).into());
             }
-            let (root, space_id, base) = resolve_command_triple(
-                legacy_space,
-                explicit_config,
-                context_override,
-                "change revert",
-            )?;
-            if let Some(base) = base {
+            let (root, space_id, base) =
+                resolve_command_triple(explicit_config, context_override, "change revert")?;
+            if base.is_some() {
                 if author != "cli" {
                     return Err(UsageError(
                         "change revert --author is only supported in core mode; backend/api derive author from the authenticated identity"
@@ -164,8 +140,13 @@ pub async fn run(
                     )
                     .into());
                 }
-                let result = http::execute(
-                    &base,
+                let target = crate::cli_config::resolve_command_target(
+                    explicit_config,
+                    context_override,
+                    "change revert",
+                )?;
+                let result = http::execute_for_target(
+                    &target,
                     "change.revert",
                     serde_json::json!({"space_id": space_id, "change_id": change_id}),
                     Some(serde_json::json!({})),

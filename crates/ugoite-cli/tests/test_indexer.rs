@@ -1,7 +1,9 @@
 //! Integration tests for indexer operations.
 //! REQ-SRCH-007, REQ-FORM-011, REQ-SRCH-006, REQ-ENTRY-004
 
-use std::process::Command;
+use support::Command;
+
+mod support;
 
 fn ugoite_bin() -> std::path::PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {

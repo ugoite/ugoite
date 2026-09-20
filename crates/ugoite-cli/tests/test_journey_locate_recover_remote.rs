@@ -18,7 +18,8 @@ use tempfile::tempdir;
 use tokio::net::TcpListener;
 use tokio::process::Command;
 use tokio::task::JoinHandle;
-use ugoite_cli::config::{AuthSession, EndpointConfig, EndpointMode};
+use ugoite_cli::cli_config::{ConfigFile, ConnectionConfig, ContextConfig};
+use ugoite_cli::config::AuthSession;
 use ugoite_server::{app, AppState};
 
 struct ServerGuard(JoinHandle<()>);
@@ -56,9 +57,26 @@ fn test_key_and_jwk() -> (SigningKey, serde_json::Value) {
 }
 
 async fn run_cli(config_path: &std::path::Path, args: &[&str]) -> Output {
+    let space_uid = std::fs::read_to_string(config_path).ok().and_then(|text| {
+        text.lines().find_map(|line| {
+            line.trim()
+                .strip_prefix("space_uid = \"")
+                .and_then(|value| value.strip_suffix('\"'))
+                .map(str::to_owned)
+        })
+    });
+    let mut command_args = vec!["--config", config_path.to_str().expect("config path")];
+    command_args.extend(
+        args.iter()
+            .copied()
+            .filter(|arg| Some(*arg) != space_uid.as_deref()),
+    );
     Command::new(ugoite_bin())
-        .args(args)
-        .env("UGOITE_CLI_CONFIG_PATH", config_path)
+        .args(command_args)
+        .env(
+            "HOME",
+            config_path.parent().expect("config parent").join("home"),
+        )
         .output()
         .await
         .expect("run ugoite")
@@ -190,8 +208,8 @@ async fn setup_remote() -> RemoteFixture {
     }
 
     let config_dir = tempdir().expect("config directory");
-    let config_path = config_dir.path().join("cli-endpoints.json");
-    let credentials_path = config_dir.path().join("cli-credentials.json");
+    let config_path = config_dir.path().join("config.toml");
+    let credentials_path = config_dir.path().join("home/.ugoite/credentials.json");
     let session = AuthSession {
         credential_id: access.credential_id,
         device_name: "Locate-recover remote test".to_string(),
@@ -210,19 +228,36 @@ async fn setup_remote() -> RemoteFixture {
         resource: None,
         space_uid: access.space_uid,
     };
-    let config = EndpointConfig {
-        mode: EndpointMode::Api,
-        backend_url: server_url,
-        api_url: api_base,
-    };
+    let mut config = ConfigFile::empty();
+    config.connections.insert(
+        "remote-api".to_string(),
+        ConnectionConfig::Api { url: api_base },
+    );
+    config.contexts.insert(
+        "locate-recover".to_string(),
+        ContextConfig {
+            connection: "remote-api".to_string(),
+            space_uid: access.space_uid,
+            credential: Some("locate-recover".to_string()),
+        },
+    );
+    config.current_context = Some("locate-recover".to_string());
+    let mut profile = serde_json::to_value(&session).expect("serialize CLI credential");
+    profile["connection"] = serde_json::Value::String("remote-api".to_string());
+    let credentials = serde_json::json!({
+        "version": 1,
+        "credentials": { "locate-recover": profile },
+    });
     std::fs::write(
         &config_path,
-        serde_json::to_vec_pretty(&config).expect("serialize endpoint config"),
+        toml::to_string_pretty(&config).expect("serialize canonical config"),
     )
-    .expect("write endpoint config");
+    .expect("write canonical config");
+    std::fs::create_dir_all(credentials_path.parent().expect("credentials parent"))
+        .expect("create credentials directory");
     std::fs::write(
         &credentials_path,
-        serde_json::to_vec_pretty(&session).expect("serialize CLI credential"),
+        serde_json::to_vec_pretty(&credentials).expect("serialize credential store"),
     )
     .expect("write CLI credential");
 

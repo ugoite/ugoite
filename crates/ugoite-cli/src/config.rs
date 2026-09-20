@@ -1,28 +1,8 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::net::IpAddr;
 use std::path::{Path, PathBuf};
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum EndpointMode {
-    #[default]
-    Core,
-    Backend,
-    Api,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct EndpointConfig {
-    #[serde(default)]
-    pub mode: EndpointMode,
-    #[serde(default = "default_backend_url")]
-    pub backend_url: String,
-    #[serde(default = "default_api_url")]
-    pub api_url: String,
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
 pub struct AuthSession {
@@ -39,59 +19,11 @@ pub struct AuthSession {
     pub space_uid: uuid::Uuid,
 }
 
-fn default_backend_url() -> String {
-    "http://localhost:8000".to_string()
-}
-
-fn default_api_url() -> String {
-    "http://localhost:3000/api".to_string()
-}
-
-impl Default for EndpointConfig {
-    fn default() -> Self {
-        Self {
-            mode: EndpointMode::Core,
-            backend_url: default_backend_url(),
-            api_url: default_api_url(),
-        }
-    }
-}
-
-pub fn config_path() -> PathBuf {
-    if let Some(path) = non_empty_env_path("UGOITE_CLI_CONFIG_PATH") {
-        return path;
-    }
-    if let Some(config_home) = non_empty_env_path("UGOITE_CONFIG_HOME") {
-        return config_home.join("ugoite").join("cli-endpoints.json");
-    }
-    if let Some(xdg_config_home) = non_empty_env_path("XDG_CONFIG_HOME") {
-        return xdg_config_home.join("ugoite").join("cli-endpoints.json");
-    }
-    dirs_home().join(".ugoite").join("cli-endpoints.json")
-}
-
 pub fn auth_session_path() -> PathBuf {
-    config_path()
+    crate::cli_config::canonical_global_config_path()
         .parent()
         .unwrap_or(Path::new("."))
         .join("cli-credentials.json")
-}
-
-fn non_empty_env_path(key: &str) -> Option<PathBuf> {
-    std::env::var(key).ok().and_then(|value| {
-        if value.trim().is_empty() {
-            None
-        } else {
-            Some(PathBuf::from(value))
-        }
-    })
-}
-
-fn dirs_home() -> PathBuf {
-    match std::env::var("HOME") {
-        Ok(home) => PathBuf::from(home),
-        Err(_) => PathBuf::from("."),
-    }
 }
 
 fn non_empty_string(value: String) -> Option<String> {
@@ -106,47 +38,6 @@ pub fn non_empty_env_value(key: &str) -> Option<String> {
     std::env::var(key).ok().and_then(non_empty_string)
 }
 
-fn config_load_error(path: &Path, reason: &str) -> anyhow::Error {
-    crate::output::UsageError(format!(
-        "cannot load CLI configuration at {}: {reason}",
-        path.display()
-    ))
-    .into()
-}
-
-pub fn load_config() -> Result<EndpointConfig> {
-    let path = config_path();
-    let text = match std::fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(EndpointConfig::default());
-        }
-        Err(error) => {
-            return Err(config_load_error(
-                &path,
-                &format!("configuration file is unreadable ({:?})", error.kind()),
-            ));
-        }
-    };
-    let value: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|_| config_load_error(&path, "configuration file contains invalid JSON"))?;
-    let config: EndpointConfig = serde_json::from_value(value).map_err(|_| {
-        config_load_error(
-            &path,
-            "configuration contains invalid endpoint configuration",
-        )
-    })?;
-    validate_server_endpoint_url(&config.backend_url, "Backend endpoint")
-        .and_then(|_| validate_server_endpoint_url(&config.api_url, "API endpoint"))
-        .map_err(|_| {
-            config_load_error(
-                &path,
-                "configuration contains invalid endpoint configuration",
-            )
-        })?;
-    Ok(config)
-}
-
 pub fn load_auth_session() -> Option<AuthSession> {
     let path = auth_session_path();
     if !path.exists() {
@@ -158,17 +49,6 @@ pub fn load_auth_session() -> Option<AuthSession> {
         Err(_) => return None,
     };
     serde_json::from_str(&text).ok()
-}
-
-pub fn save_config(config: &EndpointConfig) -> Result<PathBuf> {
-    let path = config_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let text =
-        serde_json::to_string_pretty(config).expect("EndpointConfig serialization is infallible");
-    std::fs::write(&path, text)?;
-    Ok(path)
 }
 
 pub fn save_auth_session(session: &AuthSession) -> Result<PathBuf> {
@@ -312,230 +192,6 @@ fn set_owner_only_directory(_path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn space_ws_path(_root_path: &str, space_id: &str) -> String {
-    format!("spaces/{}", space_id)
-}
-
-fn explicit_core_space_path(space_path: &str) -> Option<(String, String)> {
-    let text = space_path.trim_end_matches('/');
-    let pos = text.rfind("/spaces/")?;
-    let root = if pos == 0 { "/" } else { &text[..pos] };
-    let rest = &text[pos + 8..];
-    let space_id = rest.split('/').next().unwrap_or(rest);
-    if root.is_empty() || space_id.is_empty() {
-        return None;
-    }
-    Some((root.to_string(), space_id.to_string()))
-}
-
-fn validate_local_space_candidate(
-    path: &std::path::Path,
-    directory_id: &str,
-) -> Result<serde_json::Value> {
-    let metadata: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(path.join("meta.json"))?)?;
-    // Local core mode and the server-backed path share the domain-owned
-    // compatibility classifier. A legacy schema field is never a fallback.
-    if let Err(error) = ugoite_domain::space::classify_space_version(&metadata) {
-        let detected = error.detected().map(str::to_owned);
-        return Err(ugoite_core::error::AppError::unsupported_space_version(
-            detected.as_deref(),
-            ugoite_domain::space::SUPPORTED_SPACE_VERSIONS,
-        )
-        .into());
-    }
-    let object = metadata
-        .as_object()
-        .context("Space metadata must be an object")?;
-    const SPACE_METADATA_FIELDS: &[&str] = &[
-        "space_version",
-        "space_id",
-        "space_uid",
-        "slug",
-        "id",
-        "name",
-        "created_at",
-        "hmac_key_id",
-        "hmac_key",
-        "last_rotation",
-    ];
-    if object
-        .keys()
-        .any(|field| !SPACE_METADATA_FIELDS.contains(&field.as_str()))
-    {
-        bail!("Space metadata contains unsupported fields");
-    }
-    if object
-        .get("space_version")
-        .and_then(serde_json::Value::as_str)
-        != Some(ugoite_domain::space::CURRENT_SPACE_VERSION)
-        || object.get("space_id").and_then(serde_json::Value::as_str) != Some(directory_id)
-        || object.get("id").and_then(serde_json::Value::as_str) != Some(directory_id)
-        || object
-            .get("slug")
-            .and_then(serde_json::Value::as_str)
-            .is_none_or(str::is_empty)
-        || object
-            .get("name")
-            .and_then(serde_json::Value::as_str)
-            .is_none_or(str::is_empty)
-        || object
-            .get("created_at")
-            .and_then(serde_json::Value::as_f64)
-            .is_none()
-        || object
-            .get("hmac_key_id")
-            .and_then(serde_json::Value::as_str)
-            .is_none_or(str::is_empty)
-        || object
-            .get("hmac_key")
-            .and_then(serde_json::Value::as_str)
-            .is_none_or(str::is_empty)
-        || object
-            .get("last_rotation")
-            .and_then(serde_json::Value::as_str)
-            .is_none_or(str::is_empty)
-    {
-        bail!("Space metadata identity or required fields are invalid");
-    }
-    let space_uid = object
-        .get("space_uid")
-        .and_then(serde_json::Value::as_str)
-        .and_then(|value| uuid::Uuid::parse_str(value).ok())
-        .context("Space metadata must contain a UUIDv7 space_uid")?;
-    if space_uid.get_version() != Some(uuid::Version::SortRand) {
-        bail!("Space metadata space_uid must be a UUIDv7");
-    }
-    if let Ok(directory_uid) = uuid::Uuid::parse_str(directory_id) {
-        if directory_uid.get_version() == Some(uuid::Version::SortRand)
-            && directory_uid != space_uid
-        {
-            bail!("Space directory and metadata space_uid disagree");
-        }
-    }
-    let settings: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(path.join("settings.json"))?)?;
-    if !settings.is_object()
-        || settings
-            .get("default_form")
-            .and_then(serde_json::Value::as_str)
-            .is_none_or(str::is_empty)
-    {
-        bail!("Space settings are incomplete");
-    }
-    for directory in ["security", "forms", "assets", "sql_sessions"] {
-        if !path.join(directory).is_dir() {
-            bail!("Space bootstrap is incomplete: missing {directory}");
-        }
-    }
-    Ok(metadata)
-}
-
-/// Parse an immutable Space UID for backend/api mode.
-///
-/// Remote operations address a Knowledge authority by its immutable UUIDv7
-/// Space UID only. Slugs, filesystem paths, and other fallback identifiers
-/// are never accepted here so a typo cannot silently select another Space.
-pub fn parse_space_uid(value: &str) -> Result<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty()
-        || trimmed.contains('/')
-        || trimmed.contains('\\')
-        || trimmed.contains('\0')
-    {
-        bail!("backend/api mode requires SPACE_UID (UUIDv7)");
-    }
-    let parsed = uuid::Uuid::parse_str(trimmed)
-        .map_err(|_| anyhow!("backend/api mode requires SPACE_UID (UUIDv7)"))?;
-    if parsed.get_version() != Some(uuid::Version::SortRand) {
-        bail!("backend/api mode requires SPACE_UID (UUIDv7)");
-    }
-    Ok(parsed.to_string())
-}
-
-/// Resolve a backend/api-only Space reference without leaking the raw input.
-///
-/// Core-mode paths are never accepted here; only an exact UUIDv7 works.
-pub fn resolve_backend_space_uid(space_uid: &str, command_name: &str) -> Result<String> {
-    parse_space_uid(space_uid)
-        .with_context(|| format!("{command_name} requires SPACE_UID in backend/api mode"))
-}
-
-pub fn parse_space_path(space_path: &str) -> (String, String) {
-    if let Some(explicit) = explicit_core_space_path(space_path) {
-        return explicit;
-    }
-    let text = space_path.trim_end_matches('/');
-    (
-        "".to_string(),
-        std::path::Path::new(text)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(text)
-            .to_string(),
-    )
-}
-
-pub fn resolve_space_reference(
-    config: &EndpointConfig,
-    space_path: &str,
-    command_name: &str,
-) -> Result<(String, String)> {
-    if validated_base_url(config)?.is_some() {
-        let space_uid = parse_space_uid(space_path)
-            .with_context(|| format!("{command_name} requires SPACE_UID in backend/api mode"))?;
-        return Ok((String::new(), space_uid));
-    }
-    let (root, reference) = explicit_core_space_path(space_path).ok_or_else(|| {
-        anyhow!(
-            "{command_name} requires SPACE_UID_OR_PATH as /path/to/root/spaces/<slug> in core mode"
-        )
-    })?;
-    let spaces = std::path::Path::new(&root).join("spaces");
-    let direct_path = spaces.join(&reference);
-    let direct_candidate = if direct_path.join("meta.json").is_file() {
-        Some(
-            validate_local_space_candidate(&direct_path, &reference)
-                .with_context(|| format!("invalid Space selected by identifier: {reference}"))?,
-        )
-    } else {
-        None
-    };
-    let mut matching = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&spaces) {
-        for entry in entries.flatten() {
-            let meta_path = entry.path().join("meta.json");
-            let Some(immutable_id) = entry.file_name().to_str().map(str::to_owned) else {
-                continue;
-            };
-            let Ok(contents) = std::fs::read(&meta_path) else {
-                continue;
-            };
-            let Ok(meta) = serde_json::from_slice::<serde_json::Value>(&contents) else {
-                continue;
-            };
-            if meta.get("slug").and_then(serde_json::Value::as_str) == Some(reference.as_str()) {
-                validate_local_space_candidate(&entry.path(), &immutable_id)
-                    .with_context(|| format!("invalid Space matching slug: {reference}"))?;
-                matching.push(immutable_id);
-            }
-        }
-    }
-    if matching.len() > 1 {
-        bail!("Space slug is ambiguous: {reference}");
-    }
-    if let Some(immutable_id) = matching.pop() {
-        if direct_candidate.is_some() && immutable_id != reference {
-            bail!("Space slug is ambiguous: {reference}");
-        }
-        return Ok((root, immutable_id));
-    }
-    if direct_candidate.is_some() {
-        return Ok((root, reference));
-    }
-    Ok((root, reference))
-}
-
 pub fn normalize_space_root(root_path: &str) -> String {
     let trimmed = if root_path == "/" {
         "/"
@@ -551,81 +207,8 @@ pub fn normalize_space_root(root_path: &str) -> String {
     trimmed.to_string()
 }
 
-struct SelectedServerEndpoint<'a> {
-    label: &'static str,
-    url: &'a str,
-}
-
-fn selected_server_endpoint(config: &EndpointConfig) -> Option<SelectedServerEndpoint<'_>> {
-    match config.mode {
-        EndpointMode::Backend => Some(SelectedServerEndpoint {
-            label: "Backend endpoint",
-            url: &config.backend_url,
-        }),
-        EndpointMode::Api => Some(SelectedServerEndpoint {
-            label: "API endpoint",
-            url: &config.api_url,
-        }),
-        EndpointMode::Core => None,
-    }
-}
-
-pub fn base_url(config: &EndpointConfig) -> Option<String> {
-    selected_server_endpoint(config).map(|endpoint| endpoint.url.trim_end_matches('/').to_string())
-}
-
-fn is_loopback_host(host: &str) -> bool {
-    let host = host.trim_end_matches('.');
-    let normalized = host
-        .strip_prefix('[')
-        .and_then(|value| value.strip_suffix(']'))
-        .unwrap_or(host);
-    normalized.eq_ignore_ascii_case("localhost")
-        || normalized
-            .parse::<IpAddr>()
-            .map(|address| address.is_loopback())
-            .unwrap_or(false)
-}
-
 pub fn validate_server_endpoint_url(url: &str, label: &str) -> Result<()> {
-    let parsed = reqwest::Url::parse(url)
-        .map_err(|error| anyhow!("{label} URL {url:?} is invalid: {error}"))?;
-    match parsed.scheme() {
-        "https" => Ok(()),
-        "http" => {
-            if parsed.host_str().is_some_and(is_loopback_host) {
-                return Ok(());
-            }
-            bail!(
-                "{label} URL {url} uses cleartext http:// for a non-loopback host. Use https:// for remote endpoints, or use a loopback http:// URL for local development."
-            )
-        }
-        scheme => bail!("{label} URL {url} must use http:// or https://, not {scheme}://."),
-    }
-}
-
-pub fn validate_active_remote_endpoint(config: &EndpointConfig) -> Result<()> {
-    let Some(endpoint) = selected_server_endpoint(config) else {
-        return Ok(());
-    };
-    validate_server_endpoint_url(endpoint.url, endpoint.label)
-}
-
-pub fn endpoint_transport_warning(url: &str, label: &str) -> Option<String> {
-    validate_server_endpoint_url(url, label).err().map(|error| {
-        format!(
-            "{error} Server-backed commands will refuse this endpoint until you switch to https:// or a loopback http:// URL."
-        )
-    })
-}
-
-pub fn validated_base_url(config: &EndpointConfig) -> Result<Option<String>> {
-    let Some(endpoint) = selected_server_endpoint(config) else {
-        return Ok(None);
-    };
-    let base = endpoint.url.trim_end_matches('/').to_string();
-    validate_server_endpoint_url(&base, endpoint.label)?;
-    Ok(Some(base))
+    crate::cli_config::model::validate_remote_url(url, label).map(|_| ())
 }
 
 /// Centralized output contract lives in `crate::output` (E0). These
