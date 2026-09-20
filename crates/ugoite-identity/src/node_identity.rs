@@ -8101,11 +8101,18 @@ mod tests {
         let space_uri = source_space.to_string_lossy().into_owned();
         let space = UgoiteService::new(&space_uri)?;
         space.create_space("drill-space").await?;
-        let entry = space
-            .create_entry(
+        let (entry, _) = space
+            .create_structured_entry_with_receipt(
                 "drill-space",
                 "drill-entry",
-                "---\nform: Entry\n---\n# Recovery drill\n\n## Body\nThis survives the backup.",
+                Some("Recovery drill".to_string()),
+                "Entry".to_string(),
+                Vec::new(),
+                std::collections::BTreeMap::from([(
+                    "Body".to_string(),
+                    serde_json::json!("This survives the backup."),
+                )]),
+                std::collections::BTreeMap::new(),
                 "drill-owner",
             )
             .await?;

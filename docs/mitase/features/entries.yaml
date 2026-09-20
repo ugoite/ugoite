@@ -16,7 +16,7 @@ features:
           - id: create-entry
             adapter: rust
             path: crates/ugoite-iceberg/src/entry.rs
-            selector: { kind: symbol, name: create_entry }
+            selector: { kind: symbol, name: create_structured_entry_with_scopes_and_change_with_receipt }
             claims:
               - kind: satisfies
                 criterion: REQ-ENTRY-001#criterion.creation
@@ -31,7 +31,7 @@ features:
           - id: update-entry
             adapter: rust
             path: crates/ugoite-iceberg/src/entry.rs
-            selector: { kind: symbol, name: update_entry }
+            selector: { kind: symbol, name: update_structured_entry_authorized_with_change }
             claims:
               - kind: satisfies
                 criterion: REQ-ENTRY-002#criterion.parent-revision-validation
@@ -92,11 +92,11 @@ features:
           - id: create-entry
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: create_entry }
+            selector: { kind: symbol, name: create_structured_entry_with_receipt }
           - id: update-entry
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: update_entry }
+            selector: { kind: symbol, name: update_structured_entry_authorized_for_principals }
           - id: delete-entry
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs

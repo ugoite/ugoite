@@ -57,6 +57,7 @@ pub async fn legacy_create_entry<I: IntegrityProvider>(
     Ok(entry)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn legacy_create_entry_with_scopes_and_change<I: IntegrityProvider>(
     op: &Operator,
     ws_path: &str,
@@ -134,6 +135,7 @@ pub async fn legacy_update_entry<I: IntegrityProvider>(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn legacy_update_entry_authorized_with_change<I: IntegrityProvider>(
     op: &Operator,
     ws_path: &str,

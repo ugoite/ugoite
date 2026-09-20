@@ -100,7 +100,7 @@ features:
           - id: create-entry
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: create_entry }
+            selector: { kind: symbol, name: create_structured_entry_with_receipt }
           - id: list-entries
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
@@ -112,11 +112,11 @@ features:
           - id: create-entry-authorized
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: create_entry_authorized_for_principals }
+            selector: { kind: symbol, name: create_structured_entry_authorized_for_principals }
           - id: update-entry-authorized
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: update_entry_authorized_for_principals }
+            selector: { kind: symbol, name: update_structured_entry_authorized_for_principals }
           - id: get-preferences
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
@@ -192,7 +192,7 @@ features:
           - id: create-entry
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: create_entry }
+            selector: { kind: symbol, name: create_structured_entry_with_receipt }
             claims:
               - kind: satisfies
                 criterion: REQ-API-002#criterion.entry-lifecycle
@@ -213,14 +213,14 @@ features:
           - id: create-entry-authorized
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: create_entry_authorized_for_principals }
+            selector: { kind: symbol, name: create_structured_entry_authorized_for_principals }
             claims:
               - kind: satisfies
                 criterion: REQ-API-002#criterion.entry-lifecycle
           - id: update-entry-authorized
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: update_entry_authorized_for_principals }
+            selector: { kind: symbol, name: update_structured_entry_authorized_for_principals }
             claims:
               - kind: satisfies
                 criterion: REQ-API-002#criterion.entry-lifecycle

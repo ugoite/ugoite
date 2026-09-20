@@ -4,13 +4,14 @@ import {
   readEntryAuthorityViolations,
 } from "./entry_authority_gate.ts";
 
-Deno.test("Entry authoring keeps Knowledge semantics behind the Rust bridge", async () => {
+Deno.test("Entry authoring keeps Knowledge semantics in structured fields", async () => {
   assertEquals(await readEntryAuthorityViolations(), []);
   const pane = await Deno.readTextFile(
     "frontend/src/components/EntryDetailPane.tsx",
   );
-  assertEquals(pane.includes("parseSourceToDraftViaWasm"), true);
-  assertEquals(pane.includes("renderDraftToSourceViaWasm"), true);
+  assertEquals(pane.includes("validateEntryDraftViaWasm"), true);
+  assertEquals(pane.includes("parseSourceToDraftViaWasm"), false);
+  assertEquals(pane.includes("renderDraftToSourceViaWasm"), false);
 });
 
 Deno.test("authority gate rejects a new semantic Markdown helper dependency", () => {

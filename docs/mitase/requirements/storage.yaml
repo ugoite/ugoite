@@ -548,12 +548,12 @@ requirements:
           - id: routing-help-case
             adapter: rust
             path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
-            selector: { kind: test, name: test_cli_help_req_sto_010_describes_space_uid_or_path_routing }
+            selector: { kind: test, name: test_cli_help_req_sto_010_describes_context_routing }
             claims:
               - kind: verifies
                 criterion: REQ-STO-010#criterion.routing-help-contract
                 covers: [FEAT-STO-001#binding.routing/target.space-command-routing]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_cli_help_req_sto_010_describes_space_uid_or_path_routing } }
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_cli_help_req_sto_010_describes_context_routing } }
 
   - id: REQ-STO-011
     title: Hashed portable user preference storage

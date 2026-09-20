@@ -205,12 +205,12 @@ requirements:
           - id: create-entry
             adapter: typescript
             path: frontend/src/lib/client.test.ts
-            selector: { kind: test, name: "should create a entry and extract title from markdown" }
+            selector: { kind: test, name: "should create a structured entry" }
             claims:
               - kind: verifies
                 criterion: REQ-API-002#criterion.entry-lifecycle
                 covers: [FEAT-API-001#binding.frontend-implementation/target.entry-api]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should create a entry and extract title from markdown" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should create a structured entry" } }
           - id: get-entry
             adapter: typescript
             path: frontend/src/lib/client.test.ts
@@ -223,12 +223,12 @@ requirements:
           - id: update-entry
             adapter: typescript
             path: frontend/src/lib/client.test.ts
-            selector: { kind: test, name: "should update entry with correct parent_revision_id" }
+            selector: { kind: test, name: "entryApi.update throws generic error on non-409 failure" }
             claims:
               - kind: verifies
                 criterion: REQ-API-002#criterion.entry-lifecycle
                 covers: [FEAT-API-001#binding.frontend-implementation/target.entry-api]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should update entry with correct parent_revision_id" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "entryApi.update throws generic error on non-409 failure" } }
           - id: delete-entry
             adapter: typescript
             path: frontend/src/lib/client.test.ts
