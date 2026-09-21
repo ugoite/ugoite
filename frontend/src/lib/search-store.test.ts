@@ -49,7 +49,7 @@ describe("createSearchStore", () => {
   it("query index returns filtered results", async () => {
     await createRoot(async (dispose) => {
       const store = createSearchStore(() => "search-store-ws");
-      const results = await store.queryIndex({});
+      const results = await store.queryIndex({ form: "Task" });
       expect(Array.isArray(results)).toBe(true);
       expect(store.queryResults()).toBeDefined();
       dispose();
@@ -80,7 +80,7 @@ describe("createSearchStore", () => {
     );
     await createRoot(async (dispose) => {
       const store = createSearchStore(() => "search-store-ws");
-      await expect(store.queryIndex({})).rejects.toThrow();
+      await expect(store.queryIndex({ form: "Task" })).rejects.toThrow();
       expect(store.error()).toContain("Failed to query");
       dispose();
     });
