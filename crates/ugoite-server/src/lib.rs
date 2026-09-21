@@ -1163,6 +1163,11 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             "/spaces/{space_id}/entries",
             get(list_entries).post(create_entry),
         )
+        .route("/spaces/{space_id}/entries/query", post(query_entry_page))
+        .route(
+            "/spaces/{space_id}/entries/query/count",
+            post(count_entry_query),
+        )
         .route("/spaces/{space_id}/entries/options", get(entry_options))
         .route(
             "/spaces/{space_id}/entries/{entry_id}",
@@ -9032,6 +9037,42 @@ async fn query_sql(
     ))
 }
 
+async fn query_entry_page(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    Json(request): Json<ugoite_core::entry_query::EntryPageRequest>,
+) -> ApiResult<Json<ugoite_core::entry_query::EntryPage>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    Ok(Json(
+        state
+            .service
+            .query_entry_page_authorized_for_principals(&space_id, &principals, request)
+            .await
+            .map_err(ApiError::from_core)?,
+    ))
+}
+
+async fn count_entry_query(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    Json(request): Json<ugoite_core::entry_query::EntryCountRequest>,
+) -> ApiResult<Json<ugoite_core::entry_query::EntryCount>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    Ok(Json(
+        state
+            .service
+            .count_entries_authorized_for_principals(&space_id, &principals, request)
+            .await
+            .map_err(ApiError::from_core)?,
+    ))
+}
+
 async fn count_sql(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
@@ -12096,6 +12137,111 @@ mod human_approval_tests {
 }
 
 #[cfg(test)]
+mod canonical_entry_query_tests {
+    use super::*;
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn canonical_entry_query_returns_projected_rows_and_separate_count() -> anyhow::Result<()>
+    {
+        let state = AppState::new_for_tests("memory://server-canonical-entry-query")?;
+        let owner = Uuid::from_u128(0x2976001);
+        let form_id = Uuid::from_u128(0x2976002);
+        let space_id = state
+            .service
+            .create_space_for_principal("canonical-entry-query", owner, "Query test")
+            .await?
+            .to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "id": form_id,
+                    "name": "Task",
+                    "version": 1,
+                    "fields": {
+                        "title": {"id": 100, "type": "string"},
+                        "done": {"id": 101, "type": "boolean"}
+                    },
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        state
+            .service
+            .create_structured_entry_with_receipt(
+                &space_id,
+                "task-one",
+                "Task".to_string(),
+                Vec::new(),
+                BTreeMap::from([
+                    ("title".to_string(), json!("Canonical row")),
+                    ("done".to_string(), json!(false)),
+                ]),
+                BTreeMap::new(),
+                &owner.to_string(),
+            )
+            .await?;
+
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let identity = super::authentication_regression_tests::content_identity(owner, space_uid);
+        let route = Router::new()
+            .route("/spaces/{space_id}/entries/query", post(query_entry_page))
+            .route(
+                "/spaces/{space_id}/entries/query/count",
+                post(count_entry_query),
+            )
+            .layer(Extension(identity))
+            .with_state(state.clone());
+        let page_request = json!({
+            "query": {
+                "scope": {"kind": "form", "form_id": form_id},
+                "filters": [],
+                "sort": []
+            },
+            "projection": {
+                "kind": "fields",
+                "fields": [{"kind": "property", "field_id": 100}]
+            },
+            "limit": 10
+        });
+        let response = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/entries/query"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(page_request.to_string()))?,
+            )
+            .await?;
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+        let page: Value = serde_json::from_slice(&body)?;
+        assert_eq!(page["rows"].as_array().map(Vec::len), Some(1));
+        assert_eq!(page["rows"][0]["form_id"], json!(form_id));
+        assert_eq!(page["rows"][0]["properties"]["title"], "Canonical row");
+        assert_eq!(page["rows"][0]["preview"], Value::Null);
+
+        let response = route
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/entries/query/count"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({"query": page_request["query"]}).to_string(),
+                    ))?,
+            )
+            .await?;
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+        let count: Value = serde_json::from_slice(&body)?;
+        assert_eq!(count["count"], 1);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
 mod authentication_regression_tests {
     use super::*;
     use axum::{
@@ -12320,7 +12466,7 @@ mod authentication_regression_tests {
         }
     }
 
-    fn content_identity(principal_id: Uuid, space_uid: Uuid) -> RequestIdentityContext {
+    pub(super) fn content_identity(principal_id: Uuid, space_uid: Uuid) -> RequestIdentityContext {
         RequestIdentityContext {
             request_identity: RequestIdentity {
                 subject: AuthenticatedSubject::HumanAccount {
@@ -14599,6 +14745,165 @@ mod authentication_regression_tests {
         assert_eq!(status, StatusCode::OK, "{unordered}");
         assert_eq!(unordered["has_more"], false);
         assert!(unordered["next"].is_null());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn canonical_entry_query_pins_publication_and_separates_count() -> anyhow::Result<()> {
+        let principal_id = Uuid::from_u128(29760);
+        let (client, space_id, _space_uid) =
+            production_rest_fixture("canonical-entry-query", principal_id, true).await?;
+
+        let (forms_status, forms) = client
+            .json(Method::GET, &format!("/spaces/{space_id}/forms"), None)
+            .await?;
+        assert_eq!(forms_status, StatusCode::OK, "{forms}");
+        let form_id = forms
+            .as_array()
+            .and_then(|forms| forms.iter().find(|form| form["name"] == "Entry"))
+            .and_then(|form| form["id"].as_str())
+            .expect("seeded Form ID")
+            .to_owned();
+
+        for (id, body) in [("first", "one"), ("second", "two"), ("third", "three")] {
+            let (status, response) = client
+                .json(
+                    Method::POST,
+                    &format!("/spaces/{space_id}/entries"),
+                    Some(json!({
+                        "id": id,
+                        "form": "Entry",
+                        "fields": {"Body": body}
+                    })),
+                )
+                .await?;
+            assert_eq!(status, StatusCode::CREATED, "{response}");
+        }
+
+        let query = json!({
+            "query": {
+                "scope": {"kind": "form", "form_id": form_id},
+                "sort": [{"field": {"kind": "updated_at"}, "direction": "asc"}]
+            },
+            "projection": {"kind": "preview"},
+            "limit": 1
+        });
+        let (status, first_page) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/entries/query"),
+                Some(query.clone()),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::OK, "{first_page}");
+        assert_eq!(first_page["rows"].as_array().map(Vec::len), Some(1));
+        assert_eq!(first_page["has_more"], true);
+        assert!(first_page["rows"][0]["id"].as_str().is_some());
+        assert!(first_page["rows"][0]["preview"]
+            .as_str()
+            .is_some_and(|preview| preview.contains("one")));
+        let mut continuation = first_page["next"].as_str().map(str::to_owned);
+        assert!(continuation.is_some());
+
+        let (status, response) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/entries"),
+                Some(json!({
+                    "id": "fourth",
+                    "form": "Entry",
+                    "fields": {"Body": "fourth"}
+                })),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::CREATED, "{response}");
+
+        let mut rows = first_page["rows"].as_array().cloned().unwrap_or_default();
+        while let Some(after) = continuation.take() {
+            let mut request = query.clone();
+            request["after"] = json!(after);
+            let (status, page) = client
+                .json(
+                    Method::POST,
+                    &format!("/spaces/{space_id}/entries/query"),
+                    Some(request),
+                )
+                .await?;
+            assert_eq!(status, StatusCode::OK, "{page}");
+            assert!(!page.to_string().contains("fourth"), "{page}");
+            rows.extend(page["rows"].as_array().cloned().unwrap_or_default());
+            continuation = page["next"].as_str().map(str::to_owned);
+        }
+        assert_eq!(rows.len(), 3);
+
+        let (status, count) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/entries/query/count"),
+                Some(json!({"query": {"scope": {"kind": "form", "form_id": form_id}}})),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::OK, "{count}");
+        assert_eq!(count["count"], 4);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn canonical_entry_query_rejects_unknown_field_as_invalid_input() -> anyhow::Result<()> {
+        let principal_id = Uuid::from_u128(29761);
+        let (client, space_id, _space_uid) =
+            production_rest_fixture("canonical-entry-query-invalid-field", principal_id, true)
+                .await?;
+
+        let (forms_status, forms) = client
+            .json(Method::GET, &format!("/spaces/{space_id}/forms"), None)
+            .await?;
+        assert_eq!(forms_status, StatusCode::OK, "{forms}");
+        let form_id = forms
+            .as_array()
+            .and_then(|forms| forms.iter().find(|form| form["name"] == "Entry"))
+            .and_then(|form| form["id"].as_str())
+            .expect("seeded Form ID");
+
+        let (status, response) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/entries/query"),
+                Some(json!({
+                    "query": {
+                        "scope": {"kind": "form", "form_id": form_id},
+                        "sort": [{
+                            "field": {"kind": "property", "field_id": 999},
+                            "direction": "asc"
+                        }]
+                    },
+                    "projection": {"kind": "preview"},
+                    "limit": 1
+                })),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{response}");
+        assert_eq!(response["code"], "INVALID_INPUT", "{response}");
+
+        let (status, response) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/entries/query"),
+                Some(json!({
+                    "query": {
+                        "scope": {"kind": "form", "form_id": form_id},
+                        "filters": [{
+                            "field": {"kind": "created_at"},
+                            "operator": "gte",
+                            "value": "1970-01-01T00:00:00Z"
+                        }]
+                    },
+                    "projection": {"kind": "preview"},
+                    "limit": 1
+                })),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::OK, "{response}");
         Ok(())
     }
 
