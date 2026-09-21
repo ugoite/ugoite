@@ -1,5 +1,5 @@
 import { type Accessor, createSignal, untrack } from "solid-js";
-import { entryApi } from "./entry-api";
+import { entryApi } from "~/lib/ugoite-client";
 
 /** Logical EntryQuery types mirrored from ugoite-core's serde contract. */
 export type EntryQueryScope =
