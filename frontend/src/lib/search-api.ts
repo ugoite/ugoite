@@ -36,10 +36,19 @@ export const searchApi = {
     spaceId: string,
     filter: Record<string, unknown>,
   ): Promise<EntryRecord[]> {
+    // v0.2 contract: /query is criteria-only. Callers pass a form-scoped
+    // filter which is translated to the equivalent criteria payload.
+    // Anything else is a usage error: the server fail-closes on unknown
+    // fields, so never emit the legacy `filter` shape.
+    const form = filter.form;
+    if (typeof form !== "string" || form.trim() === "") {
+      throw new Error("searchApi.query requires a form-scoped filter");
+    }
+    const body = { criteria: { form, conditions: [] } };
     const entries = await protocolFetch<Record<string, unknown>[]>(
       "search.query",
       { space_id: spaceId },
-      { filter },
+      body,
     );
     return entries.map(normalizeSearchEntry);
   },

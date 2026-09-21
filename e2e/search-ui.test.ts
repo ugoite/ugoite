@@ -43,13 +43,17 @@ test.describe("Search UI", () => {
 		test.setTimeout(120_000);
 		const runId = Date.now();
 		const formName = `SearchUiForm${runId}`;
-		const entryTitle = `Search UI Keyword ${runId}`;
-		const entryContent = `---\nform: ${formName}\n---\n# ${entryTitle}\n\n## Owner Name\nalice\n\n## Body\nKeyword-first search should find this entry quickly.\n`;
 		let entryId: string | null = null;
 
 		try {
 			await ensureSearchForm(request, formName, spaceId);
-			entryId = await createEntry(request, entryContent, spaceId);
+			entryId = await createEntry(request, spaceId, {
+				form: formName,
+				fields: {
+					"Owner Name": "alice",
+					Body: "Keyword-first search should find this entry quickly.",
+				},
+			});
 			await waitForKeywordMatch(request, "keyword-first", entryId, spaceId);
 
 			await page.goto(getFrontendUrl(`/spaces/${spaceId}/search`), {
@@ -59,7 +63,9 @@ test.describe("Search UI", () => {
 			await expect(page.getByLabel("Search keywords")).toBeVisible();
 			await page.getByLabel("Search keywords").fill("keyword-first");
 			await page.getByRole("button", { name: "Search entries" }).click();
-			await expect(page.getByRole("button", { name: new RegExp(entryTitle) })).toBeVisible();
+			await expect(
+				page.getByRole("button", { name: new RegExp(escapeRegExp(entryId)) }),
+			).toBeVisible();
 			await expectNoObjectCoercion(page);
 		} finally {
 			if (entryId) {
@@ -75,13 +81,18 @@ test.describe("Search UI", () => {
 		test.setTimeout(120_000);
 		const runId = Date.now();
 		const formName = `SUA${String(runId).slice(-6)}`;
-		const entryTitle = `Search UI Advanced ${runId}`;
-		const entryContent = `---\nform: ${formName}\ntags:\n  - release\n  - search-ui\n---\n# ${entryTitle}\n\n## Owner Name\nalice\n\n## Body\nStructured advanced search should find this entry.\n`;
 		let entryId: string | null = null;
 
 		try {
 			await ensureSearchForm(request, formName, spaceId);
-			entryId = await createEntry(request, entryContent, spaceId);
+			entryId = await createEntry(request, spaceId, {
+				form: formName,
+				tags: ["release", "search-ui"],
+				fields: {
+					"Owner Name": "alice",
+					Body: "Structured advanced search should find this entry.",
+				},
+			});
 			await waitForKeywordMatch(
 				request,
 				"Structured advanced search should find this entry.",
@@ -99,7 +110,9 @@ test.describe("Search UI", () => {
 			await page.getByRole("button", { name: "Run advanced search" }).click();
 
 			await expect(page).toHaveURL(new RegExp(`/spaces/${spaceId}/search$`));
-			await expect(page.getByRole("button", { name: new RegExp(entryTitle) })).toBeVisible();
+			await expect(
+				page.getByRole("button", { name: new RegExp(escapeRegExp(entryId!)) }),
+			).toBeVisible();
 		} finally {
 			if (entryId) {
 				await request.delete(getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`));
@@ -131,15 +144,23 @@ async function ensureSearchForm(
 
 async function createEntry(
 	request: APIRequestContext,
-	markdown: string,
 	spaceId: string,
+	payload: {
+		form: string;
+		tags?: string[];
+		fields: Record<string, unknown>;
+	},
 ): Promise<string> {
 	const response = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
-		data: { markdown },
+		data: payload,
 	});
 	expect(response.status()).toBe(201);
 	const entry = (await response.json()) as { id: string };
 	return entry.id;
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function waitForKeywordMatch(

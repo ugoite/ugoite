@@ -32,8 +32,10 @@ test.describe("WebKit 390px quiet layout", () => {
       getBackendUrl(`/spaces/${spaceId}/entries`),
       {
         data: {
-          markdown:
-            `---\nform: Entry\n---\n# WebKit 390px ${Date.now()}\n\n## Body\nWebKit layout fixture.`,
+          form: "Entry",
+          fields: {
+            Body: `WebKit 390px ${Date.now()}\n\nWebKit layout fixture.`,
+          },
         },
       },
     );

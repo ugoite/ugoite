@@ -29,13 +29,14 @@ test.describe("UI page screenshot export @screenshot", () => {
     test.setTimeout(180_000);
     const relation = await getDefaultFormRelation(request, spaceId);
 
-    const entryTitle = `E2E Screenshot Entry ${Date.now()}`;
     const entryRes = await request.post(
       getBackendUrl(`/spaces/${spaceId}/entries`),
       {
         data: {
-          markdown:
-            `---\nform: Entry\n---\n# ${entryTitle}\n\n## Body\nScreenshot seed entry.`,
+          form: "Entry",
+          fields: {
+            Body: `E2E Screenshot Entry ${Date.now()}\n\nScreenshot seed entry.`,
+          },
         },
       },
     );

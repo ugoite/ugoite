@@ -83,18 +83,14 @@ test.describe("Form", () => {
 			{ data: formDef },
 		);
 
-		const entryTitle = `Query Entry ${Date.now()}`;
-		const entryContent = `---
-form: ${formName}
----
-# ${entryTitle}
-
-## Status
-Active
-`;
 		const entryRes = await request.post(
 			getBackendUrl(`/spaces/${spaceId}/entries`),
-			{ data: { markdown: entryContent } },
+			{
+				data: {
+					form: formName,
+					fields: { Status: "Active" },
+				},
+			},
 		);
 		expect(entryRes.status()).toBe(201);
 		const entry = (await entryRes.json()) as { id: string };
@@ -103,18 +99,25 @@ Active
 
 		const queryRes = await request.post(
 			getBackendUrl(`/spaces/${spaceId}/query`),
-			{ data: { filter: { form: formName } } },
+			{
+				data: {
+					criteria: {
+						form: formName,
+						conditions: [],
+						limit: 100,
+					},
+				},
+			},
 		);
 		expect(queryRes.ok()).toBe(true);
-		const entries = (await queryRes.json()) as Array<{
-			id?: string;
-			title?: string;
-			properties?: Record<string, string | null>;
-		}>;
-		const match = entries.find((item) => item.id === entry.id);
+		const entries = (await queryRes.json()) as Array<Record<string, unknown>>;
+		const match = entries.find((item) =>
+			item._ugoite_id === entry.id || item.id === entry.id
+		);
 		expect(match).toBeTruthy();
-		expect(match?.title).toBe(entryTitle);
-		expect(match?.properties?.Status).toBe("Active");
+		expect(Object.values(match ?? {}).some((value) => value === "Active")).toBe(
+			true,
+		);
 
 		await request.delete(
 			getBackendUrl(`/spaces/${spaceId}/entries/${entry.id}`),
@@ -138,7 +141,15 @@ Active
 
 		const queryRes = await request.post(
 			getBackendUrl(`/spaces/${spaceId}/query`),
-			{ data: { filter: { form: formName } } },
+			{
+				data: {
+					criteria: {
+						form: formName,
+						conditions: [],
+						limit: 100,
+					},
+				},
+			},
 		);
 		expect(queryRes.status()).toBe(200);
 		expect(await queryRes.json()).toEqual([]);

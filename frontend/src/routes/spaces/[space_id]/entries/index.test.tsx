@@ -303,7 +303,7 @@ describe("/spaces/:space_id/entries", () => {
 
   it("form scope: uses the Form name as heading with a back link and preselected New Entry", async () => {
     searchParams.form = "Notes";
-    let queryBody: { filter?: Record<string, unknown> } | undefined;
+    let queryBody: { criteria?: Record<string, unknown> } | undefined;
     server.use(
       http.get(
         testApiUrl("/spaces/default/entries"),
@@ -320,7 +320,7 @@ describe("/spaces/:space_id/entries", () => {
         testApiUrl("/spaces/default/query"),
         async ({ request }) => {
           queryBody = await request.json() as {
-            filter?: Record<string, unknown>;
+            criteria?: Record<string, unknown>;
           };
           return HttpResponse.json([{
             id: "scoped-1",
@@ -343,7 +343,7 @@ describe("/spaces/:space_id/entries", () => {
       .toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /other-1/ })).not
       .toBeInTheDocument();
-    expect(queryBody?.filter).toMatchObject({ form: "Notes" });
+    expect(queryBody?.criteria).toMatchObject({ form: "Notes" });
 
     fireEvent.click(screen.getByRole("button", { name: "+ Entry" }));
     expect(navigate).toHaveBeenCalledWith(

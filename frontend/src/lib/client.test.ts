@@ -1116,7 +1116,7 @@ describe("error paths", () => {
         () => HttpResponse.json({ detail: "Error" }, { status: 500 }),
       ),
     );
-    await expect(searchApi.query("ws-search-err", {})).rejects.toThrow(
+    await expect(searchApi.query("ws-search-err", { form: "Task" })).rejects.toThrow(
       "Failed to query space",
     );
   });
@@ -1139,7 +1139,7 @@ describe("error paths", () => {
       ),
     );
 
-    const entries = await searchApi.query("ws-search-timestamps", {});
+    const entries = await searchApi.query("ws-search-timestamps", { form: "Task" });
 
     expect(entries[0].updated_at).toBe(
       new Date(1772960822.056 * 1000).toISOString(),

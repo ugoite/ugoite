@@ -22,8 +22,6 @@ test.describe("JOURNEY-KNOWLEDGE-001", () => {
   const spaceSlug = `journey-space-${stamp}`;
   const formName = `JourneyForm-${stamp}`;
   const needle = `journey-needle-${stamp}`;
-  const titleV1 = `Journey entry ${stamp}`;
-  const titleV2 = `Journey entry edited ${stamp}`;
   const bodyV1 = "journey v1 body";
   const bodyV2 = "journey v2 body";
 
@@ -121,11 +119,14 @@ test.describe("JOURNEY-KNOWLEDGE-001", () => {
   });
 
   test("JOURNEY-KNOWLEDGE-001: Entry create appends exactly one revision", async ({ request }) => {
-    const markdown =
-      `---\nform: ${formName}\n---\n# ${titleV1}\n\n## Status\n${needle}\n\n## Body\n${bodyV1}\n`;
     const createRes = await request.post(
       getBackendUrl(`/spaces/${spaceId}/entries`),
-      { data: { markdown } },
+      {
+        data: {
+          form: formName,
+          fields: { Status: needle, Body: bodyV1 },
+        },
+      },
     );
     expect(createRes.status()).toBe(201);
     const created = (await createRes.json()) as {
@@ -150,10 +151,13 @@ test.describe("JOURNEY-KNOWLEDGE-001", () => {
 
   test("JOURNEY-KNOWLEDGE-001: Entry edit enforces optimistic concurrency", async ({ request }) => {
     const entryUrl = getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`);
-    const markdown =
-      `---\nform: ${formName}\n---\n# ${titleV2}\n\n## Status\n${needle}\n\n## Body\n${bodyV2}\n`;
+    const updatePayload = {
+      form: formName,
+      fields: { Status: needle, Body: bodyV2 },
+      parent_revision_id: rev1,
+    };
     const updateRes = await request.put(entryUrl, {
-      data: { markdown, parent_revision_id: rev1 },
+      data: updatePayload,
     });
     expect(updateRes.ok()).toBe(true);
     const updated = (await updateRes.json()) as { revision_id?: string };
@@ -162,7 +166,7 @@ test.describe("JOURNEY-KNOWLEDGE-001", () => {
     rev2 = updated.revision_id!;
 
     const staleRes = await request.put(entryUrl, {
-      data: { markdown, parent_revision_id: rev1 },
+      data: { ...updatePayload },
     });
     expect(staleRes.status()).toBe(409);
   });
@@ -236,7 +240,7 @@ test.describe("JOURNEY-KNOWLEDGE-001", () => {
     };
     expect(revision.revision_id).toBe(rev3);
     expect(revision.markdown).toContain(bodyV1);
-    expect(revision.markdown).toContain(titleV1);
+    expect(revision.markdown).toContain(needle);
   });
 
   test("JOURNEY-KNOWLEDGE-001: Reopen reads identical durable state", async ({ request }) => {
