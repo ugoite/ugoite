@@ -57,6 +57,10 @@ The E2E browser feature is represented by the canonical graph at
 `docs/mitase/features/e2e.yaml`; no legacy per-area E2E feature registry is
 authoritative for that domain.
 
+The shared Entry read contract is documented in
+[`entry-query.md`](entry-query.md). Its Rust domain types are the semantic
+source used by REST, CLI, WASM, frontend, and MCP adapters.
+
 The OIDC authentication and external identity linking slice remains connected
 to the canonical security graph at `docs/mitase/features/security.yaml` as
 `FEAT-SEC-005`.

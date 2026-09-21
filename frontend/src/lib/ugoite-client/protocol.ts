@@ -42,6 +42,8 @@ export const UGOITE_API_OPERATIONS = [
   "form.get",
   "form.upsert",
   "entry.list",
+  "entry.query",
+  "entry.query.count",
   "entry.get",
   "entry.create",
   "entry.update",
