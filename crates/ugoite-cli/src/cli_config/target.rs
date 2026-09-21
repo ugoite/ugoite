@@ -351,45 +351,6 @@ fn validate_core_space_metadata(directory: &Path, space_uid: &uuid::Uuid) -> Res
     Ok(())
 }
 
-/// Legacy-shaped triple for mechanical migration of existing handlers:
-/// `(root, space_id, Option<base>)`. New code should match on
-/// [`SpaceTarget`] directly.
-pub fn resolve_command_triple(
-    explicit_config: Option<&Path>,
-    context_override: Option<&str>,
-    command_name: &str,
-) -> Result<(String, String, Option<String>)> {
-    match resolve_command_target(explicit_config, context_override, command_name)? {
-        SpaceTarget::Remote {
-            base, space_uid, ..
-        } => Ok((String::new(), space_uid, Some(base))),
-        SpaceTarget::Core { root, space_id } => Ok((root, space_id, None)),
-    }
-}
-
-/// Override-aware triple for callers that already accept `--connection` /
-/// `--credential` but still need the legacy shape.
-pub fn resolve_command_triple_with_overrides(
-    explicit_config: Option<&Path>,
-    context_override: Option<&str>,
-    connection_override: Option<&str>,
-    credential_override: Option<&str>,
-    command_name: &str,
-) -> Result<(String, String, Option<String>)> {
-    match resolve_command_target_with_overrides(
-        explicit_config,
-        context_override,
-        connection_override,
-        credential_override,
-        command_name,
-    )? {
-        SpaceTarget::Remote {
-            base, space_uid, ..
-        } => Ok((String::new(), space_uid, Some(base))),
-        SpaceTarget::Core { root, space_id } => Ok((root, space_id, None)),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

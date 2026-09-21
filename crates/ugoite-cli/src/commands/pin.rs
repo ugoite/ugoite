@@ -1,4 +1,4 @@
-use crate::cli_config::{resolve_command_target, resolve_command_triple, SpaceTarget};
+use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::config::{effective_format, print_json, print_json_table, Format};
 use crate::http;
 use crate::output::{emit_success, UsageError};
@@ -118,14 +118,12 @@ pub async fn run(
             emit_success(&pin, &fmt, Some(format!("created pin {name}")));
         }
         PinSubCmd::List => {
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "pin list")?;
-            if base.is_some() {
-                let target = resolve_command_target(explicit_config, context_override, "pin list")?;
+            let target = resolve_command_target(explicit_config, context_override, "pin list")?;
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
                 let result = http::execute_for_target(
                     &target,
                     "pin.list",
-                    serde_json::json!({"space_id": space_id}),
+                    serde_json::json!({"space_id": space_uid}),
                     None,
                 )
                 .await?;
@@ -136,8 +134,11 @@ pub async fn run(
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            let pins = service.list_pins(&space_id).await?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation pin.list does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let pins = service.list_pins(space_id).await?;
             if fmt != Format::Json {
                 print_json_table(&pin_rows_table(&pins), &[("NAME", "name")]);
                 return Ok(());
@@ -145,20 +146,21 @@ pub async fn run(
             print_json(&pins);
         }
         PinSubCmd::Read { name } => {
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "pin read")?;
-            let pins = if base.is_some() {
-                let target = resolve_command_target(explicit_config, context_override, "pin read")?;
-                http::execute_for_target(
-                    &target,
-                    "pin.list",
-                    serde_json::json!({"space_id": space_id}),
-                    None,
-                )
-                .await?
-            } else {
-                let service = UgoiteService::new_without_background_refresh(&root)?;
-                service.list_pins(&space_id).await?
+            let target = resolve_command_target(explicit_config, context_override, "pin read")?;
+            let pins = match &target {
+                SpaceTarget::Remote { space_uid, .. } => {
+                    http::execute_for_target(
+                        &target,
+                        "pin.list",
+                        serde_json::json!({"space_id": space_uid}),
+                        None,
+                    )
+                    .await?
+                }
+                SpaceTarget::Core { root, space_id } => {
+                    let service = UgoiteService::new_without_background_refresh(root)?;
+                    service.list_pins(space_id).await?
+                }
             };
             let pin = find_pin(&pins, &name)?;
             let mut value = pin.clone();
@@ -173,22 +175,23 @@ pub async fn run(
                     UsageError("--from and --to pin names must not be blank".to_string()).into(),
                 );
             }
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "pin diff")?;
-            if base.is_some() {
-                let target = resolve_command_target(explicit_config, context_override, "pin diff")?;
+            let target = resolve_command_target(explicit_config, context_override, "pin diff")?;
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
                 let result = http::execute_for_target(
                     &target,
                     "space.pin_diff",
-                    serde_json::json!({"space_id": space_id, "from": from, "to": to}),
+                    serde_json::json!({"space_id": space_uid, "from": from, "to": to}),
                     None,
                 )
                 .await?;
                 emit_success(&result, &fmt, None);
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            let diff = service.diff_pins(&space_id, &from, &to).await?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation space.pin_diff does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let diff = service.diff_pins(space_id, &from, &to).await?;
             emit_success(&diff, &fmt, None);
         }
         PinSubCmd::Delete { name } => {

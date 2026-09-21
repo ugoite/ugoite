@@ -1,4 +1,4 @@
-use crate::cli_config::resolve_command_triple;
+use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::config::print_json;
 use crate::http;
 use anyhow::{Context, Result};
@@ -355,39 +355,45 @@ pub async fn run(
             })),
         },
         SqlSubCmd::SavedList => {
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "sql saved-list")?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+            let target =
+                resolve_command_target(explicit_config, context_override, "sql saved-list")?;
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let result = http::execute_for_target(
+                    &target,
                     "sql.list",
-                    serde_json::json!({"space_id": space_id}),
+                    serde_json::json!({"space_id": space_uid}),
                     None,
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            let sqls = service.list_saved_sql_operator_unscoped(&space_id).await?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation sql.list does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let sqls = service.list_saved_sql_operator_unscoped(space_id).await?;
             print_json(&sqls);
         }
         SqlSubCmd::SavedGet { sql_id } => {
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "sql saved-get")?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+            let target =
+                resolve_command_target(explicit_config, context_override, "sql saved-get")?;
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let result = http::execute_for_target(
+                    &target,
                     "sql.get",
-                    serde_json::json!({"space_id": space_id, "sql_id": sql_id}),
+                    serde_json::json!({"space_id": space_uid, "sql_id": sql_id}),
                     None,
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            let sql = service.get_saved_sql(&space_id, &sql_id).await?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation sql.get does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let sql = service.get_saved_sql(space_id, &sql_id).await?;
             print_json(&sql);
         }
         SqlSubCmd::SavedCreate {
@@ -395,23 +401,26 @@ pub async fn run(
             sql,
             variables,
         } => {
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "sql saved-create")?;
+            let target =
+                resolve_command_target(explicit_config, context_override, "sql saved-create")?;
             let vars: serde_json::Value = variables
                 .map(|v| serde_json::from_str(&v))
                 .transpose()?
                 .unwrap_or(serde_json::json!([]));
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let result = http::execute_for_target(
+                    &target,
                     "sql.create",
-                    serde_json::json!({"space_id": space_id}),
+                    serde_json::json!({"space_id": space_uid}),
                     Some(serde_json::json!({"name": name, "kind": "user-query", "sql": sql, "variables": vars})),
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation sql.create does not use the remote transport")
+            };
             let sql_id = Uuid::now_v7().to_string();
             let payload = SqlPayload {
                 name: Some(name),
@@ -420,9 +429,9 @@ pub async fn run(
                 sql,
                 variables: vars,
             };
-            let service = UgoiteService::new_without_background_refresh(&root)?;
+            let service = UgoiteService::new_without_background_refresh(root)?;
             let result = service
-                .create_saved_sql(&space_id, &sql_id, &payload, "cli")
+                .create_saved_sql(space_id, &sql_id, &payload, "cli")
                 .await?;
             print_json(&result);
         }
@@ -433,13 +442,13 @@ pub async fn run(
             variables,
             parent_revision_id,
         } => {
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "sql saved-update")?;
+            let target =
+                resolve_command_target(explicit_config, context_override, "sql saved-update")?;
             let vars: serde_json::Value = variables
                 .map(|v| serde_json::from_str(&v))
                 .transpose()?
                 .unwrap_or(serde_json::json!([]));
-            if let Some(base) = base {
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
                 let mut body = serde_json::json!({
                     "name": name,
                     "kind": "user-query",
@@ -447,16 +456,19 @@ pub async fn run(
                     "variables": vars,
                 });
                 body["parent_revision_id"] = serde_json::json!(parent_revision_id);
-                let result = http::execute(
-                    &base,
+                let result = http::execute_for_target(
+                    &target,
                     "sql.update",
-                    serde_json::json!({"space_id": space_id, "sql_id": sql_id}),
+                    serde_json::json!({"space_id": space_uid, "sql_id": sql_id}),
                     Some(body),
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation sql.update does not use the remote transport")
+            };
             let payload = SqlPayload {
                 name: Some(name),
                 kind: SqlKind::UserQuery,
@@ -464,9 +476,9 @@ pub async fn run(
                 sql,
                 variables: vars,
             };
-            let service = UgoiteService::new_without_background_refresh(&root)?;
+            let service = UgoiteService::new_without_background_refresh(root)?;
             let result = service
-                .update_saved_sql(&space_id, &sql_id, &payload, &parent_revision_id, "cli")
+                .update_saved_sql(space_id, &sql_id, &payload, &parent_revision_id, "cli")
                 .await?;
             print_json(&result);
         }
@@ -474,15 +486,15 @@ pub async fn run(
             sql_id,
             human_approval,
         } => {
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "sql saved-delete")?;
+            let target =
+                resolve_command_target(explicit_config, context_override, "sql saved-delete")?;
             let human_approval =
                 human_approval.or_else(|| std::env::var("UGOITE_HUMAN_APPROVAL").ok());
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let result = http::execute_for_target(
+                    &target,
                     "sql.delete",
-                    serde_json::json!({"space_id": space_id, "sql_id": sql_id, "human_approval": human_approval}),
+                    serde_json::json!({"space_id": space_uid, "sql_id": sql_id, "human_approval": human_approval}),
                     None,
                 )
                 .await?;
@@ -492,8 +504,11 @@ pub async fn run(
             if human_approval.is_some() {
                 anyhow::bail!("--human-approval is only supported in backend/api mode");
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            service.delete_saved_sql(&space_id, &sql_id, "cli").await?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation sql.delete does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            service.delete_saved_sql(space_id, &sql_id, "cli").await?;
             print_json(&serde_json::json!({"deleted": true}));
         }
         SqlSubCmd::SavedExecute {
@@ -502,22 +517,22 @@ pub async fn run(
             limit,
         } => {
             let (offset_value, limit_value) = parse_sql_page(offset, limit)?;
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "sql saved-execute")?;
-            if let Some(base) = base {
-                let saved = http::execute(
-                    &base,
+            let target =
+                resolve_command_target(explicit_config, context_override, "sql saved-execute")?;
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let saved = http::execute_for_target(
+                    &target,
                     "sql.get",
-                    serde_json::json!({"space_id": space_id, "sql_id": sql_id}),
+                    serde_json::json!({"space_id": space_uid, "sql_id": sql_id}),
                     None,
                 )
                 .await?;
                 let sql = saved_sql_text(&saved)?;
                 validate_read_only_sql(&sql)?;
-                let session = http::execute(
-                    &base,
+                let session = http::execute_for_target(
+                    &target,
                     "sql_session.create",
-                    serde_json::json!({"space_id": space_id}),
+                    serde_json::json!({"space_id": space_uid}),
                     Some(serde_json::json!({"sql": sql})),
                 )
                 .await?;
@@ -525,11 +540,11 @@ pub async fn run(
                     .get("id")
                     .and_then(|value| value.as_str())
                     .ok_or_else(|| anyhow::anyhow!("SQL session response did not include an id"))?;
-                let rows_payload = http::execute(
-                    &base,
+                let rows_payload = http::execute_for_target(
+                    &target,
                     "sql_session.rows",
                     serde_json::json!({
-                        "space_id": space_id,
+                        "space_id": space_uid,
                         "session_id": session_id,
                         "offset": offset_value,
                         "limit": limit_value,
@@ -545,13 +560,16 @@ pub async fn run(
                 print_json(&output);
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            let saved = service.get_saved_sql(&space_id, &sql_id).await?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation sql_session.create does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let saved = service.get_saved_sql(space_id, &sql_id).await?;
             let sql = saved_sql_text(&saved)?;
             validate_read_only_sql(&sql)?;
             let (rows, total_count) = execute_sql_query_page(
                 service.operator(),
-                &service.workspace_path(&space_id),
+                &service.workspace_path(space_id),
                 &sql,
                 offset_value,
                 limit_value,
@@ -563,65 +581,74 @@ pub async fn run(
             print_json(&output);
         }
         SqlSubCmd::SessionCreate { sql } => {
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "sql session-create")?;
+            let target =
+                resolve_command_target(explicit_config, context_override, "sql session-create")?;
             // Shared read-only admission before any state creation or network.
             validate_read_only_sql(&sql)?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let result = http::execute_for_target(
+                    &target,
                     "sql_session.create",
-                    serde_json::json!({"space_id": space_id}),
+                    serde_json::json!({"space_id": space_uid}),
                     Some(serde_json::json!({"sql": sql})),
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let meta = write_local_sql_session(&root, &space_id, &sql)?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation sql_session.create does not use the remote transport")
+            };
+            let meta = write_local_sql_session(root, space_id, &sql)?;
             print_json(&meta);
         }
         SqlSubCmd::SessionGet { session_id } => {
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "sql session-get")?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+            let target =
+                resolve_command_target(explicit_config, context_override, "sql session-get")?;
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let result = http::execute_for_target(
+                    &target,
                     "sql_session.get",
-                    serde_json::json!({"space_id": space_id, "session_id": session_id}),
+                    serde_json::json!({"space_id": space_uid, "session_id": session_id}),
                     None,
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let meta = read_local_sql_session(&root, &space_id, &session_id)?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation sql_session.get does not use the remote transport")
+            };
+            let meta = read_local_sql_session(root, space_id, &session_id)?;
             print_json(&meta);
         }
         SqlSubCmd::SessionCount { session_id } => {
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "sql session-count")?;
-            if let Some(base) = base {
-                let result = http::execute(
-                    &base,
+            let target =
+                resolve_command_target(explicit_config, context_override, "sql session-count")?;
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let result = http::execute_for_target(
+                    &target,
                     "sql_session.count",
-                    serde_json::json!({"space_id": space_id, "session_id": session_id}),
+                    serde_json::json!({"space_id": space_uid, "session_id": session_id}),
                     None,
                 )
                 .await?;
                 print_json(&decode_remote_count(&result, &session_id)?);
                 return Ok(());
             }
-            let meta = read_local_sql_session(&root, &space_id, &session_id)?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation sql_session.count does not use the remote transport")
+            };
+            let meta = read_local_sql_session(root, space_id, &session_id)?;
             let sql = local_session_sql(&meta)?;
             validate_read_only_sql(&sql)?;
             sql_session_page_relation(&sql).map_err(|error| {
                 AppError::invalid_input(ErrorCode::InvalidInput, error.to_string())
             })?;
-            let service = UgoiteService::new_without_background_refresh(&root)?;
+            let service = UgoiteService::new_without_background_refresh(root)?;
             let (_rows, total_count) = execute_sql_query_page(
                 service.operator(),
-                &service.workspace_path(&space_id),
+                &service.workspace_path(space_id),
                 &sql,
                 0,
                 1,
@@ -639,14 +666,14 @@ pub async fn run(
             limit,
         } => {
             let (offset_value, limit_value) = parse_sql_page(offset, limit)?;
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "sql session-rows")?;
-            if let Some(base) = base {
-                let rows_payload = http::execute(
-                    &base,
+            let target =
+                resolve_command_target(explicit_config, context_override, "sql session-rows")?;
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let rows_payload = http::execute_for_target(
+                    &target,
                     "sql_session.rows",
                     serde_json::json!({
-                        "space_id": space_id,
+                        "space_id": space_uid,
                         "session_id": session_id,
                         "offset": offset_value,
                         "limit": limit_value,
@@ -661,16 +688,19 @@ pub async fn run(
                 print_json(&output);
                 return Ok(());
             }
-            let meta = read_local_sql_session(&root, &space_id, &session_id)?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation sql_session.rows does not use the remote transport")
+            };
+            let meta = read_local_sql_session(root, space_id, &session_id)?;
             let sql = local_session_sql(&meta)?;
             validate_read_only_sql(&sql)?;
             sql_session_page_relation(&sql).map_err(|error| {
                 AppError::invalid_input(ErrorCode::InvalidInput, error.to_string())
             })?;
-            let service = UgoiteService::new_without_background_refresh(&root)?;
+            let service = UgoiteService::new_without_background_refresh(root)?;
             let (rows, total_count) = execute_sql_query_page(
                 service.operator(),
-                &service.workspace_path(&space_id),
+                &service.workspace_path(space_id),
                 &sql,
                 offset_value,
                 limit_value,

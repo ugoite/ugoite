@@ -1,6 +1,4 @@
-use crate::config::{
-    clear_auth_session, load_auth_session, print_json, save_auth_session, AuthSession,
-};
+use crate::config::{print_json, AuthSession};
 use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::Utc;
@@ -90,7 +88,7 @@ pub struct AuthCmd {
 pub enum AuthSubCmd {
     /// Show the paired device and short-lived token state.
     Profile {
-        /// Named credential profile (canonical). Omit for the legacy singleton credential.
+        /// Named credential profile (canonical). Omit to use the current context's credential.
         #[arg(long, value_name = "CREDENTIAL")]
         credential: Option<String>,
     },
@@ -126,7 +124,7 @@ pub enum AuthSubCmd {
     },
     /// Revoke local access by deleting the local device credential.
     Logout {
-        /// Named credential profile (canonical). Omit for the legacy singleton credential.
+        /// Named credential profile (canonical). Omit to use the current context's credential.
         #[arg(long, value_name = "CREDENTIAL")]
         credential: Option<String>,
     },
@@ -139,20 +137,16 @@ pub async fn run(
 ) -> Result<()> {
     match cmd.sub {
         AuthSubCmd::Profile { credential } => {
-            if let Some(name) = credential.as_deref() {
-                print_named_profile(name)?;
-                return Ok(());
-            }
-            let profile = load_auth_session().map(|session| json!({
-                "paired": true,
-                "credential_id": session.credential_id,
-                "device_name": session.device_name,
-                "space_uid": session.space_uid,
-                "access_token_expires_at": session.expires_at,
-                "credential_target": if session.resource.is_some() { "mcp" } else { "rest" },
-                "private_key_storage": if session.private_key_pkcs8.is_some() { "owner_only_file" } else { "os_keychain" },
-            })).unwrap_or_else(|| json!({"paired": false}));
-            print_json(&profile);
+            let name = match credential.as_deref() {
+                Some(name) => {
+                    if name.trim().is_empty() {
+                        bail!("--credential must not be empty; pass a credential name or omit --credential to use the current context's credential");
+                    }
+                    name.to_string()
+                }
+                None => current_context_credential(explicit_config, context_override)?,
+            };
+            print_named_profile(&name)?;
         }
         AuthSubCmd::Login {
             device_name,
@@ -175,18 +169,16 @@ pub async fn run(
             .await?;
         }
         AuthSubCmd::Logout { credential } => {
-            if let Some(name) = credential.as_deref() {
-                logout_named(name)?;
-                return Ok(());
-            }
-            if let Some(session) = load_auth_session() {
-                if session.private_key_pkcs8.is_none() {
-                    let _ = keyring::Entry::new("ugoite-cli", &session.credential_id.to_string())
-                        .and_then(|entry| entry.delete_credential());
+            let name = match credential.as_deref() {
+                Some(name) => {
+                    if name.trim().is_empty() {
+                        bail!("--credential must not be empty; pass a credential name or omit --credential to use the current context's credential");
+                    }
+                    name.to_string()
                 }
-            }
-            clear_auth_session()?;
-            println!("Local CLI credential removed.");
+                None => current_context_credential(explicit_config, context_override)?,
+            };
+            logout_named(&name)?;
         }
     }
     Ok(())
@@ -303,6 +295,25 @@ async fn login_named(
     Ok(())
 }
 
+/// Resolve the credential for `auth profile` / `auth logout` when
+/// `--credential` is omitted: the current (or `--context`-selected) context's
+/// named credential. Fails actionably when the context carries none.
+fn current_context_credential(
+    explicit_config: Option<&std::path::Path>,
+    context_override: Option<&str>,
+) -> Result<String> {
+    use crate::cli_config::{load_cli_config, resolve_cli_context};
+
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let files = load_cli_config(explicit_config, &cwd)?;
+    let resolved = resolve_cli_context(&files.effective, context_override)?;
+    resolved.credential_name.ok_or_else(|| {
+        anyhow!(
+            "Cannot determine a credential: pass --credential <NAME> or select a context with a credential."
+        )
+    })
+}
+
 /// Show one named profile without ever printing secrets.
 fn print_named_profile(name: &str) -> Result<()> {
     let store = crate::cli_config::credentials::load_credentials()?;
@@ -375,8 +386,7 @@ fn store_named_profile(
 }
 
 /// Device authorization flow returning the established session without
-/// persisting it; callers decide between the legacy singleton file and a
-/// named credential profile.
+/// persisting it; the caller stores it as a named credential profile.
 async fn perform_device_login(
     base: &str,
     device_name: &str,
@@ -613,73 +623,13 @@ fn api_base_root(base_url: &str) -> Option<String> {
     Some(url.to_string().trim_end_matches('/').to_string())
 }
 
-pub async fn active_session(base_url: &str) -> Result<Option<AuthSession>> {
-    active_session_for(base_url, None).await
-}
-
-pub async fn active_session_for(
-    base_url: &str,
-    resource: Option<&str>,
-) -> Result<Option<AuthSession>> {
-    let Some(mut session) = load_auth_session() else {
-        return Ok(None);
-    };
-    if session.base_url.trim_end_matches('/') != base_url.trim_end_matches('/') {
-        bail!("saved CLI credential belongs to a different server; run `ugoite auth login`");
-    }
-    if session.resource.as_deref() != resource {
-        let login_command = if resource.is_some() {
-            "ugoite auth login --for mcp"
-        } else {
-            "ugoite auth login"
-        };
-        bail!("saved CLI credential targets a different protected resource; run `{login_command}`");
-    }
-    if session.expires_at > Utc::now().timestamp() + 30 {
-        return Ok(Some(session));
-    }
-    let key = load_signing_key(&session)?;
-    let token_url = format!("{}/oauth/token", base_url.trim_end_matches('/'));
-    let assertion = client_assertion(&key, &session.public_key_jwk, &token_url)?;
-    let response = reqwest::Client::new()
-        .post(&token_url)
-        .json(&oauth_payload(
-            json!({
-                "grant_type": "refresh_token",
-                "refresh_token": session.refresh_token,
-                "client_assertion": assertion,
-            }),
-            resource,
-        ))
-        .send()
-        .await
-        .context("refresh CLI access token")?;
-    let status = response.status();
-    let payload: Value = response.json().await?;
-    if !status.is_success() {
-        bail!("CLI credential refresh failed: {payload}");
-    }
-    session.access_token = payload["access_token"]
-        .as_str()
-        .ok_or_else(|| anyhow!("refresh response omitted access_token"))?
-        .to_string();
-    session.refresh_token = payload["refresh_token"]
-        .as_str()
-        .ok_or_else(|| anyhow!("refresh response omitted refresh_token"))?
-        .to_string();
-    session.expires_at = Utc::now().timestamp() + payload["expires_in"].as_i64().unwrap_or(300);
-    save_auth_session(&session)?;
-    Ok(Some(session))
-}
-
-/// Refresh an in-memory session without touching the legacy singleton file.
+/// Refresh an in-memory named-credential session.
 ///
-/// Named credential profiles share the legacy refresh policy (30s skew) but
-/// persist through the user-global credential store instead of
-/// `cli-credentials.json`. Always returns `Ok(Some(..))` on success: the
-/// input session unchanged when it is still fresh, else the rotated session
-/// (failures are errors, never a silent `None`). The caller persists any
-/// rotated session back to its named profile.
+/// Sessions refresh with a 30s expiry skew and persist through the
+/// user-global credential store. Always returns `Ok(Some(..))` on success:
+/// the input session unchanged when it is still fresh, else the rotated
+/// session (failures are errors, never a silent `None`). The caller persists
+/// any rotated session back to its named profile.
 pub async fn refresh_session(session: &AuthSession, base_url: &str) -> Result<Option<AuthSession>> {
     if session.expires_at > Utc::now().timestamp() + 30 {
         return Ok(Some(session.clone()));
@@ -769,32 +719,24 @@ async fn login(
     space_uid: Option<Uuid>,
     actions: Vec<String>,
     resource: Option<String>,
-) -> Result<()> {
-    let session = perform_device_login(base, device_name, space_uid, actions, resource).await?;
-    save_auth_session(&session)?;
-    Ok(())
+) -> Result<AuthSession> {
+    perform_device_login(base, device_name, space_uid, actions, resource).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        active_session_for, api_base_root, canonical_dpop_htu, device_authorization_prompt,
-        load_auth_session, login, mcp_resource, mcp_target, oauth_payload, parse_space_uid_arg,
-        public_jwk, save_auth_session,
+        api_base_root, canonical_dpop_htu, device_authorization_prompt, login, mcp_resource,
+        mcp_target, oauth_payload, parse_space_uid_arg, public_jwk, refresh_session,
     };
     use base64::Engine as _;
     use p256::pkcs8::EncodePrivateKey;
     use serde_json::json;
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
-    use std::sync::{mpsc, Mutex, OnceLock};
+    use std::sync::mpsc;
     use std::thread;
     use std::time::Duration;
-
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
 
     fn read_request(stream: &mut TcpStream) -> String {
         stream
@@ -969,12 +911,6 @@ mod tests {
 
     #[test]
     fn mcp_login_carries_resource_through_discovery_device_and_exchange() {
-        let _guard = env_lock().lock().expect("env lock");
-        let temp = tempfile::tempdir().expect("tempdir");
-        let config_path = temp.path().join("cli-config.json");
-        let previous_path = std::env::var_os("UGOITE_CLI_CONFIG_PATH");
-        std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
-
         let resource = "http://ugoite.example/mcp";
         let credential_id = uuid::Uuid::now_v7();
         let space_uid = uuid::Uuid::now_v7();
@@ -1008,7 +944,7 @@ mod tests {
             .block_on(mcp_resource(&base_url))
             .expect("discover MCP resource");
         assert_eq!(discovered, resource);
-        tokio::runtime::Runtime::new()
+        let session = tokio::runtime::Runtime::new()
             .expect("create test runtime")
             .block_on(login(
                 &base_url,
@@ -1027,24 +963,10 @@ mod tests {
             let body: serde_json::Value = serde_json::from_str(body).expect("JSON request body");
             assert_eq!(body["resource"], resource);
         }
-        assert_eq!(
-            load_auth_session()
-                .expect("saved MCP session")
-                .resource
-                .as_deref(),
-            Some(resource)
-        );
-        if let Some(session) = load_auth_session() {
-            if session.private_key_pkcs8.is_none() {
-                let _ = keyring::Entry::new("ugoite-cli", &session.credential_id.to_string())
-                    .and_then(|entry| entry.delete_credential());
-            }
-        }
-
-        if let Some(path) = previous_path {
-            std::env::set_var("UGOITE_CLI_CONFIG_PATH", path);
-        } else {
-            std::env::remove_var("UGOITE_CLI_CONFIG_PATH");
+        assert_eq!(session.resource.as_deref(), Some(resource));
+        if session.private_key_pkcs8.is_none() {
+            let _ = keyring::Entry::new("ugoite-cli", &session.credential_id.to_string())
+                .and_then(|entry| entry.delete_credential());
         }
     }
 
@@ -1072,12 +994,6 @@ mod tests {
 
     #[test]
     fn mcp_refresh_carries_the_saved_resource() {
-        let _guard = env_lock().lock().expect("env lock");
-        let temp = tempfile::tempdir().expect("tempdir");
-        let config_path = temp.path().join("cli-config.json");
-        let previous_path = std::env::var_os("UGOITE_CLI_CONFIG_PATH");
-        std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
-
         let signing_key = super::SigningKey::random(&mut super::OsRng);
         let public_key_jwk = public_jwk(&signing_key);
         let private_key = super::URL_SAFE_NO_PAD.encode(
@@ -1096,7 +1012,7 @@ mod tests {
             })
             .to_string(),
         )]);
-        save_auth_session(&super::AuthSession {
+        let expired = super::AuthSession {
             credential_id: uuid::Uuid::now_v7(),
             device_name: "mcp-device".to_string(),
             public_key_jwk,
@@ -1107,13 +1023,12 @@ mod tests {
             base_url: base_url.clone(),
             resource: Some(resource.to_string()),
             space_uid: uuid::Uuid::now_v7(),
-        })
-        .expect("save expired MCP session");
+        };
         let session = tokio::runtime::Runtime::new()
             .expect("create test runtime")
-            .block_on(active_session_for(&base_url, Some(resource)))
+            .block_on(refresh_session(&expired, &base_url))
             .expect("refresh MCP session")
-            .expect("saved MCP session");
+            .expect("refreshed MCP session");
         server.join().expect("join test server");
         let request = requests.into_iter().next().expect("refresh request");
         let body = request.split_once("\r\n\r\n").expect("request body").1;
@@ -1121,12 +1036,6 @@ mod tests {
         assert_eq!(body["resource"], resource);
         assert_eq!(session.access_token, "refreshed-mcp-access-token");
         assert_eq!(session.resource.as_deref(), Some(resource));
-
-        if let Some(path) = previous_path {
-            std::env::set_var("UGOITE_CLI_CONFIG_PATH", path);
-        } else {
-            std::env::remove_var("UGOITE_CLI_CONFIG_PATH");
-        }
     }
 }
 

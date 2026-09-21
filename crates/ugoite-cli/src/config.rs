@@ -1,7 +1,5 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
@@ -19,13 +17,6 @@ pub struct AuthSession {
     pub space_uid: uuid::Uuid,
 }
 
-pub fn auth_session_path() -> PathBuf {
-    crate::cli_config::canonical_global_config_path()
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join("cli-credentials.json")
-}
-
 fn non_empty_string(value: String) -> Option<String> {
     if value.trim().is_empty() {
         None
@@ -36,73 +27,6 @@ fn non_empty_string(value: String) -> Option<String> {
 
 pub fn non_empty_env_value(key: &str) -> Option<String> {
     std::env::var(key).ok().and_then(non_empty_string)
-}
-
-pub fn load_auth_session() -> Option<AuthSession> {
-    let path = auth_session_path();
-    if !path.exists() {
-        return None;
-    }
-    let read_text = std::fs::read_to_string(&path);
-    let text = match read_text {
-        Ok(text) => text,
-        Err(_) => return None,
-    };
-    serde_json::from_str(&text).ok()
-}
-
-pub fn save_auth_session(session: &AuthSession) -> Result<PathBuf> {
-    let path = auth_session_path();
-    let parent = path.parent().unwrap_or(Path::new("."));
-    std::fs::create_dir_all(parent)?;
-    let text =
-        serde_json::to_string_pretty(session).expect("AuthSession serialization is infallible");
-    write_auth_session_text(&path, &text)?;
-    set_owner_only_permissions(&path)?;
-    Ok(path)
-}
-
-pub fn clear_auth_session() -> Result<bool> {
-    let path = auth_session_path();
-    match std::fs::remove_file(&path) {
-        Ok(()) => Ok(true),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(error.into()),
-    }
-}
-
-#[cfg(unix)]
-fn write_auth_session_text(path: &Path, text: &str) -> Result<()> {
-    use std::os::unix::fs::OpenOptionsExt;
-
-    let mut file = OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .mode(0o600)
-        .open(path)?;
-    file.write_all(text.as_bytes())?;
-    file.sync_all()?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn write_auth_session_text(path: &Path, text: &str) -> Result<()> {
-    std::fs::write(path, text)?;
-    Ok(())
-}
-
-#[cfg(unix)]
-fn set_owner_only_permissions(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn set_owner_only_permissions(_path: &Path) -> Result<()> {
-    Ok(())
 }
 
 pub fn operator_for_path(path: &str) -> Result<opendal::Operator> {
