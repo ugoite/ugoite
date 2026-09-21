@@ -162,4 +162,47 @@ describe("EntryBrowser", () => {
     }]);
   });
 
+  it("keeps incomplete typed filters out of the canonical query until applied", async () => {
+    queryMock.mockResolvedValue({ rows: [], has_more: false });
+    const capabilities: EntryQueryCapabilities = {
+      scope: { kind: "form", form_id: "form-1" },
+      fields: [{
+        field: { kind: "property", field_id: 8 },
+        name: "priority",
+        field_type: "integer",
+        filterable: true,
+        sortable: true,
+        projectable: true,
+        supported_operators: ["equals", "gte"],
+      }],
+    };
+    const controller = createEntryQueryController(
+      () => "space-1",
+      { scope: capabilities.scope, filters: [], sort: [] },
+      undefined,
+      50,
+      queryMock,
+    );
+    render(() => (
+      <EntryBrowser controller={controller} capabilities={capabilities} />
+    ));
+
+    fireEvent.click(screen.getByText("Filter"));
+    fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
+    const value = screen.getByLabelText("Value");
+    fireEvent.input(value, { target: { value: "12abc" } });
+
+    expect(controller.query().filters).toEqual([]);
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+
+    fireEvent.input(value, { target: { value: "12" } });
+    expect(screen.getByRole("button", { name: "Apply" })).not.toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await vi.waitFor(() => expect(controller.query().filters).toEqual([{
+      field: { kind: "property", field_id: 8 },
+      operator: "equals",
+      value: 12,
+    }]));
+  });
+
 });
