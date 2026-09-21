@@ -4508,6 +4508,7 @@ impl UgoiteService {
                 parameters,
                 offset,
                 fetch_limit,
+                forms.clone(),
                 checkpoint,
             )
             .await?;
@@ -4590,6 +4591,7 @@ impl UgoiteService {
             &normalized_sql,
             &relation_scopes,
             parameters,
+            forms,
             checkpoint,
         )
         .await

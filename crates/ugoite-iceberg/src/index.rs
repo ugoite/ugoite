@@ -2132,9 +2132,10 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
     parameters: HashMap<String, datafusion::scalar::ScalarValue>,
     offset: usize,
     limit: usize,
+    forms: Vec<FormDefinition>,
     checkpoint: SpaceCheckpoint,
 ) -> Result<(Vec<String>, Vec<Value>, bool)> {
-    let context = datafusion_sql_context_with_limits(
+    let context = datafusion_sql_context_with_form_definitions(
         op,
         ws_path,
         EntryScope::AllCurrent,
@@ -2144,6 +2145,7 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
         BTreeSet::new(),
         SQL_SESSION_MAX_ROWS.saturating_add(1),
         false,
+        forms,
     )
     .await
     .map_err(map_sql_error)?;
@@ -2170,9 +2172,10 @@ pub(crate) async fn execute_sql_query_authorized_by_form_count_at_checkpoint_sta
     sql_query: &str,
     relation_scopes: &BTreeMap<String, EntryScope>,
     parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    forms: Vec<FormDefinition>,
     checkpoint: SpaceCheckpoint,
 ) -> Result<u64> {
-    let context = datafusion_sql_context_with_limits(
+    let context = datafusion_sql_context_with_form_definitions(
         op,
         ws_path,
         EntryScope::AllCurrent,
@@ -2182,6 +2185,7 @@ pub(crate) async fn execute_sql_query_authorized_by_form_count_at_checkpoint_sta
         BTreeSet::new(),
         SQL_SESSION_MAX_ROWS,
         false,
+        forms,
     )
     .await
     .map_err(map_sql_error)?;
@@ -2764,6 +2768,35 @@ async fn datafusion_sql_context_with_limits(
     let forms = workspace
         .list_forms_bounded(MAX_QUERY_FORMS, MAX_QUERY_FORM_DEFINITION_BYTES)
         .await?;
+    datafusion_sql_context_with_form_snapshot(
+        workspace,
+        entry_scope,
+        allowed_relations,
+        relation_scopes,
+        checkpoint,
+        allowed_functions,
+        max_rows,
+        include_payload,
+        forms,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn datafusion_sql_context_with_form_definitions(
+    op: &Operator,
+    ws_path: &str,
+    entry_scope: EntryScope,
+    allowed_relations: Option<&HashSet<String>>,
+    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    checkpoint: Option<SpaceCheckpoint>,
+    allowed_functions: BTreeSet<String>,
+    max_rows: usize,
+    include_payload: bool,
+    forms: Vec<FormDefinition>,
+) -> Result<crate::query_context::AuthorizedQueryContext> {
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
     datafusion_sql_context_with_form_snapshot(
         workspace,
         entry_scope,
