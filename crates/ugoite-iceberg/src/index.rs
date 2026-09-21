@@ -631,6 +631,7 @@ struct CanonicalSortColumn {
 /// views. Hydration then reads each selected Form once, so a page never turns
 /// into one point-read per Entry. The checkpoint and Form definitions are
 /// supplied by the caller and are therefore never replaced by the live Head.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn query_entry_page_at_checkpoint(
     op: &Operator,
     ws_path: &str,
@@ -919,6 +920,8 @@ fn field_parameter_type(field_type: &FieldType) -> Result<&'static str> {
     }
 }
 
+type CanonicalEntrySql = (String, Map<String, Value>, BTreeMap<String, String>);
+
 fn build_canonical_entry_sql(
     query: &EntryQuery,
     forms: &[&FormDefinition],
@@ -926,7 +929,7 @@ fn build_canonical_entry_sql(
     sort_columns: &[CanonicalSortColumn],
     cursor: Option<&EntryCursor>,
     limit: Option<usize>,
-) -> Result<(String, Map<String, Value>, BTreeMap<String, String>)> {
+) -> Result<CanonicalEntrySql> {
     let mut values = Map::new();
     let mut types = BTreeMap::new();
     let mut branches = Vec::new();
@@ -1120,11 +1123,11 @@ fn build_canonical_entry_sql(
         let mut disjunctions = Vec::new();
         for index in 0..sort_columns.len() {
             let mut conjunctions = Vec::new();
-            for prior in 0..index {
+            for (prior, sort) in sort_columns.iter().enumerate().take(index) {
                 conjunctions.push(cursor_equality(
-                    &sort_columns[prior].alias,
+                    &sort.alias,
                     &cursor.sort_values[prior],
-                    &sort_columns[prior].parameter_type,
+                    sort.parameter_type,
                     &mut values,
                     &mut types,
                     prior,
@@ -1284,7 +1287,7 @@ fn canonical_candidates_from_batches(
                 })
                 .collect::<Result<Vec<_>>>()?;
             Ok(CanonicalEntryCandidate {
-                form_id: FormId::from(form_id),
+                form_id,
                 stable_id: stable_id.to_string(),
                 external_id: external_id.to_string(),
                 sort_values,
