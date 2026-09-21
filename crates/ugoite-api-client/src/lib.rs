@@ -53,6 +53,8 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "form.get",
     "form.upsert",
     "entry.list",
+    "entry.query",
+    "entry.query.count",
     "entry.get",
     "entry.create",
     "entry.update",
@@ -612,6 +614,27 @@ pub fn prepare_request(
                     query,
                 )
             }
+            "entry.query" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to query entries"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "entries".into(),
+                    "query".into(),
+                ],
+                vec![],
+            ),
+            "entry.query.count" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to count entries"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "entries".into(),
+                    "query".into(),
+                    "count".into(),
+                ],
+                vec![],
+            ),
             "entry.get" => {
                 let mut query = Vec::new();
                 if let Some(pin) = optional_string(operation, args, "pin")? {
@@ -1454,6 +1477,16 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to list entries",
             RequestBodyKind::None,
         ),
+        "entry.query" => (
+            HttpMethod::Post,
+            "Failed to query entries",
+            RequestBodyKind::Json,
+        ),
+        "entry.query.count" => (
+            HttpMethod::Post,
+            "Failed to count entries",
+            RequestBodyKind::Json,
+        ),
         "entry.get" => (
             HttpMethod::Get,
             "Failed to get entry",
@@ -1796,6 +1829,35 @@ mod tests {
         .expect("request");
 
         assert_eq!(request.path, "/spaces/demo/entries?limit=10000");
+    }
+
+    #[test]
+    fn entry_query_uses_the_canonical_post_route() {
+        let body = json!({
+            "query": {"scope": {"kind": "all"}},
+            "projection": {"kind": "preview"},
+            "limit": 50
+        });
+        let request = prepare_request("entry.query", &json!({"space_id": "demo"}), Some(&body))
+            .expect("request");
+        assert_eq!(request.method, HttpMethod::Post);
+        assert_eq!(request.path, "/spaces/demo/entries/query");
+        assert_eq!(
+            request.body.expect("body"),
+            serde_json::to_string(&body).expect("encode")
+        );
+    }
+
+    #[test]
+    fn entry_query_count_uses_a_separate_canonical_route() {
+        let request = prepare_request(
+            "entry.query.count",
+            &json!({"space_id": "demo"}),
+            Some(&json!({"query": {"scope": {"kind": "all"}}})),
+        )
+        .expect("request");
+        assert_eq!(request.method, HttpMethod::Post);
+        assert_eq!(request.path, "/spaces/demo/entries/query/count");
     }
 
     #[test]

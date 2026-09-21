@@ -3,6 +3,7 @@
 
 pub mod change;
 pub mod entry;
+pub mod entry_query;
 pub mod error;
 pub mod metadata;
 pub mod query;
