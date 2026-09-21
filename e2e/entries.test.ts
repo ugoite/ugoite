@@ -43,7 +43,10 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
-					markdown: `---\nform: Entry\n---\n# E2E Test Entry ${timestamp}\n\n## Body\nCreated at ${new Date().toISOString()}`,
+					form: "Entry",
+					fields: {
+						Body: `E2E Test Entry ${timestamp}\n\nCreated at ${new Date().toISOString()}`,
+					},
 				},
 			},
 		);
@@ -70,8 +73,8 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
-					markdown:
-						"---\nform: Entry\n---\n# Initial Content\n\n## Body\nThis is the first version.",
+					form: "Entry",
+					fields: { Body: "Initial Content\n\nThis is the first version." },
 				},
 			},
 		);
@@ -82,8 +85,8 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 			{
 				data: {
-					markdown:
-						"---\nform: Entry\n---\n# Updated Content\n\n## Body\nThis is the second version.",
+					form: "Entry",
+					fields: { Body: "Updated Content\n\nThis is the second version." },
 					parent_revision_id: created.revision_id,
 				},
 			},
@@ -97,8 +100,8 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 			{
 				data: {
-					markdown:
-						"---\nform: Entry\n---\n# Third Version\n\n## Body\nThis is the third version.",
+					form: "Entry",
+					fields: { Body: "Third Version\n\nThis is the third version." },
 					parent_revision_id: firstResult.revision_id,
 				},
 			},
@@ -115,8 +118,8 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
-					markdown:
-						"---\nform: Entry\n---\n# Conflict Test\n\n## Body\nTesting revision conflicts.",
+					form: "Entry",
+					fields: { Body: "Conflict Test\n\nTesting revision conflicts." },
 				},
 			},
 		);
@@ -127,8 +130,8 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 			{
 				data: {
-					markdown:
-						"---\nform: Entry\n---\n# After First Update\n\n## Body\nFirst update body",
+					form: "Entry",
+					fields: { Body: "After First Update\n\nFirst update body" },
 					parent_revision_id: created.revision_id,
 				},
 			},
@@ -139,8 +142,8 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 			{
 				data: {
-					markdown:
-						"---\nform: Entry\n---\n# This Should Fail\n\n## Body\nStale revision",
+					form: "Entry",
+					fields: { Body: "This Should Fail\n\nStale revision" },
 					parent_revision_id: created.revision_id,
 				},
 			},
@@ -157,8 +160,8 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
-					markdown:
-						"---\nform: Entry\n---\n# Persistence Test\n\n## Body\nOriginal content.",
+					form: "Entry",
+					fields: { Body: "Persistence Test\n\nOriginal content." },
 				},
 			},
 		);
@@ -169,8 +172,10 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 			{
 				data: {
-					markdown:
-						"---\nform: Entry\n---\n# Persistence Test\n\n## Body\nUpdated content that should persist.",
+					form: "Entry",
+					fields: {
+						Body: "Persistence Test\n\nUpdated content that should persist.",
+					},
 					parent_revision_id: created.revision_id,
 				},
 			},
@@ -439,7 +444,8 @@ test.describe("Entries CRUD", () => {
 		const createAlphaProject = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
 			data: {
 				id: projectAlphaId,
-				markdown: `---\nform: Project\n---\n# Alpha Project ${timestamp}\n\n## Summary\nPrimary project`,
+				form: "Project",
+				fields: { Summary: `Alpha primary project ${timestamp}` },
 			},
 		});
 		expect(createAlphaProject.status()).toBe(201);
@@ -447,7 +453,8 @@ test.describe("Entries CRUD", () => {
 		const createBetaProject = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
 			data: {
 				id: projectBetaId,
-				markdown: `---\nform: Project\n---\n# Beta Project ${timestamp}\n\n## Summary\nSecondary project`,
+				form: "Project",
+				fields: { Summary: `Beta secondary project ${timestamp}` },
 			},
 		});
 		expect(createBetaProject.status()).toBe(201);
@@ -478,7 +485,7 @@ test.describe("Entries CRUD", () => {
 		await projectInput.fill("alpha");
 
 		const alphaOption = page.getByRole("button", {
-			name: new RegExp(`Alpha Project ${timestamp}.*${projectAlphaId}`),
+			name: new RegExp(projectAlphaId),
 		});
 		await expect(alphaOption).toBeVisible();
 		await alphaOption.click();
@@ -809,8 +816,8 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
-					markdown:
-						"---\nform: Entry\n---\n# Detail Route Test\n\n## Body\nRoute render check.",
+					form: "Entry",
+					fields: { Body: "Detail Route Test\n\nRoute render check." },
 				},
 			},
 		);
@@ -834,8 +841,11 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
-					content:
-						'---\nform: Entry\n---\n# Preview Safety\n\n## Body\n<img src=x onerror="window.__ugoiteXss=\'ran\'">\n\n**bold**',
+					form: "Entry",
+					fields: {
+						Body:
+							'Preview Safety\n\n<img src=x onerror="window.__ugoiteXss=\'ran\'">\n\n**bold**',
+					},
 				},
 			},
 		);
@@ -867,12 +877,13 @@ test.describe("Entries CRUD", () => {
 
 	test("REQ-FE-033: Retrieve entry with special characters", async ({ page, request }) => {
 		const timestamp = Date.now();
-		const title = `Special Entry @ ${timestamp} % &`;
+		const specialBody = `Special body @ ${timestamp} % & <tag> "quoted"`;
 		const createRes = await request.post(
 			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
-					markdown: `---\nform: Entry\n---\n# ${title}\n\n## Body\nTesting special chars in title.`,
+					form: "Entry",
+					fields: { Body: `${specialBody}\n\nTesting special chars in body.` },
 				},
 			},
 		);
@@ -881,8 +892,11 @@ test.describe("Entries CRUD", () => {
 
 		await page.goto(`/spaces/${spaceId}/entries/${encodeURIComponent(created.id)}`);
 		await page.waitForLoadState("networkidle");
+		await expect(page.getByLabel("Body")).toHaveValue(
+			`${specialBody}\n\nTesting special chars in body.`,
+		);
 		const html = await page.content();
-		expect(html).toContain(title);
+		expect(html).toContain(`Special body @ ${timestamp} % &amp;`);
 
 		await request.delete(
 			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
@@ -893,17 +907,20 @@ test.describe("Entries CRUD", () => {
 		const formEntries = await Promise.all([
 			request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
 				data: {
-					markdown: "---\nform: Entry\n---\n# Entry A\n\n## Body\nContent A",
+					form: "Entry",
+					fields: { Body: "Entry A\n\nContent A" },
 				},
 			}),
 			request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
 				data: {
-					markdown: "---\nform: Entry\n---\n# Entry B\n\n## Body\nContent B",
+					form: "Entry",
+					fields: { Body: "Entry B\n\nContent B" },
 				},
 			}),
 			request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
 				data: {
-					markdown: "---\nform: Entry\n---\n# Entry C\n\n## Body\nContent C",
+					form: "Entry",
+					fields: { Body: "Entry C\n\nContent C" },
 				},
 			}),
 		]);
@@ -942,8 +959,10 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
-					markdown:
-						"---\nform: Entry\n---\n# Timeout Recovery Test\n\n## Body\nEnsure navigation resolves.",
+					form: "Entry",
+					fields: {
+						Body: "Timeout Recovery Test\n\nEnsure navigation resolves.",
+					},
 				},
 			},
 		);
@@ -965,8 +984,8 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
-					markdown:
-						"---\nform: Entry\n---\n# Update Test Entry\n\n## Body\nOriginal content",
+					form: "Entry",
+					fields: { Body: "Update Test Entry\n\nOriginal content" },
 				},
 			},
 		);
@@ -982,8 +1001,8 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 			{
 				data: {
-					markdown:
-						"---\nform: Entry\n---\n# Updated Title\n\n## Body\nUpdated content by E2E test",
+					form: "Entry",
+					fields: { Body: "Updated Title\n\nUpdated content by E2E test" },
 					parent_revision_id: current.revision_id,
 				},
 			},
@@ -998,8 +1017,8 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
-					markdown:
-						"---\nform: Entry\n---\n# Delete Test Entry\n\n## Body\nTo be deleted",
+					form: "Entry",
+					fields: { Body: "Delete Test Entry\n\nTo be deleted" },
 				},
 			},
 		);

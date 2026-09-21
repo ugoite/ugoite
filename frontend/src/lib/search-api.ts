@@ -36,10 +36,17 @@ export const searchApi = {
     spaceId: string,
     filter: Record<string, unknown>,
   ): Promise<EntryRecord[]> {
+    // v0.2 contract: /query is criteria-only. A form-scoped legacy filter is
+    // translated to the equivalent criteria payload so FormTable and the
+    // Entries list keep working without caller churn.
+    const form = filter.form;
+    const body = typeof form === "string" && form.trim() !== ""
+      ? { criteria: { form, conditions: [] } }
+      : { filter };
     const entries = await protocolFetch<Record<string, unknown>[]>(
       "search.query",
       { space_id: spaceId },
-      { filter },
+      body,
     );
     return entries.map(normalizeSearchEntry);
   },
