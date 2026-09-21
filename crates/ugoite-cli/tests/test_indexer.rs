@@ -19,36 +19,78 @@ fn ugoite_bin() -> std::path::PathBuf {
     path
 }
 
+fn run_cli(config_path: &std::path::Path, args: &[&str]) -> std::process::Output {
+    let mut full = vec![
+        "--config".to_string(),
+        config_path.to_string_lossy().into_owned(),
+    ];
+    full.extend(args.iter().map(|arg| (*arg).to_string()));
+    Command::new(ugoite_bin())
+        .args(full)
+        .env("UGOITE_CLI_CONFIG_PATH", config_path)
+        .output()
+        .expect("run CLI")
+}
+
+fn init_canonical_space(dir: &tempfile::TempDir, slug: &str) -> std::path::PathBuf {
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.toml");
+    assert!(run_cli(&config_path, &["config", "init"]).status.success());
+    assert!(run_cli(
+        &config_path,
+        &[
+            "config",
+            "connection",
+            "set",
+            "local",
+            "--type",
+            "core",
+            "--root",
+            &root
+        ]
+    )
+    .status
+    .success());
+    let created = run_cli(&config_path, &["space", "create", slug]);
+    assert!(
+        created.status.success(),
+        "space create failed: {}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    config_path
+}
+
 fn create_structured_entry(
     config_path: &std::path::Path,
     entry_id: &str,
     form: &str,
     fields: &[(&str, &str)],
 ) -> std::process::Output {
-    let mut command = Command::new(ugoite_bin());
-    command.args(["entry", "create", "--form", form]);
+    let mut args = vec![
+        "entry".to_string(),
+        "create".to_string(),
+        entry_id.to_string(),
+        "--form".to_string(),
+        form.to_string(),
+    ];
     for (key, value) in fields {
-        command.arg("--field").arg(format!("{key}={value}"));
+        args.push("--field".to_string());
+        args.push(format!("{key}={value}"));
     }
-    command
-        .arg(entry_id)
+    let mut full = vec![
+        "--config".to_string(),
+        config_path.to_string_lossy().into_owned(),
+    ];
+    full.extend(args);
+    Command::new(ugoite_bin())
+        .args(full)
         .env("UGOITE_CLI_CONFIG_PATH", config_path)
         .output()
         .expect("create structured entry")
 }
 
-fn setup_space_with_entries(
-    dir: &tempfile::TempDir,
-) -> (String, String, std::path::PathBuf, String) {
-    let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = format!("{root}/spaces/idx-space");
-
-    Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "idx-space"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create space");
+fn setup_space_with_entries(dir: &tempfile::TempDir) -> (String, std::path::PathBuf, String) {
+    let config_path = init_canonical_space(dir, "idx-space");
 
     let form_file = dir.path().join("entry-form.json");
     std::fs::write(
@@ -57,16 +99,17 @@ fn setup_space_with_entries(
     )
     .unwrap();
 
-    Command::new(ugoite_bin())
-        .args(["form", "update", &space_path, form_file.to_str().unwrap()])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create form");
-    let form_output = Command::new(ugoite_bin())
-        .args(["form", "get", &space_path, "Entry"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("get form");
+    let updated = run_cli(
+        &config_path,
+        &["form", "update", form_file.to_str().unwrap()],
+    );
+    assert!(
+        updated.status.success(),
+        "form update failed: {}",
+        String::from_utf8_lossy(&updated.stderr)
+    );
+    let form_output = run_cli(&config_path, &["form", "get", "Entry"]);
+    assert!(form_output.status.success());
     let form_json: serde_json::Value = serde_json::from_slice(&form_output.stdout).unwrap();
     let relation = form_json["sql_relation"]
         .as_str()
@@ -84,20 +127,16 @@ fn setup_space_with_entries(
             .success()
     );
 
-    (root, space_path, config_path, relation)
+    (relation, config_path, String::new())
 }
 
 /// REQ-SRCH-007: Indexer run rebuilds the internal DerivedRelation.
 #[test]
 fn test_indexer_run_once() {
     let dir = tempfile::tempdir().unwrap();
-    let (_root, space_path, config_path, _relation) = setup_space_with_entries(&dir);
+    let (_relation, config_path, _) = setup_space_with_entries(&dir);
 
-    let output = Command::new(ugoite_bin())
-        .args(["index", "run", &space_path])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    let output = run_cli(&config_path, &["index", "run"]);
 
     assert!(
         output.status.success(),
@@ -110,13 +149,9 @@ fn test_indexer_run_once() {
 #[test]
 fn test_aggregate_stats() {
     let dir = tempfile::tempdir().unwrap();
-    let (_root, space_path, config_path, _relation) = setup_space_with_entries(&dir);
+    let (_relation, config_path, _) = setup_space_with_entries(&dir);
 
-    let output = Command::new(ugoite_bin())
-        .args(["index", "stats", &space_path])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    let output = run_cli(&config_path, &["index", "stats"]);
 
     assert!(
         output.status.success(),
@@ -129,13 +164,9 @@ fn test_aggregate_stats() {
 #[test]
 fn test_aggregate_stats_includes_field_usage() {
     let dir = tempfile::tempdir().unwrap();
-    let (_root, space_path, config_path, _relation) = setup_space_with_entries(&dir);
+    let (_relation, config_path, _) = setup_space_with_entries(&dir);
 
-    let output = Command::new(ugoite_bin())
-        .args(["index", "stats", &space_path])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    let output = run_cli(&config_path, &["index", "stats"]);
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -146,28 +177,21 @@ fn test_aggregate_stats_includes_field_usage() {
 #[test]
 fn test_extract_properties_h2_sections() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = format!("{root}/spaces/prop-space");
-
-    Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "prop-space"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create space");
+    let config_path = init_canonical_space(&dir, "prop-space");
 
     let form_file = dir.path().join("form.json");
     std::fs::write(
         &form_file,
-        r#"{"name":"Entry","fields":{"Summary":{"type":"markdown"},"Status":{"type":"text"}}}"#,
+        r#"{"name":"Entry","fields":{"Body":{"type":"markdown"},"Summary":{"type":"markdown"},"Status":{"type":"text"}}}"#,
     )
     .unwrap();
 
-    Command::new(ugoite_bin())
-        .args(["form", "update", &space_path, form_file.to_str().unwrap()])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create form");
+    assert!(run_cli(
+        &config_path,
+        &["form", "update", form_file.to_str().unwrap()]
+    )
+    .status
+    .success());
 
     assert!(create_structured_entry(
         &config_path,
@@ -178,11 +202,7 @@ fn test_extract_properties_h2_sections() {
     .status
     .success());
 
-    let get_output = Command::new(ugoite_bin())
-        .args(["entry", "get", &space_path, "entry-h2"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("get entry");
+    let get_output = run_cli(&config_path, &["entry", "get", "entry-h2"]);
 
     assert!(
         get_output.status.success(),
@@ -195,28 +215,21 @@ fn test_extract_properties_h2_sections() {
 #[test]
 fn test_extract_properties_precedence() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = format!("{root}/spaces/prec-space");
-
-    Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "prec-space"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create space");
+    let config_path = init_canonical_space(&dir, "prec-space");
 
     let form_file = dir.path().join("form.json");
     std::fs::write(
         &form_file,
-        r#"{"name":"Entry","fields":{"Section A":{"type":"markdown"}}}"#,
+        r#"{"name":"Entry","fields":{"Body":{"type":"markdown"},"Section A":{"type":"markdown"}}}"#,
     )
     .unwrap();
 
-    Command::new(ugoite_bin())
-        .args(["form", "update", &space_path, form_file.to_str().unwrap()])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create form");
+    assert!(run_cli(
+        &config_path,
+        &["form", "update", form_file.to_str().unwrap()]
+    )
+    .status
+    .success());
 
     assert!(create_structured_entry(
         &config_path,
@@ -227,11 +240,7 @@ fn test_extract_properties_precedence() {
     .status
     .success());
 
-    let get_output = Command::new(ugoite_bin())
-        .args(["entry", "get", &space_path, "entry-prec"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("get entry");
+    let get_output = run_cli(&config_path, &["entry", "get", "entry-prec"]);
 
     assert!(get_output.status.success());
 }
@@ -240,18 +249,16 @@ fn test_extract_properties_precedence() {
 #[test]
 fn test_query_index() {
     let dir = tempfile::tempdir().unwrap();
-    let (_root, space_path, config_path, relation) = setup_space_with_entries(&dir);
+    let (relation, config_path, _) = setup_space_with_entries(&dir);
 
-    let output = Command::new(ugoite_bin())
-        .args([
+    let output = run_cli(
+        &config_path,
+        &[
             "query",
-            &space_path,
             "--sql",
             &format!("SELECT * FROM \"{relation}\" LIMIT 10"),
-        ])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("query");
+        ],
+    );
 
     assert!(
         output.status.success(),
@@ -264,18 +271,16 @@ fn test_query_index() {
 #[test]
 fn test_query_index_by_tag() {
     let dir = tempfile::tempdir().unwrap();
-    let (_root, space_path, config_path, relation) = setup_space_with_entries(&dir);
+    let (relation, config_path, _) = setup_space_with_entries(&dir);
 
-    let output = Command::new(ugoite_bin())
-        .args([
+    let output = run_cli(
+        &config_path,
+        &[
             "query",
-            &space_path,
             "--sql",
             &format!("SELECT * FROM \"{relation}\" LIMIT 10"),
-        ])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("query by tag");
+        ],
+    );
 
     assert!(
         output.status.success(),
@@ -288,15 +293,7 @@ fn test_query_index_by_tag() {
 #[test]
 fn test_validate_properties_missing_required() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = format!("{root}/spaces/val-space");
-
-    Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "val-space"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create space");
+    let config_path = init_canonical_space(&dir, "val-space");
 
     let form_file = dir.path().join("form.json");
     std::fs::write(
@@ -305,11 +302,12 @@ fn test_validate_properties_missing_required() {
     )
     .unwrap();
 
-    Command::new(ugoite_bin())
-        .args(["form", "update", &space_path, form_file.to_str().unwrap()])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create form");
+    assert!(run_cli(
+        &config_path,
+        &["form", "update", form_file.to_str().unwrap()]
+    )
+    .status
+    .success());
 
     assert!(create_structured_entry(
         &config_path,
@@ -320,11 +318,7 @@ fn test_validate_properties_missing_required() {
     .status
     .success());
 
-    let output = Command::new(ugoite_bin())
-        .args(["entry", "get", &space_path, "no-title-entry"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("get entry");
+    let output = run_cli(&config_path, &["entry", "get", "no-title-entry"]);
 
     // Entry should still be accessible (validation is advisory)
     assert!(output.status.success() || !output.status.success());
@@ -334,15 +328,7 @@ fn test_validate_properties_missing_required() {
 #[test]
 fn test_validate_properties_valid() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = format!("{root}/spaces/valid-space");
-
-    Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "valid-space"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create space");
+    let config_path = init_canonical_space(&dir, "valid-space");
 
     let form_file = dir.path().join("form.json");
     std::fs::write(
@@ -351,11 +337,12 @@ fn test_validate_properties_valid() {
     )
     .unwrap();
 
-    Command::new(ugoite_bin())
-        .args(["form", "update", &space_path, form_file.to_str().unwrap()])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create form");
+    assert!(run_cli(
+        &config_path,
+        &["form", "update", form_file.to_str().unwrap()]
+    )
+    .status
+    .success());
 
     assert!(create_structured_entry(
         &config_path,
@@ -366,11 +353,7 @@ fn test_validate_properties_valid() {
     .status
     .success());
 
-    let output = Command::new(ugoite_bin())
-        .args(["entry", "get", &space_path, "valid-entry"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("get entry");
+    let output = run_cli(&config_path, &["entry", "get", "valid-entry"]);
 
     assert!(
         output.status.success(),
@@ -383,13 +366,9 @@ fn test_validate_properties_valid() {
 #[test]
 fn test_indexer_generates_inverted_index() {
     let dir = tempfile::tempdir().unwrap();
-    let (_root, space_path, config_path, _relation) = setup_space_with_entries(&dir);
+    let (_relation, config_path, _) = setup_space_with_entries(&dir);
 
-    let output = Command::new(ugoite_bin())
-        .args(["index", "run", &space_path])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    let output = run_cli(&config_path, &["index", "run"]);
 
     assert!(output.status.success(), "{output:?}");
 }
@@ -398,13 +377,9 @@ fn test_indexer_generates_inverted_index() {
 #[test]
 fn test_indexer_computes_word_count() {
     let dir = tempfile::tempdir().unwrap();
-    let (_root, space_path, config_path, _relation) = setup_space_with_entries(&dir);
+    let (_relation, config_path, _) = setup_space_with_entries(&dir);
 
-    let output = Command::new(ugoite_bin())
-        .args(["index", "run", &space_path])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    let output = run_cli(&config_path, &["index", "run"]);
 
     assert!(output.status.success(), "{output:?}");
 }

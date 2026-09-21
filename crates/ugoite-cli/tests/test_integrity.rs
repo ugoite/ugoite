@@ -19,19 +19,44 @@ fn ugoite_bin() -> std::path::PathBuf {
     path
 }
 
-/// REQ-INT-001, REQ-STO-004: Integrity provider validates space successfully with valid key.
-#[test]
-fn test_integrity_provider_for_space_success() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
-
-    let output = Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "int-space"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+fn init_canonical_config(config_path: &std::path::Path, root: &str) {
+    let init = Command::new(ugoite_bin())
+        .args(["--config", config_path.to_str().unwrap(), "config", "init"])
+        .env("UGOITE_CLI_CONFIG_PATH", config_path)
         .output()
-        .expect("failed to execute");
+        .expect("config init");
+    assert!(init.status.success());
+    let connection = Command::new(ugoite_bin())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "config",
+            "connection",
+            "set",
+            "local",
+            "--type",
+            "core",
+            "--root",
+            root,
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", config_path)
+        .output()
+        .expect("connection set");
+    assert!(connection.status.success());
+}
 
+fn create_space(config_path: &std::path::Path, slug: &str) {
+    let output = Command::new(ugoite_bin())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "space",
+            "create",
+            slug,
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", config_path)
+        .output()
+        .expect("space create");
     assert!(
         output.status.success(),
         "stderr: {}",
@@ -39,30 +64,58 @@ fn test_integrity_provider_for_space_success() {
     );
 }
 
+fn upsert_entry_form(config_path: &std::path::Path, dir: &std::path::Path) {
+    let form_file = dir.join("entry-form.json");
+    std::fs::write(
+        &form_file,
+        r#"{"name":"Entry","fields":{"Body":{"type":"markdown"}}}"#,
+    )
+    .unwrap();
+    let output = Command::new(ugoite_bin())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "form",
+            "update",
+            form_file.to_str().unwrap(),
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", config_path)
+        .output()
+        .expect("form update");
+    assert!(output.status.success());
+}
+
+/// REQ-INT-001, REQ-STO-004: Integrity provider validates space successfully with valid key.
+#[test]
+fn test_integrity_provider_for_space_success() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.toml");
+    init_canonical_config(&config_path, &root);
+    create_space(&config_path, "int-space");
+}
+
 /// REQ-INT-001: Integrity provider fails when HMAC key is missing.
 #[test]
 fn test_integrity_provider_missing_hmac_key() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
+    let config_path = dir.path().join("cli-config.toml");
+    init_canonical_config(&config_path, &root);
 
     // Create space without HMAC key configuration
-    Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "no-hmac-space"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create space");
+    create_space(&config_path, "no-hmac-space");
 
     // Attempting to access a space requiring HMAC without key should fail
     let output = Command::new(ugoite_bin())
-        .args(["space", "list", "--root", &root])
+        .args(["--config", config_path.to_str().unwrap(), "space", "list"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
 
     // In core mode, list should succeed (no HMAC required for local access)
     // The test verifies the system behaves deterministically
-    assert!(output.status.success() || !output.status.success());
+    assert!(output.status.success());
 }
 
 /// REQ-INT-001: Integrity provider rejects entry with invalid HMAC key.
@@ -70,25 +123,24 @@ fn test_integrity_provider_missing_hmac_key() {
 fn test_integrity_provider_invalid_hmac_key() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
+    let config_path = dir.path().join("cli-config.toml");
+    init_canonical_config(&config_path, &root);
 
     // Create space
-    Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "hmac-space"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create space");
+    create_space(&config_path, "hmac-space");
+    upsert_entry_form(&config_path, dir.path());
 
     Command::new(ugoite_bin())
         .args([
+            "--config",
+            config_path.to_str().unwrap(),
             "entry",
             "create",
-            &root,
-            "hmac-space",
-            "--id",
             "hmac-entry",
-            "--content",
-            "# HMAC Test Entry",
+            "--form",
+            "Entry",
+            "--field",
+            "Body=HMAC Test Entry",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
@@ -96,7 +148,13 @@ fn test_integrity_provider_invalid_hmac_key() {
 
     // Accessing with a wrong/invalid HMAC secret should produce an error
     let output = Command::new(ugoite_bin())
-        .args(["entry", "get", &root, "hmac-space", "hmac-entry"])
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "entry",
+            "get",
+            "hmac-entry",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .env("UGOITE_HMAC_SECRET", "invalid-secret-key")
         .output()

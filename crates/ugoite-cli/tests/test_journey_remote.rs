@@ -44,94 +44,6 @@ fn ugoite_bin() -> std::path::PathBuf {
     path
 }
 
-fn structured_entry_args(markdown: &str) -> Vec<String> {
-    let mut form = String::new();
-    let mut fields: Vec<(String, String)> = Vec::new();
-    let mut current: Option<String> = None;
-    let mut value = Vec::new();
-    let mut in_frontmatter = false;
-    let mut frontmatter_seen = false;
-    let finish = |fields: &mut Vec<(String, String)>,
-                  current: &mut Option<String>,
-                  value: &mut Vec<String>| {
-        if let Some(name) = current.take() {
-            fields.push((name, value.join("\n").trim().to_string()));
-        }
-        value.clear();
-    };
-    for line in markdown.lines() {
-        if line.trim() == "---" && !frontmatter_seen {
-            frontmatter_seen = true;
-            in_frontmatter = true;
-            continue;
-        }
-        if in_frontmatter {
-            if line.trim() == "---" {
-                in_frontmatter = false;
-            } else if let Some(name) = line.strip_prefix("form:") {
-                form = name.trim().to_string();
-            }
-            continue;
-        }
-        if let Some(name) = line.strip_prefix("## ") {
-            finish(&mut fields, &mut current, &mut value);
-            current = Some(name.trim().to_string());
-        } else if current.is_some() {
-            value.push(line.to_string());
-        }
-    }
-    finish(&mut fields, &mut current, &mut value);
-    let mut result = vec!["--form".to_string(), form];
-    for (name, value) in fields {
-        result.extend(["--field".to_string(), format!("{name}={value}")]);
-    }
-    result
-}
-
-fn replace_legacy_entry_input(args: Vec<String>) -> Vec<String> {
-    let Some(entry_index) = args.iter().position(|arg| *arg == "entry") else {
-        return args;
-    };
-    let Some(operation) = args.get(entry_index + 1).map(String::as_str) else {
-        return args;
-    };
-    let raw_index = args[entry_index + 2..].iter().position(|arg| {
-        (operation == "create" && *arg == "--content")
-            || (operation == "update" && arg.starts_with("--markdown="))
-    });
-    let Some(relative_raw_index) = raw_index else {
-        return args;
-    };
-    let raw_index = entry_index + 2 + relative_raw_index;
-    let (markdown, entry_id, suffix_start) = if operation == "create" {
-        let Some(markdown) = args.get(raw_index + 1) else {
-            return args;
-        };
-        let Some(entry_id) = args[raw_index + 2..]
-            .iter()
-            .find(|arg| !arg.starts_with("--"))
-        else {
-            return args;
-        };
-        (markdown.clone(), (*entry_id).clone(), raw_index + 3)
-    } else {
-        let markdown = args[raw_index].trim_start_matches("--markdown=");
-        let Some(entry_id) = args[entry_index + 2..raw_index]
-            .iter()
-            .rev()
-            .find(|arg| !arg.starts_with("--"))
-        else {
-            return args;
-        };
-        (markdown.to_string(), (*entry_id).clone(), raw_index + 1)
-    };
-    let mut canonical = args[..entry_index].to_vec();
-    canonical.extend(["entry".to_string(), operation.to_string(), entry_id]);
-    canonical.extend(structured_entry_args(&markdown));
-    canonical.extend(args[suffix_start..].iter().cloned());
-    canonical
-}
-
 fn test_key_and_jwk() -> (SigningKey, serde_json::Value) {
     let key = SigningKey::random(&mut OsRng);
     let point = key.verifying_key().to_encoded_point(false);
@@ -145,25 +57,11 @@ fn test_key_and_jwk() -> (SigningKey, serde_json::Value) {
 }
 
 async fn run_cli(config_path: &std::path::Path, args: &[&str]) -> Output {
-    let space_uid = std::fs::read_to_string(config_path).ok().and_then(|text| {
-        text.lines().find_map(|line| {
-            line.trim()
-                .strip_prefix("space_uid = \"")
-                .and_then(|value| value.strip_suffix('\"'))
-                .map(str::to_owned)
-        })
-    });
     let mut command_args = vec![
         "--config".to_string(),
         config_path.to_str().expect("config path").to_string(),
     ];
-    command_args.extend(
-        args.iter()
-            .copied()
-            .filter(|arg| Some(*arg) != space_uid.as_deref())
-            .map(str::to_string),
-    );
-    let command_args = replace_legacy_entry_input(command_args);
+    command_args.extend(args.iter().copied().map(str::to_string));
     Command::new(ugoite_bin())
         .args(command_args)
         .env(
@@ -173,6 +71,11 @@ async fn run_cli(config_path: &std::path::Path, args: &[&str]) -> Output {
         .output()
         .await
         .expect("run ugoite")
+}
+
+async fn run_cli_owned(config_path: &std::path::Path, args: &[String]) -> Output {
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(config_path, &refs).await
 }
 
 fn stdout_json(output: &Output, what: &str) -> serde_json::Value {
@@ -357,10 +260,7 @@ async fn journey_cli_remote() {
 
     // Space create is intentionally not driven remotely (see above): prove
     // the provisioned Space is durable and reopenable through remote reads.
-    let space = stdout_json(
-        &run_cli(config_path, &["space", "get", space_id]).await,
-        "space get",
-    );
+    let space = stdout_json(&run_cli(config_path, &["space", "get"]).await, "space get");
     assert!(contains_string(&space, space_id));
 
     // Form establish via `form update`: the upsert path behind a weaker name.
@@ -377,7 +277,7 @@ async fn journey_cli_remote() {
     .expect("write journey form");
     let output = run_cli(
         config_path,
-        &["form", "update", space_id, form_file.to_str().unwrap()],
+        &["form", "update", form_file.to_str().unwrap()],
     )
     .await;
     assert!(
@@ -386,7 +286,7 @@ async fn journey_cli_remote() {
         String::from_utf8_lossy(&output.stderr)
     );
     let form = stdout_json(
-        &run_cli(config_path, &["form", "get", space_id, form_name]).await,
+        &run_cli(config_path, &["form", "get", form_name]).await,
         "form get",
     );
     assert_eq!(
@@ -404,13 +304,20 @@ async fn journey_cli_remote() {
     );
 
     // Entry create appends exactly one revision.
-    let v1 = format!(
-        "---\nform: {form_name}\n---\n# Journey remote v1\n\n## Status\n{needle}\n\n## Body\njourney remote v1\n"
-    );
     let created = stdout_json(
         &run_cli(
             config_path,
-            &["entry", "create", "--content", &v1, space_id, entry_id],
+            &[
+                "entry",
+                "create",
+                entry_id,
+                "--form",
+                form_name,
+                "--field",
+                &format!("Status={needle}"),
+                "--field",
+                "Body=journey remote v1",
+            ],
         )
         .await,
         "entry create",
@@ -422,7 +329,7 @@ async fn journey_cli_remote() {
         .expect("create returns durable change_id")
         .to_string();
     let history = stdout_json(
-        &run_cli(config_path, &["entry", "history", space_id, entry_id]).await,
+        &run_cli(config_path, &["entry", "history", entry_id]).await,
         "entry history after create",
     );
     let ids = revision_ids(&history);
@@ -434,20 +341,16 @@ async fn journey_cli_remote() {
     let rev1 = ids[0].clone();
 
     // Entry edit appends a revision; a stale parent conflicts.
-    let v2 = format!(
-        "---\nform: {form_name}\n---\n# Journey remote v2\n\n## Status\n{needle}\n\n## Body\njourney remote v2\n"
-    );
-    // NOTE: `--markdown=<value>` keeps frontmatter (leading `---`) from
-    // parsing as a flag; the update flag lacks allow_hyphen_values.
-    let markdown_arg = format!("--markdown={v2}");
     let output = run_cli(
         config_path,
         &[
             "entry",
             "update",
-            space_id,
             entry_id,
-            markdown_arg.as_str(),
+            "--field",
+            &format!("Status={needle}"),
+            "--field",
+            "Body=journey remote v2",
             "--parent-revision-id",
             &rev1,
         ],
@@ -465,7 +368,7 @@ async fn journey_cli_remote() {
         .expect("update returns durable change_id")
         .to_string();
     let history = stdout_json(
-        &run_cli(config_path, &["entry", "history", space_id, entry_id]).await,
+        &run_cli(config_path, &["entry", "history", entry_id]).await,
         "entry history after edit",
     );
     let ids = revision_ids(&history);
@@ -477,9 +380,11 @@ async fn journey_cli_remote() {
         &[
             "entry",
             "update",
-            space_id,
             entry_id,
-            markdown_arg.as_str(),
+            "--field",
+            &format!("Status={needle}"),
+            "--field",
+            "Body=journey remote v2",
             "--parent-revision-id",
             &rev1,
         ],
@@ -492,7 +397,7 @@ async fn journey_cli_remote() {
 
     // Search finds the updated durable Entry.
     let results = stdout_json(
-        &run_cli(config_path, &["search", "keyword", space_id, needle]).await,
+        &run_cli(config_path, &["search", "keyword", needle]).await,
         "search keyword",
     );
     assert!(
@@ -501,18 +406,14 @@ async fn journey_cli_remote() {
     );
 
     // Restore appends a new revision replaying rev1; history never shortens.
-    let output = run_cli(
-        config_path,
-        &["entry", "restore", space_id, entry_id, &rev1],
-    )
-    .await;
+    let output = run_cli(config_path, &["entry", "restore", entry_id, &rev1]).await;
     assert!(
         output.status.success(),
         "entry restore failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let history = stdout_json(
-        &run_cli(config_path, &["entry", "history", space_id, entry_id]).await,
+        &run_cli(config_path, &["entry", "history", entry_id]).await,
         "entry history after restore",
     );
     let ids = revision_ids(&history);
@@ -552,11 +453,7 @@ async fn journey_cli_remote() {
         Some(restore_change_id.as_str())
     );
     let revision = stdout_json(
-        &run_cli(
-            config_path,
-            &["entry", "revision", space_id, entry_id, &rev3],
-        )
-        .await,
+        &run_cli(config_path, &["entry", "revision", entry_id, &rev3]).await,
         "entry revision after restore",
     );
     assert_eq!(
@@ -570,17 +467,17 @@ async fn journey_cli_remote() {
 
     // Reopen: fresh processes read identical durable state.
     let space = stdout_json(
-        &run_cli(config_path, &["space", "get", space_id]).await,
+        &run_cli(config_path, &["space", "get"]).await,
         "space get on reopen",
     );
     assert!(contains_string(&space, space_id));
     let history = stdout_json(
-        &run_cli(config_path, &["entry", "history", space_id, entry_id]).await,
+        &run_cli(config_path, &["entry", "history", entry_id]).await,
         "entry history on reopen",
     );
     assert_eq!(revision_ids(&history).len(), 3);
     let results = stdout_json(
-        &run_cli(config_path, &["search", "keyword", space_id, needle]).await,
+        &run_cli(config_path, &["search", "keyword", needle]).await,
         "search keyword on reopen",
     );
     assert!(contains_string(&results, entry_id));
@@ -604,7 +501,6 @@ async fn test_cli_remote_entry_update_parent_revision_matrix() {
             &[
                 "entry",
                 "create",
-                &fixture.space_id,
                 "parent-matrix-structured",
                 "--form",
                 "ParentMatrixRemoteForm",
@@ -622,12 +518,7 @@ async fn test_cli_remote_entry_update_parent_revision_matrix() {
     let structured_history = stdout_json(
         &run_cli(
             &fixture.config_path,
-            &[
-                "entry",
-                "history",
-                &fixture.space_id,
-                "parent-matrix-structured",
-            ],
+            &["entry", "history", "parent-matrix-structured"],
         )
         .await,
         "remote structured matrix history after create",
@@ -639,7 +530,6 @@ async fn test_cli_remote_entry_update_parent_revision_matrix() {
         &[
             "entry",
             "update",
-            &fixture.space_id,
             "parent-matrix-structured",
             "--field",
             "Body=structured explicit",
@@ -656,12 +546,7 @@ async fn test_cli_remote_entry_update_parent_revision_matrix() {
     let structured_history = stdout_json(
         &run_cli(
             &fixture.config_path,
-            &[
-                "entry",
-                "history",
-                &fixture.space_id,
-                "parent-matrix-structured",
-            ],
+            &["entry", "history", "parent-matrix-structured"],
         )
         .await,
         "remote structured matrix history after explicit update",
@@ -676,7 +561,6 @@ async fn test_cli_remote_entry_update_parent_revision_matrix() {
             &[
                 "entry",
                 "revision",
-                &fixture.space_id,
                 "parent-matrix-structured",
                 &structured_rev2,
             ],
@@ -691,7 +575,6 @@ async fn test_cli_remote_entry_update_parent_revision_matrix() {
         &[
             "entry",
             "update",
-            &fixture.space_id,
             "parent-matrix-structured",
             "--field",
             "Body=structured omitted",
@@ -706,12 +589,7 @@ async fn test_cli_remote_entry_update_parent_revision_matrix() {
     let structured_history = stdout_json(
         &run_cli(
             &fixture.config_path,
-            &[
-                "entry",
-                "history",
-                &fixture.space_id,
-                "parent-matrix-structured",
-            ],
+            &["entry", "history", "parent-matrix-structured"],
         )
         .await,
         "remote structured matrix history after omitted update",
@@ -726,7 +604,6 @@ async fn test_cli_remote_entry_update_parent_revision_matrix() {
             &[
                 "entry",
                 "revision",
-                &fixture.space_id,
                 "parent-matrix-structured",
                 &structured_rev3,
             ],
@@ -736,153 +613,131 @@ async fn test_cli_remote_entry_update_parent_revision_matrix() {
     );
     assert_eq!(structured_revision["parent_revision_id"], structured_rev2);
 
-    let markdown_v1 =
-        "---\nform: ParentMatrixRemoteForm\n---\n# Matrix Markdown v1\n\n## Body\nmarkdown v1\n";
     let created = stdout_json(
         &run_cli(
             &fixture.config_path,
             &[
                 "entry",
                 "create",
-                "--content",
-                markdown_v1,
-                &fixture.space_id,
-                "parent-matrix-markdown",
+                "parent-matrix-canonical",
+                "--form",
+                "ParentMatrixRemoteForm",
+                "--field",
+                "Body=canonical v1",
             ],
         )
         .await,
-        "remote Markdown matrix create",
+        "remote canonical matrix create",
     );
-    assert!(contains_string(&created, "parent-matrix-markdown"));
+    assert!(contains_string(&created, "parent-matrix-canonical"));
     let history = stdout_json(
         &run_cli(
             &fixture.config_path,
-            &[
-                "entry",
-                "history",
-                &fixture.space_id,
-                "parent-matrix-markdown",
-            ],
+            &["entry", "history", "parent-matrix-canonical"],
         )
         .await,
-        "remote Markdown matrix history after create",
+        "remote canonical matrix history after create",
     );
-    let markdown_rev1 = revision_ids(&history)[0].clone();
+    let canonical_rev1 = revision_ids(&history)[0].clone();
 
-    let markdown_v2 = markdown_v1.replace("v1", "v2");
-    let markdown_v2_arg = format!("--markdown={markdown_v2}");
     let explicit = run_cli(
         &fixture.config_path,
         &[
             "entry",
             "update",
-            &fixture.space_id,
-            "parent-matrix-markdown",
-            &markdown_v2_arg,
+            "parent-matrix-canonical",
+            "--field",
+            "Body=canonical v2",
             "--parent-revision-id",
-            &markdown_rev1,
+            &canonical_rev1,
         ],
     )
     .await;
     assert!(
         explicit.status.success(),
-        "remote explicit Markdown update failed: {}",
+        "remote explicit canonical update failed: {}",
         String::from_utf8_lossy(&explicit.stderr)
     );
     let history = stdout_json(
         &run_cli(
             &fixture.config_path,
-            &[
-                "entry",
-                "history",
-                &fixture.space_id,
-                "parent-matrix-markdown",
-            ],
+            &["entry", "history", "parent-matrix-canonical"],
         )
         .await,
-        "remote Markdown matrix history after explicit update",
+        "remote canonical matrix history after explicit update",
     );
-    let markdown_rev2 = revision_ids(&history)
+    let canonical_rev2 = revision_ids(&history)
         .into_iter()
-        .find(|revision| revision != &markdown_rev1)
-        .expect("remote Markdown rev2");
+        .find(|revision| revision != &canonical_rev1)
+        .expect("remote canonical rev2");
     let revision = stdout_json(
         &run_cli(
             &fixture.config_path,
             &[
                 "entry",
                 "revision",
-                &fixture.space_id,
-                "parent-matrix-markdown",
-                &markdown_rev2,
+                "parent-matrix-canonical",
+                &canonical_rev2,
             ],
         )
         .await,
-        "remote Markdown matrix revision after explicit update",
+        "remote canonical matrix revision after explicit update",
     );
-    assert_eq!(revision["parent_revision_id"], markdown_rev1);
+    assert_eq!(revision["parent_revision_id"], canonical_rev1);
 
-    let markdown_v3 = markdown_v2.replace("v2", "v3");
-    let markdown_v3_arg = format!("--markdown={markdown_v3}");
     let omitted = run_cli(
         &fixture.config_path,
         &[
             "entry",
             "update",
-            &fixture.space_id,
-            "parent-matrix-markdown",
-            &markdown_v3_arg,
+            "parent-matrix-canonical",
+            "--field",
+            "Body=canonical v3",
         ],
     )
     .await;
     assert!(
         omitted.status.success(),
-        "remote omitted Markdown update failed: {}",
+        "remote omitted canonical update failed: {}",
         String::from_utf8_lossy(&omitted.stderr)
     );
     let history = stdout_json(
         &run_cli(
             &fixture.config_path,
-            &[
-                "entry",
-                "history",
-                &fixture.space_id,
-                "parent-matrix-markdown",
-            ],
+            &["entry", "history", "parent-matrix-canonical"],
         )
         .await,
-        "remote Markdown matrix history after omitted update",
+        "remote canonical matrix history after omitted update",
     );
-    let markdown_rev3 = revision_ids(&history)
+    let canonical_rev3 = revision_ids(&history)
         .into_iter()
-        .find(|revision| revision != &markdown_rev1 && revision != &markdown_rev2)
-        .expect("remote Markdown rev3");
+        .find(|revision| revision != &canonical_rev1 && revision != &canonical_rev2)
+        .expect("remote canonical rev3");
     let revision = stdout_json(
         &run_cli(
             &fixture.config_path,
             &[
                 "entry",
                 "revision",
-                &fixture.space_id,
-                "parent-matrix-markdown",
-                &markdown_rev3,
+                "parent-matrix-canonical",
+                &canonical_rev3,
             ],
         )
         .await,
-        "remote Markdown matrix revision after omitted update",
+        "remote canonical matrix revision after omitted update",
     );
-    assert_eq!(revision["parent_revision_id"], markdown_rev2);
+    assert_eq!(revision["parent_revision_id"], canonical_rev2);
 
     let stale = run_cli(
         &fixture.config_path,
         &[
             "entry",
             "update",
-            &fixture.space_id,
-            "parent-matrix-markdown",
-            &markdown_v3_arg,
+            "parent-matrix-canonical",
+            "--field",
+            "Body=canonical v3",
             "--parent-revision-id",
-            &markdown_rev1,
+            &canonical_rev1,
         ],
     )
     .await;
@@ -921,12 +776,7 @@ async fn setup_parity_form(fixture: &RemoteFixture, form_fields: &str, form_name
     .expect("write parity form");
     let output = run_cli(
         &fixture.config_path,
-        &[
-            "form",
-            "update",
-            &fixture.space_id,
-            form_file.to_str().unwrap(),
-        ],
+        &["form", "update", form_file.to_str().unwrap()],
     )
     .await;
     assert!(
@@ -936,48 +786,46 @@ async fn setup_parity_form(fixture: &RemoteFixture, form_fields: &str, form_name
     );
 }
 
-fn parity_markdown(form_name: &str, title: &str, status: Option<&str>, body: &str) -> String {
-    let status_section = status
-        .map(|value| format!("\n## Status\n{value}\n"))
-        .unwrap_or_default();
-    format!("---\nform: {form_name}\n---\n# {title}\n{status_section}\n## Body\n{body}\n")
+fn parity_fields(status: Option<&str>, body: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some(status) = status {
+        args.push("--field".to_string());
+        args.push(format!("Status={status}"));
+    }
+    args.push("--field".to_string());
+    args.push(format!("Body={body}"));
+    args
 }
 
 async fn entry_absent(fixture: &RemoteFixture, entry_id: &str) {
-    let output = run_cli(
-        &fixture.config_path,
-        &["entry", "get", &fixture.space_id, entry_id],
-    )
-    .await;
+    let output = run_cli(&fixture.config_path, &["entry", "get", entry_id]).await;
     assert!(
         !output.status.success(),
         "rejected mutation must not persist an entry"
     );
 }
 
-async fn create_parity_entry(fixture: &RemoteFixture, entry_id: &str, markdown: &str) -> String {
+async fn create_parity_entry(
+    fixture: &RemoteFixture,
+    entry_id: &str,
+    status: Option<&str>,
+    body: &str,
+) -> String {
+    let mut args = vec![
+        "entry".to_string(),
+        "create".to_string(),
+        entry_id.to_string(),
+        "--form".to_string(),
+        "ParityRemoteForm".to_string(),
+    ];
+    args.extend(parity_fields(status, body));
     let created = stdout_json(
-        &run_cli(
-            &fixture.config_path,
-            &[
-                "entry",
-                "create",
-                "--content",
-                markdown,
-                &fixture.space_id,
-                entry_id,
-            ],
-        )
-        .await,
+        &run_cli_owned(&fixture.config_path, &args).await,
         "parity setup entry create",
     );
     assert!(contains_string(&created, entry_id));
     let history = stdout_json(
-        &run_cli(
-            &fixture.config_path,
-            &["entry", "history", &fixture.space_id, entry_id],
-        )
-        .await,
+        &run_cli(&fixture.config_path, &["entry", "history", entry_id]).await,
         "parity setup history",
     );
     let ids = revision_ids(&history);
@@ -997,16 +845,20 @@ async fn test_parity_remote_invalid_field_rejected_without_mutation() {
             "ParityRemoteForm",
         )
         .await;
-    let markdown = "---\nform: ParityRemoteForm\n---\n# Parity invalid\n\n## Status\nok\n\n## Count\nnot-a-number\n\n## Body\nx\n";
     let output = run_cli(
         &fixture.config_path,
         &[
             "entry",
             "create",
-            "--content",
-            markdown,
-            &fixture.space_id,
             "parity-invalid",
+            "--form",
+            "ParityRemoteForm",
+            "--field",
+            "Status=ok",
+            "--field",
+            "Count=not-a-number",
+            "--field",
+            "Body=x",
         ],
     )
     .await;
@@ -1031,16 +883,16 @@ async fn test_parity_remote_missing_required_rejected_without_mutation() {
         "ParityRemoteForm",
     )
     .await;
-    let markdown = parity_markdown("ParityRemoteForm", "Parity missing", None, "x");
     let output = run_cli(
         &fixture.config_path,
         &[
             "entry",
             "create",
-            "--content",
-            &markdown,
-            &fixture.space_id,
             "parity-missing",
+            "--form",
+            "ParityRemoteForm",
+            "--field",
+            "Body=x",
         ],
     )
     .await;
@@ -1066,18 +918,17 @@ async fn test_parity_remote_stale_revision_conflicts_without_mutation() {
         "ParityRemoteForm",
     )
     .await;
-    let v1 = parity_markdown("ParityRemoteForm", "Parity stale", Some("ok"), "v1");
-    let rev1 = create_parity_entry(fixture, "parity-stale", &v1).await;
-    let v2 = parity_markdown("ParityRemoteForm", "Parity stale v2", Some("ok"), "v2");
-    let markdown_arg = format!("--markdown={v2}");
+    let rev1 = create_parity_entry(fixture, "parity-stale", Some("ok"), "v1").await;
     let updated = run_cli(
         &fixture.config_path,
         &[
             "entry",
             "update",
-            &fixture.space_id,
             "parity-stale",
-            markdown_arg.as_str(),
+            "--field",
+            "Status=ok",
+            "--field",
+            "Body=v2",
             "--parent-revision-id",
             &rev1,
         ],
@@ -1089,9 +940,11 @@ async fn test_parity_remote_stale_revision_conflicts_without_mutation() {
         &[
             "entry",
             "update",
-            &fixture.space_id,
             "parity-stale",
-            markdown_arg.as_str(),
+            "--field",
+            "Status=ok",
+            "--field",
+            "Body=v2",
             "--parent-revision-id",
             &rev1,
         ],
@@ -1101,11 +954,7 @@ async fn test_parity_remote_stale_revision_conflicts_without_mutation() {
     let stderr = String::from_utf8_lossy(&stale.stderr);
     assert!(stderr.contains("Revision conflict"), "stderr: {stderr}");
     let history = stdout_json(
-        &run_cli(
-            &fixture.config_path,
-            &["entry", "history", &fixture.space_id, "parity-stale"],
-        )
-        .await,
+        &run_cli(&fixture.config_path, &["entry", "history", "parity-stale"]).await,
         "parity history after conflict",
     );
     assert_eq!(revision_ids(&history).len(), 2);
@@ -1122,14 +971,12 @@ async fn test_parity_remote_restore_unknown_revision_rejected_without_mutation()
         "ParityRemoteForm",
     )
     .await;
-    let v1 = parity_markdown("ParityRemoteForm", "Parity restore", Some("ok"), "v1");
-    create_parity_entry(fixture, "parity-restore", &v1).await;
+    create_parity_entry(fixture, "parity-restore", Some("ok"), "v1").await;
     let output = run_cli(
         &fixture.config_path,
         &[
             "entry",
             "restore",
-            &fixture.space_id,
             "parity-restore",
             "00000000-0000-0000-0000-000000000000",
         ],
@@ -1144,7 +991,7 @@ async fn test_parity_remote_restore_unknown_revision_rejected_without_mutation()
     let history = stdout_json(
         &run_cli(
             &fixture.config_path,
-            &["entry", "history", &fixture.space_id, "parity-restore"],
+            &["entry", "history", "parity-restore"],
         )
         .await,
         "parity history after rejected restore",
@@ -1163,16 +1010,18 @@ async fn test_parity_remote_missing_form_rejected_without_mutation() {
         "ParityRemoteForm",
     )
     .await;
-    let markdown = parity_markdown("NoSuchFormParity", "Parity noform", Some("ok"), "x");
     let output = run_cli(
         &fixture.config_path,
         &[
             "entry",
             "create",
-            "--content",
-            &markdown,
-            &fixture.space_id,
             "parity-noform",
+            "--form",
+            "NoSuchFormParity",
+            "--field",
+            "Status=ok",
+            "--field",
+            "Body=x",
         ],
     )
     .await;
@@ -1197,8 +1046,7 @@ async fn test_parity_remote_unauthenticated_mutation_rejected_without_mutation()
         "ParityRemoteForm",
     )
     .await;
-    let v1 = parity_markdown("ParityRemoteForm", "Parity auth", Some("ok"), "v1");
-    create_parity_entry(fixture, "parity-auth", &v1).await;
+    create_parity_entry(fixture, "parity-auth", Some("ok"), "v1").await;
 
     let bare_dir = tempfile::tempdir().expect("bare config directory");
     let bare_config = bare_dir.path().join("config.toml");
@@ -1222,16 +1070,16 @@ async fn test_parity_remote_unauthenticated_mutation_rejected_without_mutation()
     )
     .expect("write bare canonical config");
 
-    let v2 = parity_markdown("ParityRemoteForm", "Parity auth v2", Some("ok"), "v2");
-    let markdown_arg = format!("--markdown={v2}");
     let denied = run_cli(
         &bare_config,
         &[
             "entry",
             "update",
-            &fixture.space_id,
             "parity-auth",
-            markdown_arg.as_str(),
+            "--field",
+            "Status=ok",
+            "--field",
+            "Body=v2",
         ],
     )
     .await;
@@ -1242,11 +1090,7 @@ async fn test_parity_remote_unauthenticated_mutation_rejected_without_mutation()
     let stderr = String::from_utf8_lossy(&denied.stderr);
     assert!(stderr.contains("access token"), "stderr: {stderr}");
     let history = stdout_json(
-        &run_cli(
-            &fixture.config_path,
-            &["entry", "history", &fixture.space_id, "parity-auth"],
-        )
-        .await,
+        &run_cli(&fixture.config_path, &["entry", "history", "parity-auth"]).await,
         "parity history after rejected mutation",
     );
     assert_eq!(revision_ids(&history).len(), 1);
@@ -1265,24 +1109,15 @@ async fn test_parity_remote_delete_without_approval_rejected_without_mutation() 
         "ParityRemoteForm",
     )
     .await;
-    let v1 = parity_markdown("ParityRemoteForm", "Parity delauth", Some("ok"), "v1");
-    create_parity_entry(fixture, "parity-delauth", &v1).await;
-    let denied = run_cli(
-        &fixture.config_path,
-        &["entry", "delete", &fixture.space_id, "parity-delauth"],
-    )
-    .await;
+    create_parity_entry(fixture, "parity-delauth", Some("ok"), "v1").await;
+    let denied = run_cli(&fixture.config_path, &["entry", "delete", "parity-delauth"]).await;
     assert!(
         !denied.status.success(),
         "unapproved remote delete must be rejected"
     );
     let stderr = String::from_utf8_lossy(&denied.stderr);
     assert!(stderr.contains("human approval"), "stderr: {stderr}");
-    let current = run_cli(
-        &fixture.config_path,
-        &["entry", "get", &fixture.space_id, "parity-delauth"],
-    )
-    .await;
+    let current = run_cli(&fixture.config_path, &["entry", "get", "parity-delauth"]).await;
     assert!(
         current.status.success(),
         "rejected delete must leave the entry readable"
@@ -1290,7 +1125,7 @@ async fn test_parity_remote_delete_without_approval_rejected_without_mutation() 
     let history = stdout_json(
         &run_cli(
             &fixture.config_path,
-            &["entry", "history", &fixture.space_id, "parity-delauth"],
+            &["entry", "history", "parity-delauth"],
         )
         .await,
         "parity history after rejected delete",
@@ -1307,12 +1142,7 @@ async fn test_remote_asset_upload_returns_reference() {
     std::fs::write(&file, b"remote upload bytes").expect("stage asset file");
     let output = run_cli(
         &fixture.config_path,
-        &[
-            "asset",
-            "upload",
-            &fixture.space_id,
-            file.to_str().expect("asset path"),
-        ],
+        &["asset", "upload", file.to_str().expect("asset path")],
     )
     .await;
     let asset = stdout_json(&output, "remote asset upload");
@@ -1342,12 +1172,7 @@ async fn test_remote_asset_second_upload_returns_reference() {
     let first_asset = stdout_json(
         &run_cli(
             &fixture.config_path,
-            &[
-                "asset",
-                "upload",
-                &fixture.space_id,
-                first.to_str().expect("asset path"),
-            ],
+            &["asset", "upload", first.to_str().expect("asset path")],
         )
         .await,
         "first remote asset upload",
@@ -1355,12 +1180,7 @@ async fn test_remote_asset_second_upload_returns_reference() {
     let second_asset = stdout_json(
         &run_cli(
             &fixture.config_path,
-            &[
-                "asset",
-                "upload",
-                &fixture.space_id,
-                second.to_str().expect("asset path"),
-            ],
+            &["asset", "upload", second.to_str().expect("asset path")],
         )
         .await,
         "second remote asset upload",
@@ -1382,7 +1202,6 @@ async fn test_remote_asset_upload_strips_filename_traversal() {
             &[
                 "asset",
                 "upload",
-                &fixture.space_id,
                 file.to_str().expect("asset path"),
                 "--filename",
                 "nested/../../outside.txt",
@@ -1412,12 +1231,7 @@ async fn test_remote_asset_upload_rejects_oversize() {
     drop(handle);
     let output = run_cli(
         &fixture.config_path,
-        &[
-            "asset",
-            "upload",
-            &fixture.space_id,
-            file.to_str().expect("asset path"),
-        ],
+        &["asset", "upload", file.to_str().expect("asset path")],
     )
     .await;
     assert!(!output.status.success(), "oversize upload must be rejected");
@@ -1447,18 +1261,13 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         &[
             "form",
             "update",
-            &fixture.space_id,
             task_form_file.to_str().expect("task form path"),
         ],
     )
     .await;
     assert!(task_form_update.status.success());
     let task_form = stdout_json(
-        &run_cli(
-            &fixture.config_path,
-            &["form", "get", &fixture.space_id, "ParityTask"],
-        )
-        .await,
+        &run_cli(&fixture.config_path, &["form", "get", "ParityTask"]).await,
         "get parity task form",
     );
     let task_form_id = task_form["id"].as_str().expect("task form id");
@@ -1501,7 +1310,6 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         &[
             "form",
             "update",
-            &fixture.space_id,
             parity_form_file.to_str().expect("parity form path"),
         ],
     )
@@ -1512,11 +1320,7 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         String::from_utf8_lossy(&form_update.stderr)
     );
     let parity_form_read = stdout_json(
-        &run_cli(
-            &fixture.config_path,
-            &["form", "get", &fixture.space_id, "ParityRemote"],
-        )
-        .await,
+        &run_cli(&fixture.config_path, &["form", "get", "ParityRemote"]).await,
         "get remote parity form",
     );
     assert!(parity_form_read["id"].as_str().is_some());
@@ -1537,11 +1341,7 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         })
         .collect();
     let parity_form_reopened = stdout_json(
-        &run_cli(
-            &fixture.config_path,
-            &["form", "get", &fixture.space_id, "ParityRemote"],
-        )
-        .await,
+        &run_cli(&fixture.config_path, &["form", "get", "ParityRemote"]).await,
         "reopen remote parity form",
     );
     assert_eq!(parity_form_reopened["id"], parity_form_id);
@@ -1554,7 +1354,6 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         &[
             "entry",
             "create",
-            &fixture.space_id,
             "parity-task-01",
             "--form",
             "ParityTask",
@@ -1569,7 +1368,6 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         &[
             "entry",
             "create",
-            &fixture.space_id,
             "parity-task-02",
             "--form",
             "ParityTask",
@@ -1585,12 +1383,7 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
     let asset = stdout_json(
         &run_cli(
             &fixture.config_path,
-            &[
-                "asset",
-                "upload",
-                &fixture.space_id,
-                asset_file.to_str().expect("asset path"),
-            ],
+            &["asset", "upload", asset_file.to_str().expect("asset path")],
         )
         .await,
         "upload parity asset",
@@ -1615,7 +1408,6 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
             &[
                 "entry",
                 "create",
-                &fixture.space_id,
                 "parity-remote-entry",
                 "--form",
                 "ParityRemote",
@@ -1631,7 +1423,7 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
     let entry = stdout_json(
         &run_cli(
             &fixture.config_path,
-            &["entry", "get", &fixture.space_id, "parity-remote-entry"],
+            &["entry", "get", "parity-remote-entry"],
         )
         .await,
         "remote parity entry get",
@@ -1693,7 +1485,7 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
     let history = stdout_json(
         &run_cli(
             &fixture.config_path,
-            &["entry", "history", &fixture.space_id, "parity-remote-entry"],
+            &["entry", "history", "parity-remote-entry"],
         )
         .await,
         "remote parity history after create",
@@ -1703,13 +1495,7 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
     let rev1_json = stdout_json(
         &run_cli(
             &fixture.config_path,
-            &[
-                "entry",
-                "revision",
-                &fixture.space_id,
-                "parity-remote-entry",
-                &rev1,
-            ],
+            &["entry", "revision", "parity-remote-entry", &rev1],
         )
         .await,
         "remote parity created revision",
@@ -1757,7 +1543,6 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
             &[
                 "entry",
                 "update",
-                &fixture.space_id,
                 "parity-remote-entry",
                 "--fields-file",
                 updated_fields_file.to_str().expect("updated fields path"),
@@ -1773,7 +1558,7 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
     let history = stdout_json(
         &run_cli(
             &fixture.config_path,
-            &["entry", "history", &fixture.space_id, "parity-remote-entry"],
+            &["entry", "history", "parity-remote-entry"],
         )
         .await,
         "remote parity history after update",
@@ -1787,13 +1572,7 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
     let revision = stdout_json(
         &run_cli(
             &fixture.config_path,
-            &[
-                "entry",
-                "revision",
-                &fixture.space_id,
-                "parity-remote-entry",
-                &rev2,
-            ],
+            &["entry", "revision", "parity-remote-entry", &rev2],
         )
         .await,
         "remote parity updated revision",
@@ -1803,7 +1582,7 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
     let reopened = stdout_json(
         &run_cli(
             &fixture.config_path,
-            &["entry", "get", &fixture.space_id, "parity-remote-entry"],
+            &["entry", "get", "parity-remote-entry"],
         )
         .await,
         "remote parity reopen",
@@ -1818,7 +1597,6 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         &[
             "entry",
             "create",
-            &fixture.space_id,
             "parity-remote-invalid",
             "--form",
             "ParityRemote",
@@ -1831,49 +1609,4 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
     .await;
     assert!(!invalid.status.success());
     assert!(String::from_utf8_lossy(&invalid.stderr).contains("FORM_VALIDATION_FAILED"));
-
-    let legacy_markdown = acceptance_fixture["markdown"]
-        .as_str()
-        .expect("fixture Markdown")
-        .replace("form: Parity", "form: ParityRemote")
-        .replace("task-01", "parity-task-01")
-        .replace(
-            r#"{"asset_id": "01900000-0000-7000-8000-000000000001", "name": "spec.pdf", "media_type": "application/pdf", "size_bytes": 12, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
-            &serde_json::to_string(&asset).expect("serialize uploaded asset"),
-        )
-        .replace(
-            r#"{"asset_id": "01900000-0000-7000-8000-000000000002", "name": "a.png", "media_type": "image/png", "size_bytes": 4, "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#,
-            &serde_json::to_string(&asset).expect("serialize uploaded asset"),
-        );
-    let legacy = run_cli(
-        &fixture.config_path,
-        &[
-            "entry",
-            "create",
-            "--content",
-            &legacy_markdown,
-            &fixture.space_id,
-            "parity-remote-legacy",
-        ],
-    )
-    .await;
-    assert!(
-        legacy.status.success(),
-        "legacy parity create failed: {}",
-        String::from_utf8_lossy(&legacy.stderr)
-    );
-    let legacy_entry = stdout_json(
-        &run_cli(
-            &fixture.config_path,
-            &["entry", "get", &fixture.space_id, "parity-remote-legacy"],
-        )
-        .await,
-        "remote legacy parity entry get",
-    );
-    assert_eq!(legacy_entry["form"], entry["form"]);
-    for field in [
-        "Headline", "Done", "Count", "At", "AtNs", "AtTz", "AtTzNs", "Labels", "Rows", "Ref",
-    ] {
-        assert_eq!(legacy_entry["sections"][field], entry["sections"][field]);
-    }
 }
