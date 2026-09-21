@@ -670,14 +670,23 @@ impl UgoiteService {
         format!("spaces/{space_id}")
     }
 
-    fn sql_query_signing_key(&self, space_id: &str) -> Vec<u8> {
-        let configured =
-            std::env::var("UGOITE_QUERY_CURSOR_SECRET").unwrap_or_else(|_| self.root_uri.clone());
+    async fn sql_query_signing_key(&self, space_id: &str) -> Result<Vec<u8>> {
+        let configured = match std::env::var_os("UGOITE_QUERY_CURSOR_SECRET") {
+            Some(value) => value.to_string_lossy().as_bytes().to_vec(),
+            None => {
+                crate::integrity::load_existing_hmac_material(&self.operator, space_id)
+                    .await?
+                    .1
+            }
+        };
+        if configured.len() < 32 {
+            bail!("SQL query continuation secret must be at least 32 bytes");
+        }
         let mut digest = Sha256::new();
-        digest.update(configured.as_bytes());
+        digest.update(configured);
         digest.update([0]);
         digest.update(space_id.as_bytes());
-        digest.finalize().to_vec()
+        Ok(digest.finalize().to_vec())
     }
 
     async fn validate_complete_space(&self, space_id: &str) -> Result<()> {
@@ -4415,7 +4424,7 @@ impl UgoiteService {
         index::validate_read_only_sql(&normalized_sql)?;
         self.validate_complete_space(space_id).await?;
 
-        let signing_key = self.sql_query_signing_key(space_id);
+        let signing_key = self.sql_query_signing_key(space_id).await?;
         let continuation = request
             .continuation
             .as_deref()

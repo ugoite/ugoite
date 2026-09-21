@@ -41,7 +41,6 @@ pub const SQL_SESSION_MAX_ROWS: usize = 1_000;
 pub const SQL_SESSION_MAX_AUTHORIZATION_SCOPE_IDS: usize = SQL_SESSION_MAX_ROWS;
 pub const SQL_SESSION_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
 /// Maximum encoded JSON payload for one stateless SQL page.
-pub const SQL_QUERY_MAX_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 pub const SQL_SESSION_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const AUTHORIZED_ASSET_REFERENCE_MAX_ROWS: usize = usize::MAX / 2;
 const MAX_QUERY_FORMS: usize = 100_000;
@@ -2149,17 +2148,13 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
     )
     .await
     .map_err(map_sql_error)?;
-    let columns = context
-        .query_columns(sql_query, parameters.clone())
-        .await
-        .map_err(map_sql_error)?;
-    let (batches, has_order) = context
+    let (columns, batches, has_order) = context
         .execute_stateless_page(sql_query, parameters, offset, limit)
         .await
         .map_err(map_sql_error)?;
     Ok((
         columns,
-        record_batches_to_values_bounded(&batches, SQL_QUERY_MAX_OUTPUT_BYTES)?,
+        record_batches_to_values_bounded(&batches, ugoite_core::sql_query::MAX_SQL_OUTPUT_BYTES)?,
         has_order,
     ))
 }

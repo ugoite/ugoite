@@ -15,8 +15,10 @@ part of page retrieval.
 The first page captures the current `PublicationRef`. A continuation resolves
 that same immutable publication and rechecks current authorization on every
 request. It carries SQL and parameter fingerprints, a page offset, and a
-tamper-detecting signature; it is not an authorization token. Changing SQL,
-parameters, or authorization requires a fresh query.
+tamper-detecting signature; it is not an authorization token. The signature
+uses `UGOITE_QUERY_CURSOR_SECRET` when configured, otherwise the existing
+per-Space integrity key; the storage URI is never used as a secret. Changing
+SQL, parameters, or authorization requires a fresh query.
 
 Only one read-only `SELECT` statement is admitted. DataFusion receives only
 authorized Form relations from the checkpoint-pinned execution context. SQL

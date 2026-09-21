@@ -21,6 +21,9 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use ugoite_core::query::{AuthorizedQueryPolicy, EntryScope, QuerySystemColumn};
+use ugoite_core::sql_query::{
+    MAX_SQL_COLUMN_METADATA_BYTES, MAX_SQL_COLUMN_NAME_BYTES, MAX_SQL_OUTPUT_COLUMNS,
+};
 use ugoite_domain::form::sql_column_name;
 
 use crate::{form_from_table, IcebergWorkspace};
@@ -1110,7 +1113,7 @@ impl AuthorizedQueryContext {
         parameters: HashMap<String, datafusion::scalar::ScalarValue>,
         offset: usize,
         limit: usize,
-    ) -> Result<(Vec<arrow_array::RecordBatch>, bool)> {
+    ) -> Result<(Vec<String>, Vec<arrow_array::RecordBatch>, bool)> {
         let _permit = self
             .permits
             .clone()
@@ -1143,22 +1146,6 @@ impl AuthorizedQueryContext {
         )
         .await
         .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
-    }
-
-    /// Resolves the authorized output schema without materializing query
-    /// rows. This keeps empty SQL pages capable of returning their columns.
-    pub async fn query_columns(
-        &self,
-        sql: &str,
-        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
-    ) -> Result<Vec<String>> {
-        let plan = self.prepared_plan(sql, parameters).await?;
-        Ok(plan
-            .schema()
-            .fields()
-            .iter()
-            .map(|field| field.name().to_string())
-            .collect())
     }
 
     #[cfg(debug_assertions)]
@@ -1335,7 +1322,7 @@ impl AuthorizedQueryContext {
         parameters: HashMap<String, datafusion::scalar::ScalarValue>,
         offset: usize,
         limit: usize,
-    ) -> Result<(Vec<arrow_array::RecordBatch>, bool)> {
+    ) -> Result<(Vec<String>, Vec<arrow_array::RecordBatch>, bool)> {
         if limit == 0 || limit > self.limits.max_rows {
             return Err(AuthorizedQueryError::resource_limit(anyhow!(
                 "SQL query page exceeds its configured row limit"
@@ -1343,7 +1330,8 @@ impl AuthorizedQueryContext {
             .into());
         }
         let plan = self.prepared_plan(sql, parameters).await?;
-        let has_order = logical_plan_contains_sort(&plan);
+        let columns = sql_output_columns(&plan)?;
+        let has_order = stateless_query_has_top_level_order(sql)?;
         let validation_plan = plan.clone();
         let frame = self
             .context
@@ -1355,7 +1343,7 @@ impl AuthorizedQueryContext {
             .map_err(AuthorizedQueryError::resource_limit)?;
         let batches = self.collect_frame(page).await?;
         self.validate_revision_invariants(&validation_plan).await?;
-        Ok((batches, has_order))
+        Ok((columns, batches, has_order))
     }
 
     async fn execute_stateless_count_with_permit(
@@ -1545,6 +1533,62 @@ fn logical_plan_contains_sort(plan: &LogicalPlan) -> bool {
             .inputs()
             .iter()
             .any(|input| logical_plan_contains_sort(input))
+}
+
+fn sql_output_columns(plan: &LogicalPlan) -> Result<Vec<String>> {
+    let fields = plan.schema().fields();
+    if fields.len() > MAX_SQL_OUTPUT_COLUMNS {
+        return Err(AuthorizedQueryError::resource_limit(anyhow!(
+            "SQL output contains too many columns"
+        ))
+        .into());
+    }
+    let mut metadata_bytes = 0usize;
+    let columns = fields
+        .iter()
+        .map(|field| {
+            let name = field.name().to_string();
+            if name.len() > MAX_SQL_COLUMN_NAME_BYTES {
+                return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                    "SQL output column name exceeds its byte limit"
+                ))
+                .into());
+            }
+            metadata_bytes = metadata_bytes.checked_add(name.len()).ok_or_else(|| {
+                AuthorizedQueryError::resource_limit(anyhow!(
+                    "SQL output column metadata exceeds its byte limit"
+                ))
+            })?;
+            if metadata_bytes > MAX_SQL_COLUMN_METADATA_BYTES {
+                return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                    "SQL output column metadata exceeds its byte limit"
+                ))
+                .into());
+            }
+            Ok(name)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(columns)
+}
+
+fn stateless_query_has_top_level_order(sql: &str) -> Result<bool> {
+    use datafusion::sql::parser::{DFParser, Statement as DataFusionStatement};
+    use datafusion::sql::sqlparser::ast::Statement as SqlStatement;
+
+    let statements = DFParser::parse_sql(sql).map_err(AuthorizedQueryError::invalid_query)?;
+    let Some(DataFusionStatement::Statement(statement)) = statements.front() else {
+        return Err(AuthorizedQueryError::invalid_query(anyhow!(
+            "SQL query must contain one SELECT statement"
+        ))
+        .into());
+    };
+    let SqlStatement::Query(query) = statement.as_ref() else {
+        return Err(AuthorizedQueryError::invalid_query(anyhow!(
+            "SQL query must contain one SELECT statement"
+        ))
+        .into());
+    };
+    Ok(query.order_by.is_some())
 }
 
 fn validate_session_page_range(offset: usize, limit: usize, max_rows: usize) -> Result<()> {

@@ -19,6 +19,10 @@ pub const SQL_CONTINUATION_VERSION: u32 = 1;
 pub const MAX_SQL_QUERY_BYTES: usize = 256 * 1024;
 pub const MAX_SQL_PARAMETER_BYTES: usize = 256 * 1024;
 pub const MAX_SQL_PAGE_LIMIT: usize = 1_000;
+pub const MAX_SQL_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_SQL_OUTPUT_COLUMNS: usize = 256;
+pub const MAX_SQL_COLUMN_NAME_BYTES: usize = 16 * 1024;
+pub const MAX_SQL_COLUMN_METADATA_BYTES: usize = 1024 * 1024;
 
 type HmacSha256 = Hmac<Sha256>;
 
