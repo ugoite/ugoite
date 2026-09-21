@@ -14849,6 +14849,45 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
+    async fn canonical_entry_query_rejects_unknown_field_as_invalid_input() -> anyhow::Result<()> {
+        let principal_id = Uuid::from_u128(29761);
+        let (client, space_id, _space_uid) =
+            production_rest_fixture("canonical-entry-query-invalid-field", principal_id, true)
+                .await?;
+
+        let (forms_status, forms) = client
+            .json(Method::GET, &format!("/spaces/{space_id}/forms"), None)
+            .await?;
+        assert_eq!(forms_status, StatusCode::OK, "{forms}");
+        let form_id = forms
+            .as_array()
+            .and_then(|forms| forms.iter().find(|form| form["name"] == "Entry"))
+            .and_then(|form| form["id"].as_str())
+            .expect("seeded Form ID");
+
+        let (status, response) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/entries/query"),
+                Some(json!({
+                    "query": {
+                        "scope": {"kind": "form", "form_id": form_id},
+                        "sort": [{
+                            "field": {"kind": "property", "field_id": 999},
+                            "direction": "asc"
+                        }]
+                    },
+                    "projection": {"kind": "preview"},
+                    "limit": 1
+                })),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{response}");
+        assert_eq!(response["code"], "INVALID_INPUT", "{response}");
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn issue_2314_rest_rejected_dml_preserves_entry_value_history_and_count(
     ) -> anyhow::Result<()> {
         let principal_id = Uuid::from_u128(23140);

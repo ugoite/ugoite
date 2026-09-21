@@ -752,6 +752,10 @@ pub(crate) async fn query_entry_page_at_checkpoint(
     Ok((hydrated, has_more))
 }
 
+fn canonical_query_invalid(message: impl Into<String>) -> anyhow::Error {
+    AppError::invalid_input(ErrorCode::InvalidInput, message).into()
+}
+
 pub(crate) async fn count_entries_at_checkpoint(
     op: &Operator,
     ws_path: &str,
@@ -880,8 +884,11 @@ fn canonical_field_expression(
                 .fields
                 .iter()
                 .find(|field| field.id == field_id)
-                .with_context(|| {
-                    format!("Form {} does not define field {field_id:?}", form.name)
+                .ok_or_else(|| {
+                    canonical_query_invalid(format!(
+                        "Form {} does not define field {field_id:?}",
+                        form.name
+                    ))
                 })?;
             Ok((
                 quote_identifier(&sql_column_name(field.id)),
@@ -912,10 +919,10 @@ fn field_parameter_type(field_type: &FieldType) -> Result<&'static str> {
         FieldType::TimestampTzNs => Ok("timestamp_tz_ns"),
         FieldType::Uuid => Ok("uuid"),
         FieldType::Binary | FieldType::List | FieldType::ObjectList | FieldType::AssetReference => {
-            Err(anyhow!(
+            Err(canonical_query_invalid(format!(
                 "EntryQuery does not support scalar filtering or sorting for field type {}",
                 field_type.as_str()
-            ))
+            )))
         }
     }
 }
@@ -992,7 +999,7 @@ fn build_canonical_entry_sql(
                     filter.operator,
                     ugoite_core::structured_search::SearchOperator::Equals
                 ) {
-                    return Err(anyhow!("Form filter only supports equals"));
+                    return Err(canonical_query_invalid("Form filter only supports equals"));
                 }
                 expression = sql_string_literal(&form.id.to_string());
             }
@@ -1002,20 +1009,20 @@ fn build_canonical_entry_sql(
                 let field = form_field_for_ref(form, filter.field)?;
                 Some(
                     StructuredSearchFieldKind::of(&field.field_type).ok_or_else(|| {
-                        anyhow!(
+                        canonical_query_invalid(format!(
                             "field type {} does not support EntryQuery filters",
                             field.field_type.as_str()
-                        )
+                        ))
                     })?,
                 )
             };
             if let Some(kind) = kind {
                 if !kind.supports(filter.operator) {
-                    return Err(anyhow!(
+                    return Err(canonical_query_invalid(format!(
                         "operator {} is not supported for field type {}",
                         filter.operator.as_str(),
                         kind.as_str()
-                    ));
+                    )));
                 }
             }
             let parameter = format!("entry_filter_{index}");
@@ -1024,10 +1031,9 @@ fn build_canonical_entry_sql(
                     ("=", filter.value.clone(), false)
                 }
                 ugoite_core::structured_search::SearchOperator::Contains => {
-                    let raw = filter
-                        .value
-                        .as_str()
-                        .context("contains filter value must be a string")?;
+                    let raw = filter.value.as_str().ok_or_else(|| {
+                        canonical_query_invalid("contains filter value must be a string")
+                    })?;
                     (
                         "ILIKE",
                         Value::String(format!(
@@ -1052,7 +1058,9 @@ fn build_canonical_entry_sql(
             };
             if value.is_null() {
                 if operator != "=" {
-                    return Err(anyhow!("null EntryQuery filters only support equals"));
+                    return Err(canonical_query_invalid(
+                        "null EntryQuery filters only support equals",
+                    ));
                 }
                 predicates.push(format!("{expression} IS NULL"));
             } else {
@@ -1060,7 +1068,8 @@ fn build_canonical_entry_sql(
                 // and structured Search reject the same invalid values.
                 if filter.field != EntryFieldRef::Form {
                     let field = form_field_for_ref(form, filter.field)?;
-                    let _ = filter_literal(&value, field.field_type.as_str())?;
+                    let _ = filter_literal(&value, field.field_type.as_str())
+                        .map_err(|error| canonical_query_invalid(error.to_string()))?;
                 }
                 values.insert(parameter.clone(), value);
                 types.insert(parameter.clone(), field_type.to_string());
@@ -1073,10 +1082,9 @@ fn build_canonical_entry_sql(
             .iter()
             .find(|filter| filter.field == EntryFieldRef::Form)
         {
-            let expected = filter
-                .value
-                .as_str()
-                .context("Form filter value must be a Form ID string")?;
+            let expected = filter.value.as_str().ok_or_else(|| {
+                canonical_query_invalid("Form filter value must be a Form ID string")
+            })?;
             if expected != form.id.to_string() {
                 continue;
             }
@@ -1118,7 +1126,9 @@ fn build_canonical_entry_sql(
     );
     if let Some(cursor) = cursor {
         if cursor.sort_values.len() != sort_columns.len() {
-            return Err(anyhow!("Entry cursor sort tuple does not match the query"));
+            return Err(canonical_query_invalid(
+                "Entry cursor sort tuple does not match the query",
+            ));
         }
         let mut disjunctions = Vec::new();
         for index in 0..sort_columns.len() {
@@ -1174,12 +1184,19 @@ fn form_field_for_ref(
     field: EntryFieldRef,
 ) -> Result<&ugoite_domain::form::FormField> {
     let EntryFieldRef::Property { field_id } = field else {
-        return Err(anyhow!("Entry field is not a Form property"));
+        return Err(canonical_query_invalid(
+            "Entry field is not a Form property",
+        ));
     };
     form.fields
         .iter()
         .find(|field| field.id == field_id)
-        .with_context(|| format!("Form {} does not define field {field_id:?}", form.name))
+        .ok_or_else(|| {
+            canonical_query_invalid(format!(
+                "Form {} does not define field {field_id:?}",
+                form.name
+            ))
+        })
 }
 
 fn canonical_filter_expression(
