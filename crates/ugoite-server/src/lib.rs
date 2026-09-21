@@ -14884,6 +14884,26 @@ mod authentication_regression_tests {
             .await?;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{response}");
         assert_eq!(response["code"], "INVALID_INPUT", "{response}");
+
+        let (status, response) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/entries/query"),
+                Some(json!({
+                    "query": {
+                        "scope": {"kind": "form", "form_id": form_id},
+                        "filters": [{
+                            "field": {"kind": "created_at"},
+                            "operator": "gte",
+                            "value": "1970-01-01T00:00:00Z"
+                        }]
+                    },
+                    "projection": {"kind": "preview"},
+                    "limit": 1
+                })),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::OK, "{response}");
         Ok(())
     }
 

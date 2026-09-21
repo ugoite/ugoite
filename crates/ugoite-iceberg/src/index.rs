@@ -1003,18 +1003,22 @@ fn build_canonical_entry_sql(
                 }
                 expression = sql_string_literal(&form.id.to_string());
             }
-            let kind = if filter.field == EntryFieldRef::Form {
-                None
-            } else {
-                let field = form_field_for_ref(form, filter.field)?;
-                Some(
-                    StructuredSearchFieldKind::of(&field.field_type).ok_or_else(|| {
-                        canonical_query_invalid(format!(
-                            "field type {} does not support EntryQuery filters",
-                            field.field_type.as_str()
-                        ))
-                    })?,
-                )
+            let kind = match filter.field {
+                EntryFieldRef::Form => None,
+                EntryFieldRef::Property { .. } => {
+                    let field = form_field_for_ref(form, filter.field)?;
+                    Some(
+                        StructuredSearchFieldKind::of(&field.field_type).ok_or_else(|| {
+                            canonical_query_invalid(format!(
+                                "field type {} does not support EntryQuery filters",
+                                field.field_type.as_str()
+                            ))
+                        })?,
+                    )
+                }
+                EntryFieldRef::CreatedAt | EntryFieldRef::UpdatedAt => {
+                    Some(StructuredSearchFieldKind::Timestamp)
+                }
             };
             if let Some(kind) = kind {
                 if !kind.supports(filter.operator) {
@@ -1067,8 +1071,7 @@ fn build_canonical_entry_sql(
                 // Reuse the typed literal validator so the canonical query
                 // and structured Search reject the same invalid values.
                 if filter.field != EntryFieldRef::Form {
-                    let field = form_field_for_ref(form, filter.field)?;
-                    let _ = filter_literal(&value, field.field_type.as_str())
+                    let _ = filter_literal(&value, field_type)
                         .map_err(|error| canonical_query_invalid(error.to_string()))?;
                 }
                 values.insert(parameter.clone(), value);
