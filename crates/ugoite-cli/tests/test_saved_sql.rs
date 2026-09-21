@@ -19,34 +19,69 @@ fn ugoite_bin() -> std::path::PathBuf {
     path
 }
 
+fn init_canonical_config(config_path: &std::path::Path, root: &str) {
+    let init = Command::new(ugoite_bin())
+        .args(["--config", config_path.to_str().unwrap(), "config", "init"])
+        .env("UGOITE_CLI_CONFIG_PATH", config_path)
+        .output()
+        .expect("config init");
+    assert!(init.status.success());
+    let connection = Command::new(ugoite_bin())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "config",
+            "connection",
+            "set",
+            "local",
+            "--type",
+            "core",
+            "--root",
+            root,
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", config_path)
+        .output()
+        .expect("connection set");
+    assert!(connection.status.success());
+}
+
+fn run_cli(config_path: &std::path::Path, args: &[&str]) -> std::process::Output {
+    let mut full = vec![
+        "--config".to_string(),
+        config_path.to_string_lossy().into_owned(),
+    ];
+    full.extend(args.iter().map(|arg| (*arg).to_string()));
+    Command::new(ugoite_bin())
+        .args(full)
+        .env("UGOITE_CLI_CONFIG_PATH", config_path)
+        .output()
+        .expect("run CLI")
+}
+
 /// REQ-API-006: Saved SQL queries CRUD lifecycle (create, read, update, delete).
 #[test]
 fn test_saved_sql_req_api_006_crud() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = format!("{root}/spaces/sql-space");
+    let config_path = dir.path().join("cli-config.toml");
+    init_canonical_config(&config_path, &root);
 
-    Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "sql-space"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create space");
+    assert!(run_cli(&config_path, &["space", "create", "sql-space"])
+        .status
+        .success());
 
     // Create a saved query
-    let create_output = Command::new(ugoite_bin())
-        .args([
+    let create_output = run_cli(
+        &config_path,
+        &[
             "sql",
             "saved-create",
             "--name",
             "my-query",
             "--sql",
             "SELECT * FROM sql",
-            &space_path,
-        ])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+        ],
+    );
 
     assert!(
         create_output.status.success(),
@@ -60,11 +95,7 @@ fn test_saved_sql_req_api_006_crud() {
         .filter(|id| !id.is_empty())
         .expect("local create response should contain a non-empty id");
 
-    let get_output = Command::new(ugoite_bin())
-        .args(["sql", "saved-get", &space_path, created_id])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    let get_output = run_cli(&config_path, &["sql", "saved-get", created_id]);
     assert!(
         get_output.status.success(),
         "get stderr: {}",
@@ -75,11 +106,7 @@ fn test_saved_sql_req_api_006_crud() {
     assert_eq!(fetched["id"].as_str(), Some(created_id));
 
     // List saved queries
-    let list_output = Command::new(ugoite_bin())
-        .args(["sql", "saved-list", &space_path])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    let list_output = run_cli(&config_path, &["sql", "saved-list"]);
 
     assert!(
         list_output.status.success(),
@@ -99,11 +126,11 @@ fn test_saved_sql_req_api_006_crud() {
         .as_str()
         .filter(|revision| !revision.is_empty())
         .expect("local create response should contain a revision id");
-    let update_output = Command::new(ugoite_bin())
-        .args([
+    let update_output = run_cli(
+        &config_path,
+        &[
             "sql",
             "saved-update",
-            &space_path,
             created_id,
             "--name",
             "updated-query",
@@ -111,10 +138,8 @@ fn test_saved_sql_req_api_006_crud() {
             "SELECT * FROM updated_sql",
             "--parent-revision-id",
             parent_revision_id,
-        ])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+        ],
+    );
     assert!(
         update_output.status.success(),
         "update stderr: {}",
@@ -126,11 +151,7 @@ fn test_saved_sql_req_api_006_crud() {
     assert_eq!(updated["name"].as_str(), Some("updated-query"));
     assert_eq!(updated["sql"].as_str(), Some("SELECT * FROM updated_sql"));
 
-    let delete_output = Command::new(ugoite_bin())
-        .args(["sql", "saved-delete", &space_path, created_id])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    let delete_output = run_cli(&config_path, &["sql", "saved-delete", created_id]);
     assert!(
         delete_output.status.success(),
         "delete stderr: {}",
@@ -140,11 +161,7 @@ fn test_saved_sql_req_api_006_crud() {
         serde_json::from_slice(&delete_output.stdout).expect("delete should return JSON");
     assert_eq!(deleted["deleted"].as_bool(), Some(true));
 
-    let final_list_output = Command::new(ugoite_bin())
-        .args(["sql", "saved-list", &space_path])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    let final_list_output = run_cli(&config_path, &["sql", "saved-list"]);
     assert!(
         final_list_output.status.success(),
         "final list stderr: {}",
@@ -162,29 +179,25 @@ fn test_saved_sql_req_api_006_crud() {
 fn test_saved_sql_req_api_007_validation() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = format!("{root}/spaces/sql-space");
+    let config_path = dir.path().join("cli-config.toml");
+    init_canonical_config(&config_path, &root);
 
-    Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "sql-space"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("create space");
+    assert!(run_cli(&config_path, &["space", "create", "sql-space"])
+        .status
+        .success());
 
     // Attempt to create a saved query with invalid SQL
-    let create_output = Command::new(ugoite_bin())
-        .args([
+    let create_output = run_cli(
+        &config_path,
+        &[
             "sql",
             "saved-create",
             "--name",
             "bad-query",
             "--sql",
             "THIS IS NOT VALID SQL !!!",
-            &space_path,
-        ])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+        ],
+    );
 
     // Should either reject or accept (validation may happen at execution time)
     // Either way, the system should not crash

@@ -57,20 +57,8 @@ fn test_key_and_jwk() -> (SigningKey, serde_json::Value) {
 }
 
 async fn run_cli(config_path: &std::path::Path, args: &[&str]) -> Output {
-    let space_uid = std::fs::read_to_string(config_path).ok().and_then(|text| {
-        text.lines().find_map(|line| {
-            line.trim()
-                .strip_prefix("space_uid = \"")
-                .and_then(|value| value.strip_suffix('\"'))
-                .map(str::to_owned)
-        })
-    });
     let mut command_args = vec!["--config", config_path.to_str().expect("config path")];
-    command_args.extend(
-        args.iter()
-            .copied()
-            .filter(|arg| Some(*arg) != space_uid.as_deref()),
-    );
+    command_args.extend(args.iter().copied());
     Command::new(ugoite_bin())
         .args(command_args)
         .env(
@@ -272,7 +260,7 @@ async fn setup_remote() -> RemoteFixture {
 async fn journey_cli_remote_locate_recover() {
     let fixture = setup_remote().await;
     let config_path = &fixture.config_path;
-    let space_id: &str = &fixture.space_id;
+    let _space_id: &str = &fixture.space_id;
 
     // Bare Space IDs select the remote transport in every command below.
     let form_name = "LocateTask";
@@ -291,7 +279,7 @@ async fn journey_cli_remote_locate_recover() {
     .expect("write locate-recover form");
     let output = run_cli(
         config_path,
-        &["form", "update", space_id, form_file.to_str().unwrap()],
+        &["form", "update", form_file.to_str().unwrap()],
     )
     .await;
     assert!(
@@ -331,11 +319,7 @@ async fn journey_cli_remote_locate_recover() {
 
     // Keyword Search discovers the target.
     let results = stdout_json(
-        &run_cli(
-            config_path,
-            &["search", "keyword", space_id, "locate-task-a"],
-        )
-        .await,
+        &run_cli(config_path, &["search", "keyword", "locate-task-a"]).await,
         "keyword search discovers the target",
     );
     assert!(contains_string(&results, "locate-task-a"));
@@ -347,7 +331,6 @@ async fn journey_cli_remote_locate_recover() {
             &[
                 "search",
                 "query",
-                space_id,
                 "--form",
                 form_name,
                 "--eq",
@@ -361,11 +344,7 @@ async fn journey_cli_remote_locate_recover() {
 
     // Update the Entry; the receipt carries the durable Change ID.
     let history = stdout_json(
-        &run_cli(
-            config_path,
-            &["entry", "history", space_id, "locate-task-a"],
-        )
-        .await,
+        &run_cli(config_path, &["entry", "history", "locate-task-a"]).await,
         "entry history after create",
     );
     assert_eq!(revision_ids(&history).len(), 1);
@@ -400,7 +379,7 @@ async fn journey_cli_remote_locate_recover() {
 
     // Space History observes the timeline.
     let changes = stdout_json(
-        &run_cli(config_path, &["change", "list", space_id]).await,
+        &run_cli(config_path, &["change", "list"]).await,
         "change list observes the timeline",
     );
     let before_ids = change_ids(&changes);
@@ -408,11 +387,7 @@ async fn journey_cli_remote_locate_recover() {
 
     // Change revert appends its inverse; the reverted Change is kept.
     let reverted = stdout_json(
-        &run_cli(
-            config_path,
-            &["change", "revert", space_id, &update_change_id],
-        )
-        .await,
+        &run_cli(config_path, &["change", "revert", &update_change_id]).await,
         "change revert",
     );
     let revert_id = reverted
@@ -424,18 +399,14 @@ async fn journey_cli_remote_locate_recover() {
 
     // Entry history grows append-only; current search reflects recovery.
     let history = stdout_json(
-        &run_cli(
-            config_path,
-            &["entry", "history", space_id, "locate-task-a"],
-        )
-        .await,
+        &run_cli(config_path, &["entry", "history", "locate-task-a"]).await,
         "entry history after revert",
     );
     let ids = revision_ids(&history);
     assert_eq!(ids.len(), 3);
     assert!(ids.contains(&rev1));
     let changes = stdout_json(
-        &run_cli(config_path, &["change", "list", space_id]).await,
+        &run_cli(config_path, &["change", "list"]).await,
         "change list after revert",
     );
     let after_ids = change_ids(&changes);
@@ -447,7 +418,6 @@ async fn journey_cli_remote_locate_recover() {
             &[
                 "search",
                 "query",
-                space_id,
                 "--form",
                 form_name,
                 "--eq",
@@ -461,20 +431,12 @@ async fn journey_cli_remote_locate_recover() {
 
     // Reopen: fresh invocations read the same durable state.
     let history = stdout_json(
-        &run_cli(
-            config_path,
-            &["entry", "history", space_id, "locate-task-a"],
-        )
-        .await,
+        &run_cli(config_path, &["entry", "history", "locate-task-a"]).await,
         "entry history on reopen",
     );
     assert_eq!(revision_ids(&history).len(), 3);
     let results = stdout_json(
-        &run_cli(
-            config_path,
-            &["search", "keyword", space_id, "locate-task-a"],
-        )
-        .await,
+        &run_cli(config_path, &["search", "keyword", "locate-task-a"]).await,
         "keyword search on reopen",
     );
     assert!(contains_string(&results, "locate-task-a"));

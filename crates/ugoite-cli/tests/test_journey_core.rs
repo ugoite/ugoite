@@ -25,96 +25,6 @@ fn ugoite_bin() -> std::path::PathBuf {
     path
 }
 
-fn structured_entry_args(markdown: &str) -> Vec<String> {
-    let mut form = String::new();
-    let mut fields: Vec<(String, String)> = Vec::new();
-    let mut current: Option<String> = None;
-    let mut value = Vec::new();
-    let mut in_frontmatter = false;
-    let mut frontmatter_seen = false;
-
-    let finish = |fields: &mut Vec<(String, String)>,
-                  current: &mut Option<String>,
-                  value: &mut Vec<String>| {
-        if let Some(name) = current.take() {
-            fields.push((name, value.join("\n").trim().to_string()));
-        }
-        value.clear();
-    };
-    for line in markdown.lines() {
-        if line.trim() == "---" && !frontmatter_seen {
-            frontmatter_seen = true;
-            in_frontmatter = true;
-            continue;
-        }
-        if in_frontmatter {
-            if line.trim() == "---" {
-                in_frontmatter = false;
-            } else if let Some(name) = line.strip_prefix("form:") {
-                form = name.trim().to_string();
-            }
-            continue;
-        }
-        if let Some(name) = line.strip_prefix("## ") {
-            finish(&mut fields, &mut current, &mut value);
-            current = Some(name.trim().to_string());
-        } else if current.is_some() {
-            value.push(line.to_string());
-        }
-    }
-    finish(&mut fields, &mut current, &mut value);
-
-    let mut result = vec!["--form".to_string(), form];
-    for (name, value) in fields {
-        result.extend(["--field".to_string(), format!("{name}={value}")]);
-    }
-    result
-}
-
-fn replace_legacy_entry_input(args: Vec<String>) -> Vec<String> {
-    let Some(entry_index) = args.iter().position(|arg| arg == "entry") else {
-        return args;
-    };
-    let Some(operation) = args.get(entry_index + 1).map(String::as_str) else {
-        return args;
-    };
-    let raw_index = args[entry_index + 2..].iter().position(|arg| {
-        (operation == "create" && arg == "--content")
-            || (operation == "update" && arg.starts_with("--markdown="))
-    });
-    let Some(relative_raw_index) = raw_index else {
-        return args;
-    };
-    let raw_index = entry_index + 2 + relative_raw_index;
-    let (markdown, entry_id, suffix_start) = if operation == "create" {
-        let Some(markdown) = args.get(raw_index + 1) else {
-            return args;
-        };
-        let Some(entry_id) = args[raw_index + 2..]
-            .iter()
-            .find(|arg| !arg.contains("/spaces/") && !arg.starts_with("--"))
-        else {
-            return args;
-        };
-        (markdown.clone(), (*entry_id).clone(), raw_index + 3)
-    } else {
-        let markdown = args[raw_index].trim_start_matches("--markdown=");
-        let Some(entry_id) = args[entry_index + 2..raw_index]
-            .iter()
-            .rev()
-            .find(|arg| !arg.contains("/spaces/") && !arg.starts_with("--"))
-        else {
-            return args;
-        };
-        (markdown.to_string(), (*entry_id).clone(), raw_index + 1)
-    };
-    let mut canonical = args[..entry_index].to_vec();
-    canonical.extend(["entry".to_string(), operation.to_string(), entry_id]);
-    canonical.extend(structured_entry_args(&markdown));
-    canonical.extend(args[suffix_start..].iter().cloned());
-    canonical
-}
-
 fn run_cli(config: &std::path::Path, args: &[&str]) -> Output {
     let bin = ugoite_bin();
     if !config.exists() && args.first().copied() != Some("config") {
@@ -144,25 +54,9 @@ fn run_cli(config: &std::path::Path, args: &[&str]) -> Output {
         "--config".to_string(),
         config.to_string_lossy().into_owned(),
     ];
-    let mut index = 0;
-    while index < args.len() {
-        let arg = args[index];
-        if arg == "create-space" {
-            canonical.extend(["space".to_string(), "create".to_string()]);
-        } else if arg == "--root" {
-            index += 1;
-        } else if arg.contains("/spaces/") {
-            // Old test invocations carried the Space path. The product CLI
-            // now resolves it from the current canonical context.
-        } else if arg == "session-metadata" {
-            canonical.push("session-get".to_string());
-        } else {
-            canonical.push(arg.to_string());
-        }
-        index += 1;
-    }
+    canonical.extend(args.iter().map(|arg| (*arg).to_string()));
     Command::new(bin)
-        .args(replace_legacy_entry_input(canonical))
+        .args(canonical)
         .output()
         .expect("run ugoite")
 }
@@ -222,16 +116,14 @@ fn revision_ids(history: &serde_json::Value) -> Vec<String> {
 #[test]
 fn test_journey_cli_core_local_durable_outcome() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
+    let config_path = dir.path().join("cli-config.toml");
     let space_id = "journey-core-space";
-    let space_path = format!("{root}/spaces/{space_id}");
     let form_name = "JourneyCoreForm";
     let needle = "journey-core-needle";
     let entry_id = "journey-core-entry";
 
     // Space create: a durable Space comes into existence.
-    let output = run_cli(&config_path, &["create-space", "--root", &root, space_id]);
+    let output = run_cli(&config_path, &["space", "create", space_id]);
     assert!(
         output.status.success(),
         "space create failed: {}",
@@ -249,7 +141,7 @@ fn test_journey_cli_core_local_durable_outcome() {
     .unwrap();
     let output = run_cli(
         &config_path,
-        &["form", "update", &space_path, form_file.to_str().unwrap()],
+        &["form", "update", form_file.to_str().unwrap()],
     );
     assert!(
         output.status.success(),
@@ -257,7 +149,7 @@ fn test_journey_cli_core_local_durable_outcome() {
         String::from_utf8_lossy(&output.stderr)
     );
     let form = stdout_json(
-        &run_cli(&config_path, &["form", "get", &space_path, form_name]),
+        &run_cli(&config_path, &["form", "get", form_name]),
         "form get",
     );
     assert_eq!(
@@ -275,13 +167,20 @@ fn test_journey_cli_core_local_durable_outcome() {
     );
 
     // Entry create appends exactly one revision.
-    let v1 = format!(
-        "---\nform: {form_name}\n---\n# Journey core v1\n\n## Status\n{needle}\n\n## Body\njourney core v1\n"
-    );
     let created = stdout_json(
         &run_cli(
             &config_path,
-            &["entry", "create", "--content", &v1, &space_path, entry_id],
+            &[
+                "entry",
+                "create",
+                entry_id,
+                "--form",
+                form_name,
+                "--field",
+                &format!("Status={needle}"),
+                "--field",
+                "Body=journey core v1",
+            ],
         ),
         "entry create",
     );
@@ -292,7 +191,7 @@ fn test_journey_cli_core_local_durable_outcome() {
         .expect("create returns durable change_id")
         .to_string();
     let history = stdout_json(
-        &run_cli(&config_path, &["entry", "history", &space_path, entry_id]),
+        &run_cli(&config_path, &["entry", "history", entry_id]),
         "entry history after create",
     );
     let ids = revision_ids(&history);
@@ -304,20 +203,16 @@ fn test_journey_cli_core_local_durable_outcome() {
     let rev1 = ids[0].clone();
 
     // Entry edit appends a revision; a stale parent conflicts.
-    let v2 = format!(
-        "---\nform: {form_name}\n---\n# Journey core v2\n\n## Status\n{needle}\n\n## Body\njourney core v2\n"
-    );
-    // NOTE: `--markdown=<value>` keeps frontmatter (leading `---`) from
-    // parsing as a flag.
-    let markdown_arg = format!("--markdown={v2}");
     let output = run_cli(
         &config_path,
         &[
             "entry",
             "update",
-            &space_path,
             entry_id,
-            markdown_arg.as_str(),
+            "--field",
+            &format!("Status={needle}"),
+            "--field",
+            "Body=journey core v2",
             "--parent-revision-id",
             &rev1,
         ],
@@ -334,7 +229,7 @@ fn test_journey_cli_core_local_durable_outcome() {
         .expect("update returns durable change_id")
         .to_string();
     let history = stdout_json(
-        &run_cli(&config_path, &["entry", "history", &space_path, entry_id]),
+        &run_cli(&config_path, &["entry", "history", entry_id]),
         "entry history after edit",
     );
     let ids = revision_ids(&history);
@@ -346,9 +241,11 @@ fn test_journey_cli_core_local_durable_outcome() {
         &[
             "entry",
             "update",
-            &space_path,
             entry_id,
-            markdown_arg.as_str(),
+            "--field",
+            &format!("Status={needle}"),
+            "--field",
+            "Body=journey core v2",
             "--parent-revision-id",
             &rev1,
         ],
@@ -360,7 +257,7 @@ fn test_journey_cli_core_local_durable_outcome() {
 
     // Search finds the updated durable Entry.
     let results = stdout_json(
-        &run_cli(&config_path, &["search", "keyword", &space_path, needle]),
+        &run_cli(&config_path, &["search", "keyword", needle]),
         "search keyword",
     );
     assert!(
@@ -369,17 +266,14 @@ fn test_journey_cli_core_local_durable_outcome() {
     );
 
     // Restore appends a new revision replaying rev1; history never shortens.
-    let output = run_cli(
-        &config_path,
-        &["entry", "restore", &space_path, entry_id, &rev1],
-    );
+    let output = run_cli(&config_path, &["entry", "restore", entry_id, &rev1]);
     assert!(
         output.status.success(),
         "entry restore failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let history = stdout_json(
-        &run_cli(&config_path, &["entry", "history", &space_path, entry_id]),
+        &run_cli(&config_path, &["entry", "history", entry_id]),
         "entry history after restore",
     );
     let ids = revision_ids(&history);
@@ -419,10 +313,7 @@ fn test_journey_cli_core_local_durable_outcome() {
         Some(restore_change_id.as_str())
     );
     let revision = stdout_json(
-        &run_cli(
-            &config_path,
-            &["entry", "revision", &space_path, entry_id, &rev3],
-        ),
+        &run_cli(&config_path, &["entry", "revision", entry_id, &rev3]),
         "entry revision after restore",
     );
     assert_eq!(
@@ -436,25 +327,25 @@ fn test_journey_cli_core_local_durable_outcome() {
 
     // Reopen: fresh processes read identical durable state.
     let space = stdout_json(
-        &run_cli(&config_path, &["space", "get", &space_path]),
+        &run_cli(&config_path, &["space", "get"]),
         "space get on reopen",
     );
     assert!(contains_string(&space, space_id));
     let history = stdout_json(
-        &run_cli(&config_path, &["entry", "history", &space_path, entry_id]),
+        &run_cli(&config_path, &["entry", "history", entry_id]),
         "entry history on reopen",
     );
     assert_eq!(revision_ids(&history).len(), 3);
     let results = stdout_json(
-        &run_cli(&config_path, &["search", "keyword", &space_path, needle]),
+        &run_cli(&config_path, &["search", "keyword", needle]),
         "search keyword on reopen",
     );
     assert!(contains_string(&results, entry_id));
 }
 
 /// The CLI supplies the current revision when the caller omits a parent for
-/// both structured and compatibility updates. Explicit parents use the same
-/// write path, and a stale parent remains a canonical conflict.
+/// structured updates. Explicit parents use the same write path, and a stale
+/// parent remains a canonical conflict.
 #[test]
 fn test_cli_core_entry_update_parent_revision_matrix() {
     let space = setup_parity_space(r#"{"Status":{"type":"string"},"Body":{"type":"markdown"}}"#);
@@ -465,7 +356,6 @@ fn test_cli_core_entry_update_parent_revision_matrix() {
             &[
                 "entry",
                 "create",
-                &space.space_path,
                 "parent-matrix-structured",
                 "--form",
                 space.form_name,
@@ -482,12 +372,7 @@ fn test_cli_core_entry_update_parent_revision_matrix() {
     let structured_history = stdout_json(
         &run_cli(
             &space.config_path,
-            &[
-                "entry",
-                "history",
-                &space.space_path,
-                "parent-matrix-structured",
-            ],
+            &["entry", "history", "parent-matrix-structured"],
         ),
         "structured matrix history after create",
     );
@@ -498,7 +383,6 @@ fn test_cli_core_entry_update_parent_revision_matrix() {
         &[
             "entry",
             "update",
-            &space.space_path,
             "parent-matrix-structured",
             "--field",
             "Body=structured explicit",
@@ -513,12 +397,7 @@ fn test_cli_core_entry_update_parent_revision_matrix() {
     let structured_history = stdout_json(
         &run_cli(
             &space.config_path,
-            &[
-                "entry",
-                "history",
-                &space.space_path,
-                "parent-matrix-structured",
-            ],
+            &["entry", "history", "parent-matrix-structured"],
         ),
         "structured matrix history after explicit update",
     );
@@ -532,7 +411,6 @@ fn test_cli_core_entry_update_parent_revision_matrix() {
             &[
                 "entry",
                 "revision",
-                &space.space_path,
                 "parent-matrix-structured",
                 &structured_rev2,
             ],
@@ -546,7 +424,6 @@ fn test_cli_core_entry_update_parent_revision_matrix() {
         &[
             "entry",
             "update",
-            &space.space_path,
             "parent-matrix-structured",
             "--field",
             "Body=structured omitted",
@@ -556,12 +433,7 @@ fn test_cli_core_entry_update_parent_revision_matrix() {
     let structured_history = stdout_json(
         &run_cli(
             &space.config_path,
-            &[
-                "entry",
-                "history",
-                &space.space_path,
-                "parent-matrix-structured",
-            ],
+            &["entry", "history", "parent-matrix-structured"],
         ),
         "structured matrix history after omitted update",
     );
@@ -575,7 +447,6 @@ fn test_cli_core_entry_update_parent_revision_matrix() {
             &[
                 "entry",
                 "revision",
-                &space.space_path,
                 "parent-matrix-structured",
                 &structured_rev3,
             ],
@@ -584,139 +455,118 @@ fn test_cli_core_entry_update_parent_revision_matrix() {
     );
     assert_eq!(structured_revision["parent_revision_id"], structured_rev2);
 
-    let markdown_v1 = format!(
-        "---\nform: {}\n---\n# Matrix Markdown v1\n\n## Body\nmarkdown v1\n",
-        space.form_name
-    );
     let created = stdout_json(
         &run_cli(
             &space.config_path,
             &[
                 "entry",
                 "create",
-                "--content",
-                &markdown_v1,
-                &space.space_path,
-                "parent-matrix-markdown",
+                "parent-matrix-canonical",
+                "--form",
+                space.form_name,
+                "--field",
+                "Body=canonical v1",
             ],
         ),
-        "markdown matrix create",
+        "canonical matrix create",
     );
-    assert!(contains_string(&created, "parent-matrix-markdown"));
+    assert!(contains_string(&created, "parent-matrix-canonical"));
     let history = stdout_json(
         &run_cli(
             &space.config_path,
-            &[
-                "entry",
-                "history",
-                &space.space_path,
-                "parent-matrix-markdown",
-            ],
+            &["entry", "history", "parent-matrix-canonical"],
         ),
-        "markdown matrix history after create",
+        "canonical matrix history after create",
     );
-    let markdown_rev1 = revision_ids(&history)[0].clone();
+    let canonical_rev1 = revision_ids(&history)[0].clone();
 
-    let markdown_v2 = markdown_v1.replace("v1", "v2");
-    let markdown_v2_arg = format!("--markdown={markdown_v2}");
     let explicit = run_cli(
         &space.config_path,
         &[
             "entry",
             "update",
-            &space.space_path,
-            "parent-matrix-markdown",
-            &markdown_v2_arg,
+            "parent-matrix-canonical",
+            "--field",
+            "Body=canonical v2",
             "--parent-revision-id",
-            &markdown_rev1,
+            &canonical_rev1,
         ],
     );
-    assert!(explicit.status.success(), "explicit Markdown update failed");
+    assert!(
+        explicit.status.success(),
+        "explicit canonical update failed"
+    );
     let history = stdout_json(
         &run_cli(
             &space.config_path,
-            &[
-                "entry",
-                "history",
-                &space.space_path,
-                "parent-matrix-markdown",
-            ],
+            &["entry", "history", "parent-matrix-canonical"],
         ),
-        "markdown matrix history after explicit update",
+        "canonical matrix history after explicit update",
     );
-    let markdown_rev2 = revision_ids(&history)
+    let canonical_rev2 = revision_ids(&history)
         .into_iter()
-        .find(|revision| revision != &markdown_rev1)
-        .expect("markdown rev2");
+        .find(|revision| revision != &canonical_rev1)
+        .expect("canonical rev2");
     let revision = stdout_json(
         &run_cli(
             &space.config_path,
             &[
                 "entry",
                 "revision",
-                &space.space_path,
-                "parent-matrix-markdown",
-                &markdown_rev2,
+                "parent-matrix-canonical",
+                &canonical_rev2,
             ],
         ),
-        "Markdown matrix revision after explicit update",
+        "canonical matrix revision after explicit update",
     );
-    assert_eq!(revision["parent_revision_id"], markdown_rev1);
+    assert_eq!(revision["parent_revision_id"], canonical_rev1);
 
-    let markdown_v3 = markdown_v2.replace("v2", "v3");
-    let markdown_v3_arg = format!("--markdown={markdown_v3}");
     let omitted = run_cli(
         &space.config_path,
         &[
             "entry",
             "update",
-            &space.space_path,
-            "parent-matrix-markdown",
-            &markdown_v3_arg,
+            "parent-matrix-canonical",
+            "--field",
+            "Body=canonical v3",
         ],
     );
-    assert!(omitted.status.success(), "omitted Markdown update failed");
+    assert!(omitted.status.success(), "omitted canonical update failed");
     let history = stdout_json(
         &run_cli(
             &space.config_path,
-            &[
-                "entry",
-                "history",
-                &space.space_path,
-                "parent-matrix-markdown",
-            ],
+            &["entry", "history", "parent-matrix-canonical"],
         ),
-        "markdown matrix history after omitted update",
+        "canonical matrix history after omitted update",
     );
-    let markdown_rev3 = revision_ids(&history)
+    let canonical_rev3 = revision_ids(&history)
         .into_iter()
-        .find(|revision| revision != &markdown_rev1 && revision != &markdown_rev2)
-        .expect("markdown rev3");
+        .find(|revision| revision != &canonical_rev1 && revision != &canonical_rev2)
+        .expect("canonical rev3");
     let revision = stdout_json(
         &run_cli(
             &space.config_path,
             &[
                 "entry",
                 "revision",
-                &space.space_path,
-                "parent-matrix-markdown",
-                &markdown_rev3,
+                "parent-matrix-canonical",
+                &canonical_rev3,
             ],
         ),
-        "Markdown matrix revision after omitted update",
+        "canonical matrix revision after omitted update",
     );
-    assert_eq!(revision["parent_revision_id"], markdown_rev2);
+    assert_eq!(revision["parent_revision_id"], canonical_rev2);
 
     let stale = run_cli(
         &space.config_path,
         &[
             "entry",
             "update",
-            &space.space_path,
-            "parent-matrix-markdown",
-            &markdown_v3_arg,
+            "parent-matrix-canonical",
+            "--field",
+            "Body=canonical v3",
             "--parent-revision-id",
-            &markdown_rev1,
+            &canonical_rev1,
         ],
     );
     assert!(!stale.status.success(), "stale parent must conflict");
@@ -732,19 +582,16 @@ fn test_cli_core_entry_update_parent_revision_matrix() {
 struct ParitySpace {
     _dir: tempfile::TempDir,
     config_path: std::path::PathBuf,
-    space_path: String,
     form_name: &'static str,
 }
 
 fn setup_parity_space(form_fields: &str) -> ParitySpace {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
+    let config_path = dir.path().join("cli-config.toml");
     let space_id = "parity-core-space";
-    let space_path = format!("{root}/spaces/{space_id}");
     let form_name = "ParityCoreForm";
 
-    let output = run_cli(&config_path, &["create-space", "--root", &root, space_id]);
+    let output = run_cli(&config_path, &["space", "create", space_id]);
     assert!(
         output.status.success(),
         "parity setup space create failed: {}",
@@ -760,7 +607,7 @@ fn setup_parity_space(form_fields: &str) -> ParitySpace {
     .unwrap();
     let output = run_cli(
         &config_path,
-        &["form", "update", &space_path, form_file.to_str().unwrap()],
+        &["form", "update", form_file.to_str().unwrap()],
     );
     assert!(
         output.status.success(),
@@ -770,23 +617,12 @@ fn setup_parity_space(form_fields: &str) -> ParitySpace {
     ParitySpace {
         _dir: dir,
         config_path,
-        space_path,
         form_name,
     }
 }
 
-fn parity_markdown(form_name: &str, title: &str, status: Option<&str>, body: &str) -> String {
-    let status_section = status
-        .map(|value| format!("\n## Status\n{value}\n"))
-        .unwrap_or_default();
-    format!("---\nform: {form_name}\n---\n# {title}\n{status_section}\n## Body\n{body}\n")
-}
-
 fn entry_absent(space: &ParitySpace, entry_id: &str) {
-    let output = run_cli(
-        &space.config_path,
-        &["entry", "get", &space.space_path, entry_id],
-    );
+    let output = run_cli(&space.config_path, &["entry", "get", entry_id]);
     assert!(
         !output.status.success(),
         "rejected mutation must not persist an entry"
@@ -800,19 +636,20 @@ fn test_parity_core_invalid_field_rejected_without_mutation() {
     let space = setup_parity_space(
         "{\"Status\":{\"type\":\"string\",\"required\":true},\"Count\":{\"type\":\"double\"},\"Body\":{\"type\":\"markdown\"}}",
     );
-    let markdown = format!(
-        "---\nform: {}\n---\n# Parity invalid\n\n## Status\nok\n\n## Count\nnot-a-number\n\n## Body\nx\n",
-        space.form_name
-    );
     let output = run_cli(
         &space.config_path,
         &[
             "entry",
             "create",
-            "--content",
-            &markdown,
-            &space.space_path,
             "parity-invalid",
+            "--form",
+            space.form_name,
+            "--field",
+            "Status=ok",
+            "--field",
+            "Count=not-a-number",
+            "--field",
+            "Body=x",
         ],
     );
     assert!(!output.status.success(), "mistyped field must be rejected");
@@ -831,16 +668,16 @@ fn test_parity_core_missing_required_rejected_without_mutation() {
     let space = setup_parity_space(
         "{\"Status\":{\"type\":\"string\",\"required\":true},\"Body\":{\"type\":\"markdown\"}}",
     );
-    let markdown = parity_markdown(space.form_name, "Parity missing", None, "x");
     let output = run_cli(
         &space.config_path,
         &[
             "entry",
             "create",
-            "--content",
-            &markdown,
-            &space.space_path,
             "parity-missing",
+            "--form",
+            space.form_name,
+            "--field",
+            "Body=x",
         ],
     );
     assert!(
@@ -862,40 +699,39 @@ fn test_parity_core_stale_revision_conflicts_without_mutation() {
     let space = setup_parity_space(
         "{\"Status\":{\"type\":\"string\",\"required\":true},\"Body\":{\"type\":\"markdown\"}}",
     );
-    let v1 = parity_markdown(space.form_name, "Parity stale", Some("ok"), "v1");
     let created = stdout_json(
         &run_cli(
             &space.config_path,
             &[
                 "entry",
                 "create",
-                "--content",
-                &v1,
-                &space.space_path,
                 "parity-stale",
+                "--form",
+                space.form_name,
+                "--field",
+                "Status=ok",
+                "--field",
+                "Body=v1",
             ],
         ),
         "parity setup entry create",
     );
     assert!(contains_string(&created, "parity-stale"));
     let history = stdout_json(
-        &run_cli(
-            &space.config_path,
-            &["entry", "history", &space.space_path, "parity-stale"],
-        ),
+        &run_cli(&space.config_path, &["entry", "history", "parity-stale"]),
         "parity setup history",
     );
     let rev1 = revision_ids(&history)[0].clone();
-    let v2 = parity_markdown(space.form_name, "Parity stale v2", Some("ok"), "v2");
-    let markdown_arg = format!("--markdown={v2}");
     let updated = run_cli(
         &space.config_path,
         &[
             "entry",
             "update",
-            &space.space_path,
             "parity-stale",
-            markdown_arg.as_str(),
+            "--field",
+            "Status=ok",
+            "--field",
+            "Body=v2",
             "--parent-revision-id",
             &rev1,
         ],
@@ -906,9 +742,11 @@ fn test_parity_core_stale_revision_conflicts_without_mutation() {
         &[
             "entry",
             "update",
-            &space.space_path,
             "parity-stale",
-            markdown_arg.as_str(),
+            "--field",
+            "Status=ok",
+            "--field",
+            "Body=v2",
             "--parent-revision-id",
             &rev1,
         ],
@@ -917,10 +755,7 @@ fn test_parity_core_stale_revision_conflicts_without_mutation() {
     let stderr = String::from_utf8_lossy(&stale.stderr);
     assert!(stderr.contains("Revision conflict"), "stderr: {stderr}");
     let history = stdout_json(
-        &run_cli(
-            &space.config_path,
-            &["entry", "history", &space.space_path, "parity-stale"],
-        ),
+        &run_cli(&space.config_path, &["entry", "history", "parity-stale"]),
         "parity history after conflict",
     );
     assert_eq!(revision_ids(&history).len(), 2);
@@ -932,17 +767,19 @@ fn test_parity_core_restore_unknown_revision_rejected_without_mutation() {
     let space = setup_parity_space(
         "{\"Status\":{\"type\":\"string\",\"required\":true},\"Body\":{\"type\":\"markdown\"}}",
     );
-    let v1 = parity_markdown(space.form_name, "Parity restore", Some("ok"), "v1");
     let created = stdout_json(
         &run_cli(
             &space.config_path,
             &[
                 "entry",
                 "create",
-                "--content",
-                &v1,
-                &space.space_path,
                 "parity-restore",
+                "--form",
+                space.form_name,
+                "--field",
+                "Status=ok",
+                "--field",
+                "Body=v1",
             ],
         ),
         "parity setup entry create",
@@ -953,7 +790,6 @@ fn test_parity_core_restore_unknown_revision_rejected_without_mutation() {
         &[
             "entry",
             "restore",
-            &space.space_path,
             "parity-restore",
             "00000000-0000-0000-0000-000000000000",
         ],
@@ -965,10 +801,7 @@ fn test_parity_core_restore_unknown_revision_rejected_without_mutation() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("not found"), "stderr: {stderr}");
     let history = stdout_json(
-        &run_cli(
-            &space.config_path,
-            &["entry", "history", &space.space_path, "parity-restore"],
-        ),
+        &run_cli(&space.config_path, &["entry", "history", "parity-restore"]),
         "parity history after rejected restore",
     );
     assert_eq!(revision_ids(&history).len(), 1);
@@ -980,16 +813,18 @@ fn test_parity_core_missing_form_rejected_without_mutation() {
     let space = setup_parity_space(
         "{\"Status\":{\"type\":\"string\",\"required\":true},\"Body\":{\"type\":\"markdown\"}}",
     );
-    let markdown = parity_markdown("NoSuchFormParity", "Parity noform", Some("ok"), "x");
     let output = run_cli(
         &space.config_path,
         &[
             "entry",
             "create",
-            "--content",
-            &markdown,
-            &space.space_path,
             "parity-noform",
+            "--form",
+            "NoSuchFormParity",
+            "--field",
+            "Status=ok",
+            "--field",
+            "Body=x",
         ],
     );
     assert!(!output.status.success(), "unknown form must be rejected");
@@ -1008,36 +843,32 @@ fn test_parity_core_delete_tombstone_keeps_history() {
     let space = setup_parity_space(
         "{\"Status\":{\"type\":\"string\",\"required\":true},\"Body\":{\"type\":\"markdown\"}}",
     );
-    let v1 = parity_markdown(space.form_name, "Parity delete", Some("ok"), "v1");
     let created = stdout_json(
         &run_cli(
             &space.config_path,
             &[
                 "entry",
                 "create",
-                "--content",
-                &v1,
-                &space.space_path,
                 "parity-delete",
+                "--form",
+                space.form_name,
+                "--field",
+                "Status=ok",
+                "--field",
+                "Body=v1",
             ],
         ),
         "parity setup entry create",
     );
     assert!(contains_string(&created, "parity-delete"));
     let history = stdout_json(
-        &run_cli(
-            &space.config_path,
-            &["entry", "history", &space.space_path, "parity-delete"],
-        ),
+        &run_cli(&space.config_path, &["entry", "history", "parity-delete"]),
         "parity setup history",
     );
     let before = revision_ids(&history).len();
     assert!(before >= 1);
 
-    let deleted_output = run_cli(
-        &space.config_path,
-        &["entry", "delete", &space.space_path, "parity-delete"],
-    );
+    let deleted_output = run_cli(&space.config_path, &["entry", "delete", "parity-delete"]);
     assert!(
         deleted_output.status.success(),
         "entry delete failed: {}",
@@ -1052,17 +883,14 @@ fn test_parity_core_delete_tombstone_keeps_history() {
         "delete returns durable change_id: {deleted}"
     );
 
-    let current = run_cli(
-        &space.config_path,
-        &["entry", "get", &space.space_path, "parity-delete"],
-    );
+    let current = run_cli(&space.config_path, &["entry", "get", "parity-delete"]);
     assert!(
         !current.status.success(),
         "deleted entry must leave current reads"
     );
 
     let listed = stdout_json(
-        &run_cli(&space.config_path, &["entry", "list", &space.space_path]),
+        &run_cli(&space.config_path, &["entry", "list"]),
         "parity entry list after delete",
     );
     assert!(
@@ -1071,10 +899,7 @@ fn test_parity_core_delete_tombstone_keeps_history() {
     );
 
     let history = stdout_json(
-        &run_cli(
-            &space.config_path,
-            &["entry", "history", &space.space_path, "parity-delete"],
-        ),
+        &run_cli(&space.config_path, &["entry", "history", "parity-delete"]),
         "parity history after delete",
     );
     assert!(

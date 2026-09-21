@@ -26,6 +26,46 @@ fn ugoite_bin() -> std::path::PathBuf {
     path
 }
 
+fn init_canonical_config(config_path: &std::path::Path, root: &str) {
+    let init = Command::new(ugoite_bin())
+        .args(["--config", config_path.to_str().unwrap(), "config", "init"])
+        .env("UGOITE_CLI_CONFIG_PATH", config_path)
+        .output()
+        .expect("config init");
+    assert!(init.status.success());
+    let connection = Command::new(ugoite_bin())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "config",
+            "connection",
+            "set",
+            "local",
+            "--type",
+            "core",
+            "--root",
+            root,
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", config_path)
+        .output()
+        .expect("connection set");
+    assert!(connection.status.success());
+}
+
+fn create_space(config_path: &std::path::Path, slug: &str) -> std::process::Output {
+    Command::new(ugoite_bin())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "space",
+            "create",
+            slug,
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", config_path)
+        .output()
+        .expect("space create")
+}
+
 /// The connection command must exercise the shared Rust storage probe for a
 /// local backend instead of inferring a mode from the URI.
 #[test]
@@ -106,16 +146,11 @@ fn mode(path: &std::path::Path) -> u32 {
 #[test]
 fn test_create_space_scaffolding() {
     let dir = tempfile::tempdir().unwrap();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = dir.path().join("spaces").join("my-space");
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.toml");
+    init_canonical_config(&config_path, &root);
 
-    let output = Command::new(ugoite_bin())
-        .arg("space")
-        .arg("create")
-        .arg(&space_path)
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    let output = create_space(&config_path, "my-space");
 
     assert!(
         output.status.success(),
@@ -132,7 +167,7 @@ fn test_create_space_scaffolding() {
     assert_eq!(settings["default_form"], "Entry");
 
     let forms_output = Command::new(ugoite_bin())
-        .args(["form", "list", space_dir.to_str().unwrap()])
+        .args(["--config", config_path.to_str().unwrap(), "form", "list"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to list starter forms");
@@ -152,16 +187,11 @@ fn test_create_space_scaffolding() {
 #[test]
 fn test_create_space_req_sto_003_permissions() {
     let dir = tempfile::tempdir().unwrap();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = dir.path().join("spaces").join("private-space");
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.toml");
+    init_canonical_config(&config_path, &root);
 
-    let output = Command::new(ugoite_bin())
-        .arg("space")
-        .arg("create")
-        .arg(&space_path)
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    let output = create_space(&config_path, "private-space");
 
     assert!(
         output.status.success(),
@@ -181,47 +211,20 @@ fn test_create_space_req_sto_003_permissions() {
     }
 }
 
-/// REQ-STO-001: S3 backend is not yet implemented (returns unimplemented error).
-#[test]
-fn test_create_space_s3_unimplemented() {
-    let dir = tempfile::tempdir().unwrap();
-    let config_path = dir.path().join("cli-config.json");
-
-    // Attempting to use s3:// path should fail gracefully
-    let output = Command::new(ugoite_bin())
-        .args(["create-space", "--root", "s3://my-bucket", "my-space"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
-
-    // S3 is not supported in core mode; expect failure
-    assert!(
-        !output.status.success() || {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            stderr.contains("not") || stderr.contains("unsupported") || stderr.contains("error")
-        }
-    );
-}
-
 /// REQ-STO-005: Core-mode Space create is idempotent - retrying the same slug
 /// converges to the same durable Space identity instead of failing.
 #[test]
 fn test_create_space_idempotency() {
     let dir = tempfile::tempdir().unwrap();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = dir.path().join("spaces").join("idempotent-space");
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.toml");
+    init_canonical_config(&config_path, &root);
 
     // Create space first time
-    let output1 = Command::new(ugoite_bin())
-        .arg("space")
-        .arg("create")
-        .arg(&space_path)
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    let output1 = create_space(&config_path, "idempotent-space");
     assert!(
         output1.status.success(),
-        "First create-space should succeed: {}",
+        "First space create should succeed: {}",
         String::from_utf8_lossy(&output1.stderr)
     );
     let first: serde_json::Value =
@@ -232,17 +235,11 @@ fn test_create_space_idempotency() {
     );
 
     // Second creation with the same slug converges to the same Space.
-    let output2 = Command::new(ugoite_bin())
-        .arg("space")
-        .arg("create")
-        .arg(&space_path)
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    let output2 = create_space(&config_path, "idempotent-space");
 
     assert!(
         output2.status.success(),
-        "Second create-space should converge to the existing Space: {}",
+        "Second space create should converge to the existing Space: {}",
         String::from_utf8_lossy(&output2.stderr)
     );
     let second: serde_json::Value =
@@ -259,15 +256,20 @@ fn test_create_space_idempotency() {
 #[test]
 fn test_create_space_with_independent_display_name() {
     let dir = tempfile::tempdir().unwrap();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = dir.path().join("spaces").join("team-notes");
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.toml");
+    init_canonical_config(&config_path, &root);
 
     let output = Command::new(ugoite_bin())
-        .arg("space")
-        .arg("create")
-        .arg(&space_path)
-        .arg("--name")
-        .arg("Team Notes")
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "space",
+            "create",
+            "team-notes",
+            "--name",
+            "Team Notes",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -292,15 +294,20 @@ fn test_create_space_with_independent_display_name() {
 #[test]
 fn test_create_space_rejects_whitespace_display_name_before_write() {
     let dir = tempfile::tempdir().unwrap();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = dir.path().join("spaces").join("blank-name");
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.toml");
+    init_canonical_config(&config_path, &root);
 
     let output = Command::new(ugoite_bin())
-        .arg("space")
-        .arg("create")
-        .arg(&space_path)
-        .arg("--name")
-        .arg("   ")
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "space",
+            "create",
+            "blank-name",
+            "--name",
+            "   ",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -324,15 +331,20 @@ fn test_create_space_rejects_whitespace_display_name_before_write() {
 #[test]
 fn test_create_space_retry_does_not_rename() {
     let dir = tempfile::tempdir().unwrap();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = dir.path().join("spaces").join("named-space");
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.toml");
+    init_canonical_config(&config_path, &root);
 
     let first = Command::new(ugoite_bin())
-        .arg("space")
-        .arg("create")
-        .arg(&space_path)
-        .arg("--name")
-        .arg("Alpha")
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "space",
+            "create",
+            "named-space",
+            "--name",
+            "Alpha",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -346,11 +358,15 @@ fn test_create_space_retry_does_not_rename() {
     assert_eq!(created["context"]["created"], serde_json::json!(true));
 
     let retry = Command::new(ugoite_bin())
-        .arg("space")
-        .arg("create")
-        .arg(&space_path)
-        .arg("--name")
-        .arg("Beta")
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "space",
+            "create",
+            "named-space",
+            "--name",
+            "Beta",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -377,16 +393,11 @@ fn test_create_space_retry_does_not_rename() {
 #[test]
 fn test_create_space_defaults_display_name_to_slug() {
     let dir = tempfile::tempdir().unwrap();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = dir.path().join("spaces").join("plain-slug");
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.toml");
+    init_canonical_config(&config_path, &root);
 
-    let output = Command::new(ugoite_bin())
-        .arg("space")
-        .arg("create")
-        .arg(&space_path)
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    let output = create_space(&config_path, "plain-slug");
     assert!(
         output.status.success(),
         "stderr: {}",
@@ -407,16 +418,11 @@ fn test_create_space_defaults_display_name_to_slug() {
 #[test]
 fn test_create_sample_space_req_api_009() {
     let dir = tempfile::tempdir().unwrap();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = dir.path().join("spaces").join("sample-space");
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.toml");
+    init_canonical_config(&config_path, &root);
 
-    let output = Command::new(ugoite_bin())
-        .arg("space")
-        .arg("create")
-        .arg(&space_path)
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    let output = create_space(&config_path, "sample-space");
 
     assert!(
         output.status.success(),

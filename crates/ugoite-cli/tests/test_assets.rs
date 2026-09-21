@@ -37,27 +37,23 @@ fn immutable_space_path(root: &str) -> std::path::PathBuf {
 fn test_asset_lifecycle() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
+    let config_path = dir.path().join("cli-config.toml");
+    init_core_config(&config_path, &root);
 
     // Create space first
-    Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "asset-space"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    assert!(run_cli(&config_path, &["space", "create", "asset-space"])
+        .status
+        .success());
 
     // Create a temp file to upload
     let asset_file = dir.path().join("test-asset.txt");
     std::fs::write(&asset_file, b"test asset content").unwrap();
 
-    let space_path = format!("{root}/spaces/asset-space");
-
     // Upload asset
-    let upload_output = Command::new(ugoite_bin())
-        .args(["asset", "upload", &space_path, asset_file.to_str().unwrap()])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    let upload_output = run_cli(
+        &config_path,
+        &["asset", "upload", asset_file.to_str().unwrap()],
+    );
 
     assert!(
         upload_output.status.success(),
@@ -71,30 +67,26 @@ fn test_asset_lifecycle() {
 fn test_asset_req_asset_001_upload_strips_filename_traversal() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
+    let config_path = dir.path().join("cli-config.toml");
+    init_core_config(&config_path, &root);
 
-    Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "asset-space"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    assert!(run_cli(&config_path, &["space", "create", "asset-space"])
+        .status
+        .success());
 
     let asset_file = dir.path().join("test-asset.txt");
     std::fs::write(&asset_file, b"test asset content").unwrap();
 
-    let space_path = format!("{root}/spaces/asset-space");
-    let upload_output = Command::new(ugoite_bin())
-        .args([
+    let upload_output = run_cli(
+        &config_path,
+        &[
             "asset",
             "upload",
-            &space_path,
             asset_file.to_str().unwrap(),
             "--filename",
             "nested/../../outside.txt",
-        ])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+        ],
+    );
 
     assert!(
         upload_output.status.success(),
@@ -118,30 +110,26 @@ fn test_asset_req_asset_001_upload_strips_filename_traversal() {
 fn test_asset_req_asset_001_upload_normalizes_markdown_heading_filename() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
+    let config_path = dir.path().join("cli-config.toml");
+    init_core_config(&config_path, &root);
 
-    Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "asset-space"])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+    assert!(run_cli(&config_path, &["space", "create", "asset-space"])
+        .status
+        .success());
 
     let asset_file = dir.path().join("test-asset.txt");
     std::fs::write(&asset_file, b"test asset content").unwrap();
 
-    let space_path = format!("{root}/spaces/asset-space");
-    let upload_output = Command::new(ugoite_bin())
-        .args([
+    let upload_output = run_cli(
+        &config_path,
+        &[
             "asset",
             "upload",
-            &space_path,
             asset_file.to_str().unwrap(),
             "--filename",
             "## uploaded_at\nspoofed.txt",
-        ])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
+        ],
+    );
 
     assert!(
         upload_output.status.success(),
@@ -170,7 +158,6 @@ fn test_asset_remote_upload_rejects_oversize_without_request() {
     listener.set_nonblocking(true).unwrap();
     let endpoint = format!("http://{}", listener.local_addr().unwrap());
     let dir = tempfile::tempdir().unwrap();
-    let config_path = dir.path().join("cli-config.json");
     let asset_file = dir.path().join("huge-asset.bin");
     let oversize = ugoite_iceberg::asset::MAX_ASSET_BYTES + 1;
     let chunk = vec![7u8; 1024 * 1024];
@@ -182,28 +169,14 @@ fn test_asset_remote_upload_rejects_oversize_without_request() {
         remaining -= take;
     }
     drop(handle);
-    std::fs::write(
-        &config_path,
-        serde_json::json!({
-            "mode": "backend",
-            "backend_url": endpoint,
-            "api_url": "http://127.0.0.1:3000/api"
-        })
-        .to_string(),
-    )
-    .unwrap();
-
     let remote_space_uid = uuid::Uuid::now_v7().to_string();
-    let output = Command::new(ugoite_bin())
-        .args([
-            "asset",
-            "upload",
-            &remote_space_uid,
-            asset_file.to_str().unwrap(),
-        ])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("run remote asset upload");
+    let config_path = dir.path().join("cli-config.toml");
+    init_backend_config(&config_path, &endpoint, &remote_space_uid);
+
+    let output = run_cli(
+        &config_path,
+        &["asset", "upload", asset_file.to_str().unwrap()],
+    );
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("size limit"));
     assert!(matches!(
@@ -213,11 +186,71 @@ fn test_asset_remote_upload_rejects_oversize_without_request() {
 }
 
 fn run_cli(config_path: &std::path::Path, args: &[&str]) -> std::process::Output {
+    let mut full = vec![
+        "--config".to_string(),
+        config_path.to_string_lossy().into_owned(),
+    ];
+    full.extend(args.iter().map(|arg| (*arg).to_string()));
     Command::new(ugoite_bin())
-        .args(args)
+        .args(full)
         .env("UGOITE_CLI_CONFIG_PATH", config_path)
         .output()
         .expect("run CLI")
+}
+
+fn init_core_config(config_path: &std::path::Path, root: &str) {
+    assert!(run_cli(config_path, &["config", "init"]).status.success());
+    assert!(run_cli(
+        config_path,
+        &[
+            "config",
+            "connection",
+            "set",
+            "local",
+            "--type",
+            "core",
+            "--root",
+            root
+        ]
+    )
+    .status
+    .success());
+}
+
+fn init_backend_config(config_path: &std::path::Path, url: &str, space_uid: &str) {
+    assert!(run_cli(config_path, &["config", "init"]).status.success());
+    assert!(run_cli(
+        config_path,
+        &[
+            "config",
+            "connection",
+            "set",
+            "local",
+            "--type",
+            "backend",
+            "--url",
+            url
+        ]
+    )
+    .status
+    .success());
+    assert!(run_cli(
+        config_path,
+        &[
+            "context",
+            "add",
+            "test",
+            "--connection",
+            "local",
+            "--space",
+            space_uid
+        ]
+    )
+    .status
+    .success());
+    assert!(run_cli(config_path, &["context", "use", "test"])
+        .status
+        .success());
 }
 
 fn json_of(output: &std::process::Output) -> serde_json::Value {
@@ -231,15 +264,12 @@ fn json_of(output: &std::process::Output) -> serde_json::Value {
 fn test_asset_read_side_shares_core_semantics() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = format!("{root}/spaces/asset-space");
+    let config_path = dir.path().join("cli-config.toml");
+    init_core_config(&config_path, &root);
 
-    assert!(run_cli(
-        &config_path,
-        &["create-space", "--root", &root, "asset-space"]
-    )
-    .status
-    .success());
+    assert!(run_cli(&config_path, &["space", "create", "asset-space"])
+        .status
+        .success());
     let form_file = dir.path().join("doc-form.json");
     std::fs::write(
         &form_file,
@@ -248,7 +278,7 @@ fn test_asset_read_side_shares_core_semantics() {
     .unwrap();
     assert!(run_cli(
         &config_path,
-        &["form", "update", &space_path, form_file.to_str().unwrap()]
+        &["form", "update", form_file.to_str().unwrap()]
     )
     .status
     .success());
@@ -257,7 +287,7 @@ fn test_asset_read_side_shares_core_semantics() {
     std::fs::write(&asset_file, b"binary-bytes").unwrap();
     let upload = run_cli(
         &config_path,
-        &["asset", "upload", &space_path, asset_file.to_str().unwrap()],
+        &["asset", "upload", asset_file.to_str().unwrap()],
     );
     assert!(
         upload.status.success(),
@@ -278,7 +308,6 @@ fn test_asset_read_side_shares_core_semantics() {
         &[
             "entry",
             "create",
-            &space_path,
             "doc-1",
             "--form",
             "Doc",
@@ -293,7 +322,7 @@ fn test_asset_read_side_shares_core_semantics() {
     );
 
     // List shows the Form-owned reference with ownership identity.
-    let list = run_cli(&config_path, &["asset", "list", &space_path, "-o", "json"]);
+    let list = run_cli(&config_path, &["asset", "list", "-o", "json"]);
     assert!(
         list.status.success(),
         "stderr: {}",
@@ -310,16 +339,7 @@ fn test_asset_read_side_shares_core_semantics() {
     let read = run_cli(
         &config_path,
         &[
-            "asset",
-            "read",
-            &space_path,
-            &asset_id,
-            "--entry",
-            "doc-1",
-            "--field",
-            "Document",
-            "-o",
-            "json",
+            "asset", "read", &asset_id, "--entry", "doc-1", "--field", "Document", "-o", "json",
         ],
     );
     assert!(
@@ -338,7 +358,6 @@ fn test_asset_read_side_shares_core_semantics() {
         &[
             "asset",
             "download",
-            &space_path,
             &asset_id,
             "--entry",
             "doc-1",
@@ -360,7 +379,6 @@ fn test_asset_read_side_shares_core_semantics() {
         vec![
             "asset",
             "read",
-            &space_path,
             &asset_id,
             "--entry",
             "missing-entry",
@@ -370,21 +388,11 @@ fn test_asset_read_side_shares_core_semantics() {
             "json",
         ],
         vec![
-            "asset",
-            "read",
-            &space_path,
-            &asset_id,
-            "--entry",
-            "doc-1",
-            "--field",
-            "Missing",
-            "-o",
-            "json",
+            "asset", "read", &asset_id, "--entry", "doc-1", "--field", "Missing", "-o", "json",
         ],
         vec![
             "asset",
             "download",
-            &space_path,
             &asset_id,
             "--entry",
             "doc-1",
@@ -404,7 +412,7 @@ fn test_asset_read_side_shares_core_semantics() {
     }
 
     // A referenced asset cannot be deleted while it is in use.
-    let delete = run_cli(&config_path, &["asset", "delete", &space_path, &asset_id]);
+    let delete = run_cli(&config_path, &["asset", "delete", &asset_id]);
     assert!(!delete.status.success());
 }
 
@@ -495,17 +503,8 @@ fn test_asset_read_side_backend_uses_shared_operations() {
     });
 
     let dir = tempfile::tempdir().unwrap();
-    let config_path = dir.path().join("cli-config.json");
-    std::fs::write(
-        &config_path,
-        serde_json::json!({
-            "mode": "backend",
-            "backend_url": endpoint,
-            "api_url": "http://127.0.0.1:3000/api"
-        })
-        .to_string(),
-    )
-    .unwrap();
+    let config_path = dir.path().join("cli-config.toml");
+    init_backend_config(&config_path, &endpoint, &space_uid);
 
     let out_path = dir.path().join("downloaded.bin");
     let download = run_cli(
@@ -513,7 +512,6 @@ fn test_asset_read_side_backend_uses_shared_operations() {
         &[
             "asset",
             "download",
-            &space_uid,
             "asset-1",
             "--entry",
             "doc-1",
@@ -560,21 +558,12 @@ fn test_asset_read_side_backend_uses_shared_operations() {
         stream.write_all(response.as_bytes()).unwrap();
         stream.write_all(body).unwrap();
     });
-    std::fs::write(
-        &config_path,
-        serde_json::json!({
-            "mode": "backend",
-            "backend_url": lonely_endpoint,
-            "api_url": "http://127.0.0.1:3000/api"
-        })
-        .to_string(),
-    )
-    .unwrap();
+    let lonely_config = dir.path().join("lonely-config.toml");
+    init_backend_config(&lonely_config, &lonely_endpoint, &space_uid);
     let denied = run_cli(
-        &config_path,
+        &lonely_config,
         &[
-            "asset", "read", &space_uid, "asset-1", "--entry", "doc-1", "--field", "Missing", "-o",
-            "json",
+            "asset", "read", "asset-1", "--entry", "doc-1", "--field", "Missing", "-o", "json",
         ],
     );
     assert!(!denied.status.success());
@@ -597,39 +586,32 @@ fn test_asset_read_side_backend_uses_shared_operations() {
 const DOC_FORM_JSON: &str = r#"{"name":"Doc","fields":{"Document":{"type":"asset_reference"}}}"#;
 const ALBUM_FORM_JSON: &str = r#"{"name":"Album","fields":{"Attachments":{"type":"list","items":{"type":"asset_reference"}}}}"#;
 
-fn setup_core_space(dir: &tempfile::TempDir, slug: &str, form_json: &str) -> (String, PathBuf) {
+fn setup_core_space(dir: &tempfile::TempDir, slug: &str, form_json: &str) -> PathBuf {
     let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = format!("{root}/spaces/{slug}");
-    assert!(
-        run_cli(&config_path, &["create-space", "--root", &root, slug])
-            .status
-            .success()
-    );
+    let config_path = dir.path().join("cli-config.toml");
+    init_core_config(&config_path, &root);
+    assert!(run_cli(&config_path, &["space", "create", slug])
+        .status
+        .success());
     let form_file = dir.path().join("form.json");
     std::fs::write(&form_file, form_json).unwrap();
     let updated = run_cli(
         &config_path,
-        &["form", "update", &space_path, form_file.to_str().unwrap()],
+        &["form", "update", form_file.to_str().unwrap()],
     );
     assert!(
         updated.status.success(),
         "stderr: {}",
         String::from_utf8_lossy(&updated.stderr)
     );
-    (space_path, config_path)
+    config_path
 }
 
-fn upload_core(
-    config_path: &Path,
-    space_path: &str,
-    file: &Path,
-    filename: &str,
-) -> serde_json::Value {
+fn upload_core(config_path: &Path, file: &Path, filename: &str) -> serde_json::Value {
     let file = file.to_str().unwrap();
     let output = run_cli(
         config_path,
-        &["asset", "upload", space_path, file, "--filename", filename],
+        &["asset", "upload", file, "--filename", filename],
     );
     assert!(
         output.status.success(),
@@ -641,7 +623,6 @@ fn upload_core(
 
 fn create_entry_with_fields(
     config_path: &Path,
-    space_path: &str,
     entry_id: &str,
     form: &str,
     fields: &serde_json::Value,
@@ -653,7 +634,6 @@ fn create_entry_with_fields(
         &[
             "entry",
             "create",
-            space_path,
             entry_id,
             "--form",
             form,
@@ -670,7 +650,6 @@ fn create_entry_with_fields(
 
 fn update_entry_with_fields(
     config_path: &Path,
-    space_path: &str,
     entry_id: &str,
     fields: &serde_json::Value,
     fields_path: &Path,
@@ -681,7 +660,6 @@ fn update_entry_with_fields(
         &[
             "entry",
             "update",
-            space_path,
             entry_id,
             "--fields-file",
             fields_path.to_str().unwrap(),
@@ -696,7 +674,6 @@ fn update_entry_with_fields(
 
 fn read_asset_name(
     config_path: &Path,
-    space_path: &str,
     asset_id: &str,
     entry_id: &str,
     field: &str,
@@ -704,8 +681,7 @@ fn read_asset_name(
     let output = run_cli(
         config_path,
         &[
-            "asset", "read", space_path, asset_id, "--entry", entry_id, "--field", field, "-o",
-            "json",
+            "asset", "read", asset_id, "--entry", entry_id, "--field", field, "-o", "json",
         ],
     );
     assert!(
@@ -721,51 +697,37 @@ fn read_asset_name(
 #[test]
 fn test_asset_attach_create_and_update_read_name_back_core() {
     let dir = tempfile::tempdir().unwrap();
-    let (space_path, config_path) = setup_core_space(&dir, "attach-core", DOC_FORM_JSON);
+    let config_path = setup_core_space(&dir, "attach-core", DOC_FORM_JSON);
 
     let first_file = dir.path().join("report.txt");
     std::fs::write(&first_file, b"first report bytes").unwrap();
-    let first = upload_core(&config_path, &space_path, &first_file, "report.txt");
+    let first = upload_core(&config_path, &first_file, "report.txt");
     let first_id = first["asset_id"].as_str().expect("asset id").to_string();
 
     // Supported attach path: the upload asset object becomes the field value.
     create_entry_with_fields(
         &config_path,
-        &space_path,
         "doc-create",
         "Doc",
         &serde_json::json!({"Document": first}),
         &dir.path().join("create-fields.json"),
     );
-    let read = read_asset_name(
-        &config_path,
-        &space_path,
-        &first_id,
-        "doc-create",
-        "Document",
-    );
+    let read = read_asset_name(&config_path, &first_id, "doc-create", "Document");
     assert_eq!(read["name"], "report.txt");
     assert_eq!(read["asset_id"], first_id);
 
     // Same attach path through a structured update (full replacement map).
     let second_file = dir.path().join("second.bin");
     std::fs::write(&second_file, b"second bytes").unwrap();
-    let second = upload_core(&config_path, &space_path, &second_file, "second.bin");
+    let second = upload_core(&config_path, &second_file, "second.bin");
     let second_id = second["asset_id"].as_str().expect("asset id").to_string();
     update_entry_with_fields(
         &config_path,
-        &space_path,
         "doc-create",
         &serde_json::json!({"Document": second}),
         &dir.path().join("update-fields.json"),
     );
-    let reread = read_asset_name(
-        &config_path,
-        &space_path,
-        &second_id,
-        "doc-create",
-        "Document",
-    );
+    let reread = read_asset_name(&config_path, &second_id, "doc-create", "Document");
     assert_eq!(reread["name"], "second.bin");
 
     // The replaced reference no longer authorizes the old context.
@@ -774,7 +736,6 @@ fn test_asset_attach_create_and_update_read_name_back_core() {
         &[
             "asset",
             "read",
-            &space_path,
             &first_id,
             "--entry",
             "doc-create",
@@ -797,15 +758,14 @@ fn test_asset_attach_create_and_update_read_name_back_core() {
 #[test]
 fn test_asset_multi_attachment_full_update_preserves_both_core() {
     let dir = tempfile::tempdir().unwrap();
-    let (space_path, config_path) = setup_core_space(&dir, "multi-core", ALBUM_FORM_JSON);
+    let config_path = setup_core_space(&dir, "multi-core", ALBUM_FORM_JSON);
 
     let first_file = dir.path().join("first.txt");
     std::fs::write(&first_file, b"first bytes").unwrap();
-    let first = upload_core(&config_path, &space_path, &first_file, "first.txt");
+    let first = upload_core(&config_path, &first_file, "first.txt");
     let first_id = first["asset_id"].as_str().expect("asset id").to_string();
     create_entry_with_fields(
         &config_path,
-        &space_path,
         "album-1",
         "Album",
         &serde_json::json!({"Attachments": [first]}),
@@ -813,7 +773,7 @@ fn test_asset_multi_attachment_full_update_preserves_both_core() {
     );
 
     // Read step of read-modify-write: the current revision anchors the update.
-    let current = run_cli(&config_path, &["entry", "get", &space_path, "album-1"]);
+    let current = run_cli(&config_path, &["entry", "get", "album-1"]);
     assert!(current.status.success());
     let current_json: serde_json::Value = serde_json::from_slice(&current.stdout).unwrap();
     let revision_id = current_json["revision_id"]
@@ -823,7 +783,7 @@ fn test_asset_multi_attachment_full_update_preserves_both_core() {
 
     let second_file = dir.path().join("second.txt");
     std::fs::write(&second_file, b"second bytes").unwrap();
-    let second = upload_core(&config_path, &space_path, &second_file, "second.txt");
+    let second = upload_core(&config_path, &second_file, "second.txt");
     let second_id = second["asset_id"].as_str().expect("asset id").to_string();
 
     // Full-replacement update resupplies both references, anchored on the read
@@ -839,7 +799,6 @@ fn test_asset_multi_attachment_full_update_preserves_both_core() {
         &[
             "entry",
             "update",
-            &space_path,
             "album-1",
             "--fields-file",
             fields_path.to_str().unwrap(),
@@ -853,7 +812,7 @@ fn test_asset_multi_attachment_full_update_preserves_both_core() {
         String::from_utf8_lossy(&updated.stderr)
     );
 
-    let list = run_cli(&config_path, &["asset", "list", &space_path, "-o", "json"]);
+    let list = run_cli(&config_path, &["asset", "list", "-o", "json"]);
     assert!(list.status.success());
     let items = json_of(&list);
     let ids: Vec<&str> = items
@@ -866,23 +825,11 @@ fn test_asset_multi_attachment_full_update_preserves_both_core() {
     assert!(ids.contains(&first_id.as_str()));
     assert!(ids.contains(&second_id.as_str()));
     assert_eq!(
-        read_asset_name(
-            &config_path,
-            &space_path,
-            &first_id,
-            "album-1",
-            "Attachments"
-        )["name"],
+        read_asset_name(&config_path, &first_id, "album-1", "Attachments")["name"],
         "first.txt"
     );
     assert_eq!(
-        read_asset_name(
-            &config_path,
-            &space_path,
-            &second_id,
-            "album-1",
-            "Attachments"
-        )["name"],
+        read_asset_name(&config_path, &second_id, "album-1", "Attachments")["name"],
         "second.txt"
     );
 }
@@ -893,36 +840,17 @@ fn test_asset_multi_attachment_full_update_preserves_both_core() {
 fn test_asset_read_missing_context_is_usage_error() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
-    let space_path = format!("{root}/spaces/usage-space");
-    assert!(run_cli(
-        &config_path,
-        &["create-space", "--root", &root, "usage-space"]
-    )
-    .status
-    .success());
+    let config_path = dir.path().join("cli-config.toml");
+    init_core_config(&config_path, &root);
+    assert!(run_cli(&config_path, &["space", "create", "usage-space"])
+        .status
+        .success());
 
     for args in [
-        vec!["asset", "read", &space_path, "asset-1", "-o", "json"],
+        vec!["asset", "read", "asset-1", "-o", "json"],
+        vec!["asset", "read", "asset-1", "--entry", "doc-1", "-o", "json"],
         vec![
-            "asset",
-            "read",
-            &space_path,
-            "asset-1",
-            "--entry",
-            "doc-1",
-            "-o",
-            "json",
-        ],
-        vec![
-            "asset",
-            "read",
-            &space_path,
-            "asset-1",
-            "--field",
-            "Document",
-            "-o",
-            "json",
+            "asset", "read", "asset-1", "--field", "Document", "-o", "json",
         ],
     ] {
         let output = run_cli(&config_path, &args);
@@ -934,7 +862,6 @@ fn test_asset_read_missing_context_is_usage_error() {
         &[
             "asset",
             "download",
-            &space_path,
             "asset-1",
             "--field",
             "Document",
@@ -948,21 +875,10 @@ fn test_asset_read_missing_context_is_usage_error() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let endpoint = format!("http://{}", listener.local_addr().unwrap());
-    std::fs::write(
-        &config_path,
-        serde_json::json!({
-            "mode": "backend",
-            "backend_url": endpoint,
-            "api_url": "http://127.0.0.1:3000/api"
-        })
-        .to_string(),
-    )
-    .unwrap();
     let remote_uid = uuid::Uuid::now_v7().to_string();
-    let denied = run_cli(
-        &config_path,
-        &["asset", "read", &remote_uid, "asset-1", "-o", "json"],
-    );
+    let backend_config = dir.path().join("backend-config.toml");
+    init_backend_config(&backend_config, &endpoint, &remote_uid);
+    let denied = run_cli(&backend_config, &["asset", "read", "asset-1", "-o", "json"]);
     assert_eq!(denied.status.code(), Some(2));
     assert!(matches!(
         listener.accept(),
@@ -976,17 +892,17 @@ fn test_asset_read_missing_context_is_usage_error() {
 #[test]
 fn test_asset_upload_missing_file_fails_closed_without_mutation() {
     let dir = tempfile::tempdir().unwrap();
-    let (space_path, config_path) = setup_core_space(&dir, "malformed-cli", DOC_FORM_JSON);
+    let config_path = setup_core_space(&dir, "malformed-cli", DOC_FORM_JSON);
 
     let missing = dir.path().join("no-such-file.bin");
     let output = run_cli(
         &config_path,
-        &["asset", "upload", &space_path, missing.to_str().unwrap()],
+        &["asset", "upload", missing.to_str().unwrap()],
     );
     assert!(!output.status.success());
     assert!(!String::from_utf8_lossy(&output.stderr).is_empty());
 
-    let list = run_cli(&config_path, &["asset", "list", &space_path, "-o", "json"]);
+    let list = run_cli(&config_path, &["asset", "list", "-o", "json"]);
     assert!(list.status.success());
     assert_eq!(json_of(&list).as_array().expect("array").len(), 0);
 }
@@ -996,31 +912,27 @@ fn test_asset_upload_missing_file_fails_closed_without_mutation() {
 #[test]
 fn test_asset_search_finds_attachment_text_core() {
     let dir = tempfile::tempdir().unwrap();
-    let (space_path, config_path) = setup_core_space(&dir, "search-core", DOC_FORM_JSON);
+    let config_path = setup_core_space(&dir, "search-core", DOC_FORM_JSON);
 
     let keyword = "zephyr-quetzal-attachment";
     let body_file = dir.path().join("notes.txt");
     std::fs::write(&body_file, format!("field notes about {keyword}")).unwrap();
-    let asset = upload_core(&config_path, &space_path, &body_file, "notes.txt");
+    let asset = upload_core(&config_path, &body_file, "notes.txt");
     create_entry_with_fields(
         &config_path,
-        &space_path,
         "doc-search",
         "Doc",
         &serde_json::json!({"Document": asset}),
         &dir.path().join("search-fields.json"),
     );
 
-    let reindex = run_cli(&config_path, &["index", "run", &space_path]);
+    let reindex = run_cli(&config_path, &["index", "run"]);
     assert!(
         reindex.status.success(),
         "reindex stderr: {}",
         String::from_utf8_lossy(&reindex.stderr)
     );
-    let search = run_cli(
-        &config_path,
-        &["search", "keyword", &space_path, keyword, "-o", "json"],
-    );
+    let search = run_cli(&config_path, &["search", "keyword", keyword, "-o", "json"]);
     assert!(
         search.status.success(),
         "search stderr: {}",
@@ -1282,17 +1194,8 @@ fn start_stub(
         seen: Mutex::new(Vec::new()),
     });
     let dir = tempfile::tempdir().unwrap();
-    let config_path = dir.path().join("cli-config.json");
-    std::fs::write(
-        &config_path,
-        serde_json::json!({
-            "mode": "backend",
-            "backend_url": endpoint,
-            "api_url": "http://127.0.0.1:3000/api"
-        })
-        .to_string(),
-    )
-    .unwrap();
+    let config_path = dir.path().join("cli-config.toml");
+    init_backend_config(&config_path, &endpoint, &uid);
     StubSetup {
         uid,
         dir,
@@ -1356,7 +1259,7 @@ fn test_asset_attach_create_reads_name_back_remote() {
     std::fs::write(&file, &asset_bytes).unwrap();
     let upload = run_cli(
         &harness.config_path,
-        &["asset", "upload", &harness.uid, file.to_str().unwrap()],
+        &["asset", "upload", file.to_str().unwrap()],
     );
     assert!(
         upload.status.success(),
@@ -1376,7 +1279,6 @@ fn test_asset_attach_create_reads_name_back_remote() {
         &[
             "entry",
             "create",
-            &harness.uid,
             "doc-1",
             "--form",
             "Doc",
@@ -1389,13 +1291,7 @@ fn test_asset_attach_create_reads_name_back_remote() {
         "create stderr: {}",
         String::from_utf8_lossy(&create.stderr)
     );
-    let read = read_asset_name(
-        &harness.config_path,
-        &harness.uid,
-        asset_id,
-        "doc-1",
-        "Document",
-    );
+    let read = read_asset_name(&harness.config_path, asset_id, "doc-1", "Document");
     assert_eq!(read["name"], "report.txt");
     assert_eq!(read["content_text"], "remote report bytes");
     harness.handle.join().unwrap();
@@ -1543,7 +1439,7 @@ fn test_asset_multi_attachment_full_update_preserves_both_remote() {
     for file in [&first_file, &second_file] {
         let upload = run_cli(
             &harness.config_path,
-            &["asset", "upload", &harness.uid, file.to_str().unwrap()],
+            &["asset", "upload", file.to_str().unwrap()],
         );
         assert!(
             upload.status.success(),
@@ -1567,7 +1463,6 @@ fn test_asset_multi_attachment_full_update_preserves_both_remote() {
         &[
             "entry",
             "create",
-            &harness.uid,
             "doc-1",
             "--form",
             "Doc",
@@ -1583,10 +1478,7 @@ fn test_asset_multi_attachment_full_update_preserves_both_remote() {
 
     // Read-modify-full-update: the CLI reads the entry for its revision, then
     // the caller resupplies the complete post-update array.
-    let get = run_cli(
-        &harness.config_path,
-        &["entry", "get", &harness.uid, "doc-1"],
-    );
+    let get = run_cli(&harness.config_path, &["entry", "get", "doc-1"]);
     assert!(get.status.success());
     std::fs::write(
         &fields_file,
@@ -1601,7 +1493,6 @@ fn test_asset_multi_attachment_full_update_preserves_both_remote() {
         &[
             "entry",
             "update",
-            &harness.uid,
             "doc-1",
             "--fields-file",
             fields_file.to_str().unwrap(),
@@ -1613,10 +1504,7 @@ fn test_asset_multi_attachment_full_update_preserves_both_remote() {
         String::from_utf8_lossy(&update.stderr)
     );
 
-    let list = run_cli(
-        &harness.config_path,
-        &["asset", "list", &harness.uid, "-o", "json"],
-    );
+    let list = run_cli(&harness.config_path, &["asset", "list", "-o", "json"]);
     assert!(list.status.success());
     let ids: Vec<String> = json_of(&list)
         .as_array()
@@ -1658,14 +1546,7 @@ fn test_asset_search_keyword_remote_surfaces_results() {
     );
     let search = run_cli(
         &harness.config_path,
-        &[
-            "search",
-            "keyword",
-            &harness.uid,
-            "zephyr-quetzal",
-            "-o",
-            "json",
-        ],
+        &["search", "keyword", "zephyr-quetzal", "-o", "json"],
     );
     assert!(
         search.status.success(),
@@ -1699,23 +1580,22 @@ fn test_asset_search_keyword_remote_surfaces_results() {
 fn test_asset_acceptance_matrix_core_remote_parity() {
     // Row 1: valid context reads the same name on both transports.
     let dir = tempfile::tempdir().unwrap();
-    let (space_path, config_path) = setup_core_space(&dir, "matrix-core", DOC_FORM_JSON);
+    let config_path = setup_core_space(&dir, "matrix-core", DOC_FORM_JSON);
     let body_file = dir.path().join("matrix.txt");
     std::fs::write(&body_file, b"matrix bytes").unwrap();
-    let core_asset = upload_core(&config_path, &space_path, &body_file, "matrix.txt");
+    let core_asset = upload_core(&config_path, &body_file, "matrix.txt");
     let core_id = core_asset["asset_id"]
         .as_str()
         .expect("asset id")
         .to_string();
     create_entry_with_fields(
         &config_path,
-        &space_path,
         "m-1",
         "Doc",
         &serde_json::json!({"Document": core_asset}),
         &dir.path().join("matrix-fields.json"),
     );
-    let core_name = read_asset_name(&config_path, &space_path, &core_id, "m-1", "Document")["name"]
+    let core_name = read_asset_name(&config_path, &core_id, "m-1", "Document")["name"]
         .as_str()
         .expect("name")
         .to_string();
@@ -1740,12 +1620,7 @@ fn test_asset_acceptance_matrix_core_remote_parity() {
     std::fs::write(&remote_file, b"matrix bytes").unwrap();
     assert!(run_cli(
         &harness.config_path,
-        &[
-            "asset",
-            "upload",
-            &harness.uid,
-            remote_file.to_str().unwrap()
-        ],
+        &["asset", "upload", remote_file.to_str().unwrap()],
     )
     .status
     .success());
@@ -1760,7 +1635,6 @@ fn test_asset_acceptance_matrix_core_remote_parity() {
         &[
             "entry",
             "create",
-            &harness.uid,
             "m-1",
             "--form",
             "Doc",
@@ -1770,13 +1644,7 @@ fn test_asset_acceptance_matrix_core_remote_parity() {
     )
     .status
     .success());
-    let remote_name = read_asset_name(
-        &harness.config_path,
-        &harness.uid,
-        remote_id,
-        "m-1",
-        "Document",
-    )["name"]
+    let remote_name = read_asset_name(&harness.config_path, remote_id, "m-1", "Document")["name"]
         .as_str()
         .expect("name")
         .to_string();
@@ -1788,16 +1656,7 @@ fn test_asset_acceptance_matrix_core_remote_parity() {
     let core_wrong = run_cli(
         &config_path,
         &[
-            "asset",
-            "read",
-            &space_path,
-            &core_id,
-            "--entry",
-            "m-1",
-            "--field",
-            "Missing",
-            "-o",
-            "json",
+            "asset", "read", &core_id, "--entry", "m-1", "--field", "Missing", "-o", "json",
         ],
     );
     assert!(!core_wrong.status.success());
@@ -1809,16 +1668,7 @@ fn test_asset_acceptance_matrix_core_remote_parity() {
     let remote_wrong = run_cli(
         &harness.config_path,
         &[
-            "asset",
-            "read",
-            &harness.uid,
-            remote_id,
-            "--entry",
-            "m-1",
-            "--field",
-            "Missing",
-            "-o",
-            "json",
+            "asset", "read", remote_id, "--entry", "m-1", "--field", "Missing", "-o", "json",
         ],
     );
     assert!(!remote_wrong.status.success());
@@ -1830,17 +1680,12 @@ fn test_asset_acceptance_matrix_core_remote_parity() {
 
     // Row 3: remote search surfaces the same entry the core search finds
     // after the explicit local reindex.
-    assert!(run_cli(&config_path, &["index", "run", &space_path])
-        .status
-        .success());
-    let core_search = run_cli(
-        &config_path,
-        &["search", "keyword", &space_path, "matrix", "-o", "json"],
-    );
+    assert!(run_cli(&config_path, &["index", "run"]).status.success());
+    let core_search = run_cli(&config_path, &["search", "keyword", "matrix", "-o", "json"]);
     assert!(core_search.status.success());
     let remote_search = run_cli(
         &harness.config_path,
-        &["search", "keyword", &harness.uid, "matrix", "-o", "json"],
+        &["search", "keyword", "matrix", "-o", "json"],
     );
     assert!(remote_search.status.success());
     for output in [&core_search, &remote_search] {

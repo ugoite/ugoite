@@ -52,19 +52,7 @@ fn run_cli(config: &std::path::Path, args: &[&str]) -> Output {
         "--config".to_string(),
         config.to_string_lossy().into_owned(),
     ];
-    let mut index = 0;
-    while index < args.len() {
-        let arg = args[index];
-        if arg == "create-space" {
-            canonical.extend(["space".to_string(), "create".to_string()]);
-        } else if arg == "--root" {
-            index += 1;
-        } else if arg.contains("/spaces/") {
-        } else {
-            canonical.push(arg.to_string());
-        }
-        index += 1;
-    }
+    canonical.extend(args.iter().map(|arg| (*arg).to_string()));
     Command::new(bin)
         .args(canonical)
         .output()
@@ -143,13 +131,11 @@ fn revision_ids(history: &serde_json::Value) -> Vec<String> {
 #[test]
 fn test_journey_cli_core_locate_recover_durable_outcome() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_string_lossy().to_string();
-    let config_path = dir.path().join("cli-config.json");
+    let config_path = dir.path().join("cli-config.toml");
     let space_id = "locate-recover-core";
-    let space_path = format!("{root}/spaces/{space_id}");
 
-    // 1. Open a 0.1 Space.
-    let output = run_cli(&config_path, &["create-space", "--root", &root, space_id]);
+    // 1. Create the canonical Space.
+    let output = run_cli(&config_path, &["space", "create", space_id]);
     assert!(
         output.status.success(),
         "space create failed: {}",
@@ -165,7 +151,7 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
     .unwrap();
     let output = run_cli(
         &config_path,
-        &["form", "update", &space_path, form_file.to_str().unwrap()],
+        &["form", "update", form_file.to_str().unwrap()],
     );
     assert!(
         output.status.success(),
@@ -183,13 +169,13 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
             &[
                 "entry",
                 "create",
+                entry_id,
                 "--form",
                 "Task",
                 "--field",
                 &status_field,
                 "--field",
                 &priority_field,
-                entry_id,
             ],
         );
         assert!(
@@ -201,10 +187,7 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
 
     // 3. Keyword Search discovers the target by title.
     let results = stdout_json(
-        &run_cli(
-            &config_path,
-            &["search", "keyword", &space_path, "locate-task-a"],
-        ),
+        &run_cli(&config_path, &["search", "keyword", "locate-task-a"]),
         "keyword search discovers the target",
     );
     assert!(contains_string(&results, "locate-task-a"));
@@ -213,15 +196,7 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
     let results = stdout_json(
         &run_cli(
             &config_path,
-            &[
-                "search",
-                "query",
-                &space_path,
-                "--form",
-                "Task",
-                "--eq",
-                "status=open",
-            ],
+            &["search", "query", "--form", "Task", "--eq", "status=open"],
         ),
         "structured search narrows to open tasks",
     );
@@ -229,15 +204,7 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
     let results = stdout_json(
         &run_cli(
             &config_path,
-            &[
-                "search",
-                "query",
-                &space_path,
-                "--form",
-                "Task",
-                "--eq",
-                "status=nope",
-            ],
+            &["search", "query", "--form", "Task", "--eq", "status=nope"],
         ),
         "structured search excludes on non-matching condition",
     );
@@ -245,10 +212,7 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
 
     // 5. Update the Entry; the receipt carries the durable Change ID.
     let history = stdout_json(
-        &run_cli(
-            &config_path,
-            &["entry", "history", &space_path, "locate-task-a"],
-        ),
+        &run_cli(&config_path, &["entry", "history", "locate-task-a"]),
         "entry history after create",
     );
     assert_eq!(revision_ids(&history).len(), 1);
@@ -284,15 +248,7 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
     let results = stdout_json(
         &run_cli(
             &config_path,
-            &[
-                "search",
-                "query",
-                &space_path,
-                "--form",
-                "Task",
-                "--eq",
-                "status=open",
-            ],
+            &["search", "query", "--form", "Task", "--eq", "status=open"],
         ),
         "structured search reflects the update",
     );
@@ -300,7 +256,7 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
 
     // 6. Space History observes create and update Changes.
     let changes = stdout_json(
-        &run_cli(&config_path, &["change", "list", &space_path]),
+        &run_cli(&config_path, &["change", "list"]),
         "change list observes the timeline",
     );
     let before_ids = change_ids(&changes);
@@ -309,10 +265,7 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
 
     // 7. Change revert appends its inverse; the reverted Change is kept.
     let reverted = stdout_json(
-        &run_cli(
-            &config_path,
-            &["change", "revert", &space_path, &update_change_id],
-        ),
+        &run_cli(&config_path, &["change", "revert", &update_change_id]),
         "change revert",
     );
     let revert_id = reverted
@@ -324,17 +277,14 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
 
     // 8. Entry history grows append-only; no revision is lost.
     let history = stdout_json(
-        &run_cli(
-            &config_path,
-            &["entry", "history", &space_path, "locate-task-a"],
-        ),
+        &run_cli(&config_path, &["entry", "history", "locate-task-a"]),
         "entry history after revert",
     );
     let ids = revision_ids(&history);
     assert_eq!(ids.len(), 3);
     assert!(ids.contains(&rev1));
     let changes = stdout_json(
-        &run_cli(&config_path, &["change", "list", &space_path]),
+        &run_cli(&config_path, &["change", "list"]),
         "change list after revert",
     );
     let after_ids = change_ids(&changes);
@@ -346,15 +296,7 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
     let results = stdout_json(
         &run_cli(
             &config_path,
-            &[
-                "search",
-                "query",
-                &space_path,
-                "--form",
-                "Task",
-                "--eq",
-                "status=open",
-            ],
+            &["search", "query", "--form", "Task", "--eq", "status=open"],
         ),
         "structured search reflects recovered state",
     );
@@ -362,23 +304,17 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
 
     // 10. Reopen: fresh invocations read the same durable state.
     let history = stdout_json(
-        &run_cli(
-            &config_path,
-            &["entry", "history", &space_path, "locate-task-a"],
-        ),
+        &run_cli(&config_path, &["entry", "history", "locate-task-a"]),
         "entry history on reopen",
     );
     assert_eq!(revision_ids(&history).len(), 3);
     let results = stdout_json(
-        &run_cli(
-            &config_path,
-            &["search", "keyword", &space_path, "locate-task-a"],
-        ),
+        &run_cli(&config_path, &["search", "keyword", "locate-task-a"]),
         "keyword search on reopen",
     );
     assert!(contains_string(&results, "locate-task-a"));
     let changes = stdout_json(
-        &run_cli(&config_path, &["change", "list", &space_path]),
+        &run_cli(&config_path, &["change", "list"]),
         "change list on reopen",
     );
     assert_eq!(change_ids(&changes).len(), after_ids.len());
