@@ -124,9 +124,7 @@ impl EntryQuery {
             .map(|filter| filter.field)
             .chain(self.sort.iter().map(|sort| sort.field))
         {
-            if field.is_property() && matches!(self.scope, EntryQueryScope::All) {
-                return Err(EntryQueryError::PropertyRequiresFormScope);
-            }
+            validate_field_for_scope(field, &self.scope)?;
         }
         Ok(())
     }
@@ -160,6 +158,31 @@ impl EntryProjection {
         }
         Ok(())
     }
+
+    pub fn validate_for_scope(&self, scope: &EntryQueryScope) -> Result<(), EntryQueryError> {
+        self.validate()?;
+        if let Self::Fields { fields } = self {
+            for field in fields {
+                validate_field_for_scope(*field, scope)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+fn validate_field_for_scope(
+    field: EntryFieldRef,
+    scope: &EntryQueryScope,
+) -> Result<(), EntryQueryError> {
+    match (field, scope) {
+        (EntryFieldRef::Property { .. }, EntryQueryScope::All) => {
+            Err(EntryQueryError::PropertyRequiresFormScope)
+        }
+        (EntryFieldRef::Form, EntryQueryScope::Form { .. }) => Err(EntryQueryError::Invalid(
+            "Form identity requires an All Forms Entry query".to_string(),
+        )),
+        _ => Ok(()),
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -175,7 +198,7 @@ pub struct EntryPageRequest {
 impl EntryPageRequest {
     pub fn validate(&self) -> Result<(), EntryQueryError> {
         self.query.validate()?;
-        self.projection.validate()?;
+        self.projection.validate_for_scope(&self.query.scope)?;
         if self.limit == 0 || self.limit > MAX_ENTRY_PAGE_LIMIT {
             return Err(EntryQueryError::Invalid(
                 "Entry query page limit is out of range".to_string(),
@@ -493,6 +516,24 @@ mod tests {
         };
         request.validate().expect("request");
         assert_eq!(first, request.query.fingerprint().expect("fingerprint"));
+    }
+
+    #[test]
+    fn all_forms_projection_rejects_property_fields() {
+        let request = EntryPageRequest {
+            query: EntryQuery::default(),
+            projection: EntryProjection::Fields {
+                fields: vec![EntryFieldRef::Property {
+                    field_id: FieldId::new(100).expect("field id"),
+                }],
+            },
+            limit: 50,
+            after: None,
+        };
+        assert!(matches!(
+            request.validate(),
+            Err(EntryQueryError::PropertyRequiresFormScope)
+        ));
     }
 
     #[test]
