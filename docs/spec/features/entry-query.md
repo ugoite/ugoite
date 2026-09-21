@@ -29,3 +29,9 @@ query fingerprint; a scope, text, filter, or sort change starts a new chain.
 Filter operators and field capabilities are derived by Rust from the Form
 definition. Frontend and CLI adapters consume the capability descriptor and do
 not maintain independent operator or type tables.
+
+The server exposes this contract through `POST
+/spaces/{space_id}/entries/query` and the independent count operation at `POST
+/spaces/{space_id}/entries/query/count`. A page continuation keeps the
+publication selected by the first request; it does not create a durable pin or
+write query state into the Space.

@@ -29,10 +29,15 @@ use uuid::Uuid;
 
 use crate::entry;
 use crate::SpaceCheckpoint;
+use ugoite_core::entry_query::{
+    EntryCursor, EntryFieldRef, EntryProjection, EntryQuery, EntryQueryScope, EntrySort,
+    EntrySortDirection,
+};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
 };
+use ugoite_core::structured_search::StructuredSearchFieldKind;
 
 pub const SQL_SESSION_MAX_ROWS: usize = 1_000;
 /// A durable SQL-session policy may carry a sparse ID set only up to the same
@@ -593,6 +598,699 @@ pub(crate) struct EntryCandidate {
     pub entry_id: String,
     pub created_at: f64,
     pub updated_at: f64,
+}
+
+/// Candidate selected by the canonical EntryQuery compiler. The external ID
+/// remains useful for the existing payload reader, while `stable_id` is the
+/// immutable Entry identity exposed by the new query contract.
+#[derive(Debug, Clone)]
+pub(crate) struct CanonicalEntryCandidate {
+    pub form_id: FormId,
+    pub stable_id: String,
+    pub external_id: String,
+    pub sort_values: Vec<Value>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct CanonicalEntryRow {
+    pub candidate: CanonicalEntryCandidate,
+    pub row: entry::EntryRow,
+}
+
+#[derive(Debug, Clone)]
+struct CanonicalSortColumn {
+    alias: String,
+    expression: String,
+    direction: EntrySortDirection,
+    parameter_type: &'static str,
+}
+
+/// Execute the canonical EntryQuery against one immutable checkpoint.
+///
+/// Candidate selection is one DataFusion query over the authorized Form
+/// views. Hydration then reads each selected Form once, so a page never turns
+/// into one point-read per Entry. The checkpoint and Form definitions are
+/// supplied by the caller and are therefore never replaced by the live Head.
+pub(crate) async fn query_entry_page_at_checkpoint(
+    op: &Operator,
+    ws_path: &str,
+    checkpoint: SpaceCheckpoint,
+    forms: &[FormDefinition],
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    query: &EntryQuery,
+    projection: &EntryProjection,
+    cursor: Option<&EntryCursor>,
+    limit: usize,
+) -> Result<(Vec<CanonicalEntryRow>, bool)> {
+    if limit == 0 || limit > ugoite_core::entry_query::MAX_ENTRY_PAGE_LIMIT {
+        return Err(anyhow!("Entry query page limit is out of range"));
+    }
+    let form_values = forms
+        .iter()
+        .map(|form| {
+            let value = crate::form::from_domain_form(form);
+            crate::form::enrich_form_definition(&value).map(|value| (form.id, value))
+        })
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    let selected_forms = selected_canonical_forms(forms, relation_scopes, &query.scope);
+    if selected_forms.is_empty() {
+        return Ok((Vec::new(), false));
+    }
+
+    let sort_columns = canonical_sort_columns(query, selected_forms[0])?;
+    let (sql, values, types) = build_canonical_entry_sql(
+        query,
+        &selected_forms,
+        &form_values,
+        &sort_columns,
+        cursor,
+        Some(limit.saturating_add(1)),
+    )?;
+    let parameters = datafusion_parameters(&values, &types)?;
+    let context = datafusion_sql_context_with_form_definitions(
+        op,
+        ws_path,
+        EntryScope::AllCurrent,
+        None,
+        Some(relation_scopes),
+        Some(checkpoint),
+        BTreeSet::from([
+            "array_to_string".to_string(),
+            crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME.to_string(),
+        ]),
+        limit.saturating_add(1),
+        true,
+        forms.to_vec(),
+    )
+    .await
+    .map_err(map_sql_error)?;
+    let batches = context
+        .execute_with_parameters(&sql, parameters)
+        .await
+        .map_err(map_sql_error)?;
+    let mut candidates = canonical_candidates_from_batches(&batches, forms, &sort_columns)?;
+    let has_more = candidates.len() > limit;
+    candidates.truncate(limit);
+    if candidates.is_empty() {
+        return Ok((Vec::new(), has_more));
+    }
+
+    let mut hydrated = Vec::with_capacity(candidates.len());
+    let mut by_form = BTreeMap::<FormId, Vec<&CanonicalEntryCandidate>>::new();
+    for candidate in &candidates {
+        by_form
+            .entry(candidate.form_id)
+            .or_default()
+            .push(candidate);
+    }
+    for (form_id, form_candidates) in by_form {
+        let form = forms
+            .iter()
+            .find(|form| form.id == form_id)
+            .with_context(|| format!("checkpoint is missing Form {form_id}"))?;
+        let form_value = form_values
+            .get(&form_id)
+            .with_context(|| format!("checkpoint is missing Form value {form_id}"))?;
+        let relation = sql_relation_name(form.id);
+        let ids = form_candidates
+            .iter()
+            .map(|candidate| sql_string_literal(&candidate.external_id))
+            .collect::<Vec<_>>();
+        let sql = format!(
+            "SELECT * FROM {} WHERE {} IN ({})",
+            quote_identifier(&relation),
+            quote_identifier("_ugoite_id"),
+            ids.join(", ")
+        );
+        let batches = context.execute(&sql).await.map_err(map_sql_error)?;
+        let rows = entry_rows_from_batches(&form.name, form_value, &batches)?;
+        let mut by_external = rows
+            .into_iter()
+            .map(|row| (row.entry_id.clone(), row))
+            .collect::<BTreeMap<_, _>>();
+        for candidate in form_candidates {
+            if let Some(row) = by_external.remove(&candidate.external_id) {
+                hydrated.push(CanonicalEntryRow {
+                    candidate: candidate.clone(),
+                    row,
+                });
+            }
+        }
+    }
+    let order = candidates
+        .iter()
+        .map(|candidate| (candidate.form_id, candidate.external_id.as_str()))
+        .collect::<Vec<_>>();
+    hydrated.sort_by_key(|row| {
+        order
+            .iter()
+            .position(|key| *key == (row.candidate.form_id, row.row.entry_id.as_str()))
+            .unwrap_or(order.len())
+    });
+    let _ = projection;
+    Ok((hydrated, has_more))
+}
+
+pub(crate) async fn count_entries_at_checkpoint(
+    op: &Operator,
+    ws_path: &str,
+    checkpoint: SpaceCheckpoint,
+    forms: &[FormDefinition],
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    query: &EntryQuery,
+) -> Result<u64> {
+    let form_values = forms
+        .iter()
+        .map(|form| {
+            let value = crate::form::from_domain_form(form);
+            crate::form::enrich_form_definition(&value).map(|value| (form.id, value))
+        })
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    let selected_forms = selected_canonical_forms(forms, relation_scopes, &query.scope);
+    if selected_forms.is_empty() {
+        return Ok(0);
+    }
+    let sort_columns = canonical_sort_columns(query, selected_forms[0])?;
+    let (sql, values, types) = build_canonical_entry_sql(
+        query,
+        &selected_forms,
+        &form_values,
+        &sort_columns,
+        None,
+        None,
+    )?;
+    let parameters = datafusion_parameters(&values, &types)?;
+    let context = datafusion_sql_context_with_form_definitions(
+        op,
+        ws_path,
+        EntryScope::AllCurrent,
+        None,
+        Some(relation_scopes),
+        Some(checkpoint),
+        BTreeSet::from([
+            "array_to_string".to_string(),
+            "count".to_string(),
+            crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME.to_string(),
+        ]),
+        1,
+        false,
+        forms.to_vec(),
+    )
+    .await
+    .map_err(map_sql_error)?;
+    let count_sql =
+        format!("SELECT COUNT(*) AS \"__ugoite_count\" FROM ({sql}) AS \"__ugoite_count_source\"");
+    let batches = context
+        .execute_with_parameters(&count_sql, parameters)
+        .await
+        .map_err(map_sql_error)?;
+    let values = record_batches_to_values(&batches)?;
+    values
+        .first()
+        .and_then(|value| value.get("__ugoite_count"))
+        .and_then(Value::as_u64)
+        .ok_or_else(|| anyhow!("Entry count result is missing its count"))
+}
+
+fn selected_canonical_forms<'a>(
+    forms: &'a [FormDefinition],
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    scope: &EntryQueryScope,
+) -> Vec<&'a FormDefinition> {
+    forms
+        .iter()
+        .filter(|form| match scope {
+            EntryQueryScope::All => true,
+            EntryQueryScope::Form { form_id } => form.id == *form_id,
+        })
+        .filter(|form| {
+            relation_scopes.contains_key(&form.name.to_ascii_lowercase())
+                || relation_scopes.contains_key(&sql_relation_name(form.id).to_ascii_lowercase())
+        })
+        .collect()
+}
+
+fn canonical_sort_columns(
+    query: &EntryQuery,
+    form: &FormDefinition,
+) -> Result<Vec<CanonicalSortColumn>> {
+    let mut columns = Vec::new();
+    let user_sort = if query.sort.is_empty() {
+        vec![EntrySort {
+            field: EntryFieldRef::UpdatedAt,
+            direction: EntrySortDirection::Desc,
+        }]
+    } else {
+        query.sort.clone()
+    };
+    for (index, sort) in user_sort.into_iter().enumerate() {
+        let (expression, parameter_type) = canonical_field_expression(form, sort.field)?;
+        columns.push(CanonicalSortColumn {
+            alias: format!("__ugoite_sort_{index}"),
+            expression,
+            direction: sort.direction,
+            parameter_type,
+        });
+    }
+    if matches!(query.scope, EntryQueryScope::All) {
+        columns.push(CanonicalSortColumn {
+            alias: "__ugoite_form_id".to_string(),
+            expression: "__FORM_ID__".to_string(),
+            direction: EntrySortDirection::Asc,
+            parameter_type: "string",
+        });
+    }
+    columns.push(CanonicalSortColumn {
+        alias: "__ugoite_stable_id".to_string(),
+        expression: format!("CAST({} AS VARCHAR)", quote_identifier("_ugoite_id")),
+        direction: EntrySortDirection::Asc,
+        parameter_type: "string",
+    });
+    Ok(columns)
+}
+
+fn canonical_field_expression(
+    form: &FormDefinition,
+    field: EntryFieldRef,
+) -> Result<(String, &'static str)> {
+    match field {
+        EntryFieldRef::Property { field_id } => {
+            let field = form
+                .fields
+                .iter()
+                .find(|field| field.id == field_id)
+                .with_context(|| {
+                    format!("Form {} does not define field {field_id:?}", form.name)
+                })?;
+            Ok((
+                quote_identifier(&sql_column_name(field.id)),
+                field_parameter_type(&field.field_type)?,
+            ))
+        }
+        EntryFieldRef::Form => Ok(("__FORM_ID__".to_string(), "string")),
+        EntryFieldRef::CreatedAt => Ok((quote_identifier("_ugoite_created_at"), "timestamp_tz")),
+        EntryFieldRef::UpdatedAt => Ok((quote_identifier("_ugoite_updated_at"), "timestamp_tz")),
+    }
+}
+
+fn field_parameter_type(field_type: &FieldType) -> Result<&'static str> {
+    match field_type {
+        FieldType::String | FieldType::Markdown | FieldType::Sql | FieldType::RowReference => {
+            Ok("string")
+        }
+        FieldType::Boolean => Ok("boolean"),
+        FieldType::Integer => Ok("int32"),
+        FieldType::Long => Ok("int64"),
+        FieldType::Float => Ok("float32"),
+        FieldType::Double => Ok("float64"),
+        FieldType::Date => Ok("date"),
+        FieldType::Time => Ok("time"),
+        FieldType::Timestamp => Ok("timestamp"),
+        FieldType::TimestampTz => Ok("timestamp_tz"),
+        FieldType::TimestampNs => Ok("timestamp_ns"),
+        FieldType::TimestampTzNs => Ok("timestamp_tz_ns"),
+        FieldType::Uuid => Ok("uuid"),
+        FieldType::Binary | FieldType::List | FieldType::ObjectList | FieldType::AssetReference => {
+            Err(anyhow!(
+                "EntryQuery does not support scalar filtering or sorting for field type {}",
+                field_type.as_str()
+            ))
+        }
+    }
+}
+
+fn build_canonical_entry_sql(
+    query: &EntryQuery,
+    forms: &[&FormDefinition],
+    form_values: &BTreeMap<FormId, Value>,
+    sort_columns: &[CanonicalSortColumn],
+    cursor: Option<&EntryCursor>,
+    limit: Option<usize>,
+) -> Result<(String, Map<String, Value>, BTreeMap<String, String>)> {
+    let mut values = Map::new();
+    let mut types = BTreeMap::new();
+    let mut branches = Vec::new();
+    for form in forms {
+        let form_value = form_values
+            .get(&form.id)
+            .with_context(|| format!("missing Form {}", form.id))?;
+        let relation = sql_relation_name(form.id);
+        let mut predicates = Vec::new();
+        if let Some(text) = query.text.as_deref() {
+            let normalized = crate::search_normalization::normalize_search_text(text);
+            let parameter = format!("entry_text_{}", form.id.as_uuid().simple());
+            values.insert(
+                parameter.clone(),
+                Value::String(format!(
+                    "%{}%",
+                    crate::structured_search::escape_like_pattern(&normalized)
+                )),
+            );
+            types.insert(parameter.clone(), "string".to_string());
+            let mut text_terms = vec![
+                format!(
+                    "ugoite_search_normalize(CAST({} AS VARCHAR)) LIKE ${parameter} ESCAPE '\\\\'",
+                    quote_identifier("_ugoite_id")
+                ),
+                format!(
+                    "ugoite_search_normalize(CAST({} AS VARCHAR)) LIKE ${parameter} ESCAPE '\\\\'",
+                    quote_identifier("_ugoite_tags")
+                ),
+                format!(
+                    "ugoite_search_normalize({}) LIKE ${parameter} ESCAPE '\\\\'",
+                    sql_string_literal(&form.name)
+                ),
+            ];
+            if let Some(fields) = form_value.get("fields").and_then(Value::as_object) {
+                for field in fields.values() {
+                    let Some(column) = field.get("sql_column").and_then(Value::as_str) else {
+                        continue;
+                    };
+                    if matches!(
+                        field.get("type").and_then(Value::as_str),
+                        Some("list" | "object_list" | "asset_reference" | "binary")
+                    ) {
+                        continue;
+                    }
+                    text_terms.push(format!(
+                        "ugoite_search_normalize(CAST({} AS VARCHAR)) LIKE ${parameter} ESCAPE '\\\\'",
+                        quote_identifier(column)
+                    ));
+                }
+            }
+            predicates.push(format!("({})", text_terms.join(" OR ")));
+        }
+        for (index, filter) in query.filters.iter().enumerate() {
+            let (mut expression, field_type) = canonical_filter_expression(form, filter.field)?;
+            if filter.field == EntryFieldRef::Form {
+                // Form identity is represented by one trusted literal per
+                // branch; it never resolves a caller-provided identifier.
+                if !matches!(
+                    filter.operator,
+                    ugoite_core::structured_search::SearchOperator::Equals
+                ) {
+                    return Err(anyhow!("Form filter only supports equals"));
+                }
+                expression = sql_string_literal(&form.id.to_string());
+            }
+            let kind = if filter.field == EntryFieldRef::Form {
+                None
+            } else {
+                let field = form_field_for_ref(form, filter.field)?;
+                Some(
+                    StructuredSearchFieldKind::of(&field.field_type).ok_or_else(|| {
+                        anyhow!(
+                            "field type {} does not support EntryQuery filters",
+                            field.field_type.as_str()
+                        )
+                    })?,
+                )
+            };
+            if let Some(kind) = kind {
+                if !kind.supports(filter.operator) {
+                    return Err(anyhow!(
+                        "operator {} is not supported for field type {}",
+                        filter.operator.as_str(),
+                        kind.as_str()
+                    ));
+                }
+            }
+            let parameter = format!("entry_filter_{index}");
+            let (operator, value, escape_like) = match filter.operator {
+                ugoite_core::structured_search::SearchOperator::Equals => {
+                    ("=", filter.value.clone(), false)
+                }
+                ugoite_core::structured_search::SearchOperator::Contains => {
+                    let raw = filter
+                        .value
+                        .as_str()
+                        .context("contains filter value must be a string")?;
+                    (
+                        "ILIKE",
+                        Value::String(format!(
+                            "%{}%",
+                            crate::structured_search::escape_like_pattern(raw)
+                        )),
+                        true,
+                    )
+                }
+                ugoite_core::structured_search::SearchOperator::Lt => {
+                    ("<", filter.value.clone(), false)
+                }
+                ugoite_core::structured_search::SearchOperator::Lte => {
+                    ("<=", filter.value.clone(), false)
+                }
+                ugoite_core::structured_search::SearchOperator::Gt => {
+                    (">", filter.value.clone(), false)
+                }
+                ugoite_core::structured_search::SearchOperator::Gte => {
+                    (">=", filter.value.clone(), false)
+                }
+            };
+            if value.is_null() {
+                if operator != "=" {
+                    return Err(anyhow!("null EntryQuery filters only support equals"));
+                }
+                predicates.push(format!("{expression} IS NULL"));
+            } else {
+                // Reuse the typed literal validator so the canonical query
+                // and structured Search reject the same invalid values.
+                if filter.field != EntryFieldRef::Form {
+                    let field = form_field_for_ref(form, filter.field)?;
+                    let _ = filter_literal(&value, field.field_type.as_str())?;
+                }
+                values.insert(parameter.clone(), value);
+                types.insert(parameter.clone(), field_type.to_string());
+                let escape = if escape_like { " ESCAPE '\\\\'" } else { "" };
+                predicates.push(format!("{expression} {operator} ${parameter}{escape}"));
+            }
+        }
+        if let Some(filter) = query
+            .filters
+            .iter()
+            .find(|filter| filter.field == EntryFieldRef::Form)
+        {
+            let expected = filter
+                .value
+                .as_str()
+                .context("Form filter value must be a Form ID string")?;
+            if expected != form.id.to_string() {
+                continue;
+            }
+        }
+        let select_columns = sort_columns
+            .iter()
+            .map(|sort| {
+                let expression = if sort.expression == "__FORM_ID__" {
+                    sql_string_literal(&form.id.to_string())
+                } else {
+                    sort.expression.clone()
+                };
+                format!("{expression} AS {}", quote_identifier(&sort.alias))
+            })
+            .collect::<Vec<_>>();
+        let where_clause = if predicates.is_empty() {
+            String::new()
+        } else {
+            format!(" WHERE {}", predicates.join(" AND "))
+        };
+        branches.push(format!(
+            "SELECT {} AS {}, {} AS {}, {} FROM {}{}",
+            quote_identifier("_ugoite_id"),
+            quote_identifier("__ugoite_external_id"),
+            sql_string_literal(&form.name),
+            quote_identifier("__ugoite_form_name"),
+            select_columns.join(", "),
+            quote_identifier(&relation),
+            where_clause
+        ));
+    }
+    if branches.is_empty() {
+        return Ok(("SELECT 1 WHERE FALSE".to_string(), values, types));
+    }
+    let mut sql = format!(
+        "SELECT * FROM ({}) AS {}",
+        branches.join(" UNION ALL "),
+        quote_identifier("__ugoite_candidates")
+    );
+    if let Some(cursor) = cursor {
+        if cursor.sort_values.len() != sort_columns.len() {
+            return Err(anyhow!("Entry cursor sort tuple does not match the query"));
+        }
+        let mut disjunctions = Vec::new();
+        for index in 0..sort_columns.len() {
+            let mut conjunctions = Vec::new();
+            for prior in 0..index {
+                conjunctions.push(cursor_equality(
+                    &sort_columns[prior].alias,
+                    &cursor.sort_values[prior],
+                    &sort_columns[prior].parameter_type,
+                    &mut values,
+                    &mut types,
+                    prior,
+                )?);
+            }
+            let column = quote_identifier(&sort_columns[index].alias);
+            let value = &cursor.sort_values[index];
+            let greater = cursor_after(
+                &column,
+                value,
+                &sort_columns[index].direction,
+                sort_columns[index].parameter_type,
+                &mut values,
+                &mut types,
+                index,
+            )?;
+            conjunctions.push(greater);
+            disjunctions.push(format!("({})", conjunctions.join(" AND ")));
+        }
+        sql.push_str(&format!(" WHERE {}", disjunctions.join(" OR ")));
+    }
+    let order = sort_columns
+        .iter()
+        .map(|sort| {
+            format!(
+                "{} {} NULLS LAST",
+                quote_identifier(&sort.alias),
+                match sort.direction {
+                    EntrySortDirection::Asc => "ASC",
+                    EntrySortDirection::Desc => "DESC",
+                }
+            )
+        })
+        .collect::<Vec<_>>();
+    sql.push_str(&format!(" ORDER BY {}", order.join(", ")));
+    if let Some(limit) = limit {
+        sql.push_str(&format!(" LIMIT {limit}"));
+    }
+    Ok((sql, values, types))
+}
+
+fn form_field_for_ref(
+    form: &FormDefinition,
+    field: EntryFieldRef,
+) -> Result<&ugoite_domain::form::FormField> {
+    let EntryFieldRef::Property { field_id } = field else {
+        return Err(anyhow!("Entry field is not a Form property"));
+    };
+    form.fields
+        .iter()
+        .find(|field| field.id == field_id)
+        .with_context(|| format!("Form {} does not define field {field_id:?}", form.name))
+}
+
+fn canonical_filter_expression(
+    form: &FormDefinition,
+    field: EntryFieldRef,
+) -> Result<(String, &'static str)> {
+    match field {
+        EntryFieldRef::Property { .. } => {
+            let field = form_field_for_ref(form, field)?;
+            Ok((
+                quote_identifier(&sql_column_name(field.id)),
+                field_parameter_type(&field.field_type)?,
+            ))
+        }
+        EntryFieldRef::Form => Ok(("__FORM_ID__".to_string(), "string")),
+        EntryFieldRef::CreatedAt | EntryFieldRef::UpdatedAt => {
+            let column = match field {
+                EntryFieldRef::CreatedAt => "_ugoite_created_at",
+                EntryFieldRef::UpdatedAt => "_ugoite_updated_at",
+                _ => unreachable!(),
+            };
+            Ok((quote_identifier(column), "timestamp_tz"))
+        }
+    }
+}
+
+fn cursor_equality(
+    alias: &str,
+    value: &Value,
+    parameter_type: &str,
+    values: &mut Map<String, Value>,
+    types: &mut BTreeMap<String, String>,
+    index: usize,
+) -> Result<String> {
+    let column = quote_identifier(alias);
+    if value.is_null() {
+        Ok(format!("{column} IS NULL"))
+    } else {
+        let parameter = format!("entry_cursor_{index}");
+        values.insert(parameter.clone(), value.clone());
+        types.insert(parameter.clone(), parameter_type.to_string());
+        Ok(format!("{column} = ${parameter}"))
+    }
+}
+
+fn cursor_after(
+    column: &str,
+    value: &Value,
+    direction: &EntrySortDirection,
+    parameter_type: &str,
+    values: &mut Map<String, Value>,
+    types: &mut BTreeMap<String, String>,
+    index: usize,
+) -> Result<String> {
+    if value.is_null() {
+        return Ok("FALSE".to_string());
+    }
+    let parameter = format!("entry_cursor_{index}");
+    values.insert(parameter.clone(), value.clone());
+    types.insert(parameter.clone(), parameter_type.to_string());
+    let operator = match direction {
+        EntrySortDirection::Asc => ">",
+        EntrySortDirection::Desc => "<",
+    };
+    Ok(format!(
+        "({column} {operator} ${parameter} OR {column} IS NULL)"
+    ))
+}
+
+fn canonical_candidates_from_batches(
+    batches: &[arrow_array::RecordBatch],
+    forms: &[FormDefinition],
+    sort_columns: &[CanonicalSortColumn],
+) -> Result<Vec<CanonicalEntryCandidate>> {
+    let values = record_batches_to_values(batches)?;
+    values
+        .into_iter()
+        .map(|value| {
+            let stable_id = value
+                .get("__ugoite_stable_id")
+                .and_then(Value::as_str)
+                .context("Entry query candidate is missing stable ID")?;
+            let external_id = value
+                .get("__ugoite_external_id")
+                .and_then(Value::as_str)
+                .context("Entry query candidate is missing external ID")?;
+            let form_name = value
+                .get("__ugoite_form_name")
+                .and_then(Value::as_str)
+                .context("Entry query candidate is missing Form name")?;
+            let form_id = forms
+                .iter()
+                .find(|form| form.name == form_name)
+                .map(|form| form.id)
+                .with_context(|| {
+                    format!("Entry query candidate references unknown Form {form_name}")
+                })?;
+            let sort_values = sort_columns
+                .iter()
+                .map(|sort| {
+                    value
+                        .get(&sort.alias)
+                        .cloned()
+                        .context("Entry query candidate is missing sort value")
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok(CanonicalEntryCandidate {
+                form_id: FormId::from(form_id),
+                stable_id: stable_id.to_string(),
+                external_id: external_id.to_string(),
+                sort_values,
+            })
+        })
+        .collect()
 }
 
 struct EntryCandidatePage<'a> {

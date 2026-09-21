@@ -28,6 +28,10 @@ use crate::{
     entry, form, iceberg_store, index, preferences, saved_sql, search, space, sql_session,
 };
 use crate::{CheckpointIntegrityError, CheckpointUnavailable, PublicationRef};
+use ugoite_core::entry_query::{
+    EntryCount, EntryCountRequest, EntryCursor, EntryFieldRef, EntryPage, EntryPageRequest,
+    EntryProjection, EntryQueryError, EntryResult,
+};
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind as AppErrorKind};
 use ugoite_core::query::EntryScope;
 use ugoite_core::sql_query::{
@@ -4381,6 +4385,179 @@ impl UgoiteService {
             .await
     }
 
+    /// Executes one canonical EntryQuery page against a fixed publication.
+    /// The continuation is client-held and signed; no query state is written
+    /// to the Space. Authorization is rebuilt for every request, including
+    /// continuation requests.
+    pub async fn query_entry_page_authorized_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        request: EntryPageRequest,
+    ) -> Result<EntryPage> {
+        request.validate().map_err(entry_query_contract_error)?;
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        let query_fingerprint = request
+            .query
+            .fingerprint()
+            .map_err(entry_query_contract_error)?;
+        let signing_key = self.sql_query_signing_key(space_id).await?;
+        let cursor = request
+            .after
+            .as_deref()
+            .map(|token| {
+                EntryCursor::decode(token, &signing_key).map_err(entry_cursor_contract_error)
+            })
+            .transpose()?;
+        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
+            .acquire_state_lease(space_id)
+            .await?;
+        for principal_id in principal_ids {
+            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
+                return Err(
+                    AppError::forbidden("principal is not authorized to read this Space").into(),
+                );
+            }
+        }
+        let authorization_fingerprint = sql_query_authorization_fingerprint(&state, principal_ids)?;
+        let space_uid = state.space_uid;
+        if let Some(cursor) = &cursor {
+            if cursor.space_id.as_uuid() != space_uid {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    "Entry cursor belongs to another Space",
+                )
+                .into());
+            }
+            if cursor.query_fingerprint != query_fingerprint {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    "Entry query does not match the continuation",
+                )
+                .into());
+            }
+            cursor
+                .authorize(&authorization_fingerprint)
+                .map_err(entry_cursor_contract_error)?;
+        }
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let publication = cursor
+            .as_ref()
+            .map(|cursor| cursor.publication.clone())
+            .unwrap_or(workspace.current_publication().await?);
+        let checkpoint = workspace.resolve_publication(&publication).await?;
+        let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
+        let named_scopes =
+            Self::authorized_form_entry_scopes_for_forms(&state, principal_ids, forms.clone())?;
+        let relation_scopes = forms
+            .iter()
+            .filter_map(|form| {
+                named_scopes
+                    .get(&form.name.to_ascii_lowercase())
+                    .cloned()
+                    .map(|scope| (sql_relation_name(form.id), scope))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let (rows, has_more) = index::query_entry_page_at_checkpoint(
+            &self.operator,
+            &self.workspace_path(space_id),
+            checkpoint,
+            &forms,
+            &relation_scopes,
+            &request.query,
+            &request.projection,
+            cursor.as_ref(),
+            request.limit,
+        )
+        .await?;
+        let results = rows
+            .iter()
+            .map(|row| canonical_entry_result(row, &request.projection, &forms))
+            .collect::<Result<Vec<_>>>()?;
+        let next = if has_more {
+            let last = rows
+                .last()
+                .context("Entry query reported more rows without a page row")?;
+            let cursor = EntryCursor::new(
+                space_uid.into(),
+                publication,
+                query_fingerprint,
+                authorization_fingerprint,
+                last.candidate.sort_values.clone(),
+                matches!(
+                    &request.query.scope,
+                    ugoite_core::entry_query::EntryQueryScope::All
+                )
+                .then_some(last.candidate.form_id),
+                parse_entry_id(&last.candidate.stable_id)?,
+            )
+            .map_err(entry_cursor_contract_error)?;
+            Some(
+                cursor
+                    .encode(&signing_key)
+                    .map_err(entry_cursor_contract_error)?,
+            )
+        } else {
+            None
+        };
+        Ok(EntryPage {
+            rows: results,
+            has_more,
+            next,
+        })
+    }
+
+    /// Counts the current authorized Entry set independently from page
+    /// execution. Count requests always start from a fresh publication.
+    pub async fn count_entries_authorized_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        request: EntryCountRequest,
+    ) -> Result<EntryCount> {
+        request.validate().map_err(entry_query_contract_error)?;
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
+            .acquire_state_lease(space_id)
+            .await?;
+        for principal_id in principal_ids {
+            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
+                return Err(
+                    AppError::forbidden("principal is not authorized to read this Space").into(),
+                );
+            }
+        }
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let publication = workspace.current_publication().await?;
+        let checkpoint = workspace.resolve_publication(&publication).await?;
+        let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
+        let named_scopes =
+            Self::authorized_form_entry_scopes_for_forms(&state, principal_ids, forms.clone())?;
+        let relation_scopes = forms
+            .iter()
+            .filter_map(|form| {
+                named_scopes
+                    .get(&form.name.to_ascii_lowercase())
+                    .cloned()
+                    .map(|scope| (sql_relation_name(form.id), scope))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let count = index::count_entries_at_checkpoint(
+            &self.operator,
+            &self.workspace_path(space_id),
+            checkpoint,
+            &forms,
+            &relation_scopes,
+            &request.query,
+        )
+        .await?;
+        Ok(EntryCount { count })
+    }
+
     pub async fn execute_sql_query_authorized(
         &self,
         space_id: &str,
@@ -5424,6 +5601,147 @@ fn sql_query_authorization_fingerprint(
         "principal_ids": principal_ids,
     }))?;
     Ok(format!("sha256:{}", hex::encode(Sha256::digest(canonical))))
+}
+
+fn entry_query_contract_error(error: EntryQueryError) -> anyhow::Error {
+    AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()).into()
+}
+
+fn entry_cursor_contract_error(error: impl std::fmt::Display) -> anyhow::Error {
+    AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()).into()
+}
+
+fn parse_entry_id(value: &str) -> Result<ugoite_domain::id::EntryId> {
+    Ok(ugoite_domain::id::EntryId::from(
+        Uuid::parse_str(value)
+            .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, value.as_bytes())),
+    ))
+}
+
+fn parse_revision_id(value: &str) -> Result<ugoite_domain::id::RevisionId> {
+    Uuid::parse_str(value)
+        .map(ugoite_domain::id::RevisionId::from)
+        .map_err(|error| anyhow!("Entry query returned an invalid revision ID: {error}"))
+}
+
+fn micros_from_seconds(value: f64, label: &str) -> Result<i64> {
+    if !value.is_finite() {
+        return Err(anyhow!("Entry query returned a non-finite {label}"));
+    }
+    let micros = value * 1_000_000.0;
+    if !micros.is_finite() || micros < i64::MIN as f64 || micros > i64::MAX as f64 {
+        return Err(anyhow!("Entry query returned an out-of-range {label}"));
+    }
+    Ok(micros.round() as i64)
+}
+
+fn canonical_entry_result(
+    row: &index::CanonicalEntryRow,
+    projection: &EntryProjection,
+    forms: &[FormDefinition],
+) -> Result<EntryResult> {
+    let form = forms
+        .iter()
+        .find(|form| form.id == row.candidate.form_id)
+        .with_context(|| {
+            format!(
+                "Entry query result references unknown Form {}",
+                row.candidate.form_id.as_uuid()
+            )
+        })?;
+    let (properties, preview) = match projection {
+        EntryProjection::Fields { fields } => {
+            (Some(project_entry_fields(&row.row, form, fields)?), None)
+        }
+        EntryProjection::Preview => (None, Some(entry_preview(&row.row, form))),
+    };
+    Ok(EntryResult {
+        id: parse_entry_id(&row.candidate.stable_id)?,
+        form_id: row.candidate.form_id,
+        revision_id: parse_revision_id(&row.row.revision_id)?,
+        created_at_micros: micros_from_seconds(row.row.created_at, "created_at")?,
+        updated_at_micros: micros_from_seconds(row.row.updated_at, "updated_at")?,
+        properties,
+        preview,
+    })
+}
+
+fn project_entry_fields(
+    row: &entry::EntryRow,
+    form: &FormDefinition,
+    fields: &[EntryFieldRef],
+) -> Result<Value> {
+    let source = row.fields.as_object().cloned().unwrap_or_default();
+    let mut projected = serde_json::Map::new();
+    for field in fields {
+        match field {
+            EntryFieldRef::Property { field_id } => {
+                let definition = form
+                    .fields
+                    .iter()
+                    .find(|definition| definition.id == *field_id)
+                    .with_context(|| {
+                        format!("Form {} does not define field {field_id:?}", form.name)
+                    })?;
+                projected.insert(
+                    definition.name.clone(),
+                    source.get(&definition.name).cloned().unwrap_or(Value::Null),
+                );
+            }
+            EntryFieldRef::Form => {
+                projected.insert("form_id".to_string(), Value::String(form.id.to_string()));
+            }
+            EntryFieldRef::CreatedAt => {
+                projected.insert(
+                    "created_at_micros".to_string(),
+                    Value::from(micros_from_seconds(row.created_at, "created_at")?),
+                );
+            }
+            EntryFieldRef::UpdatedAt => {
+                projected.insert(
+                    "updated_at_micros".to_string(),
+                    Value::from(micros_from_seconds(row.updated_at, "updated_at")?),
+                );
+            }
+        }
+    }
+    Ok(Value::Object(projected))
+}
+
+fn entry_preview(row: &entry::EntryRow, form: &FormDefinition) -> String {
+    const MAX_PREVIEW_CHARS: usize = 512;
+    let values = row.fields.as_object();
+    let mut parts = Vec::new();
+    if let Some(values) = values {
+        for field in &form.fields {
+            let Some(value) = values.get(&field.name) else {
+                continue;
+            };
+            if value.is_null() {
+                continue;
+            }
+            let rendered = displayable_entry_value(value);
+            if rendered.is_empty() {
+                continue;
+            }
+            parts.push(format!(
+                "{}: {rendered}",
+                field.label.as_deref().unwrap_or(&field.name)
+            ));
+        }
+    }
+    let preview = parts.join(" · ");
+    preview.chars().take(MAX_PREVIEW_CHARS).collect()
+}
+
+fn displayable_entry_value(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        Value::Bool(value) => value.to_string(),
+        Value::Number(value) => value.to_string(),
+        Value::Array(_) | Value::Object(_) => serde_json::to_string(value).unwrap_or_default(),
+        Value::Null => String::new(),
+    }
 }
 
 fn validate_storage_id(

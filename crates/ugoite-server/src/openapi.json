@@ -3483,6 +3483,92 @@
         }
       }
     },
+    "/spaces/{space_id}/entries/query": {
+      "post": {
+        "summary": "Query Entries with the canonical EntryQuery contract",
+        "description": "Reads the fixed publication selected by the first page. The opaque `after` continuation is client-held and signed; reading does not create Space state.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntryQueryPageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryQueryPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid EntryQuery request or continuation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/spaces/{space_id}/entries/query/count": {
+      "post": {
+        "summary": "Count the canonical EntryQuery result",
+        "description": "Counts the current authorized Entry set independently from page execution.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntryQueryCountRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryQueryCount"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid EntryQuery request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/spaces/{space_id}/entries": {
       "get": {
         "summary": "List entries",
@@ -12788,6 +12874,282 @@
             "type": "string"
           }
         }
+      },
+      "EntryQueryPageRequest": {
+        "type": "object",
+        "required": [
+          "query",
+          "projection",
+          "limit"
+        ],
+        "properties": {
+          "query": {
+            "$ref": "#/components/schemas/EntryQuery"
+          },
+          "projection": {
+            "$ref": "#/components/schemas/EntryProjection"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "after": {
+            "type": "string",
+            "description": "Opaque signed keyset continuation. It is not an authorization token."
+          }
+        },
+        "additionalProperties": false
+      },
+      "EntryQueryCountRequest": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "$ref": "#/components/schemas/EntryQuery"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EntryQuery": {
+        "type": "object",
+        "required": [
+          "scope"
+        ],
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/EntryQueryScope"
+          },
+          "text": {
+            "type": "string"
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntryFilter"
+            }
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntrySort"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "EntryQueryScope": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "all"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "form_id"
+            ],
+            "properties": {
+              "kind": {
+                "const": "form"
+              },
+              "form_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "EntryFieldRef": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "property",
+              "form",
+              "created_at",
+              "updated_at"
+            ]
+          },
+          "field_id": {
+            "type": "integer",
+            "minimum": 100
+          }
+        },
+        "additionalProperties": false
+      },
+      "EntryFilter": {
+        "type": "object",
+        "required": [
+          "field",
+          "operator",
+          "value"
+        ],
+        "properties": {
+          "field": {
+            "$ref": "#/components/schemas/EntryFieldRef"
+          },
+          "operator": {
+            "type": "string",
+            "enum": [
+              "equals",
+              "contains",
+              "lt",
+              "lte",
+              "gt",
+              "gte"
+            ]
+          },
+          "value": {}
+        },
+        "additionalProperties": false
+      },
+      "EntrySort": {
+        "type": "object",
+        "required": [
+          "field",
+          "direction"
+        ],
+        "properties": {
+          "field": {
+            "$ref": "#/components/schemas/EntryFieldRef"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "EntryProjection": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "fields"
+            ],
+            "properties": {
+              "kind": {
+                "const": "fields"
+              },
+              "fields": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/EntryFieldRef"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "preview"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "EntryQueryResult": {
+        "type": "object",
+        "required": [
+          "id",
+          "form_id",
+          "revision_id",
+          "created_at_micros",
+          "updated_at_micros"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "form_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at_micros": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_at_micros": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "properties": {
+            "type": "object"
+          },
+          "preview": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EntryQueryPage": {
+        "type": "object",
+        "required": [
+          "rows",
+          "has_more"
+        ],
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntryQueryResult"
+            }
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EntryQueryCount": {
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
       },
       "EntryRestoreRequest": {
         "type": "object",
