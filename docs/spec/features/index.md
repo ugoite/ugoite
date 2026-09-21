@@ -61,6 +61,10 @@ The shared Entry read contract is documented in
 [`entry-query.md`](entry-query.md). Its Rust domain types are the semantic
 source used by REST, CLI, WASM, frontend, and MCP adapters.
 
+The stateless SQL read contract is documented in
+[`sql-query.md`](sql-query.md). SQL execution is separate from Saved SQL
+Knowledge and uses a fixed publication without persistent query state.
+
 The OIDC authentication and external identity linking slice remains connected
 to the canonical security graph at `docs/mitase/features/security.yaml` as
 `FEAT-SEC-005`.

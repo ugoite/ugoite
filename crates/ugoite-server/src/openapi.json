@@ -6261,6 +6261,90 @@
         }
       }
     },
+    "/spaces/{space_id}/sql/query": {
+      "post": {
+        "summary": "Execute a stateless read-only SQL query",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JsonValue"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or non-read-only SQL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/spaces/{space_id}/sql/query/count": {
+      "post": {
+        "summary": "Count a stateless read-only SQL query",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JsonValue"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or non-read-only SQL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/spaces/{space_id}/sql": {
       "get": {
         "summary": "List saved SQL",

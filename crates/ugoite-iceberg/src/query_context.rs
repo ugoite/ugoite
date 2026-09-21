@@ -1101,6 +1101,66 @@ impl AuthorizedQueryContext {
         .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
     }
 
+    /// Executes one stateless SQL page without computing a total count. The
+    /// offset is a continuation coordinate, not a result-window limit; only
+    /// the materialized page is bounded by the query resource policy.
+    pub async fn execute_stateless_page(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<arrow_array::RecordBatch>, bool)> {
+        let _permit = self
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        tokio::time::timeout(
+            self.limits.timeout,
+            self.execute_stateless_page_with_permit(sql, parameters, offset, limit),
+        )
+        .await
+        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+    }
+
+    /// Executes the explicit count operation for stateless SQL. It is kept
+    /// separate from page execution so a normal page never performs an
+    /// arbitrary count wrapper.
+    pub async fn execute_stateless_count(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<u64> {
+        let _permit = self
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        tokio::time::timeout(
+            self.limits.timeout,
+            self.execute_stateless_count_with_permit(sql, parameters),
+        )
+        .await
+        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+    }
+
+    /// Resolves the authorized output schema without materializing query
+    /// rows. This keeps empty SQL pages capable of returning their columns.
+    pub async fn query_columns(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<Vec<String>> {
+        let plan = self.prepared_plan(sql, parameters).await?;
+        Ok(plan
+            .schema()
+            .fields()
+            .iter()
+            .map(|field| field.name().to_string())
+            .collect())
+    }
+
     #[cfg(debug_assertions)]
     #[doc(hidden)]
     pub async fn physical_plan_for_testing(&self, sql: &str) -> Result<String> {
@@ -1262,6 +1322,59 @@ impl AuthorizedQueryContext {
                 Vec::new(),
                 vec![datafusion::functions_aggregate::expr_fn::count(lit(1))
                     .alias("ugoite_session_count")],
+            )
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        let count_batches = self.collect_frame(count_frame).await?;
+        self.validate_revision_invariants(&validation_plan).await?;
+        count_from_batches(&count_batches)
+    }
+
+    async fn execute_stateless_page_with_permit(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<arrow_array::RecordBatch>, bool)> {
+        if limit == 0 || limit > self.limits.max_rows {
+            return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                "SQL query page exceeds its configured row limit"
+            ))
+            .into());
+        }
+        let plan = self.prepared_plan(sql, parameters).await?;
+        let has_order = logical_plan_contains_sort(&plan);
+        let validation_plan = plan.clone();
+        let frame = self
+            .context
+            .execute_logical_plan(plan)
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        let page = frame
+            .limit(offset, Some(limit))
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        let batches = self.collect_frame(page).await?;
+        self.validate_revision_invariants(&validation_plan).await?;
+        Ok((batches, has_order))
+    }
+
+    async fn execute_stateless_count_with_permit(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<u64> {
+        let plan = self.prepared_plan(sql, parameters).await?;
+        let validation_plan = plan.clone();
+        let frame = self
+            .context
+            .execute_logical_plan(plan)
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        let count_frame = frame
+            .aggregate(
+                Vec::new(),
+                vec![datafusion::functions_aggregate::expr_fn::count(lit(1))
+                    .alias("ugoite_query_count")],
             )
             .map_err(AuthorizedQueryError::execution_failed)?;
         let count_batches = self.collect_frame(count_frame).await?;

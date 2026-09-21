@@ -40,6 +40,8 @@ pub const SQL_SESSION_MAX_ROWS: usize = 1_000;
 /// public explicit-ID constructor uses `Only` and is bounded identically.
 pub const SQL_SESSION_MAX_AUTHORIZATION_SCOPE_IDS: usize = SQL_SESSION_MAX_ROWS;
 pub const SQL_SESSION_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
+/// Maximum encoded JSON payload for one stateless SQL page.
+pub const SQL_QUERY_MAX_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 pub const SQL_SESSION_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const AUTHORIZED_ASSET_REFERENCE_MAX_ROWS: usize = usize::MAX / 2;
 const MAX_QUERY_FORMS: usize = 100_000;
@@ -2114,6 +2116,77 @@ pub(crate) async fn execute_sql_query_authorized_by_form_count_at_checkpoint(
         .map_err(map_sql_error)?;
     context
         .execute_session_count(sql_query, parameters)
+        .await
+        .map_err(map_sql_error)
+}
+
+/// Executes one stateless SQL page against a fixed checkpoint. The caller
+/// chooses whether the fetched sentinel row represents `has_more`; this
+/// function never computes a total count as a side effect.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stateless(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    offset: usize,
+    limit: usize,
+    checkpoint: SpaceCheckpoint,
+) -> Result<(Vec<String>, Vec<Value>, bool)> {
+    let context = datafusion_sql_context_with_limits(
+        op,
+        ws_path,
+        EntryScope::AllCurrent,
+        None,
+        Some(relation_scopes),
+        Some(checkpoint),
+        BTreeSet::new(),
+        SQL_SESSION_MAX_ROWS.saturating_add(1),
+        false,
+    )
+    .await
+    .map_err(map_sql_error)?;
+    let columns = context
+        .query_columns(sql_query, parameters.clone())
+        .await
+        .map_err(map_sql_error)?;
+    let (batches, has_order) = context
+        .execute_stateless_page(sql_query, parameters, offset, limit)
+        .await
+        .map_err(map_sql_error)?;
+    Ok((
+        columns,
+        record_batches_to_values_bounded(&batches, SQL_QUERY_MAX_OUTPUT_BYTES)?,
+        has_order,
+    ))
+}
+
+/// Executes the explicit count operation against the same kind of
+/// checkpoint-pinned authorized context used by stateless pages.
+pub(crate) async fn execute_sql_query_authorized_by_form_count_at_checkpoint_stateless(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    checkpoint: SpaceCheckpoint,
+) -> Result<u64> {
+    let context = datafusion_sql_context_with_limits(
+        op,
+        ws_path,
+        EntryScope::AllCurrent,
+        None,
+        Some(relation_scopes),
+        Some(checkpoint),
+        BTreeSet::new(),
+        SQL_SESSION_MAX_ROWS,
+        false,
+    )
+    .await
+    .map_err(map_sql_error)?;
+    context
+        .execute_stateless_count(sql_query, parameters)
         .await
         .map_err(map_sql_error)
 }

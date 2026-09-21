@@ -151,6 +151,8 @@ export const OPENAPI_PATHS = [
   "/spaces/{space_id}/sql-sessions/{session_id}",
   "/spaces/{space_id}/sql-sessions/{session_id}/count",
   "/spaces/{space_id}/sql-sessions/{session_id}/rows",
+  "/spaces/{space_id}/sql/query",
+  "/spaces/{space_id}/sql/query/count",
   "/spaces/{space_id}/sql/{sql_id}",
   "/spaces/{space_id}/test-connection"
 ] as const;
