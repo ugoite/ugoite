@@ -999,7 +999,7 @@ describe("CreateEntryDialog", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "In web/chat mode, search the target form and choose a match. Ugoite still stores the stable entry_id underneath.",
+        "In form/chat mode, search the target form and choose a match. Ugoite still stores the stable entry_id underneath.",
       ),
     ).toBeInTheDocument();
 
@@ -1529,7 +1529,7 @@ describe("CreateEntryDialog", () => {
     await waitFor(() => {
       expect(
         screen.getByText(
-          "Couldn't load Project entries. Switch to Markdown if you need to paste a stable entry_id manually.",
+          "Couldn't load Project entries. Try again once entries exist.",
         ),
       ).toBeInTheDocument();
     });

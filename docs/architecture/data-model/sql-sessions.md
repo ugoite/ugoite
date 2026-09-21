@@ -44,7 +44,7 @@ The file contains:
       "relation": "form_<form-id-without-dashes>",
       "entry_scope": { "all_except": ["entry-hidden-from-session"] },
       "columns": ["field_<field-id>"],
-      "system_columns": ["external_id", "title", "created_at", "updated_at"]
+      "system_columns": ["external_id", "created_at", "updated_at"]
     }]
   },
   "pagination": {
