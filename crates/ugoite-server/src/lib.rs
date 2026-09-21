@@ -14521,6 +14521,25 @@ mod authentication_regression_tests {
         let mut next = first_page["next"].as_str().map(str::to_owned);
         assert!(next.is_some(), "{first_page}");
 
+        // A Form evolution also advances the Head and changes the current
+        // schema. Continuations must keep using the Form definition from the
+        // publication captured by page one.
+        let (status, response) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/forms"),
+                Some(json!({
+                    "name": "Entry",
+                    "fields": {
+                        "Body": {"type": "markdown"},
+                        "Extra": {"type": "string"}
+                    },
+                    "allow_extra_attributes": "deny"
+                })),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::CREATED, "{response}");
+
         // This mutation advances the current Head but must not enter the
         // continuation chain that started at the prior publication.
         let (status, response) = client
