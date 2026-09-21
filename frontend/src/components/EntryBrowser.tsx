@@ -72,6 +72,7 @@ export function EntryBrowser(props: EntryBrowserProps) {
   const currentFilters = () => queryState().filters;
   const currentText = () => queryState().text ?? "";
   const [draftFilter, setDraftFilter] = createSignal<EntryFilter | null>(null);
+  const hasDraftFilter = createMemo(() => draftFilter() !== null);
   const filterRows = () => {
     const draft = draftFilter();
     return draft ? [...currentFilters(), draft] : currentFilters();
@@ -372,7 +373,7 @@ export function EntryBrowser(props: EntryBrowserProps) {
                     );
                   }}
                 </For>
-                <Show when={draftFilter()}>
+                <Show when={hasDraftFilter()}>
                   <button
                     type="button"
                     class="ui-button ui-button-primary"
@@ -389,7 +390,7 @@ export function EntryBrowser(props: EntryBrowserProps) {
                   type="button"
                   class="ui-button ui-button-secondary"
                   onClick={addFilter}
-                  disabled={Boolean(draftFilter()) || filterOptions().every((field) =>
+                  disabled={hasDraftFilter() || filterOptions().every((field) =>
                     currentFilters().some((filter) =>
                       fieldKey(filter.field) === fieldKey(field.field)
                     )
