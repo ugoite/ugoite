@@ -98,4 +98,28 @@ describe("EntryQueryController", () => {
       projection: { kind: "fields", fields: [{ kind: "updated_at" }] },
     });
   });
+
+  it("clears stale rows while a fresh query chain is loading", async () => {
+    let resolveNext: ((page: { rows: never[]; has_more: boolean }) => void) | undefined;
+    queryMock
+      .mockResolvedValueOnce({ rows: [row("one")], has_more: false })
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveNext = resolve;
+      }));
+
+    const controller = createEntryQueryController(
+      () => "space-1",
+      undefined,
+      undefined,
+      50,
+      queryMock,
+    );
+    await controller.load();
+    controller.setText("fresh");
+    await vi.waitFor(() => expect(controller.loading()).toBe(true));
+
+    expect(controller.rows()).toEqual([]);
+    resolveNext?.({ rows: [], has_more: false });
+    await vi.waitFor(() => expect(controller.loading()).toBe(false));
+  });
 });

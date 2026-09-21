@@ -174,8 +174,14 @@ export function createEntryQueryController(
     nextStack: (string | undefined)[],
   ) => {
     const generation = ++requestGeneration;
+    const freshChain = after === undefined && nextStack.length === 1;
     setLoading(true);
     setError(null);
+    if (freshChain) {
+      setRows([]);
+      setHasMore(false);
+      setNextCursor(undefined);
+    }
     try {
       const page = await queryPage(untrack(spaceId), {
         query: untrack(query),

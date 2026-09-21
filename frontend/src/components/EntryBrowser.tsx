@@ -1,4 +1,6 @@
-import { createMemo, createSignal, For, Index, Show } from "solid-js";
+// REQ-FE-004: canonical EntryBrowser display and query controls
+// REQ-FE-008: EntryBrowser selection remains separate from mutation
+import { createMemo, createSignal, For, Show } from "solid-js";
 import type {
   EntryFieldCapability,
   EntryFieldRef,
@@ -70,10 +72,10 @@ export function EntryBrowser(props: EntryBrowserProps) {
   const currentFilters = () => queryState().filters;
   const currentText = () => queryState().text ?? "";
   const [draftFilter, setDraftFilter] = createSignal<EntryFilter | null>(null);
-  const filterRows = () => {
+  const filterRows = createMemo(() => {
     const draft = draftFilter();
     return draft ? [...currentFilters(), draft] : currentFilters();
-  };
+  });
 
   const isProjected = (field: EntryFieldRef) =>
     projectionFields(projectionState()).some((candidate) =>
@@ -170,11 +172,13 @@ export function EntryBrowser(props: EntryBrowserProps) {
   };
 
   const addFilter = () => {
+    console.log("addFilter", draftFilter(), filterOptions());
     if (draftFilter()) return;
     const capability = filterOptions()[0];
     const operator = capability?.supported_operators[0];
     if (!capability || !operator) return;
     setDraftFilter({ field: capability.field, operator, value: "" });
+    console.log("draft after set", draftFilter());
   };
 
   const updateFilter = (index: number, filter: EntryFilter) => {
@@ -282,9 +286,9 @@ export function EntryBrowser(props: EntryBrowserProps) {
               }
             >
               <div class="ui-stack-sm">
-                <Index each={filterRows()}>
+                <For each={filterRows()}>
                   {(filter, index) => {
-                    const capability = () => filterCapability(index);
+                    const capability = () => filterCapability(index());
                     return (
                       <div class="flex flex-wrap items-end gap-2">
                         <label>
@@ -292,9 +296,9 @@ export function EntryBrowser(props: EntryBrowserProps) {
                           <select
                             class="ui-select"
                             aria-label={`${t("entryBrowser.filterField")} ${
-                              index + 1
+                              index() + 1
                             }`}
-                            value={fieldKey(filter().field)}
+                            value={fieldKey(filter.field)}
                             onChange={(event) => {
                               const nextCapability = filterOptions().find((
                                 candidate,
@@ -305,8 +309,8 @@ export function EntryBrowser(props: EntryBrowserProps) {
                               const nextOperator = nextCapability
                                 ?.supported_operators[0];
                               if (nextCapability && nextOperator) {
-                                updateFilter(index, {
-                                  ...filter(),
+                                updateFilter(index(), {
+                                  ...filter,
                                   field: nextCapability.field,
                                   operator: nextOperator,
                                 });
@@ -327,12 +331,12 @@ export function EntryBrowser(props: EntryBrowserProps) {
                           <select
                             class="ui-select"
                             aria-label={`${t("entryBrowser.filterOperator")} ${
-                              index + 1
+                              index() + 1
                             }`}
-                            value={filter().operator}
+                            value={filter.operator}
                             onChange={(event) =>
-                              updateFilter(index, {
-                                ...filter(),
+                              updateFilter(index(), {
+                                ...filter,
                                 operator: event.currentTarget
                                   .value as EntryFilterOperator,
                               })}
@@ -348,10 +352,10 @@ export function EntryBrowser(props: EntryBrowserProps) {
                           {t("entryBrowser.filterValue")}
                           <input
                             class="ui-input"
-                            value={String(filter().value ?? "")}
+                            value={String(filter.value ?? "")}
                             onInput={(event) =>
-                              updateFilter(index, {
-                                ...filter(),
+                              updateFilter(index(), {
+                                ...filter,
                                 value: parseFilterValue(
                                   capability()?.field_type ?? "string",
                                   event.currentTarget.value,
@@ -362,14 +366,14 @@ export function EntryBrowser(props: EntryBrowserProps) {
                         <button
                           type="button"
                           class="ui-button ui-button-secondary"
-                          onClick={() => removeFilter(index)}
+                          onClick={() => removeFilter(index())}
                         >
                           {t("entryBrowser.remove")}
                         </button>
                       </div>
                     );
                   }}
-                </Index>
+                </For>
                 <Show when={draftFilter()}>
                   <button
                     type="button"
@@ -496,6 +500,7 @@ export function EntryBrowser(props: EntryBrowserProps) {
               type="button"
               role="listitem"
               class="entryRow w-full text-left"
+              disabled={loadingState()}
               onClick={() => props.onSelect?.(row)}
             >
               <span class="entryRowMain">

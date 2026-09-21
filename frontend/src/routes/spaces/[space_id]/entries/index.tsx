@@ -6,6 +6,7 @@ import { EntryBrowser } from "~/components/EntryBrowser";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import {
   createEntryQueryController,
+  type EntryProjection,
   type EntryQueryCapabilities,
   type EntryQueryScope,
   systemEntryCapabilities,
@@ -32,6 +33,15 @@ import {
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "entries" });
+
+const fieldProjection = (
+  capabilities: EntryQueryCapabilities,
+): EntryProjection => {
+  const fields = capabilities.fields
+    .filter((field) => field.projectable && field.field.kind !== "form")
+    .map((field) => field.field);
+  return fields.length > 0 ? { kind: "fields", fields } : { kind: "preview" };
+};
 
 export default function SpaceEntriesIndexPane() {
   const navigate = useNavigate();
@@ -93,14 +103,16 @@ export default function SpaceEntriesIndexPane() {
   const controller = createEntryQueryController(
     () => spaceId(),
     { scope: queryScope(), filters: [], sort: [] },
-    { kind: "preview" },
+    formName() ? fieldProjection(capabilities()) : { kind: "preview" },
   );
   let lastQueryConfiguration = "";
   createEffect(() => {
     if (sessionId().trim() || ctx.loadingForms()) return;
     if (formName() && !selectedForm()?.id) return;
     const nextQuery = { scope: queryScope(), filters: [], sort: [] };
-    const nextProjection = { kind: "preview" as const };
+    const nextProjection = formName()
+      ? fieldProjection(capabilities())
+      : { kind: "preview" as const };
     const configuration = JSON.stringify({
       space_id: spaceId(),
       nextQuery,

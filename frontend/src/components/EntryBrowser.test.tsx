@@ -1,3 +1,5 @@
+// REQ-FE-004: canonical EntryBrowser display and query controls
+// REQ-FE-008: EntryBrowser selection remains separate from mutation
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -62,7 +64,7 @@ describe("EntryBrowser", () => {
       kind: "fields",
       fields: [{ kind: "updated_at" }],
     });
-    expect(screen.getByText("Use this entry")).toBeInTheDocument();
+    expect(await screen.findByText("Use this entry")).toBeInTheDocument();
   });
 
   it("keeps selection separate from server mutation", async () => {
@@ -151,7 +153,7 @@ describe("EntryBrowser", () => {
       screen.getByRole("combobox", { name: "Operator 1" }),
       { target: { value: "equals" } },
     );
-    const value = screen.getByLabelText("Value");
+    const value = await screen.findByLabelText("Value");
     fireEvent.input(value, { target: { value: "active" } });
     expect(controller.query().filters).toEqual([{
       field: { kind: "property", field_id: 7 },
@@ -187,7 +189,7 @@ describe("EntryBrowser", () => {
 
     fireEvent.click(screen.getByText("Filter"));
     fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
-    const value = screen.getByLabelText("Value");
+    const value = await screen.findByLabelText("Value");
     fireEvent.input(value, { target: { value: "12abc" } });
 
     expect(controller.query().filters).toEqual([]);
