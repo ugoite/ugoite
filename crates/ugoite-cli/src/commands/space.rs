@@ -745,21 +745,16 @@ pub async fn run(
             print_json(&result);
         }
         SpaceSubCmd::AuditEvents { offset, limit } => {
-            let (root, space_id, base) = crate::cli_config::resolve_command_triple(
+            let target = crate::cli_config::resolve_command_target(
                 explicit_config,
                 context_override,
                 "space audit-events",
             )?;
-            if base.is_some() {
-                let target = crate::cli_config::resolve_command_target(
-                    explicit_config,
-                    context_override,
-                    "space audit-events",
-                )?;
+            if let crate::cli_config::SpaceTarget::Remote { space_uid, .. } = &target {
                 let result = http::execute_for_target(
                     &target,
                     "space.audit",
-                    serde_json::json!({"space_id": space_id, "offset": offset, "limit": limit}),
+                    serde_json::json!({"space_id": space_uid, "offset": offset, "limit": limit}),
                     None,
                 )
                 .await?;
@@ -782,16 +777,19 @@ pub async fn run(
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
+            let crate::cli_config::SpaceTarget::Core { root, space_id } = &target else {
+                bail!("operation space.audit does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
             // Open hook heals crash-missing evidence; the list itself is a
             // light read of committed evidence.
-            service.open_space(&space_id).await?;
+            service.open_space(space_id).await?;
             // Clamp before `usize` conversion: effective range 1..=500, so
             // even the largest CLI integer cannot overflow before the cap.
             let (audit_limit, audit_offset) =
                 ugoite_iceberg::audit::normalize_audit_page(limit, offset);
             let result = service
-                .list_space_audit(&space_id, audit_offset, audit_limit)
+                .list_space_audit(space_id, audit_offset, audit_limit)
                 .await?;
             if fmt != Format::Json {
                 if let Some(rows) = result.get("items").and_then(|value| value.as_array()) {

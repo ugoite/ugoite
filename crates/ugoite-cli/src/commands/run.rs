@@ -1,4 +1,4 @@
-use crate::cli_config::resolve_command_triple;
+use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::http;
 use crate::output::{effective_format, emit_success, Format, UsageError};
 use anyhow::Result;
@@ -41,9 +41,8 @@ pub async fn run(
             if run_id.trim().is_empty() {
                 return Err(UsageError("RUN_ID must not be blank".to_string()).into());
             }
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "run undo")?;
-            if base.is_some() {
+            let target = resolve_command_target(explicit_config, context_override, "run undo")?;
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
                 if author != "cli" {
                     return Err(UsageError(
                         "run undo --author is only supported in core mode; backend/api derive author from the authenticated identity"
@@ -51,15 +50,10 @@ pub async fn run(
                     )
                     .into());
                 }
-                let target = crate::cli_config::resolve_command_target(
-                    explicit_config,
-                    context_override,
-                    "run undo",
-                )?;
                 let result = http::execute_for_target(
                     &target,
                     "run.undo",
-                    serde_json::json!({"space_id": space_id, "run_id": run_id}),
+                    serde_json::json!({"space_id": space_uid, "run_id": run_id}),
                     Some(serde_json::json!({})),
                 )
                 .await?;
@@ -70,8 +64,11 @@ pub async fn run(
                 emit_success(&result, &fmt, human);
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            let result = service.undo_run(&space_id, &run_id, &author).await?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation run.undo does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let result = service.undo_run(space_id, &run_id, &author).await?;
             let human = result
                 .get("reverted_change_count")
                 .and_then(|value| value.as_u64())

@@ -553,16 +553,17 @@ impl RmcpMcpHost {
         credential: Option<&str>,
     ) -> Result<Self> {
         let target = crate::commands::auth::mcp_target(base_url).await?;
-        let session = if let Some(connection) = connection {
-            crate::http::named_session_for_target(base_url, connection, credential)
-                .await?
-                .filter(|session| session.resource.as_deref() == Some(target.resource.as_str()))
-        } else {
-            crate::commands::auth::active_session_for(base_url, Some(&target.resource)).await?
-        }
-        .ok_or_else(|| {
-            anyhow!("`ugoite konase` requires an MCP credential; run `ugoite auth login --for mcp`")
-        })?;
+        let Some(connection) = connection else {
+            bail!("`ugoite konase` requires a canonical connection with an MCP credential; run `ugoite auth login --for mcp`");
+        };
+        let session = crate::http::named_session_for_target(base_url, connection, credential)
+            .await?
+            .filter(|session| session.resource.as_deref() == Some(target.resource.as_str()))
+            .ok_or_else(|| {
+                anyhow!(
+                    "`ugoite konase` requires an MCP credential; run `ugoite auth login --for mcp`"
+                )
+            })?;
         let transport = StreamableHttpClientTransport::from_config(
             StreamableHttpClientTransportConfig::with_uri(target.endpoint)
                 .auth_header(session.access_token),

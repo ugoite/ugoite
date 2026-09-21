@@ -1,4 +1,4 @@
-use crate::cli_config::resolve_command_triple;
+use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::config::print_json;
 use crate::http;
 use anyhow::{bail, Result};
@@ -38,22 +38,21 @@ pub async fn run(
 ) -> Result<()> {
     match cmd.sub {
         IndexSubCmd::Run { component } => {
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "index run")?;
-            if base.is_some() {
+            let target = resolve_command_target(explicit_config, context_override, "index run")?;
+            let SpaceTarget::Core { root, space_id } = &target else {
                 bail!(
                     "index run is not available in backend/api mode in this release; use core mode for local reindexing"
                 );
-            }
+            };
             if let Some(component) = component.as_deref() {
                 if component != "asset-text" {
                     bail!("unsupported index component: {component}; expected asset-text");
                 }
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
+            let service = UgoiteService::new_without_background_refresh(root)?;
             tokio::time::timeout(INDEX_RUN_TIMEOUT, async {
-                service.reindex(&space_id).await?;
-                service.garbage_collect_asset_text_builds(&space_id).await?;
+                service.reindex(space_id).await?;
+                service.garbage_collect_asset_text_builds(space_id).await?;
                 Ok::<(), anyhow::Error>(())
             })
             .await
@@ -61,15 +60,14 @@ pub async fn run(
             print_json(&serde_json::json!({"reindexed": true}));
         }
         IndexSubCmd::Stats => {
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "index stats")?;
-            if base.is_some() {
+            let target = resolve_command_target(explicit_config, context_override, "index stats")?;
+            let SpaceTarget::Core { root, space_id } = &target else {
                 bail!(
                     "index stats is not available in backend/api mode in this release; use core mode for local index stats"
                 );
-            }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            let stats = service.space_stats(&space_id).await?;
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let stats = service.space_stats(space_id).await?;
             print_json(&stats);
         }
     }
@@ -81,15 +79,12 @@ pub async fn query_cmd(
     explicit_config: Option<&std::path::Path>,
     context_override: Option<&str>,
 ) -> Result<()> {
-    let (root, space_id, base) =
-        resolve_command_triple(explicit_config, context_override, "query")?;
-    if base.is_some() {
-        let target =
-            crate::cli_config::resolve_command_target(explicit_config, context_override, "query")?;
+    let target = resolve_command_target(explicit_config, context_override, "query")?;
+    if let SpaceTarget::Remote { space_uid, .. } = &target {
         let session = http::execute_for_target(
             &target,
             "sql_session.create",
-            serde_json::json!({"space_id": space_id}),
+            serde_json::json!({"space_id": space_uid}),
             Some(serde_json::json!({"sql": sql})),
         )
         .await?;
@@ -101,7 +96,7 @@ pub async fn query_cmd(
             &target,
             "sql_session.rows",
             serde_json::json!({
-                "space_id": space_id,
+                "space_id": space_uid,
                 "session_id": session_id,
                 "offset": 0,
                 "limit": 1000,
@@ -115,8 +110,11 @@ pub async fn query_cmd(
         print_json(&payload);
         return Ok(());
     }
-    let service = UgoiteService::new_without_background_refresh(&root)?;
-    let results = service.execute_sql_query(&space_id, sql).await?;
+    let SpaceTarget::Core { root, space_id } = &target else {
+        anyhow::bail!("operation sql_session.create does not use the remote transport")
+    };
+    let service = UgoiteService::new_without_background_refresh(root)?;
+    let results = service.execute_sql_query(space_id, sql).await?;
     print_json(&results);
     Ok(())
 }

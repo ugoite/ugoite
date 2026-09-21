@@ -41,8 +41,7 @@ pub use model::{
 pub use resolve::{resolve_cli_context, ResolvedCliContext, ResolvedConnection};
 pub use runtime::{load_cli_config, mutate_write_target, read_write_target_file, CliConfigFiles};
 pub use target::{
-    resolve_command_target, resolve_command_target_with_overrides, resolve_command_triple,
-    resolve_command_triple_with_overrides, resolve_context_target,
+    resolve_command_target, resolve_command_target_with_overrides, resolve_context_target,
     resolve_context_target_with_overrides, SpaceTarget,
 };
 pub use write::{normalize_core_root_to_absolute, unique_context_name, write_config_file_atomic};

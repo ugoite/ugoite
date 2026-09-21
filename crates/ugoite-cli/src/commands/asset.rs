@@ -1,4 +1,4 @@
-use crate::cli_config::{resolve_command_target, resolve_command_triple};
+use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::config::{effective_format, print_json, print_json_table, Format};
 use crate::http;
 use anyhow::Result;
@@ -76,8 +76,7 @@ pub async fn run(
     match cmd.sub {
         AssetSubCmd::Upload { file, filename } => {
             let file_path = file;
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "asset upload")?;
+            let target = resolve_command_target(explicit_config, context_override, "asset upload")?;
             let file_size = std::fs::metadata(&file_path)?.len();
             if file_size > ugoite_iceberg::asset::MAX_ASSET_BYTES as u64 {
                 anyhow::bail!(
@@ -103,13 +102,11 @@ pub async fn run(
                     .unwrap_or("asset")
                     .to_string()
             });
-            if base.is_some() {
-                let target =
-                    resolve_command_target(explicit_config, context_override, "asset upload")?;
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
                 let result = http::execute_multipart_for_target(
                     &target,
                     "asset.upload",
-                    serde_json::json!({"space_id": space_id}),
+                    serde_json::json!({"space_id": space_uid}),
                     name,
                     data,
                 )
@@ -117,25 +114,25 @@ pub async fn run(
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            let asset = service.save_asset(&space_id, &name, &data).await?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation asset.upload does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let asset = service.save_asset(space_id, &name, &data).await?;
             print_json(&asset);
         }
         AssetSubCmd::Delete {
             asset_id,
             human_approval,
         } => {
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "asset delete")?;
+            let target = resolve_command_target(explicit_config, context_override, "asset delete")?;
             let human_approval =
                 human_approval.or_else(|| std::env::var("UGOITE_HUMAN_APPROVAL").ok());
-            if base.is_some() {
-                let target =
-                    resolve_command_target(explicit_config, context_override, "asset delete")?;
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
                 let result = http::execute_for_target(
                     &target,
                     "asset.delete",
-                    serde_json::json!({"space_id": space_id, "asset_id": asset_id, "human_approval": human_approval}),
+                    serde_json::json!({"space_id": space_uid, "asset_id": asset_id, "human_approval": human_approval}),
                     None,
                 )
                 .await?;
@@ -145,27 +142,30 @@ pub async fn run(
             if human_approval.is_some() {
                 anyhow::bail!("--human-approval is only supported in backend/api mode");
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            service.delete_asset(&space_id, &asset_id).await?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation asset.delete does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            service.delete_asset(space_id, &asset_id).await?;
             print_json(&serde_json::json!({"deleted": true}));
         }
         AssetSubCmd::List => {
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "asset list")?;
-            let items = if base.is_some() {
-                let target =
-                    resolve_command_target(explicit_config, context_override, "asset list")?;
-                let result = http::execute_for_target(
-                    &target,
-                    "asset.list",
-                    serde_json::json!({"space_id": space_id}),
-                    None,
-                )
-                .await?;
-                result.as_array().cloned().unwrap_or_default()
-            } else {
-                let service = UgoiteService::new_without_background_refresh(&root)?;
-                service.list_assets(&space_id).await?
+            let target = resolve_command_target(explicit_config, context_override, "asset list")?;
+            let items = match &target {
+                SpaceTarget::Remote { space_uid, .. } => {
+                    let result = http::execute_for_target(
+                        &target,
+                        "asset.list",
+                        serde_json::json!({"space_id": space_uid}),
+                        None,
+                    )
+                    .await?;
+                    result.as_array().cloned().unwrap_or_default()
+                }
+                SpaceTarget::Core { root, space_id } => {
+                    let service = UgoiteService::new_without_background_refresh(root)?;
+                    service.list_assets(space_id).await?
+                }
             };
             if fmt != Format::Json {
                 print_json_table(
@@ -188,22 +188,8 @@ pub async fn run(
             entry,
             field,
         } => {
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "asset read")?;
-            let target = base
-                .as_ref()
-                .map(|_| resolve_command_target(explicit_config, context_override, "asset read"))
-                .transpose()?;
-            let context = resolve_asset_context(
-                &root,
-                &space_id,
-                base.as_deref(),
-                target.as_ref(),
-                &asset_id,
-                &entry,
-                &field,
-            )
-            .await?;
+            let target = resolve_command_target(explicit_config, context_override, "asset read")?;
+            let context = resolve_asset_context(&target, &asset_id, &entry, &field).await?;
             match inline_text(&context.bytes, reference_media_type(&context.reference)) {
                 Some(preview) => {
                     if fmt == Format::Json {
@@ -227,28 +213,13 @@ pub async fn run(
             field,
             out,
         } => {
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "asset download")?;
-            let target = base
-                .as_ref()
-                .map(|_| {
-                    resolve_command_target(explicit_config, context_override, "asset download")
-                })
-                .transpose()?;
+            let target =
+                resolve_command_target(explicit_config, context_override, "asset download")?;
             let use_stdout = out.trim() == "-";
             if use_stdout && std::io::stdout().is_terminal() {
                 anyhow::bail!("refusing to write binary asset bytes to a terminal; use --out PATH");
             }
-            let context = resolve_asset_context(
-                &root,
-                &space_id,
-                base.as_deref(),
-                target.as_ref(),
-                &asset_id,
-                &entry,
-                &field,
-            )
-            .await?;
+            let context = resolve_asset_context(&target, &asset_id, &entry, &field).await?;
             if use_stdout {
                 IoWrite::write_all(&mut std::io::stdout().lock(), &context.bytes)
                     .map_err(|error| anyhow::anyhow!("write asset bytes to stdout: {error}"))?;
@@ -283,28 +254,26 @@ struct AssetContext {
 }
 
 async fn resolve_asset_context(
-    root: &str,
-    space_id: &str,
-    base: Option<&str>,
-    target: Option<&crate::cli_config::SpaceTarget>,
+    target: &SpaceTarget,
     asset_id: &str,
     entry_id: &str,
     field: &str,
 ) -> Result<AssetContext> {
-    let items = if base.is_some() {
-        http::execute_for_target(
-            target.ok_or_else(|| anyhow::anyhow!("remote asset target is missing"))?,
+    let items = match target {
+        SpaceTarget::Remote { space_uid, .. } => http::execute_for_target(
+            target,
             "asset.list",
-            serde_json::json!({"space_id": space_id}),
+            serde_json::json!({"space_id": space_uid}),
             None,
         )
         .await?
         .as_array()
         .cloned()
-        .unwrap_or_default()
-    } else {
-        let service = UgoiteService::new_without_background_refresh(root)?;
-        service.list_assets(space_id).await?
+        .unwrap_or_default(),
+        SpaceTarget::Core { root, space_id } => {
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            service.list_assets(space_id).await?
+        }
     };
     let reference = items
         .iter()
@@ -325,24 +294,27 @@ async fn resolve_asset_context(
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default()
         .to_string();
-    let bytes = if base.is_some() {
-        http::execute_bytes_for_target(
-            target.ok_or_else(|| anyhow::anyhow!("remote asset target is missing"))?,
-            "asset.read",
-            serde_json::json!({
-                "space_id": space_id,
-                "asset_id": asset_id,
-                "form": form,
-                "entry_id": entry_id,
-            }),
-        )
-        .await?
-    } else {
-        let service = UgoiteService::new_without_background_refresh(root)?;
-        service
-            .ensure_asset_reference_is_readable(space_id, &form, entry_id, asset_id)
-            .await?;
-        service.read_asset(space_id, asset_id).await?.bytes
+    let bytes = match target {
+        SpaceTarget::Remote { space_uid, .. } => {
+            http::execute_bytes_for_target(
+                target,
+                "asset.read",
+                serde_json::json!({
+                    "space_id": space_uid,
+                    "asset_id": asset_id,
+                    "form": form,
+                    "entry_id": entry_id,
+                }),
+            )
+            .await?
+        }
+        SpaceTarget::Core { root, space_id } => {
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            service
+                .ensure_asset_reference_is_readable(space_id, &form, entry_id, asset_id)
+                .await?;
+            service.read_asset(space_id, asset_id).await?.bytes
+        }
     };
     Ok(AssetContext { reference, bytes })
 }

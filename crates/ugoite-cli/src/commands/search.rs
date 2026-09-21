@@ -1,4 +1,4 @@
-use crate::cli_config::resolve_command_triple;
+use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::http;
 use crate::output::{
     effective_format, emit_success, print_json, print_json_table, Format, UsageError,
@@ -232,18 +232,13 @@ pub async fn run(
     let fmt = effective_format(cmd.format);
     match cmd.sub {
         SearchSubCmd::Keyword { query } => {
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "search keyword")?;
-            if base.is_some() {
-                let target = crate::cli_config::resolve_command_target(
-                    explicit_config,
-                    context_override,
-                    "search keyword",
-                )?;
+            let target =
+                resolve_command_target(explicit_config, context_override, "search keyword")?;
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
                 let result = http::execute_for_target(
                     &target,
                     "search.keyword",
-                    serde_json::json!({"space_id": space_id, "q": query}),
+                    serde_json::json!({"space_id": space_uid, "q": query}),
                     None,
                 )
                 .await?;
@@ -257,8 +252,11 @@ pub async fn run(
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            let results = service.search_entries(&space_id, &query).await?;
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation search.keyword does not use the remote transport")
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let results = service.search_entries(space_id, &query).await?;
             if fmt != Format::Json {
                 let rows: Vec<serde_json::Value> = results
                     .iter()
@@ -298,18 +296,12 @@ pub async fn run(
                 criteria_file,
             })
             .map_err(anyhow::Error::from)?;
-            let (root, space_id, base) =
-                resolve_command_triple(explicit_config, context_override, "search query")?;
-            if base.is_some() {
-                let target = crate::cli_config::resolve_command_target(
-                    explicit_config,
-                    context_override,
-                    "search query",
-                )?;
+            let target = resolve_command_target(explicit_config, context_override, "search query")?;
+            if let SpaceTarget::Remote { space_uid, .. } = &target {
                 let result = http::execute_for_target(
                     &target,
                     "search.query",
-                    serde_json::json!({"space_id": space_id}),
+                    serde_json::json!({"space_id": space_uid}),
                     Some(serde_json::json!({"criteria": criteria_value})),
                 )
                 .await?;
@@ -323,12 +315,15 @@ pub async fn run(
                 emit_success(&result, &fmt, None);
                 return Ok(());
             }
+            let SpaceTarget::Core { root, space_id } = &target else {
+                anyhow::bail!("operation search.query does not use the remote transport")
+            };
             let criteria: ugoite_core::structured_search::StructuredSearch =
                 serde_json::from_value(criteria_value).map_err(|error| {
                     UsageError(format!("invalid structured search criteria: {error}"))
                 })?;
-            let service = UgoiteService::new_without_background_refresh(&root)?;
-            let rows = service.search_structured(&space_id, &criteria).await?;
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let rows = service.search_structured(space_id, &criteria).await?;
             if fmt != Format::Json {
                 let table = criteria_rows_table(&rows);
                 print_json_table(&table, &[("ID", "id")]);
