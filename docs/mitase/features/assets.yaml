@@ -179,7 +179,7 @@ features:
           - id: remote-upload
             adapter: rust
             path: crates/ugoite-cli/src/http.rs
-            selector: { kind: symbol, name: execute_multipart }
+            selector: { kind: symbol, name: execute_multipart_for_target }
             claims:
               - kind: satisfies
                 criterion: REQ-ASSET-001#criterion.typed-reference
