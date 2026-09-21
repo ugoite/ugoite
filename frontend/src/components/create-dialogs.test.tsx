@@ -13,11 +13,18 @@ import {
   EditFormDialog,
 } from "./create-dialogs";
 import { setLocale } from "~/lib/i18n";
-import { searchApi } from "~/lib/ugoite-client";
+import { entryApi } from "~/lib/entry-api";
 import type { Form } from "~/lib/types";
+
+vi.mock("~/lib/entry-api", () => ({
+  entryApi: { query: vi.fn() },
+}));
+
+const entryQueryMock = vi.mocked(entryApi.query);
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  entryQueryMock.mockReset();
   setLocale("en");
 });
 
@@ -757,7 +764,6 @@ describe("CreateEntryDialog", () => {
 
   it("REQ-FE-037: does not block webform submission on a deprecated row reference", async () => {
     const onSubmit = vi.fn();
-    vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([]);
     const forms = [
       {
         name: "Task",
@@ -790,9 +796,6 @@ describe("CreateEntryDialog", () => {
     });
     fireEvent.input(screen.getByLabelText(/Summary/), {
       target: { value: "Active summary" },
-    });
-    fireEvent.input(screen.getByLabelText(/Retired/), {
-      target: { value: "legacy" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
@@ -1011,27 +1014,22 @@ describe("CreateEntryDialog", () => {
     ).toBeInTheDocument();
   });
 
-  it("REQ-FE-065: row_reference fields offer a searchable picker while storing stable entry ids", async () => {
+  it("routes Row Reference selection through the target Form EntryQuery", async () => {
+    entryQueryMock.mockResolvedValue({
+      rows: [{
+        id: "entry-project-1",
+        form_id: "form-project",
+        revision_id: "revision-1",
+        created_at_micros: 1_772_960_000_000_000,
+        updated_at_micros: 1_772_960_000_000_000,
+        preview: "Project Alpha",
+      }],
+      has_more: false,
+    });
     const onSubmit = vi.fn();
-    const onClose = vi.fn();
-    vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([
-      {
-        id: "project-alpha",
-        form: "Project",
-        updated_at: "2026-02-14T09:30:00Z",
-        properties: {},
-        tags: [],
-      },
-      {
-        id: "project-beta",
-        form: "Project",
-        updated_at: "2026-02-15T09:30:00Z",
-        properties: {},
-        tags: [],
-      },
-    ]);
     const forms: Form[] = [
       {
+        id: "form-task",
         name: "Task",
         version: 1,
         fields: {
@@ -1042,572 +1040,16 @@ describe("CreateEntryDialog", () => {
             target_form: "Project",
           },
         },
-        template: "# Task\n\n## Summary\n\n## Project\n",
+        template: "# Task",
       },
       {
+        id: "form-project",
         name: "Project",
         version: 1,
         fields: {
-          Summary: { type: "string", required: true },
+          Name: { type: "string", required: true },
         },
-        template: "# Project\n\n## Summary\n",
-      },
-    ];
-
-    render(() => (
-      <CreateEntryDialog
-        open={true}
-        forms={forms}
-        spaceId="default"
-        onClose={onClose}
-        onSubmit={onSubmit}
-      />
-    ));
-
-    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
-      target: { value: "Task" },
-    });
-    fireEvent.input(screen.getByLabelText(/Summary/), {
-      target: { value: "Track the launch" },
-    });
-
-    const projectInput = screen.getByLabelText(/Project/);
-    fireEvent.input(projectInput, { target: { value: "alpha" } });
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: /project-alpha/i }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Create" }));
-
-    expect(onSubmit).toHaveBeenCalledWith(
-      "Task",
-      expect.objectContaining({
-        Summary: "Track the launch",
-        Project: "project-alpha",
-      }),
-      "webform",
-    );
-    await waitFor(() => {
-      expect(searchApi.rowReferenceOptions).toHaveBeenCalledWith(
-        "default",
-        "Project",
-        "alpha",
-        8,
-      );
-    });
-  });
-
-  it("REQ-FE-065: chat mode stores the selected row_reference entry id", async () => {
-    const onSubmit = vi.fn();
-    const onClose = vi.fn();
-    vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([
-      {
-        id: "project-alpha",
-        form: "Project",
-        updated_at: "2026-02-14T09:30:00Z",
-        properties: {},
-        tags: [],
-      },
-      {
-        id: "project-beta",
-        form: "Project",
-        updated_at: "2026-02-15T09:30:00Z",
-        properties: {},
-        tags: [],
-      },
-    ]);
-    const forms: Form[] = [
-      {
-        name: "Task",
-        version: 1,
-        fields: {
-          Summary: { type: "string", required: true },
-          Project: {
-            type: "row_reference",
-            required: true,
-            target_form: "Project",
-          },
-        },
-        template: "# Task\n\n## Summary\n\n## Project\n",
-      },
-      {
-        name: "Project",
-        version: 1,
-        fields: {
-          Summary: { type: "string", required: true },
-        },
-        template: "# Project\n\n## Summary\n",
-      },
-    ];
-
-    render(() => (
-      <CreateEntryDialog
-        open={true}
-        forms={forms}
-        spaceId="default"
-        onClose={onClose}
-        onSubmit={onSubmit}
-      />
-    ));
-
-    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
-      target: { value: "Task" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Chat" }));
-
-    fireEvent.input(screen.getByLabelText(/Summary/), {
-      target: { value: "Use the picker inside chat mode" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Next question" }));
-
-    fireEvent.input(screen.getByLabelText(/Project/), {
-      target: { value: "beta" },
-    });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /project-beta/i }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Create" }));
-
-    expect(onSubmit).toHaveBeenCalledWith(
-      "Task",
-      expect.objectContaining({
-        Summary: "Use the picker inside chat mode",
-        Project: "project-beta",
-      }),
-      "chat",
-    );
-  });
-
-  it("REQ-FE-065: clearing a selected row_reference removes the saved entry id", async () => {
-    const onSubmit = vi.fn();
-    const onClose = vi.fn();
-    vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([
-      {
-        id: "project-alpha",
-        form: "Project",
-        updated_at: "2026-02-14T09:30:00Z",
-        properties: {},
-        tags: [],
-      },
-    ]);
-    const forms: Form[] = [
-      {
-        name: "Task",
-        version: 1,
-        fields: {
-          Summary: { type: "string", required: true },
-          Project: {
-            type: "row_reference",
-            required: false,
-            target_form: "Project",
-          },
-        },
-        template: "# Task\n\n## Summary\n\n## Project\n",
-      },
-      {
-        name: "Project",
-        version: 1,
-        fields: {
-          Summary: { type: "string", required: true },
-        },
-        template: "# Project\n\n## Summary\n",
-      },
-    ];
-
-    render(() => (
-      <CreateEntryDialog
-        open={true}
-        forms={forms}
-        spaceId="default"
-        onClose={onClose}
-        onSubmit={onSubmit}
-      />
-    ));
-
-    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
-      target: { value: "Task" },
-    });
-    fireEvent.input(screen.getByLabelText(/Summary/), {
-      target: { value: "Only keep the human summary" },
-    });
-    fireEvent.input(screen.getByLabelText(/Project/), {
-      target: { value: "alpha" },
-    });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /project-alpha/i }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
-    fireEvent.click(screen.getByRole("button", { name: "Create" }));
-
-    expect(onSubmit).toHaveBeenCalledWith(
-      "Task",
-      {
-        Summary: "Only keep the human summary",
-      },
-      "webform",
-    );
-    expect(screen.queryByRole("button", { name: "Clear selection" })).not
-      .toBeInTheDocument();
-  });
-
-  it("REQ-FE-065: row_reference pickers fall back to entry ids and sort duplicate titles by id", async () => {
-    const onSubmit = vi.fn();
-    const onClose = vi.fn();
-    vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([
-      {
-        id: "project-2",
-        form: "Project",
-        updated_at: "2026-02-15T09:30:00Z",
-        properties: {},
-        tags: [],
-      },
-      {
-        id: "project-blank",
-        form: "Project",
-        updated_at: "2026-02-16T09:30:00Z",
-        properties: {},
-        tags: [],
-      },
-      {
-        id: "project-1",
-        form: "Project",
-        updated_at: "2026-02-14T09:30:00Z",
-        properties: {},
-        tags: [],
-      },
-    ]);
-    const forms: Form[] = [
-      {
-        name: "Task",
-        version: 1,
-        fields: {
-          Project: {
-            type: "row_reference",
-            required: false,
-            target_form: "Project",
-          },
-        },
-        template: "# Task\n\n## Project\n",
-      },
-      {
-        name: "Project",
-        version: 1,
-        fields: {
-          Summary: { type: "string", required: true },
-        },
-        template: "# Project\n\n## Summary\n",
-      },
-    ];
-
-    render(() => (
-      <CreateEntryDialog
-        open={true}
-        forms={forms}
-        spaceId="default"
-        onClose={onClose}
-        onSubmit={onSubmit}
-      />
-    ));
-
-    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
-      target: { value: "Task" },
-    });
-
-    await waitFor(() => {
-      expect(searchApi.rowReferenceOptions).toHaveBeenCalledWith(
-        "default",
-        "Project",
-        "",
-        8,
-      );
-    });
-
-    await waitFor(() => {
-      expect(
-        Array.from(
-          document.querySelectorAll<HTMLButtonElement>(
-            ".ui-reference-picker-button",
-          ),
-        ).map(
-          (button) => {
-            if (button.textContent?.includes("project-1")) return "project-1";
-            if (button.textContent?.includes("project-2")) return "project-2";
-            return "project-blank";
-          },
-        ),
-      ).toEqual(["project-1", "project-2", "project-blank"]);
-    });
-    expect(screen.getAllByText("project-blank")).toHaveLength(2);
-  });
-
-  it("REQ-FE-065: row_reference pickers show an empty-state hint when searches have no matches", async () => {
-    const onSubmit = vi.fn();
-    const onClose = vi.fn();
-    vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([]);
-    const forms: Form[] = [
-      {
-        name: "Task",
-        version: 1,
-        fields: {
-          Summary: { type: "string", required: true },
-          Project: {
-            type: "row_reference",
-            required: false,
-            target_form: "Project",
-          },
-        },
-        template: "# Task\n\n## Summary\n\n## Project\n",
-      },
-    ];
-
-    render(() => (
-      <CreateEntryDialog
-        open={true}
-        forms={forms}
-        spaceId="default"
-        onClose={onClose}
-        onSubmit={onSubmit}
-      />
-    ));
-
-    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
-      target: { value: "Task" },
-    });
-    fireEvent.input(screen.getByLabelText(/Project/), {
-      target: { value: "alpha" },
-    });
-
-    expect(
-      await screen.findByText("No Project entries matched that search yet."),
-    ).toBeInTheDocument();
-  });
-
-  it("REQ-FE-065: row_reference fields without target_form keep raw text entry", async () => {
-    const onSubmit = vi.fn();
-    const onClose = vi.fn();
-    const optionsSpy = vi.spyOn(searchApi, "rowReferenceOptions")
-      .mockResolvedValue([]);
-    const forms: Form[] = [
-      {
-        name: "Task",
-        version: 1,
-        fields: {
-          Summary: { type: "string", required: true },
-          Project: { type: "row_reference", required: false },
-        },
-        template: "# Task\n\n## Summary\n\n## Project\n",
-      },
-    ];
-
-    render(() => (
-      <CreateEntryDialog
-        open={true}
-        forms={forms}
-        spaceId="default"
-        onClose={onClose}
-        onSubmit={onSubmit}
-      />
-    ));
-
-    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
-      target: { value: "Task" },
-    });
-    fireEvent.input(screen.getByLabelText(/Summary/), {
-      target: { value: "Use a raw reference string" },
-    });
-    fireEvent.input(screen.getByLabelText(/Project/), {
-      target: { value: "legacy-project-id" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Create" }));
-
-    expect(onSubmit).toHaveBeenCalledWith(
-      "Task",
-      {
-        Summary: "Use a raw reference string",
-        Project: "legacy-project-id",
-      },
-      "webform",
-    );
-    expect(optionsSpy).not.toHaveBeenCalled();
-  });
-
-  it("REQ-FE-065: row_reference fields fall back to raw text when no space id is available", async () => {
-    const onSubmit = vi.fn();
-    const onClose = vi.fn();
-    const optionsSpy = vi.spyOn(searchApi, "rowReferenceOptions")
-      .mockResolvedValue([]);
-    const forms: Form[] = [
-      {
-        name: "Task",
-        version: 1,
-        fields: {
-          Summary: { type: "string", required: true },
-          Project: {
-            type: "row_reference",
-            required: false,
-            target_form: "Project",
-          },
-        },
-        template: "# Task\n\n## Summary\n\n## Project\n",
-      },
-    ];
-
-    render(() => (
-      <CreateEntryDialog
-        open={true}
-        forms={forms}
-        onClose={onClose}
-        onSubmit={onSubmit}
-      />
-    ));
-
-    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
-      target: { value: "Task" },
-    });
-    fireEvent.input(screen.getByLabelText(/Summary/), {
-      target: { value: "Capture a raw reference without space context" },
-    });
-    fireEvent.input(screen.getByLabelText(/Project/), {
-      target: { value: "alpha" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Create" }));
-
-    expect(onSubmit).toHaveBeenCalledWith(
-      "Task",
-      {
-        Summary: "Capture a raw reference without space context",
-        Project: "alpha",
-      },
-      "webform",
-    );
-    expect(optionsSpy).not.toHaveBeenCalled();
-  });
-
-  it("REQ-FE-065: row_reference pickers surface load errors when reference lookup fails", async () => {
-    const onSubmit = vi.fn();
-    const onClose = vi.fn();
-    const rejectedOptions = Promise.reject(new Error("boom"));
-    rejectedOptions.catch(() => undefined);
-    vi.spyOn(searchApi, "rowReferenceOptions").mockReturnValue(rejectedOptions);
-    const forms: Form[] = [
-      {
-        name: "Task",
-        version: 1,
-        fields: {
-          Project: {
-            type: "row_reference",
-            required: false,
-            target_form: "Project",
-          },
-        },
-        template: "# Task\n\n## Project\n",
-      },
-      {
-        name: "Project",
-        version: 1,
-        fields: {
-          Summary: { type: "string", required: true },
-        },
-        template: "# Project\n\n## Summary\n",
-      },
-    ];
-
-    render(() => (
-      <CreateEntryDialog
-        open={true}
-        forms={forms}
-        spaceId="default"
-        onClose={onClose}
-        onSubmit={onSubmit}
-      />
-    ));
-
-    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
-      target: { value: "Task" },
-    });
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(
-          "Couldn't load Project entries. Try again once entries exist.",
-        ),
-      ).toBeInTheDocument();
-    });
-  });
-
-  it("REQ-FE-065: row_reference searches must resolve to a saved entry before submit", async () => {
-    const onSubmit = vi.fn();
-    const onClose = vi.fn();
-    vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([
-      {
-        id: "project-alpha",
-        form: "Project",
-        updated_at: "2026-02-14T09:30:00Z",
-        properties: {},
-        tags: [],
-      },
-    ]);
-    const forms: Form[] = [
-      {
-        name: "Task",
-        version: 1,
-        fields: {
-          Summary: { type: "string", required: true },
-          Project: {
-            type: "row_reference",
-            required: false,
-            target_form: "Project",
-          },
-        },
-        template: "# Task\n\n## Summary\n\n## Project\n",
-      },
-    ];
-
-    render(() => (
-      <CreateEntryDialog
-        open={true}
-        forms={forms}
-        spaceId="default"
-        onClose={onClose}
-        onSubmit={onSubmit}
-      />
-    ));
-
-    fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
-      target: { value: "Task" },
-    });
-    fireEvent.input(screen.getByLabelText(/Summary/), {
-      target: { value: "Investigate query guard" },
-    });
-    fireEvent.input(screen.getByLabelText(/Project/), {
-      target: { value: "alpha" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Create" }));
-
-    expect(onSubmit).not.toHaveBeenCalled();
-    expect(
-      screen.getByText(
-        "Please select a saved entry for row_reference field: Project.",
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it("REQ-FE-065: chat mode blocks unresolved row_reference searches before submit", async () => {
-    const onSubmit = vi.fn();
-    vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([]);
-    const forms: Form[] = [
-      {
-        name: "Task",
-        version: 1,
-        fields: {
-          Summary: { type: "string", required: true },
-          Project: {
-            type: "row_reference",
-            required: false,
-            target_form: "Project",
-          },
-        },
-        template: "# Task\n\n## Summary\n\n## Project\n",
+        template: "# Project",
       },
     ];
 
@@ -1624,22 +1066,33 @@ describe("CreateEntryDialog", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "Form *" }), {
       target: { value: "Task" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Chat" }));
     fireEvent.input(screen.getByLabelText(/Summary/), {
-      target: { value: "Investigate chat guard" },
+      target: { value: "Track the launch" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Next question" }));
-    fireEvent.input(screen.getByLabelText(/Project/), {
-      target: { value: "alpha" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Select entry" }));
+
+    expect(await screen.findByText("Project Alpha")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("listitem"));
+    expect(onSubmit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
-    expect(onSubmit).not.toHaveBeenCalled();
-    expect(
-      screen.getByText(
-        "Please select a saved entry for row_reference field: Project.",
-      ),
-    ).toBeInTheDocument();
+    expect(onSubmit).toHaveBeenCalledWith(
+      "Task",
+      {
+        Summary: "Track the launch",
+        Project: "entry-project-1",
+      },
+      "webform",
+    );
+    expect(entryQueryMock).toHaveBeenCalledWith(
+      "default",
+      expect.objectContaining({
+        query: expect.objectContaining({
+          scope: { kind: "form", form_id: "form-project" },
+        }),
+      }),
+    );
   });
 
   it("REQ-FE-053: keeps web-form guidance free of Markdown-only instructions", async () => {
@@ -1767,7 +1220,6 @@ describe("CreateEntryDialog", () => {
 
   it("REQ-FE-057: chat mode treats deprecated required fields as optional", async () => {
     const onSubmit = vi.fn();
-    vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([]);
     const forms = [
       {
         name: "Task",
@@ -1810,9 +1262,6 @@ describe("CreateEntryDialog", () => {
       .toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Skip optional field" }))
       .toBeInTheDocument();
-    fireEvent.input(screen.getByLabelText(/Retired/), {
-      target: { value: "legacy" },
-    });
     fireEvent.click(screen.getByRole("button", { name: "Next question" }));
     expect(screen.getByText("Question 3 / 3")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retired (optional)" }));

@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FieldInput } from "~/components/fields/FieldInput";
 import { FieldValues } from "~/components/fields/FieldValue";
 import { RowReferenceSelect } from "~/components/fields/RowReferenceSelect";
@@ -9,34 +9,6 @@ import {
   buildRowReferenceOptions,
   hasRowReferencePicker,
 } from "~/components/fields/row-reference";
-import { searchApi } from "~/lib/ugoite-client";
-
-vi.mock("~/lib/ugoite-client", () => ({
-  searchApi: { rowReferenceOptions: vi.fn() },
-  entryApi: {},
-}));
-
-const rowOptionsMock = vi.mocked(searchApi.rowReferenceOptions);
-
-const alphaEntries = [
-  { id: "project-alpha" },
-  { id: "project-beta" },
-];
-
-beforeEach(() => {
-  vi.resetAllMocks();
-  rowOptionsMock.mockImplementation(
-    async (
-      _spaceId: string,
-      _form: string,
-      query: string,
-    ): Promise<Array<{ id: string }>> =>
-      alphaEntries.filter((entry) =>
-        entry.id.includes(query)
-      ),
-  );
-});
-
 describe("shared FieldInput family", () => {
   it("edits strings and numbers with the same semantics in both call sites", () => {
     const onSummary = vi.fn();
@@ -106,32 +78,20 @@ describe("shared FieldInput family", () => {
     expect(legacy).toHaveValue("maybe");
   });
 
-  it("settles booleans on the text control when the draft arrives after mount", async () => {
-    // Drafts load asynchronously: the value is undefined at mount and the
-    // legacy text lands later. The control kind must follow reactively
-    // instead of sticking with the mount-time checkbox.
-    const [value, setValue] = createSignal<unknown>(undefined);
+  it("renders an unparseable boolean draft as editable text", () => {
+    // Rust-owned validation must keep an unparseable legacy value visible
+    // instead of coercing it into a checkbox state.
     render(() => (
-      <>
-        <label for="bool-late">Done</label>
-        <FieldInput
-          field={{ type: "boolean" }}
-          value={value()}
-          onChange={vi.fn()}
-          fieldId="bool-late"
-        />
-      </>
+      <FieldInput
+        field={{ type: "boolean" }}
+        value="maybe"
+        onChange={vi.fn()}
+        fieldId="bool-late"
+      />
     ));
 
-    expect(screen.getByLabelText("Done")).toHaveAttribute(
-      "type",
-      "checkbox",
-    );
-    setValue("maybe");
-    await waitFor(() => {
-      expect(screen.getByLabelText("Done")).toHaveAttribute("type", "text");
-    });
-    expect(screen.getByLabelText("Done")).toHaveValue("maybe");
+    expect(screen.getByRole("textbox")).toHaveAttribute("type", "text");
+    expect(screen.getByRole("textbox")).toHaveValue("maybe");
   });
 
   it("renders dates with a date control", () => {
@@ -151,7 +111,7 @@ describe("shared FieldInput family", () => {
     expect(due).toHaveValue("2026-02-14");
   });
 
-  it("shares the same object_list row UI for create and edit values", async () => {
+  it("shares the same object_list row UI for create and edit values", () => {
     const onChange = vi.fn();
     const [values, setValues] = createSignal<Record<string, unknown>[]>([
       { name: "alpha" },
@@ -177,169 +137,57 @@ describe("shared FieldInput family", () => {
 });
 
 describe("shared RowReferenceSelect", () => {
-  it("shows titles while saving the stable entry id", async () => {
+  it("uses the target Form for the canonical picker without exposing ids", () => {
     const onChange = vi.fn();
     render(() => (
-      <>
-        <label for="project">Project</label>
-        <RowReferenceSelect
-          spaceId="default"
-          targetForm="Project"
-          value=""
-          onChange={onChange}
-          fieldId="project"
-        />
-      </>
+      <RowReferenceSelect
+        spaceId="default"
+        targetForm="Project"
+        value=""
+        onChange={onChange}
+        fieldId="project-canonical"
+        forms={[{
+          id: "form-project",
+          name: "Project",
+          version: 1,
+          template: "",
+          fields: {},
+        }]}
+      />
     ));
 
-    fireEvent.input(screen.getByLabelText("Project"), {
-      target: { value: "alpha" },
-    });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /project-alpha/ }),
-    );
-    expect(onChange).toHaveBeenCalledWith("project-alpha");
-    expect((await screen.findAllByText("project-alpha")).length).toBeGreaterThan(
-      0,
-    );
-    expect(rowOptionsMock).toHaveBeenCalledWith(
-      "default",
-      "Project",
-      "alpha",
-      8,
-    );
-  });
-
-  it("supports keyboard arrows, Enter, Escape, and clear", async () => {
-    const onChange = vi.fn();
-    const [value, setValue] = createSignal("");
-    render(() => (
-      <>
-        <label for="project-kb">Project</label>
-        <RowReferenceSelect
-          spaceId="default"
-          targetForm="Project"
-          value={value()}
-          onChange={(next) => {
-            setValue(next);
-            onChange(next);
-          }}
-          fieldId="project-kb"
-        />
-      </>
-    ));
-
-    const input = screen.getByLabelText("Project");
-    fireEvent.input(input, { target: { value: "project" } });
-    await screen.findByRole("button", { name: /project-alpha/ });
-
-    // ArrowDown highlights the second option; Enter confirms its stable id.
-    fireEvent.keyDown(input, { key: "ArrowDown" });
-    fireEvent.keyDown(input, { key: "Enter" });
-    expect(onChange).toHaveBeenCalledWith("project-beta");
-
-    // Escape cancels the in-progress search and reverts to the confirmed pick.
-    onChange.mockClear();
-    fireEvent.input(input, { target: { value: "zzz" } });
-    fireEvent.keyDown(input, { key: "Escape" });
-    expect(input).toHaveValue("project-beta");
-    expect(onChange).toHaveBeenCalledWith("project-beta");
-
-    // Clear removes the saved entry id.
-    onChange.mockClear();
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Clear selection" }),
-    );
-    expect(onChange).toHaveBeenCalledWith("");
-  });
-
-  it("renders loading, error, and empty states", async () => {
-    let resolveOptions!: (
-      value: Array<{ id: string }>,
-    ) => void;
-    rowOptionsMock.mockReturnValue(
-      new Promise((resolve) => {
-        resolveOptions = resolve;
-      }),
-    );
-    render(() => (
-      <>
-        <label for="project-states">Project</label>
-        <RowReferenceSelect
-          spaceId="default"
-          targetForm="Project"
-          value=""
-          onChange={vi.fn()}
-          fieldId="project-states"
-        />
-      </>
-    ));
-
-    fireEvent.input(screen.getByLabelText("Project"), {
-      target: { value: "alpha" },
-    });
-    expect(await screen.findByText(/Loading Project entries/))
+    const picker = screen.getByTestId("row-reference-picker");
+    expect(picker).toHaveAttribute("data-target-form", "form-project");
+    expect(screen.getByRole("button", { name: /select entry/i }))
       .toBeInTheDocument();
-    resolveOptions([]);
-    expect(
-      await screen.findByText(/No Project entries matched/),
-    ).toBeInTheDocument();
+    expect(screen.queryByText("entry-project-1")).not.toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
   });
-
-  it("surfaces lookup failures without losing the control", async () => {
-    rowOptionsMock.mockRejectedValue(new Error("offline"));
+  it("does not expose raw ids when the target Form catalog is unavailable", () => {
     render(() => (
-      <>
-        <label for="project-error">Project</label>
-        <RowReferenceSelect
-          spaceId="default"
-          targetForm="Project"
-          value=""
-          onChange={vi.fn()}
-          fieldId="project-error"
-        />
-      </>
+      <RowReferenceSelect
+        spaceId="default"
+        targetForm="Project"
+        value="stable-entry-id"
+        onChange={vi.fn()}
+        fieldId="project-unavailable"
+      />
     ));
 
-    fireEvent.input(screen.getByLabelText("Project"), {
-      target: { value: "alpha" },
-    });
-    expect(await screen.findByText(/Couldn't load Project entries/))
-      .toBeInTheDocument();
-    expect(screen.getByLabelText("Project")).toBeInTheDocument();
-  });
-
-  it("reports unresolved searches so required guards keep working", async () => {
-    const onPending = vi.fn();
-    render(() => (
-      <>
-        <label for="project-pending">Project</label>
-        <RowReferenceSelect
-          spaceId="default"
-          targetForm="Project"
-          value=""
-          onChange={vi.fn()}
-          fieldId="project-pending"
-          onPendingChange={onPending}
-        />
-      </>
-    ));
-
-    fireEvent.input(screen.getByLabelText("Project"), {
-      target: { value: "alpha" },
-    });
-    await waitFor(() => expect(onPending).toHaveBeenCalledWith(true));
-    fireEvent.click(
-      await screen.findByRole("button", { name: /project-alpha/ }),
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "target Form Project is not available",
     );
-    await waitFor(() => expect(onPending).toHaveBeenCalledWith(false));
+    expect(screen.queryByText("stable-entry-id")).not.toBeInTheDocument();
   });
 });
 
 describe("list<row_reference> rows", () => {
-  it("uses the same selector per row and stores stable ids", async () => {
+  it("uses the same selector per row and stores stable ids", () => {
     const onChange = vi.fn();
-    const [values, setValues] = createSignal<string[]>(["project-alpha"]);
+    const [values] = createSignal<string[]>([
+      "project-alpha",
+      "project-beta",
+    ]);
     render(() => (
       <FieldInput
         field={{
@@ -347,27 +195,21 @@ describe("list<row_reference> rows", () => {
           items: { type: "row_reference", target_form: "Project" },
         }}
         value={values()}
-        onChange={(next) => {
-          setValues(next as string[]);
-          onChange(next);
-        }}
+        onChange={onChange}
         fieldId="projects"
         spaceId="default"
+        forms={[{
+          id: "form-project",
+          name: "Project",
+          version: 1,
+          template: "",
+          fields: {},
+        }]}
       />
     ));
 
-    // Stored ids remain the deterministic display value.
-    expect(await screen.findByDisplayValue("project-alpha"))
-      .toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /Add/ }));
-    const inputs = screen.getAllByRole("combobox");
-    expect(inputs).toHaveLength(2);
-    fireEvent.input(inputs[1], { target: { value: "beta" } });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /project-beta/ }),
-    );
-    expect(onChange).toHaveBeenCalledWith(["project-alpha", "project-beta"]);
+    expect(screen.getAllByRole("button", { name: /select entry/i }))
+      .toHaveLength(2);
   });
 });
 

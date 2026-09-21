@@ -1,206 +1,223 @@
-import { createEffect, createSignal, Show } from "solid-js";
-import { createResource } from "~/lib/recoverable-resource";
-import { searchApi } from "~/lib/ugoite-client";
-import { t } from "~/lib/i18n";
-import { SearchableSelect } from "~/components/fields/SearchableSelect";
+import { createSignal, Show } from "solid-js";
+import { EntryBrowser } from "~/components/EntryBrowser";
 import {
-  buildRowReferenceOptions,
-  type RowReferenceOption,
-  rowReferenceSuggestionLimit,
-} from "~/components/fields/row-reference";
+  createEntryQueryController,
+  type EntryQueryCapabilities,
+  type EntryQueryResult,
+  systemEntryCapabilities,
+} from "~/lib/entry-query";
+import { t } from "~/lib/i18n";
+import type { Form } from "~/lib/types";
 
 export interface RowReferenceSelectProps {
   spaceId: string;
   targetForm: string;
-  /** Stable entry id. Display labels are the deterministic entry ID. */
+  /** Stable entry id. The human-facing label is resolved from the Entry. */
   value: string;
   onChange: (id: string) => void;
   fieldId: string;
   invalid?: boolean;
   describedBy?: string;
-  limit?: number;
-  /** True while the search text names no saved entry (create-dialog guard). */
+  /** Loaded Form catalog. Stable Form ids enable the canonical EntryQuery path. */
+  forms?: readonly Form[];
+  /** Kept for form-level validation hooks; selection itself is confirmed in the dialog. */
   onPendingChange?: (pending: boolean) => void;
 }
 
+const targetFormDefinition = (props: RowReferenceSelectProps) => {
+  const target = props.targetForm.trim();
+  return props.forms?.find((form) =>
+    form.id === target || form.name === target
+  );
+};
+
+const canonicalCapabilities = (
+  form: Form,
+): EntryQueryCapabilities => {
+  const scope = { kind: "form" as const, form_id: form.id! };
+  const system = systemEntryCapabilities(scope);
+  const fields = Object.values(form.fields)
+    .map((field) => field.query_capability)
+    .filter((field): field is NonNullable<typeof field> => field !== undefined);
+  return { scope, fields: [...system.fields, ...fields] };
+};
+
 /**
- * Shared row-reference control for create and edit.
+ * Canonical Row Reference picker.
  *
- * Shows deterministic entry IDs, saves the stable entry id, and scopes every
- * lookup to the exact target Form. Keyboard arrows/Enter/Escape, clear,
- * and loading/error/empty states come from the generic SearchableSelect.
+ * The dialog owns a disposable EntryQuery controller. Selecting a row only
+ * updates dialog state; the field draft receives the stable entry id on
+ * confirm. Cancel never mutates the parent form.
  */
-export function RowReferenceSelect(props: RowReferenceSelectProps) {
-  const targetForm = () => props.targetForm.trim();
-  const [query, setQuery] = createSignal(props.value);
-  const [selected, setSelected] = createSignal<RowReferenceOption | null>(
-    props.value
-      ? { id: props.value, title: props.value, label: props.value }
-      : null,
+function CanonicalRowReferenceSelect(props: RowReferenceSelectProps) {
+  const form = () => targetFormDefinition(props)!;
+  const scope = () => ({ kind: "form" as const, form_id: form().id! });
+  const controller = createEntryQueryController(
+    () => props.spaceId,
+    { scope: scope(), filters: [], sort: [] },
   );
-  /** Last confirmed selection. Escape reverts an in-progress search to it. */
-  const [confirmed, setConfirmed] = createSignal<RowReferenceOption | null>(
-    selected(),
+  const capabilities = () => canonicalCapabilities(form());
+  const [open, setOpen] = createSignal(false);
+  const [pending, setPending] = createSignal<EntryQueryResult | null>(null);
+  const [selectedRow, setSelectedRow] = createSignal<EntryQueryResult | null>(
+    null,
   );
 
-  // Emission guard (plain variable, never reactive): parent state echoes our
-  // own onChange calls, but effect flushes can run mid-handler and observe
-  // the stale parent value first. Adoption below keys on an actual parent
-  // change (`lastParent`), so any interleaving of child writes and parent
-  // echoes is safe: our own in-flight emission never resets the query.
-  let pendingEmit: string | null = null;
-  let lastParent = props.value;
-  const emit = (id: string) => {
-    pendingEmit = id;
-    props.onChange(id);
+  const openPicker = () => {
+    setPending(null);
+    setOpen(true);
+    void controller.invalidate();
   };
 
-  createEffect(() => {
-    const value = props.value;
-    // Adopt external parent sets only. Child-signal writes (typing,
-    // selecting, clearing) re-run this effect through the `selected()`
-    // read below, but the unchanged parent value returns here before any
-    // reset can clobber in-progress work.
-    if (value === lastParent) return;
-    lastParent = value;
-    if (value === pendingEmit) {
-      // Parent echoed our emission (or already held it). Adopt the echo as
-      // the sync point and stop guarding.
-      pendingEmit = null;
-      return;
-    }
-    if (value === selected()?.id) return;
-    if (pendingEmit !== null) return;
-    setQuery(value);
-    const next = value ? { id: value, title: value, label: value } : null;
-    setSelected(next);
-    setConfirmed(next);
-  });
-
-  const [options] = createResource(
-    () => ({
-      spaceId: props.spaceId.trim(),
-      targetForm: targetForm(),
-      query: query(),
-    }),
-    async ({ spaceId, targetForm: form, query: searchQuery }) => {
-      if (!spaceId || !form) return [] as RowReferenceOption[];
-      const entries = await searchApi.rowReferenceOptions(
-        spaceId,
-        form,
-        searchQuery,
-        props.limit ?? rowReferenceSuggestionLimit,
-      );
-      return buildRowReferenceOptions(entries);
-    },
-    { initialValue: [] as RowReferenceOption[] },
-  );
-
-  // Resolve the display label once options arrive. The saved value never
-  // changes here.
-  createEffect(() => {
-    const current = selected();
-    if (!current) return;
-    const match = options().find((option) => option.id === current.id);
-    if (match && match.title !== current.title) {
-      setSelected(match);
-      if (confirmed()?.id === match.id) setConfirmed(match);
-      if (query() === current.title || query() === current.id) {
-        setQuery(match.title);
-      }
-    }
-  });
-
-  const pending = () => query().trim() !== "" && !props.value.trim();
-  createEffect(() => {
-    props.onPendingChange?.(pending());
-  });
-
-  const handleQueryInput = (value: string) => {
-    setQuery(value);
-    setSelected(null);
-    if (props.value) emit("");
-    props.onPendingChange?.(value.trim() !== "");
+  const cancel = () => {
+    setPending(null);
+    setOpen(false);
   };
 
-  const handleSelect = (option: RowReferenceOption) => {
-    setSelected(option);
-    setConfirmed(option);
-    setQuery(option.title);
-    emit(option.id);
+  const confirm = () => {
+    const row = pending();
+    if (!row) return;
+    setSelectedRow(row);
+    props.onChange(row.id);
+    props.onPendingChange?.(false);
+    setPending(null);
+    setOpen(false);
+  };
+
+  const clear = () => {
+    setSelectedRow(null);
+    props.onChange("");
     props.onPendingChange?.(false);
   };
 
-  const handleClear = () => {
-    setSelected(null);
-    setConfirmed(null);
-    setQuery("");
-    emit("");
-    props.onPendingChange?.(false);
-  };
-
-  /** Escape cancels the in-progress search and reverts to the confirmed pick. */
-  const handleEscape = () => {
-    const current = confirmed();
-    if (!current) {
-      handleClear();
-      return;
-    }
-    setSelected(current);
-    setQuery(current.title);
-    if (props.value !== current.id) emit(current.id);
-    props.onPendingChange?.(false);
+  const humanLabel = () => {
+    const row = selectedRow();
+    if (row?.preview?.trim()) return row.preview.trim();
+    return props.value ? t("createDialog.entry.rowReference.selected") : "";
   };
 
   return (
-    <Show
-      when={targetForm()}
-      fallback={
-        <input
-          id={props.fieldId}
-          type="text"
-          class="ui-input"
-          value={props.value}
-          aria-invalid={props.invalid ? "true" : undefined}
-          aria-describedby={props.describedBy}
-          onInput={(event) => props.onChange(event.currentTarget.value)}
-        />
-      }
-    >
-      <SearchableSelect
+    <>
+      <div
+        class="ui-stack-sm"
+        data-row-reference-picker="entry-query"
+        data-testid="row-reference-picker"
+        data-target-form={form().id}
+      >
+        <div class="flex items-center gap-2">
+          <span class="ui-input flex-1" aria-live="polite">
+            {humanLabel() || t("createDialog.entry.rowReference.noneSelected")}
+          </span>
+          <button
+            type="button"
+            class="ui-button ui-button-secondary"
+            onClick={openPicker}
+            aria-haspopup="dialog"
+          >
+            {t("createDialog.entry.rowReference.select")}
+          </button>
+          <Show when={props.value}>
+            <button
+              type="button"
+              class="ui-button ui-button-secondary"
+              onClick={clear}
+            >
+              {t("createDialog.entry.rowReference.clear")}
+            </button>
+          </Show>
+        </div>
+      </div>
+      <Show when={open()}>
+        <div
+          class="ui-backdrop"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) cancel();
+          }}
+        >
+          <div
+            class="ui-dialog ui-row-reference-dialog ui-stack"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`${props.fieldId}-picker-title`}
+          >
+            <div class="flex items-center justify-between gap-2">
+              <h2 id={`${props.fieldId}-picker-title`}>
+                {t("createDialog.entry.rowReference.selectFor", {
+                  form: form().name,
+                })}
+              </h2>
+              <button
+                type="button"
+                class="ui-button ui-button-secondary"
+                onClick={cancel}
+              >
+                {t("common.cancel")}
+              </button>
+            </div>
+            <EntryBrowser
+              mode="select_one"
+              controller={controller}
+              capabilities={capabilities()}
+              formLabels={{ [form().id!]: form().name }}
+              onSelect={setPending}
+            />
+            <div class="flex justify-end gap-2">
+              <button
+                type="button"
+                class="ui-button ui-button-secondary"
+                onClick={cancel}
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                class="ui-button ui-button-primary"
+                disabled={!pending()}
+                onClick={confirm}
+              >
+                {t("common.confirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Show>
+    </>
+  );
+}
+
+function UnavailableRowReferenceSelect(props: RowReferenceSelectProps) {
+  return (
+    <div class="ui-stack-sm" data-row-reference-picker="unavailable">
+      <span
         id={props.fieldId}
-        query={query()}
-        onQueryInput={handleQueryInput}
-        options={options()}
-        selected={selected()}
-        onSelect={handleSelect}
-        onClear={handleClear}
-        loading={options.loading}
-        error={options.error}
-        invalid={props.invalid}
-        describedBy={props.describedBy}
-        onEscape={handleEscape}
-        labels={{
-          placeholder: t(
-            "createDialog.entry.rowReference.searchPlaceholder",
-            { form: targetForm() },
-          ),
-          help: t("createDialog.entry.rowReference.help", {
-            form: targetForm(),
-          }),
-          selectedHeading: t("createDialog.entry.rowReference.selected"),
-          clear: t("createDialog.entry.rowReference.clear"),
-          loading: t("createDialog.entry.rowReference.loading", {
-            form: targetForm(),
-          }),
-          loadError: t("createDialog.entry.rowReference.loadError", {
-            form: targetForm(),
-          }),
-          noMatches: t("createDialog.entry.rowReference.noMatches", {
-            form: targetForm(),
-          }),
-        }}
-      />
+        class="ui-input"
+        aria-live="polite"
+        aria-invalid={props.invalid ? "true" : undefined}
+        aria-describedby={props.describedBy}
+      >
+        {props.value
+          ? t("createDialog.entry.rowReference.selected")
+          : t("createDialog.entry.rowReference.noneSelected")}
+      </span>
+      <p class="text-xs ui-text-danger" role="alert">
+        {t("createDialog.entry.rowReference.targetUnavailable", {
+          form: props.targetForm.trim(),
+        })}
+      </p>
+    </div>
+  );
+}
+
+/** Shared row-reference control for create and edit. */
+export function RowReferenceSelect(props: RowReferenceSelectProps) {
+  const canonical = () => Boolean(targetFormDefinition(props)?.id);
+  return (
+    <Show
+      when={canonical()}
+      fallback={<UnavailableRowReferenceSelect {...props} />}
+    >
+      <CanonicalRowReferenceSelect {...props} />
     </Show>
   );
 }

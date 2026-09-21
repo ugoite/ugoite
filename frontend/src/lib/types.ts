@@ -280,6 +280,18 @@ export interface FormField {
   };
   /** Backend-owned stable SQL column; never derive this from the field label. */
   sql_column?: string;
+  /** Rust-derived canonical EntryQuery capability metadata. */
+  query_capability?: {
+    field: { kind: "property"; field_id: number };
+    name: string;
+    field_type: string;
+    filterable: boolean;
+    sortable: boolean;
+    projectable: boolean;
+    supported_operators: Array<
+      "equals" | "contains" | "lt" | "lte" | "gt" | "gte"
+    >;
+  };
 }
 
 /** Durable Form policy for values outside the declared fields. */

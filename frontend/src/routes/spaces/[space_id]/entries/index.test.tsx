@@ -1,15 +1,12 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { createMemo, createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { http, HttpResponse } from "msw";
 import { EntriesRouteContext } from "~/lib/entries-route-context";
 import { createEntryStore } from "~/lib/entry-store";
 import { createSpaceStore } from "~/lib/space-store";
 import { setLocale } from "~/lib/i18n";
 import type { Form } from "~/lib/types";
-import { server } from "~/test/mocks/server";
-import { testApiUrl } from "~/test/http-origin";
 import SpaceEntriesIndexPane from "./index";
 
 const searchParams: Record<string, string> = {};
@@ -36,7 +33,11 @@ vi.mock("@solidjs/router", () => ({
   ),
 }));
 
-function renderRoute(formsList: Form[] = [], spaceId = "default") {
+function renderRoute(
+  formsList: Form[] = [],
+  spaceId = "default",
+  loadingForms = false,
+) {
   render(() => {
     const [forms] = createSignal(formsList);
     return (
@@ -44,11 +45,11 @@ function renderRoute(formsList: Form[] = [], spaceId = "default") {
         value={{
           spaceId: () => spaceId,
           forms: createMemo(forms),
-          loadingForms: () => false,
+          loadingForms: () => loadingForms,
           columnTypes: () => [],
           refetchForms: vi.fn(),
-          entryStore: createEntryStore(() => spaceId),
-          spaceStore: createSpaceStore(),
+          entryStore: {} as ReturnType<typeof createEntryStore>,
+          spaceStore: {} as ReturnType<typeof createSpaceStore>,
         }}
       >
         <SpaceEntriesIndexPane />
@@ -58,11 +59,25 @@ function renderRoute(formsList: Form[] = [], spaceId = "default") {
 }
 
 const noteForm: Form = {
+  id: "00000000-0000-7000-8000-000000000001",
   name: "Notes",
   version: 1,
   template: "",
   fields: {
-    title: { type: "string", required: true },
+    title: {
+      id: 7,
+      type: "string",
+      required: true,
+      query_capability: {
+        field: { kind: "property", field_id: 7 },
+        name: "title",
+        field_type: "string",
+        filterable: true,
+        sortable: true,
+        projectable: true,
+        supported_operators: ["equals", "contains"],
+      },
+    },
   },
 };
 
@@ -73,566 +88,42 @@ describe("/spaces/:space_id/entries", () => {
     for (const key of Object.keys(searchParams)) delete searchParams[key];
   });
 
-  it("REQ-FE-037: loads the plain Entry list without redirecting", async () => {
-    server.use(
-      http.get(
-        testApiUrl("/spaces/default/entries"),
-        () =>
-          HttpResponse.json([{
-            id: "entry-1",
-            updated_at: "2026-03-01T00:00:00Z",
-            properties: {},
-            tags: [],
-          }]),
-      ),
-    );
+  it("mounts the shared EntryBrowser for the canonical All Forms surface", () => {
+    renderRoute([], "default", true);
 
-    renderRoute();
-
-    expect(await screen.findByRole("heading", { name: "Entries" }))
+    expect(screen.getByRole("heading", { name: "Entries" }))
       .toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /entry-1/ }))
+    expect(screen.getByRole("toolbar", { name: "Entry query" }))
       .toBeInTheDocument();
-    expect(screen.queryByTestId("redirect")).not.toBeInTheDocument();
-  });
-
-  it("provides a flat list with local filtering and ID sorting", async () => {
-    server.use(
-      http.get(
-        testApiUrl("/spaces/default/entries"),
-        () =>
-          HttpResponse.json([
-            {
-              id: "entry-1",
-              form: "Notes",
-              updated_at: "2026-03-01T00:00:00Z",
-              properties: {},
-              tags: [],
-            },
-            {
-              id: "entry-2",
-              form: "Notes",
-              updated_at: "2026-03-02T00:00:00Z",
-              properties: {},
-              tags: [],
-            },
-            {
-              id: "entry-3",
-              form: "Notes",
-              updated_at: "2026-03-03T00:00:00Z",
-              properties: {},
-              tags: [],
-            },
-          ]),
-      ),
-    );
-
-    renderRoute();
-
-    expect(await screen.findByRole("button", { name: /entry-1/ }))
-      .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /entry-2/ }))
-      .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /entry-3/ }))
-      .toBeInTheDocument();
-    const filter = screen.getByRole("search");
-    expect(filter).toBeInTheDocument();
-    fireEvent.input(screen.getByLabelText("Filter entries"), {
-      target: { value: "entry-2" },
-    });
-    expect(screen.queryByRole("button", { name: /entry-1/ }))
-      .not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /entry-3/ }))
-      .not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /entry-2/ }))
-      .toBeInTheDocument();
-
-    // Filter matches the ID label.
-    fireEvent.input(screen.getByLabelText("Filter entries"), {
-      target: { value: "entry-3" },
-    });
-    expect(screen.queryByRole("button", { name: /entry-2/ }))
-      .not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /entry-3/ }))
-      .toBeInTheDocument();
-
-    // Filter matches the form name as well as the label.
-    fireEvent.input(screen.getByLabelText("Filter entries"), {
-      target: { value: "Notes" },
-    });
-    expect(screen.getByRole("button", { name: /entry-1/ }))
-      .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /entry-2/ }))
-      .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /entry-3/ }))
-      .toBeInTheDocument();
-
-    fireEvent.input(screen.getByLabelText("Filter entries"), {
-      target: { value: "" },
-    });
-    fireEvent.change(screen.getByLabelText("Sort entries"), {
-      target: { value: "id" },
-    });
     expect(
-      [...document.querySelectorAll(".entryRowTitle")].map((node) =>
-        node.textContent
-      ),
-    ).toEqual(["entry-1", "entry-2", "entry-3"]);
-    fireEvent.change(screen.getByLabelText("Sort entries"), {
-      target: { value: "updated" },
-    });
-    expect(
-      [...document.querySelectorAll(".entryRowTitle")].map((node) =>
-        node.textContent
-      ),
-    ).toEqual(["entry-3", "entry-2", "entry-1"]);
-    expect(document.querySelector(".entryRow")).toBeInTheDocument();
-    expect(document.querySelector(".entryRow .ui-card")).toBeNull();
+      screen.getByRole("toolbar", { name: "Entry query" })
+        .querySelectorAll("summary"),
+    ).toHaveLength(3);
   });
 
-  it("REQ-FE-054: keeps the dedicated SQL session result route", async () => {
-    searchParams.session = "session-1";
-    server.use(
-      http.get(
-        testApiUrl("/spaces/default/sql-sessions/session-1"),
-        () =>
-          HttpResponse.json({
-            id: "session-1",
-            space_id: "default",
-            sql_id: "query-1",
-            sql: "SELECT 1",
-            status: "ready",
-            created_at: "2026-03-01T00:00:00Z",
-            expires_at: "2026-03-01T01:00:00Z",
-          }),
-      ),
-      http.get(
-        testApiUrl("/spaces/default/sql-sessions/session-1/rows"),
-        () =>
-          HttpResponse.json({
-            rows: [{
-              _ugoite_id: "query-entry",
-              _ugoite_updated_at: 1772960822.056,
-              field_100: "Active",
-            }],
-            offset: 0,
-            limit: 24,
-            total_count: 1,
-          }),
-      ),
-    );
-
-    renderRoute();
-
-    const expectedDate = new Date(1772960822.056 * 1000).toLocaleDateString();
-    expect(await screen.findByText("query-entry")).toBeInTheDocument();
-    expect(await screen.findByText(expectedDate)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /query-entry/ }));
-    expect(navigate).toHaveBeenCalledWith(
-      "/spaces/default/entries/query-entry",
-    );
-  });
-
-  it("shows an explicit error for SQL rows that are not Entry projections", async () => {
-    searchParams.session = "session-1";
-    server.use(
-      http.get(
-        testApiUrl("/spaces/default/sql-sessions/session-1"),
-        () =>
-          HttpResponse.json({
-            id: "session-1",
-            status: "ready",
-          }),
-      ),
-      http.get(
-        testApiUrl("/spaces/default/sql-sessions/session-1/rows"),
-        () =>
-          HttpResponse.json({
-            rows: [{ field_100: "Active" }],
-            offset: 0,
-            limit: 24,
-            total_count: 1,
-          }),
-      ),
-    );
-
-    renderRoute();
-
-    expect(
-      await screen.findByText(/SQL session result is not an Entry projection/),
-    ).toBeInTheDocument();
-    expect(document.querySelector(".entryRow")).toBeNull();
-    expect(navigate).not.toHaveBeenCalled();
-  });
-
-  it("returns to the Forms workspace when clearing SQL results", async () => {
-    searchParams.session = "session-1";
-    server.use(
-      http.get(
-        testApiUrl("/spaces/default/sql-sessions/session-1"),
-        () =>
-          HttpResponse.json({
-            id: "session-1",
-            space_id: "default",
-            sql_id: "query-1",
-            sql: "SELECT 1",
-            status: "ready",
-            created_at: "2026-03-01T00:00:00Z",
-            expires_at: "2026-03-01T01:00:00Z",
-          }),
-      ),
-      http.get(
-        testApiUrl("/spaces/default/sql-sessions/session-1/rows"),
-        () =>
-          HttpResponse.json({
-            rows: [],
-            offset: 0,
-            limit: 24,
-            total_count: 0,
-          }),
-      ),
-    );
-    renderRoute();
-    expect(await screen.findByText("No entries found.")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Clear query" }));
-
-    expect(navigate).toHaveBeenCalledWith("/spaces/default/forms");
-  });
-
-  it("form scope: uses the Form name as heading with a back link and preselected New Entry", async () => {
+  it("uses Form scope capabilities and keeps create beside the browser", () => {
     searchParams.form = "Notes";
-    let queryBody: { criteria?: Record<string, unknown> } | undefined;
-    server.use(
-      http.get(
-        testApiUrl("/spaces/default/entries"),
-        () =>
-          HttpResponse.json([{
-            id: "other-1",
-            form: "Projects",
-            updated_at: "2026-03-01T00:00:00Z",
-            properties: {},
-            tags: [],
-          }]),
-      ),
-      http.post(
-        testApiUrl("/spaces/default/query"),
-        async ({ request }) => {
-          queryBody = await request.json() as {
-            criteria?: Record<string, unknown>;
-          };
-          return HttpResponse.json([{
-            id: "scoped-1",
-            form: "Notes",
-            updated_at: "2026-03-01T00:00:00Z",
-            properties: {},
-            tags: [],
-          }]);
-        },
-      ),
-    );
+    renderRoute([noteForm], "default", true);
 
-    renderRoute([noteForm]);
-
-    expect(await screen.findByRole("heading", { name: "Notes" }))
-      .toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Notes" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to Forms" }))
       .toHaveAttribute("href", "/spaces/default/forms");
-    expect(await screen.findByRole("button", { name: /scoped-1/ }))
-      .toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /other-1/ })).not
-      .toBeInTheDocument();
-    expect(queryBody?.criteria).toMatchObject({ form: "Notes" });
-
-    fireEvent.click(screen.getByRole("button", { name: "+ Entry" }));
-    expect(navigate).toHaveBeenCalledWith(
-      "/spaces/default/entries/new?form=Notes",
-    );
-  });
-
-  it("REQ-UX-ENTRY-001: renders form-scoped entries with a positional back link and list-adjacent create action", async () => {
-    searchParams.form = "Notes";
-    server.use(
-      http.post(
-        testApiUrl("/spaces/default/query"),
-        () =>
-          HttpResponse.json([{
-            id: "scoped-1",
-            form: "Notes",
-            updated_at: "2026-03-01T00:00:00Z",
-            properties: {},
-            tags: [],
-          }]),
-      ),
-    );
-
-    renderRoute([noteForm]);
-
-    expect(await screen.findByRole("heading", { name: "Notes" }))
-      .toBeInTheDocument();
-    // Shared positional back control: short visible label, full destination
-    // as the accessible name — no "Back to Forms" sentence in the layout.
-    const back = screen.getByRole("link", { name: "Back to Forms" });
-    expect(back).toHaveAttribute("href", "/spaces/default/forms");
-    expect(back).toHaveTextContent("Back");
-    expect(back.textContent).not.toMatch(/Back to Forms/);
-    // The create action sits adjacent to the list, not in the header.
+    const toolbar = screen.getByRole("toolbar", { name: "Entry query" });
+    expect(toolbar.textContent).toContain("title");
     const create = screen.getByRole("button", { name: "+ Entry" });
-    expect(
-      document.querySelector(".entriesHeader")!.contains(create),
-    ).toBe(false);
-    expect(
-      document.querySelector(".entriesCreateRow")!.contains(create),
-    ).toBe(true);
-    expect(document.querySelector(".entriesCreateRow")).toBeInTheDocument();
+    expect(create).toBeInTheDocument();
+    expect(document.querySelector(".entriesHeader")!.contains(create))
+      .toBe(false);
   });
 
-  it("REQ-UX-LIST-001: renders entry rows without type chips and with compact right-meta dates", async () => {
-    searchParams.form = "Notes";
-    server.use(
-      http.post(
-        testApiUrl("/spaces/default/query"),
-        () =>
-          HttpResponse.json([{
-            id: "scoped-1",
-            form: "Notes",
-            updated_at: "2026-03-01T00:00:00Z",
-            properties: {},
-            tags: [],
-          }]),
-      ),
-    );
-
-    renderRoute([noteForm]);
-
-    expect(await screen.findByRole("button", { name: /scoped-1/ }))
-      .toBeInTheDocument();
-    // The form is already the list context: no per-row type chip repeats it.
-    expect(document.querySelector(".entryRow .ui-pill")).toBeNull();
-    expect(document.querySelector(".entryRowForm")).toBeNull();
-    const row = screen.getByRole("button", { name: /scoped-1/ });
-    expect(row.textContent).toContain("scoped-1");
-    // Compact right-meta date without a repeated "Updated" label.
-    const date = document.querySelector(".entryRowDate")!;
-    expect(date.textContent).not.toMatch(/Updated/);
-    expect(date.textContent).toContain(
-      new Date("2026-03-01T00:00:00Z").toLocaleDateString(),
-    );
-  });
-
-  it("form scope: hides New Entry for reserved metadata Forms", async () => {
-    searchParams.form = "SQL";
-    server.use(
-      http.post(
-        testApiUrl("/spaces/default/query"),
-        () => HttpResponse.json([]),
-      ),
-    );
-
-    renderRoute([]);
-
-    expect(await screen.findByRole("heading", { name: "SQL" }))
-      .toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back to Forms" }))
-      .toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "+ Entry" })).not
-      .toBeInTheDocument();
-    expect(await screen.findByText("No entries found.")).toBeInTheDocument();
-  });
-
-  it("form scope: shows server query failures instead of entries", async () => {
-    searchParams.form = "Notes";
-    server.use(
-      http.post(
-        testApiUrl("/spaces/default/query"),
-        () => HttpResponse.json({ detail: "Error" }, { status: 500 }),
-      ),
-    );
-
-    renderRoute([noteForm]);
-
-    expect(await screen.findByRole("heading", { name: "Notes" }))
-      .toBeInTheDocument();
-    await waitFor(() =>
-      expect(document.querySelector(".ui-text-danger")).toBeInTheDocument()
-    );
-    expect(screen.queryByRole("button", { name: /scoped-1/ })).not
-      .toBeInTheDocument();
-  });
-
-  it("form scope: localizes the back link in Japanese", async () => {
-    setLocale("ja");
-    searchParams.form = "Notes";
-    server.use(
-      http.post(
-        testApiUrl("/spaces/default/query"),
-        () => HttpResponse.json([]),
-      ),
-    );
-
-    renderRoute([noteForm]);
-
-    expect(await screen.findByRole("link", { name: "フォームへ戻る" }))
-      .toBeInTheDocument();
-  });
-
-  it("prefers the SQL session over the route form when both are present", async () => {
-    searchParams.session = "session-1";
-    searchParams.form = "Notes";
-    let formQueried = false;
-    server.use(
-      http.get(
-        testApiUrl("/spaces/default/sql-sessions/session-1"),
-        () =>
-          HttpResponse.json({
-            id: "session-1",
-            space_id: "default",
-            sql_id: "query-1",
-            sql: "SELECT 1",
-            status: "ready",
-            created_at: "2026-03-01T00:00:00Z",
-            expires_at: "2026-03-01T01:00:00Z",
-          }),
-      ),
-      http.get(
-        testApiUrl("/spaces/default/sql-sessions/session-1/rows"),
-        () =>
-          HttpResponse.json({
-            rows: [{
-              _ugoite_id: "session-entry",
-              _ugoite_updated_at: 1772960822.056,
-            }],
-            offset: 0,
-            limit: 24,
-            total_count: 1,
-          }),
-      ),
-      http.post(
-        testApiUrl("/spaces/default/query"),
-        () => {
-          formQueried = true;
-          return HttpResponse.json([]);
-        },
-      ),
-    );
-
-    renderRoute([noteForm]);
-
-    expect(await screen.findByRole("heading", { name: "Query Results" }))
-      .toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /session-entry/ }))
-      .toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Notes" })).not
-      .toBeInTheDocument();
-    expect(formQueried).toBe(false);
-  });
-
-  it("form scope: shows a helpful hint for an unknown form name", async () => {
+  it("does not query or render a browser for an unknown Form", () => {
     searchParams.form = "Missing";
-    server.use(
-      http.post(
-        testApiUrl("/spaces/default/query"),
-        () => HttpResponse.json([]),
-      ),
-    );
-
     renderRoute([noteForm]);
 
-    expect(await screen.findByRole("heading", { name: "Missing" }))
+    expect(screen.getByRole("heading", { name: "Missing" }))
       .toBeInTheDocument();
-    expect(await screen.findByText(/No such form “Missing”/))
-      .toBeInTheDocument();
-    expect(screen.queryByText("No entries found.")).not.toBeInTheDocument();
-  });
-
-  it("encodes Space path segments in Entry navigation targets", async () => {
-    const spaceId = "space/with space";
-    let requestedPath = "";
-    server.use(
-      http.get(
-        testApiUrl("/spaces/:spaceId/entries"),
-        ({ request }) => {
-          requestedPath = new URL(request.url).pathname;
-          return HttpResponse.json([{
-            id: "entry-1",
-            updated_at: "2026-03-01T00:00:00Z",
-            properties: {},
-            tags: [],
-          }]);
-        },
-      ),
-    );
-
-    renderRoute([], spaceId);
-
-    fireEvent.click(await screen.findByRole("button", { name: /entry-1/ }));
-    expect(navigate).toHaveBeenCalledWith(
-      "/spaces/space%2Fwith%20space/entries/entry-1",
-    );
-    // The store keeps the logical Space ID: the API client applies its own
-    // single path encoding, so the request path carries exactly one level
-    // of encoding and never the navigation-encoded string verbatim twice.
-    expect(requestedPath).toContain("/spaces/space%2Fwith%20space/entries");
-    expect(requestedPath).not.toContain("%25");
-  });
-
-  it("encodes Space path segments in the Forms back link and New Entry target", async () => {
-    searchParams.form = "My Form";
-    server.use(
-      http.post(
-        testApiUrl("/spaces/:spaceId/query"),
-        () => HttpResponse.json([]),
-      ),
-    );
-
-    renderRoute([noteForm], "space/with space");
-
-    expect(await screen.findByRole("heading", { name: "My Form" }))
-      .toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back to Forms" }))
-      .toHaveAttribute("href", "/spaces/space%2Fwith%20space/forms");
-
-    fireEvent.click(screen.getByRole("button", { name: "+ Entry" }));
-    expect(navigate).toHaveBeenCalledWith(
-      "/spaces/space%2Fwith%20space/entries/new?form=My%20Form",
-    );
-  });
-
-  it("#2864: unscoped view shows Form name per row; scoped view does not repeat it", async () => {
-    server.use(
-      http.get(
-        testApiUrl("/spaces/default/entries"),
-        () =>
-          HttpResponse.json([
-            {
-              id: "entry-1",
-              form: "Notes",
-              updated_at: "2026-03-01T00:00:00Z",
-              properties: {},
-              tags: [],
-            },
-            {
-              id: "entry-2",
-              form: "Projects",
-              updated_at: "2026-03-02T00:00:00Z",
-              properties: {},
-              tags: [],
-            },
-          ]),
-      ),
-    );
-
-    renderRoute([noteForm]);
-
-    expect(await screen.findByRole("button", { name: /entry-1/ }))
-      .toBeInTheDocument();
-    const zebra = screen.getByRole("button", { name: /entry-1/ });
-    const plan = screen.getByRole("button", { name: /entry-2/ });
-    expect(zebra.textContent).toContain("Notes");
-    expect(plan.textContent).toContain("Projects");
-    expect(document.querySelector(".entryRowForm")).not.toBeNull();
-    // Entry creation stays one tap away in the unscoped view.
-    expect(screen.getByRole("button", { name: "+ Entry" })).toBeInTheDocument();
+    expect(screen.getByText(/No such form “Missing”/)).toBeInTheDocument();
+    expect(screen.queryByRole("toolbar", { name: "Entry query" }))
+      .not.toBeInTheDocument();
   });
 });

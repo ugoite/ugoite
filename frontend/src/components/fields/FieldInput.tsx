@@ -16,6 +16,7 @@ import {
   parseNumberItemText,
 } from "~/lib/draft-values";
 import { t } from "~/lib/i18n";
+import type { Form } from "~/lib/types";
 
 export interface FieldDefinitionLike {
   type: string;
@@ -36,14 +37,16 @@ export interface FieldInputProps {
    * Defaults to `fieldId` when the call site has no display name.
    */
   fieldName?: string;
-  /** Space scope for row-reference lookups. Empty falls back to raw text. */
+  /** Space scope for the canonical EntryQuery row-reference picker. */
   spaceId?: string;
+  /** Form catalog used to resolve Row Reference targets and capabilities. */
+  forms?: readonly Form[];
   invalid?: boolean;
   describedBy?: string;
   /** Long-text rendering for string-like fields (markdown document fields). */
   multiline?: boolean;
   placeholder?: string;
-  /** True while a row-reference search names no saved entry. */
+  /** Kept for form-level validation hooks around row-reference selection. */
   onRowReferencePendingChange?: (pending: boolean) => void;
 }
 
@@ -302,6 +305,7 @@ function RowReferenceListRows(
           <RowReferenceSelect
             spaceId={props.spaceId ?? ""}
             targetForm={props.targetForm}
+            forms={props.forms}
             value={item() ?? ""}
             fieldId={index() === 0
               ? props.fieldId
@@ -344,6 +348,7 @@ export function FieldInput(props: FieldInputProps) {
       <RowReferenceSelect
         spaceId={props.spaceId ?? ""}
         targetForm={normalizeRowReferenceTargetForm(props.field)}
+        forms={props.forms}
         value={typeof props.value === "string" ? props.value : ""}
         fieldId={props.fieldId}
         invalid={props.invalid}

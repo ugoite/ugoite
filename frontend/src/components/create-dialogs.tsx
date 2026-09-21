@@ -476,6 +476,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
         fieldId={fieldId}
         fieldName={name}
         spaceId={pickerSpaceId()}
+        forms={props.forms}
         multiline={isLongTextField(name, def)}
         placeholder={isLongTextField(name, def)
           ? resolveTextareaPlaceholder()

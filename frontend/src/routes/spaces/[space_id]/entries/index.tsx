@@ -1,27 +1,29 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-  Show,
-} from "solid-js";
-import { CreateFormDialog } from "~/components/create-dialogs";
+import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { BackLink } from "~/components/BackLink";
+import { CreateFormDialog } from "~/components/create-dialogs";
+import { EntryBrowser } from "~/components/EntryBrowser";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
-import { formatDateLabel } from "~/lib/date-format";
+import {
+  createEntryQueryController,
+  type EntryProjection,
+  type EntryQueryCapabilities,
+  type EntryQueryScope,
+  systemEntryCapabilities,
+} from "~/lib/entry-query";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
-import { formApi, searchApi } from "~/lib/ugoite-client";
-import { t } from "~/lib/i18n";
-import { createResource } from "~/lib/recoverable-resource";
 import {
   filterCreatableEntryForms,
   isReservedMetadataForm,
 } from "~/lib/metadata-forms";
-import { sqlSessionApi, sqlSessionRowToEntryRecord } from "~/lib/ugoite-client";
+import {
+  formApi,
+  sqlSessionApi,
+  sqlSessionRowToEntryRecord,
+} from "~/lib/ugoite-client";
+import { t } from "~/lib/i18n";
+import { createResource } from "~/lib/recoverable-resource";
 import type { EntryRecord, FormCreatePayload } from "~/lib/types";
-import { entryDisplayLabel } from "~/lib/entry-label";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import {
   spaceEntriesPath,
@@ -31,6 +33,13 @@ import {
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "entries" });
+
+const fieldProjection = (capabilities: EntryQueryCapabilities): EntryProjection => {
+  const fields = capabilities.fields
+    .filter((field) => field.projectable && field.field.kind !== "form")
+    .map((field) => field.field);
+  return fields.length > 0 ? { kind: "fields", fields } : { kind: "preview" };
+};
 
 export default function SpaceEntriesIndexPane() {
   const navigate = useNavigate();
@@ -42,24 +51,25 @@ export default function SpaceEntriesIndexPane() {
     filterCreatableEntryForms(ctx.forms())
   );
   const hasCreatableForms = createMemo(() => creatableForms().length > 0);
-
-  const sessionId = createMemo(
-    () => (searchParams.session ? String(searchParams.session) : ""),
+  const sessionId = createMemo(() =>
+    searchParams.session ? String(searchParams.session) : ""
   );
-  const formName = createMemo(
-    () => (searchParams.form ? String(searchParams.form).trim() : ""),
+  const formName = createMemo(() =>
+    searchParams.form ? String(searchParams.form).trim() : ""
   );
-  const isReservedForm = createMemo(
-    () => formName() !== "" && isReservedMetadataForm(formName()),
+  const selectedForm = createMemo(() =>
+    ctx.forms().find((form) => form.name === formName())
   );
-  const [page, setPage] = createSignal(1);
-  const [pageSize] = createSignal(24);
+  const isReservedForm = createMemo(() =>
+    formName() !== "" && isReservedMetadataForm(formName())
+  );
 
   const [session, { refetch: refetchSession }] = createResource(
     () => sessionId().trim() || null,
     async (id) => sqlSessionApi.get(spaceId(), id),
   );
-
+  const [page, setPage] = createSignal(1);
+  const [pageSize] = createSignal(24);
   const [sessionRows] = createResource(
     () => {
       const id = sessionId().trim();
@@ -70,49 +80,69 @@ export default function SpaceEntriesIndexPane() {
       sqlSessionApi.rows(spaceId(), id, offset, limit),
   );
 
-  // Form-scoped Entry list: server-side query, never a client-side filter
-  // over the unpaginated entry store.
-  const [formEntries] = createResource(
-    () => {
-      if (sessionId().trim() || !formName()) return null;
-      return { id: spaceId(), form: formName() };
-    },
-    async ({ id, form }) => await searchApi.query(id, { form }),
+  const queryScope = createMemo<EntryQueryScope>(() =>
+    selectedForm()?.id
+      ? { kind: "form", form_id: selectedForm()!.id! }
+      : { kind: "all" }
   );
+  const capabilities = createMemo<EntryQueryCapabilities>(() => {
+    const scope = queryScope();
+    const system = systemEntryCapabilities(scope);
+    const formCapabilities = selectedForm()
+      ? Object.values(selectedForm()!.fields)
+        .map((field) => field.query_capability)
+        .filter((field): field is NonNullable<typeof field> =>
+          field !== undefined
+        )
+      : [];
+    return { scope, fields: [...system.fields, ...formCapabilities] };
+  });
 
+  const controller = createEntryQueryController(
+    () => spaceId(),
+    { scope: queryScope(), filters: [], sort: [] },
+    formName() ? fieldProjection(capabilities()) : { kind: "preview" },
+  );
+  let lastQueryConfiguration = "";
   createEffect(() => {
-    if (spaceId() && !sessionId().trim() && !formName()) {
-      ctx.entryStore.loadEntries();
-    }
+    if (sessionId().trim() || ctx.loadingForms()) return;
+    if (formName() && !selectedForm()?.id) return;
+    const nextQuery = { scope: queryScope(), filters: [], sort: [] };
+    const nextProjection = formName()
+      ? fieldProjection(capabilities())
+      : { kind: "preview" as const };
+    const configuration = JSON.stringify({
+      space_id: spaceId(),
+      nextQuery,
+      nextProjection,
+    });
+    if (configuration === lastQueryConfiguration) return;
+    lastQueryConfiguration = configuration;
+    void controller.configure(nextQuery, nextProjection);
   });
 
   createEffect(() => {
     const id = sessionId().trim();
     if (!id) return;
     const interval = setInterval(() => {
-      if (session()?.status === "running") {
-        refetchSession();
-      }
+      if (session()?.status === "running") refetchSession();
     }, 1000);
-    onCleanup(() => clearInterval(interval));
+    return () => clearInterval(interval);
   });
 
   createEffect(() => {
-    if (sessionId().trim()) {
-      setPage(1);
-    }
+    if (sessionId().trim()) setPage(1);
   });
 
-  const displayEntryState = createMemo<{
-    entries: EntryRecord[];
-    error: Error | null;
-  }>(() => {
-    if (!sessionId().trim() && formName()) {
-      return { entries: formEntries() ?? [], error: null };
-    }
-    if (!sessionId().trim()) {
-      return { entries: ctx.entryStore.entries() || [], error: null };
-    }
+  const isUnknownForm = createMemo(() => {
+    const name = formName();
+    if (!name || sessionId().trim() || ctx.loadingForms()) return false;
+    if (isReservedMetadataForm(name)) return false;
+    return !selectedForm()?.id;
+  });
+  const sessionEntries = createMemo<
+    { entries: EntryRecord[]; error: Error | null }
+  >(() => {
     const rows = sessionRows()?.rows;
     if (!rows) return { entries: [], error: null };
     try {
@@ -124,103 +154,29 @@ export default function SpaceEntriesIndexPane() {
       };
     }
   });
-
-  const displayEntries = createMemo(() => displayEntryState().entries);
-
-  type EntrySort = "updated" | "id";
-  const [entryQuery, setEntryQuery] = createSignal("");
-  const [entrySort, setEntrySort] = createSignal<EntrySort>("updated");
-  const visibleEntries = createMemo(() => {
-    const query = entryQuery().trim().toLocaleLowerCase();
-    const filtered = query
-      ? displayEntries().filter((entry) =>
-        [entryDisplayLabel(entry), entry.form].some((value) =>
-          value?.toLocaleLowerCase().includes(query)
-        )
-      )
-      : displayEntries();
-
-    return [...filtered].sort((left, right) => {
-      if (entrySort() === "id") {
-        return left.id.localeCompare(right.id);
-      }
-
-      const leftUpdated = Date.parse(left.updated_at);
-      const rightUpdated = Date.parse(right.updated_at);
-      const leftTime = Number.isNaN(leftUpdated)
-        ? Number.NEGATIVE_INFINITY
-        : leftUpdated;
-      const rightTime = Number.isNaN(rightUpdated)
-        ? Number.NEGATIVE_INFINITY
-        : rightUpdated;
-      return rightTime - leftTime || left.id.localeCompare(right.id);
-    });
-  });
-
-  const totalCount = createMemo(() =>
-    sessionRows()?.totalCount ?? displayEntries().length
+  const sessionTotal = createMemo(() => sessionRows()?.totalCount ?? 0);
+  const sessionTotalPages = createMemo(() =>
+    Math.max(1, Math.ceil(sessionTotal() / pageSize()))
   );
-
-  const totalPages = createMemo(() =>
-    Math.max(1, Math.ceil(totalCount() / pageSize()))
+  const isLoading = createMemo(() =>
+    sessionId().trim() ? session.loading || sessionRows.loading : false
   );
-
-  const isLoading = createMemo(() => {
-    if (sessionId().trim()) {
-      return session.loading || sessionRows.loading;
-    }
-    if (formName()) {
-      return formEntries.loading;
-    }
-    return ctx.entryStore.loading();
-  });
-
-  const error = createMemo<unknown>(() => {
-    if (sessionId().trim()) {
-      return session.error || sessionRows.error || displayEntryState().error;
-    }
-    if (formName()) {
-      return formEntries.error || displayEntryState().error;
-    }
-    return ctx.entryStore.errorCause();
-  });
-
   const errorMessage = createMemo(() => {
-    const err = error();
-    if (!err) return null;
-    if (formName() && !sessionId().trim()) {
-      return formatUserFacingError(
-        err,
+    const error = sessionId().trim()
+      ? session.error || sessionRows.error || sessionEntries().error
+      : null;
+    return error
+      ? formatUserFacingError(
+        error,
         "formTable.recordsError",
-        "search.query",
-      );
-    }
-    return formatUserFacingError(
-      err,
-      "formTable.recordsError",
-      sessionId().trim() ? "sql_session.rows" : undefined,
-    );
+        sessionId().trim() ? "sql_session.rows" : "entry.query",
+      )
+      : null;
   });
-  const isUnknownForm = createMemo(() => {
-    const name = formName();
-    if (!name || sessionId().trim() || ctx.loadingForms()) return false;
-    if (isReservedMetadataForm(name)) return false;
-    return !ctx.forms().some((form) => form.name === name);
-  });
-  const needsFirstFormGuidance = createMemo(
-    () =>
-      !sessionId().trim() &&
-      !formName() &&
-      !isLoading() &&
-      !ctx.loadingForms() &&
-      displayEntries().length === 0 &&
-      !errorMessage() &&
-      !hasCreatableForms(),
+  const needsFirstFormGuidance = createMemo(() =>
+    !sessionId().trim() && !formName() && !ctx.loadingForms() &&
+    !hasCreatableForms()
   );
-
-  const handleSelectEntry = (entryId: string) => {
-    navigate(spaceEntryPath(spaceId(), entryId));
-  };
 
   const handleCreateForm = async (payload: FormCreatePayload) => {
     await formApi.create(spaceId(), payload);
@@ -251,225 +207,154 @@ export default function SpaceEntriesIndexPane() {
             </Show>
           </div>
           <Show when={sessionId().trim()}>
-            <div class="flex items-center gap-2">
-              <button
-                type="button"
-                class="ui-button ui-button-secondary text-sm"
-                onClick={() => navigate(spaceFormsPath(spaceId()))}
-              >
-                {t("querySession.clear")}
-              </button>
-            </div>
+            <button
+              type="button"
+              class="ui-button ui-button-secondary text-sm"
+              onClick={() => navigate(spaceFormsPath(spaceId()))}
+            >
+              {t("querySession.clear")}
+            </button>
           </Show>
         </div>
 
         <div class="mt-6 entriesBody" aria-busy={isLoading() || undefined}>
-          <Show when={sessionId().trim() && session()?.status === "running"}>
-            <LocalBusyIndicator label={t("querySession.preparing")} />
-          </Show>
-          <Show when={session()?.status === "failed"}>
-            <p class="text-sm ui-text-danger">
-              {session()?.error || t("querySession.failed")}
-            </p>
-          </Show>
-          <Show when={session()?.status === "expired"}>
-            <p class="text-sm ui-text-danger">{t("querySession.expired")}</p>
-          </Show>
-          {/* Panel-local spinner alongside the list: rows stay mounted. */}
-          <Show when={isLoading()}>
-            <LocalBusyIndicator label={t("listPanel.loadingEntries")} />
-          </Show>
-          <Show when={errorMessage()}>
-            <p class="text-sm ui-text-danger">{errorMessage()}</p>
-          </Show>
           <Show
-            when={!needsFirstFormGuidance() &&
-              !isLoading() &&
-              displayEntries().length === 0 &&
-              !errorMessage()}
+            when={sessionId().trim()}
+            fallback={
+              <>
+                <Show when={isUnknownForm()}>
+                  <p class="text-sm ui-muted">
+                    {t("entriesPage.unknownFormHint", { form: formName() })}
+                  </p>
+                </Show>
+                <Show when={errorMessage()}>
+                  <p class="text-sm ui-text-danger">{errorMessage()}</p>
+                </Show>
+                <Show when={needsFirstFormGuidance()}>
+                  <div class="ui-alert ui-alert-warning mb-4 text-sm ui-stack-sm">
+                    <p class="font-medium">
+                      {t("dashboard.section.createEntry.empty")}
+                    </p>
+                    <p>
+                      {t("dashboard.section.createEntry.firstFormDescription")}
+                    </p>
+                    <button
+                      type="button"
+                      class="ui-button ui-button-primary text-sm"
+                      onClick={() => setShowCreateFormDialog(true)}
+                    >
+                      {t("dashboard.section.createEntry.createFirstForm")}
+                    </button>
+                  </div>
+                </Show>
+                <Show when={!isReservedForm()}>
+                  <div class="entriesCreateRow">
+                    <button
+                      type="button"
+                      class="ui-button ui-button-primary text-sm"
+                      disabled={!hasCreatableForms()}
+                      onClick={() =>
+                        navigate(
+                          formName()
+                            ? spaceEntriesPath(
+                              spaceId(),
+                              `/new?form=${encodeURIComponent(formName())}`,
+                            )
+                            : spaceEntriesPath(spaceId(), "/new"),
+                        )}
+                    >
+                      {t("entriesPage.newShort")}
+                    </button>
+                  </div>
+                </Show>
+                <Show when={!isReservedForm() && !isUnknownForm()}>
+                  <EntryBrowser
+                    controller={controller}
+                    capabilities={capabilities()}
+                    formLabels={Object.fromEntries(
+                      ctx.forms().filter((form) => form.id).map((
+                        form,
+                      ) => [form.id!, form.name]),
+                    )}
+                    onSelect={(row) =>
+                      navigate(spaceEntryPath(spaceId(), row.id))}
+                  />
+                </Show>
+              </>
+            }
           >
-            <Show
-              when={isUnknownForm()}
-              fallback={
-                <p class="text-sm ui-muted">{t("entriesPage.noEntries")}</p>
-              }
-            >
-              <p class="text-sm ui-muted">
-                {t("entriesPage.unknownFormHint", { form: formName() })}
+            <Show when={session()?.status === "running"}>
+              <LocalBusyIndicator label={t("querySession.preparing")} />
+            </Show>
+            <Show when={session()?.status === "failed"}>
+              <p class="text-sm ui-text-danger">
+                {session()?.error || t("querySession.failed")}
               </p>
             </Show>
-          </Show>
-          <Show
-            when={!sessionId().trim() && !isLoading() && !errorMessage()}
-          >
-            <div class="entriesToolbar" role="search">
-              <label class="entriesSearch">
-                <span class="ui-sr-only">{t("entriesPage.filterLabel")}</span>
-                <span class="entriesSearchIcon" aria-hidden="true">⌕</span>
-                <input
-                  type="search"
-                  aria-label={t("entriesPage.filterLabel")}
-                  class="ui-input"
-                  placeholder={t("entriesPage.filterPlaceholder")}
-                  value={entryQuery()}
-                  onInput={(event) => setEntryQuery(event.currentTarget.value)}
-                />
-              </label>
-              <label class="entriesSort">
-                <span class="ui-sr-only">{t("entriesPage.sortLabel")}</span>
-                <select
-                  class="ui-select"
-                  aria-label={t("entriesPage.sortLabel")}
-                  value={entrySort()}
-                  onChange={(event) =>
-                    setEntrySort(event.currentTarget.value as EntrySort)}
-                >
-                  <option value="updated">
-                    {t("entriesPage.sortUpdated")}
-                  </option>
-                  <option value="id">{t("entriesPage.sortId")}</option>
-                </select>
-              </label>
-              <span class="entriesCount ui-muted">
-                {t("entriesPage.count", { count: visibleEntries().length })}
-              </span>
-            </div>
-          </Show>
-          <Show
-            when={!isLoading() && !errorMessage() &&
-              displayEntries().length > 0 && visibleEntries().length === 0}
-          >
-            <p class="text-sm ui-muted">{t("entriesPage.noMatches")}</p>
-          </Show>
-          <Show when={needsFirstFormGuidance()}>
-            <div class="ui-alert ui-alert-warning mb-4 text-sm ui-stack-sm">
-              <div class="ui-stack-sm">
-                <p class="font-medium">
-                  {t("dashboard.section.createEntry.empty")}
-                </p>
-                <p>{t("dashboard.section.createEntry.firstFormDescription")}</p>
-              </div>
-              <div>
-                <button
-                  type="button"
-                  class="ui-button ui-button-primary text-sm"
-                  onClick={() => setShowCreateFormDialog(true)}
-                >
-                  {t("dashboard.section.createEntry.createFirstForm")}
-                </button>
-              </div>
-            </div>
-          </Show>
-          <Show when={!formName() || !isReservedForm()}>
-            <div class="entriesCreateRow">
-              <button
-                type="button"
-                class="ui-button text-sm"
-                classList={{
-                  "ui-button-primary": hasCreatableForms(),
-                  "ui-button-secondary": !hasCreatableForms(),
-                }}
-                disabled={!hasCreatableForms()}
-                onClick={() =>
-                  navigate(
-                    formName()
-                      ? spaceEntriesPath(
-                        spaceId(),
-                        `/new?form=${encodeURIComponent(formName())}`,
-                      )
-                      : spaceEntriesPath(spaceId(), "/new"),
-                  )}
-              >
-                {t("entriesPage.newShort")}
-              </button>
-            </div>
-          </Show>
-          <div class="entriesList">
-            <For each={visibleEntries()}>
-              {(entry) => (
+            <Show when={session()?.status === "expired"}>
+              <p class="text-sm ui-text-danger">{t("querySession.expired")}</p>
+            </Show>
+            <Show when={isLoading()}>
+              <LocalBusyIndicator label={t("listPanel.loadingEntries")} />
+            </Show>
+            <Show when={errorMessage()}>
+              <p class="text-sm ui-text-danger">{errorMessage()}</p>
+            </Show>
+            <Show
+              when={!isLoading() && !errorMessage() &&
+                sessionEntries().entries.length === 0}
+            >
+              <p class="text-sm ui-muted">{t("entriesPage.noEntries")}</p>
+            </Show>
+            <div class="entriesList">
+              {sessionEntries().entries.map((entry) => (
                 <button
                   type="button"
                   class="entryRow"
-                  onClick={() => handleSelectEntry(entry.id)}
+                  onClick={() => navigate(spaceEntryPath(spaceId(), entry.id))}
                 >
-                  <span class="entryRowMain">
-                    <span class="entryRowTitle">
-                      {entryDisplayLabel(entry)}
-                    </span>
-                    {
-                      /* #2864: unscoped (all-forms) view keeps Form context as
-                        secondary metadata; the form-scoped list already names
-                        the Form in its heading so per-row repetition is out. */
-                    }
-                    <Show when={!formName() && entry.form}>
-                      <span class="entryRowForm ui-muted">
-                        {entry.form}
-                      </span>
-                    </Show>
-                  </span>
+                  <span class="entryRowTitle">{entry.id}</span>
                   <span class="entryRowDate ui-muted">
                     {formatDateLabel(entry.updated_at)}
                   </span>
-                  <span class="entryRowChevron" aria-hidden="true">›</span>
                 </button>
-              )}
-            </For>
-          </div>
-          <Show
-            when={!sessionId().trim() && !formName() &&
-              ctx.entryStore.hasMore()}
-          >
-            <div class="mt-6 flex justify-center">
-              <button
-                type="button"
-                class="ui-button ui-button-secondary text-sm"
-                disabled={ctx.entryStore.loadingMore()}
-                onClick={() => void ctx.entryStore.loadMoreEntries()}
-              >
-                {t("entriesPage.loadMore")}
-              </button>
-              {/* Footer spinner only: existing rows stay visible. */}
-              <Show when={ctx.entryStore.loadingMore()}>
-                <LocalBusyIndicator
-                  size="sm"
-                  label={t("entriesPage.loadingMore")}
-                />
-              </Show>
+              ))}
             </div>
-          </Show>
-          <Show when={sessionId().trim() && totalCount() > 0}>
-            <div class="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm ui-muted">
-              <div>
-                {t("querySession.pagination", {
-                  page: page(),
-                  totalPages: totalPages(),
-                  resultCount: totalCount(),
-                })}
+            <Show when={sessionTotal() > 0}>
+              <div class="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm ui-muted">
+                <span>
+                  {t("querySession.pagination", {
+                    page: page(),
+                    totalPages: sessionTotalPages(),
+                    resultCount: sessionTotal(),
+                  })}
+                </span>
+                <span class="flex gap-2">
+                  <button
+                    type="button"
+                    class="ui-button ui-button-secondary"
+                    disabled={page() <= 1}
+                    onClick={() => setPage((value) => Math.max(1, value - 1))}
+                  >
+                    {t("common.previous")}
+                  </button>
+                  <button
+                    type="button"
+                    class="ui-button ui-button-secondary"
+                    disabled={page() >= sessionTotalPages()}
+                    onClick={() =>
+                      setPage((value) =>
+                        Math.min(sessionTotalPages(), value + 1)
+                      )}
+                  >
+                    {t("common.next")}
+                  </button>
+                </span>
               </div>
-              <div class="flex items-center gap-2">
-                <button
-                  type="button"
-                  class="ui-button ui-button-secondary text-sm"
-                  disabled={page() <= 1}
-                  onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                >
-                  {t("common.previous")}
-                </button>
-                <button
-                  type="button"
-                  class="ui-button ui-button-secondary text-sm"
-                  disabled={page() >= totalPages()}
-                  onClick={() =>
-                    setPage((prev) => Math.min(totalPages(), prev + 1))}
-                >
-                  {t("common.next")}
-                </button>
-              </div>
-            </div>
+            </Show>
           </Show>
         </div>
       </div>
-
       <CreateFormDialog
         open={showCreateFormDialog()}
         columnTypes={ctx.columnTypes()}
