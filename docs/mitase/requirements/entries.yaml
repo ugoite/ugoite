@@ -5,7 +5,7 @@ category: Entry creation, mutation, revision, and retrieval
 requirements:
   - id: REQ-ENTRY-001
     title: Entry creation
-    description: Create an Entry from Markdown content by appending one immutable revision row to the stable Form ID's Iceberg table.
+    description: Create a structured Entry from Form field values by appending one immutable revision row to the stable Form ID's Iceberg table.
     priority: high
     status: implemented
     criteria:

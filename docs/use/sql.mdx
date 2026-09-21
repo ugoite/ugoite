@@ -101,7 +101,7 @@ ugoite sql session-count <session-id>
 ```
 
 `sql session-rows` returns one bounded page. Every row page carries the
-same envelope: `rows` (this page), `result` (alias of `rows`), `count`
+same envelope: `rows` (this page), `count`
 (rows in this page), `total_count` (rows in the whole result), `offset`,
 and `limit`, plus the `session_id` continuation handle. Pages default to
 `--limit 50`; `--offset`/`--limit` must stay within the `max_limit` window
@@ -116,7 +116,6 @@ ugoite sql session-rows <session-id> --offset 0 --limit 1
   "count": 1,
   "limit": 1,
   "offset": 0,
-  "result": [{ "_ugoite_id": "task-a", "field_<FieldId>": "Alpha" }],
   "rows": [{ "_ugoite_id": "task-a", "field_<FieldId>": "Alpha" }],
   "session_id": "<session-id>",
   "total_count": 2
@@ -135,7 +134,6 @@ ugoite sql saved-execute <sql-id> --limit 1
   "count": 1,
   "limit": 1,
   "offset": 0,
-  "result": [{ "_ugoite_id": "task-a", "field_<FieldId>": "Alpha" }],
   "rows": [{ "_ugoite_id": "task-a", "field_<FieldId>": "Alpha" }],
   "sql_id": "<sql-id>",
   "total_count": 2
@@ -154,7 +152,6 @@ ugoite sql saved-execute <sql-id> --limit 1
   "count": 1,
   "limit": 1,
   "offset": 0,
-  "result": [{ "_ugoite_id": "task-a", "field_<FieldId>": "Alpha" }],
   "rows": [{ "_ugoite_id": "task-a", "field_<FieldId>": "Alpha" }],
   "session_id": "<session-id>",
   "sql_id": "<sql-id>",
@@ -171,7 +168,7 @@ Contract notes:
 - `session_id` is not guaranteed to be present in local/core mode. Scripts
   and automation must not require it, and must not treat its presence or
   value as Knowledge semantics.
-- Row, count, and pagination meanings (`rows`/`result`/`count`/
+- Row, count, and pagination meanings (`rows`/`count`/
   `total_count`/`offset`/`limit`) are identical across both transports.
 
 ## Verify the result

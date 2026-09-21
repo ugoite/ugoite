@@ -523,7 +523,7 @@ requirements:
 
   - id: REQ-API-013
     title: Current MCP surface documentation
-    description: "Current-state MCP documentation describes the shipped v1 semantic facade: ugoite.search, ugoite.save, and authorized ugoite.delete, plus lazy stable Entry/Form resources. Plain Markdown save canonicalizes to the built-in Entry Form without weakening Entry validation; storage-specific routes, prompts, SQL, and revision tools remain future work."
+    description: "Current-state MCP documentation describes the shipped v1 semantic facade: ugoite.search, ugoite.save, and authorized ugoite.delete, plus lazy stable Entry/Form resources. ugoite.save creates a structured Entry without id or updates one opaque Entry with id using form, fields, tags, and optional extra_attributes values; a declared Markdown Form field remains ordinary Markdown text and the Entry itself is never submitted as a Markdown document. Storage-specific routes, prompts, SQL, and revision tools remain future work."
     priority: medium
     status: implemented
     criteria:

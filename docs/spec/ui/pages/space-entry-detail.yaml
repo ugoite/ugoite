@@ -20,7 +20,7 @@ components:
         - id: entry-label
           type: heading
           text: "{entry_label}"
-          description: Legacy compatibility title when present, otherwise the stable entry ID. No Untitled canonical label.
+          description: Stable entry ID label. A Form-defined Title or Name renders as a normal field with no Entry-level semantics. No Untitled canonical label.
         - id: save-status
           type: status
           values:
