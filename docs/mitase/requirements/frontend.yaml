@@ -283,19 +283,28 @@ requirements:
                 criterion: REQ-FE-004#criterion.display
                 covers: [FEAT-FE-002#binding.frontend/target.list-panel]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "should render entries list" } }
+          - id: entry-browser
+            adapter: typescript
+            path: frontend/src/components/EntryBrowser.test.tsx
+            selector: { kind: test, name: "connects toolbar actions to canonical projection, text, and sort state" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-004#criterion.display
+                covers: [FEAT-FE-002#binding.frontend/target.entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "connects toolbar actions to canonical projection, text, and sort state" } }
           - id: entries-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/entries/index.test.tsx"
-            selector: { kind: test, name: "REQ-FE-037: loads the plain Entry list without redirecting" }
+            selector: { kind: test, name: "mounts the shared EntryBrowser for the canonical All Forms surface" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-004#criterion.display
                 covers: [FEAT-FE-002#binding.frontend/target.entries-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "REQ-FE-037: loads the plain Entry list without redirecting" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "mounts the shared EntryBrowser for the canonical All Forms surface" } }
               - kind: verifies
                 criterion: REQ-FE-067#criterion.plain-entry-workspace
                 covers: [FEAT-FE-002#binding.frontend/target.entries-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "REQ-FE-037: loads the plain Entry list without redirecting" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "mounts the shared EntryBrowser for the canonical All Forms surface" } }
   - id: REQ-FE-008
     title: Entry Selection and Highlight
     description: The frontend highlights the selected Entry and lets the user select an Entry to load its detail view.
@@ -339,19 +348,15 @@ requirements:
                 criterion: REQ-FE-008#criterion.selection
                 covers: [FEAT-FE-002#binding.frontend/target.list-panel]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "should call onSelectEntry when a entry is clicked" } }
-          - id: route-selection
+          - id: entry-browser-selection
             adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/entries/index.test.tsx"
-            selector: { kind: test, name: "REQ-FE-054: keeps the dedicated SQL session result route" }
+            path: frontend/src/components/EntryBrowser.test.tsx
+            selector: { kind: test, name: "keeps selection separate from server mutation" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-008#criterion.selection
-                covers: [FEAT-FE-002#binding.frontend/target.entries-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "REQ-FE-054: keeps the dedicated SQL session result route" } }
-              - kind: verifies
-                criterion: REQ-FE-067#criterion.sql-session-surface
-                covers: [FEAT-FE-002#binding.frontend/target.entries-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "REQ-FE-054: keeps the dedicated SQL session result route" } }
+                covers: [FEAT-FE-002#binding.frontend/target.entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "keeps selection separate from server mutation" } }
   - id: REQ-FE-005
     title: Markdown Editor
     description: The frontend provides a Markdown editor with editing, preview, save, and safe rendered-preview behavior for Entry content.
@@ -1500,118 +1505,38 @@ requirements:
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/lib/preferences-store.test.ts", test: "REQ-FE-064: public locale initialization avoids portable preference requests" } }
 
   - id: REQ-FE-065
-    title: Searchable Row Reference Picker
-    description: Create-entry flows for row_reference fields let users search and choose target-form entries by human-readable metadata while storing the stable referenced entry_id and blocking submission until a typed search is resolved to a saved target entry.
+    title: EntryQuery Row Reference Picker
+    description: Create-entry flows for row_reference fields use the shared EntryBrowser in select mode, scope queries to the declared target Form, show human-readable Entry content, and commit the stable referenced entry_id only after confirmation.
     priority: medium
     status: implemented
     criteria:
       - id: search-and-store
         kind: behavior
-        statement: Web and chat create-entry modes let users search a target Form and store the selected stable entry_id rather than the display label.
+        statement: The row_reference dialog searches the declared target Form through EntryQuery and stores the selected stable entry_id rather than the display label.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
       - id: submission-guard
         kind: security
-        statement: A row_reference search that has not been resolved to a selected target entry blocks web and chat submission.
-        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
-      - id: bounded-lookup
-        kind: behavior
-        statement: Row-reference lookup requests are scoped to the target Form, use the bounded picker limit, omit blank keyword queries, and surface backend failures to the picker.
-        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
-      - id: protocol-binding
-        kind: behavior
-        statement: Row-reference lookup protocol requests preserve the immutable Space UID and encode the target Form, limit, and optional keyword as the supported entry.options request.
+        statement: Selecting a row_reference Entry does not mutate the parent draft until the dialog is confirmed; cancel leaves the draft unchanged.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
     bindings:
       - id: row-reference-verification
         role: verification
         facet: verification
-        responsibility: Verify web/chat row-reference selection, submission guarding, bounded lookup behavior, protocol encoding, and the browser journey through exact frontend and browser tests.
+        responsibility: Verify target-Form EntryQuery selection and confirm-only draft mutation through exact frontend tests.
         targets:
-          - id: web-picker
+          - id: entry-query-picker
             adapter: typescript
             path: frontend/src/components/create-dialogs.test.tsx
-            selector: { kind: test, name: "REQ-FE-065: row_reference fields offer a searchable picker while storing stable entry ids" }
+            selector: { kind: test, name: "routes Row Reference selection through the target Form EntryQuery" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-065#criterion.search-and-store
                 covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "REQ-FE-065: row_reference fields offer a searchable picker while storing stable entry ids" } }
-          - id: chat-picker
-            adapter: typescript
-            path: frontend/src/components/create-dialogs.test.tsx
-            selector: { kind: test, name: "REQ-FE-065: chat mode stores the selected row_reference entry id" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-065#criterion.search-and-store
-                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "REQ-FE-065: chat mode stores the selected row_reference entry id" } }
-          - id: submission-guard
-            adapter: typescript
-            path: frontend/src/components/create-dialogs.test.tsx
-            selector: { kind: test, name: "REQ-FE-065: row_reference searches must resolve to a saved entry before submit" }
-            claims:
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "routes Row Reference selection through the target Form EntryQuery" } }
               - kind: verifies
                 criterion: REQ-FE-065#criterion.submission-guard
                 covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "REQ-FE-065: row_reference searches must resolve to a saved entry before submit" } }
-          - id: chat-submission-guard
-            adapter: typescript
-            path: frontend/src/components/create-dialogs.test.tsx
-            selector: { kind: test, name: "REQ-FE-065: chat mode blocks unresolved row_reference searches before submit" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-065#criterion.submission-guard
-                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "REQ-FE-065: chat mode blocks unresolved row_reference searches before submit" } }
-          - id: bounded-options
-            adapter: typescript
-            path: frontend/src/lib/client.test.ts
-            selector: { kind: test, name: "REQ-FE-065: row_reference picker options request bounded form-scoped summaries" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-065#criterion.bounded-lookup
-                covers: [FEAT-SRCH-001#binding.frontend/target.search-api]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/lib/client.test.ts", test: "REQ-FE-065: row_reference picker options request bounded form-scoped summaries" } }
-          - id: lookup-failure
-            adapter: typescript
-            path: frontend/src/components/create-dialogs.test.tsx
-            selector: { kind: test, name: "REQ-FE-065: row_reference pickers surface load errors when reference lookup fails" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-065#criterion.bounded-lookup
-                covers: [FEAT-SRCH-001#binding.frontend/target.search-api]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "REQ-FE-065: row_reference pickers surface load errors when reference lookup fails" } }
-          - id: blank-options
-            adapter: typescript
-            path: frontend/src/lib/client.test.ts
-            selector: { kind: test, name: "REQ-FE-065: row_reference picker options omit blank keyword queries" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-065#criterion.bounded-lookup
-                covers: [FEAT-SRCH-001#binding.frontend/target.search-api]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/lib/client.test.ts", test: "REQ-FE-065: row_reference picker options omit blank keyword queries" } }
-          - id: protocol-space
-            adapter: typescript
-            path: frontend/src/lib/ugoite-client/protocol.test.ts
-            selector: { kind: test, name: "REQ-FE-065: sends row-reference lookups with the immutable Space UID" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-065#criterion.protocol-binding
-                covers: [FEAT-FE-008#binding.frontend/target.row-reference-protocol]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/lib/ugoite-client/protocol.test.ts", test: "REQ-FE-065: sends row-reference lookups with the immutable Space UID" } }
-          - id: browser-picker
-            adapter: typescript
-            path: e2e/entries.test.ts
-            selector: { kind: test, name: "REQ-FE-065: create-entry uses a searchable row_reference picker and stores the selected entry_id" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-065#criterion.search-and-store
-                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/entries.test.ts, test: "REQ-FE-065: create-entry uses a searchable row_reference picker and stores the selected entry_id" } }
-              - kind: verifies
-                criterion: REQ-FE-065#criterion.bounded-lookup
-                covers: [FEAT-SRCH-001#binding.frontend/target.search-api]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/entries.test.ts, test: "REQ-FE-065: create-entry uses a searchable row_reference picker and stores the selected entry_id" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "routes Row Reference selection through the target Form EntryQuery" } }
 
   - id: REQ-FE-061
     title: Saved SQL List Route Guidance
@@ -1812,7 +1737,7 @@ requirements:
 
   - id: REQ-FE-067
     title: Form List Navigation and Form-Scoped Entries
-    description: The Forms route presents a list-only Form list where selecting a Form navigates to its form-scoped Entry list, the plain Entries route remains a portable-client compatibility surface without redirecting to Forms, SQL-session results remain dedicated, and Form/Entry dialogs retain usable action layout and visible icon affordances.
+    description: The Forms route presents a list-only Form list where selecting a Form navigates to its form-scoped EntryBrowser, the plain Entries route uses the canonical EntryQuery surface without redirecting to Forms, and Form/Entry dialogs retain usable action layout and visible icon affordances.
     priority: high
     status: implemented
     criteria:
@@ -1822,15 +1747,11 @@ requirements:
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
       - id: form-scoped-entries
         kind: behavior
-        statement: The Entries route with a form query parameter shows that Form's Entries from a form-scoped server query, links back to Forms, opens New Entry with that Form preselected, and hides New Entry for reserved metadata Forms.
+        statement: The Entries route with a form query parameter shows that Form's Entries through a form-scoped EntryQuery, links back to Forms, keeps New Entry adjacent to the EntryBrowser, and does not expose the browser for an unknown Form.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
       - id: plain-entry-workspace
         kind: behavior
-        statement: The plain Space Entries route loads the Entry list and first-entry flow through the portable client without redirecting to Forms.
-        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
-      - id: sql-session-surface
-        kind: behavior
-        statement: A session query parameter keeps the dedicated SQL-session result surface at the Entries route rather than collapsing it into the ordinary Form workspace.
+        statement: The plain Space Entries route mounts the shared EntryBrowser and loads Entries through the canonical EntryQuery without redirecting to Forms.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
       - id: dialog-workspace
         kind: quality
@@ -1844,7 +1765,7 @@ requirements:
       - id: unified-workspace-verification
         role: verification
         facet: verification
-        responsibility: Verify the list-only Form list, form-scoped Entries, plain Entries compatibility route, dedicated SQL-session result surface, dialog layout, and visible action icons through exact frontend tests.
+        responsibility: Verify the list-only Form list, form-scoped Entries, canonical EntryBrowser surface, dialog layout, and visible action icons through exact frontend tests.
         targets:
           - id: form-workspace
             adapter: typescript
@@ -1889,21 +1810,12 @@ requirements:
           - id: form-scoped-entries
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/entries/index.test.tsx"
-            selector: { kind: test, name: "form scope: uses the Form name as heading with a back link and preselected New Entry" }
+            selector: { kind: test, name: "uses Form scope capabilities and keeps create beside the browser" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-067#criterion.form-scoped-entries
                 covers: [FEAT-FE-002#binding.frontend/target.entries-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "form scope: uses the Form name as heading with a back link and preselected New Entry" } }
-          - id: form-scoped-reserved
-            adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/entries/index.test.tsx"
-            selector: { kind: test, name: "form scope: hides New Entry for reserved metadata Forms" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-067#criterion.form-scoped-entries
-                covers: [FEAT-FE-002#binding.frontend/target.entries-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "form scope: hides New Entry for reserved metadata Forms" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "uses Form scope capabilities and keeps create beside the browser" } }
           - id: dialog-action-layout
             adapter: typescript
             path: frontend/src/components/create-dialogs.test.tsx
