@@ -72,10 +72,10 @@ export function EntryBrowser(props: EntryBrowserProps) {
   const currentFilters = () => queryState().filters;
   const currentText = () => queryState().text ?? "";
   const [draftFilter, setDraftFilter] = createSignal<EntryFilter | null>(null);
-  const filterRows = createMemo(() => {
+  const filterRows = () => {
     const draft = draftFilter();
     return draft ? [...currentFilters(), draft] : currentFilters();
-  });
+  };
 
   const isProjected = (field: EntryFieldRef) =>
     projectionFields(projectionState()).some((candidate) =>
@@ -172,13 +172,11 @@ export function EntryBrowser(props: EntryBrowserProps) {
   };
 
   const addFilter = () => {
-    console.log("addFilter", draftFilter(), filterOptions());
     if (draftFilter()) return;
     const capability = filterOptions()[0];
     const operator = capability?.supported_operators[0];
     if (!capability || !operator) return;
     setDraftFilter({ field: capability.field, operator, value: "" });
-    console.log("draft after set", draftFilter());
   };
 
   const updateFilter = (index: number, filter: EntryFilter) => {
