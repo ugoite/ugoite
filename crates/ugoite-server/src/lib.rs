@@ -7096,28 +7096,7 @@ fn validate_approval_resource_id(value: &str, name: &str) -> ApiResult<()> {
 
 fn approval_intent(operation: &str, resource: &ResourceRef, intent: &Value) -> ApiResult<Value> {
     match operation {
-        "entry.delete" => {
-            let object = intent.as_object().ok_or_else(|| {
-                ApiError::new(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    json!({"code":"HUMAN_APPROVAL_INPUT_INVALID","message":"delete intent must be an object"}),
-                )
-            })?;
-            let target_id = object.get("target_id").and_then(Value::as_str);
-            let hard_delete = object.get("hard_delete").and_then(Value::as_bool);
-            if object.len() != 2
-                || target_id != Some(resource.id.as_str())
-                || hard_delete.is_none()
-                || hard_delete != Some(false)
-            {
-                return Err(ApiError::new(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    json!({"code":"HUMAN_APPROVAL_INPUT_INVALID","message":"delete intent does not match the operation and resource"}),
-                ));
-            }
-            Ok(canonical_json(intent))
-        }
-        "sql.delete" | "asset.delete" => {
+        "entry.delete" | "sql.delete" | "asset.delete" => {
             let object = intent.as_object().ok_or_else(|| {
                 ApiError::new(
                     StatusCode::UNPROCESSABLE_ENTITY,
@@ -9339,7 +9318,6 @@ async fn apply_operations(
         validate_id(&entry_id, "entry_id")?;
         let approval_mutation = json!({
             "target_id": entry_id,
-            "hard_delete": false,
         });
         let (principal_id, approval) = require_dangerous_resource_action(
             &state,
@@ -9788,7 +9766,6 @@ async fn delete_entry(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, entry_id)): Path<(String, String)>,
-    Query(query): Query<EntryDeleteQuery>,
 ) -> ApiResult<Json<Value>> {
     validate_id(&entry_id, "entry_id")?;
     let (principal_id, approval) = require_dangerous_resource_action(
@@ -9799,7 +9776,7 @@ async fn delete_entry(
         Action::Delete,
         ResourceKind::Entry,
         &entry_id,
-        &json!({"target_id": entry_id, "hard_delete": query.hard_delete.unwrap_or(false)}),
+        &json!({"target_id": entry_id}),
     )
     .await?;
     let approval_for_audit = approval.as_ref().map(|pending| pending.approval.clone());
@@ -9812,7 +9789,6 @@ async fn delete_entry(
         let mutation_service = state.service.clone();
         let mutation_space_id = space_id.clone();
         let mutation_entry_id = entry_id.clone();
-        let mutation_hard_delete = query.hard_delete.unwrap_or(false);
         let mutation_actor_for_approved = mutation_actor.clone();
         let result = execute_approved_mutation(&state, &space_id, &identity, pending, move |_| {
             Box::pin(async move {
@@ -9820,7 +9796,6 @@ async fn delete_entry(
                     .delete_entry_with_receipt(
                         &mutation_space_id,
                         &mutation_entry_id,
-                        mutation_hard_delete,
                         &mutation_actor_for_approved,
                     )
                     .await
@@ -9866,12 +9841,7 @@ async fn delete_entry(
                 with_active_request_credential(&state, &identity, || async {
                     state
                         .service
-                        .delete_entry_with_receipt(
-                            &space_id,
-                            &entry_id,
-                            query.hard_delete.unwrap_or(false),
-                            &mutation_actor,
-                        )
+                        .delete_entry_with_receipt(&space_id, &entry_id, &mutation_actor)
                         .await
                 })
                 .await
@@ -9932,11 +9902,6 @@ async fn delete_entry(
         response["change_id"] = value.clone();
     }
     Ok(Json(response))
-}
-
-#[derive(Deserialize)]
-struct EntryDeleteQuery {
-    hard_delete: Option<bool>,
 }
 
 async fn entry_history(
@@ -10246,60 +10211,42 @@ async fn search_entries(
     ))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct QueryRequest {
+    criteria: ugoite_core::structured_search::StructuredSearch,
+}
+
 async fn query_entries(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path(space_id): Path<String>,
-    Json(payload): Json<Value>,
+    payload: Result<Json<QueryRequest>, JsonRejection>,
 ) -> ApiResult<Json<Value>> {
-    if payload.get("criteria").is_some() && payload.get("filter").is_some() {
-        return Err(ApiError::from_core(
-            AppError::invalid_input(
-                ErrorCode::InvalidInput,
-                "structured search criteria and legacy filter cannot be supplied together",
-            )
-            .into(),
-        ));
-    }
+    let Json(request) = payload.map_err(|error| {
+        ApiError::new(
+            error.status(),
+            json!({
+                "code": "INVALID_INPUT",
+                "message": error.body_text(),
+            }),
+        )
+    })?;
     // Deserialize and syntactically validate typed criteria before permission
     // and principal reads. Form existence and field authorization remain in
     // the service boundary so an unauthorized caller cannot infer them.
-    let criteria = if let Some(criteria_value) = payload.get("criteria") {
-        let criteria: ugoite_core::structured_search::StructuredSearch =
-            serde_json::from_value(criteria_value.clone()).map_err(|error| {
-                ApiError::new(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    serde_json::json!({
-                        "code": "INVALID_INPUT",
-                        "message": format!("invalid structured search criteria: {error}"),
-                    }),
-                )
-            })?;
-        ugoite_core::structured_search::validate_structured_search_syntax(&criteria)
-            .map_err(|error| ApiError::from_core(error.into()))?;
-        Some(criteria)
-    } else {
-        None
-    };
+    ugoite_core::structured_search::validate_structured_search_syntax(&request.criteria)
+        .map_err(|error| ApiError::from_core(error.into()))?;
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
-    // Additive typed criteria input. Legacy `filter` passthrough remains
-    // unchanged for v0.1.x compatibility.
-    if let Some(criteria) = criteria {
-        return Ok(Json(Value::Array(
-            state
-                .service
-                .search_structured_authorized_for_principals(&space_id, &principals, &criteria)
-                .await
-                .map_err(ApiError::from_core)?,
-        )));
-    }
-    let filter = payload.get("filter").cloned().unwrap_or(payload);
+    // Criteria-only input. The v0.1 legacy `filter` passthrough and
+    // bare-payload queries were removed: unknown fields (including `filter`)
+    // and a missing `criteria` fail closed with INVALID_INPUT above.
     Ok(Json(Value::Array(
         state
             .service
-            .query_entries_authorized_for_principals(&space_id, &principals, &filter)
+            .search_structured_authorized_for_principals(&space_id, &principals, &request.criteria)
             .await
             .map_err(ApiError::from_core)?,
     )))
@@ -12003,35 +11950,26 @@ mod human_approval_tests {
 
     #[test]
     fn approval_request_derives_operation_specific_delete_bindings() {
-        let (action, resource, intent) = approval_request_binding(
-            "entry.delete",
-            &json!({"target_id": "entry-1", "hard_delete": false}),
-        )
-        .expect("valid delete mutation");
-        assert_eq!(action, Action::Delete);
-        assert_eq!(resource.kind, ResourceKind::Entry);
-        assert_eq!(resource.id, "entry-1");
-        assert_eq!(intent["hard_delete"], false);
-        assert!(approval_request_binding(
-            "entry.delete",
-            &json!({"target_id": "entry-1", "hard_delete": true}),
-        )
-        .is_err());
         for (operation, kind) in [
+            ("entry.delete", ResourceKind::Entry),
             ("sql.delete", ResourceKind::SavedSql),
             ("asset.delete", ResourceKind::Asset),
         ] {
             let (action, resource, intent) =
                 approval_request_binding(operation, &json!({"target_id": "resource-1"}))
-                    .expect("valid non-entry delete mutation");
+                    .expect("valid delete mutation");
             assert_eq!(action, Action::Delete);
             assert_eq!(resource.kind, kind);
+            assert_eq!(resource.id, "resource-1");
             assert_eq!(intent, json!({"target_id": "resource-1"}));
-            assert!(approval_request_binding(
-                operation,
-                &json!({"target_id": "resource-1", "hard_delete": false}),
-            )
-            .is_err());
+            // The removed v0.1 `hard_delete` compat field is rejected.
+            for hard_delete in [true, false] {
+                assert!(approval_request_binding(
+                    operation,
+                    &json!({"target_id": "resource-1", "hard_delete": hard_delete}),
+                )
+                .is_err());
+            }
         }
     }
 
@@ -15382,8 +15320,9 @@ mod authentication_regression_tests {
         let rows: Value = serde_json::from_slice(&body)?;
         assert_eq!(rows, json!([]));
 
-        // Criteria and the legacy filter are intentionally ambiguous when
-        // combined; do not silently select one of them.
+        // The typed request rejects unknown fields, so the removed v0.1
+        // legacy `filter` cannot be combined with (or substituted for)
+        // `criteria`.
         let response = route
             .clone()
             .oneshot(
@@ -16234,8 +16173,7 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
-    async fn sql_and_asset_delete_routes_bind_approval_without_entry_hard_delete(
-    ) -> anyhow::Result<()> {
+    async fn sql_and_asset_delete_routes_bind_approval() -> anyhow::Result<()> {
         let state = AppState::new_for_tests("memory://server-human-approval-delete-routes")?;
         let principal_id = Uuid::from_u128(1926);
         let space_id = state
@@ -16675,7 +16613,7 @@ mod authentication_regression_tests {
         ttl: chrono::Duration,
     ) -> anyhow::Result<(String, String)> {
         let entry_id = Uuid::from_u128(1940).to_string();
-        let intent = json!({"target_id": entry_id.clone(), "hard_delete": false});
+        let intent = json!({"target_id": entry_id.clone()});
         let intent_digest = intent_hash(&intent)
             .map_err(|error| anyhow::anyhow!("invalid test intent: {}", error.detail))?;
         let authorizer = Authorizer::new(state.service.operator().clone());
@@ -16793,7 +16731,7 @@ mod authentication_regression_tests {
             id: "approval-node-lock-entry".to_string(),
             parent: None,
         };
-        let intent = json!({"target_id": resource.id.clone(), "hard_delete": false});
+        let intent = json!({"target_id": resource.id.clone()});
         let intent_digest = intent_hash(&intent)
             .map_err(|error| anyhow::anyhow!("invalid test intent: {}", error.detail))?;
         let approval_request = HumanApprovalIssue {
@@ -16873,8 +16811,7 @@ mod authentication_regression_tests {
         assert!(entry.consumed_at.is_some());
 
         let second_intent = json!({
-            "target_id": "approval-node-lock-entry-2",
-            "hard_delete": false
+            "target_id": "approval-node-lock-entry-2"
         });
         let second_digest = intent_hash(&second_intent)
             .map_err(|error| anyhow::anyhow!("invalid second test intent: {}", error.detail))?;
@@ -16968,8 +16905,7 @@ mod authentication_regression_tests {
         .await?;
         let authorizer = Authorizer::new(state.service.operator().clone());
         let replay_intent_hash = intent_hash(&json!({
-            "target_id": entry_id.clone(),
-            "hard_delete": false
+            "target_id": entry_id.clone()
         }))
         .map_err(|error| anyhow::anyhow!("invalid test intent: {}", error.detail))?;
         authorizer
@@ -19263,7 +19199,7 @@ mod authentication_regression_tests {
                 format!("/spaces/{space_id}/approvals"),
                 json!({
                     "operation": "entry.delete",
-                    "mutation": {"target_id": "approval-entry", "hard_delete": false},
+                    "mutation": {"target_id": "approval-entry"},
                     "actor_credential_id": actor_credential_id,
                     "expires_in_seconds": 60
                 }),

@@ -93,8 +93,6 @@ pub enum EntrySubCmd {
     Delete {
         #[arg(value_name = "ENTRY_ID")]
         entry_id: String,
-        #[arg(long)]
-        hard_delete: bool,
         /// Single-use approval token issued by a recently reauthenticated human.
         #[arg(long)]
         human_approval: Option<String>,
@@ -552,7 +550,6 @@ pub async fn run(
         }
         EntrySubCmd::Delete {
             entry_id,
-            hard_delete,
             human_approval,
             author,
         } => {
@@ -573,7 +570,6 @@ pub async fn run(
                     serde_json::json!({
                         "space_id": space_uid,
                         "entry_id": entry_id,
-                        "hard_delete": hard_delete,
                         "human_approval": human_approval,
                     }),
                     None,
@@ -609,7 +605,7 @@ pub async fn run(
             // Do not wait for Derived refreshes in a one-shot mutation.
             let service = UgoiteService::new_without_background_refresh(root)?;
             let result = service
-                .delete_entry_with_receipt(space_id, &entry_id, hard_delete, &author)
+                .delete_entry_with_receipt(space_id, &entry_id, &author)
                 .await?;
             let receipt = entry_receipt(
                 entry_id,

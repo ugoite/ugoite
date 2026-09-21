@@ -4302,9 +4302,6 @@
             "$ref": "#/components/parameters/EntryId"
           },
           {
-            "$ref": "#/components/parameters/HardDelete"
-          },
-          {
             "$ref": "#/components/parameters/HumanApprovalHeader"
           }
         ],
@@ -6103,7 +6100,7 @@
     "/spaces/{space_id}/query": {
       "post": {
         "summary": "Structured entry query",
-        "description": "Legacy filter passthrough remains supported. Additive typed input: {\"criteria\": {\"form\": \"Task\", \"updated_from\": \"2026-09-01\", \"conditions\": [{\"field\": \"status\", \"operator\": \"equals\", \"value\": \"open\"}], \"limit\": 100}}. Logical form/field identity only; SQL relation/column names are never accepted. `criteria` and legacy `filter` cannot be supplied together. Structured values are validated against the Form field type, including timezone-free wall-clock and timezone-aware instant timestamp variants.",
+        "description": "Structured entry query. Criteria-only typed input: {\"criteria\": {\"form\": \"Task\", \"updated_from\": \"2026-09-01\", \"conditions\": [{\"field\": \"status\", \"operator\": \"equals\", \"value\": \"open\"}], \"limit\": 100}}. Logical form/field identity only; SQL relation/column names are never accepted. Unknown request fields, a missing `criteria`, and the removed v0.1 legacy `filter` passthrough fail closed with INVALID_INPUT. Structured values are validated against the Form field type, including timezone-free wall-clock and timezone-aware instant timestamp variants.",
         "parameters": [
           {
             "$ref": "#/components/parameters/SpaceId"
@@ -6257,7 +6254,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JsonValue"
+                "$ref": "#/components/schemas/QueryRequest"
               }
             }
           }
@@ -12116,16 +12113,6 @@
           "maxLength": 256
         }
       },
-      "HardDelete": {
-        "name": "hard_delete",
-        "in": "query",
-        "required": false,
-        "description": "Retained for the v1 protocol shape; Entry hard delete is not an approval-eligible mutation.",
-        "schema": {
-          "type": "boolean",
-          "default": false
-        }
-      },
       "StepUpHeader": {
         "name": "X-Ugoite-Step-Up",
         "in": "header",
@@ -12751,9 +12738,6 @@
             "type": "object",
             "additionalProperties": true
           },
-          "template": {
-            "type": "string"
-          },
           "allow_extra_attributes": {
             "type": "string",
             "enum": [
@@ -12765,6 +12749,21 @@
           }
         },
         "additionalProperties": true
+      },
+      "QueryRequest": {
+        "type": "object",
+        "description": "Criteria-only structured Search request. Unknown fields, including the removed v0.1 legacy `filter`, are rejected with INVALID_INPUT.",
+        "required": [
+          "criteria"
+        ],
+        "properties": {
+          "criteria": {
+            "type": "object",
+            "description": "Typed structured Search criteria: logical Form name with optional updated bounds, field conditions, and optional limit/offset. Unknown criteria or condition fields are rejected with INVALID_INPUT.",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
       },
       "SqlSession": {
         "type": "object",
@@ -13548,19 +13547,12 @@
       "HumanApprovalEntryDeleteMutation": {
         "type": "object",
         "required": [
-          "target_id",
-          "hard_delete"
+          "target_id"
         ],
         "properties": {
           "target_id": {
             "type": "string",
             "minLength": 1
-          },
-          "hard_delete": {
-            "type": "boolean",
-            "enum": [
-              false
-            ]
           }
         },
         "additionalProperties": false

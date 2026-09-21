@@ -801,9 +801,7 @@ mod tests {
             .expect("revision id")
             .to_string();
         assert_ne!(revision_id, updated_revision_id);
-        service
-            .delete_entry(&space_id, "entry-1", false, "author")
-            .await?;
+        service.delete_entry(&space_id, "entry-1", "author").await?;
 
         // list_audit_events verifies the hash chain on every read.
         let listed = crate::audit::list_audit_events(
@@ -1056,7 +1054,6 @@ mod tests {
             service.operator(),
             &service.workspace_path(&space_id),
             "entry-1",
-            false,
             "author",
         )
         .await?;
@@ -1279,12 +1276,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn authorized_hard_delete_tombstone_reconciles_with_change() -> anyhow::Result<()> {
+    async fn authorized_delete_tombstone_reconciles_with_change() -> anyhow::Result<()> {
         use ugoite_domain::change::{ChangeCommand, RunId};
-        // Authorized delete with an explicit ChangeCommand and hard_delete:
-        // history stays append-only (tombstone, never removal) and the
-        // delete evidence carries the Change ID plus caller principal
-        // attribution from live delivery through reconcile.
+        // Authorized delete with an explicit ChangeCommand: history stays
+        // append-only (tombstone, never removal) and the delete evidence
+        // carries the Change ID plus caller principal attribution from live
+        // delivery through reconcile.
         let service = UgoiteService::new("memory://mutation-audit-hard-delete")?;
         let principal = Uuid::now_v7();
         let space_id = service
@@ -1296,7 +1293,7 @@ mod tests {
             change_id: Uuid::now_v7().to_string(),
             run_id: Some(RunId::new("run-hard-delete")?),
             actor_principal_id: principal.to_string(),
-            message: Some("authorized hard delete".to_string()),
+            message: Some("authorized delete".to_string()),
             reverts_change_id: None,
             created_at_micros: chrono::Utc::now().timestamp_micros(),
         };
@@ -1304,7 +1301,6 @@ mod tests {
             .delete_entry_authorized_for_principals_with_change(
                 &space_id,
                 "entry-1",
-                true,
                 &principal.to_string(),
                 &[principal],
                 Some(delete_change.clone()),

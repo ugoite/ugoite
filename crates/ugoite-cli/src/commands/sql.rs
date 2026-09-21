@@ -150,6 +150,9 @@ fn parse_sql_page(offset: Option<usize>, limit: Option<usize>) -> Result<(usize,
 }
 
 /// Stable row-page envelope shared by core and remote transports.
+///
+/// Rows-only output: `{rows, count, total_count, offset, limit}`. The v0.1
+/// `result` alias was removed; consumers must read `rows`.
 fn sql_page_output_with_alias(
     rows: Vec<serde_json::Value>,
     total_count: u64,
@@ -158,8 +161,7 @@ fn sql_page_output_with_alias(
 ) -> serde_json::Value {
     let count = rows.len() as u64;
     serde_json::json!({
-        "rows": rows.clone(),
-        "result": rows,
+        "rows": rows,
         "count": count,
         "total_count": total_count,
         "offset": offset,

@@ -2338,25 +2338,18 @@ async fn apply_update_from_draft<I: IntegrityProvider>(
     Ok(result)
 }
 
-pub async fn delete_entry(
-    op: &Operator,
-    ws_path: &str,
-    entry_id: &str,
-    hard_delete: bool,
-    actor: &str,
-) -> Result<()> {
-    delete_entry_with_change(op, ws_path, entry_id, hard_delete, actor, None).await
+pub async fn delete_entry(op: &Operator, ws_path: &str, entry_id: &str, actor: &str) -> Result<()> {
+    delete_entry_with_change(op, ws_path, entry_id, actor, None).await
 }
 
 pub async fn delete_entry_with_change(
     op: &Operator,
     ws_path: &str,
     entry_id: &str,
-    hard_delete: bool,
     actor: &str,
     change: Option<ChangeCommand>,
 ) -> Result<()> {
-    delete_entry_with_change_receipt(op, ws_path, entry_id, hard_delete, actor, change)
+    delete_entry_with_change_receipt(op, ws_path, entry_id, actor, change)
         .await
         .map(|_| ())
 }
@@ -2365,7 +2358,6 @@ pub async fn delete_entry_with_change_receipt(
     op: &Operator,
     ws_path: &str,
     entry_id: &str,
-    hard_delete: bool,
     actor: &str,
     change: Option<ChangeCommand>,
 ) -> Result<Option<CommitReceipt>> {
@@ -2384,7 +2376,6 @@ pub async fn delete_entry_with_change_receipt(
     if delete_ts <= row.updated_at {
         delete_ts = row.updated_at + 0.001;
     }
-    let _ = hard_delete;
     let previous_revision_id = row.revision_id.clone();
     row.deleted = true;
     row.deleted_at = Some(delete_ts);

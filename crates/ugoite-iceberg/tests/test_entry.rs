@@ -267,7 +267,7 @@ async fn restore_replays_historical_references_even_when_targets_are_unavailable
         &FakeIntegrityProvider,
     )
     .await?;
-    entry::delete_entry(&op, ws_path, "target-1", false, "deleter").await?;
+    entry::delete_entry(&op, ws_path, "target-1", "deleter").await?;
     asset::delete_asset(&op, ws_path, &reference.asset_id, &Default::default()).await?;
 
     entry::restore_entry(
@@ -728,7 +728,7 @@ async fn deleted_entry_history_revision_and_restore_remain_reachable() -> anyhow
     )
     .await?;
     let original = entry::get_entry_content(&op, ws_path, "deleted-entry").await?;
-    entry::delete_entry(&op, ws_path, "deleted-entry", false, "deleter").await?;
+    entry::delete_entry(&op, ws_path, "deleted-entry", "deleter").await?;
 
     let history = entry::get_entry_history(&op, ws_path, "deleted-entry").await?;
     assert_eq!(history["revisions"].as_array().map(Vec::len), Some(2));
@@ -955,7 +955,7 @@ async fn entry_ids_are_global_across_forms_and_tombstones() -> anyhow::Result<()
     assert_eq!(unreadable_duplicate.code(), ErrorCode::InvalidInput);
     assert!(unreadable_duplicate.message().contains("global-id"));
 
-    entry::delete_entry(&op, ws_path, "global-id", false, "author").await?;
+    entry::delete_entry(&op, ws_path, "global-id", "author").await?;
     let tombstone_duplicate = entry::create_entry(
         &op,
         ws_path,
@@ -1811,7 +1811,7 @@ async fn test_entry_req_entry_004_delete_entry() -> anyhow::Result<()> {
     .await?;
 
     // Delete
-    entry::delete_entry(&op, ws_path, entry_id, false, "deleter").await?;
+    entry::delete_entry(&op, ws_path, entry_id, "deleter").await?;
 
     // Verify the tombstone is hidden from current listings but retained in history.
     let list = entry::list_entries(&op, ws_path).await?;
@@ -1878,7 +1878,7 @@ async fn entry_attribution_is_consistent_across_lifecycle() -> anyhow::Result<()
     assert_eq!(updated.updated_by, "editor");
     assert_eq!(updated.deleted_by, None);
 
-    entry::delete_entry(&op, ws_path, entry_id, false, "deleter").await?;
+    entry::delete_entry(&op, ws_path, entry_id, "deleter").await?;
     let deleted_history = entry::get_entry_history(&op, ws_path, entry_id).await?;
     let deleted_revision_id = deleted_history["revisions"]
         .as_array()

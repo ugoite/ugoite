@@ -824,15 +824,13 @@ pub(crate) fn enrich_form_definition(form_def: &Value) -> Result<Value> {
             .and_then(Value::as_str)
             .context("Form definition missing stable 'id' field")?,
     )?);
-    let name = form_def
+    form_def
         .get("name")
         .and_then(|v| v.as_str())
         .context("Form definition missing 'name' field")?;
-    let template = form_template_from_fields(name, form_def.get("fields"));
 
     let mut enriched = form_def.clone();
     if let Some(obj) = enriched.as_object_mut() {
-        obj.insert("template".to_string(), Value::String(template));
         obj.insert(
             "sql_relation".to_string(),
             Value::String(sql_relation_name(form_id)),
@@ -860,16 +858,4 @@ pub(crate) fn enrich_form_definition(form_def: &Value) -> Result<Value> {
         }
     }
     Ok(enriched)
-}
-
-fn form_template_from_fields(form_name: &str, fields: Option<&Value>) -> String {
-    let mut template = format!("# {}\n\n", form_name);
-    if let Some(Value::Object(map)) = fields {
-        let mut field_names: Vec<&String> = map.keys().collect();
-        field_names.sort();
-        for name in field_names {
-            template.push_str(&format!("## {}\n\n", name));
-        }
-    }
-    template
 }

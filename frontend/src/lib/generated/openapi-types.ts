@@ -42,6 +42,7 @@ export const OPENAPI_SCHEMA_NAMES = [
   "OwnerRecoveryStartRequest",
   "PinCreate",
   "PublicSpaceSettings",
+  "QueryRequest",
   "RecoveryErrorResponse",
   "RunUndoRequest",
   "SavedSql",
