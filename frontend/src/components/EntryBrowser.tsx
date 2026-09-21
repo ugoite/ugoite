@@ -1,6 +1,4 @@
-// REQ-FE-004: canonical EntryBrowser display and query controls
-// REQ-FE-008: EntryBrowser selection remains separate from mutation
-import { createMemo, createSignal, For, Index, Show } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
 import type {
   EntryFieldCapability,
   EntryFieldRef,
@@ -71,11 +69,6 @@ export function EntryBrowser(props: EntryBrowserProps) {
   const currentSort = () => queryState().sort;
   const currentFilters = () => queryState().filters;
   const currentText = () => queryState().text ?? "";
-  const [draftFilter, setDraftFilter] = createSignal<EntryFilter | null>(null);
-  const filterRows = () => {
-    const draft = draftFilter();
-    return draft ? [...currentFilters(), draft] : currentFilters();
-  };
 
   const isProjected = (field: EntryFieldRef) =>
     projectionFields(projectionState()).some((candidate) =>
@@ -124,7 +117,7 @@ export function EntryBrowser(props: EntryBrowserProps) {
   const filterCapability = (
     index: number,
   ): EntryFieldCapability | undefined => {
-    const filter = filterRows()[index];
+    const filter = currentFilters()[index];
     return filterOptions().find((candidate) =>
       fieldKey(candidate.field) === fieldKey(filter.field)
     );
@@ -151,64 +144,28 @@ export function EntryBrowser(props: EntryBrowserProps) {
     return value;
   };
 
-  const filterValueIsValid = (
-    capability: EntryFieldCapability | undefined,
-    value: unknown,
-  ): boolean => {
-    if (!capability) return false;
-    switch (capability.field_type) {
-      case "boolean":
-        return typeof value === "boolean";
-      case "integer":
-        return typeof value === "number" && Number.isSafeInteger(value);
-      case "numeric":
-        return typeof value === "number" && Number.isFinite(value);
-      case "date":
-      case "timestamp":
-        return typeof value === "string" && value.trim() !== "";
-      default:
-        return typeof value === "string";
-    }
-  };
-
   const addFilter = () => {
-    if (draftFilter()) return;
     const capability = filterOptions()[0];
     const operator = capability?.supported_operators[0];
     if (!capability || !operator) return;
-    setDraftFilter({ field: capability.field, operator, value: "" });
+    props.controller.setFilters([
+      ...currentFilters(),
+      { field: capability.field, operator, value: "" },
+    ]);
   };
 
   const updateFilter = (index: number, filter: EntryFilter) => {
-    if (index >= currentFilters().length) {
-      setDraftFilter(filter);
-      return;
-    }
-    props.controller.setFilters(currentFilters().map((current, currentIndex) =>
-      currentIndex === index ? filter : current
-    ));
+    props.controller.setFilters(
+      currentFilters().map((current, currentIndex) =>
+        currentIndex === index ? filter : current
+      ),
+    );
   };
 
   const removeFilter = (index: number) => {
-    if (index >= currentFilters().length) {
-      setDraftFilter(null);
-      return;
-    }
-    props.controller.setFilters(currentFilters().filter((_, currentIndex) =>
-      currentIndex !== index
-    ));
-  };
-
-  const applyDraftFilter = () => {
-    const draft = draftFilter();
-    if (
-      !draft ||
-      !filterValueIsValid(filterCapability(currentFilters().length), draft.value)
-    ) {
-      return;
-    }
-    props.controller.setFilters([...currentFilters(), draft]);
-    setDraftFilter(null);
+    props.controller.setFilters(
+      currentFilters().filter((_, currentIndex) => currentIndex !== index),
+    );
   };
 
   const rowLabel = (row: EntryQueryResult): string => {
@@ -287,9 +244,9 @@ export function EntryBrowser(props: EntryBrowserProps) {
               }
             >
               <div class="ui-stack-sm">
-                <Index each={filterRows()}>
+                <For each={currentFilters()}>
                   {(filter, index) => {
-                    const capability = () => filterCapability(index);
+                    const capability = () => filterCapability(index());
                     return (
                       <div class="flex flex-wrap items-end gap-2">
                         <label>
@@ -297,9 +254,9 @@ export function EntryBrowser(props: EntryBrowserProps) {
                           <select
                             class="ui-select"
                             aria-label={`${t("entryBrowser.filterField")} ${
-                              index + 1
+                              index() + 1
                             }`}
-                            value={fieldKey(filter().field)}
+                            value={fieldKey(filter.field)}
                             onChange={(event) => {
                               const nextCapability = filterOptions().find((
                                 candidate,
@@ -310,8 +267,8 @@ export function EntryBrowser(props: EntryBrowserProps) {
                               const nextOperator = nextCapability
                                 ?.supported_operators[0];
                               if (nextCapability && nextOperator) {
-                                updateFilter(index, {
-                                  ...filter(),
+                                updateFilter(index(), {
+                                  ...filter,
                                   field: nextCapability.field,
                                   operator: nextOperator,
                                 });
@@ -332,12 +289,12 @@ export function EntryBrowser(props: EntryBrowserProps) {
                           <select
                             class="ui-select"
                             aria-label={`${t("entryBrowser.filterOperator")} ${
-                              index + 1
+                              index() + 1
                             }`}
-                            value={filter().operator}
+                            value={filter.operator}
                             onChange={(event) =>
-                              updateFilter(index, {
-                                ...filter(),
+                              updateFilter(index(), {
+                                ...filter,
                                 operator: event.currentTarget
                                   .value as EntryFilterOperator,
                               })}
@@ -353,10 +310,10 @@ export function EntryBrowser(props: EntryBrowserProps) {
                           {t("entryBrowser.filterValue")}
                           <input
                             class="ui-input"
-                            value={String(filter().value ?? "")}
+                            value={String(filter.value ?? "")}
                             onInput={(event) =>
-                              updateFilter(index, {
-                                ...filter(),
+                              updateFilter(index(), {
+                                ...filter,
                                 value: parseFilterValue(
                                   capability()?.field_type ?? "string",
                                   event.currentTarget.value,
@@ -367,32 +324,19 @@ export function EntryBrowser(props: EntryBrowserProps) {
                         <button
                           type="button"
                           class="ui-button ui-button-secondary"
-                          onClick={() => removeFilter(index)}
+                          onClick={() => removeFilter(index())}
                         >
                           {t("entryBrowser.remove")}
                         </button>
                       </div>
                     );
                   }}
-                </Index>
-                <Show when={draftFilter()}>
-                  <button
-                    type="button"
-                    class="ui-button ui-button-primary"
-                    disabled={!filterValueIsValid(
-                      filterCapability(currentFilters().length),
-                      draftFilter()!.value,
-                    )}
-                    onClick={applyDraftFilter}
-                  >
-                    {t("entryBrowser.apply")}
-                  </button>
-                </Show>
+                </For>
                 <button
                   type="button"
                   class="ui-button ui-button-secondary"
                   onClick={addFilter}
-                  disabled={Boolean(draftFilter()) || filterOptions().every((field) =>
+                  disabled={filterOptions().every((field) =>
                     currentFilters().some((filter) =>
                       fieldKey(filter.field) === fieldKey(field.field)
                     )
