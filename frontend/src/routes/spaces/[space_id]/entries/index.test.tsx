@@ -93,10 +93,10 @@ describe("/spaces/:space_id/entries", () => {
 
     expect(screen.getByRole("heading", { name: "Entries" }))
       .toBeInTheDocument();
-    expect(screen.getByRole("toolbar", { name: "Entry query" }))
+    expect(screen.getByRole("toolbar", { name: "Entry browser" }))
       .toBeInTheDocument();
     expect(
-      screen.getByRole("toolbar", { name: "Entry query" })
+      screen.getByRole("toolbar", { name: "Entry browser" })
         .querySelectorAll("summary"),
     ).toHaveLength(3);
   });
@@ -108,7 +108,7 @@ describe("/spaces/:space_id/entries", () => {
     expect(screen.getByRole("heading", { name: "Notes" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to Forms" }))
       .toHaveAttribute("href", "/spaces/default/forms");
-    const toolbar = screen.getByRole("toolbar", { name: "Entry query" });
+    const toolbar = screen.getByRole("toolbar", { name: "Entry browser" });
     expect(toolbar.textContent).toContain("title");
     const create = screen.getByRole("button", { name: "+ Entry" });
     expect(create).toBeInTheDocument();
@@ -123,7 +123,7 @@ describe("/spaces/:space_id/entries", () => {
     expect(screen.getByRole("heading", { name: "Missing" }))
       .toBeInTheDocument();
     expect(screen.getByText(/No such form “Missing”/)).toBeInTheDocument();
-    expect(screen.queryByRole("toolbar", { name: "Entry query" }))
+    expect(screen.queryByRole("toolbar", { name: "Entry browser" }))
       .not.toBeInTheDocument();
   });
 });
