@@ -27,11 +27,14 @@ pub const MAX_ENTRY_PAGE_LIMIT: usize = 1_000;
 type HmacSha256 = Hmac<Sha256>;
 
 /// The semantic scope of an Entry query.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum EntryQueryScope {
+    #[default]
     All,
-    Form { form_id: FormId },
+    Form {
+        form_id: FormId,
+    },
 }
 
 /// A logical Entry field. Property fields are meaningful only inside a Form
@@ -88,12 +91,6 @@ pub struct EntryQuery {
     pub filters: Vec<EntryFilter>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sort: Vec<EntrySort>,
-}
-
-impl Default for EntryQueryScope {
-    fn default() -> Self {
-        Self::All
-    }
 }
 
 impl EntryQuery {
