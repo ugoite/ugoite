@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
 use opendal::Operator;
@@ -138,6 +138,31 @@ pub async fn load_hmac_material(op: &Operator, space_name: &str) -> Result<(Stri
     crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{space_name}")).await?;
     let storage = OpendalStorage::from_operator(op);
     load_hmac_material_with_storage(&storage, space_name).await
+}
+
+/// Reads the Space integrity key without creating or mutating any storage
+/// object. Read-only query continuations use this path for stable signing
+/// material.
+pub async fn load_existing_hmac_material(
+    op: &Operator,
+    space_name: &str,
+) -> Result<(String, Vec<u8>)> {
+    let storage = OpendalStorage::from_operator(op);
+    let meta_path = format!("spaces/{space_name}/meta.json");
+    if !storage.exists(&meta_path).await? {
+        bail!("Space metadata not found: {meta_path}");
+    }
+    let meta: Value = storage.read_json(&meta_path).await?;
+    let key_b64 = meta
+        .get("hmac_key")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| anyhow!("hmac_key missing in {meta_path}"))?;
+    let key_id = meta
+        .get("hmac_key_id")
+        .and_then(|value| value.as_str())
+        .unwrap_or("default")
+        .to_string();
+    Ok((key_id, general_purpose::STANDARD.decode(key_b64)?))
 }
 
 async fn load_response_hmac_material_with_storage<S: StorageBackend + ?Sized>(

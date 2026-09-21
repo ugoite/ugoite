@@ -1157,6 +1157,8 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             "/spaces/{space_id}/sql-sessions/{session_id}/rows",
             get(get_sql_session_rows),
         )
+        .route("/spaces/{space_id}/sql/query", post(query_sql))
+        .route("/spaces/{space_id}/sql/query/count", post(count_sql))
         .route(
             "/spaces/{space_id}/entries",
             get(list_entries).post(create_entry),
@@ -9012,6 +9014,41 @@ async fn get_sql_session_rows(
     ))
 }
 
+async fn query_sql(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    Json(request): Json<ugoite_core::sql_query::SqlQueryRequest>,
+) -> ApiResult<Json<ugoite_core::sql_query::SqlQueryPage>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    Ok(Json(
+        state
+            .service
+            .query_sql_authorized_for_principals(&space_id, &principals, request)
+            .await
+            .map_err(ApiError::from_core)?,
+    ))
+}
+
+async fn count_sql(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    Json(request): Json<ugoite_core::sql_query::SqlQueryCountRequest>,
+) -> ApiResult<Json<Value>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    let count = state
+        .service
+        .count_sql_authorized_for_principals(&space_id, &principals, request)
+        .await
+        .map_err(ApiError::from_core)?;
+    Ok(Json(json!({"count": count})))
+}
+
 fn validate_sql_session_page_request(offset: usize, limit: usize) -> ApiResult<()> {
     let page_end = offset.checked_add(limit);
     if limit == 0
@@ -14431,6 +14468,137 @@ mod authentication_regression_tests {
             .await?;
         assert_eq!(status, StatusCode::CREATED, "{session}");
         assert!(session["id"].as_str().is_some(), "{session}");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stateless_sql_query_pins_publication_and_separates_count() -> anyhow::Result<()> {
+        let principal_id = Uuid::from_u128(29750);
+        let (client, space_id, _space_uid) =
+            production_rest_fixture("stateless-sql-query", principal_id, true).await?;
+
+        let (forms_status, forms) = client
+            .json(Method::GET, &format!("/spaces/{space_id}/forms"), None)
+            .await?;
+        assert_eq!(forms_status, StatusCode::OK, "{forms}");
+        let relation = forms
+            .as_array()
+            .and_then(|forms| forms.iter().find(|form| form["name"] == "Entry"))
+            .and_then(|form| form["sql_relation"].as_str())
+            .expect("seeded Form SQL relation")
+            .to_owned();
+        let sql = format!("SELECT _ugoite_id, field_100 FROM \"{relation}\" ORDER BY _ugoite_id");
+
+        for (id, body) in [("first", "one"), ("second", "two"), ("third", "three")] {
+            let (status, response) = client
+                .json(
+                    Method::POST,
+                    &format!("/spaces/{space_id}/entries"),
+                    Some(json!({
+                        "id": id,
+                        "form": "Entry",
+                        "fields": {"Body": body}
+                    })),
+                )
+                .await?;
+            assert_eq!(status, StatusCode::CREATED, "{response}");
+        }
+
+        let (status, first_page) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/sql/query"),
+                Some(json!({"sql": sql, "limit": 1})),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::OK, "{first_page}");
+        assert_eq!(first_page["rows"].as_array().map(Vec::len), Some(1));
+        assert_eq!(first_page["has_more"], true);
+        assert!(first_page["columns"].as_array().is_some_and(|columns| {
+            columns.iter().any(|column| column == "_ugoite_id")
+                && columns.iter().any(|column| column == "field_100")
+        }));
+        let mut next = first_page["next"].as_str().map(str::to_owned);
+        assert!(next.is_some(), "{first_page}");
+
+        // A Form evolution also advances the Head and changes the current
+        // schema. Continuations must keep using the Form definition from the
+        // publication captured by page one.
+        let (status, response) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/forms"),
+                Some(json!({
+                    "name": "Entry",
+                    "fields": {
+                        "Body": {"type": "markdown"},
+                        "Extra": {"type": "string"}
+                    },
+                    "allow_extra_attributes": "deny"
+                })),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::CREATED, "{response}");
+
+        // This mutation advances the current Head but must not enter the
+        // continuation chain that started at the prior publication.
+        let (status, response) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/entries"),
+                Some(json!({
+                    "id": "fourth",
+                    "form": "Entry",
+                    "fields": {"Body": "fourth"}
+                })),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::CREATED, "{response}");
+
+        let mut continued_rows = 1;
+        while let Some(continuation) = next.take() {
+            let (status, page) = client
+                .json(
+                    Method::POST,
+                    &format!("/spaces/{space_id}/sql/query"),
+                    Some(json!({
+                        "sql": sql,
+                        "limit": 1,
+                        "continuation": continuation
+                    })),
+                )
+                .await?;
+            assert_eq!(status, StatusCode::OK, "{page}");
+            assert_eq!(page["rows"].as_array().map(Vec::len), Some(1));
+            assert!(!page.to_string().contains("fourth"), "{page}");
+            continued_rows += page["rows"].as_array().map_or(0, Vec::len);
+            next = page["next"].as_str().map(str::to_owned);
+        }
+        assert_eq!(continued_rows, 3);
+
+        let (status, count) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/sql/query/count"),
+                Some(json!({"sql": sql})),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::OK, "{count}");
+        assert_eq!(count["count"], 4, "fresh count sees the new publication");
+
+        let (status, unordered) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/sql/query"),
+                Some(json!({
+                    "sql": format!("SELECT field_100 FROM \"{relation}\""),
+                    "limit": 1
+                })),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::OK, "{unordered}");
+        assert_eq!(unordered["has_more"], false);
+        assert!(unordered["next"].is_null());
         Ok(())
     }
 

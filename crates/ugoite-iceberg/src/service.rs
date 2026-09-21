@@ -30,7 +30,11 @@ use crate::{
 use crate::{CheckpointIntegrityError, CheckpointUnavailable, PublicationRef};
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind as AppErrorKind};
 use ugoite_core::query::EntryScope;
+use ugoite_core::sql_query::{
+    SqlContinuation, SqlQueryCountRequest, SqlQueryError, SqlQueryPage, SqlQueryRequest,
+};
 use ugoite_domain::change::{ChangeCommand, RunId};
+use ugoite_domain::form::{sql_relation_name, FormDefinition};
 use ugoite_domain::id::{
     validate_asset_id, validate_entry_id, validate_form_name, validate_revision_id,
     validate_space_id, validate_sql_id, validate_sql_session_id, FormId,
@@ -664,6 +668,25 @@ impl UgoiteService {
 
     pub fn workspace_path(&self, space_id: &str) -> String {
         format!("spaces/{space_id}")
+    }
+
+    async fn sql_query_signing_key(&self, space_id: &str) -> Result<Vec<u8>> {
+        let configured = match std::env::var_os("UGOITE_QUERY_CURSOR_SECRET") {
+            Some(value) => value.to_string_lossy().as_bytes().to_vec(),
+            None => {
+                crate::integrity::load_existing_hmac_material(&self.operator, space_id)
+                    .await?
+                    .1
+            }
+        };
+        if configured.len() < 32 {
+            bail!("SQL query continuation secret must be at least 32 bytes");
+        }
+        let mut digest = Sha256::new();
+        digest.update(configured);
+        digest.update([0]);
+        digest.update(space_id.as_bytes());
+        Ok(digest.finalize().to_vec())
     }
 
     async fn validate_complete_space(&self, space_id: &str) -> Result<()> {
@@ -3772,6 +3795,17 @@ impl UgoiteService {
             )
             .await?
             .into_iter()
+            .collect::<Vec<_>>();
+        Self::authorized_form_entry_scopes_for_forms(state, principal_ids, readable_forms)
+    }
+
+    fn authorized_form_entry_scopes_for_forms(
+        state: &AuthorizationState,
+        principal_ids: &[Uuid],
+        forms: Vec<FormDefinition>,
+    ) -> Result<BTreeMap<String, EntryScope>> {
+        let readable_forms = forms
+            .into_iter()
             .filter(|form| {
                 let resource = ResourceRef {
                     kind: ResourceKind::Form,
@@ -4373,6 +4407,203 @@ impl UgoiteService {
                 .await
             })
             .await
+    }
+
+    /// Executes one stateless, read-only SQL page. The publication is fixed
+    /// by the first request and carried by an opaque continuation; every
+    /// request still rebuilds authorization from the current state.
+    pub async fn query_sql_authorized_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        request: SqlQueryRequest,
+    ) -> Result<SqlQueryPage> {
+        request.validate().map_err(sql_query_contract_error)?;
+        require_nonempty_authorized_principals(principal_ids)?;
+        let normalized_sql = index::normalize_sql_template(&request.sql)?;
+        index::validate_read_only_sql(&normalized_sql)?;
+        self.validate_complete_space(space_id).await?;
+
+        let signing_key = self.sql_query_signing_key(space_id).await?;
+        let continuation = request
+            .continuation
+            .as_deref()
+            .map(|value| {
+                SqlContinuation::decode(value, &signing_key).map_err(sql_query_contract_error)
+            })
+            .transpose()?;
+        let effective_parameter_types =
+            effective_sql_parameter_types(&request.parameters, &request.parameter_types)?;
+        let parameter_fingerprint = SqlQueryRequest {
+            parameter_types: effective_parameter_types.clone(),
+            ..request.clone()
+        }
+        .parameter_fingerprint()
+        .map_err(sql_query_contract_error)?;
+        let sql_fingerprint = request
+            .sql_fingerprint(&normalized_sql)
+            .map_err(sql_query_contract_error)?;
+        let parameters =
+            index::datafusion_parameters(&request.parameters, &effective_parameter_types).map_err(
+                |error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()),
+            )?;
+
+        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
+            .acquire_state_lease(space_id)
+            .await?;
+        for principal_id in principal_ids {
+            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
+                return Err(
+                    AppError::forbidden("principal is not authorized to read this Space").into(),
+                );
+            }
+        }
+        let authorization_fingerprint = sql_query_authorization_fingerprint(&state, principal_ids)?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let (publication, offset) = match continuation {
+            Some(cursor) => {
+                if cursor.space_id.as_uuid() != state.space_uid {
+                    return Err(AppError::invalid_input(
+                        ErrorCode::InvalidInput,
+                        "SQL continuation belongs to another Space",
+                    )
+                    .into());
+                }
+                if cursor.sql_fingerprint != sql_fingerprint
+                    || cursor.parameter_fingerprint != parameter_fingerprint
+                {
+                    return Err(AppError::invalid_input(
+                        ErrorCode::InvalidInput,
+                        "SQL or parameter fingerprint does not match the continuation",
+                    )
+                    .into());
+                }
+                cursor
+                    .authorize(&authorization_fingerprint)
+                    .map_err(sql_query_contract_error)?;
+                let publication = cursor.publication.clone();
+                workspace.resolve_publication(&publication).await?;
+                (publication, cursor.offset)
+            }
+            None => {
+                let publication = workspace.current_publication().await?;
+                (publication, 0)
+            }
+        };
+        let checkpoint = workspace.resolve_publication(&publication).await?;
+        let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
+        let named_scopes =
+            Self::authorized_form_entry_scopes_for_forms(&state, principal_ids, forms.clone())?;
+        let relation_scopes = forms
+            .iter()
+            .filter_map(|form| {
+                named_scopes
+                    .get(&form.name.to_ascii_lowercase())
+                    .cloned()
+                    .map(|scope| (sql_relation_name(form.id), scope))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let fetch_limit = request
+            .limit
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("SQL query page limit overflows"))?;
+        let (columns, mut rows, has_order) =
+            index::execute_sql_query_authorized_by_form_page_at_checkpoint_stateless(
+                &self.operator,
+                &self.workspace_path(space_id),
+                &normalized_sql,
+                &relation_scopes,
+                parameters,
+                offset,
+                fetch_limit,
+                forms.clone(),
+                checkpoint,
+            )
+            .await?;
+        let has_more = has_order && rows.len() > request.limit;
+        rows.truncate(request.limit);
+        let next = if has_more {
+            let next_offset = offset
+                .checked_add(rows.len())
+                .ok_or_else(|| anyhow!("SQL continuation offset overflows"))?;
+            Some(
+                SqlContinuation::new(
+                    state.space_uid.into(),
+                    publication,
+                    sql_fingerprint,
+                    parameter_fingerprint,
+                    authorization_fingerprint,
+                    next_offset,
+                )?
+                .encode(&signing_key)?,
+            )
+        } else {
+            None
+        };
+        Ok(SqlQueryPage {
+            columns,
+            rows,
+            has_more,
+            next,
+        })
+    }
+
+    /// Explicit SQL count operation. It starts a fresh checkpoint and never
+    /// creates or updates execution state in the Space.
+    pub async fn count_sql_authorized_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        request: SqlQueryCountRequest,
+    ) -> Result<u64> {
+        request.validate().map_err(sql_query_contract_error)?;
+        require_nonempty_authorized_principals(principal_ids)?;
+        let normalized_sql = index::normalize_sql_template(&request.sql)?;
+        index::validate_read_only_sql(&normalized_sql)?;
+        self.validate_complete_space(space_id).await?;
+        let effective_parameter_types =
+            effective_sql_parameter_types(&request.parameters, &request.parameter_types)?;
+        let parameters =
+            index::datafusion_parameters(&request.parameters, &effective_parameter_types).map_err(
+                |error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()),
+            )?;
+        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
+            .acquire_state_lease(space_id)
+            .await?;
+        for principal_id in principal_ids {
+            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
+                return Err(
+                    AppError::forbidden("principal is not authorized to read this Space").into(),
+                );
+            }
+        }
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let publication = workspace.current_publication().await?;
+        let checkpoint = workspace.resolve_publication(&publication).await?;
+        let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
+        let named_scopes =
+            Self::authorized_form_entry_scopes_for_forms(&state, principal_ids, forms.clone())?;
+        let relation_scopes = forms
+            .iter()
+            .filter_map(|form| {
+                named_scopes
+                    .get(&form.name.to_ascii_lowercase())
+                    .cloned()
+                    .map(|scope| (sql_relation_name(form.id), scope))
+            })
+            .collect::<BTreeMap<_, _>>();
+        index::execute_sql_query_authorized_by_form_count_at_checkpoint_stateless(
+            &self.operator,
+            &self.workspace_path(space_id),
+            &normalized_sql,
+            &relation_scopes,
+            parameters,
+            forms,
+            checkpoint,
+        )
+        .await
     }
 
     pub async fn reindex(&self, space_id: &str) -> Result<()> {
@@ -5014,6 +5245,44 @@ fn require_sql_session_principals(principal_ids: &[Uuid]) -> Result<()> {
     Ok(())
 }
 
+fn sql_query_contract_error(error: SqlQueryError) -> anyhow::Error {
+    AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()).into()
+}
+
+fn effective_sql_parameter_types(
+    values: &serde_json::Map<String, Value>,
+    declared: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>> {
+    let mut types = declared.clone();
+    for (name, value) in values {
+        if types.contains_key(name) {
+            continue;
+        }
+        let inferred = match value {
+            Value::String(_) => "string",
+            Value::Bool(_) => "boolean",
+            Value::Number(number) if number.is_i64() || number.is_u64() => "long",
+            Value::Number(_) => "double",
+            Value::Null => {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    format!("SQL null parameter {name} requires a declared parameter type"),
+                )
+                .into())
+            }
+            Value::Array(_) | Value::Object(_) => {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    format!("SQL parameter {name} has an unsupported JSON type"),
+                )
+                .into())
+            }
+        };
+        types.insert(name.clone(), inferred.to_string());
+    }
+    Ok(types)
+}
+
 fn require_nonempty_authorized_principals(principal_ids: &[Uuid]) -> Result<()> {
     if principal_ids.is_empty() {
         return Err(
@@ -5132,6 +5401,27 @@ fn sql_session_policy_hash(state: &AuthorizationState, principal_ids: &[Uuid]) -
         "membership_roles": membership_roles,
         "agent_grants": agent_grants,
         "entry_policies": entry_policies,
+    }))?;
+    Ok(format!("sha256:{}", hex::encode(Sha256::digest(canonical))))
+}
+
+fn sql_query_authorization_fingerprint(
+    state: &AuthorizationState,
+    principal_ids: &[Uuid],
+) -> Result<String> {
+    require_sql_session_principals(principal_ids)?;
+    let principal_ids = principal_ids
+        .iter()
+        .map(Uuid::to_string)
+        .collect::<BTreeSet<_>>();
+    // AuthorizationState::revision is the durable monotonic revision for all
+    // ACL and membership changes. Rechecking the current state on every page
+    // remains mandatory; this fingerprint only detects that a continuation
+    // must be restarted rather than acting as an authorization credential.
+    let canonical = serde_json::to_vec(&json!({
+        "space_uid": state.space_uid,
+        "authorization_revision": state.revision,
+        "principal_ids": principal_ids,
     }))?;
     Ok(format!("sha256:{}", hex::encode(Sha256::digest(canonical))))
 }

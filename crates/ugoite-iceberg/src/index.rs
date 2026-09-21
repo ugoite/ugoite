@@ -40,6 +40,7 @@ pub const SQL_SESSION_MAX_ROWS: usize = 1_000;
 /// public explicit-ID constructor uses `Only` and is bounded identically.
 pub const SQL_SESSION_MAX_AUTHORIZATION_SCOPE_IDS: usize = SQL_SESSION_MAX_ROWS;
 pub const SQL_SESSION_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
+/// Maximum encoded JSON payload for one stateless SQL page.
 pub const SQL_SESSION_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const AUTHORIZED_ASSET_REFERENCE_MAX_ROWS: usize = usize::MAX / 2;
 const MAX_QUERY_FORMS: usize = 100_000;
@@ -2118,6 +2119,77 @@ pub(crate) async fn execute_sql_query_authorized_by_form_count_at_checkpoint(
         .map_err(map_sql_error)
 }
 
+/// Executes one stateless SQL page against a fixed checkpoint. The caller
+/// chooses whether the fetched sentinel row represents `has_more`; this
+/// function never computes a total count as a side effect.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stateless(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    offset: usize,
+    limit: usize,
+    forms: Vec<FormDefinition>,
+    checkpoint: SpaceCheckpoint,
+) -> Result<(Vec<String>, Vec<Value>, bool)> {
+    let context = datafusion_sql_context_with_form_definitions(
+        op,
+        ws_path,
+        EntryScope::AllCurrent,
+        None,
+        Some(relation_scopes),
+        Some(checkpoint),
+        BTreeSet::new(),
+        SQL_SESSION_MAX_ROWS.saturating_add(1),
+        false,
+        forms,
+    )
+    .await
+    .map_err(map_sql_error)?;
+    let (columns, batches, has_order) = context
+        .execute_stateless_page(sql_query, parameters, offset, limit)
+        .await
+        .map_err(map_sql_error)?;
+    Ok((
+        columns,
+        record_batches_to_values_bounded(&batches, ugoite_core::sql_query::MAX_SQL_OUTPUT_BYTES)?,
+        has_order,
+    ))
+}
+
+/// Executes the explicit count operation against the same kind of
+/// checkpoint-pinned authorized context used by stateless pages.
+pub(crate) async fn execute_sql_query_authorized_by_form_count_at_checkpoint_stateless(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    forms: Vec<FormDefinition>,
+    checkpoint: SpaceCheckpoint,
+) -> Result<u64> {
+    let context = datafusion_sql_context_with_form_definitions(
+        op,
+        ws_path,
+        EntryScope::AllCurrent,
+        None,
+        Some(relation_scopes),
+        Some(checkpoint),
+        BTreeSet::new(),
+        SQL_SESSION_MAX_ROWS,
+        false,
+        forms,
+    )
+    .await
+    .map_err(map_sql_error)?;
+    context
+        .execute_stateless_count(sql_query, parameters)
+        .await
+        .map_err(map_sql_error)
+}
+
 /// Validates a SQL session query at creation against only frozen policy and
 /// checkpoint inputs. The live Form registry is deliberately absent.
 pub(crate) async fn validate_sql_session_query_at_checkpoint(
@@ -2691,6 +2763,35 @@ async fn datafusion_sql_context_with_limits(
     let forms = workspace
         .list_forms_bounded(MAX_QUERY_FORMS, MAX_QUERY_FORM_DEFINITION_BYTES)
         .await?;
+    datafusion_sql_context_with_form_snapshot(
+        workspace,
+        entry_scope,
+        allowed_relations,
+        relation_scopes,
+        checkpoint,
+        allowed_functions,
+        max_rows,
+        include_payload,
+        forms,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn datafusion_sql_context_with_form_definitions(
+    op: &Operator,
+    ws_path: &str,
+    entry_scope: EntryScope,
+    allowed_relations: Option<&HashSet<String>>,
+    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    checkpoint: Option<SpaceCheckpoint>,
+    allowed_functions: BTreeSet<String>,
+    max_rows: usize,
+    include_payload: bool,
+    forms: Vec<FormDefinition>,
+) -> Result<crate::query_context::AuthorizedQueryContext> {
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
     datafusion_sql_context_with_form_snapshot(
         workspace,
         entry_scope,

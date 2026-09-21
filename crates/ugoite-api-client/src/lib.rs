@@ -70,6 +70,8 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "sql.create",
     "sql.update",
     "sql.delete",
+    "sql.query",
+    "sql.query.count",
     "sql_session.create",
     "sql_session.get",
     "sql_session.count",
@@ -833,6 +835,27 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
+            "sql.query" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to query SQL"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "sql".into(),
+                    "query".into(),
+                ],
+                vec![],
+            ),
+            "sql.query.count" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to count SQL query rows"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "sql".into(),
+                    "query".into(),
+                    "count".into(),
+                ],
+                vec![],
+            ),
 
             "sql_session.create" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to create SQL session"),
@@ -1562,6 +1585,16 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to delete saved SQL",
             RequestBodyKind::None,
         ),
+        "sql.query" => (
+            HttpMethod::Post,
+            "Failed to query SQL",
+            RequestBodyKind::Json,
+        ),
+        "sql.query.count" => (
+            HttpMethod::Post,
+            "Failed to count SQL query rows",
+            RequestBodyKind::Json,
+        ),
         "sql_session.create" => (
             HttpMethod::Post,
             "Failed to create SQL session",
@@ -1858,6 +1891,31 @@ mod tests {
         .expect("request");
         assert_eq!(request.method, HttpMethod::Post);
         assert_eq!(request.path, "/spaces/demo/entries/query/count");
+    }
+
+    #[test]
+    fn sql_query_uses_the_stateless_post_route() {
+        let body = json!({
+            "sql": "SELECT * FROM form_tasks ORDER BY _ugoite_id",
+            "parameters": {},
+            "limit": 100
+        });
+        let request = prepare_request("sql.query", &json!({"space_id": "demo"}), Some(&body))
+            .expect("request");
+        assert_eq!(request.method, HttpMethod::Post);
+        assert_eq!(request.path, "/spaces/demo/sql/query");
+    }
+
+    #[test]
+    fn sql_query_count_uses_a_separate_stateless_route() {
+        let request = prepare_request(
+            "sql.query.count",
+            &json!({"space_id": "demo"}),
+            Some(&json!({"sql": "SELECT * FROM form_tasks"})),
+        )
+        .expect("request");
+        assert_eq!(request.method, HttpMethod::Post);
+        assert_eq!(request.path, "/spaces/demo/sql/query/count");
     }
 
     #[test]

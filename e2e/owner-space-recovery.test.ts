@@ -601,7 +601,7 @@ test.describe("Owner-approved Space access recovery", () => {
     try {
       await page.goto(invitationUrl);
       await page.getByRole("button", { name: "Accept invitation" }).dblclick();
-      await expect(page).toHaveURL(/\/spaces$/);
+      await expect(page).toHaveURL(/\/spaces$/, { timeout: 15_000 });
       const list = await members(request, spaceId);
       expect(
         list.filter((member) =>

@@ -59,6 +59,8 @@ export const UGOITE_API_OPERATIONS = [
   "sql.create",
   "sql.update",
   "sql.delete",
+  "sql.query",
+  "sql.query.count",
   "sql_session.create",
   "sql_session.get",
   "sql_session.count",
