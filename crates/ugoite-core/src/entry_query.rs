@@ -589,6 +589,38 @@ mod tests {
     }
 
     #[test]
+    fn field_capability_preserves_typed_operator_boundaries() {
+        let priority = FormField {
+            id: FieldId::new(101).expect("field id"),
+            name: "priority".to_owned(),
+            field_type: FieldType::Integer,
+            required: false,
+            label: None,
+            description: None,
+            semantic_role: None,
+            reference_form: None,
+            list_item: None,
+            validation: None,
+            enum_values: Vec::new(),
+            deprecated: false,
+        };
+        let capability = entry_field_capability(&priority);
+        assert!(capability.filterable);
+        assert!(capability.sortable);
+        assert!(capability.projectable);
+        assert_eq!(
+            capability.supported_operators,
+            vec![
+                SearchOperator::Equals,
+                SearchOperator::Lt,
+                SearchOperator::Lte,
+                SearchOperator::Gt,
+                SearchOperator::Gte,
+            ]
+        );
+    }
+
+    #[test]
     fn signed_cursor_rejects_tampering_and_detects_auth_changes() {
         let cursor = EntryCursor::new(
             SpaceId::from(Uuid::from_u128(1)),

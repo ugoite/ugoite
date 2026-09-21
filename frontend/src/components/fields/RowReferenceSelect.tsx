@@ -66,7 +66,11 @@ function CanonicalRowReferenceSelect(props: RowReferenceSelectProps) {
   const openPicker = () => {
     setPending(null);
     setOpen(true);
-    void controller.invalidate();
+    void controller.invalidate().then(() => {
+      if (!props.value) return;
+      const existing = controller.rows().find((row) => row.id === props.value);
+      if (existing) setSelectedRow(existing);
+    });
   };
 
   const cancel = () => {
