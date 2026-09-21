@@ -283,15 +283,6 @@ requirements:
                 criterion: REQ-FE-004#criterion.display
                 covers: [FEAT-FE-002#binding.frontend/target.list-panel]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "should render entries list" } }
-          - id: entry-browser
-            adapter: typescript
-            path: frontend/src/components/EntryBrowser.test.tsx
-            selector: { kind: test, name: "connects toolbar actions to canonical projection, text, and sort state" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-004#criterion.display
-                covers: [FEAT-FE-002#binding.frontend/target.entry-browser]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "connects toolbar actions to canonical projection, text, and sort state" } }
           - id: entries-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/entries/index.test.tsx"
@@ -348,15 +339,6 @@ requirements:
                 criterion: REQ-FE-008#criterion.selection
                 covers: [FEAT-FE-002#binding.frontend/target.list-panel]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "should call onSelectEntry when a entry is clicked" } }
-          - id: entry-browser-selection
-            adapter: typescript
-            path: frontend/src/components/EntryBrowser.test.tsx
-            selector: { kind: test, name: "keeps selection separate from server mutation" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-008#criterion.selection
-                covers: [FEAT-FE-002#binding.frontend/target.entry-browser]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "keeps selection separate from server mutation" } }
   - id: REQ-FE-005
     title: Markdown Editor
     description: The frontend provides a Markdown editor with editing, preview, save, and safe rendered-preview behavior for Entry content.

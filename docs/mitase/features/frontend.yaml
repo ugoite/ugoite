@@ -111,15 +111,6 @@ features:
                 criterion: REQ-FE-008#criterion.selection
               - kind: satisfies
                 criterion: REQ-FE-044#criterion.dictionary-localization
-          - id: entry-browser
-            adapter: typescript
-            path: frontend/src/components/EntryBrowser.tsx
-            selector: { kind: symbol, name: EntryBrowser }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-004#criterion.display
-              - kind: satisfies
-                criterion: REQ-FE-008#criterion.selection
           - id: entries-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/entries/index.tsx"
@@ -127,8 +118,6 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-004#criterion.display
-              - kind: satisfies
-                criterion: REQ-FE-008#criterion.selection
               - kind: satisfies
                 criterion: REQ-FE-067#criterion.plain-entry-workspace
               - kind: satisfies
