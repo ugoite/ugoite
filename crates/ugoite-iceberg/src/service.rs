@@ -2182,7 +2182,6 @@ impl UgoiteService {
                         .delete_entry_with_change_receipt_for_principals(
                             space_id,
                             &id,
-                            false,
                             actor_principal_id,
                             principal_ids,
                             Some(change),
@@ -2757,14 +2756,8 @@ impl UgoiteService {
         Ok(result)
     }
 
-    pub async fn delete_entry(
-        &self,
-        space_id: &str,
-        entry_id: &str,
-        hard_delete: bool,
-        actor: &str,
-    ) -> Result<()> {
-        self.delete_entry_with_receipt(space_id, entry_id, hard_delete, actor)
+    pub async fn delete_entry(&self, space_id: &str, entry_id: &str, actor: &str) -> Result<()> {
+        self.delete_entry_with_receipt(space_id, entry_id, actor)
             .await
             .map(|_| ())
     }
@@ -2773,7 +2766,6 @@ impl UgoiteService {
         &self,
         space_id: &str,
         entry_id: &str,
-        hard_delete: bool,
         actor: &str,
     ) -> Result<Value> {
         self.ensure_mutation_admitted(space_id).await?;
@@ -2783,7 +2775,6 @@ impl UgoiteService {
             &self.operator,
             &self.workspace_path(space_id),
             entry_id,
-            hard_delete,
             actor,
             None,
         )
@@ -2805,11 +2796,10 @@ impl UgoiteService {
         &self,
         space_id: &str,
         entry_id: &str,
-        hard_delete: bool,
         actor: &str,
         change: Option<ChangeCommand>,
     ) -> Result<()> {
-        self.delete_entry_with_change_receipt(space_id, entry_id, hard_delete, actor, change)
+        self.delete_entry_with_change_receipt(space_id, entry_id, actor, change)
             .await
             .map(|_| ())
     }
@@ -2818,7 +2808,6 @@ impl UgoiteService {
         &self,
         space_id: &str,
         entry_id: &str,
-        hard_delete: bool,
         actor: &str,
         change: Option<ChangeCommand>,
     ) -> Result<Value> {
@@ -2829,7 +2818,6 @@ impl UgoiteService {
             &self.operator,
             &self.workspace_path(space_id),
             entry_id,
-            hard_delete,
             actor,
             change,
         )
@@ -2856,14 +2844,12 @@ impl UgoiteService {
         &self,
         space_id: &str,
         entry_id: &str,
-        hard_delete: bool,
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
         self.delete_entry_authorized_for_principals_with_change(
             space_id,
             entry_id,
-            hard_delete,
             author,
             principal_ids,
             None,
@@ -2879,14 +2865,13 @@ impl UgoiteService {
     /// entry boundary the operator-local path uses (no separate mutation
     /// implementation).
     ///
-    /// `hard_delete` is accepted for API compatibility but the store always
-    /// appends a tombstone revision: history is append-only, so a delete
-    /// never removes evidence and reconcile still converges `entry.deleted`.
+    /// Deletes always append a tombstone revision: history is append-only, so
+    /// a delete never removes evidence and reconcile still converges
+    /// `entry.deleted`.
     pub async fn delete_entry_authorized_for_principals_with_change(
         &self,
         space_id: &str,
         entry_id: &str,
-        hard_delete: bool,
         author: &str,
         principal_ids: &[Uuid],
         change: Option<ChangeCommand>,
@@ -2894,7 +2879,6 @@ impl UgoiteService {
         self.delete_entry_authorized_for_principals_with_change_receipt(
             space_id,
             entry_id,
-            hard_delete,
             author,
             principal_ids,
             change,
@@ -2906,7 +2890,6 @@ impl UgoiteService {
         &self,
         space_id: &str,
         entry_id: &str,
-        hard_delete: bool,
         author: &str,
         principal_ids: &[Uuid],
         change: Option<ChangeCommand>,
@@ -2931,7 +2914,6 @@ impl UgoiteService {
         self.delete_entry_with_change_receipt_for_principals(
             space_id,
             entry_id,
-            hard_delete,
             author,
             principal_ids,
             change,
@@ -2956,7 +2938,6 @@ impl UgoiteService {
         &self,
         space_id: &str,
         entry_id: &str,
-        hard_delete: bool,
         author: &str,
         principal_ids: &[Uuid],
         change: Option<ChangeCommand>,
@@ -2968,7 +2949,6 @@ impl UgoiteService {
             &self.operator,
             &self.workspace_path(space_id),
             entry_id,
-            hard_delete,
             author,
             change,
         )
@@ -4130,31 +4110,6 @@ impl UgoiteService {
         Err(anyhow!(
             "authorization changed while executing the protected search"
         ))
-    }
-
-    pub async fn query_entries_authorized_for_principals(
-        &self,
-        space_id: &str,
-        principal_ids: &[Uuid],
-        filter: &Value,
-    ) -> Result<Vec<Value>> {
-        require_nonempty_authorized_principals(principal_ids)?;
-        self.validate_complete_space(space_id).await?;
-        let authorizer = Authorizer::new(self.operator.clone());
-        authorizer
-            .with_state_lock(space_id, |state| async move {
-                let scopes = self
-                    .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
-                    .await?;
-                index::query_index_authorized_by_form_scopes(
-                    &self.operator,
-                    &self.workspace_path(space_id),
-                    &filter.to_string(),
-                    &scopes,
-                )
-                .await
-            })
-            .await
     }
 
     /// Authorized structured Search. Permission filtering is applied before

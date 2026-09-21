@@ -1496,7 +1496,6 @@ async fn delete(
                 .delete_entry(
                     &auth.space_id,
                     &id_for_write,
-                    false,
                     &actor_principal_id.unwrap_or(principal_id).to_string(),
                 )
                 .await

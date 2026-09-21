@@ -647,22 +647,16 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
-            "entry.delete" => {
-                let mut query = Vec::new();
-                if optional_bool(operation, args, "hard_delete")?.unwrap_or(false) {
-                    query.push(("hard_delete".into(), "true".into()));
-                }
-                (
-                    OperationSpec::no_body(HttpMethod::Delete, "Failed to delete entry"),
-                    vec![
-                        "spaces".into(),
-                        required_string(operation, args, "space_id")?,
-                        "entries".into(),
-                        required_string(operation, args, "entry_id")?,
-                    ],
-                    query,
-                )
-            }
+            "entry.delete" => (
+                OperationSpec::no_body(HttpMethod::Delete, "Failed to delete entry"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "entries".into(),
+                    required_string(operation, args, "entry_id")?,
+                ],
+                vec![],
+            ),
             "entry.history" => {
                 let mut query = Vec::new();
                 if let Some(pin) = optional_string(operation, args, "pin")? {
@@ -1672,21 +1666,6 @@ fn required_u64(
     })
 }
 
-fn optional_bool(
-    operation: &str,
-    args: &Map<String, Value>,
-    key: &str,
-) -> Result<Option<bool>, ApiProtocolError> {
-    match args.get(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::Bool(value)) => Ok(Some(*value)),
-        _ => Err(ApiProtocolError::invalid_arguments(
-            operation,
-            format!("argument `{key}` must be a boolean when provided"),
-        )),
-    }
-}
-
 fn encoded_path(segments: &[String], query: &[(String, String)]) -> Result<String, String> {
     let mut url = Url::parse("https://ugoite.invalid").map_err(|error| error.to_string())?;
     {
@@ -1964,7 +1943,6 @@ mod tests {
             &json!({
                 "space_id": "demo",
                 "entry_id": "entry-1",
-                "hard_delete": false,
                 "human_approval": "a".repeat(43)
             }),
             None,

@@ -667,9 +667,7 @@ async fn sql_sessions_service_freezes_publication_scope_and_policy() -> anyhow::
         .expect_err("session rows must reject an empty principal set");
     assert_forbidden(&error);
 
-    service
-        .delete_entry(&space_id, "task-1", false, "owner")
-        .await?;
+    service.delete_entry(&space_id, "task-1", "owner").await?;
     service
         .create_entry(
             &space_id,

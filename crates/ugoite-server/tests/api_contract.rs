@@ -1164,9 +1164,17 @@ fn openapi_human_approval_is_server_derived_and_single_use() {
         snapshot["components"]["schemas"]["HumanApprovalDeleteMutation"]["required"],
         serde_json::json!(["target_id"])
     );
+    // Entry deletes use the same target-only approval payload: the v0.1
+    // `hard_delete` compat field was removed end to end.
     assert_eq!(
         snapshot["components"]["schemas"]["HumanApprovalEntryDeleteMutation"]["required"],
-        serde_json::json!(["target_id", "hard_delete"])
+        serde_json::json!(["target_id"])
+    );
+    assert!(
+        snapshot["components"]["schemas"]["HumanApprovalEntryDeleteMutation"]["properties"]
+            .get("hard_delete")
+            .is_none(),
+        "entry delete approval must not publish hard_delete"
     );
     let access_put = &snapshot["paths"]["/spaces/{space_id}/policies/{kind}/{resource_id}"]["put"];
     assert_eq!(
