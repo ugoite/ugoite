@@ -17,9 +17,8 @@ Read the [REST overview](../architecture/api/rest.md) for admission,
 storage-boundary, and authentication surfaces. Use `/openapi.json` from a
 running server for exact paths, methods, and schemas. Examples of contract
 paths (not a registry: verify against the generated document) include
-`/health`, `/spaces`, `/spaces/{space_id}/entries`,
-`/spaces/{space_id}/entries/{entry_id}/history`, and
-`/spaces/{space_id}/search`.
+`/health`, `/spaces`, `/spaces/{space_id}/entries`, and
+`/spaces/{space_id}/entries/{entry_id}/history`.
 
 ## Auth model
 

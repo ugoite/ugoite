@@ -11,7 +11,7 @@ support, and product claims stay aligned with the implementation.
 
 - local CLI core mode over operator-owned Spaces;
 - Rust REST server with entries, forms, assets, preferences, search, saved SQL,
-  and SQL query sessions;
+  and stateless read-only SQL query;
 - server-backed browser application;
 - single non-root container image and Helm chart;
 - MCP v1 search/save/delete facade with lazy Entry, history, schema, and Form

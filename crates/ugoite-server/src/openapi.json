@@ -10992,14 +10992,6 @@
           "type": "string"
         }
       },
-      "SessionId": {
-        "name": "session_id",
-        "in": "path",
-        "required": true,
-        "schema": {
-          "type": "string"
-        }
-      },
       "EntryId": {
         "name": "entry_id",
         "in": "path",
