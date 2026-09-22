@@ -542,3 +542,88 @@ requirements:
         kind: documentation
         statement: The API documentation assigns distinct roles to MCP, CLI, and REST and preserves the stable MCP v1 boundary.
         governed_by: [POL-004#rule.governance, POL-005#rule.governance, POL-015#rule.governance]
+  - id: REQ-API-015
+    title: Stateless SQL query CLI
+    description: The CLI exposes canonical read-only SQL page and count operations using the stateless SqlQuery contract in both local and remote mode.
+    priority: high
+    status: implemented
+    criteria:
+      - id: canonical-sql-page
+        kind: behavior
+        statement: '`ugoite sql query` submits SqlQueryRequest with SQL, parameters, limit, and optional continuation and returns the canonical page envelope.'
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: canonical-sql-count
+        kind: behavior
+        statement: '`ugoite sql count` submits a separate SqlQueryCountRequest and returns an explicit count without coupling it to page retrieval.'
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: local-remote-parity
+        kind: quality
+        statement: Local and remote CLI SQL operations use the same canonical request and response DTOs.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: ordered-pagination
+        kind: security
+        statement: A SQL page that exceeds its limit must have an explicit ORDER BY; unordered results are rejected instead of silently discarding rows or issuing an unsafe continuation.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: cli-verification
+        role: verification
+        facet: verification
+        responsibility: Verify canonical stateless SQL page and count routing plus local execution through exact CLI integration cases.
+        targets:
+          - id: remote-page
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_sql_query_uses_stateless_route_and_dto }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.canonical-sql-page
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_sql_query_uses_stateless_route_and_dto } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.local-remote-parity
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_sql_query_uses_stateless_route_and_dto } }
+          - id: remote-count
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_sql_query_count_uses_separate_stateless_route }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.canonical-sql-count
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_sql_query_count_uses_separate_stateless_route } }
+          - id: local-page-and-count
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_core.rs
+            selector: { kind: test, name: test_cli_sql_query_and_count_use_stateless_local_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.canonical-sql-page
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_cli_sql_query_and_count_use_stateless_local_contract } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.canonical-sql-count
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_cli_sql_query_and_count_use_stateless_local_contract } }
+      - id: backend-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that unordered SQL results exceeding a page limit are rejected instead of silently truncated.
+        targets:
+          - id: ordered-pagination
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::stateless_sql_query_pins_publication_and_separates_count }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.canonical-sql-page
+                covers: [FEAT-API-001#binding.backend-implementation/target.query-sql]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::stateless_sql_query_pins_publication_and_separates_count } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.canonical-sql-count
+                covers: [FEAT-API-001#binding.backend-implementation/target.count-sql]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::stateless_sql_query_pins_publication_and_separates_count } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.ordered-pagination
+                covers: [FEAT-API-001#binding.backend-implementation/target.query-sql]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::stateless_sql_query_pins_publication_and_separates_count } }

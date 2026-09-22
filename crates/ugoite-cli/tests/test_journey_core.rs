@@ -1012,3 +1012,100 @@ fn test_cli_entry_list_canonical_query_options() {
         "human table must not use raw Entry ID as its primary display: {table_stdout}"
     );
 }
+
+#[test]
+fn test_cli_sql_query_and_count_use_stateless_local_contract() {
+    let space = setup_parity_space(r#"{"Status":{"type":"string"}}"#);
+
+    let form = stdout_json(
+        &run_cli(&space.config_path, &["form", "get", space.form_name]),
+        "local SQL form lookup",
+    );
+    let form_id = form["id"].as_str().expect("form id").replace('-', "");
+    let relation = format!("form_{form_id}");
+    let sql = format!("SELECT _ugoite_id FROM \"{relation}\" ORDER BY _ugoite_id");
+    let created = run_cli(
+        &space.config_path,
+        &[
+            "entry",
+            "create",
+            "sql-local-entry",
+            "--form",
+            space.form_name,
+            "--field",
+            "Status=open",
+        ],
+    );
+    assert!(created.status.success(), "local SQL entry setup failed");
+    let created = run_cli(
+        &space.config_path,
+        &[
+            "entry",
+            "create",
+            "sql-local-entry-2",
+            "--form",
+            space.form_name,
+            "--field",
+            "Status=closed",
+        ],
+    );
+    assert!(
+        created.status.success(),
+        "second local SQL entry setup failed"
+    );
+
+    let page = stdout_json(
+        &run_cli(&space.config_path, &["sql", "query", &sql, "--limit", "1"]),
+        "local stateless SQL query",
+    );
+    assert_eq!(page["columns"].as_array().map(Vec::len), Some(1));
+    assert_eq!(page["rows"].as_array().map(Vec::len), Some(1));
+    assert_eq!(page["has_more"], true);
+    let first_id = page["rows"][0]["_ugoite_id"]
+        .as_str()
+        .expect("first SQL row id")
+        .to_string();
+    let continuation = page["next"].as_str().expect("SQL continuation");
+
+    let next_page = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "sql",
+                "query",
+                &sql,
+                "--limit",
+                "1",
+                "--continuation",
+                continuation,
+            ],
+        ),
+        "continued stateless SQL query",
+    );
+    assert_eq!(next_page["has_more"], false);
+    assert!(next_page["next"].is_null());
+    assert_ne!(next_page["rows"][0]["_ugoite_id"], first_id);
+
+    let unordered = run_cli(
+        &space.config_path,
+        &[
+            "sql",
+            "query",
+            &format!("SELECT _ugoite_id FROM \"{relation}\""),
+            "--limit",
+            "1",
+        ],
+    );
+    assert!(!unordered.status.success());
+    assert!(
+        String::from_utf8_lossy(&unordered.stderr).contains("ORDER BY"),
+        "unordered SQL pagination should fail clearly: {}",
+        String::from_utf8_lossy(&unordered.stderr)
+    );
+
+    let count = stdout_json(
+        &run_cli(&space.config_path, &["sql", "count", &sql]),
+        "local stateless SQL count",
+    );
+    assert_eq!(count["count"], 2);
+}

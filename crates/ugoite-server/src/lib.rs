@@ -14742,9 +14742,14 @@ mod authentication_regression_tests {
                 })),
             )
             .await?;
-        assert_eq!(status, StatusCode::OK, "{unordered}");
-        assert_eq!(unordered["has_more"], false);
-        assert!(unordered["next"].is_null());
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{unordered}");
+        assert_eq!(unordered["code"], "INVALID_INPUT", "{unordered}");
+        assert!(
+            unordered["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("ORDER BY")),
+            "{unordered}"
+        );
         Ok(())
     }
 

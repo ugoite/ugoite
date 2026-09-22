@@ -1,192 +1,148 @@
 ---
 title: "Saved SQL and Expert Query"
-description: Reuse saved read-only SQL definitions and run expert queries over Form relations.
+description: Save read-only SQL as Knowledge or run a stateless expert query over authorized Form relations.
 sidebar:
   order: 7
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Saved SQL definitions are durable Space content. Sessions, indexes, and result
-previews are derived and replaceable. Every execution path is read-only:
-write and DDL input is rejected before execution.
+Saved SQL and SQL execution are separate concepts. A saved SQL definition is
+durable Space Knowledge. `sql query` and `sql count` are disposable read
+operations: they do not create a SQL session, result object, or other query
+state in the Space.
 
 ## Outcome
 
-A saved read-only definition exists in the Space and an expert query reads
-the same Form data on Browser and CLI.
+You can either save a read-only SQL definition for later reuse, or execute a
+stateless query page against the current authorized publication. The CLI uses
+the same request contract in local and remote mode.
 
 ## Before you begin
 
-Create an Entry in [Create and Edit Entries](entries.mdx) and confirm the
-Form name with `ugoite form get`. Each Form is exposed as the
-backend-provided `form_<FormId>` relation (the Form UUID without dashes, as
-returned in the `id` field of `ugoite form get`) with `field_<FieldId>`
-columns plus `_ugoite_id`, `_ugoite_created_at`, and `_ugoite_updated_at`
-columns. Entry identity is `_ugoite_id`; human-readable labels are ordinary
-Form-defined fields.
+Create an Entry in [Create and Edit Entries](entries.mdx) and confirm the Form
+name with `ugoite form get`. Each Form is exposed as the backend-provided
+`form_<FormId>` relation (the Form UUID without dashes, as returned in the
+`id` field of `ugoite form get`) with `field_<FieldId>` columns plus
+`_ugoite_id`, `_ugoite_created_at`, and `_ugoite_updated_at` columns. Entry
+identity is `_ugoite_id`; human-readable labels are ordinary Form-defined
+fields.
 
-## Steps
+## Save a definition or run a query
 
 <Tabs>
 <TabItem label="Browser">
 
-1. Open **SQL** for a saved definition over the same Form used in
-   [Search and Filter](search.mdx).
-2. Save the definition so it reopens with identical text.
-3. Run it and confirm the same Form rows appear.
+Use the SQL view to create or edit a saved SQL definition. Running a query is
+read-only; saving the definition is the explicit Knowledge operation.
 
 </TabItem>
 <TabItem label="CLI">
 
 ```bash
-ugoite sql lint 'SELECT _ugoite_id, field_<FieldId> FROM form_<FormId> LIMIT 10'
-ugoite sql saved-list
+# Durable SQL definition
 ugoite sql saved-create \
-  --name planning --sql 'SELECT _ugoite_id FROM form_<FormId> LIMIT 10'
-ugoite sql saved-get <sql-id>
-ugoite sql saved-execute <sql-id> --limit 20
-ugoite query \
-  --sql 'SELECT _ugoite_id, field_<FieldId> FROM form_<FormId> LIMIT 10'
+  --name planning \
+  --sql 'SELECT field_<FieldId> FROM form_<FormId> ORDER BY _ugoite_id'
+
+# Stateless page query
+ugoite sql query \
+  'SELECT field_<FieldId> FROM form_<FormId> ORDER BY _ugoite_id' \
+  --limit 100
+
+# SQL from a file, with repeatable typed parameters
+ugoite sql query query.sql \
+  --param status=open \
+  --param-type status=string \
+  --format table
+
+# Explicit count; count is not coupled to page retrieval
+ugoite sql count \
+  'SELECT field_<FieldId> FROM form_<FormId> WHERE field_<StatusId> = $status'
 ```
 
-`sql lint` checks syntax only; it does not resolve Forms or authorize
-execution. `sql saved-*` manages durable definitions; `sql session-create`,
-`sql session-get`, `sql session-count`, and `sql session-rows` page one
-bounded read-only result set. `query` is read-only and rejects DDL and DML
-without changing the Space. Take `<sql-id>` from `sql saved-list` output.
-Run `ugoite sql --help` and `ugoite query --help` for exact flags.
+`sql saved-*` manages durable definitions. `sql query` and `sql count` accept
+only one read-only `SELECT` statement and reject DDL, DML, and multiple
+statements before execution. Use `ugoite sql --help` for the complete option
+grammar.
 
 </TabItem>
 </Tabs>
 
 ## Read a result page
 
-`sql session-create` returns the session handle; `sql session-count` and
-`sql session-rows` read from it. Sessions are throwaway pagination state,
-not durable Knowledge.
-
-```bash
-ugoite sql session-create \
-  --sql 'SELECT _ugoite_id, field_<FieldId> FROM form_<FormId> ORDER BY _ugoite_id'
-```
+`sql query` returns a stateless page envelope:
 
 ```json
 {
-  "id": "<session-id>",
-  "pagination": {
-    "default_limit": 50,
-    "max_limit": 1000,
-    "max_offset": 999,
-    "strategy": "offset"
-  },
-  "space_id": "<space-id>",
-  "sql": "SELECT _ugoite_id, field_<FieldId> FROM form_<FormId> ORDER BY _ugoite_id",
-  "status": "ready"
+  "columns": ["field_<FieldId>"],
+  "rows": [{"field_<FieldId>": "Alpha"}],
+  "has_more": true,
+  "next": "<opaque-continuation>"
 }
 ```
 
-`sql session-count` returns the total row count for the session:
+When `has_more` is true, pass `next` back as `--continuation`. The
+continuation fixes the publication used by the query chain while the current
+authorization is checked again for every request.
+
+An explicit `ORDER BY` is required for a result that needs more than one page.
+An unordered result that exceeds `--limit` is rejected instead of silently
+discarding rows; a single-page unordered result remains valid.
 
 ```bash
-ugoite sql session-count <session-id>
+ugoite sql query \
+  'SELECT field_<FieldId> FROM form_<FormId> ORDER BY _ugoite_id' \
+  --limit 100 \
+  --continuation '<opaque-continuation>'
 ```
+
+The default JSON output preserves the complete page envelope. `--format
+table` renders rows for humans and prints only a generic pagination notice to
+stderr when another page exists. `--format ndjson` writes one row per line and
+keeps pagination metadata out of the row stream. Use JSON output when a
+continuation token is needed; opaque continuation values are never written to
+logs by table or NDJSON rendering.
+
+`sql count` returns a separate response:
 
 ```json
-{
-  "count": 2,
-  "session_id": "<session-id>",
-  "total_count": 2
-}
+{"count": 42}
 ```
 
-`sql session-rows` returns one bounded page. Every row page carries the
-same envelope: `rows` (this page), `count`
-(rows in this page), `total_count` (rows in the whole result), `offset`,
-and `limit`, plus the `session_id` continuation handle. Pages default to
-`--limit 50`; `--offset`/`--limit` must stay within the `max_limit` window
-above.
+It is an explicit operation and is not executed automatically for each page.
 
-```bash
-ugoite sql session-rows <session-id> --offset 0 --limit 1
-```
+## Parameters
 
-```json
-{
-  "count": 1,
-  "limit": 1,
-  "offset": 0,
-  "rows": [{ "_ugoite_id": "task-a", "field_<FieldId>": "Alpha" }],
-  "session_id": "<session-id>",
-  "total_count": 2
-}
-```
+Repeat `--param NAME=VALUE` for each named parameter. Scalar JSON values are
+accepted; unquoted values that are not valid JSON are treated as strings.
+Use `--param-type NAME=TYPE` when a null value needs an explicit type or when
+the inferred scalar type is not the intended SQL type.
 
-`sql saved-execute` returns the same page envelope with `sql_id` for the
-executed definition. Local/core mode carries no `session_id`:
+## Read-only and authorization contract
 
-```bash
-ugoite sql saved-execute <sql-id> --limit 1
-```
+Only authorized public Form relations and their public columns are registered
+for execution. Internal catalog, object-store, authorization, maintenance,
+and derived-relation metadata are not automatically exposed to SQL. Query
+execution is fixed-publication and read-only: it does not publish Knowledge,
+materialize a result relation, or create persistent execution state.
 
-```json
-{
-  "count": 1,
-  "limit": 1,
-  "offset": 0,
-  "rows": [{ "_ugoite_id": "task-a", "field_<FieldId>": "Alpha" }],
-  "sql_id": "<sql-id>",
-  "total_count": 2
-}
-```
+## Saved SQL versus query execution
 
-Remote mode (CLI pointed at a server) returns the same envelope plus a
-`session_id` continuation handle:
-
-```bash
-ugoite sql saved-execute <sql-id> --limit 1
-```
-
-```json
-{
-  "count": 1,
-  "limit": 1,
-  "offset": 0,
-  "rows": [{ "_ugoite_id": "task-a", "field_<FieldId>": "Alpha" }],
-  "session_id": "<session-id>",
-  "sql_id": "<sql-id>",
-  "total_count": 2
-}
-```
-
-Contract notes:
-
-- `sql_id` is the identity of the saved SQL definition (durable Knowledge).
-- `session_id` is a transient handle for the remote SQL execution/session,
-  used for result continuation. It is runtime/transport metadata, not
-  durable Knowledge.
-- `session_id` is not guaranteed to be present in local/core mode. Scripts
-  and automation must not require it, and must not treat its presence or
-  value as Knowledge semantics.
-- Row, count, and pagination meanings (`rows`/`count`/
-  `total_count`/`offset`/`limit`) are identical across both transports.
-
-## Verify the result
-
-The saved definition reads back with identical text, and the expert query
-returns the same Form rows that the Browser SQL view shows.
-
-## What became durable?
-
-The saved SQL definition. Sessions, result pages, and previews are derived
-runtime state.
+- Saved SQL is Knowledge and is managed with `sql saved-list`, `saved-create`,
+  `saved-get`, `saved-update`, and `saved-delete`.
+- `sql query` is a stateless page read with an opaque client-held
+  continuation.
+- `sql count` is a separate explicit read.
 
 ## If it fails
 
 - SQL rejected: check the `form_<FormId>` relation, `field_<FieldId>` columns,
-  and statement kind; only read-only selects over authorized relations run.
-- Unknown saved ID: list definitions again and use the exact ID from
-  `sql saved-list` output.
+  and statement kind; only authorized read-only selects run.
+- Parameter rejected: check `NAME=VALUE` syntax and add `--param-type` for
+  null or an explicitly typed scalar.
+- Continuation rejected: start a fresh query when SQL, parameters, or current
+  authorization no longer match the continuation.
 
 ## Related concepts
 
@@ -195,6 +151,6 @@ runtime state.
 
 ## Reference
 
-- `ugoite sql --help` and `ugoite query --help` are the command authorities.
+- `ugoite sql --help` is the CLI command authority.
 - REST shapes live in `crates/ugoite-server` and `/openapi.json`; see
   [REST API and OpenAPI](../reference/rest.md).

@@ -39,6 +39,8 @@ pub enum Format {
     Json,
     /// Human-readable table (default when stdout is a TTY)
     Table,
+    /// One JSON value per line
+    Ndjson,
     /// Key: value lines for single objects
     Plain,
 }
@@ -76,7 +78,7 @@ pub fn is_machine_stderr() -> bool {
 /// when one is supplied, otherwise falls back to JSON so no data is lost.
 pub fn emit_success<T: Serialize>(data: &T, format: &Format, human: Option<String>) {
     match format {
-        Format::Json => print_json(data),
+        Format::Json | Format::Ndjson => print_json(data),
         Format::Table | Format::Plain => {
             if let Some(rendered) = human {
                 println!("{rendered}");

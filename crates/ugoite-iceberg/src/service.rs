@@ -4697,6 +4697,168 @@ impl UgoiteService {
             .await
     }
 
+    /// Executes one stateless, read-only SQL page for the trusted local
+    /// operator boundary. The publication is fixed by the first request and
+    /// carried by an opaque continuation; no query state is written.
+    pub async fn query_sql(
+        &self,
+        space_id: &str,
+        request: SqlQueryRequest,
+    ) -> Result<SqlQueryPage> {
+        const LOCAL_AUTHORIZATION_FINGERPRINT: &str = "local-operator";
+
+        request.validate().map_err(sql_query_contract_error)?;
+        let normalized_sql = index::normalize_sql_template(&request.sql)?;
+        index::validate_read_only_sql(&normalized_sql)?;
+        self.validate_complete_space(space_id).await?;
+        let signing_key = self.sql_query_signing_key(space_id).await?;
+        let continuation = request
+            .continuation
+            .as_deref()
+            .map(|value| {
+                SqlContinuation::decode(value, &signing_key).map_err(sql_query_contract_error)
+            })
+            .transpose()?;
+        let effective_parameter_types =
+            effective_sql_parameter_types(&request.parameters, &request.parameter_types)?;
+        let parameter_fingerprint = SqlQueryRequest {
+            parameter_types: effective_parameter_types.clone(),
+            ..request.clone()
+        }
+        .parameter_fingerprint()
+        .map_err(sql_query_contract_error)?;
+        let sql_fingerprint = request
+            .sql_fingerprint(&normalized_sql)
+            .map_err(sql_query_contract_error)?;
+        let parameters =
+            index::datafusion_parameters(&request.parameters, &effective_parameter_types).map_err(
+                |error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()),
+            )?;
+        let space_uid = self.space_uid(space_id).await?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let (publication, offset) = match continuation {
+            Some(cursor) => {
+                if cursor.space_id.as_uuid() != space_uid {
+                    return Err(AppError::invalid_input(
+                        ErrorCode::InvalidInput,
+                        "SQL continuation belongs to another Space",
+                    )
+                    .into());
+                }
+                if cursor.sql_fingerprint != sql_fingerprint
+                    || cursor.parameter_fingerprint != parameter_fingerprint
+                {
+                    return Err(AppError::invalid_input(
+                        ErrorCode::InvalidInput,
+                        "SQL or parameter fingerprint does not match the continuation",
+                    )
+                    .into());
+                }
+                cursor
+                    .authorize(LOCAL_AUTHORIZATION_FINGERPRINT)
+                    .map_err(sql_query_contract_error)?;
+                let publication = cursor.publication.clone();
+                workspace.resolve_publication(&publication).await?;
+                (publication, cursor.offset)
+            }
+            None => {
+                let publication = workspace.current_publication().await?;
+                (publication, 0)
+            }
+        };
+        let checkpoint = workspace.resolve_publication(&publication).await?;
+        let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
+        let relation_scopes = forms
+            .iter()
+            .map(|form| (sql_relation_name(form.id), EntryScope::AllCurrent))
+            .collect::<BTreeMap<_, _>>();
+        let fetch_limit = request
+            .limit
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("SQL query page limit overflows"))?;
+        let (columns, mut rows, has_order) =
+            index::execute_sql_query_authorized_by_form_page_at_checkpoint_stateless(
+                &self.operator,
+                &self.workspace_path(space_id),
+                &normalized_sql,
+                &relation_scopes,
+                parameters,
+                offset,
+                fetch_limit,
+                forms,
+                checkpoint,
+            )
+            .await?;
+        if !has_order && rows.len() > request.limit {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "SQL pagination requires an explicit ORDER BY",
+            )
+            .into());
+        }
+        let has_more = has_order && rows.len() > request.limit;
+        rows.truncate(request.limit);
+        let next = if has_more {
+            let next_offset = offset
+                .checked_add(rows.len())
+                .ok_or_else(|| anyhow!("SQL continuation offset overflows"))?;
+            Some(
+                SqlContinuation::new(
+                    space_uid.into(),
+                    publication,
+                    sql_fingerprint,
+                    parameter_fingerprint,
+                    LOCAL_AUTHORIZATION_FINGERPRINT.to_string(),
+                    next_offset,
+                )?
+                .encode(&signing_key)?,
+            )
+        } else {
+            None
+        };
+        Ok(SqlQueryPage {
+            columns,
+            rows,
+            has_more,
+            next,
+        })
+    }
+
+    /// Counts a read-only SQL query for the trusted local operator boundary.
+    /// Counting is explicit and never creates query or session state.
+    pub async fn count_sql(&self, space_id: &str, request: SqlQueryCountRequest) -> Result<u64> {
+        request.validate().map_err(sql_query_contract_error)?;
+        let normalized_sql = index::normalize_sql_template(&request.sql)?;
+        index::validate_read_only_sql(&normalized_sql)?;
+        self.validate_complete_space(space_id).await?;
+        let effective_parameter_types =
+            effective_sql_parameter_types(&request.parameters, &request.parameter_types)?;
+        let parameters =
+            index::datafusion_parameters(&request.parameters, &effective_parameter_types).map_err(
+                |error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()),
+            )?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let publication = workspace.current_publication().await?;
+        let checkpoint = workspace.resolve_publication(&publication).await?;
+        let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
+        let relation_scopes = forms
+            .iter()
+            .map(|form| (sql_relation_name(form.id), EntryScope::AllCurrent))
+            .collect::<BTreeMap<_, _>>();
+        index::execute_sql_query_authorized_by_form_count_at_checkpoint_stateless(
+            &self.operator,
+            &self.workspace_path(space_id),
+            &normalized_sql,
+            &relation_scopes,
+            parameters,
+            forms,
+            checkpoint,
+        )
+        .await
+    }
+
     /// Executes one stateless, read-only SQL page. The publication is fixed
     /// by the first request and carried by an opaque continuation; every
     /// request still rebuilds authorization from the current state.
@@ -4809,6 +4971,13 @@ impl UgoiteService {
                 checkpoint,
             )
             .await?;
+        if !has_order && rows.len() > request.limit {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "SQL pagination requires an explicit ORDER BY",
+            )
+            .into());
+        }
         let has_more = has_order && rows.len() > request.limit;
         rows.truncate(request.limit);
         let next = if has_more {

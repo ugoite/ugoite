@@ -2,6 +2,36 @@ version: '0.2'
 updated: '2026-06-23'
 kind: sql
 apis:
+- id: sql.query
+  method: POST
+  status: implemented
+  description: Execute one read-only SQL SELECT page without persistent SQL execution state. An explicit ORDER BY is required when the result exceeds the requested page limit.
+  backend:
+    path: /spaces/{space_id}/sql/query
+    file: crates/ugoite-server/src/lib.rs
+    function: query_sql
+  ugoite_core:
+    file: crates/ugoite-iceberg/src/service.rs
+    function: query_sql
+  ugoite_cli:
+    command: ugoite sql query
+    file: crates/ugoite-cli/src/commands/sql.rs
+    function: run
+- id: sql.query.count
+  method: POST
+  status: implemented
+  description: Explicitly count rows for one read-only SQL SELECT without coupling count to page retrieval.
+  backend:
+    path: /spaces/{space_id}/sql/query/count
+    file: crates/ugoite-server/src/lib.rs
+    function: count_sql
+  ugoite_core:
+    file: crates/ugoite-iceberg/src/service.rs
+    function: count_sql
+  ugoite_cli:
+    command: ugoite sql count
+    file: crates/ugoite-cli/src/commands/sql.rs
+    function: run
 - id: sql.list
   method: GET
   status: implemented
