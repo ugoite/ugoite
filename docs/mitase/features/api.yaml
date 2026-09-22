@@ -423,6 +423,12 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.canonical-sql-page
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.canonical-sql-count
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.local-remote-parity
           - id: entry-query-command
             adapter: rust
             path: crates/ugoite-cli/src/commands/entry_query.rs

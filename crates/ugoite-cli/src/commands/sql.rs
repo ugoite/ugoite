@@ -1,9 +1,11 @@
 use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::config::print_json;
 use crate::http;
+use crate::output::{print_json_table, Format, UsageError};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_core::sql_query::{SqlQueryCountRequest, SqlQueryPage, SqlQueryRequest};
 use ugoite_iceberg::service::UgoiteService;
 use ugoite_iceberg::{
     index::{
@@ -25,6 +27,30 @@ pub struct SqlCmd {
 pub enum SqlSubCmd {
     /// Validate SQL syntax without executing it
     Lint { sql_text: String },
+    /// Execute one stateless, read-only SQL page
+    Query {
+        #[arg(value_name = "SQL_OR_FILE")]
+        sql_text: String,
+        #[arg(long = "param", value_name = "NAME=VALUE")]
+        parameters: Vec<String>,
+        #[arg(long = "param-type", value_name = "NAME=TYPE")]
+        parameter_types: Vec<String>,
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+        #[arg(long)]
+        continuation: Option<String>,
+        #[arg(long, value_enum, default_value_t = Format::Json)]
+        format: Format,
+    },
+    /// Count rows for one explicit, read-only SQL query
+    Count {
+        #[arg(value_name = "SQL_OR_FILE")]
+        sql_text: String,
+        #[arg(long = "param", value_name = "NAME=VALUE")]
+        parameters: Vec<String>,
+        #[arg(long = "param-type", value_name = "NAME=TYPE")]
+        parameter_types: Vec<String>,
+    },
     /// List saved SQL queries
     #[command(long_about = "Use the selected context or --context NAME for this command.")]
     SavedList,
@@ -339,6 +365,165 @@ fn saved_sql_text(saved: &serde_json::Value) -> Result<String> {
         })
 }
 
+fn sql_text_from_argument(argument: &str) -> Result<String> {
+    let path = std::path::Path::new(argument);
+    if path.is_file() {
+        return std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read SQL file {}", path.display()));
+    }
+    Ok(argument.to_string())
+}
+
+fn parse_sql_bindings(
+    raw_parameters: &[String],
+    raw_types: &[String],
+) -> Result<(
+    serde_json::Map<String, serde_json::Value>,
+    std::collections::BTreeMap<String, String>,
+)> {
+    let mut parameters = serde_json::Map::new();
+    for raw in raw_parameters {
+        let (name, value) = raw
+            .split_once('=')
+            .ok_or_else(|| UsageError(format!("--param must be NAME=VALUE, got {raw:?}")))?;
+        if name.trim().is_empty() {
+            return Err(UsageError("SQL parameter name must not be empty".to_string()).into());
+        }
+        let value = serde_json::from_str(value)
+            .unwrap_or_else(|_| serde_json::Value::String(value.to_string()));
+        if parameters.insert(name.to_string(), value).is_some() {
+            return Err(UsageError(format!(
+                "SQL parameter {name:?} was provided more than once"
+            ))
+            .into());
+        }
+    }
+    let mut parameter_types = std::collections::BTreeMap::new();
+    for raw in raw_types {
+        let (name, kind) = raw
+            .split_once('=')
+            .ok_or_else(|| UsageError(format!("--param-type must be NAME=TYPE, got {raw:?}")))?;
+        if name.trim().is_empty() || kind.trim().is_empty() {
+            return Err(UsageError("SQL parameter type requires NAME=TYPE".to_string()).into());
+        }
+        if parameter_types
+            .insert(name.to_string(), kind.to_string())
+            .is_some()
+        {
+            return Err(UsageError(format!(
+                "SQL parameter type {name:?} was provided more than once"
+            ))
+            .into());
+        }
+    }
+    for (name, value) in &parameters {
+        if parameter_types.contains_key(name) {
+            continue;
+        }
+        let kind = match value {
+            serde_json::Value::String(_) => "string",
+            serde_json::Value::Bool(_) => "boolean",
+            serde_json::Value::Number(number) if number.is_i64() || number.is_u64() => "long",
+            serde_json::Value::Number(_) => "double",
+            serde_json::Value::Null => {
+                return Err(UsageError(format!(
+                    "SQL null parameter {name:?} requires --param-type"
+                ))
+                .into())
+            }
+            serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+                return Err(UsageError(format!(
+                    "SQL parameter {name:?} must be a scalar JSON value"
+                ))
+                .into())
+            }
+        };
+        parameter_types.insert(name.clone(), kind.to_string());
+    }
+    Ok((parameters, parameter_types))
+}
+
+fn target_space_id(target: &SpaceTarget) -> &str {
+    match target {
+        SpaceTarget::Core { space_id, .. }
+        | SpaceTarget::Remote {
+            space_uid: space_id,
+            ..
+        } => space_id,
+    }
+}
+
+async fn query_sql_page(target: &SpaceTarget, request: SqlQueryRequest) -> Result<SqlQueryPage> {
+    let space_id = target_space_id(target);
+    match target {
+        SpaceTarget::Remote { .. } => {
+            let payload = http::execute_for_target(
+                target,
+                "sql.query",
+                serde_json::json!({"space_id": space_id}),
+                Some(serde_json::to_value(request)?),
+            )
+            .await?;
+            serde_json::from_value(payload).context("sql.query returned an invalid page")
+        }
+        SpaceTarget::Core { root, .. } => {
+            UgoiteService::new_without_background_refresh(root)?
+                .query_sql(space_id, request)
+                .await
+        }
+    }
+}
+
+async fn query_sql_count(
+    target: &SpaceTarget,
+    request: SqlQueryCountRequest,
+) -> Result<serde_json::Value> {
+    let space_id = target_space_id(target);
+    match target {
+        SpaceTarget::Remote { .. } => {
+            http::execute_for_target(
+                target,
+                "sql.query.count",
+                serde_json::json!({"space_id": space_id}),
+                Some(serde_json::to_value(request)?),
+            )
+            .await
+        }
+        SpaceTarget::Core { root, .. } => {
+            let count = UgoiteService::new_without_background_refresh(root)?
+                .count_sql(space_id, request)
+                .await?;
+            Ok(serde_json::json!({"count": count}))
+        }
+    }
+}
+
+fn print_sql_page(page: &SqlQueryPage, format: &Format) -> Result<()> {
+    match format {
+        Format::Json | Format::Plain => print_json(page),
+        Format::Ndjson => {
+            for row in &page.rows {
+                println!("{}", serde_json::to_string(row)?);
+            }
+            if let Some(next) = &page.next {
+                eprintln!("next continuation: {next}");
+            }
+        }
+        Format::Table => {
+            let columns = page
+                .columns
+                .iter()
+                .map(|column| (column.as_str(), column.as_str()))
+                .collect::<Vec<_>>();
+            print_json_table(&page.rows, &columns);
+            if let Some(next) = &page.next {
+                eprintln!("next continuation: {next}");
+            }
+        }
+    }
+    Ok(())
+}
+
 pub async fn run(
     cmd: SqlCmd,
     explicit_config: Option<&std::path::Path>,
@@ -356,6 +541,50 @@ pub async fn run(
                 "reason": error.to_string(),
             })),
         },
+        SqlSubCmd::Query {
+            sql_text,
+            parameters,
+            parameter_types,
+            limit,
+            continuation,
+            format,
+        } => {
+            let sql = sql_text_from_argument(&sql_text)?;
+            let (parameters, parameter_types) = parse_sql_bindings(&parameters, &parameter_types)?;
+            let target = resolve_command_target(explicit_config, context_override, "sql query")?;
+            let page = query_sql_page(
+                &target,
+                SqlQueryRequest {
+                    sql,
+                    parameters,
+                    parameter_types,
+                    limit,
+                    continuation,
+                },
+            )
+            .await?;
+            print_sql_page(&page, &format)?;
+        }
+        SqlSubCmd::Count {
+            sql_text,
+            parameters,
+            parameter_types,
+        } => {
+            let sql = sql_text_from_argument(&sql_text)?;
+            let (parameters, parameter_types) = parse_sql_bindings(&parameters, &parameter_types)?;
+            let target =
+                resolve_command_target(explicit_config, context_override, "sql query count")?;
+            let result = query_sql_count(
+                &target,
+                SqlQueryCountRequest {
+                    sql,
+                    parameters,
+                    parameter_types,
+                },
+            )
+            .await?;
+            print_json(&result);
+        }
         SqlSubCmd::SavedList => {
             let target =
                 resolve_command_target(explicit_config, context_override, "sql saved-list")?;

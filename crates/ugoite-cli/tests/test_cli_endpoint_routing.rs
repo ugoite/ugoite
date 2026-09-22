@@ -372,6 +372,88 @@ fn test_entry_list_uses_canonical_entry_query_route_and_dto() {
 }
 
 #[test]
+fn test_sql_query_uses_stateless_route_and_dto() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let (base_url, request_rx, server) = spawn_recording_server(
+        "HTTP/1.1 200 OK",
+        r#"{"columns":["status"],"rows":[{"status":"open"}],"has_more":true,"next":"continuation-1"}"#,
+    );
+    init_config(&config);
+    set_connection(&config, "backend", &base_url);
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+
+    let output = run(
+        &config,
+        &[
+            "sql",
+            "query",
+            "SELECT status FROM tasks WHERE status = $status ORDER BY status",
+            "--param",
+            "status=open",
+            "--limit",
+            "2",
+        ],
+    );
+    let request = request_rx.recv().unwrap();
+    server.join().unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        request.starts_with(
+            "POST /spaces/019f1234-5678-7abc-8def-0123456789ab/sql/query HTTP/1.1\r\n"
+        ),
+        "{request}"
+    );
+    let body = request_json_body(&request);
+    assert_eq!(
+        body["sql"],
+        "SELECT status FROM tasks WHERE status = $status ORDER BY status"
+    );
+    assert_eq!(body["parameters"]["status"], "open");
+    assert_eq!(body["parameter_types"]["status"], "string");
+    assert_eq!(body["limit"], 2);
+    assert!(body["continuation"].is_null());
+}
+
+#[test]
+fn test_sql_query_count_uses_separate_stateless_route() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let (base_url, request_rx, server) =
+        spawn_recording_server("HTTP/1.1 200 OK", r#"{"count":7}"#);
+    init_config(&config);
+    set_connection(&config, "backend", &base_url);
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+
+    let output = run(&config, &["sql", "count", "SELECT 1"]);
+    let request = request_rx.recv().unwrap();
+    server.join().unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        request.starts_with(
+            "POST /spaces/019f1234-5678-7abc-8def-0123456789ab/sql/query/count HTTP/1.1\r\n"
+        ),
+        "{request}"
+    );
+    let body = request_json_body(&request);
+    assert_eq!(body["sql"], "SELECT 1");
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()["count"],
+        7
+    );
+}
+
+#[test]
 fn test_saved_sql_create_req_api_006_uses_server_generated_id() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("config.toml");
