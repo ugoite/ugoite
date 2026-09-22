@@ -1072,7 +1072,7 @@ describe("CreateEntryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select entry" }));
 
     expect(await screen.findByText("Project Alpha")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("listitem"));
+    fireEvent.click(screen.getByRole("button", { name: "Use this entry" }));
     expect(onSubmit).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     fireEvent.click(screen.getByRole("button", { name: "Create" }));

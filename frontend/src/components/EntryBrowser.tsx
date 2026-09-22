@@ -38,8 +38,36 @@ const displayValue = (value: unknown): string => {
   return formatValueForDisplay(value);
 };
 
-const projectedFields = (props: EntryBrowserProps): EntryFieldCapability[] =>
-  props.capabilities.fields.filter((field) => field.projectable);
+type VisibleColumn =
+  | { kind: "field"; key: string; label: string; field: EntryFieldRef }
+  | { kind: "preview"; key: string; label: string };
+
+const capabilityForField = (
+  props: EntryBrowserProps,
+  field: EntryFieldRef,
+): EntryFieldCapability | undefined =>
+  props.capabilities.fields.find((candidate) =>
+    fieldKey(candidate.field) === fieldKey(field)
+  );
+
+const capabilityForKind = (
+  props: EntryBrowserProps,
+  kind: EntryFieldRef["kind"],
+): EntryFieldCapability | undefined =>
+  props.capabilities.fields.find((candidate) => candidate.field.kind === kind);
+
+/**
+ * Selectable columns. All-Forms scope offers system-level columns only
+ * (Form, Created, Updated): heterogeneous Form properties are never unioned
+ * into common columns, and the backend rejects property fields for the All
+ * scope.
+ */
+const columnOptions = (props: EntryBrowserProps): EntryFieldCapability[] =>
+  props.capabilities.fields.filter((field) =>
+    field.projectable &&
+    (props.capabilities.scope.kind !== "all" ||
+      field.field.kind !== "property")
+  );
 
 const sortableFields = (props: EntryBrowserProps): EntryFieldCapability[] =>
   props.capabilities.fields.filter((field) => field.sortable);
@@ -60,10 +88,8 @@ export function EntryBrowser(props: EntryBrowserProps) {
   const loadingState = createMemo(() => props.controller.loading());
   const errorState = createMemo(() => props.controller.error());
   const hasMoreState = createMemo(() => props.controller.hasMore());
-  const canGoPreviousState = createMemo(() =>
-    props.controller.canGoPrevious()
-  );
-  const projectionOptions = () => projectedFields(props);
+  const canGoPreviousState = createMemo(() => props.controller.canGoPrevious());
+  const projectionOptions = () => columnOptions(props);
   const sortOptions = () => sortableFields(props);
   const filterOptions = () => filterableFields(props);
   const currentSort = () => queryState().sort;
@@ -168,14 +194,89 @@ export function EntryBrowser(props: EntryBrowserProps) {
     );
   };
 
-  const rowLabel = (row: EntryQueryResult): string => {
-    const firstValue = Object.values(row.properties ?? {})[0];
-    return row.preview?.trim() ||
-      (firstValue === undefined ? "Entry" : displayValue(firstValue));
+  /**
+   * Preview-mode columns. Timestamps and the Form label are row identity,
+   * always returned by the backend outside the projection payload, so they
+   * render alongside the preview. Form-scoped: Preview + Created + Updated.
+   * All-Forms: Form + Preview + Created + Updated. Raw ids are never shown:
+   * the Form column renders the human-readable form label.
+   */
+  const previewColumns = (): VisibleColumn[] => {
+    const columns: VisibleColumn[] = [];
+    if (props.capabilities.scope.kind === "all") {
+      const formCapability = capabilityForKind(props, "form");
+      if (formCapability) {
+        columns.push({
+          kind: "field",
+          key: fieldKey(formCapability.field),
+          label: formCapability.name,
+          field: formCapability.field,
+        });
+      }
+    }
+    columns.push({
+      kind: "preview",
+      key: "preview",
+      label: t("entryBrowser.preview"),
+    });
+    for (const kind of ["created_at", "updated_at"] as const) {
+      const capability = capabilityForKind(props, kind);
+      if (capability) {
+        columns.push({
+          kind: "field",
+          key: fieldKey(capability.field),
+          label: capability.name,
+          field: capability.field,
+        });
+      }
+    }
+    return columns;
   };
 
-  const formLabel = (row: EntryQueryResult): string =>
-    props.formLabels?.[row.form_id] || "Form";
+  /**
+   * Visible table columns, derived from the same EntryProjection state that
+   * drives the query. Fields mode renders exactly the projected fields in
+   * projection order, so the Columns selection and the table can never
+   * disagree. Preview mode renders the preview pseudo-column plus the
+   * always-available system columns.
+   */
+  const visibleColumns = (): VisibleColumn[] => {
+    const projection = projectionState();
+    if (projection.kind === "fields") {
+      const columns: VisibleColumn[] = [];
+      for (const field of projection.fields) {
+        const capability = capabilityForField(props, field);
+        if (capability) {
+          columns.push({
+            kind: "field",
+            key: fieldKey(field),
+            label: capability.name,
+            field,
+          });
+        }
+      }
+      if (columns.length > 0) return columns;
+    }
+    return previewColumns();
+  };
+
+  const cellText = (row: EntryQueryResult, column: VisibleColumn): string => {
+    if (column.kind === "preview") return row.preview?.trim() || "—";
+    if (column.field.kind === "form") {
+      return props.formLabels?.[row.form_id] ??
+        t("entryBrowser.unknownForm");
+    }
+    if (column.field.kind === "created_at") {
+      return dateFromMicros(row.created_at_micros);
+    }
+    if (column.field.kind === "updated_at") {
+      return dateFromMicros(row.updated_at_micros);
+    }
+    const capability = capabilityForField(props, column.field);
+    const value = capability ? row.properties?.[capability.name] : undefined;
+    if (value === null || value === undefined) return "—";
+    return displayValue(value);
+  };
 
   return (
     <section
@@ -383,7 +484,9 @@ export function EntryBrowser(props: EntryBrowserProps) {
                   </select>
                   <select
                     class="ui-select"
-                    aria-label={`${t("entryBrowser.sortDirection")} ${index() + 1}`}
+                    aria-label={`${t("entryBrowser.sortDirection")} ${
+                      index() + 1
+                    }`}
                     value={sort.direction}
                     onChange={(event) =>
                       updateSort(index(), {
@@ -432,45 +535,79 @@ export function EntryBrowser(props: EntryBrowserProps) {
           {String(errorState())}
         </p>
       </Show>
-      <Show
-        when={!loadingState() && rowsState().length === 0 && !errorState()}
-      >
+      <Show when={!loadingState() && rowsState().length === 0 && !errorState()}>
         <p class="ui-muted">{t("entryBrowser.empty")}</p>
       </Show>
 
-      <div class="entry-browser-table" role="list">
-        <For each={rowsState()}>
-          {(row) => (
-            <button
-              type="button"
-              role="listitem"
-              class="entryRow w-full text-left"
-              disabled={loadingState()}
-              onClick={() => props.onSelect?.(row)}
-            >
-              <span class="entryRowMain">
-                <span class="entryRowTitle">{rowLabel(row)}</span>
-                <Show when={props.capabilities.scope.kind === "all"}>
-                  <span class="entryRowForm ui-muted">{formLabel(row)}</span>
+      <Show when={rowsState().length > 0}>
+        <div class="entry-browser-table-scroll">
+          <table class="entry-browser-table">
+            <thead>
+              <tr>
+                <For each={visibleColumns()}>
+                  {(column) => (
+                    <th scope="col" class="entry-browser-header-cell">
+                      {column.label}
+                    </th>
+                  )}
+                </For>
+                <Show when={mode() === "select_one"}>
+                  <th scope="col" class="entry-browser-header-cell">
+                    <span class="ui-sr-only">
+                      {t("entryBrowser.confirm")}
+                    </span>
+                  </th>
                 </Show>
-                <Show when={row.properties}>
-                  <span class="entryRowProperties ui-muted">
-                    {Object.entries(row.properties ?? {}).slice(0, 2).map(
-                      ([name, value]) => `${name}: ${displayValue(value)}`,
-                    ).join(" · ")}
-                  </span>
-                </Show>
-              </span>
-              <span class="entryRowDate ui-muted">
-                {dateFromMicros(row.updated_at_micros)}
-              </span>
-              <Show when={mode() === "select_one"}>
-                <span class="ui-pill">{t("entryBrowser.confirm")}</span>
-              </Show>
-            </button>
-          )}
-        </For>
-      </div>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={rowsState()}>
+                {(row) => (
+                  <tr
+                    class="entry-browser-row"
+                    data-entry-id={row.id}
+                  >
+                    <For each={visibleColumns()}>
+                      {(column, columnIndex) => (
+                        <td
+                          class="entry-browser-cell"
+                          data-column-key={column.key}
+                        >
+                          <Show
+                            when={columnIndex() === 0}
+                            fallback={cellText(row, column)}
+                          >
+                            <button
+                              type="button"
+                              class="entry-browser-primary"
+                              disabled={loadingState()}
+                              onClick={() => props.onSelect?.(row)}
+                            >
+                              {cellText(row, column)}
+                            </button>
+                          </Show>
+                        </td>
+                      )}
+                    </For>
+                    <Show when={mode() === "select_one"}>
+                      <td class="entry-browser-cell">
+                        <button
+                          type="button"
+                          class="ui-button ui-button-secondary"
+                          disabled={loadingState()}
+                          onClick={() => props.onSelect?.(row)}
+                        >
+                          {t("entryBrowser.confirm")}
+                        </button>
+                      </td>
+                    </Show>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        </div>
+      </Show>
 
       <nav
         class="entry-browser-pagination"
