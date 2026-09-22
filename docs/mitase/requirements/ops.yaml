@@ -254,7 +254,7 @@ requirements:
           - id: form-search-help-case
             adapter: rust
             path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
-            selector: { kind: test, name: test_form_and_search_req_ops_006_help_describes_required_inputs }
+            selector: { kind: test, name: test_form_and_entry_list_req_ops_006_help_describes_required_inputs }
             claims:
               - kind: verifies
                 criterion: REQ-OPS-006#criterion.cli-surface

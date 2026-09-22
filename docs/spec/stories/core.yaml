@@ -48,10 +48,10 @@ stories:
   acceptance_criteria:
   - Keyword search returns matching non-deleted entries
   - Structured queries filter current Entry data
-  - The UI exposes keyword-first and advanced query flows
+  - The UI exposes keyword-first and structured filter flows
   related_apis:
-  - rest: GET /spaces/{space_id}/search?q=query
-  - rest: POST /spaces/{space_id}/query
+  - rest: POST /spaces/{space_id}/entries/query
+  - rest: POST /spaces/{space_id}/entries/query/count
   requirements:
   - REQ-SRCH-006
   - REQ-SRCH-008

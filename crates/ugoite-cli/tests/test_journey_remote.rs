@@ -395,10 +395,10 @@ async fn journey_cli_remote() {
         "stale parent revision must conflict instead of overwriting"
     );
 
-    // Search finds the updated durable Entry.
+    // EntryQuery text search finds the updated durable Entry.
     let results = stdout_json(
-        &run_cli(config_path, &["search", "keyword", needle]).await,
-        "search keyword",
+        &run_cli(config_path, &["entry", "list", "--text", needle]).await,
+        "entry list --text",
     );
     assert!(
         contains_string(&results, entry_id),
@@ -477,8 +477,8 @@ async fn journey_cli_remote() {
     );
     assert_eq!(revision_ids(&history).len(), 3);
     let results = stdout_json(
-        &run_cli(config_path, &["search", "keyword", needle]).await,
-        "search keyword on reopen",
+        &run_cli(config_path, &["entry", "list", "--text", needle]).await,
+        "entry list --text on reopen",
     );
     assert!(contains_string(&results, entry_id));
 }

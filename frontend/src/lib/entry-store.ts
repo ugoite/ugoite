@@ -4,7 +4,6 @@ import { formatUserFacingError } from "./user-facing-error";
 import { type TranslationKey } from "./i18n";
 import type { Entry, EntryRecord, EntryUpdatePayload } from "./types";
 import { entryApi, RevisionConflictError } from "./ugoite-client";
-import { searchApi } from "./ugoite-client";
 import { pageFromArray } from "./pagination";
 
 export const ENTRY_PAGE_SIZE = 100;
@@ -256,14 +255,28 @@ export function createEntryStore(spaceId: () => string) {
     selectEntry,
     refetchSelectedEntry,
 
-    /** Perform a keyword search without mutating store state */
+    /**
+     * Keyword search via the canonical EntryQuery text clause. Collection
+     * reads never bypass entry.query; this helper performs a one-shot page
+     * without mutating store state.
+     */
     async searchEntries(query: string) {
       clearError();
       try {
-        return await searchApi.keyword(spaceId(), query);
+        const page = await entryApi.query(spaceId(), {
+          query: {
+            scope: { kind: "all" },
+            ...(query.trim() ? { text: query.trim() } : {}),
+            filters: [],
+            sort: [],
+          },
+          projection: { kind: "preview" },
+          limit: ENTRY_PAGE_SIZE + 1,
+        });
+        return page.rows;
       } catch (e) {
         /* v8 ignore start */
-        reportError(e, "entriesPage.failedSearch", "search.keyword");
+        reportError(e, "entriesPage.failedSearch", "entry.query");
         /* v8 ignore stop */
         throw e;
       }

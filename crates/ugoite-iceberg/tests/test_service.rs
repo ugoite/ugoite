@@ -8,8 +8,8 @@ use anyhow::Result;
 use chrono::Utc;
 use serde_json::json;
 use std::collections::BTreeMap;
+use ugoite_core::entry_query::{EntryPageRequest, EntryProjection, EntryQuery, EntryQueryScope};
 use ugoite_core::error::{AppError, ErrorCode};
-use ugoite_core::structured_search::StructuredSearch;
 use ugoite_domain::identity::{
     AccessPolicy, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
 };
@@ -250,9 +250,24 @@ async fn test_service_boundary_covers_primary_adapter_operations() -> Result<()>
     let entries = service.list_entries("demo").await?;
     assert_eq!(entries.len(), 1);
 
-    let search = service.search_entries("demo", "service").await?;
-    assert_eq!(search.len(), 1);
-    assert_eq!(search[0].id, "first");
+    let page = service
+        .query_entry_page(
+            "demo",
+            EntryPageRequest {
+                query: EntryQuery {
+                    scope: EntryQueryScope::All,
+                    text: Some("service".to_string()),
+                    filters: Vec::new(),
+                    sort: Vec::new(),
+                },
+                projection: EntryProjection::Preview,
+                limit: 10,
+                after: None,
+            },
+        )
+        .await?;
+    assert_eq!(page.rows.len(), 1);
+    assert_eq!(page.rows[0].id, "first");
 
     let asset = service.save_asset("demo", "hello.txt", b"hello").await?;
     let content = service.read_asset("demo", &asset.asset_id).await?;
@@ -604,8 +619,7 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
 }
 
 #[tokio::test]
-async fn authorized_structured_search_has_exact_policy_filtered_rows_and_no_form_leak() -> Result<()>
-{
+async fn authorized_entry_query_has_exact_policy_filtered_rows_and_no_form_leak() -> Result<()> {
     let service = UgoiteService::new("memory://authorized-structured-search-contract")?;
     let owner = Uuid::from_u128(401);
     let viewer = Uuid::from_u128(402);
@@ -639,18 +653,24 @@ async fn authorized_structured_search_has_exact_policy_filtered_rows_and_no_form
         )
         .await?;
 
-    let criteria = StructuredSearch {
-        form: "Task".to_owned(),
-        updated_from: None,
-        updated_to: None,
-        conditions: Vec::new(),
-        limit: Some(100),
-        offset: None,
+    let form_id: ugoite_domain::id::FormId =
+        serde_json::from_value(service.get_form(&space_id, "Task").await?["id"].clone())?;
+    let request = EntryPageRequest {
+        query: EntryQuery {
+            scope: EntryQueryScope::Form { form_id },
+            text: None,
+            filters: Vec::new(),
+            sort: Vec::new(),
+        },
+        projection: EntryProjection::Preview,
+        limit: 100,
+        after: None,
     };
-    let direct = service.search_structured(&space_id, &criteria).await?;
+    let direct = service.query_entry_page(&space_id, request.clone()).await?;
     let direct_ids = direct
+        .rows
         .iter()
-        .map(|row| row["_ugoite_id"].as_str().expect("Entry id").to_owned())
+        .map(|row| row.id.clone())
         .collect::<Vec<_>>();
     assert_eq!(direct_ids, vec!["hidden-task", "visible-task"]);
 
@@ -686,34 +706,34 @@ async fn authorized_structured_search_has_exact_policy_filtered_rows_and_no_form
         )
         .await?;
 
-    let viewer_rows = service
-        .search_structured_authorized_for_principals(&space_id, &[viewer], &criteria)
+    let viewer_page = service
+        .query_entry_page_authorized_for_principals(&space_id, &[viewer], request)
         .await?;
-    let viewer_ids = viewer_rows
+    let viewer_ids = viewer_page
+        .rows
         .iter()
-        .map(|row| row["_ugoite_id"].as_str().expect("Entry id").to_owned())
+        .map(|row| row.id.clone())
         .collect::<Vec<_>>();
     assert_eq!(viewer_ids, vec!["visible-task"]);
 
-    let unknown = StructuredSearch {
-        form: "NotARealForm".to_owned(),
-        ..criteria
+    // An unknown Form scope reveals nothing: no rows and no typed leak.
+    let unknown_request = EntryPageRequest {
+        query: EntryQuery {
+            scope: EntryQueryScope::Form {
+                form_id: ugoite_domain::id::FormId::from(Uuid::now_v7()),
+            },
+            text: None,
+            filters: Vec::new(),
+            sort: Vec::new(),
+        },
+        projection: EntryProjection::Preview,
+        limit: 100,
+        after: None,
     };
     let authorized_unknown = service
-        .search_structured_authorized_for_principals(&space_id, &[viewer], &unknown)
+        .query_entry_page_authorized_for_principals(&space_id, &[viewer], unknown_request)
         .await?;
-    assert!(authorized_unknown.is_empty());
-    let direct_error = service
-        .search_structured(&space_id, &unknown)
-        .await
-        .expect_err("direct Search retains the explicit Form-not-found error");
-    let direct_error = direct_error
-        .downcast_ref::<ugoite_core::error::AppError>()
-        .expect("direct unknown Form error is typed");
-    assert_eq!(
-        direct_error.code(),
-        ugoite_core::error::ErrorCode::FormNotFound
-    );
+    assert!(authorized_unknown.rows.is_empty());
     Ok(())
 }
 
@@ -752,27 +772,30 @@ async fn listing_inventory_is_authoritative_for_one_operation() -> Result<()> {
 }
 
 #[tokio::test]
-async fn authorized_structured_search_rejects_invalid_input_before_space_lookup() -> Result<()> {
+async fn authorized_entry_query_rejects_invalid_input_before_space_lookup() -> Result<()> {
     let service = UgoiteService::new("memory://authorized-structured-search-admission-order")?;
-    let criteria = StructuredSearch {
-        form: "Task".to_owned(),
-        updated_from: None,
-        updated_to: None,
-        conditions: Vec::new(),
-        limit: Some(0),
-        offset: None,
+    let request = EntryPageRequest {
+        query: EntryQuery {
+            scope: EntryQueryScope::All,
+            text: None,
+            filters: Vec::new(),
+            sort: Vec::new(),
+        },
+        projection: EntryProjection::Preview,
+        limit: 0,
+        after: None,
     };
     let error = service
-        .search_structured_authorized_for_principals(
+        .query_entry_page_authorized_for_principals(
             "missing-space",
             &[Uuid::from_u128(404)],
-            &criteria,
+            request,
         )
         .await
-        .expect_err("invalid structured Search must fail before Space lookup");
+        .expect_err("invalid EntryQuery must fail before Space lookup");
     let error = error
         .downcast_ref::<ugoite_core::error::AppError>()
-        .expect("structured Search admission failure is typed");
+        .expect("EntryQuery admission failure is typed");
     assert_eq!(error.code(), ugoite_core::error::ErrorCode::InvalidInput);
     Ok(())
 }

@@ -31,16 +31,37 @@ test.describe("Form", () => {
 		await expect
 			.poll(
 				async () => {
-					const res = await request.get(
-						getBackendUrl(`/spaces/${spaceId}/search?q=${encodeURIComponent(query)}`),
+					const res = await request.post(
+						getBackendUrl(`/spaces/${spaceId}/entries/query`),
+						{
+							data: {
+								query: { scope: { kind: "all" }, text: query },
+								projection: { kind: "preview" },
+								limit: 10,
+							},
+						},
 					);
 					if (!res.ok()) return false;
-					const data = (await res.json()) as Array<{ id?: string }>;
-					return data.some((entry) => entry.id === entryId);
+					const page = (await res.json()) as { rows?: Array<{ id?: string }> };
+					return (page.rows ?? []).some((entry) => entry.id === entryId);
 				},
 				{ timeout: 30000 },
 			)
 			.toBe(true);
+	};
+
+	type FormCapability = { id?: string; fields?: Record<string, { query_capability?: { field?: unknown } }> };
+
+	const resolveFormScope = async (
+		request: APIRequestContext,
+		formName: string,
+	): Promise<{ form_id: string; fields: Record<string, { query_capability?: { field?: unknown } }> }> => {
+		const listRes = await request.get(getBackendUrl(`/spaces/${spaceId}/forms`));
+		expect(listRes.ok()).toBe(true);
+		const forms = (await listRes.json()) as Array<FormCapability & { name?: string }>;
+		const form = forms.find((candidate) => candidate.name === formName);
+		expect(form?.id).toBeTruthy();
+		return { form_id: form!.id!, fields: form!.fields ?? {} };
 	};
 
 
@@ -97,25 +118,26 @@ test.describe("Form", () => {
 		await waitForForm(request, formName);
 		await waitForSearchResult(request, "Active", entry.id);
 
+		const { form_id, fields } = await resolveFormScope(request, formName);
+		const statusRef = fields["Status"]?.query_capability?.field;
+		expect(statusRef).toBeTruthy();
 		const queryRes = await request.post(
-			getBackendUrl(`/spaces/${spaceId}/query`),
+			getBackendUrl(`/spaces/${spaceId}/entries/query`),
 			{
 				data: {
-					criteria: {
-						form: formName,
-						conditions: [],
-						limit: 100,
-					},
+					query: { scope: { kind: "form", form_id } },
+					projection: { kind: "fields", fields: [statusRef] },
+					limit: 100,
 				},
 			},
 		);
 		expect(queryRes.ok()).toBe(true);
-		const entries = (await queryRes.json()) as Array<Record<string, unknown>>;
-		const match = entries.find((item) =>
-			item._ugoite_id === entry.id || item.id === entry.id
-		);
+		const page = (await queryRes.json()) as {
+			rows?: Array<{ id?: string; properties?: Record<string, unknown> }>;
+		};
+		const match = (page.rows ?? []).find((item) => item.id === entry.id);
 		expect(match).toBeTruthy();
-		expect(Object.values(match ?? {}).some((value) => value === "Active")).toBe(
+		expect(Object.values(match?.properties ?? {}).some((value) => value === "Active")).toBe(
 			true,
 		);
 
@@ -139,19 +161,18 @@ test.describe("Form", () => {
 		);
 		expect([200, 201]).toContain(createRes.status());
 
+		const { form_id } = await resolveFormScope(request, formName);
 		const queryRes = await request.post(
-			getBackendUrl(`/spaces/${spaceId}/query`),
+			getBackendUrl(`/spaces/${spaceId}/entries/query`),
 			{
 				data: {
-					criteria: {
-						form: formName,
-						conditions: [],
-						limit: 100,
-					},
+					query: { scope: { kind: "form", form_id } },
+					projection: { kind: "preview" },
+					limit: 100,
 				},
 			},
 		);
 		expect(queryRes.status()).toBe(200);
-		expect(await queryRes.json()).toEqual([]);
+		expect(((await queryRes.json()) as { rows?: unknown[] }).rows).toEqual([]);
 	});
 });

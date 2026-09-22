@@ -25,8 +25,8 @@ describe("formatUserFacingError", () => {
     setLocale("ja");
     const error = new UgoiteApiError({
       kind: "api",
-      operation: "search.keyword",
-      message: "Failed to search entries: backend detail",
+      operation: "entry.query",
+      message: "Failed to query entries: backend detail",
       detail: "backend detail",
     });
 

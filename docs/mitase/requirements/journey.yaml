@@ -95,7 +95,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-JOURNEY-001#criterion.search-keyword
                 covers:
-                  - FEAT-JOURNEY-001#binding.frontend/target.search-api
+                  - FEAT-JOURNEY-001#binding.frontend/target.entry-query
                 runner: { runner: e2e-playwright, arguments: { file: e2e/knowledge-journey.test.ts, test: 'JOURNEY-KNOWLEDGE-001: Search finds the updated durable entry' } }
           - id: history-case
             adapter: typescript
@@ -127,7 +127,7 @@ requirements:
                 covers:
                   - FEAT-JOURNEY-001#binding.frontend/target.space-api
                   - FEAT-JOURNEY-001#binding.frontend/target.entry-api
-                  - FEAT-JOURNEY-001#binding.frontend/target.search-api
+                  - FEAT-JOURNEY-001#binding.frontend/target.entry-query
                 runner: { runner: e2e-playwright, arguments: { file: e2e/knowledge-journey.test.ts, test: 'JOURNEY-KNOWLEDGE-001: Reopen reads identical durable state' } }
       - id: journey-cli-core-verification
         role: verification
@@ -157,7 +157,7 @@ requirements:
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_journey_cli_core_local_durable_outcome } }
               - kind: verifies
                 criterion: REQ-JOURNEY-001#criterion.search-keyword
-                covers: [FEAT-JOURNEY-001#binding.cli-core/target.search-command]
+                covers: [FEAT-JOURNEY-001#binding.cli-core/target.entry-list-command]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_journey_cli_core_local_durable_outcome } }
               - kind: verifies
                 criterion: REQ-JOURNEY-001#criterion.entry-history
@@ -172,7 +172,7 @@ requirements:
                 covers:
                   - FEAT-STO-001#binding.routing/target.space-command-routing
                   - FEAT-API-001#binding.cli-implementation/target.entry-command
-                  - FEAT-JOURNEY-001#binding.cli-core/target.search-command
+                  - FEAT-JOURNEY-001#binding.cli-core/target.entry-list-command
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_journey_cli_core_local_durable_outcome } }
           - id: parent-revision-matrix-case
             adapter: rust
@@ -211,7 +211,7 @@ requirements:
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: journey_cli_remote_reaches_durable_outcome } }
               - kind: verifies
                 criterion: REQ-JOURNEY-001#criterion.search-keyword
-                covers: [FEAT-JOURNEY-001#binding.cli-core/target.search-command]
+                covers: [FEAT-JOURNEY-001#binding.cli-core/target.entry-list-command]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: journey_cli_remote_reaches_durable_outcome } }
               - kind: verifies
                 criterion: REQ-JOURNEY-001#criterion.entry-history
@@ -226,7 +226,7 @@ requirements:
                 covers:
                   - FEAT-STO-001#binding.routing/target.space-command-routing
                   - FEAT-API-001#binding.cli-implementation/target.entry-command
-                  - FEAT-JOURNEY-001#binding.cli-core/target.search-command
+                  - FEAT-JOURNEY-001#binding.cli-core/target.entry-list-command
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: journey_cli_remote_reaches_durable_outcome } }
           - id: parent-revision-matrix-case
             adapter: rust
@@ -484,13 +484,13 @@ requirements:
           - id: narrow-case
             adapter: typescript
             path: e2e/knowledge-journey.test.ts
-            selector: { kind: test, name: 'JOURNEY-LOCATE-RECOVER-001: Structured search narrows keyword discovery' }
+            selector: { kind: test, name: 'JOURNEY-LOCATE-RECOVER-001: EntryQuery filters narrow keyword discovery' }
             claims:
               - kind: verifies
                 criterion: REQ-JOURNEY-004#criterion.structured-search-narrow
                 covers:
-                  - FEAT-JOURNEY-001#binding.frontend/target.search-api
-                runner: { runner: e2e-playwright, arguments: { file: e2e/knowledge-journey.test.ts, test: 'JOURNEY-LOCATE-RECOVER-001: Structured search narrows keyword discovery' } }
+                  - FEAT-JOURNEY-001#binding.frontend/target.entry-query
+                runner: { runner: e2e-playwright, arguments: { file: e2e/knowledge-journey.test.ts, test: 'JOURNEY-LOCATE-RECOVER-001: EntryQuery filters narrow keyword discovery' } }
           - id: timeline-case
             adapter: typescript
             path: e2e/knowledge-journey.test.ts
@@ -519,7 +519,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-JOURNEY-004#criterion.recovered-search-reopen
                 covers:
-                  - FEAT-JOURNEY-001#binding.frontend/target.search-api
+                  - FEAT-JOURNEY-001#binding.frontend/target.entry-query
                 runner: { runner: e2e-playwright, arguments: { file: e2e/knowledge-journey.test.ts, test: 'JOURNEY-LOCATE-RECOVER-001: Recovered search reflects recovered state on reopen' } }
       - id: locate-recover-cli-core-verification
         role: verification
@@ -533,7 +533,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-JOURNEY-004#criterion.structured-search-narrow
-                covers: [FEAT-JOURNEY-001#binding.cli-core/target.search-command]
+                covers: [FEAT-JOURNEY-001#binding.cli-core/target.entry-list-command]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_locate_recover, test: test_journey_cli_core_locate_recover_durable_outcome } }
               - kind: verifies
                 criterion: REQ-JOURNEY-004#criterion.space-change-history
@@ -546,7 +546,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-JOURNEY-004#criterion.recovered-search-reopen
                 covers:
-                  - FEAT-JOURNEY-001#binding.cli-core/target.search-command
+                  - FEAT-JOURNEY-001#binding.cli-core/target.entry-list-command
                   - FEAT-JOURNEY-001#binding.cli-core/target.change-command
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_locate_recover, test: test_journey_cli_core_locate_recover_durable_outcome } }
       - id: locate-recover-cli-remote-verification
@@ -561,7 +561,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-JOURNEY-004#criterion.structured-search-narrow
-                covers: [FEAT-JOURNEY-001#binding.cli-core/target.search-command]
+                covers: [FEAT-JOURNEY-001#binding.cli-core/target.entry-list-command]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_locate_recover_remote, test: journey_cli_remote_locate_recover_reaches_durable_outcome } }
               - kind: verifies
                 criterion: REQ-JOURNEY-004#criterion.space-change-history
@@ -574,6 +574,6 @@ requirements:
               - kind: verifies
                 criterion: REQ-JOURNEY-004#criterion.recovered-search-reopen
                 covers:
-                  - FEAT-JOURNEY-001#binding.cli-core/target.search-command
+                  - FEAT-JOURNEY-001#binding.cli-core/target.entry-list-command
                   - FEAT-JOURNEY-001#binding.cli-core/target.change-command
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_locate_recover_remote, test: journey_cli_remote_locate_recover_reaches_durable_outcome } }

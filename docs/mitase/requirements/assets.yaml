@@ -159,6 +159,10 @@ requirements:
                 criterion: REQ-ASSET-002#criterion.reference-edge-authorization
                 covers: [FEAT-ASSET-001#binding.core/target.reference-guard]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: authorization_state_hides_scalar_and_list_asset_references } }
+              - kind: verifies
+                criterion: REQ-ASSET-004#criterion.no-derived-authority
+                covers: [FEAT-ASSET-001#binding.derived/target.asset-text-rebuild]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: authorization_state_hides_scalar_and_list_asset_references } }
           - id: context-case
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
@@ -251,34 +255,8 @@ requirements:
       - id: derived-policy-verification
         role: verification
         facet: verification
-        responsibility: Verify that AssetText results remain subordinate to current Entry references and Asset policy through the exact Iceberg integration case.
+        responsibility: Verify that AssetText rebuilds scan current Entry references and that authorization stays on the containing Entry and Asset edge through the exact reindex and authorization integration cases. Authorized AssetText projection search has no Entry read-path surface after the EntryQuery cleanup; that projection evidence remains an explicit gap and is not claimed here.
         targets:
-          - id: policy-case
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_asset.rs
-            selector: { kind: test, name: asset_text_search_applies_asset_policy_with_entry_parent }
-            claims:
-              - kind: verifies
-                criterion: REQ-ASSET-004#criterion.durable-entry-source
-                covers: [FEAT-ASSET-001#binding.derived/target.asset-text-rebuild]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: asset_text_search_applies_asset_policy_with_entry_parent } }
-              - kind: verifies
-                criterion: REQ-ASSET-004#criterion.no-derived-authority
-                covers: [FEAT-ASSET-001#binding.derived/target.asset-text-rebuild]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: asset_text_search_applies_asset_policy_with_entry_parent } }
-              - kind: verifies
-                criterion: REQ-SRCH-002#criterion.authorized-assettext-projection
-                covers: [FEAT-SRCH-001#binding.core/target.search-entries]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: asset_text_search_applies_asset_policy_with_entry_parent } }
-          - id: bounded-search-case
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_asset.rs
-            selector: { kind: test, name: asset_text_search_finds_an_authorized_match_after_ten_thousand_entries }
-            claims:
-              - kind: verifies
-                criterion: REQ-SRCH-002#criterion.authorized-assettext-projection
-                covers: [FEAT-SRCH-001#binding.core/target.search-entries]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_asset, test: asset_text_search_finds_an_authorized_match_after_ten_thousand_entries } }
           - id: parser-limit-durability-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_asset.rs

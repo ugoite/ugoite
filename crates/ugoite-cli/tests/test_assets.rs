@@ -907,48 +907,7 @@ fn test_asset_upload_missing_file_fails_closed_without_mutation() {
     assert_eq!(json_of(&list).as_array().expect("array").len(), 0);
 }
 
-/// Attachment body text is CLI-observable through keyword search after the
-/// explicit local reindex that rebuilds the derived asset-text relation.
-#[test]
-fn test_asset_search_finds_attachment_text_core() {
-    let dir = tempfile::tempdir().unwrap();
-    let config_path = setup_core_space(&dir, "search-core", DOC_FORM_JSON);
-
-    let keyword = "zephyr-quetzal-attachment";
-    let body_file = dir.path().join("notes.txt");
-    std::fs::write(&body_file, format!("field notes about {keyword}")).unwrap();
-    let asset = upload_core(&config_path, &body_file, "notes.txt");
-    create_entry_with_fields(
-        &config_path,
-        "doc-search",
-        "Doc",
-        &serde_json::json!({"Document": asset}),
-        &dir.path().join("search-fields.json"),
-    );
-
-    let reindex = run_cli(&config_path, &["index", "run"]);
-    assert!(
-        reindex.status.success(),
-        "reindex stderr: {}",
-        String::from_utf8_lossy(&reindex.stderr)
-    );
-    let search = run_cli(&config_path, &["search", "keyword", keyword, "-o", "json"]);
-    assert!(
-        search.status.success(),
-        "search stderr: {}",
-        String::from_utf8_lossy(&search.stderr)
-    );
-    let rows = json_of(&search);
-    let ids: Vec<&str> = rows
-        .as_array()
-        .expect("search array")
-        .iter()
-        .filter_map(|row| row.get("id").and_then(|id| id.as_str()))
-        .collect();
-    assert!(ids.contains(&"doc-search"), "rows: {rows}");
-}
-
-/// Minimal stub backend serving the portable asset/entry/search routes over
+/// Minimal stub backend serving the portable asset/entry routes over
 /// the same REST paths the api-client protocol owns.
 struct StubBackend {
     space_uid: String,
@@ -956,7 +915,7 @@ struct StubBackend {
     asset_bytes: Vec<u8>,
     refs: Mutex<Vec<serde_json::Value>>,
     entry_get: serde_json::Value,
-    search_rows: serde_json::Value,
+    entry_rows: serde_json::Value,
     seen: Mutex<Vec<(String, String)>>,
 }
 
@@ -1074,11 +1033,14 @@ fn serve_stub(listener: TcpListener, backend: Arc<StubBackend>, expected: usize)
                         backend.asset_bytes.clone(),
                     )
                 }
-            } else if head.starts_with(&format!("GET /spaces/{uid}/search")) {
+            } else if head.starts_with(&format!("POST /spaces/{uid}/entries/query")) {
                 (
                     "200 OK",
                     "application/json",
-                    serde_json::to_vec(&backend.search_rows).unwrap(),
+                    serde_json::to_vec(
+                        &serde_json::json!({"rows": backend.entry_rows, "has_more": false}),
+                    )
+                    .unwrap(),
                 )
             } else {
                 (
@@ -1172,7 +1134,7 @@ fn start_stub(
     asset: serde_json::Value,
     asset_bytes: Vec<u8>,
     refs: Vec<serde_json::Value>,
-    search_rows: serde_json::Value,
+    entry_rows: serde_json::Value,
 ) -> StubSetup {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -1185,12 +1147,12 @@ fn start_stub(
         refs: Mutex::new(refs),
         entry_get: serde_json::json!({
             "id": "doc-1",
-            "revision_id": "rev-1",
+            "revision_id": "00000000-0000-7000-8000-000000000001",
             "extra_attributes": {},
             "form": "Doc",
             "title": "doc-1",
         }),
-        search_rows,
+        entry_rows,
         seen: Mutex::new(Vec::new()),
     });
     let dir = tempfile::tempdir().unwrap();
@@ -1531,22 +1493,22 @@ fn test_asset_multi_attachment_full_update_preserves_both_remote() {
     assert!(put.1.contains(second_id), "PUT body: {}", put.1);
 }
 
-/// Remote keyword search surfaces stub rows through the shared search
+/// Remote entry list surfaces stub rows through the canonical EntryQuery
 /// operation (engine behavior remote-side is covered by service tests).
 #[test]
-fn test_asset_search_keyword_remote_surfaces_results() {
+fn test_asset_entry_list_remote_surfaces_results() {
     let harness = spawn_stub(
         start_stub(
             stub_asset("asset-x", "x.txt", 1),
             b"x".to_vec(),
             vec![],
-            serde_json::json!([{"id": "doc-1", "title": "Doc"}]),
+            serde_json::json!([{"id": "doc-1", "form_id": "00000000-0000-7000-8000-000000000001", "revision_id": "00000000-0000-7000-8000-000000000001", "created_at_micros": 1000000, "updated_at_micros": 1000000, "preview": "Doc"}]),
         ),
         1,
     );
     let search = run_cli(
         &harness.config_path,
-        &["search", "keyword", "zephyr-quetzal", "-o", "json"],
+        &["entry", "list", "--text", "zephyr-quetzal", "-o", "json"],
     );
     assert!(
         search.status.success(),
@@ -1567,7 +1529,7 @@ fn test_asset_search_keyword_remote_surfaces_results() {
     assert!(
         seen[0]
             .0
-            .starts_with(&format!("GET /spaces/{}/search", harness.uid)),
+            .starts_with(&format!("POST /spaces/{}/entries/query", harness.uid)),
         "{}",
         seen[0].0
     );
@@ -1611,7 +1573,7 @@ fn test_asset_acceptance_matrix_core_remote_parity() {
                 "size_bytes": 12, "sha256": "abc",
                 "form": "Doc", "entry_id": "m-1", "field": "Document",
             })],
-            serde_json::json!([{"id": "m-1", "title": "M"}]),
+            serde_json::json!([{"id": "m-1", "form_id": "00000000-0000-7000-8000-000000000001", "revision_id": "00000000-0000-7000-8000-000000000001", "created_at_micros": 1000000, "updated_at_micros": 1000000, "preview": "M"}]),
         ),
         6,
     );
@@ -1678,14 +1640,18 @@ fn test_asset_acceptance_matrix_core_remote_parity() {
         String::from_utf8_lossy(&remote_wrong.stderr)
     );
 
-    // Row 3: remote search surfaces the same entry the core search finds
-    // after the explicit local reindex.
+    // Row 3: entry text search surfaces the same entry on both transports.
+    // Entry text matches Entry identity and columns only; asset bytes stay
+    // outside the EntryQuery read path by product intent.
     assert!(run_cli(&config_path, &["index", "run"]).status.success());
-    let core_search = run_cli(&config_path, &["search", "keyword", "matrix", "-o", "json"]);
+    let core_search = run_cli(
+        &config_path,
+        &["entry", "list", "--text", "m-1", "-o", "json"],
+    );
     assert!(core_search.status.success());
     let remote_search = run_cli(
         &harness.config_path,
-        &["search", "keyword", "matrix", "-o", "json"],
+        &["entry", "list", "--text", "m-1", "-o", "json"],
     );
     assert!(remote_search.status.success());
     for output in [&core_search, &remote_search] {

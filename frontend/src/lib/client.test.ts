@@ -5,7 +5,6 @@ import { http, HttpResponse } from "msw";
 import { assetApi } from "./ugoite-client";
 import { formApi } from "./ugoite-client";
 import { entryApi } from "./ugoite-client";
-import { searchApi } from "./ugoite-client";
 import { spaceApi } from "./ugoite-client";
 import { joinUrl } from "./api";
 import { UgoiteApiError } from "./ugoite-client/protocol";
@@ -353,33 +352,66 @@ describe("entryApi", () => {
     });
   });
 
-  describe("search and Form-owned references", () => {
-    it("searches entries by keyword", async () => {
+  describe("entry query collection reads", () => {
+    it("queries entries by canonical text", async () => {
       const created = await entryApi.create("test-ws", {
         form: "Project",
         fields: { Notes: "Rocket Project entries about propulsion" },
       });
 
-      const matches = await searchApi.keyword("test-ws", "rocket");
-      expect(matches.find((m) => m.id === created.id)).toBeDefined();
-    });
-
-    it("forwards limit and offset for keyword search pages", async () => {
       server.use(
-        http.get(
-          testApiUrl("/spaces/test-ws/search"),
-          ({ request }) => {
-            const url = new URL(request.url);
-            expect(url.searchParams.get("q")).toBe("rocket");
-            expect(url.searchParams.get("limit")).toBe("25");
-            expect(url.searchParams.get("offset")).toBe("50");
-            return HttpResponse.json([]);
+        http.post(
+          testApiUrl("/spaces/test-ws/entries/query"),
+          async ({ request }) => {
+            const body = await request.json() as {
+              query?: { text?: string };
+            };
+            expect(body.query?.text).toBe("rocket");
+            return HttpResponse.json({
+              rows: [{
+                id: created.id,
+                form_id: "form-1",
+                revision_id: "rev-1",
+                created_at_micros: 1_000_000,
+                updated_at_micros: 1_000_000,
+                preview: "Rocket Project",
+              }],
+              has_more: false,
+            });
           },
         ),
       );
 
-      await expect(searchApi.keyword("test-ws", "rocket", 25, 50))
-        .resolves.toEqual([]);
+      const page = await entryApi.query("test-ws", {
+        query: {
+          scope: { kind: "all" },
+          text: "rocket",
+          filters: [],
+          sort: [],
+        },
+        projection: { kind: "preview" },
+        limit: 50,
+      });
+      expect(page.rows.find((row) => row.id === created.id)).toBeDefined();
+    });
+
+    it("forwards limit for entry query pages", async () => {
+      server.use(
+        http.post(
+          testApiUrl("/spaces/test-ws/entries/query"),
+          async ({ request }) => {
+            const body = await request.json() as { limit?: number };
+            expect(body.limit).toBe(25);
+            return HttpResponse.json({ rows: [], has_more: false });
+          },
+        ),
+      );
+
+      await expect(entryApi.query("test-ws", {
+        query: { scope: { kind: "all" }, filters: [], sort: [] },
+        projection: { kind: "preview" },
+        limit: 25,
+      })).resolves.toEqual({ rows: [], has_more: false });
     });
 
     it("forwards limit and offset for entry history pages", async () => {
@@ -399,75 +431,50 @@ describe("entryApi", () => {
         .resolves.toEqual({ revisions: [] });
     });
 
-    it("REQ-FE-065: row_reference picker options request bounded form-scoped summaries", async () => {
+    it("REQ-FE-065: row_reference picker pages form-scoped entries via entry.query", async () => {
       server.use(
-        http.get(
-          testApiUrl("/spaces/test-ws/entries/options"),
-          ({ request }) => {
-            const url = new URL(request.url);
-            expect(url.searchParams.get("form")).toBe("Project");
-            expect(url.searchParams.get("q")).toBe("alpha");
-            expect(url.searchParams.get("limit")).toBe("8");
-            return HttpResponse.json([
-              { id: "project-alpha", form: "Project" },
-            ]);
+        http.post(
+          testApiUrl("/spaces/test-ws/entries/query"),
+          async ({ request }) => {
+            const body = await request.json() as {
+              query?: { scope?: { kind?: string } };
+              limit?: number;
+            };
+            expect(body.query?.scope?.kind).toBe("form");
+            expect(body.limit).toBe(8);
+            return HttpResponse.json({
+              rows: [{
+                id: "project-alpha",
+                form_id: "form-1",
+                revision_id: "rev-1",
+                created_at_micros: 1_000_000,
+                updated_at_micros: 1_000_000,
+                preview: "Project Alpha",
+              }],
+              has_more: false,
+            });
           },
         ),
       );
 
-      const matches = await searchApi.rowReferenceOptions(
-        "test-ws",
-        "Project",
-        "alpha",
-        8,
-      );
-      expect(matches).toEqual([{
+      const page = await entryApi.query("test-ws", {
+        query: {
+          scope: { kind: "form", form_id: "form-1" },
+          text: "alpha",
+          filters: [],
+          sort: [],
+        },
+        projection: { kind: "preview" },
+        limit: 8,
+      });
+      expect(page.rows).toEqual([{
         id: "project-alpha",
-        form: "Project",
+        form_id: "form-1",
+        revision_id: "rev-1",
+        created_at_micros: 1_000_000,
+        updated_at_micros: 1_000_000,
+        preview: "Project Alpha",
       }]);
-    });
-
-    it("REQ-FE-065: row_reference picker options omit blank keyword queries", async () => {
-      server.use(
-        http.get(
-          testApiUrl("/spaces/test-ws/entries/options"),
-          ({ request }) => {
-            const url = new URL(request.url);
-            expect(url.searchParams.get("form")).toBe("Project");
-            expect(url.searchParams.get("q")).toBeNull();
-            expect(url.searchParams.get("limit")).toBe("8");
-            return HttpResponse.json([
-              { id: "project-alpha", form: "Project" },
-            ]);
-          },
-        ),
-      );
-
-      const matches = await searchApi.rowReferenceOptions(
-        "test-ws",
-        "Project",
-        "   ",
-        8,
-      );
-      expect(matches).toEqual([{
-        id: "project-alpha",
-        form: "Project",
-      }]);
-    });
-
-    it("REQ-FE-065: row_reference picker options surface backend load failures", async () => {
-      server.use(
-        http.get(
-          testApiUrl("/spaces/test-ws/entries/options"),
-          () => HttpResponse.json({ detail: "lookup failed" }, { status: 502 }),
-        ),
-      );
-
-      await expect(
-        searchApi.rowReferenceOptions("test-ws", "Project", "alpha", 8),
-      ).rejects.toThrow(
-        "Failed to load row_reference options: lookup failed",
-      );
     });
 
     it("uploads a typed asset reference and deletes by stable asset id", async () => {
@@ -1097,52 +1104,33 @@ describe("error paths", () => {
     ).rejects.toThrow("Failed to save form");
   });
 
-  it("searchApi.keyword throws on failure", async () => {
+  it("entryApi.query throws on failure", async () => {
     server.use(
-      http.get(
-        testApiUrl("/spaces/ws-search-err/search"),
+      http.post(
+        testApiUrl("/spaces/ws-search-err/entries/query"),
         () => HttpResponse.json({ detail: "Error" }, { status: 500 }),
       ),
     );
-    await expect(searchApi.keyword("ws-search-err", "test")).rejects.toThrow(
-      "Failed to search entries",
+    await expect(entryApi.query("ws-search-err", {
+      query: { scope: { kind: "all" }, filters: [], sort: [] },
+      projection: { kind: "preview" },
+      limit: 50,
+    })).rejects.toThrow(
+      "Failed to query entries",
     );
   });
 
-  it("searchApi.query throws on failure", async () => {
+  it("entryApi.count throws on failure", async () => {
     server.use(
       http.post(
-        testApiUrl("/spaces/ws-search-err/query"),
+        testApiUrl("/spaces/ws-search-err/entries/query/count"),
         () => HttpResponse.json({ detail: "Error" }, { status: 500 }),
       ),
     );
-    await expect(searchApi.query("ws-search-err", { form: "Task" })).rejects.toThrow(
-      "Failed to query space",
-    );
-  });
-
-  it("REQ-FE-054: searchApi.query normalizes unix-second timestamps", async () => {
-    server.use(
-      http.post(
-        testApiUrl("/spaces/ws-search-timestamps/query"),
-        () =>
-          HttpResponse.json([
-            {
-              id: "entry-1",
-              title: "Timestamp Entry",
-              updated_at: 1772960822.056,
-              properties: {},
-              tags: [],
-              links: [],
-            },
-          ]),
-      ),
-    );
-
-    const entries = await searchApi.query("ws-search-timestamps", { form: "Task" });
-
-    expect(entries[0].updated_at).toBe(
-      new Date(1772960822.056 * 1000).toISOString(),
+    await expect(entryApi.count("ws-search-err", {
+      query: { scope: { kind: "all" }, filters: [], sort: [] },
+    })).rejects.toThrow(
+      "Failed to count entries",
     );
   });
 

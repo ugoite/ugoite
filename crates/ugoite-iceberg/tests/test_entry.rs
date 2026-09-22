@@ -4,7 +4,6 @@ use common::setup_operator;
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
-use ugoite_core::structured_search::StructuredSearch;
 use ugoite_domain::change::ChangeCommand;
 use ugoite_domain::form::{FormChange, FormChangeSet};
 use ugoite_domain::id::{FieldId, FormId};
@@ -685,28 +684,13 @@ async fn restore_after_form_field_rename_keeps_field_id_and_current_name() -> an
             .expect("restore revision ID")
     );
 
-    let search = ugoite_iceberg::structured_search::search_structured(
-        &op,
-        ws_path,
-        &StructuredSearch {
-            form: "Rename".to_owned(),
-            updated_from: None,
-            updated_to: None,
-            conditions: Vec::new(),
-            limit: Some(10),
-            offset: None,
-        },
-    )
-    .await?;
-    assert_eq!(
-        search
-            .iter()
-            .filter_map(|value| value["_ugoite_id"].as_str())
-            .collect::<Vec<_>>(),
-        vec!["rename-entry"]
-    );
-    let field_column = format!("field_{}", field_id.get());
-    assert_eq!(search[0][field_column.as_str()], "historical value");
+    let renamed = entry::list_entries(&op, ws_path)
+        .await?
+        .into_iter()
+        .find(|value| value["id"] == "rename-entry")
+        .expect("renamed Entry remains listed");
+    assert_eq!(renamed["properties"]["new_name"], "historical value");
+    assert!(renamed["properties"].get("old_name").is_none());
     Ok(())
 }
 

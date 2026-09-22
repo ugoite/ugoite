@@ -30,8 +30,28 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-SRCH-001#criterion.keyword-search
-                covers: [FEAT-SRCH-001#binding.core/target.search-entries]
+                covers: [FEAT-SRCH-001#binding.core/target.entry-query]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_search, test: test_search_req_srch_001_keyword_search } }
+      - id: entry-query-text-test
+        role: verification
+        facet: verification
+        responsibility: Verify keyword text search through the canonical EntryQuery collection read with Space read authorization.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: test, name: authentication_regression_tests::test_search_req_sec_006_authorization_filter_before_search }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-001#criterion.keyword-search
+                covers:
+                  - FEAT-SRCH-001#binding.core/target.entry-query
+                  - FEAT-SRCH-001#binding.server-implementation/target.entry-query-handler
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::test_search_req_sec_006_authorization_filter_before_search } }
+              - kind: verifies
+                criterion: REQ-SRCH-001#criterion.http-search-operation
+                covers: [FEAT-SRCH-001#binding.server-implementation/target.entry-query-handler]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::test_search_req_sec_006_authorization_filter_before_search } }
   - id: REQ-SRCH-002
     title: Content-scan search implementation
     description: Keyword search scans current Entry rows and the authorized AssetText projection. AssetText is an internal derived Iceberg relation; missing, stale, or corrupt derived state degrades to native Entry search. A persistent inverted index is still absent.
@@ -123,28 +143,28 @@ requirements:
       - id: frontend-test
         role: verification
         facet: verification
-        responsibility: Verify the keyword-first Search route through the exact frontend test.
+        responsibility: Verify the keyword-first Search route through the exact search UI journey test.
         targets:
           - id: case
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/search.test.tsx
-            selector: { kind: test, name: 'REQ-SRCH-004: runs a direct keyword search and renders matching entries' }
+            path: e2e/search-ui.test.ts
+            selector: { kind: test, name: 'REQ-SRCH-004: search page starts with direct keyword search' }
             claims:
               - kind: verifies
                 criterion: REQ-SRCH-004#criterion.keyword-first-route
                 covers:
-                  - FEAT-SRCH-001#binding.frontend/target.search-api
                   - FEAT-SRCH-001#binding.frontend/target.search-route
-                runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-004: runs a direct keyword search and renders matching entries" } }
+                  - FEAT-SRCH-001#binding.frontend/target.entry-query-controller
+                runner: { runner: e2e-playwright, arguments: { file: e2e/search-ui.test.ts, test: 'REQ-SRCH-004: search page starts with direct keyword search' } }
   - id: REQ-SRCH-005
     title: Structured search reuse through shared query infrastructure
-    description: The search route MUST offer advanced structured conditions that send typed criteria through the shared search.query execution path, and searches MUST remain reusable in place or from a human-readable search-history UI instead of exposing raw query management as the primary workflow.
+    description: The search route MUST offer structured conditions that send EntryQuery filters through the shared entry.query execution path, and searches MUST remain reusable in place or from a human-readable search-history UI instead of exposing raw query management as the primary workflow.
     priority: high
     status: implemented
     criteria:
       - id: structured-search-reuse
         kind: behavior
-        statement: Advanced search sends structured conditions through the shared query path and keeps the resulting search reusable in place; saved expert queries remain reusable through human-readable history.
+        statement: Structured search sends EntryQuery filters through the shared collection-read path and keeps the resulting search reusable in place; saved expert queries remain reusable through human-readable history.
         governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
       - id: history-not-raw-query-workflow
         kind: behavior
@@ -154,19 +174,21 @@ requirements:
       - id: frontend-test
         role: verification
         facet: verification
-        responsibility: Verify advanced Search compilation and human-readable history reuse through exact frontend tests.
+        responsibility: Verify EntryQuery structured filtering and human-readable history reuse through exact frontend tests.
         targets:
           - id: compile-case
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/search.test.tsx
-            selector: { kind: test, name: 'REQ-SRCH-005: advanced search sends logical criteria without SQL construction' }
+            path: frontend/src/components/EntryBrowser.test.tsx
+            selector: { kind: test, name: 'maps the filter builder to EntryQuery filters' }
             claims:
               - kind: verifies
                 criterion: REQ-SRCH-005#criterion.structured-search-reuse
                 covers:
-                  - FEAT-SRCH-001#binding.frontend/target.search-route
-                  - FEAT-SRCH-001#binding.frontend/target.advanced-query-builder
-                runner: { runner: frontend-vitest, arguments: { test: "REQ-SRCH-005: advanced search sends logical criteria without SQL construction" } }
+                  - FEAT-SRCH-001#binding.core/target.entry-query
+                  - FEAT-SRCH-001#binding.core/target.entry-query-capability
+                  - FEAT-SRCH-001#binding.frontend/target.entry-browser
+                  - FEAT-SRCH-001#binding.frontend/target.entry-query-controller
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/EntryBrowser.test.tsx", test: "maps the filter builder to EntryQuery filters" } }
           - id: history-case
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
@@ -175,7 +197,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-SRCH-005#criterion.structured-search-reuse
                 covers: [FEAT-SRCH-001#binding.frontend/target.search-route]
-                runner: { runner: frontend-vitest, arguments: { test: "keeps search history in Saved and routes direct reruns to stateless results" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/index.test.tsx", test: "keeps search history in Saved and routes direct reruns to stateless results" } }
   - id: REQ-SRCH-006
     title: Structured query operation
     description: Users and operators can submit a structured query for a Space and receive the matching results through the supported Ugoite interfaces.
@@ -191,6 +213,22 @@ requirements:
         statement: The core query path executes structured filters and SQL payloads against Form relations, including self-joins.
         governed_by: [POL-001#rule.governance, POL-012#rule.governance, POL-014#rule.governance]
     bindings:
+      - id: entry-query-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the canonical EntryQuery collection read and count through the exact server integration case.
+        targets:
+          - id: page-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: test, name: canonical_entry_query_tests::canonical_entry_query_returns_projected_rows_and_separate_count }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-006#criterion.query-operation
+                covers:
+                  - FEAT-SRCH-001#binding.core/target.entry-query
+                  - FEAT-SRCH-001#binding.server-implementation/target.entry-query-handler
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: canonical_entry_query_tests::canonical_entry_query_returns_projected_rows_and_separate_count } }
       - id: query-verification
         role: verification
         facet: verification
@@ -271,6 +309,10 @@ requirements:
               - kind: verifies
                 criterion: REQ-SRCH-007#criterion.derived-boundary
                 covers: [FEAT-SRCH-001#binding.derived/target.reindex]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_index, test: test_index_req_idx_001_reindex_writes_index_files } }
+              - kind: verifies
+                criterion: REQ-ASSET-004#criterion.durable-entry-source
+                covers: [FEAT-ASSET-001#binding.derived/target.asset-text-rebuild]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_index, test: test_index_req_idx_001_reindex_writes_index_files } }
           - id: no-inverted-index-case
             adapter: rust

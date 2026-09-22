@@ -659,7 +659,7 @@ fn test_cli_help_req_sto_010_describes_context_routing() {
         ["entry", "list", "--help"],
         ["form", "list", "--help"],
         ["index", "run", "--help"],
-        ["search", "keyword", "--help"],
+        ["entry", "list", "--help"],
         ["space", "get", "--help"],
         ["space", "patch", "--help"],
     ] {
@@ -714,8 +714,8 @@ fn test_entry_create_req_ops_006_help_leads_with_structured_fields() {
 }
 
 #[test]
-fn test_form_and_search_req_ops_006_help_describes_required_inputs() {
-    for args in [["form", "get", "--help"], ["search", "keyword", "--help"]] {
+fn test_form_and_entry_list_req_ops_006_help_describes_required_inputs() {
+    for args in [["form", "get", "--help"], ["entry", "list", "--help"]] {
         let output = Command::new(ugoite_bin()).args(args).output().unwrap();
         assert!(output.status.success());
         let stdout = String::from_utf8_lossy(&output.stdout);

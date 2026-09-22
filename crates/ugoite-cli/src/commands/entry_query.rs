@@ -6,9 +6,8 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use ugoite_core::entry_query::{
     EntryFieldCapability, EntryFieldRef, EntryFilter, EntryPage, EntryPageRequest, EntryProjection,
-    EntryQuery, EntryQueryScope, EntrySort, EntrySortDirection,
+    EntryQuery, EntryQueryScope, EntrySort, EntrySortDirection, SearchOperator,
 };
-use ugoite_core::structured_search::SearchOperator;
 use ugoite_domain::id::FormId;
 use ugoite_iceberg::service::UgoiteService;
 

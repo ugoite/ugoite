@@ -46,13 +46,6 @@ pub(crate) struct AssetAuthorization {
 }
 
 impl AssetAuthorization {
-    pub(crate) fn new(state: AuthorizationState, principal_ids: &[Uuid]) -> Self {
-        Self {
-            state: Arc::new(state),
-            principal_ids: Arc::new(principal_ids.to_vec()),
-        }
-    }
-
     fn allows(&self, entry_id: &str, asset_id: &str) -> Result<bool> {
         let parent = ResourceRef {
             kind: ResourceKind::Entry,

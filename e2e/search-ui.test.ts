@@ -24,9 +24,8 @@ test.describe("Search UI", () => {
 
 		const navigation = page.getByRole("navigation", { name: "Search" });
 		await expect(navigation).toBeVisible();
-		await expect(navigation.getByRole("button", { name: "Quick search" }))
-			.toBeVisible();
-		await expect(navigation.getByRole("button", { name: "Advanced search" }))
+		await expect(page.getByLabel("Search keywords")).toBeVisible();
+		await expect(page.getByRole("button", { name: "Search entries" }))
 			.toBeVisible();
 		await expect(navigation.getByRole("link", { name: "Files" }))
 			.toHaveAttribute("href", `/spaces/${spaceId}/assets`);
@@ -63,8 +62,9 @@ test.describe("Search UI", () => {
 			await expect(page.getByLabel("Search keywords")).toBeVisible();
 			await page.getByLabel("Search keywords").fill("keyword-first");
 			await page.getByRole("button", { name: "Search entries" }).click();
+			await expect(page.locator(".entry-browser-table").getByRole("button").first()).toBeVisible();
 			await expect(
-				page.getByRole("button", { name: new RegExp(escapeRegExp(entryId)) }),
+				page.locator(".entry-browser-table").getByText("alice", { exact: false }).first(),
 			).toBeVisible();
 			await expectNoObjectCoercion(page);
 		} finally {
@@ -74,51 +74,6 @@ test.describe("Search UI", () => {
 		}
 	});
 
-	test("REQ-SRCH-005: advanced search renders structured results inline", async ({
-		page,
-		request,
-	}) => {
-		test.setTimeout(120_000);
-		const runId = Date.now();
-		const formName = `SUA${String(runId).slice(-6)}`;
-		let entryId: string | null = null;
-
-		try {
-			await ensureSearchForm(request, formName, spaceId);
-			entryId = await createEntry(request, spaceId, {
-				form: formName,
-				tags: ["release", "search-ui"],
-				fields: {
-					"Owner Name": "alice",
-					Body: "Structured advanced search should find this entry.",
-				},
-			});
-			await waitForKeywordMatch(
-				request,
-				"Structured advanced search should find this entry.",
-				entryId,
-				spaceId,
-			);
-
-			await page.goto(getFrontendUrl(`/spaces/${spaceId}/search`), {
-				waitUntil: "domcontentloaded",
-			});
-			await page.getByRole("button", { name: "Advanced search" }).click();
-			await page.getByLabel("Form").selectOption(formName);
-			await page.getByLabel("Field").selectOption("Owner Name");
-			await page.getByLabel("Value").fill("alice");
-			await page.getByRole("button", { name: "Run advanced search" }).click();
-
-			await expect(page).toHaveURL(new RegExp(`/spaces/${spaceId}/search$`));
-			await expect(
-				page.getByRole("button", { name: new RegExp(escapeRegExp(entryId!)) }),
-			).toBeVisible();
-		} finally {
-			if (entryId) {
-				await request.delete(getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`));
-			}
-		}
-	});
 });
 
 async function ensureSearchForm(
@@ -159,9 +114,6 @@ async function createEntry(
 	return entry.id;
 }
 
-function escapeRegExp(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 async function waitForKeywordMatch(
 	request: APIRequestContext,
@@ -172,12 +124,19 @@ async function waitForKeywordMatch(
 	await expect
 		.poll(
 			async () => {
-				const response = await request.get(
-					getBackendUrl(`/spaces/${spaceId}/search?q=${encodeURIComponent(query)}`),
+				const response = await request.post(
+					getBackendUrl(`/spaces/${spaceId}/entries/query`),
+					{
+						data: {
+							query: { scope: { kind: "all" }, text: query },
+							projection: { kind: "preview" },
+							limit: 10,
+						},
+					},
 				);
 				if (!response.ok()) return false;
-				const rows = (await response.json()) as Array<{ id?: string }>;
-				return rows.some((row) => row.id === entryId);
+				const page = (await response.json()) as { rows?: Array<{ id?: string }> };
+				return (page.rows ?? []).some((row) => row.id === entryId);
 			},
 			{ timeout: 30_000 },
 		)

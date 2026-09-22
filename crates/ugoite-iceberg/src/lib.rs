@@ -29,7 +29,6 @@ pub mod saved_sql;
 pub mod search;
 pub mod service;
 pub mod space;
-pub mod structured_search;
 
 pub use health::SpaceHealthReport;
 use space_catalog::SpaceCatalog;

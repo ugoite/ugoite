@@ -102,7 +102,7 @@ fn golden_journey_needs_no_repeated_space_path() {
     for args in [
         vec!["form", "list"],
         vec!["entry", "list"],
-        vec!["search", "keyword", "planning"],
+        vec!["entry", "list", "--text", "planning"],
         vec!["space", "get"],
     ] {
         assert_success(

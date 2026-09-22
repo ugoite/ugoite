@@ -61,7 +61,7 @@ fn test_help_req_ops_018_shows_task_oriented_quick_start() {
         "ugoite config init",
         "ugoite space create demo",
         "ugoite context use work",
-        "ugoite --context research search keyword catalyst",
+        "ugoite --context research entry list --text catalyst",
         "ugoite config connection",
         "ugoite auth login --connection NAME --credential NAME",
     ] {

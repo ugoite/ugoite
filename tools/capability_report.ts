@@ -142,7 +142,7 @@ export const JOURNEY_CAPABILITIES: JourneyCapability[] = [
   {
     id: "search-keyword",
     checkpoint: "Search",
-    operations: ["search.keyword"],
+    operations: ["entry.query"],
     requirement: "REQ-SRCH-001#criterion.keyword-search",
     outcome:
       "The updated durable Entry is discoverable under identical query conditions regardless of surface.",
@@ -197,7 +197,7 @@ export const SERVICE_METHOD_OPERATIONS: Record<string, string> = {
   entry_history: "entry.history",
   entry_revision: "entry.revision",
   restore_entry: "entry.restore",
-  search_entries: "search.keyword",
+  query_entry_page: "entry.query",
 };
 
 const OPERATION_PATTERN = /"([a-z][a-z0-9_.]+)"/g;

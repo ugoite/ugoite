@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-07-31"
+updated: "2026-09-22"
 page:
   id: space-search
   title: Entry Search
@@ -18,49 +18,22 @@ components:
           label: search
           target_page: space-search
   body:
-    - id: search-mode-toggle
-      type: segmented-control
-      default_option: keyword-search-panel
-      options:
-        - id: keyword-search-panel
-          label: quick-search
-        - id: advanced-search-panel
-          label: advanced-search
     - id: keyword-search-panel
       type: search-panel
       placeholder: Search entries by title, fields, tags, or content
       action:
         id: search-entries-button
         label: search-entries
+      execution:
+        mode: entry-query
+        text_clause: query.text
+        collection_read: POST /spaces/{space_id}/entries/query
       result_surface:
         id: keyword-result-list
-        type: entry-card-grid
+        type: query-results
+        component: EntryBrowser
+        controller: EntryQueryController
         selection_target: space-entry-detail
-    - id: advanced-search-panel
-      type: structured-search-form
-      fields:
-        - form
-        - updated_from
-        - updated_to
-        - field_conditions[]
-      form_selection:
-        required: true
-        reason: EntryQuery uses an explicit Form scope for property fields and keeps system fields available by contract.
-      field_conditions:
-        item_fields:
-          - field
-          - operator
-          - value
-        supported_operators:
-          - equals
-          - contains
-      action:
-        id: run-advanced-search-button
-        label: run-advanced-search
-        execution:
-          mode: entry-query
-          target_page: space-entries-object
-          history: save-and-reuse
     - id: power-user-query-button
       type: button
       label: open-sql-editor

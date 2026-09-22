@@ -180,14 +180,19 @@ test.describe("JOURNEY-KNOWLEDGE-001", () => {
     await expect
       .poll(
         async () => {
-          const searchRes = await request.get(
-            getBackendUrl(
-              `/spaces/${spaceId}/search?q=${encodeURIComponent(needle)}`,
-            ),
+          const searchRes = await request.post(
+            getBackendUrl(`/spaces/${spaceId}/entries/query`),
+            {
+              data: {
+                query: { scope: { kind: "all" }, text: needle },
+                projection: { kind: "preview" },
+                limit: 10,
+              },
+            },
           );
           if (!searchRes.ok()) return false;
-          const rows = (await searchRes.json()) as Array<{ id?: string }>;
-          return rows.some((row) => row.id === entryId);
+          const page = (await searchRes.json()) as { rows?: Array<{ id?: string }> };
+          return (page.rows ?? []).some((row) => row.id === entryId);
         },
         { timeout: 30_000 },
       )
@@ -258,58 +263,39 @@ test.describe("JOURNEY-KNOWLEDGE-001", () => {
     };
     expect(history.revisions).toHaveLength(3);
 
-    const searchRes = await request.get(
-      getBackendUrl(
-        `/spaces/${spaceId}/search?q=${encodeURIComponent(needle)}`,
-      ),
+    const searchRes = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/entries/query`),
+      {
+        data: {
+          query: { scope: { kind: "all" }, text: needle },
+          projection: { kind: "preview" },
+          limit: 10,
+        },
+      },
     );
     expect(searchRes.ok()).toBe(true);
-    const rows = (await searchRes.json()) as Array<{ id?: string }>;
-    expect(rows.some((row) => row.id === entryId)).toBe(true);
+    const page = (await searchRes.json()) as { rows?: Array<{ id?: string }> };
+    expect((page.rows ?? []).some((row) => row.id === entryId)).toBe(true);
   });
 
-  test("JOURNEY-LOCATE-RECOVER-001: Structured search narrows keyword discovery", async ({ request }) => {
-    const matchRes = await request.post(
-      getBackendUrl(`/spaces/${spaceId}/query`),
-      {
-        data: {
-          criteria: {
-            form: formName,
-            conditions: [{
-              field: "Status",
-              operator: "equals",
-              value: needle,
-            }],
-            limit: 100,
-          },
-        },
-      },
+  test("JOURNEY-LOCATE-RECOVER-001: EntryQuery filters narrow keyword discovery", async ({ request }) => {
+    const matches = await queryFormField(
+      request,
+      spaceId,
+      formName,
+      "Status",
+      needle,
     );
-    expect(matchRes.ok()).toBe(true);
-    const matches = (await matchRes.json()) as Array<Record<string, unknown>>;
     expect(matches.length).toBeGreaterThan(0);
-    expect(
-      matches.some((row) => row._ugoite_id === entryId || row.id === entryId),
-    ).toBe(true);
+    expect(matches.some((row) => row.id === entryId)).toBe(true);
 
-    const missRes = await request.post(
-      getBackendUrl(`/spaces/${spaceId}/query`),
-      {
-        data: {
-          criteria: {
-            form: formName,
-            conditions: [{
-              field: "Status",
-              operator: "equals",
-              value: "no-such-status",
-            }],
-            limit: 100,
-          },
-        },
-      },
+    const misses = await queryFormField(
+      request,
+      spaceId,
+      formName,
+      "Status",
+      "no-such-status",
     );
-    expect(missRes.ok()).toBe(true);
-    const misses = (await missRes.json()) as Array<unknown>;
     expect(misses).toHaveLength(0);
   });
 
@@ -393,44 +379,68 @@ test.describe("JOURNEY-KNOWLEDGE-001", () => {
   });
 
   test("JOURNEY-LOCATE-RECOVER-001: Recovered search reflects recovered state on reopen", async ({ request }) => {
-    const searchRes = await request.get(
-      getBackendUrl(
-        `/spaces/${spaceId}/search?q=${encodeURIComponent(needle)}`,
-      ),
-    );
-    expect(searchRes.ok()).toBe(true);
-    const rows = (await searchRes.json()) as Array<{ id?: string }>;
-    expect(rows.some((row) => row.id === entryId)).toBe(true);
-
-    const structuredRes = await request.post(
-      getBackendUrl(`/spaces/${spaceId}/query`),
+    const searchRes = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/entries/query`),
       {
         data: {
-          criteria: {
-            form: formName,
-            conditions: [{
-              field: "Status",
-              operator: "equals",
-              value: needle,
-            }],
-            limit: 100,
-          },
+          query: { scope: { kind: "all" }, text: needle },
+          projection: { kind: "preview" },
+          limit: 10,
         },
       },
     );
-    expect(structuredRes.ok()).toBe(true);
-    const structured = (await structuredRes.json()) as Array<
-      Record<string, unknown>
-    >;
-    expect(
-      structured.some((row) =>
-        row._ugoite_id === entryId || row.id === entryId
-      ),
-    ).toBe(true);
+    expect(searchRes.ok()).toBe(true);
+    const page = (await searchRes.json()) as { rows?: Array<{ id?: string }> };
+    expect((page.rows ?? []).some((row) => row.id === entryId)).toBe(true);
+
+    const structured = await queryFormField(
+      request,
+      spaceId,
+      formName,
+      "Status",
+      needle,
+    );
+    expect(structured.some((row) => row.id === entryId)).toBe(true);
 
     const spaceRes = await request.get(getBackendUrl(`/spaces/${spaceId}`));
     expect(spaceRes.ok()).toBe(true);
     const space = (await spaceRes.json()) as { space_uid?: string };
     expect(space.space_uid).toBe(spaceId);
   });
+
+  async function queryFormField(
+    request: APIRequestContext,
+    spaceId: string,
+    formName: string,
+    fieldName: string,
+    value: string,
+  ): Promise<Array<{ id: string }>> {
+    const formsRes = await request.get(getBackendUrl(`/spaces/${spaceId}/forms`));
+    expect(formsRes.ok()).toBe(true);
+    const forms = (await formsRes.json()) as Array<{
+      id?: string;
+      name?: string;
+      fields?: Record<string, { query_capability?: { field?: unknown } }>;
+    }>;
+    const form = forms.find((candidate) => candidate.name === formName);
+    expect(form?.id).toBeTruthy();
+    const capability = form?.fields?.[fieldName]?.query_capability;
+    expect(capability?.field).toBeTruthy();
+    const queryRes = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/entries/query`),
+      {
+        data: {
+          query: {
+            scope: { kind: "form", form_id: form!.id },
+            filters: [{ field: capability!.field, operator: "equals", value }],
+          },
+          projection: { kind: "preview" },
+          limit: 100,
+        },
+      },
+    );
+    expect(queryRes.ok()).toBe(true);
+    const page = (await queryRes.json()) as { rows?: Array<{ id: string }> };
+    return page.rows ?? [];
+  }
 });

@@ -185,28 +185,28 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
         );
     }
 
-    // 3. Keyword Search discovers the target by title.
+    // 3. EntryQuery text search discovers the target by title.
     let results = stdout_json(
-        &run_cli(&config_path, &["search", "keyword", "locate-task-a"]),
-        "keyword search discovers the target",
+        &run_cli(&config_path, &["entry", "list", "--text", "locate-task-a"]),
+        "entry list --text discovers the target",
     );
     assert!(contains_string(&results, "locate-task-a"));
 
-    // 4. Typed structured Search narrows to the intended Entry set.
+    // 4. EntryQuery filters narrow to the intended Entry set.
     let results = stdout_json(
         &run_cli(
             &config_path,
-            &["search", "query", "--form", "Task", "--eq", "status=open"],
+            &["entry", "list", "--form", "Task", "--filter", "status=open"],
         ),
-        "structured search narrows to open tasks",
+        "entry list --filter narrows to open tasks",
     );
     assert_eq!(search_ids(&results), vec!["locate-task-a".to_string()]);
     let results = stdout_json(
         &run_cli(
             &config_path,
-            &["search", "query", "--form", "Task", "--eq", "status=nope"],
+            &["entry", "list", "--form", "Task", "--filter", "status=nope"],
         ),
-        "structured search excludes on non-matching condition",
+        "entry list --filter excludes on non-matching condition",
     );
     assert!(search_ids(&results).is_empty());
 
@@ -248,9 +248,9 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
     let results = stdout_json(
         &run_cli(
             &config_path,
-            &["search", "query", "--form", "Task", "--eq", "status=open"],
+            &["entry", "list", "--form", "Task", "--filter", "status=open"],
         ),
-        "structured search reflects the update",
+        "entry list --filter reflects the update",
     );
     assert!(search_ids(&results).is_empty());
 
@@ -292,13 +292,13 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
     assert!(after_ids.contains(&revert_id));
     assert_eq!(after_ids.len(), before_ids.len() + 1);
 
-    // 9. Current search results reflect the recovered state.
+    // 9. Current EntryQuery results reflect the recovered state.
     let results = stdout_json(
         &run_cli(
             &config_path,
-            &["search", "query", "--form", "Task", "--eq", "status=open"],
+            &["entry", "list", "--form", "Task", "--filter", "status=open"],
         ),
-        "structured search reflects recovered state",
+        "entry list --filter reflects recovered state",
     );
     assert_eq!(search_ids(&results), vec!["locate-task-a".to_string()]);
 
@@ -309,8 +309,8 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
     );
     assert_eq!(revision_ids(&history).len(), 3);
     let results = stdout_json(
-        &run_cli(&config_path, &["search", "keyword", "locate-task-a"]),
-        "keyword search on reopen",
+        &run_cli(&config_path, &["entry", "list", "--text", "locate-task-a"]),
+        "entry list --text on reopen",
     );
     assert!(contains_string(&results, "locate-task-a"));
     let changes = stdout_json(

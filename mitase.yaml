@@ -59,10 +59,11 @@ inventory:
             - frontend/src/lib/client.test.ts
             - frontend/src/lib/i18n.ts
             - frontend/src/lib/i18n.test.ts
-            - frontend/src/lib/search-store.ts
-            - frontend/src/lib/search-store.test.ts
+            - frontend/src/lib/entry-query.ts
+            - frontend/src/lib/entry-query.test.ts
             - frontend/src/lib/form-api.ts
-            - frontend/src/lib/search-api.ts
+            - frontend/src/components/EntryBrowser.tsx
+            - frontend/src/components/EntryBrowser.test.tsx
             - frontend/src/lib/ugoite-client/protocol.ts
             - frontend/src/lib/ugoite-client/protocol.test.ts
             - frontend/src/lib/space-api.ts
@@ -129,7 +130,6 @@ inventory:
             - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.tsx
             - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/restore.tsx
             - frontend/src/routes/spaces/[space_id]/search.tsx
-            - frontend/src/routes/spaces/[space_id]/search.test.tsx
             - frontend/src/lib/change-api.ts
             - frontend/src/routes/spaces/[space_id]/history.tsx
             - frontend/src/routes/spaces/[space_id]/history.test.tsx
@@ -326,7 +326,7 @@ inventory:
             - crates/ugoite-iceberg/src/form.rs
             - crates/ugoite-iceberg/src/search.rs
             - crates/ugoite-konase/src/agent_runtime.rs
-            - frontend/src/lib/search-api.ts
+            - frontend/src/lib/entry-query.ts
             - frontend/src/components/SpaceShell.tsx
             - frontend/src/components/GlobalShell.tsx
             - frontend/src/components/EntryList.tsx
@@ -371,7 +371,7 @@ verification:
       arguments: [test, -p, "{package}", "{test}", --, --exact]
     frontend-vitest:
       executable: deno
-      arguments: [task, --cwd, frontend, test, "src/routes/spaces/[space_id]/search.test.tsx", --testNamePattern, "{test}"]
+      arguments: [task, --cwd, frontend, test, "src/components/EntryBrowser.test.tsx", --testNamePattern, "{test}"]
     frontend-vitest-file:
       executable: deno
       arguments: [task, --cwd, frontend, test, "{file}", --testNamePattern, "{test}"]
