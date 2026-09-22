@@ -128,7 +128,6 @@ inventory:
             - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history.tsx
             - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].tsx
             - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.tsx
-            - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/restore.tsx
             - frontend/src/routes/spaces/[space_id]/search.tsx
             - frontend/src/lib/change-api.ts
             - frontend/src/routes/spaces/[space_id]/history.tsx
@@ -335,7 +334,6 @@ inventory:
             - frontend/src/components/ActionIconBar.tsx
             - frontend/src/components/SearchBar.tsx
             - frontend/src/lib/i18n.ts
-            - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/restore.tsx
             - frontend/app.config.ts
             - crates/ugoite-iceberg/tests/fixtures/v0.1-knowledge.json
             - fixtures/spaces/0.1/spaces/019c1234-5678-7abc-8def-0123456789ab/meta.json

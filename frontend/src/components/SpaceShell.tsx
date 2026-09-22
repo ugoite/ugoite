@@ -23,16 +23,9 @@ export type SpaceNavigation =
   | "history"
   | "settings";
 
-// Legacy aliases kept for route compat: "forms" covered Knowledge before
-// PR-07. Inference below maps old paths onto the split destinations.
-export type SpaceTopTab = "dashboard" | "search";
-export type SpaceBottomTab = "object" | "grid";
-
 interface SpaceShellProps {
   spaceId: string;
-  activeTopTab?: SpaceTopTab;
-  activeBottomTab?: SpaceBottomTab;
-  activeNavigation?: SpaceNavigation;
+  activeNavigation: SpaceNavigation;
   title?: string;
   showBottomTabs?: boolean;
   bottomTabHrefSuffix?: string;
@@ -153,10 +146,6 @@ export function SpaceShell(props: SpaceShellProps) {
   });
   const active = createMemo<SpaceNavigation>(() => {
     if (props.activeNavigation) return props.activeNavigation;
-    if (props.activeTopTab === "dashboard") return "home";
-    if (props.activeTopTab === "search") return "search";
-    if (props.activeBottomTab === "grid") return "forms";
-    if (props.activeBottomTab === "object") return "entries";
     const pathname = typeof window === "undefined"
       ? ""
       : window.location.pathname;

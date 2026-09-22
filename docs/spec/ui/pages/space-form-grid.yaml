@@ -13,7 +13,7 @@ components:
   body:
     - id: form-list
       type: list
-      description: The Forms route is list-only. Selecting a Form navigates to its form-scoped Entry list at the Entries route with a form query parameter; legacy /forms?form= URLs redirect there. One shared list DOM serves desktop and mobile with border-separated rows, and per-row edit stays on a small button that does not steal the navigation click.
+      description: The Forms route is list-only. Selecting a Form navigates to its form-scoped Entry list at the Entries route with a form query parameter. One shared list DOM serves desktop and mobile with border-separated rows, and per-row edit stays on a small button that does not steal the navigation click.
       items:
         - form-name
       actions:

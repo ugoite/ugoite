@@ -1,5 +1,5 @@
-import { useNavigate, useSearchParams } from "@solidjs/router";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { useNavigate } from "@solidjs/router";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { CreateFormDialog, EditFormDialog } from "~/components/create-dialogs";
 import { RowList, RowListButton, RowListItem } from "~/components/RowList";
 import { UiIcon } from "~/components/UiIcon";
@@ -19,12 +19,10 @@ export const route = spaceRoute({ navigation: "forms" });
 export default function SpaceFormsIndexPane() {
   const ctx = useEntriesRouteContext();
   const navigate = useNavigate();
-  const [params] = useSearchParams();
   const [query, setQuery] = createSignal("");
   const [showFormDialog, setShowFormDialog] = createSignal(false);
   const [editingForm, setEditingForm] = createSignal<Form | null>(null);
   const [showMetadata, setShowMetadata] = createSignal(false);
-  const [redirectedLegacy, setRedirectedLegacy] = createSignal(false);
   const forms = createMemo(() =>
     showMetadata() ? ctx.forms() : filterCreatableEntryForms(ctx.forms())
   );
@@ -33,21 +31,6 @@ export default function SpaceFormsIndexPane() {
       form.name.toLowerCase().includes(query().trim().toLowerCase())
     )
   );
-
-  // Graceful legacy support: /forms?form=X navigates to the form-scoped
-  // Entry list. The Forms page itself stays list-only.
-  createEffect(() => {
-    const legacy = String(params.form || "");
-    if (legacy && !redirectedLegacy()) {
-      const spaceId = ctx.spaceId();
-      if (!spaceId) return;
-      setRedirectedLegacy(true);
-      navigate(
-        spaceEntriesPath(spaceId, `?form=${encodeURIComponent(legacy)}`),
-        { replace: true },
-      );
-    }
-  });
 
   const createForm = async (payload: FormCreatePayload) => {
     await formApi.create(ctx.spaceId(), payload);

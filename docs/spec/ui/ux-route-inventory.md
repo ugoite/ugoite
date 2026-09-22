@@ -57,26 +57,25 @@ map to the same surface as their route.
 | 22 | `frontend/src/routes/spaces/[space_id]/entries/[entry_id]/info.tsx`                  | `/spaces/{space_id}/entries/{entry_id}/info`                  | §5                           | Entry info workspace                                    |
 | 23 | `frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history.tsx`               | `/spaces/{space_id}/entries/{entry_id}/history` (layout)      | §9                           | Entry history layout boundary                           |
 | 24 | `frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.tsx`         | `/spaces/{space_id}/entries/{entry_id}/history`               | §9                           | Entry history list (append-only)                        |
-| 25 | `frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].tsx` | `/spaces/{space_id}/entries/{entry_id}/history/{revision_id}` | §9                           | Single revision view (append-only)                      |
-| 26 | `frontend/src/routes/spaces/[space_id]/entries/[entry_id]/restore.tsx`               | `/spaces/{space_id}/entries/{entry_id}/restore`               | §9                           | Restore workspace (appends a new revision)              |
-| 27 | `frontend/src/routes/spaces/[space_id]/forms.tsx`                                    | `/spaces/{space_id}/forms` (layout)                           | §6                           | Forms layout boundary                                   |
-| 28 | `frontend/src/routes/spaces/[space_id]/forms/index.tsx`                              | `/spaces/{space_id}/forms`                                    | §6                           | List-only Forms list workspace                          |
-| 29 | `frontend/src/routes/spaces/[space_id]/forms/types.tsx`                              | `/spaces/{space_id}/forms/types`                              | §6                           | Form column-types surface                               |
-| 30 | `frontend/src/routes/spaces/[space_id]/history.tsx`                                  | `/spaces/{space_id}/history`                                  | §9                           | Space history timeline                                  |
-| 31 | `frontend/src/routes/spaces/[space_id]/queries/new.tsx`                              | `/spaces/{space_id}/queries/new`                              | §6                           | Saved-query create workspace                            |
-| 32 | `frontend/src/routes/spaces/[space_id]/queries/[query_id]/variables.tsx`             | `/spaces/{space_id}/queries/{query_id}/variables`             | §6                           | Query variables workspace                               |
-| 33 | `frontend/src/routes/spaces/[space_id]/search.tsx`                                   | `/spaces/{space_id}/search`                                   | §6                           | Keyword/advanced search workspace                       |
-| 34 | `frontend/src/routes/spaces/[space_id]/settings.tsx`                                 | `/spaces/{space_id}/settings`                                 | §4 + §6                      | Space settings workspace (persistent sections)          |
-| 35 | `frontend/src/routes/spaces/[space_id]/sql.tsx`                                      | `/spaces/{space_id}/sql` (layout)                             | §6                           | SQL layout boundary                                     |
-| 36 | `frontend/src/routes/spaces/[space_id]/sql/index.tsx`                                | `/spaces/{space_id}/sql`                                      | §6                           | Saved SQL list and create action                        |
-| 37 | `frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx`                             | `/spaces/{space_id}/sql/{sql_id}`                             | §6                           | Saved SQL detail workspace                              |
-| 38 | `frontend/src/routes/spaces/[space_id]/test-connection.tsx`                          | `/spaces/{space_id}/test-connection`                          | §4 + §6                      | Storage connection test surface                         |
-| 39 | `frontend/src/routes/step-up.tsx`                                                    | `/step-up`                                                    | §4                           | Step-up authentication surface (global shell)           |
+| 25 | `frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].tsx` | `/spaces/{space_id}/entries/{entry_id}/history/{revision_id}` | §9                           | Single revision view (append-only; hosts the restore action)        |
+| 26 | `frontend/src/routes/spaces/[space_id]/forms.tsx`                                    | `/spaces/{space_id}/forms` (layout)                           | §6                           | Forms layout boundary                                   |
+| 27 | `frontend/src/routes/spaces/[space_id]/forms/index.tsx`                              | `/spaces/{space_id}/forms`                                    | §6                           | List-only Forms list workspace                          |
+| 28 | `frontend/src/routes/spaces/[space_id]/forms/types.tsx`                              | `/spaces/{space_id}/forms/types`                              | §6                           | Form column-types surface                               |
+| 29 | `frontend/src/routes/spaces/[space_id]/history.tsx`                                  | `/spaces/{space_id}/history`                                  | §9                           | Space history timeline                                  |
+| 30 | `frontend/src/routes/spaces/[space_id]/queries/new.tsx`                              | `/spaces/{space_id}/queries/new`                              | §6                           | Saved-query create workspace                            |
+| 31 | `frontend/src/routes/spaces/[space_id]/queries/[query_id]/variables.tsx`             | `/spaces/{space_id}/queries/{query_id}/variables`             | §6                           | Query variables workspace                               |
+| 32 | `frontend/src/routes/spaces/[space_id]/search.tsx`                                   | `/spaces/{space_id}/search`                                   | §6                           | Keyword/advanced search workspace                       |
+| 33 | `frontend/src/routes/spaces/[space_id]/settings.tsx`                                 | `/spaces/{space_id}/settings`                                 | §4 + §6                      | Space settings workspace (persistent sections)          |
+| 34 | `frontend/src/routes/spaces/[space_id]/sql.tsx`                                      | `/spaces/{space_id}/sql` (layout)                             | §6                           | SQL layout boundary                                     |
+| 35 | `frontend/src/routes/spaces/[space_id]/sql/index.tsx`                                | `/spaces/{space_id}/sql`                                      | §6                           | Saved SQL list and create action                        |
+| 36 | `frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx`                             | `/spaces/{space_id}/sql/{sql_id}`                             | §6                           | Saved SQL detail workspace                              |
+| 37 | `frontend/src/routes/spaces/[space_id]/test-connection.tsx`                          | `/spaces/{space_id}/test-connection`                          | §4 + §6                      | Storage connection test surface                         |
+| 38 | `frontend/src/routes/step-up.tsx`                                                    | `/step-up`                                                    | §4                           | Step-up authentication surface (global shell)           |
 
 Cross-cutting: §§7–8 apply to every rendered surface above (all except row 3,
 which renders no UI).
 
-## Companion test files (34)
+## Companion test files (33)
 
 Each test file maps to the same plan section and surface as its route file.
 
@@ -106,25 +105,23 @@ Each test file maps to the same plan section and surface as its route file.
   row 21 (§5)
 - `frontend/src/routes/spaces/[space_id]/entries/[entry_id]/info.test.tsx` → row
   22 (§5)
-- `frontend/src/routes/spaces/[space_id]/entries/[entry_id]/restore.test.tsx` →
-  row 26 (§9)
 - `frontend/src/routes/spaces/[space_id]/entries/index.test.tsx` → row 18 (§5 +
   §6)
 - `frontend/src/routes/spaces/[space_id]/entries/new.test.tsx` → row 19 (§5)
-- `frontend/src/routes/spaces/[space_id]/forms/index.test.tsx` → row 28 (§6)
-- `frontend/src/routes/spaces/[space_id]/forms/types.test.tsx` → row 29 (§6)
-- `frontend/src/routes/spaces/[space_id]/history.test.tsx` → row 30 (§9)
-- `frontend/src/routes/spaces/[space_id]/queries/new.test.tsx` → row 31 (§6)
+- `frontend/src/routes/spaces/[space_id]/forms/index.test.tsx` → row 27 (§6)
+- `frontend/src/routes/spaces/[space_id]/forms/types.test.tsx` → row 28 (§6)
+- `frontend/src/routes/spaces/[space_id]/history.test.tsx` → row 29 (§9)
+- `frontend/src/routes/spaces/[space_id]/queries/new.test.tsx` → row 30 (§6)
 - `frontend/src/routes/spaces/[space_id]/queries/[query_id]/variables.test.tsx`
-  → row 32 (§6)
-- `frontend/src/routes/spaces/[space_id]/search.test.tsx` → row 33 (§6)
-- `frontend/src/routes/spaces/[space_id]/settings.route.test.tsx` → row 34 (§4 +
+  → row 31 (§6)
+- `frontend/src/routes/spaces/[space_id]/search.test.tsx` → row 32 (§6)
+- `frontend/src/routes/spaces/[space_id]/settings.route.test.tsx` → row 33 (§4 +
   §6)
-- `frontend/src/routes/spaces/[space_id]/settings.sections.test.ts` → row 34
+- `frontend/src/routes/spaces/[space_id]/settings.sections.test.ts` → row 33
   (§4 + §6)
-- `frontend/src/routes/spaces/[space_id]/sql/index.test.tsx` → row 36 (§6)
-- `frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx` → row 37 (§6)
-- `frontend/src/routes/step-up.test.tsx` → row 39 (§4)
+- `frontend/src/routes/spaces/[space_id]/sql/index.test.tsx` → row 35 (§6)
+- `frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx` → row 36 (§6)
+- `frontend/src/routes/step-up.test.tsx` → row 38 (§4)
 
 ## Explicit gaps
 

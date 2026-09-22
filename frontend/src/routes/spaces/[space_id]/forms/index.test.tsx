@@ -14,15 +14,12 @@ import { formApi } from "~/lib/ugoite-client";
 import type { Form } from "~/lib/types";
 import SpaceFormsIndexPane from "./index";
 
-const search: Record<string, string> = {};
-const setSearch = vi.fn();
 const refetchForms = vi.fn();
 const navigate = vi.fn();
 vi.mock(
   "@solidjs/router",
   () => ({
     useNavigate: () => navigate,
-    useSearchParams: () => [search, setSearch],
   }),
 );
 vi.mock(
@@ -109,11 +106,9 @@ function renderPage(forms: Form[], formsError?: unknown, spaceId = "default") {
 describe("Forms list", () => {
   beforeEach(() => {
     setLocale("en");
-    setSearch.mockReset();
     navigate.mockReset();
     refetchForms.mockReset();
     vi.mocked(formApi.create).mockReset();
-    for (const key of Object.keys(search)) delete search[key];
   });
   it("renders a list-only heading with a create action", () => {
     renderPage([noteForm]);
@@ -236,43 +231,6 @@ describe("Forms list", () => {
         "/spaces/default/entries?form=Projects",
       )
     );
-  });
-  it("redirects legacy /forms?form= URLs to the Entry list", () => {
-    search.form = "Notes";
-    renderPage([noteForm]);
-    expect(navigate).toHaveBeenCalledWith(
-      "/spaces/default/entries?form=Notes",
-      { replace: true },
-    );
-  });
-  it("encodes Space path segments in the legacy redirect", () => {
-    search.form = "Notes";
-    renderPage([noteForm], undefined, "space/with space");
-    expect(navigate).toHaveBeenCalledWith(
-      "/spaces/space%2Fwith%20space/entries?form=Notes",
-      { replace: true },
-    );
-  });
-  it("does not navigate legacy /forms?form= URLs without a Space id", () => {
-    search.form = "Notes";
-    const [list] = createSignal([noteForm]);
-    render(() => (
-      <EntriesRouteContext.Provider
-        value={{
-          spaceId: () => "",
-          forms: list,
-          loadingForms: () => false,
-          formsError: () => undefined,
-          columnTypes: () => [],
-          refetchForms,
-          entryStore: {} as never,
-          spaceStore: {} as never,
-        }}
-      >
-        <SpaceFormsIndexPane />
-      </EntriesRouteContext.Provider>
-    ));
-    expect(navigate).not.toHaveBeenCalled();
   });
   it("shows the empty state and Japanese copy", () => {
     setLocale("ja");
