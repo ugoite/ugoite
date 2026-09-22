@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 Usage: bash scripts/dev-seed.sh [--root PATH] [--space-id ID] [--scenario NAME] [--entry-count N] [--seed VALUE]
 
-Create local sample data with the existing ugoite-cli sample-data command and
+Create local sample data with the xtask dev seed command and
 visible terminal progress.
 
 Defaults:
@@ -142,10 +142,13 @@ command=(
   run
   -q
   -p
-  ugoite-cli
+  xtask
   --
-  space
-  sample-data
+  seed
+  --root
+  "$ROOT_PATH"
+  --space-id
+  "$SPACE_ID"
   --scenario
   "$SCENARIO"
   --entry-count
@@ -155,8 +158,6 @@ command=(
 if [[ -n "$SEED_VALUE" ]]; then
   command+=(--seed "$SEED_VALUE")
 fi
-
-command+=(-- "$ROOT_PATH" "$SPACE_ID")
 
 "${command[@]}"
 

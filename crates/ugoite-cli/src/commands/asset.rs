@@ -1,6 +1,6 @@
 use crate::cli_config::{resolve_command_target, SpaceTarget};
-use crate::config::{effective_format, print_json, print_json_table, Format};
 use crate::http;
+use crate::output::{effective_format, print_json, print_json_table, Format};
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use std::io::Write as IoWrite;
@@ -140,7 +140,9 @@ pub async fn run(
                 return Ok(());
             }
             if human_approval.is_some() {
-                anyhow::bail!("--human-approval is only supported in backend/api mode");
+                anyhow::bail!(
+                    "--human-approval is only supported on a remote backend/api connection"
+                );
             }
             let SpaceTarget::Core { root, space_id } = &target else {
                 anyhow::bail!("operation asset.delete does not use the remote transport")
@@ -244,9 +246,9 @@ pub async fn run(
 ///
 /// The reference must be visible in `asset list` for the exact
 /// (entry, field, asset) triple; anything else fails as not found without
-/// falling back to another entry, field, or asset. Core mode additionally
+/// falling back to another entry, field, or asset. A local core connection additionally
 /// enforces the reference edge through the shared service boundary before
-/// touching bytes; backend mode relies on the server-side authorization
+/// touching bytes; a remote backend connection relies on the server-side authorization
 /// that `asset.read` requires.
 struct AssetContext {
     reference: serde_json::Value,

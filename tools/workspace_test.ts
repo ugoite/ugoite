@@ -386,10 +386,21 @@ Deno.test("dev-seed forwards arguments and protects UUID-backed Spaces", async (
     fakeCargo,
     `#!/bin/sh
 printf '%s\\n' "$@" > "$UGOITE_FAKE_CARGO_ARGS"
-space_dir="\${15}/spaces/019f0000-0000-7000-8000-000000000001"
+root=""; space=""; scenario=""; count=""
+prev=""
+for a in "$@"; do
+  case "$prev" in
+    --root) root="$a";;
+    --space-id) space="$a";;
+    --scenario) scenario="$a";;
+    --entry-count) count="$a";;
+  esac
+  prev="$a"
+done
+space_dir="$root/spaces/019f0000-0000-7000-8000-000000000001"
 mkdir -p "$space_dir"
-printf '{"slug":"%s","space_uid":"019f0000-0000-7000-8000-000000000001"}' "\${16}" > "$space_dir/meta.json"
-printf '{"created":true,"id":"019f0000-0000-7000-8000-000000000001","slug":"%s","scenario":"%s","entry_count":%s}\\n' "\${16}" "$9" "\${11}"
+printf '{"slug":"%s","space_uid":"019f0000-0000-7000-8000-000000000001"}' "$space" > "$space_dir/meta.json"
+printf '{"created":true,"id":"019f0000-0000-7000-8000-000000000001","slug":"%s","scenario":"%s","entry_count":%s}\\n' "$space" "$scenario" "$count"
 `,
   );
   await Deno.chmod(fakeCargo, 0o755);
@@ -438,8 +449,8 @@ printf '{"created":true,"id":"019f0000-0000-7000-8000-000000000001","slug":"%s",
     );
     assertEquals(
       await Deno.readTextFile(argsLog),
-      "run\n-q\n-p\nugoite-cli\n--\nspace\nsample-data\n--scenario\nlab-qa\n--entry-count\n7\n--seed\n42\n--\n" +
-        `${root}\nforwarded-space\n`,
+      "run\n-q\n-p\nxtask\n--\nseed\n--root\n" +
+        `${root}\n--space-id\nforwarded-space\n--scenario\nlab-qa\n--entry-count\n7\n--seed\n42\n`,
     );
 
     const legacyRoot = await Deno.makeTempDir({

@@ -1,7 +1,8 @@
 use crate::cli_config::{resolve_command_target, SpaceTarget};
-use crate::config::{effective_format, print_json, print_json_table, Format};
 use crate::http;
-use crate::output::{emit_success, UsageError};
+use crate::output::{
+    effective_format, emit_success, print_json, print_json_table, Format, UsageError,
+};
 use crate::step_up;
 use anyhow::Result;
 use clap::{Args, Subcommand};

@@ -6,7 +6,7 @@ use std::{env, fs, path::Path, process::Command};
 fn main() -> Result<()> {
     let mut args = env::args().skip(1);
     let Some(command) = args.next() else {
-        println!("usage: cargo run -p xtask -- <openapi-generate|openapi-check|operation-registry-check|architecture-check|space-compat-check|release-authority-check|docs-current-stack-check|supported-check|legacy-auth-check>");
+        println!("usage: cargo run -p xtask -- <openapi-generate|openapi-check|operation-registry-check|architecture-check|space-compat-check|release-authority-check|docs-current-stack-check|supported-check|legacy-auth-check|seed>");
         return Ok(());
     };
     match command.as_str() {
@@ -19,8 +19,117 @@ fn main() -> Result<()> {
         "docs-current-stack-check" => docs_current_stack_check(),
         "supported-check" => supported_check(),
         "legacy-auth-check" => legacy_auth_check(),
+        "seed" => seed(args.collect()),
         other => bail!("unknown xtask command: {other}"),
     }
+}
+
+/// Development-only sample-data seeder. This is the single supported entry
+/// for generating sample Spaces; the production `ugoite` CLI intentionally
+/// exposes no local-root seeding bypass.
+fn seed(args: Vec<String>) -> Result<()> {
+    let mut root = String::from("./data");
+    let mut space_id: Option<String> = None;
+    let mut scenario = String::new();
+    let mut entry_count = 50_usize;
+    let mut seed_value: Option<u64> = None;
+    let mut owner: Option<String> = None;
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--root" => {
+                root = iter
+                    .next()
+                    .context("seed: --root requires a value")?
+                    .clone();
+            }
+            "--space-id" => {
+                space_id = Some(
+                    iter.next()
+                        .context("seed: --space-id requires a value")?
+                        .clone(),
+                );
+            }
+            "--scenario" => {
+                scenario = iter
+                    .next()
+                    .context("seed: --scenario requires a value")?
+                    .clone();
+            }
+            "--entry-count" => {
+                entry_count = iter
+                    .next()
+                    .context("seed: --entry-count requires a value")?
+                    .parse()
+                    .context("seed: --entry-count must be an integer")?;
+            }
+            "--seed" => {
+                seed_value = Some(
+                    iter.next()
+                        .context("seed: --seed requires a value")?
+                        .parse()
+                        .context("seed: --seed must be an integer")?,
+                );
+            }
+            "--owner" => {
+                owner = Some(
+                    iter.next()
+                        .context("seed: --owner requires a value")?
+                        .clone(),
+                );
+            }
+            other => bail!("seed: unknown argument: {other}"),
+        }
+    }
+    let Some(space_id) = space_id else {
+        bail!("seed: --space-id is required");
+    };
+    let trimmed_root = root.trim_end_matches('/').to_string();
+    let op = opendal::Operator::new(opendal::services::Fs::default().root(
+        if trimmed_root.is_empty() {
+            "/"
+        } else {
+            &trimmed_root
+        },
+    ))
+    .context("seed: open local workspace root")?;
+    let root_uri = format!(
+        "file://{}/",
+        if trimmed_root.is_empty() {
+            "/"
+        } else {
+            trimmed_root.trim_end_matches('/')
+        }
+    );
+    let options = ugoite_iceberg::sample_data::SampleDataOptions {
+        space_id: space_id.clone(),
+        scenario: scenario.clone(),
+        entry_count,
+        seed: seed_value,
+        owner_display_name: owner
+            .map(|name| name.trim().to_string())
+            .filter(|name| !name.is_empty()),
+    };
+    let summary = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("seed: start async runtime")?
+        .block_on(
+            ugoite_iceberg::sample_data::create_sample_space_with_terminal_progress(
+                &op, &root_uri, &options,
+            ),
+        )?;
+    println!(
+        "{}",
+        serde_json::json!({
+            "created": true,
+            "id": summary.space_id,
+            "slug": space_id,
+            "scenario": summary.scenario,
+            "entry_count": summary.entry_count,
+        })
+    );
+    Ok(())
 }
 
 fn openapi_generate() -> Result<()> {

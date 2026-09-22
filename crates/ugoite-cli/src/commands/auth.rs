@@ -1,4 +1,5 @@
-use crate::config::{print_json, AuthSession};
+use crate::config::AuthSession;
+use crate::output::print_json;
 use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::Utc;
@@ -19,15 +20,15 @@ pub const DEFAULT_DEVICE_ACTIONS: &str = "read,create,update";
 
 /// Parse the `--space-uid` login scope as an immutable UUIDv7 Space UID.
 ///
-/// Backend/api mode addresses a Knowledge authority by its immutable UUIDv7
+/// Remote backend/api connections address a Knowledge authority by its immutable UUIDv7
 /// Space UID only. Slugs, filesystem paths, and non-v7 UUIDs are rejected
 /// here with a CLI usage error so a typo can never silently scope a
 /// credential to another Space.
 fn parse_space_uid_arg(value: &str) -> Result<Uuid, String> {
     let parsed = Uuid::parse_str(value.trim())
-        .map_err(|_| "backend/api mode requires SPACE_UID (UUIDv7)".to_string())?;
+        .map_err(|_| "remote backend/api connections require SPACE_UID (UUIDv7)".to_string())?;
     if parsed.get_version() != Some(uuid::Version::SortRand) {
-        return Err("backend/api mode requires SPACE_UID (UUIDv7)".to_string());
+        return Err("remote backend/api connections require SPACE_UID (UUIDv7)".to_string());
     }
     Ok(parsed)
 }

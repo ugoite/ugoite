@@ -1,7 +1,6 @@
 use crate::cli_config::{resolve_command_target, SpaceTarget};
-use crate::config::print_json;
 use crate::http;
-use crate::output::{print_json_table, Format, UsageError};
+use crate::output::{print_json, print_json_table, Format, UsageError};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use ugoite_core::sql_query::{SqlQueryCountRequest, SqlQueryPage, SqlQueryRequest};
@@ -457,7 +456,9 @@ pub async fn run(
                 return Ok(());
             }
             if human_approval.is_some() {
-                anyhow::bail!("--human-approval is only supported in backend/api mode");
+                anyhow::bail!(
+                    "--human-approval is only supported on a remote backend/api connection"
+                );
             }
             let SpaceTarget::Core { root, space_id } = &target else {
                 anyhow::bail!("operation sql.delete does not use the remote transport")

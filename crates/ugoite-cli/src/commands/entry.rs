@@ -295,7 +295,7 @@ async fn create_structured_entry(
     if let SpaceTarget::Remote { space_uid, .. } = target {
         if author.is_some() {
             return Err(UsageError(
-                "entry create --author is only supported in core mode; backend/api derive author from the authenticated identity"
+                "entry create --author is only supported on a local core connection; remote backend/api connections derive author from the authenticated identity"
                     .to_string(),
             )
             .into());
@@ -381,7 +381,7 @@ async fn update_structured_entry(
     if let SpaceTarget::Remote { space_uid, .. } = target {
         if author != "cli" {
             return Err(UsageError(
-                "entry update --author is only supported in core mode; backend/api derive author from the authenticated identity"
+                "entry update --author is only supported on a local core connection; remote backend/api connections derive author from the authenticated identity"
                     .to_string(),
             )
             .into());
@@ -578,7 +578,7 @@ pub async fn run(
             if let SpaceTarget::Remote { space_uid, .. } = &target {
                 if author != "cli" {
                     return Err(UsageError(
-                        "entry delete --author is only supported in core mode; backend/api derive actor from the authenticated identity"
+                        "entry delete --author is only supported on a local core connection; remote backend/api connections derive actor from the authenticated identity"
                             .to_string(),
                     )
                     .into());
@@ -614,7 +614,8 @@ pub async fn run(
             }
             if human_approval.is_some() {
                 return Err(UsageError(
-                    "--human-approval is only supported in backend/api mode".to_string(),
+                    "--human-approval is only supported on a remote backend/api connection"
+                        .to_string(),
                 )
                 .into());
             }
@@ -704,7 +705,7 @@ pub async fn run(
             if let SpaceTarget::Remote { space_uid, .. } = &target {
                 if author != "cli" {
                     return Err(UsageError(
-                        "entry restore --author is only supported in core mode; backend/api derive author from the authenticated identity"
+                        "entry restore --author is only supported on a local core connection; remote backend/api connections derive author from the authenticated identity"
                             .to_string(),
                     )
                     .into());

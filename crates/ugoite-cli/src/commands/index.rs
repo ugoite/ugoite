@@ -1,5 +1,5 @@
 use crate::cli_config::{resolve_command_target, SpaceTarget};
-use crate::config::print_json;
+use crate::output::print_json;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
 use std::time::Duration;
@@ -40,7 +40,7 @@ pub async fn run(
             let target = resolve_command_target(explicit_config, context_override, "index run")?;
             let SpaceTarget::Core { root, space_id } = &target else {
                 bail!(
-                    "index run is not available in backend/api mode in this release; use core mode for local reindexing"
+                    "index run is not available on a remote backend/api connection in this release; use a local core connection for local reindexing"
                 );
             };
             if let Some(component) = component.as_deref() {
@@ -62,7 +62,7 @@ pub async fn run(
             let target = resolve_command_target(explicit_config, context_override, "index stats")?;
             let SpaceTarget::Core { root, space_id } = &target else {
                 bail!(
-                    "index stats is not available in backend/api mode in this release; use core mode for local index stats"
+                    "index stats is not available on a remote backend/api connection in this release; use a local core connection for local index stats"
                 );
             };
             let service = UgoiteService::new_without_background_refresh(root)?;

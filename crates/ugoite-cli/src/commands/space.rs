@@ -1,23 +1,10 @@
-use crate::config::{
-    effective_format, normalize_space_root, operator_for_path, print_json, print_json_table,
-    print_list_table, Format,
-};
 use crate::http;
+use crate::output::{effective_format, print_json, print_json_table, print_list_table, Format};
 use crate::step_up;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
 use std::path::Path;
-use ugoite_iceberg::sample_data::SampleDataOptions;
 use ugoite_iceberg::service::{validate_public_space_patch, UgoiteService};
-
-fn space_slug_from_input(value: &str) -> String {
-    Path::new(value)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.is_empty())
-        .unwrap_or(value)
-        .to_string()
-}
 
 #[derive(Args)]
 pub struct SpaceCmd {
@@ -35,11 +22,8 @@ pub enum SpaceSubCmd {
         long_about = "Create a new Space on a named connection.\n\nThe new Space is automatically registered as the current context by its immutable Space UID. Use --no-context to skip registration, or --connection to select a named connection explicitly.\n\nExamples:\n  ugoite config init\n  ugoite space create demo\n  ugoite space create team-notes --connection remote --name \"Team Notes\""
     )]
     Create {
-        #[arg(
-            value_name = "SPACE_SLUG_OR_PATH",
-            help = "New human-readable Space slug."
-        )]
-        space_path: String,
+        #[arg(value_name = "SPACE_SLUG", help = "New human-readable Space slug.")]
+        space_slug: String,
         #[arg(
             long,
             value_name = "DISPLAY_NAME",
@@ -60,15 +44,9 @@ pub enum SpaceSubCmd {
     },
     /// List spaces
     #[command(
-        long_about = "List all spaces from the selected connection.\n\nUse `ugoite context use NAME` or `--context NAME` to select a connection context. A core connection's configured root is used when ROOT_PATH is omitted."
+        long_about = "List all spaces from the selected connection.\n\nUse `ugoite context use NAME` or `--context NAME` to select a connection context. The selected connection's configured root is used."
     )]
-    List {
-        #[arg(
-            value_name = "ROOT_PATH",
-            help = "Optional core workspace-root override; omit to use the selected connection."
-        )]
-        root_path: Option<String>,
-    },
+    List {},
     /// Get space metadata
     #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Get,
@@ -82,81 +60,11 @@ pub enum SpaceSubCmd {
         #[arg(long)]
         settings: Option<String>,
     },
-    /// Create sample data
-    SampleData {
-        #[arg(
-            value_name = "LOCAL_ROOT",
-            help = "Local workspace root (for example . or /root) where spaces/<SPACE_SLUG> will be created"
-        )]
-        root_path: String,
-        #[arg(
-            value_name = "SPACE_SLUG",
-            help = "Space slug for the generated sample-data space"
-        )]
-        space_id: String,
-        #[arg(
-            long,
-            help = "Sample-data scenario ID (run `ugoite space sample-scenarios` to list options)"
-        )]
-        scenario: Option<String>,
-        #[arg(
-            long,
-            default_value_t = 50,
-            help = "Approximate number of generated entries for the seeded space"
-        )]
-        entry_count: usize,
-        #[arg(long, help = "Deterministic random seed for reproducible sample data")]
-        seed: Option<u64>,
-        /// Create a portable owner principal with this display name.
-        /// A node binding is still required before remote access.
-        #[arg(long)]
-        owner: Option<String>,
-    },
     /// List sample scenarios
     SampleScenarios,
-    /// Create a sample data job
-    SampleJob {
-        #[arg(
-            value_name = "LOCAL_ROOT",
-            help = "Local workspace root (for example . or /root) where spaces/<SPACE_SLUG> will be created"
-        )]
-        root_path: String,
-        #[arg(
-            value_name = "SPACE_SLUG",
-            help = "Space slug for the generated sample-data space"
-        )]
-        space_id: String,
-        #[arg(
-            long,
-            help = "Sample-data scenario ID (run `ugoite space sample-scenarios` to list options)"
-        )]
-        scenario: Option<String>,
-        #[arg(
-            long,
-            default_value_t = 50,
-            help = "Approximate number of generated entries for the seeded space"
-        )]
-        entry_count: usize,
-        #[arg(long, help = "Deterministic random seed for reproducible sample data")]
-        seed: Option<u64>,
-        /// Create a portable owner principal with this display name.
-        /// A node binding is still required before remote access.
-        #[arg(long)]
-        owner: Option<String>,
-    },
-    /// Get sample data job status
-    SampleJobStatus {
-        #[arg(
-            value_name = "LOCAL_ROOT",
-            help = "Local workspace root that stores sample-data job state"
-        )]
-        root_path: String,
-        #[arg(help = "Job ID returned by `ugoite space sample-job`")]
-        job_id: String,
-    },
     /// Test storage connection
     TestConnection { storage_config_json: String },
-    /// List space members (backend/api mode only)
+    /// List space members (remote backend/api connections only)
     Members,
     /// List Space audit events (append-only evidence: event/change/revision/actor only, never paths or secrets)
     AuditEvents {
@@ -169,16 +77,6 @@ pub enum SpaceSubCmd {
         )]
         limit: u64,
     },
-}
-
-fn resolve_sample_owner_display_name(owner: Option<String>) -> Option<String> {
-    match owner {
-        Some(owner_display_name) => {
-            let owner_display_name = owner_display_name.trim().to_string();
-            (!owner_display_name.is_empty()).then_some(owner_display_name)
-        }
-        None => None,
-    }
 }
 
 fn validate_patch_settings(settings: &serde_json::Value) -> Result<()> {
@@ -300,7 +198,7 @@ fn select_connection_credential(
 /// it fails non-zero with the Space UID and config path instead (plan 35).
 #[allow(clippy::too_many_arguments)]
 async fn create_space_canonical(
-    space_path: &str,
+    space_slug: &str,
     display_name: Option<&str>,
     explicit_connection: Option<&str>,
     no_context: bool,
@@ -323,18 +221,9 @@ async fn create_space_canonical(
         .connections
         .get(&connection_name)
         .ok_or_else(|| anyhow::anyhow!("Connection {connection_name:?} is not defined."))?;
-    let requested_slug = space_slug_from_input(space_path);
-    if requested_slug.trim().is_empty() {
-        bail!("Space slug must not be empty");
-    }
-    if space_path.contains("/spaces/") || space_path.contains('/') {
-        // Canonical core creation ignores any positional root: the
-        // connection's root is the authority. Warn instead of silently
-        // using a different directory than the user typed.
-        eprintln!(
-            "Note: canonical `space create` uses connection {connection_name:?} root; the positional path is read as slug {requested_slug:?}."
-        );
-    }
+    ugoite_domain::id::validate_space_id(space_slug)
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    let requested_slug = space_slug.to_string();
     let resolved_name = resolve_create_display_name(&requested_slug, display_name)?;
 
     // Create the Space first (Knowledge mutation), before any config change.
@@ -504,13 +393,13 @@ pub async fn run(
     let fmt = effective_format(cmd.format);
     match cmd.sub {
         SpaceSubCmd::Create {
-            space_path,
+            space_slug,
             name,
             connection,
             no_context,
         } => {
             create_space_canonical(
-                &space_path,
+                &space_slug,
                 name.as_deref(),
                 connection.as_deref(),
                 no_context,
@@ -520,7 +409,7 @@ pub async fn run(
             )
             .await?;
         }
-        SpaceSubCmd::List { root_path } => {
+        SpaceSubCmd::List {} => {
             use crate::cli_config::{load_cli_config, ConnectionConfig};
             let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
             let files = load_cli_config(explicit_config, &cwd)?;
@@ -532,11 +421,7 @@ pub async fn run(
                 .get(&connection_name)
                 .ok_or_else(|| anyhow::anyhow!("Connection {connection_name:?} is not defined."))?;
             let root_path = match &connection.value {
-                ConnectionConfig::Core { root } => root_path
-                    .as_deref()
-                    .map(normalize_space_root)
-                    .filter(|path| !path.is_empty())
-                    .unwrap_or_else(|| normalize_space_root(root)),
+                ConnectionConfig::Core { root } => root.clone(),
                 ConnectionConfig::Backend { url } | ConnectionConfig::Api { url } => {
                     let base =
                         crate::cli_config::model::validate_remote_url(url, "Space list endpoint")?
@@ -652,69 +537,9 @@ pub async fn run(
                 }
             }
         }
-        SpaceSubCmd::SampleData {
-            root_path,
-            space_id,
-            scenario,
-            entry_count,
-            seed,
-            owner,
-        } => {
-            let op = operator_for_path(&root_path)?;
-            let root_uri = format!("file://{}/", root_path.trim_end_matches('/'));
-            let opts = SampleDataOptions {
-                space_id: space_id.clone(),
-                scenario: scenario.unwrap_or_default(),
-                entry_count,
-                seed,
-                owner_display_name: resolve_sample_owner_display_name(owner),
-            };
-            let summary = ugoite_iceberg::sample_data::create_sample_space_with_terminal_progress(
-                &op, &root_uri, &opts,
-            )
-            .await?;
-            print_json(&serde_json::json!({
-                "created": true,
-                "id": summary.space_id,
-                "slug": space_id,
-                "scenario": summary.scenario,
-                "entry_count": summary.entry_count,
-                "form_count": summary.form_count,
-                "forms": summary.forms,
-            }));
-        }
         SpaceSubCmd::SampleScenarios => {
             let scenarios = ugoite_iceberg::sample_data::list_sample_scenarios();
             print_json(&scenarios);
-        }
-        SpaceSubCmd::SampleJob {
-            root_path,
-            space_id,
-            scenario,
-            entry_count,
-            seed,
-            owner,
-        } => {
-            let op = operator_for_path(&root_path)?;
-            let root_uri = format!("file://{}/", root_path.trim_end_matches('/'));
-            let opts = SampleDataOptions {
-                space_id: space_id.clone(),
-                scenario: scenario.unwrap_or_default(),
-                entry_count,
-                seed,
-                owner_display_name: resolve_sample_owner_display_name(owner),
-            };
-            let job = ugoite_iceberg::sample_data::create_sample_space_job_and_wait(
-                &op, &root_uri, &opts,
-            )
-            .await?;
-            print_json(&job);
-        }
-        SpaceSubCmd::SampleJobStatus { root_path, job_id } => {
-            let op = operator_for_path(&root_path)?;
-            let job = ugoite_iceberg::sample_data::get_sample_space_job(&op, &job_id).await?;
-            let v = serde_json::to_value(job)?;
-            print_json(&v);
         }
         SpaceSubCmd::TestConnection {
             storage_config_json,
