@@ -227,7 +227,6 @@ describe("draft-values", () => {
 
   it("rejects invalid AssetReference through the shared validator", async () => {
     const result = await validateEntryDraftViaWasm(typedForm(), {
-      title: "T",
       tags: [],
       fields: {
         Title: "T",

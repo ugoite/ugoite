@@ -738,7 +738,6 @@ mod tests {
     fn entry_validate_draft_preserves_field_diagnostics() {
         let form = entry_test_form();
         let draft = serde_json::json!({
-            "title": "T",
             "form_name": "Note",
             "tags": [],
             "fields": {"Body": "hello", "Done": "maybe", "Count": 1}
@@ -775,12 +774,11 @@ mod tests {
         let form = entry_test_form();
         let malformed = vec![
             serde_json::json!({"form_name": 42, "fields": {}}),
-            serde_json::json!({"title": "T", "tags": "not-an-array", "fields": {}}),
-            serde_json::json!({"title": "T", "tags": [1, 2], "fields": {}}),
-            serde_json::json!({"title": "T", "fields": "oops"}),
-            serde_json::json!({"title": "T", "fields": {}, "extra_attributes": "oops"}),
+            serde_json::json!({"tags": "not-an-array", "fields": {}}),
+            serde_json::json!({"tags": [1, 2], "fields": {}}),
+            serde_json::json!({"fields": "oops"}),
+            serde_json::json!({"fields": {}, "extra_attributes": "oops"}),
             serde_json::json!({
-                "title": "T",
                 "form_name": "A",
                 "form": "B",
                 "fields": {}
