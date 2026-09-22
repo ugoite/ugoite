@@ -844,6 +844,26 @@ export const handlers = [
     return HttpResponse.json({ status: "deleted" });
   }),
 
+  // Stateless SQL query
+  testHttp.post(
+    "/spaces/:spaceId/sql/query",
+    async ({ request }) => {
+      const body = (await request.json()) as {
+        continuation?: string;
+      };
+      return HttpResponse.json({
+        columns: ["value"],
+        rows: [[body.continuation ? "second" : "first"]],
+        has_more: !body.continuation,
+        ...(body.continuation ? {} : { next: "test-continuation" }),
+      });
+    },
+  ),
+  testHttp.post(
+    "/spaces/:spaceId/sql/query/count",
+    () => HttpResponse.json({ count: 2 }),
+  ),
+
   // SQL Sessions
   testHttp.post(
     "/spaces/:spaceId/sql-sessions",

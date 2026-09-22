@@ -1582,7 +1582,7 @@ requirements:
 
   - id: REQ-FE-062
     title: Saved SQL Detail Route Actions
-    description: The saved SQL detail route loads and presents the saved query text and metadata, then exposes only the supported variable-free run or variable-input flow.
+    description: The saved SQL detail route loads and presents the saved query text and metadata, then exposes a stateless variable-free result flow or the variable-input flow.
     priority: medium
     status: implemented
     criteria:
@@ -1592,13 +1592,13 @@ requirements:
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
       - id: supported-actions
         kind: behavior
-        statement: A variable-free saved query runs through a SQL session and routes to Entry results, while a query with variables links to the existing variable-input flow.
+        statement: A variable-free saved query uses the canonical stateless SQL query API and routes to SQL results, while a query with variables links to the existing variable-input flow.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
     bindings:
       - id: saved-sql-detail-verification
         role: verification
         facet: verification
-        responsibility: Verify saved SQL detail rendering, read-only query review, variable-input navigation, variable-free session execution, and the browser journey through exact frontend tests.
+        responsibility: Verify saved SQL detail rendering, read-only query review, variable-input navigation, stateless variable-free execution, and the browser journey through exact frontend tests.
         targets:
           - id: detail-summary
             adapter: typescript
@@ -1616,25 +1616,25 @@ requirements:
           - id: detail-run
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
-            selector: { kind: test, name: "REQ-FE-062: saved SQL detail runs variable-free queries through SQL sessions" }
+            selector: { kind: test, name: "REQ-FE-062: saved SQL detail routes variable-free queries to stateless results" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-062#criterion.supported-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail runs variable-free queries through SQL sessions" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail routes variable-free queries to stateless results" } }
           - id: browser-detail
             adapter: typescript
             path: e2e/saved-sql-route.test.ts
-            selector: { kind: test, name: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to entries" }
+            selector: { kind: test, name: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to stateless results" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-062#criterion.detail-summary
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to entries" } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to stateless results" } }
               - kind: verifies
                 criterion: REQ-FE-062#criterion.supported-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to entries" } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to stateless results" } }
 
   - id: REQ-FE-066
     title: Auth-Aware Global Navigation Session Controls

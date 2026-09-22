@@ -367,6 +367,29 @@ export interface SqlUpdatePayload {
   parent_revision_id: string;
 }
 
+/** Request for one bounded page of the stateless SQL read surface. */
+export interface SqlQueryRequest {
+  sql: string;
+  parameters?: Record<string, unknown>;
+  parameter_types?: Record<string, string>;
+  limit: number;
+  continuation?: string;
+}
+
+/** A page returned by the stateless SQL read surface. */
+export interface SqlQueryPage {
+  columns: string[];
+  rows: unknown[];
+  has_more: boolean;
+  next?: string;
+}
+
+export interface SqlQueryCountRequest {
+  sql: string;
+  parameters?: Record<string, unknown>;
+  parameter_types?: Record<string, string>;
+}
+
 export type SqlMetadata =
   | {
     searchCriteria: {

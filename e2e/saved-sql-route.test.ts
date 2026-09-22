@@ -38,7 +38,7 @@ test.describe("Saved SQL route", () => {
       .toHaveAttribute("href", `/spaces/${spaceId}/dashboard`);
   });
 
-  test("REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to entries", async ({ page, request }) => {
+  test("REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to stateless results", async ({ page, request }) => {
     await ensureDefaultForm(request, spaceId);
     const relation = await getDefaultFormRelation(request, spaceId);
     const sqlCreate = await request.post(
@@ -69,7 +69,7 @@ test.describe("Saved SQL route", () => {
       );
       await page.getByRole("button", { name: "Run Query" }).click();
       await expect(page).toHaveURL(
-        new RegExp(`/spaces/${spaceId}/entries\\?session=`),
+        new RegExp(`/spaces/${spaceId}/sql/${savedSql.id}/run`),
       );
     } finally {
       await request.delete(
@@ -107,7 +107,7 @@ test.describe("Saved SQL route", () => {
       });
       await page.getByRole("button", { name: "Run Query" }).click();
       await expect(page).toHaveURL(
-        new RegExp(`/spaces/${spaceId}/entries\\?session=`),
+        new RegExp(`/spaces/${spaceId}/sql/${savedSqlId}/run`),
       );
     } finally {
       if (savedSqlId) {

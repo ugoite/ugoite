@@ -1,7 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
-import { http, HttpResponse } from "msw";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
 import SpaceSqlDetailRoute from "./[sql_id]";
 import { formatDateLabel } from "~/lib/date-format";
 import {
@@ -10,9 +9,7 @@ import {
   seedSpace,
   seedSqlEntry,
 } from "~/test/mocks/handlers";
-import { server } from "~/test/mocks/server";
 import type { Space } from "~/lib/types";
-import { testApiUrl } from "~/test/http-origin";
 
 const navigateMock = vi.fn();
 const entryRelation = "form_00000000000000000000000000000001";
@@ -137,7 +134,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       .not.toBeInTheDocument();
   });
 
-  it("REQ-FE-062: saved SQL detail runs variable-free queries through SQL sessions", async () => {
+  it("REQ-FE-062: saved SQL detail routes variable-free queries to stateless results", async () => {
     seedForm("default", {
       name: "Entry",
       sql_relation: entryRelation,
@@ -155,29 +152,11 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       updated_at: "2025-03-02T00:00:00Z",
       revision_id: "rev-1",
     });
-    server.use(
-      http.post(
-        testApiUrl("/spaces/default/sql-sessions"),
-        async ({ request }) => {
-          const body = (await request.json()) as { sql?: string };
-          expect(body.sql).toBe(
-            `SELECT * FROM "${entryRelation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 1`,
-          );
-          return HttpResponse.json(
-            { id: "session-1", status: "ready", error: null },
-            { status: 201 },
-          );
-        },
-      ),
-    );
-
     render(() => <SpaceSqlDetailRoute />);
     fireEvent.click(await screen.findByRole("button", { name: "Run Query" }));
 
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith(
-        "/spaces/default/entries?session=session-1",
-      );
-    });
+    expect(navigateMock).toHaveBeenCalledWith(
+      "/spaces/default/sql/saved-query/run",
+    );
   });
 });

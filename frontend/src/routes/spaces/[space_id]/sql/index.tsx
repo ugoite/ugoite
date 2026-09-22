@@ -9,8 +9,7 @@ import {
   RowListLink,
 } from "~/components/RowList";
 import { UiIcon } from "~/components/UiIcon";
-import { normalizeSqlVariables } from "~/lib/sql";
-import { sqlApi, sqlSessionApi } from "~/lib/ugoite-client";
+import { sqlApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { displaySqlName } from "~/lib/sql-metadata";
@@ -29,7 +28,6 @@ export default function SpaceSqlIndexRoute() {
   const [runningQueryId, setRunningQueryId] = createSignal<string | null>(
     null,
   );
-  const [runError, setRunError] = createSignal<string | null>(null);
 
   const savedQueries = () =>
     (queries() ?? []).filter((query) => query.kind === "user-query");
@@ -47,35 +45,12 @@ export default function SpaceSqlIndexRoute() {
       return;
     }
 
-    setRunError(null);
     setRunningQueryId(query.id);
-    try {
-      const session = await sqlSessionApi.create(
-        spaceId(),
-        normalizeSqlVariables(query.sql).sql,
-      );
-      if (session.status === "failed") {
-        setRunError(
-          formatUserFacingError(
-            session.error,
-            "searchPage.error.searchFailed",
-            "sql_session.create",
-          ),
-        );
-        return;
-      }
-      navigate(
-        `/spaces/${encodeURIComponent(spaceId())}/entries?session=${
-          encodeURIComponent(session.id)
-        }`,
-      );
-    } catch (error) {
-      setRunError(
-        formatUserFacingError(error, "searchPage.error.savedSearchFailed"),
-      );
-    } finally {
-      setRunningQueryId(null);
-    }
+    navigate(
+      `/spaces/${encodeURIComponent(spaceId())}/sql/${
+        encodeURIComponent(query.id)
+      }/run`,
+    );
   };
 
   return (
@@ -184,9 +159,6 @@ export default function SpaceSqlIndexRoute() {
               </p>
             </div>
           </div>
-          <Show when={runError()}>
-            <p class="mt-3 text-sm ui-text-danger">{runError()}</p>
-          </Show>
           <div
             class="rowList sqlHistoryRows"
             role="list"

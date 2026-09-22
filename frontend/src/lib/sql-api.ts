@@ -1,5 +1,12 @@
 import { normalizeTimestamp } from "./date-format";
-import type { SqlCreatePayload, SqlEntry, SqlUpdatePayload } from "./types";
+import type {
+  SqlCreatePayload,
+  SqlEntry,
+  SqlQueryCountRequest,
+  SqlQueryPage,
+  SqlQueryRequest,
+  SqlUpdatePayload,
+} from "./types";
 import { protocolFetch } from "./ugoite-client/protocol";
 
 type SqlMutationResponse = {
@@ -60,5 +67,28 @@ export const sqlApi = {
       space_id: spaceId,
       sql_id: sqlId,
     });
+  },
+
+  async query(
+    spaceId: string,
+    request: SqlQueryRequest,
+  ): Promise<SqlQueryPage> {
+    return await protocolFetch<SqlQueryPage>(
+      "sql.query",
+      { space_id: spaceId },
+      request,
+    );
+  },
+
+  async count(
+    spaceId: string,
+    request: SqlQueryCountRequest,
+  ): Promise<number> {
+    const payload = await protocolFetch<{ count: number }>(
+      "sql.query.count",
+      { space_id: spaceId },
+      request,
+    );
+    return payload.count;
   },
 };

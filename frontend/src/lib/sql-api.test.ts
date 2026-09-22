@@ -167,6 +167,39 @@ describe("sqlApi", () => {
     await expect(sqlApi.delete("sql-ws", created.id)).resolves.toBeUndefined();
   });
 
+  it("uses the stateless SQL page contract and preserves continuation", async () => {
+    const first = await sqlApi.query("sql-ws", {
+      sql: "SELECT value FROM demo ORDER BY value",
+      parameters: { status: "open" },
+      parameter_types: { status: "string" },
+      limit: 1,
+    });
+    expect(first).toEqual({
+      columns: ["value"],
+      rows: [["first"]],
+      has_more: true,
+      next: "test-continuation",
+    });
+
+    const second = await sqlApi.query("sql-ws", {
+      sql: "SELECT value FROM demo ORDER BY value",
+      parameters: { status: "open" },
+      parameter_types: { status: "string" },
+      limit: 1,
+      continuation: first.next,
+    });
+    expect(second.has_more).toBe(false);
+    expect(second.rows).toEqual([["second"]]);
+  });
+
+  it("keeps SQL count as an explicit separate request", async () => {
+    await expect(sqlApi.count("sql-ws", {
+      sql: "SELECT value FROM demo ORDER BY value",
+      parameters: { status: "open" },
+      parameter_types: { status: "string" },
+    })).resolves.toBe(2);
+  });
+
   it("throws on list failure", async () => {
     server.use(
       http.get(

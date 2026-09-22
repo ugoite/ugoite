@@ -170,12 +170,12 @@ requirements:
           - id: history-case
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
-            selector: { kind: test, name: 'keeps search history in Saved and preserves direct rerun actions' }
+            selector: { kind: test, name: 'keeps search history in Saved and routes direct reruns to stateless results' }
             claims:
               - kind: verifies
                 criterion: REQ-SRCH-005#criterion.structured-search-reuse
                 covers: [FEAT-SRCH-001#binding.frontend/target.search-route]
-                runner: { runner: frontend-vitest, arguments: { test: "keeps search history in Saved and preserves direct rerun actions" } }
+                runner: { runner: frontend-vitest, arguments: { test: "keeps search history in Saved and routes direct reruns to stateless results" } }
   - id: REQ-SRCH-006
     title: Structured query operation
     description: Users and operators can submit a structured query for a Space and receive the matching results through the supported Ugoite interfaces.

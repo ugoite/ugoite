@@ -3,10 +3,9 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SpaceQueryVariablesRoute from "./variables";
 
-const { navigateMock, sqlGetMock, sessionCreateMock } = vi.hoisted(() => ({
+const { navigateMock, sqlGetMock } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   sqlGetMock: vi.fn(),
-  sessionCreateMock: vi.fn(),
 }));
 
 vi.mock("@solidjs/router", () => ({
@@ -32,7 +31,6 @@ vi.mock("@solidjs/router", () => ({
 
 vi.mock("~/lib/ugoite-client", () => ({
   sqlApi: { get: sqlGetMock },
-  sqlSessionApi: { create: sessionCreateMock },
 }));
 
 describe("/spaces/:space_id/queries/:query_id/variables", () => {
@@ -57,11 +55,6 @@ describe("/spaces/:space_id/queries/:query_id/variables", () => {
       updated_at: "2026-01-02T00:00:00Z",
       revision_id: "rev-1",
     });
-    sessionCreateMock.mockResolvedValue({
-      id: "variable-session",
-      status: "ready",
-      error: null,
-    });
   });
 
   it("runs with typed parameters and opens the shared result surface", async () => {
@@ -85,30 +78,30 @@ describe("/spaces/:space_id/queries/:query_id/variables", () => {
     fireEvent.click(screen.getByRole("button", { name: "Run" }));
 
     await waitFor(() => {
-      expect(sessionCreateMock).toHaveBeenCalledWith(
-        "default",
-        "SELECT * FROM form_entry WHERE Body = $title AND enabled = $enabled AND count = $count AND score = $score AND day = $day AND happened = $happened AND optional = $optional ORDER BY _ugoite_id",
-        {
-          title: "Alpha",
-          enabled: true,
-          count: 3,
-          score: 1.5,
-          day: "2026-08-10",
-          happened: "2026-08-10T12:34:56Z",
-          optional: null,
-        },
-        {
-          title: "string",
-          enabled: "boolean",
-          count: "integer",
-          score: "float",
-          day: "date",
-          happened: "timestamp",
-          optional: "string",
-        },
-      );
       expect(navigateMock).toHaveBeenCalledWith(
-        "/spaces/default/entries?session=variable-session",
+        "/spaces/default/sql/saved-vars/run",
+        {
+          state: {
+            parameters: {
+              title: "Alpha",
+              enabled: true,
+              count: 3,
+              score: 1.5,
+              day: "2026-08-10",
+              happened: "2026-08-10T12:34:56Z",
+              optional: null,
+            },
+            parameterTypes: {
+              title: "string",
+              enabled: "boolean",
+              count: "integer",
+              score: "float",
+              day: "date",
+              happened: "timestamp",
+              optional: "string",
+            },
+          },
+        },
       );
     });
   });

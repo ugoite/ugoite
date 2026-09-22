@@ -1,13 +1,11 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
-import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
-import { ButtonSpinner } from "~/components/ButtonSpinner";
+import { createMemo, For, Match, Show, Switch } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { SqlQueryEditor } from "~/components";
 import { formatDateLabel } from "~/lib/date-format";
 import { buildSqlSchema } from "~/lib/sql";
 import { formApi, sqlApi } from "~/lib/ugoite-client";
-import { sqlSessionApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { displaySqlName } from "~/lib/sql-metadata";
@@ -25,8 +23,6 @@ export default function SpaceSqlDetailRoute() {
   const navigate = useNavigate();
   const spaceId = () => params.space_id;
   const sqlId = () => params.sql_id;
-  const [runError, setRunError] = createSignal<string | null>(null);
-  const [running, setRunning] = createSignal(false);
 
   const [entry] = createResource(async () => sqlApi.get(spaceId(), sqlId()));
   const [forms] = createResource(async () => formApi.list(spaceId()));
@@ -34,36 +30,17 @@ export default function SpaceSqlDetailRoute() {
   const queryVariablesHref = () =>
     `/spaces/${encodeURIComponent(spaceId())}/queries/${encodeURIComponent(sqlId())}/variables`;
 
-  const handleRun = async () => {
+  const handleRun = () => {
     const current = entry();
-    if (!current || variableCount() > 0 || running()) {
+    if (!current || variableCount() > 0) {
       return;
     }
 
-    setRunError(null);
-    setRunning(true);
-    try {
-      const session = await sqlSessionApi.create(spaceId(), current.sql);
-      if (session.status === "failed") {
-        setRunError(
-          formatUserFacingError(
-            session.error,
-            "querySession.failed",
-            "sql_session.create",
-          ),
-        );
-        return;
-      }
-      navigate(
-        `/spaces/${encodeURIComponent(spaceId())}/entries?session=${
-          encodeURIComponent(session.id)
-        }`,
-      );
-    } catch (err) {
-      setRunError(formatUserFacingError(err, "querySession.failed"));
-    } finally {
-      setRunning(false);
-    }
+    navigate(
+      `/spaces/${encodeURIComponent(spaceId())}/sql/${
+        encodeURIComponent(sqlId())
+      }/run`,
+    );
   };
 
   return (
@@ -184,9 +161,6 @@ export default function SpaceSqlDetailRoute() {
                   </Show>
                 </div>
 
-                <Show when={runError()}>
-                  <p class="text-sm ui-text-danger">{runError()}</p>
-                </Show>
               </>
             )}
           </Match>
@@ -197,13 +171,8 @@ export default function SpaceSqlDetailRoute() {
             <button
               type="button"
               class="btn primary"
-              onClick={() => void handleRun()}
-              disabled={running()}
-              aria-busy={running() || undefined}
+              onClick={handleRun}
             >
-              <Show when={running()}>
-                <ButtonSpinner />
-              </Show>
               {t("sqlPage.runQuery")}
             </button>
           </Show>

@@ -2,8 +2,7 @@ import { useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
-import { sqlApi, sqlSessionApi } from "~/lib/ugoite-client";
-import { normalizeSqlVariables } from "~/lib/sql";
+import { sqlApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { displaySqlName } from "~/lib/sql-metadata";
@@ -63,16 +62,11 @@ export default function SpaceQueryVariablesRoute() {
           return [variable.name, value];
         }),
       );
-      const session = await sqlSessionApi.create(
-        spaceId(),
-        normalizeSqlVariables(current.sql).sql,
-        parameters,
-        parameterTypes,
-      );
       navigate(
-        `/spaces/${encodeURIComponent(spaceId())}/entries?session=${
-          encodeURIComponent(session.id)
-        }`,
+        `/spaces/${encodeURIComponent(spaceId())}/sql/${
+          encodeURIComponent(queryId())
+        }/run`,
+        { state: { parameters, parameterTypes } },
       );
     } catch (err) {
       setError(formatUserFacingError(err, "querySession.failed"));
