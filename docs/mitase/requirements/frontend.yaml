@@ -957,13 +957,13 @@ requirements:
 
   - id: REQ-FE-019
     title: Multi-column Sorting
-    description: FormTable supports sorting displayed fields, including title and Form-defined properties, with a visible sort state.
+    description: FormTable sends capability-approved multi-column sort clauses to the canonical EntryQuery and reflects the returned page.
     priority: medium
     status: implemented
     criteria:
       - id: multi-column-sort
         kind: behavior
-        statement: FormTable cycles a selected column through ascending, descending, and cleared sort states while retaining the visible records.
+        statement: FormTable cycles a selected field through ascending, descending, and cleared states while preserving the ordered EntryQuery sort clauses and fixed page semantics.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
     bindings:
       - id: sorting-verification
@@ -974,22 +974,22 @@ requirements:
           - id: header-sorting
             adapter: typescript
             path: frontend/src/components/FormTable.test.tsx
-            selector: { kind: test, name: "REQ-FE-019: sorts entries when clicking headers" }
+            selector: { kind: test, name: "REQ-FE-019: sends multi-column sort to EntryQuery" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-019#criterion.multi-column-sort
                 covers: [FEAT-FE-005#binding.frontend/target.form-table]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-FE-019: sorts entries when clicking headers" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-FE-019: sends multi-column sort to EntryQuery" } }
 
   - id: REQ-FE-020
-    title: Hybrid Filtering
-    description: FormTable provides global keyword filtering and column-specific filters for the currently viewed records.
+    title: Canonical EntryQuery Filtering
+    description: FormTable sends global text and capability-approved column filters through the canonical EntryQuery controller.
     priority: medium
     status: implemented
     criteria:
-      - id: hybrid-filtering
+      - id: entry-query-filtering
         kind: behavior
-        statement: FormTable combines a global keyword filter with column-specific filtering to narrow visible records.
+        statement: FormTable combines text and typed field filters in one EntryQuery request; filtering is applied before the page is rendered.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
     bindings:
       - id: filtering-verification
@@ -1000,37 +1000,28 @@ requirements:
           - id: global-filter
             adapter: typescript
             path: frontend/src/components/FormTable.test.tsx
-            selector: { kind: test, name: "REQ-FE-020: filters entries globally" }
+            selector: { kind: test, name: "REQ-FE-020: sends global text search to EntryQuery" }
             claims:
               - kind: verifies
-                criterion: REQ-FE-020#criterion.hybrid-filtering
+                criterion: REQ-FE-020#criterion.entry-query-filtering
                 covers: [FEAT-FE-005#binding.frontend/target.form-table]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-FE-020: filters entries globally" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-FE-020: sends global text search to EntryQuery" } }
           - id: column-filter
             adapter: typescript
             path: frontend/src/components/FormTable.test.tsx
             selector: { kind: test, name: "column filter: updateColumnFilter via input" }
             claims:
               - kind: verifies
-                criterion: REQ-FE-020#criterion.hybrid-filtering
+                criterion: REQ-FE-020#criterion.entry-query-filtering
                 covers: [FEAT-FE-005#binding.frontend/target.form-table]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "column filter: updateColumnFilter via input" } }
-          - id: query-index
-            adapter: typescript
-            path: frontend/src/lib/search-store.test.ts
-            selector: { kind: test, name: "query index returns filtered results" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-020#criterion.hybrid-filtering
-                covers: [FEAT-FE-005#binding.frontend/target.search-store]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/search-store.test.ts, test: "query index returns filtered results" } }
           - id: combined-filter
             adapter: typescript
             path: frontend/src/components/FormTable.test.tsx
             selector: { kind: test, name: "REQ-FE-020: combines global and column filters" }
             claims:
               - kind: verifies
-                criterion: REQ-FE-020#criterion.hybrid-filtering
+                criterion: REQ-FE-020#criterion.entry-query-filtering
                 covers: [FEAT-FE-005#binding.frontend/target.form-table]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-FE-020: combines global and column filters" } }
 

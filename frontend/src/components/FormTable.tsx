@@ -1,4 +1,5 @@
 import {
+  createEffect,
   createMemo,
   createSignal,
   For,
@@ -8,13 +9,21 @@ import {
   untrack,
 } from "solid-js";
 import type { EntryRecord, Form } from "~/lib/types";
-import { createResource } from "~/lib/recoverable-resource";
 import {
   encodeSpreadsheetCsv,
   entryApi,
-  searchApi,
   spreadsheetCsvRequestBytes,
 } from "~/lib/ugoite-client";
+import {
+  createEntryQueryController,
+  type EntryFieldCapability,
+  type EntryFieldRef,
+  type EntryFilter,
+  type EntryProjection,
+  type EntryQueryCapabilities,
+  type EntryQueryResult,
+  systemEntryCapabilities,
+} from "~/lib/entry-query";
 import { t } from "~/lib/i18n";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { formatDateLabel } from "~/lib/date-format";
@@ -32,96 +41,6 @@ interface FormTableProps {
 }
 
 type SortDirection = "asc" | "desc" | null;
-
-/** Helper to filter entries by ID or properties */
-function filterEntries(
-  entries: EntryRecord[],
-  fields: string[],
-  query: string,
-) {
-  if (!query) return entries;
-  const text = query.toLowerCase();
-  return entries.filter((entry) => {
-    /* v8 ignore start */
-    if (entry.id.toLowerCase().includes(text)) return true;
-    for (const field of fields) {
-      const val = formatValueForDisplay(entry.properties?.[field], "en-US", "")
-        .toLowerCase();
-      if (val.includes(text)) return true;
-    }
-    /* v8 ignore stop */
-    return false;
-  });
-}
-
-/** Helper for column-specific filtering */
-function applyColumnFilters(
-  entries: EntryRecord[],
-  filters: Record<string, string>,
-) {
-  /* v8 ignore next */
-  const activeFilters = Object.entries(filters).filter(([_, val]) => !!val);
-  if (activeFilters.length === 0) return entries;
-
-  return entries.filter((entry) => {
-    for (const [field, filter] of activeFilters) {
-      const filterLower = filter.toLowerCase();
-      let val = "";
-      /* v8 ignore start */
-      if (field === "id") val = entry.id;
-      else if (field === "updated_at") {
-        val = formatDateLabel(entry.updated_at);
-      } else {
-        val = formatValueForDisplay(entry.properties?.[field], "en-US", "");
-      }
-      /* v8 ignore stop */
-
-      if (!val.toLowerCase().includes(filterLower)) return false;
-    }
-    return true;
-  });
-}
-
-function sortEntries(
-  entries: EntryRecord[],
-  field: string,
-  direction: SortDirection,
-) {
-  if (!field || !direction) return entries;
-  return [...entries].sort((a, b) => {
-    let valA: string | number;
-    let valB: string | number;
-
-    if (field === "id") {
-      /* v8 ignore start */
-      valA = a.id;
-      valB = b.id;
-      /* v8 ignore stop */
-      /* v8 ignore start */
-    } else if (field === "updated_at") {
-      valA = a.updated_at;
-      valB = b.updated_at;
-    } else {
-      const propertyA = a.properties?.[field];
-      const propertyB = b.properties?.[field];
-      valA = typeof propertyA === "number"
-        ? propertyA
-        : formatValueForDisplay(propertyA, "en-US", "");
-      valB = typeof propertyB === "number"
-        ? propertyB
-        : formatValueForDisplay(propertyB, "en-US", "");
-    }
-    /* v8 ignore stop */
-
-    /* v8 ignore start */
-    if (valA < valB) return direction === "asc" ? -1 : 1;
-    if (valA > valB) return direction === "asc" ? 1 : -1;
-    /* v8 ignore stop */
-    /* v8 ignore start */
-    return 0;
-    /* v8 ignore stop */
-  });
-}
 
 function SortIcon(props: { active: boolean; direction: SortDirection }) {
   /* v8 ignore start */
@@ -218,7 +137,7 @@ export function chunkCsvRowsForExport(
   dataRows: readonly (readonly string[])[],
   limitBytes: number = CSV_EXPORT_WASM_JSON_LIMIT_BYTES,
 ): readonly (readonly string[])[][] {
-  const chunks: readonly (readonly string[])[][] = [];
+  const chunks: (readonly (readonly string[])[])[] = [];
   let current: (readonly string[])[] = [];
   for (const row of dataRows) {
     const candidate = [...current, row];
@@ -241,6 +160,29 @@ export function chunkCsvRowsForExport(
   return chunks;
 }
 
+/** Split data-only rows into bounded WASM requests (without a repeated header). */
+export function chunkCsvDataRowsForExport(
+  dataRows: readonly (readonly string[])[],
+  limitBytes: number = CSV_EXPORT_WASM_JSON_LIMIT_BYTES,
+): readonly (readonly string[])[][] {
+  const chunks: (readonly (readonly string[])[])[] = [];
+  let current: (readonly string[])[] = [];
+  for (const row of dataRows) {
+    const candidate = [...current, row];
+    if (
+      current.length > 0 &&
+      spreadsheetCsvRequestBytes(candidate) > limitBytes
+    ) {
+      chunks.push(current);
+      current = [row];
+      continue;
+    }
+    current = candidate;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
+
 /** Encode all rows in bounded WASM requests and join with CRLF. */
 export async function encodeSpreadsheetCsvChunked(
   headers: readonly string[],
@@ -255,6 +197,39 @@ export async function encodeSpreadsheetCsvChunked(
   }
   return parts.join("\r\n");
 }
+
+/** Encode data-only rows in bounded WASM requests without duplicating headers. */
+export async function encodeSpreadsheetCsvDataRowsChunked(
+  dataRows: readonly (readonly string[])[],
+  limitBytes: number = CSV_EXPORT_WASM_JSON_LIMIT_BYTES,
+): Promise<string> {
+  const chunks = chunkCsvDataRowsForExport(dataRows, limitBytes);
+  const parts: string[] = [];
+  for (const chunk of chunks) {
+    parts.push(await encodeSpreadsheetCsv(chunk));
+  }
+  return parts.join("\r\n");
+}
+
+const entryQueryDate = (micros: number): string =>
+  new Date(micros / 1_000).toISOString();
+
+const entryResultToRecord = (
+  result: EntryQueryResult,
+  formName: string,
+): EntryRecord => ({
+  id: result.id,
+  form: formName,
+  created_at: entryQueryDate(result.created_at_micros),
+  updated_at: entryQueryDate(result.updated_at_micros),
+  properties: result.properties && typeof result.properties === "object"
+    ? result.properties as Record<string, unknown>
+    : {},
+  tags: [],
+});
+
+const sameField = (left: EntryFieldRef, right: EntryFieldRef): boolean =>
+  JSON.stringify(left) === JSON.stringify(right);
 
 export function FormTable(props: FormTableProps) {
   let sortMenuRef: HTMLDivElement | undefined;
@@ -280,9 +255,6 @@ export function FormTable(props: FormTableProps) {
     }
   };
   // State for filtering and sorting
-  const [globalFilter, setGlobalFilter] = createSignal("");
-  const [sortField, setSortField] = createSignal<string | null>(null);
-  const [sortDirection, setSortDirection] = createSignal<SortDirection>(null);
   const [columnFilters, setColumnFilters] = createSignal<
     Record<string, string>
   >({});
@@ -303,18 +275,6 @@ export function FormTable(props: FormTableProps) {
     return !structured && isPlainEditableValue(value);
   };
 
-  const [entries, { refetch }] = createResource(
-    () => {
-      /* v8 ignore start */
-      if (!props.spaceId || !props.entryForm?.name) return false;
-      /* v8 ignore stop */
-      return { id: props.spaceId, formName: props.entryForm.name };
-    },
-    async ({ id, formName }) => {
-      return await searchApi.query(id, { form: formName });
-    },
-  );
-
   const fields = createMemo(
     () =>
       /* v8 ignore start */
@@ -322,42 +282,195 @@ export function FormTable(props: FormTableProps) {
     /* v8 ignore stop */
   );
 
-  const sortableFields = createMemo(() => ["id", ...fields(), "updated_at"]);
+  const formScope = createMemo(() => ({
+    kind: "form" as const,
+    // Form ids are durable semantic identity. Name is only a fixture fallback
+    // for incomplete client-side definitions; server responses always carry
+    // the stable id.
+    form_id: props.entryForm.id ?? props.entryForm.name,
+  }));
 
-  const processedEntries = createMemo(() => {
-    const currentEntries = entries();
-    if (!currentEntries) return [] as EntryRecord[];
+  const capabilities = createMemo<EntryQueryCapabilities>(() => ({
+    scope: formScope(),
+    fields: [
+      ...systemEntryCapabilities(formScope()).fields,
+      ...Object.values(props.entryForm.fields ?? {})
+        .map((field) => field.query_capability)
+        .filter((field): field is NonNullable<typeof field> =>
+          field !== undefined
+        ),
+    ],
+  }));
 
-    // 1. Global Filter
-    let result = filterEntries([...currentEntries], fields(), globalFilter());
-
-    // 2. Column Filters
-    result = applyColumnFilters(result, columnFilters());
-
-    // 3. Sorting
-    return sortEntries(result, sortField() || "", sortDirection());
+  const projection = createMemo<EntryProjection>(() => {
+    const projected = capabilities().fields
+      .filter((field) => field.projectable)
+      .map((field) => field.field);
+    return projected.length > 0
+      ? { kind: "fields", fields: projected }
+      : { kind: "preview" };
   });
 
+  const controller = createEntryQueryController(
+    () => props.spaceId,
+    { scope: formScope(), filters: [], sort: [] },
+    projection(),
+    50,
+    (spaceId, request) => entryApi.query(spaceId, request),
+  );
+
+  createEffect(() => {
+    const currentQuery = untrack(() => controller.query());
+    void controller.configure(
+      {
+        scope: formScope(),
+        filters: currentQuery.filters,
+        sort: currentQuery.sort,
+      },
+      projection(),
+    );
+  });
+
+  const queryRows = createMemo(() => controller.rows());
+  const queryLoading = createMemo(() => controller.loading());
+  const queryError = createMemo(() => controller.error());
+  const entries = createMemo(() =>
+    queryRows().map((entry) => entryResultToRecord(entry, props.entryForm.name))
+  );
+  const processedEntries = entries;
+
+  const capabilityForField = (
+    field: string,
+  ): EntryFieldCapability | undefined => {
+    if (field === "updated_at") {
+      return capabilities().fields.find((candidate) =>
+        candidate.field.kind === "updated_at"
+      );
+    }
+    return capabilities().fields.find((candidate) =>
+      candidate.name === field && candidate.field.kind === "property"
+    );
+  };
+
+  const fieldRefForName = (field: string): EntryFieldRef | undefined =>
+    capabilityForField(field)?.field;
+
+  const fieldNameForRef = (field: EntryFieldRef): string | null => {
+    if (field.kind === "updated_at") return "updated_at";
+    if (field.kind !== "property") return null;
+    return capabilities().fields.find((candidate) =>
+      sameField(candidate.field, field)
+    )?.name ?? null;
+  };
+
+  const sortableFields = createMemo(() =>
+    fields().filter((field) => capabilityForField(field)?.sortable)
+      .concat(
+        capabilityForField("updated_at")?.sortable ? ["updated_at"] : [],
+      )
+  );
+  const filterableFields = createMemo(() =>
+    fields().filter((field) => capabilityForField(field)?.filterable)
+      .concat(
+        capabilityForField("updated_at")?.filterable ? ["updated_at"] : [],
+      )
+  );
+  const sortField = createMemo<string | null>(() =>
+    controller.query().sort[0]
+      ? fieldNameForRef(controller.query().sort[0].field)
+      : null
+  );
+  const sortDirection = createMemo<SortDirection>(() =>
+    controller.query().sort[0]?.direction ?? null
+  );
+
+  const parseFilterValue = (
+    capability: EntryFieldCapability,
+    value: string,
+  ): unknown => {
+    const trimmed = value.trim();
+    if (capability.field_type === "boolean") {
+      if (trimmed.toLowerCase() === "true") return true;
+      if (trimmed.toLowerCase() === "false") return false;
+    }
+    if (
+      (capability.field_type === "integer" ||
+        capability.field_type === "long") &&
+      /^[+-]?\d+$/.test(trimmed)
+    ) {
+      const parsed = Number(trimmed);
+      if (Number.isSafeInteger(parsed)) return parsed;
+    }
+    if (
+      capability.field_type === "numeric" ||
+      capability.field_type === "number" ||
+      capability.field_type === "float" ||
+      capability.field_type === "double"
+    ) {
+      const parsed = Number(trimmed);
+      if (trimmed !== "" && Number.isFinite(parsed)) return parsed;
+    }
+    return value;
+  };
+
+  const filtersForValues = (
+    values: Record<string, string>,
+  ): EntryFilter[] =>
+    Object.entries(values).flatMap(([field, value]) => {
+      if (!value.trim()) return [];
+      const capability = capabilityForField(field);
+      if (!capability || capability.supported_operators.length === 0) return [];
+      const operator = capability.supported_operators.includes("contains")
+        ? "contains"
+        : "equals";
+      return [{
+        field: capability.field,
+        operator,
+        value: parseFilterValue(capability, value),
+      }];
+    });
+
   const handleHeaderClick = (field: string) => {
-    if (sortField() === field) {
-      if (sortDirection() === "asc") setSortDirection("desc");
-      else setSortDirection(null);
+    if (!capabilityForField(field)?.sortable) return;
+    const fieldRef = fieldRefForName(field);
+    if (!fieldRef) return;
+    const current = controller.query().sort;
+    const index = current.findIndex((sort) => sameField(sort.field, fieldRef));
+    if (index < 0) {
+      controller.setSort([...current, { field: fieldRef, direction: "asc" }]);
+    } else if (current[index].direction === "asc") {
+      controller.setSort(
+        current.map((sort, currentIndex) =>
+          currentIndex === index ? { ...sort, direction: "desc" } : sort
+        ),
+      );
     } else {
-      setSortField(field);
-      setSortDirection("asc");
+      controller.setSort(
+        current.filter((_, currentIndex) => index !== currentIndex),
+      );
     }
   };
 
   const handleSortFieldChange = (value: string) => {
+    const fieldRef = value ? fieldRefForName(value) : undefined;
+    const current = controller.query().sort;
     if (!value) {
-      setSortField(null);
-      setSortDirection(null);
+      controller.setSort(current.slice(1));
       return;
     }
-    setSortField(value);
-    /* v8 ignore start */
-    if (!sortDirection()) setSortDirection("asc");
-    /* v8 ignore stop */
+    if (!fieldRef) return;
+    const next = { field: fieldRef, direction: sortDirection() ?? "asc" };
+    controller.setSort(
+      current.length > 0 ? [next, ...current.slice(1)] : [next],
+    );
+  };
+
+  const handleSortDirectionChange = (
+    direction: Exclude<SortDirection, null>,
+  ) => {
+    const current = controller.query().sort;
+    if (current.length === 0) return;
+    controller.setSort([{ ...current[0], direction }, ...current.slice(1)]);
   };
 
   /* v8 ignore start */
@@ -391,28 +504,54 @@ export function FormTable(props: FormTableProps) {
   });
 
   const updateColumnFilter = (field: string, value: string) => {
-    setColumnFilters((prev) => ({ ...prev, [field]: value }));
+    setColumnFilters((prev) => {
+      const next = { ...prev, [field]: value };
+      controller.setFilters(filtersForValues(next));
+      return next;
+    });
   };
 
   const downloadCSV = async () => {
     // Use untrack and try-catch for robustness in handler
     try {
-      const { data, fieldNames, formName } = untrack(() => ({
-        data: processedEntries(),
+      const { fieldNames, formName, query, projection } = untrack(() => ({
         fieldNames: fields(),
         /* v8 ignore start */
         formName: props.entryForm?.name || "export",
         /* v8 ignore stop */
+        query: controller.query(),
+        projection: controller.projection(),
       }));
 
       const headers = ["id", ...fieldNames, "updated_at"];
-      const dataRows = data.map((entry) => formatCsvValues(entry, headers));
-      /* v8 ignore start */
-      const csvContent = await encodeSpreadsheetCsvChunked(
-        headers,
-        dataRows,
-      );
-      /* v8 ignore stop */
+      const parts: string[] = [];
+      let after: string | undefined;
+      let firstPage = true;
+      do {
+        const page = await entryApi.query(props.spaceId, {
+          query,
+          projection,
+          limit: 100,
+          ...(after ? { after } : {}),
+        });
+        const dataRows = page.rows.map((entry) =>
+          formatCsvValues(
+            entryResultToRecord(entry, formName),
+            headers,
+          )
+        );
+        /* v8 ignore start */
+        parts.push(
+          firstPage
+            ? await encodeSpreadsheetCsvChunked(headers, dataRows)
+            : await encodeSpreadsheetCsvDataRowsChunked(dataRows),
+        );
+        /* v8 ignore stop */
+        firstPage = false;
+        after = page.next;
+        if (!page.has_more) break;
+      } while (after);
+      const csvContent = parts.join("\r\n");
 
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
@@ -439,7 +578,7 @@ export function FormTable(props: FormTableProps) {
     value: string,
   ) => {
     try {
-      const currentRow = entries()?.find((item) => item.id === entryId);
+      const currentRow = entries().find((item) => item.id === entryId);
 
       // Fetch the structured Entry to get its complete field map and revision.
       const entry = await entryApi.get(props.spaceId, entryId);
@@ -457,7 +596,7 @@ export function FormTable(props: FormTableProps) {
         parent_revision_id: entry.revision_id,
       });
       void updatedEntry;
-      refetch();
+      await controller.invalidate();
     } catch (err) {
       /* v8 ignore start */
       // biome-ignore lint/suspicious/noConsole: error logging
@@ -615,17 +754,17 @@ export function FormTable(props: FormTableProps) {
         <div class="formTableToolbar mb-4 sm:mb-6 flex flex-wrap justify-between items-start gap-3">
           <div
             class="flex flex-wrap items-center gap-2"
-            aria-busy={entries.loading || undefined}
+            aria-busy={queryLoading() || undefined}
           >
             <p class="ui-muted text-sm">
-              {entries.error
+              {queryError()
                 ? t("formTable.recordsError")
                 : t("formTable.recordsFound", {
                   count: processedEntries().length,
                 })}
             </p>
             {/* Inline spinner: table rows stay mounted during refetch. */}
-            <Show when={entries.loading}>
+            <Show when={queryLoading()}>
               <LocalBusyIndicator
                 size="sm"
                 label={t("formTable.loading")}
@@ -741,13 +880,17 @@ export function FormTable(props: FormTableProps) {
           </div>
         </Show>
 
-        <Show when={entries.error}>
+        <Show when={queryError()}>
           <div
             class="ui-alert ui-alert-error flex flex-wrap items-center justify-between gap-3"
             role="alert"
           >
             <span>{t("formTable.loadRecordsError")}</span>
-            <button class="btn" type="button" onClick={() => void refetch()}>
+            <button
+              class="btn"
+              type="button"
+              onClick={() => void controller.load()}
+            >
               {t("common.retry")}
             </button>
           </div>
@@ -760,8 +903,8 @@ export function FormTable(props: FormTableProps) {
               placeholder={t("formTable.globalSearch")}
               aria-label={t("formTable.globalSearch")}
               class="ui-input w-full max-w-md"
-              value={globalFilter()}
-              onInput={(e) => setGlobalFilter(e.currentTarget.value)}
+              value={controller.query().text ?? ""}
+              onInput={(e) => controller.setText(e.currentTarget.value)}
             />
             <div class="flex flex-wrap gap-2">
               <div
@@ -805,7 +948,7 @@ export function FormTable(props: FormTableProps) {
                             name="sort-direction"
                             value="asc"
                             checked={sortDirection() === "asc"}
-                            onChange={() => setSortDirection("asc")}
+                            onChange={() => handleSortDirectionChange("asc")}
                           />
                           <span>{t("formTable.ascending")}</span>
                         </label>
@@ -815,7 +958,7 @@ export function FormTable(props: FormTableProps) {
                             name="sort-direction"
                             value="desc"
                             checked={sortDirection() === "desc"}
-                            onChange={() => setSortDirection("desc")}
+                            onChange={() => handleSortDirectionChange("desc")}
                           />
                           <span>{t("formTable.descending")}</span>
                         </label>
@@ -846,15 +989,11 @@ export function FormTable(props: FormTableProps) {
 
         <Show when={showColumnFilters()}>
           <div class="ui-table-mobile-filters" id="form-table-mobile-filters">
-            <For each={["id", ...fields(), "updated_at"]}>
+            <For each={filterableFields()}>
               {(field) => (
                 <label class="ui-table-mobile-filter">
                   <span>
-                    {field === "id"
-                      ? t("formTable.id")
-                      : field === "updated_at"
-                      ? t("formTable.updated")
-                      : field}
+                    {field === "updated_at" ? t("formTable.updated") : field}
                   </span>
                   <input
                     type="text"
@@ -886,31 +1025,7 @@ export function FormTable(props: FormTableProps) {
                   <span class="sr-only">{t("formTable.actions")}</span>
                 </th>
                 <th scope="col" class="ui-table-header-cell sticky top-0 z-10">
-                  <div class="flex flex-col gap-2">
-                    <button
-                      type="button"
-                      class="ui-table-header-button select-none"
-                      onClick={() => handleHeaderClick("id")}
-                    >
-                      {t("formTable.id")}
-                      <SortIcon
-                        active={sortField() === "id"}
-                        direction={sortDirection()}
-                      />
-                    </button>
-                    <Show when={showColumnFilters()}>
-                      <input
-                        type="text"
-                        class="ui-input ui-input-sm ui-table-filter text-xs"
-                        placeholder={t("formTable.columnFilter")}
-                        aria-label={`${t("formTable.id")} ${t("formTable.columnFilter")}`}
-                        value={columnFilters().id || ""}
-                        onInput={(e) =>
-                          updateColumnFilter("id", e.currentTarget.value)}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    </Show>
-                  </div>
+                  <span>{t("formTable.id")}</span>
                 </th>
 
                 <For each={fields()}>
@@ -931,12 +1046,17 @@ export function FormTable(props: FormTableProps) {
                             direction={sortDirection()}
                           />
                         </button>
-                        <Show when={showColumnFilters()}>
+                        <Show
+                          when={showColumnFilters() &&
+                            capabilityForField(field)?.filterable}
+                        >
                           <input
                             type="text"
                             class="ui-input ui-input-sm ui-table-filter text-xs"
                             placeholder={t("formTable.columnFilter")}
-                            aria-label={`${field} ${t("formTable.columnFilter")}`}
+                            aria-label={`${field} ${
+                              t("formTable.columnFilter")
+                            }`}
                             value={columnFilters()[field] || ""}
                             onInput={(e) =>
                               updateColumnFilter(field, e.currentTarget.value)}
@@ -966,7 +1086,9 @@ export function FormTable(props: FormTableProps) {
                         type="text"
                         class="ui-input ui-input-sm ui-table-filter text-xs"
                         placeholder={t("formTable.columnFilter")}
-                        aria-label={`${t("formTable.updated")} ${t("formTable.columnFilter")}`}
+                        aria-label={`${t("formTable.updated")} ${
+                          t("formTable.columnFilter")
+                        }`}
                         value={columnFilters().updated_at || ""}
                         onInput={(e) =>
                           updateColumnFilter(
@@ -1270,6 +1392,28 @@ export function FormTable(props: FormTableProps) {
             )}
           </For>
         </div>
+        <Show
+          when={controller.canGoPrevious() || controller.hasMore()}
+        >
+          <div class="mt-6 flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              class="ui-button ui-button-secondary text-sm"
+              disabled={!controller.canGoPrevious() || controller.loading()}
+              onClick={() => void controller.previous()}
+            >
+              {t("common.previous")}
+            </button>
+            <button
+              type="button"
+              class="ui-button ui-button-secondary text-sm"
+              disabled={!controller.hasMore() || controller.loading()}
+              onClick={() => void controller.next()}
+            >
+              {t("common.next")}
+            </button>
+          </div>
+        </Show>
       </div>
     </div>
   );
