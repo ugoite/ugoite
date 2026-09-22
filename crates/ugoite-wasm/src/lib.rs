@@ -543,35 +543,27 @@ mod tests {
     }
 
     #[test]
-    fn search_query_criteria_prepare_round_trips_through_wasm() {
+    fn entry_query_page_prepare_round_trips_through_wasm() {
         let request = serde_json::json!({
             "action": "prepare",
-            "operation": "search.query",
+            "operation": "entry.query",
             "arguments": {"space_id": "demo"},
             "body": {
-                "criteria": {
-                    "form": "Task",
-                    "conditions": [
-                        {"field": "status", "operator": "equals", "value": "open"}
-                    ],
-                    "limit": 100
-                }
+                "query": {"scope": {"kind": "all"}, "text": "open"},
+                "projection": {"kind": "preview"},
+                "limit": 50
             }
         })
         .to_string();
         let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
         assert_eq!(response["ok"], true, "{response}");
-        assert_eq!(response["value"]["path"], "/spaces/demo/query");
+        assert_eq!(response["value"]["path"], "/spaces/demo/entries/query");
         assert_eq!(
             response["value"]["body"],
             serde_json::json!({
-                "criteria": {
-                    "form": "Task",
-                    "conditions": [
-                        {"field": "status", "operator": "equals", "value": "open"}
-                    ],
-                    "limit": 100
-                }
+                "query": {"scope": {"kind": "all"}, "text": "open"},
+                "projection": {"kind": "preview"},
+                "limit": 50
             })
             .to_string()
         );

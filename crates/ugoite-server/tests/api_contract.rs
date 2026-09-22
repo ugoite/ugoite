@@ -1054,31 +1054,26 @@ fn issue_2212_openapi_documents_space_creation_outcomes() {
 }
 
 #[test]
-fn issue_2125_openapi_documents_entry_list_and_keyword_search_bounds() {
+fn issue_2125_openapi_documents_entry_list_and_entry_query_bounds() {
     let snapshot = ugoite_server::openapi_snapshot();
     let limit = &snapshot["components"]["parameters"]["Limit"];
     assert_eq!(limit["schema"]["minimum"], 0);
     assert_eq!(limit["schema"]["maximum"], 10_000);
     assert_eq!(limit["schema"]["default"], 100);
 
-    let search_query = &snapshot["components"]["parameters"]["KeywordSearchQuery"];
-    assert_eq!(search_query["name"], "q");
-    assert_eq!(search_query["required"], true);
-    assert_eq!(search_query["schema"]["maxLength"], 8_192);
-    assert!(
-        snapshot["paths"]["/spaces/{space_id}/search"]["get"]["parameters"]
-            .as_array()
-            .expect("search parameters")
-            .iter()
-            .any(|parameter| parameter["$ref"] == "#/components/parameters/KeywordSearchQuery")
-    );
-    assert!(
-        snapshot["paths"]["/spaces/{space_id}/search"]["get"]["parameters"]
-            .as_array()
-            .expect("search parameters")
-            .iter()
-            .any(|parameter| parameter["$ref"] == "#/components/parameters/Offset")
-    );
+    // Collection reads are the canonical EntryQuery operations.
+    for path in [
+        "/spaces/{space_id}/entries/query",
+        "/spaces/{space_id}/entries/query/count",
+    ] {
+        assert!(
+            snapshot["paths"][path]["post"].is_object(),
+            "{path} must document the canonical EntryQuery collection read"
+        );
+    }
+    assert!(snapshot["paths"]["/spaces/{space_id}/search"].is_null());
+    assert!(snapshot["paths"]["/spaces/{space_id}/query"].is_null());
+    assert!(snapshot["paths"]["/spaces/{space_id}/entries/options"].is_null());
     for parameter in ["Limit", "Offset"] {
         assert!(
             snapshot["paths"]["/spaces/{space_id}/entries/{entry_id}/history"]["get"]["parameters"]

@@ -29,14 +29,21 @@ use uuid::Uuid;
 use crate::entry;
 use crate::SpaceCheckpoint;
 use ugoite_core::entry_query::{
-    EntryCursor, EntryFieldRef, EntryProjection, EntryQuery, EntryQueryScope, EntrySort,
-    EntrySortDirection,
+    EntryCursor, EntryFieldRef, EntryProjection, EntryQuery, EntryQueryFieldKind, EntryQueryScope,
+    EntrySort, EntrySortDirection, SearchOperator,
 };
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
 };
-use ugoite_core::structured_search::StructuredSearchFieldKind;
+
+/// Adapter-owned LIKE pattern escaping for EntryQuery `contains` filters.
+fn escape_like_pattern(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
 
 pub const SQL_MAX_OUTPUT_ROWS: usize = 1_000;
 pub const SQL_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
@@ -820,23 +827,20 @@ fn build_canonical_entry_sql(
             let parameter = format!("entry_text_{}", form.id.as_uuid().simple());
             values.insert(
                 parameter.clone(),
-                Value::String(format!(
-                    "%{}%",
-                    crate::structured_search::escape_like_pattern(&normalized)
-                )),
+                Value::String(format!("%{}%", escape_like_pattern(&normalized))),
             );
             types.insert(parameter.clone(), "string".to_string());
             let mut text_terms = vec![
                 format!(
-                    "ugoite_search_normalize(CAST({} AS VARCHAR)) LIKE ${parameter} ESCAPE '\\\\'",
+                    "ugoite_search_normalize(CAST({} AS VARCHAR)) LIKE ${parameter} ESCAPE '\\'",
                     quote_identifier("_ugoite_id")
                 ),
                 format!(
-                    "ugoite_search_normalize(CAST({} AS VARCHAR)) LIKE ${parameter} ESCAPE '\\\\'",
+                    "ugoite_search_normalize(CAST({} AS VARCHAR)) LIKE ${parameter} ESCAPE '\\'",
                     quote_identifier("_ugoite_tags")
                 ),
                 format!(
-                    "ugoite_search_normalize({}) LIKE ${parameter} ESCAPE '\\\\'",
+                    "ugoite_search_normalize({}) LIKE ${parameter} ESCAPE '\\'",
                     sql_string_literal(&form.name)
                 ),
             ];
@@ -852,7 +856,7 @@ fn build_canonical_entry_sql(
                         continue;
                     }
                     text_terms.push(format!(
-                        "ugoite_search_normalize(CAST({} AS VARCHAR)) LIKE ${parameter} ESCAPE '\\\\'",
+                        "ugoite_search_normalize(CAST({} AS VARCHAR)) LIKE ${parameter} ESCAPE '\\'",
                         quote_identifier(column)
                     ));
                 }
@@ -864,10 +868,7 @@ fn build_canonical_entry_sql(
             if filter.field == EntryFieldRef::Form {
                 // Form identity is represented by one trusted literal per
                 // branch; it never resolves a caller-provided identifier.
-                if !matches!(
-                    filter.operator,
-                    ugoite_core::structured_search::SearchOperator::Equals
-                ) {
+                if !matches!(filter.operator, SearchOperator::Equals) {
                     return Err(canonical_query_invalid("Form filter only supports equals"));
                 }
                 expression = sql_string_literal(&form.id.to_string());
@@ -876,17 +877,15 @@ fn build_canonical_entry_sql(
                 EntryFieldRef::Form => None,
                 EntryFieldRef::Property { .. } => {
                     let field = form_field_for_ref(form, filter.field)?;
-                    Some(
-                        StructuredSearchFieldKind::of(&field.field_type).ok_or_else(|| {
-                            canonical_query_invalid(format!(
-                                "field type {} does not support EntryQuery filters",
-                                field.field_type.as_str()
-                            ))
-                        })?,
-                    )
+                    Some(EntryQueryFieldKind::of(&field.field_type).ok_or_else(|| {
+                        canonical_query_invalid(format!(
+                            "field type {} does not support EntryQuery filters",
+                            field.field_type.as_str()
+                        ))
+                    })?)
                 }
                 EntryFieldRef::CreatedAt | EntryFieldRef::UpdatedAt => {
-                    Some(StructuredSearchFieldKind::Timestamp)
+                    Some(EntryQueryFieldKind::Timestamp)
                 }
             };
             if let Some(kind) = kind {
@@ -900,34 +899,21 @@ fn build_canonical_entry_sql(
             }
             let parameter = format!("entry_filter_{index}");
             let (operator, value, escape_like) = match filter.operator {
-                ugoite_core::structured_search::SearchOperator::Equals => {
-                    ("=", filter.value.clone(), false)
-                }
-                ugoite_core::structured_search::SearchOperator::Contains => {
+                SearchOperator::Equals => ("=", filter.value.clone(), false),
+                SearchOperator::Contains => {
                     let raw = filter.value.as_str().ok_or_else(|| {
                         canonical_query_invalid("contains filter value must be a string")
                     })?;
                     (
                         "ILIKE",
-                        Value::String(format!(
-                            "%{}%",
-                            crate::structured_search::escape_like_pattern(raw)
-                        )),
+                        Value::String(format!("%{}%", escape_like_pattern(raw))),
                         true,
                     )
                 }
-                ugoite_core::structured_search::SearchOperator::Lt => {
-                    ("<", filter.value.clone(), false)
-                }
-                ugoite_core::structured_search::SearchOperator::Lte => {
-                    ("<=", filter.value.clone(), false)
-                }
-                ugoite_core::structured_search::SearchOperator::Gt => {
-                    (">", filter.value.clone(), false)
-                }
-                ugoite_core::structured_search::SearchOperator::Gte => {
-                    (">=", filter.value.clone(), false)
-                }
+                SearchOperator::Lt => ("<", filter.value.clone(), false),
+                SearchOperator::Lte => ("<=", filter.value.clone(), false),
+                SearchOperator::Gt => (">", filter.value.clone(), false),
+                SearchOperator::Gte => (">=", filter.value.clone(), false),
             };
             if value.is_null() {
                 if operator != "=" {
@@ -938,14 +924,14 @@ fn build_canonical_entry_sql(
                 predicates.push(format!("{expression} IS NULL"));
             } else {
                 // Reuse the typed literal validator so the canonical query
-                // and structured Search reject the same invalid values.
+                // and EntryQuery filters reject the same invalid values.
                 if filter.field != EntryFieldRef::Form {
                     let _ = filter_literal(&value, field_type)
                         .map_err(|error| canonical_query_invalid(error.to_string()))?;
                 }
                 values.insert(parameter.clone(), value);
                 types.insert(parameter.clone(), field_type.to_string());
-                let escape = if escape_like { " ESCAPE '\\\\'" } else { "" };
+                let escape = if escape_like { " ESCAPE '\\'" } else { "" };
                 predicates.push(format!("{expression} {operator} ${parameter}{escape}"));
             }
         }
@@ -2636,34 +2622,6 @@ pub async fn query_index_authorized_by_form_scopes(
     query_index_with_form_scopes(op, ws_path, query, relation_scopes).await
 }
 
-/// Trusted structured-Search page execution. SQL and parameters are produced
-/// exclusively by the `structured_search` adapter; callers never supply
-/// relation names, column names, or SQL fragments.
-pub(crate) async fn query_structured_search_page_with_parameters(
-    op: &Operator,
-    ws_path: &str,
-    sql: &str,
-    relation_scopes: &BTreeMap<String, EntryScope>,
-    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
-    offset: usize,
-    limit: usize,
-) -> Result<(Vec<Value>, u64)> {
-    execute_datafusion_sql_page_with_max_rows(
-        op,
-        ws_path,
-        sql,
-        EntryScope::AllCurrent,
-        None,
-        Some(relation_scopes),
-        None,
-        offset,
-        limit,
-        parameters,
-        ugoite_core::structured_search::MAX_STRUCTURED_SEARCH_LIMIT,
-    )
-    .await
-}
-
 async fn query_index_with_form_scopes(
     op: &Operator,
     ws_path: &str,
@@ -2765,45 +2723,6 @@ async fn execute_datafusion_sql_with_functions(
     .map_err(map_sql_error)?;
     let batches = context.execute(sql).await.map_err(map_sql_error)?;
     record_batches_to_values(&batches)
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn execute_datafusion_sql_page_with_max_rows(
-    op: &Operator,
-    ws_path: &str,
-    sql: &str,
-    entry_scope: EntryScope,
-    allowed_relations: Option<&HashSet<String>>,
-    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
-    checkpoint: Option<SpaceCheckpoint>,
-    offset: usize,
-    limit: usize,
-    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
-    max_rows: usize,
-) -> Result<(Vec<Value>, u64)> {
-    validate_read_only_sql(sql)?;
-    let context = datafusion_sql_context_with_limits(
-        op,
-        ws_path,
-        entry_scope,
-        allowed_relations,
-        relation_scopes,
-        checkpoint,
-        BTreeSet::new(),
-        max_rows,
-        false,
-    )
-    .await
-    .map_err(map_sql_error)?;
-    let (_, batches, _) = context
-        .execute_stateless_page(sql, parameters.clone(), offset, limit)
-        .await
-        .map_err(map_sql_error)?;
-    let count = context
-        .execute_stateless_count(sql, parameters)
-        .await
-        .map_err(map_sql_error)?;
-    Ok((record_batches_to_values(&batches)?, count))
 }
 
 async fn datafusion_sql_context(

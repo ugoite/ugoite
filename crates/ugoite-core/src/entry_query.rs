@@ -12,10 +12,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fmt;
+use ugoite_domain::form::FieldType;
 use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId, SpaceId};
 use ugoite_domain::publication_ref::PublicationRef;
-
-use crate::structured_search::{SearchOperator, StructuredSearchFieldKind};
 
 pub const ENTRY_CURSOR_VERSION: u32 = 1;
 pub const MAX_ENTRY_QUERY_TEXT_BYTES: usize = 8 * 1024;
@@ -23,6 +22,151 @@ pub const MAX_ENTRY_FILTERS: usize = 32;
 pub const MAX_ENTRY_SORTS: usize = 8;
 pub const MAX_ENTRY_PROJECTION_FIELDS: usize = 64;
 pub const MAX_ENTRY_PAGE_LIMIT: usize = 1_000;
+
+/// Typed field-match operators. Transport uses snake_case strings.
+///
+/// EntryQuery owns structured-filter semantics: frontends and CLIs render the
+/// [`entry_field_capability`] descriptor instead of maintaining a second
+/// operator/type truth table.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchOperator {
+    Equals,
+    Contains,
+    Lt,
+    Lte,
+    Gt,
+    Gte,
+}
+
+impl SearchOperator {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Equals => "equals",
+            Self::Contains => "contains",
+            Self::Lt => "lt",
+            Self::Lte => "lte",
+            Self::Gt => "gt",
+            Self::Gte => "gte",
+        }
+    }
+}
+
+/// Logical field kind used for operator/type validation. This is a product
+/// classification, not a storage or DataFusion type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EntryQueryFieldKind {
+    String,
+    Boolean,
+    Integer,
+    Numeric,
+    Date,
+    Timestamp,
+}
+
+/// Physical precision and logical meaning of a timestamp field.
+///
+/// Timezone-free values are compared as wall-clock coordinates. Timezone-aware
+/// values are compared as instants after normalization to UTC. The precision
+/// is kept here so the storage adapter cannot accidentally canonicalize a
+/// nanosecond condition through a millisecond or microsecond parameter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EntryQueryTimestampKind {
+    WallClockMicros,
+    InstantMicros,
+    WallClockNanos,
+    InstantNanos,
+}
+
+impl EntryQueryTimestampKind {
+    pub const fn parameter_type(self) -> &'static str {
+        match self {
+            Self::WallClockMicros => "timestamp",
+            Self::InstantMicros => "timestamp_tz",
+            Self::WallClockNanos => "timestamp_ns",
+            Self::InstantNanos => "timestamp_tz_ns",
+        }
+    }
+
+    pub const fn nanosecond_precision(self) -> bool {
+        matches!(self, Self::WallClockNanos | Self::InstantNanos)
+    }
+}
+
+impl EntryQueryFieldKind {
+    pub fn of(field_type: &FieldType) -> Option<Self> {
+        match field_type {
+            FieldType::String | FieldType::Markdown => Some(Self::String),
+            FieldType::Boolean => Some(Self::Boolean),
+            FieldType::Integer | FieldType::Long => Some(Self::Integer),
+            FieldType::Float | FieldType::Double => Some(Self::Numeric),
+            FieldType::Date => Some(Self::Date),
+            FieldType::Timestamp
+            | FieldType::TimestampTz
+            | FieldType::TimestampNs
+            | FieldType::TimestampTzNs => Some(Self::Timestamp),
+            FieldType::Sql
+            | FieldType::Time
+            | FieldType::Uuid
+            | FieldType::Binary
+            | FieldType::List
+            | FieldType::ObjectList
+            | FieldType::RowReference
+            | FieldType::AssetReference => None,
+        }
+    }
+
+    pub fn timestamp_kind(field_type: &FieldType) -> Option<EntryQueryTimestampKind> {
+        match field_type {
+            FieldType::Timestamp => Some(EntryQueryTimestampKind::WallClockMicros),
+            FieldType::TimestampTz => Some(EntryQueryTimestampKind::InstantMicros),
+            FieldType::TimestampNs => Some(EntryQueryTimestampKind::WallClockNanos),
+            FieldType::TimestampTzNs => Some(EntryQueryTimestampKind::InstantNanos),
+            FieldType::String
+            | FieldType::Markdown
+            | FieldType::Sql
+            | FieldType::Boolean
+            | FieldType::Integer
+            | FieldType::Long
+            | FieldType::Float
+            | FieldType::Double
+            | FieldType::Date
+            | FieldType::Time
+            | FieldType::Uuid
+            | FieldType::Binary
+            | FieldType::List
+            | FieldType::ObjectList
+            | FieldType::RowReference
+            | FieldType::AssetReference => None,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::String => "string",
+            Self::Boolean => "boolean",
+            Self::Integer => "integer",
+            Self::Numeric => "numeric",
+            Self::Date => "date",
+            Self::Timestamp => "timestamp",
+        }
+    }
+
+    pub fn supports(self, operator: SearchOperator) -> bool {
+        match self {
+            Self::String => matches!(operator, SearchOperator::Equals | SearchOperator::Contains),
+            Self::Boolean => matches!(operator, SearchOperator::Equals),
+            Self::Integer | Self::Numeric | Self::Date | Self::Timestamp => matches!(
+                operator,
+                SearchOperator::Equals
+                    | SearchOperator::Lt
+                    | SearchOperator::Lte
+                    | SearchOperator::Gt
+                    | SearchOperator::Gte
+            ),
+        }
+    }
+}
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -278,7 +422,7 @@ pub struct EntryQueryCapabilities {
 /// type. Adapters expose this descriptor; clients must not maintain a second
 /// operator/type truth table.
 pub fn entry_field_capability(field: &ugoite_domain::form::FormField) -> EntryFieldCapability {
-    let kind = StructuredSearchFieldKind::of(&field.field_type);
+    let kind = EntryQueryFieldKind::of(&field.field_type);
     let supported_operators = [
         SearchOperator::Equals,
         SearchOperator::Contains,
@@ -569,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    fn field_capability_comes_from_structured_search_field_kind() {
+    fn field_capability_comes_from_entry_query_field_kind() {
         let title = FormField {
             id: FieldId::new(100).expect("field id"),
             name: "title".to_owned(),

@@ -46,9 +46,9 @@ features:
                 criterion: REQ-JOURNEY-001#criterion.reopen
               - kind: satisfies
                 criterion: REQ-JOURNEY-002#criterion.stale-revision
-          - id: search-api
+          - id: entry-query
             adapter: typescript
-            path: frontend/src/lib/search-api.ts
+            path: frontend/src/lib/entry-query.ts
             selector: { kind: file }
             claims:
               - kind: satisfies
@@ -109,10 +109,10 @@ features:
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
             selector: { kind: symbol, name: restore_entry }
-          - id: search-entries
+          - id: entry-query-page
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: search_entries }
+            selector: { kind: symbol, name: query_entry_page }
           - id: list-changes
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
@@ -133,10 +133,10 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-JOURNEY-001#criterion.form-establish
-          - id: search-command
+          - id: entry-list-command
             adapter: rust
-            path: crates/ugoite-cli/src/commands/search.rs
-            selector: { kind: symbol, name: run }
+            path: crates/ugoite-cli/src/commands/entry_query.rs
+            selector: { kind: symbol, name: EntryListOptions }
             claims:
               - kind: satisfies
                 criterion: REQ-JOURNEY-001#criterion.search-keyword
@@ -173,10 +173,6 @@ features:
           - id: entry-command
             adapter: rust
             path: crates/ugoite-cli/src/commands/entry.rs
-            selector: { kind: symbol, name: run }
-          - id: search-command
-            adapter: rust
-            path: crates/ugoite-cli/src/commands/search.rs
             selector: { kind: symbol, name: run }
       - id: contract
         role: contract-source
@@ -224,10 +220,10 @@ features:
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: post, path: '/spaces/{space_id}/entries/{entry_id}/restore' }
-          - id: search-keyword
+          - id: entry-query
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
-            selector: { kind: operation, method: get, path: '/spaces/{space_id}/search' }
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/entries/query' }
     contracts:
       - id: journey-space-create
         kind: http
@@ -318,11 +314,11 @@ features:
         guarantees: [REQ-JOURNEY-001#criterion.entry-restore]
       - id: journey-search
         kind: http
-        source: FEAT-JOURNEY-001#binding.contract/target.search-keyword
+        source: FEAT-JOURNEY-001#binding.contract/target.entry-query
         participants:
-          - target: FEAT-JOURNEY-001#binding.frontend/target.search-api
+          - target: FEAT-JOURNEY-001#binding.frontend/target.entry-query
             role: client
-          - target: FEAT-JOURNEY-001#binding.cli-core/target.search-command
+          - target: FEAT-JOURNEY-001#binding.cli-core/target.entry-list-command
             role: operator
         guarantees:
           - REQ-JOURNEY-001#criterion.search-keyword
@@ -335,13 +331,13 @@ features:
             role: client
           - target: FEAT-JOURNEY-001#binding.frontend/target.entry-api
             role: client
-          - target: FEAT-JOURNEY-001#binding.frontend/target.search-api
+          - target: FEAT-JOURNEY-001#binding.frontend/target.entry-query
             role: client
           - target: FEAT-STO-001#binding.routing/target.space-command-routing
             role: operator
           - target: FEAT-API-001#binding.cli-implementation/target.entry-command
             role: operator
-          - target: FEAT-JOURNEY-001#binding.cli-core/target.search-command
+          - target: FEAT-JOURNEY-001#binding.cli-core/target.entry-list-command
             role: operator
         guarantees: [REQ-JOURNEY-001#criterion.reopen]
       - id: journey-stale-revision

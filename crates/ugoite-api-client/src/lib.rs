@@ -62,9 +62,6 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "entry.history",
     "entry.revision",
     "entry.restore",
-    "entry.options",
-    "search.keyword",
-    "search.query",
     "sql.list",
     "sql.get",
     "sql.create",
@@ -727,58 +724,6 @@ pub fn prepare_request(
                     "entries".into(),
                     required_string(operation, args, "entry_id")?,
                     "restore".into(),
-                ],
-                vec![],
-            ),
-            "entry.options" => {
-                let mut query = vec![
-                    ("form".into(), required_string(operation, args, "form")?),
-                    (
-                        "limit".into(),
-                        required_u64(operation, args, "limit")?.to_string(),
-                    ),
-                ];
-                if let Some(value) = optional_string(operation, args, "q")? {
-                    if !value.trim().is_empty() {
-                        query.push(("q".into(), value.trim().to_string()));
-                    }
-                }
-                (
-                    OperationSpec::get("Failed to load row_reference options"),
-                    vec![
-                        "spaces".into(),
-                        required_string(operation, args, "space_id")?,
-                        "entries".into(),
-                        "options".into(),
-                    ],
-                    query,
-                )
-            }
-
-            "search.keyword" => {
-                let mut query = vec![("q".into(), required_string(operation, args, "q")?)];
-                if let Some(limit) = optional_u64(operation, args, "limit")? {
-                    query.push(("limit".into(), limit.to_string()));
-                }
-                if let Some(offset) = optional_u64(operation, args, "offset")? {
-                    query.push(("offset".into(), offset.to_string()));
-                }
-                (
-                    OperationSpec::get("Failed to search entries"),
-                    vec![
-                        "spaces".into(),
-                        required_string(operation, args, "space_id")?,
-                        "search".into(),
-                    ],
-                    query,
-                )
-            }
-            "search.query" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to query space"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "query".into(),
                 ],
                 vec![],
             ),
@@ -1490,21 +1435,6 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to restore entry",
             RequestBodyKind::Json,
         ),
-        "entry.options" => (
-            HttpMethod::Get,
-            "Failed to load row_reference options",
-            RequestBodyKind::None,
-        ),
-        "search.keyword" => (
-            HttpMethod::Get,
-            "Failed to search entries",
-            RequestBodyKind::None,
-        ),
-        "search.query" => (
-            HttpMethod::Post,
-            "Failed to query space",
-            RequestBodyKind::Json,
-        ),
         "sql.list" => (
             HttpMethod::Get,
             "Failed to list saved SQL",
@@ -1644,19 +1574,6 @@ fn optional_u64(
     }
 }
 
-fn required_u64(
-    operation: &str,
-    args: &Map<String, Value>,
-    key: &str,
-) -> Result<u64, ApiProtocolError> {
-    args.get(key).and_then(Value::as_u64).ok_or_else(|| {
-        ApiProtocolError::invalid_arguments(
-            operation,
-            format!("argument `{key}` must be a non-negative integer"),
-        )
-    })
-}
-
 fn encoded_path(segments: &[String], query: &[(String, String)]) -> Result<String, String> {
     let mut url = Url::parse("https://ugoite.invalid").map_err(|error| error.to_string())?;
     {
@@ -1743,8 +1660,8 @@ mod tests {
     #[test]
     fn test_api_req_api_001_encodes_path_segments_and_query_values() {
         let request = prepare_request(
-            "search.keyword",
-            &json!({"space_id": "team/東京", "q": "a & b#c"}),
+            "entry.get",
+            &json!({"space_id": "team/東京", "entry_id": "entry-1"}),
             None,
         )
         .expect("request");
@@ -1752,28 +1669,7 @@ mod tests {
         assert_eq!(request.method, HttpMethod::Get);
         assert_eq!(
             request.path,
-            "/spaces/team%2F%E6%9D%B1%E4%BA%AC/search?q=a+%26+b%23c"
-        );
-    }
-
-    #[test]
-    fn search_query_preserves_structured_criteria_body() {
-        let body = json!({
-            "criteria": {
-                "form": "Task",
-                "conditions": [
-                    {"field": "status", "operator": "equals", "value": "open"}
-                ],
-                "limit": 100
-            }
-        });
-        let request = prepare_request("search.query", &json!({"space_id": "demo"}), Some(&body))
-            .expect("request");
-        assert_eq!(request.method, HttpMethod::Post);
-        assert_eq!(request.path, "/spaces/demo/query");
-        assert_eq!(
-            request.body.expect("body"),
-            serde_json::to_string(&body).expect("encode")
+            "/spaces/team%2F%E6%9D%B1%E4%BA%AC/entries/entry-1"
         );
     }
 
@@ -1867,21 +1763,6 @@ mod tests {
         assert_eq!(
             request.path,
             "/spaces/demo/entries/entry-1/history?limit=51&offset=50"
-        );
-    }
-
-    #[test]
-    fn keyword_search_encodes_optional_paging_arguments() {
-        let request = prepare_request(
-            "search.keyword",
-            &json!({"space_id": "demo", "q": "alpha", "limit": 51, "offset": 50}),
-            None,
-        )
-        .expect("request");
-
-        assert_eq!(
-            request.path,
-            "/spaces/demo/search?q=alpha&limit=51&offset=50"
         );
     }
 
@@ -2558,14 +2439,6 @@ mod tests {
         if operation == "space.pin_diff" {
             arguments.insert("from".into(), json!("release-before"));
             arguments.insert("to".into(), json!("release-current"));
-        }
-        if operation == "entry.options" {
-            arguments.insert("form".into(), json!("Meeting"));
-            arguments.insert("limit".into(), json!(20));
-            arguments.insert("q".into(), json!("weekly"));
-        }
-        if operation == "search.keyword" {
-            arguments.insert("q".into(), json!("alpha & beta"));
         }
         if matches!(operation, "sql.get" | "sql.update" | "sql.delete") {
             arguments.insert("sql_id".into(), json!("saved-1"));

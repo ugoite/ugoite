@@ -3,16 +3,10 @@
 
 use super::*;
 use axum::body::to_bytes;
-use base64::{
-    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
-    Engine as _,
-};
-use hmac::{Hmac, KeyInit, Mac};
-use serde::{Deserialize, Serialize};
-use sha2::Sha256;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use serde::Deserialize;
 use std::{
     collections::{BTreeMap, HashMap},
-    fs,
     sync::OnceLock,
     time::{Duration, Instant},
 };
@@ -20,11 +14,7 @@ use tokio::sync::Mutex;
 use ugoite_domain::change::{ChangeCommand, RunId};
 use ugoite_domain::id::validate_decoded_identifier;
 
-type HmacSha256 = Hmac<Sha256>;
 const VERSION: &str = "2026-07-28";
-const CURSOR_VERSION: &str = "mcp-search-cursor-v1";
-const ORDERING: &str = "mcp-search-v2-id-form";
-const CURSOR_DOMAIN: &[u8] = b"ugoite/mcp/search-cursor/v1";
 const TOOL_RATE_LIMIT: u32 = 60;
 const TOOL_RATE_WINDOW: Duration = Duration::from_secs(60);
 
@@ -40,7 +30,6 @@ struct AuthContext {
     identity: RequestIdentityContext,
     claims: AccessTokenClaims,
     scheme: &'static str,
-    cnf_jkt: Option<String>,
     space_id: String,
 }
 
@@ -51,27 +40,6 @@ struct RpcRequest {
     method: String,
     #[serde(default)]
     params: Value,
-}
-
-#[derive(Serialize, Deserialize)]
-struct SearchCursor {
-    version: String,
-    expires_at: i64,
-    q: String,
-    limit: usize,
-    ordering: String,
-    space_uid: Uuid,
-    credential_id: Uuid,
-    credential_generation: Option<u64>,
-    token_jti: Option<Uuid>,
-    subject_principal_id: Option<Uuid>,
-    actor_principal_id: Option<Uuid>,
-    actions: Vec<String>,
-    authorization_revision: u64,
-    last_id: String,
-    last_form: String,
-    auth_scheme: String,
-    cnf_jkt: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -508,7 +476,6 @@ async fn authenticate(
         identity,
         claims,
         scheme,
-        cnf_jkt: (scheme == "dpop").then_some(cnf_jkt),
         space_id,
     })
 }
@@ -1182,6 +1149,9 @@ async fn search(
     auth: &AuthContext,
     arguments: &serde_json::Map<String, Value>,
 ) -> Result<Value, Response> {
+    // ugoite.search is a thin preset over the canonical EntryQuery collection
+    // read. There is no independent keyword cursor model: text, paging, and
+    // continuation tokens all belong to EntryQuery.
     let input: SearchInput = serde_json::from_value(Value::Object(arguments.clone()))
         .map_err(|_| tool_error("INVALID_ARGUMENT", "Search arguments are invalid"))?;
     let q = input.q.trim().to_string();
@@ -1192,68 +1162,51 @@ async fn search(
             "Search arguments are invalid",
         ));
     }
-    // Shared Search admission before any Storage/state access: invalid
-    // queries fail with their canonical code, never as a service outage.
-    if let Err(app_error) = ugoite_core::query::validate_keyword_query(&q) {
-        return Err(tool_error_with_detail(
-            app_error.code_str(),
-            app_error.message(),
-            app_error.detail().cloned(),
+    if q.is_empty() {
+        return Err(tool_error(
+            "INVALID_ARGUMENT",
+            "Search query must not be empty",
         ));
     }
-    let state_auth = Authorizer::new(state.service.operator().clone())
-        .state(&auth.space_id)
-        .await
-        .map_err(|_| tool_error("SERVICE_UNAVAILABLE", "The search service is unavailable"))?;
-    let mut cursor = None;
-    if let Some(encoded) = input.cursor {
-        cursor = Some(
-            decode_cursor(&encoded, auth, &state_auth, &q, limit)
-                .map_err(|_| tool_error("INVALID_ARGUMENT", "Search cursor is invalid"))?,
-        );
+    let request = ugoite_core::entry_query::EntryPageRequest {
+        query: ugoite_core::entry_query::EntryQuery {
+            scope: ugoite_core::entry_query::EntryQueryScope::All,
+            text: Some(q),
+            filters: Vec::new(),
+            sort: Vec::new(),
+        },
+        projection: ugoite_core::entry_query::EntryProjection::Preview,
+        limit,
+        after: input.cursor,
+    };
+    // Shared EntryQuery admission before any Storage/state access: invalid
+    // queries fail with their canonical code, never as a service outage.
+    if let Err(error) = request.validate() {
+        return Err(tool_error("INVALID_INPUT", &error.to_string()));
     }
     let principals = authorization_principal_ids(&auth.identity, auth.claims.sub);
-    let after = cursor
-        .as_ref()
-        .map(|cursor| (cursor.last_id.as_str(), cursor.last_form.as_str()));
-    let mut results = state
+    let page = state
         .service
-        .search_entries_authorized_for_principals_after(
-            &auth.space_id,
-            &principals,
-            &q,
-            limit + 1,
-            after,
-        )
+        .query_entry_page_authorized_for_principals(&auth.space_id, &principals, request)
         .await
         .map_err(map_search_service_error)?;
-    results.sort_by(|a, b| (a.id.as_str(), a.form.as_str()).cmp(&(b.id.as_str(), b.form.as_str())));
-    let has_next = results.len() > limit;
-    results.truncate(limit);
-    let mut items = Vec::with_capacity(results.len());
-    let mut links = Vec::with_capacity(results.len());
-    for result in &results {
-        let title = sanitize_mcp_string(&result.id);
+    let mut items = Vec::with_capacity(page.rows.len());
+    let mut links = Vec::with_capacity(page.rows.len());
+    for row in &page.rows {
+        let title = sanitize_mcp_string(
+            row.preview
+                .as_deref()
+                .filter(|preview| !preview.trim().is_empty())
+                .unwrap_or(&row.id),
+        );
         let summary = title.clone();
-        let uri = format!("ugoite://entry/{}", result.id);
+        let uri = format!("ugoite://entry/{}", row.id);
         items.push(json!({"title":title,"summary":summary,"uri":uri}));
         links.push(
             json!({"type":"resource_link","uri":uri,"name":title,"mimeType":"application/json"}),
         );
     }
-    let next_cursor = if has_next {
-        let result = results
-            .last()
-            .expect("has_next implies a retained search result");
-        Some(
-            encode_cursor(auth, &state_auth, &q, limit, result).map_err(|_| {
-                tool_error("SERVICE_UNAVAILABLE", "The search service is unavailable")
-            })?,
-        )
-    } else {
-        None
-    };
-    let structured = json!({"items":items,"nextCursor":next_cursor});
+    let structured = json!({"items":items,"nextCursor":page.next});
     let mut content =
         vec![json!({"type":"text","text":serde_json::to_string(&structured).unwrap_or_default()})];
     content.extend(links);
@@ -1537,114 +1490,6 @@ fn tool_error_with_detail(code: &str, message: &str, detail: Option<Value>) -> R
     )
 }
 
-fn encode_cursor(
-    auth: &AuthContext,
-    state: &AuthorizationState,
-    q: &str,
-    limit: usize,
-    last: &ugoite_domain::search::KeywordSearchResult,
-) -> anyhow::Result<String> {
-    let cursor = SearchCursor {
-        version: CURSOR_VERSION.to_string(),
-        expires_at: chrono::Utc::now().timestamp() + 900,
-        q: q.to_string(),
-        limit,
-        ordering: ORDERING.to_string(),
-        space_uid: auth.claims.space_uid,
-        credential_id: auth.claims.credential_id,
-        credential_generation: auth.claims.credential_generation,
-        token_jti: Some(auth.claims.jti),
-        subject_principal_id: Some(auth.claims.sub),
-        actor_principal_id: auth.claims.actor_principal_id,
-        actions: auth.claims.granted_actions.iter().cloned().collect(),
-        authorization_revision: state.revision,
-        last_id: last.id.clone(),
-        last_form: last.form.clone(),
-        auth_scheme: auth.scheme.to_string(),
-        cnf_jkt: auth.cnf_jkt.clone(),
-    };
-    let payload = serde_json::to_vec(&cursor).unwrap_or_default();
-    let mut input = Vec::with_capacity(CURSOR_DOMAIN.len() + 1 + payload.len());
-    input.extend_from_slice(CURSOR_DOMAIN);
-    input.push(0);
-    input.extend_from_slice(&payload);
-    let mut mac = HmacSha256::new_from_slice(&cursor_key()?)?;
-    mac.update(&input);
-    Ok(format!(
-        "{}.{}",
-        URL_SAFE_NO_PAD.encode(payload),
-        URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
-    ))
-}
-
-fn decode_cursor(
-    value: &str,
-    auth: &AuthContext,
-    state: &AuthorizationState,
-    q: &str,
-    limit: usize,
-) -> anyhow::Result<SearchCursor> {
-    let (payload, signature) = value
-        .split_once('.')
-        .ok_or_else(|| anyhow::anyhow!("invalid cursor"))?;
-    let payload = URL_SAFE_NO_PAD.decode(payload)?;
-    let signature = URL_SAFE_NO_PAD.decode(signature)?;
-    let mut input = Vec::with_capacity(CURSOR_DOMAIN.len() + 1 + payload.len());
-    input.extend_from_slice(CURSOR_DOMAIN);
-    input.push(0);
-    input.extend_from_slice(&payload);
-    let key = cursor_key()?;
-    let mut mac = HmacSha256::new_from_slice(&key)?;
-    mac.update(&input);
-    mac.verify_slice(&signature)?;
-    let cursor: SearchCursor = serde_json::from_slice(&payload)?;
-    if cursor.version != CURSOR_VERSION
-        || cursor.ordering != ORDERING
-        || cursor.q != q
-        || cursor.limit != limit
-        || chrono::Utc::now().timestamp() >= cursor.expires_at
-        || cursor.space_uid != auth.claims.space_uid
-        || cursor.credential_id != auth.claims.credential_id
-        || cursor.credential_generation != auth.claims.credential_generation
-        || cursor.token_jti != Some(auth.claims.jti)
-        || cursor.subject_principal_id != Some(auth.claims.sub)
-        || cursor.actor_principal_id != auth.claims.actor_principal_id
-        || cursor.actions
-            != auth
-                .claims
-                .granted_actions
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-        || cursor.authorization_revision != state.revision
-        || cursor.auth_scheme != auth.scheme
-        || cursor.cnf_jkt != auth.cnf_jkt
-    {
-        return Err(anyhow::anyhow!("cursor binding mismatch"));
-    }
-    Ok(cursor)
-}
-
-fn cursor_key() -> anyhow::Result<Vec<u8>> {
-    let mut value = if let Ok(path) = std::env::var("UGOITE_NODE_SECRET_FILE") {
-        fs::read(path)?
-    } else if let Some(value) = std::env::var_os("UGOITE_NODE_SECRET_KEY") {
-        value.to_string_lossy().as_bytes().to_vec()
-    } else {
-        return Err(anyhow::anyhow!("MCP cursor secret is unavailable"));
-    };
-    value.truncate(
-        value
-            .iter()
-            .position(|byte| *byte == b'\n' || *byte == b'\r')
-            .unwrap_or(value.len()),
-    );
-    if value.len() < 32 {
-        return Err(anyhow::anyhow!("MCP cursor secret is too short"));
-    }
-    Ok(value)
-}
-
 fn sanitize_mcp_string(value: &str) -> String {
     remove_ascii_case_insensitive(
         &remove_ascii_case_insensitive(&super::sanitize_mcp_string(value), "javascript:"),
@@ -1735,8 +1580,6 @@ fn json_http_with_header(
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
-    use std::sync::OnceLock;
-    use tokio::sync::Mutex;
 
     fn test_auth(
         space_uid: Uuid,
@@ -1823,26 +1666,7 @@ mod tests {
             },
             claims,
             scheme: "bearer",
-            cnf_jkt: None,
             space_id: space_uid.to_string(),
-        }
-    }
-
-    fn test_authorization_state(space_uid: Uuid, revision: u64) -> AuthorizationState {
-        AuthorizationState {
-            schema_version: 1,
-            space_uid,
-            principals: BTreeMap::new(),
-            memberships: BTreeMap::new(),
-            policies: BTreeMap::new(),
-            policy_history: BTreeMap::new(),
-            agents: BTreeMap::new(),
-            agent_grants: BTreeMap::new(),
-            human_approvals: BTreeMap::new(),
-            human_approval_audit_outbox: BTreeMap::new(),
-            principal_lifecycle_epochs: BTreeMap::new(),
-            recovery_fences: BTreeMap::new(),
-            revision,
         }
     }
 
@@ -2140,7 +1964,8 @@ mod tests {
     #[tokio::test]
     async fn search_keeps_canonical_validation_codes_before_any_scan() {
         // No Space is created: admission must fail before Storage access,
-        // and validation must not collapse into a generic outage.
+        // and validation must not collapse into a generic outage. EntryQuery
+        // owns text admission; empty and oversized text share INVALID_INPUT.
         let state =
             AppState::new_for_tests(format!("memory://mcp-search-admission-{}", Uuid::now_v7()))
                 .expect("test state");
@@ -2148,10 +1973,10 @@ mod tests {
         let auth = test_auth(Uuid::now_v7(), owner, &["read"], "human", None);
 
         for (query, code) in [
-            ("", "SEARCH_QUERY_EMPTY"),
-            ("   ", "SEARCH_QUERY_EMPTY"),
+            ("", "INVALID_ARGUMENT"),
+            ("   ", "INVALID_ARGUMENT"),
             (
-                &"x".repeat(ugoite_core::query::MAX_SEARCH_QUERY_BYTES + 1),
+                &"x".repeat(ugoite_core::entry_query::MAX_ENTRY_QUERY_TEXT_BYTES + 1),
                 "INVALID_INPUT",
             ),
         ] {
@@ -2163,45 +1988,6 @@ mod tests {
             let payload = &body["result"]["structuredContent"];
             assert_eq!(payload["code"], code, "query {query:?}");
             assert_ne!(payload["code"], "SERVICE_UNAVAILABLE");
-        }
-    }
-
-    #[tokio::test]
-    async fn authenticated_search_cursors_reject_tampering_and_binding_changes() {
-        static CURSOR_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        let _lock = CURSOR_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
-        let previous = std::env::var_os("UGOITE_NODE_SECRET_KEY");
-        std::env::set_var(
-            "UGOITE_NODE_SECRET_KEY",
-            "mcp-test-secret-that-is-at-least-32-bytes",
-        );
-
-        let space_uid = Uuid::now_v7();
-        let auth = test_auth(space_uid, Uuid::now_v7(), &["read"], "human", None);
-        let authorization = test_authorization_state(space_uid, 7);
-        let result = ugoite_domain::search::KeywordSearchResult {
-            id: "entry-1".to_string(),
-            form: "Note".to_string(),
-            created_at: 1.0,
-            updated_at: 1.0,
-        };
-        let cursor =
-            encode_cursor(&auth, &authorization, "query", 5, &result).expect("signed cursor");
-        assert!(decode_cursor(&cursor, &auth, &authorization, "query", 5).is_ok());
-
-        let mut tampered = cursor.as_bytes().to_vec();
-        let last = tampered.len() - 1;
-        tampered[last] = if tampered[last] == b'A' { b'B' } else { b'A' };
-        let tampered = String::from_utf8(tampered).expect("cursor text");
-        assert!(decode_cursor(&tampered, &auth, &authorization, "query", 5).is_err());
-
-        let mut different_credential = auth.clone();
-        different_credential.claims.jti = Uuid::now_v7();
-        assert!(decode_cursor(&cursor, &different_credential, &authorization, "query", 5).is_err());
-
-        match previous {
-            Some(value) => std::env::set_var("UGOITE_NODE_SECRET_KEY", value),
-            None => std::env::remove_var("UGOITE_NODE_SECRET_KEY"),
         }
     }
 

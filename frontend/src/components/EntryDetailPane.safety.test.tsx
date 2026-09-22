@@ -71,9 +71,6 @@ vi.mock("~/lib/ugoite-client", () => {
       upload: vi.fn(),
       read: vi.fn(),
     },
-    searchApi: {
-      rowReferenceOptions: vi.fn(),
-    },
     RevisionConflictError,
   };
 });

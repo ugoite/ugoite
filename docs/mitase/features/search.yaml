@@ -5,25 +5,39 @@ category: Search
 features:
   - id: FEAT-SRCH-001
     title: Search core
-    summary: Provide keyword search over current authorized Entry content and the authorized AssetText projection, with native fallback when derived data cannot be used. Criterion-specific proof for derived projection and fallback behavior remains pending.
+    summary: Provide keyword text and structured filters over current authorized Entries through the canonical EntryQuery collection read, with native fallback when derived data cannot be used. Criterion-specific proof for derived projection and fallback behavior remains pending. AssetText derived search is no longer on the Entry read path; the explicit rebuild boundary is unchanged.
     status: implemented
     bindings:
       - id: core
         role: implementation
         facet: core
-        responsibility: Implement the exact current Entry keyword scan, authorized AssetText projection, and native fallback behavior used by the operator surfaces.
+        responsibility: Own the canonical EntryQuery filter semantics and capability descriptor; implement the exact current Entry keyword scan, authorized AssetText projection, and native fallback behavior used by the operator surfaces.
         targets:
+          - id: entry-query
+            adapter: rust
+            path: crates/ugoite-core/src/entry_query.rs
+            selector: { kind: symbol, name: EntryQuery }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-001#criterion.keyword-search
+              - kind: satisfies
+                criterion: REQ-SRCH-005#criterion.structured-search-reuse
+              - kind: satisfies
+                criterion: REQ-SRCH-006#criterion.query-operation
+          - id: entry-query-capability
+            adapter: rust
+            path: crates/ugoite-core/src/entry_query.rs
+            selector: { kind: symbol, name: entry_field_capability }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-005#criterion.structured-search-reuse
           - id: search-entries
             adapter: rust
             path: crates/ugoite-iceberg/src/search.rs
             selector: { kind: symbol, name: search_entries }
             claims:
               - kind: satisfies
-                criterion: REQ-SRCH-001#criterion.keyword-search
-              - kind: satisfies
                 criterion: REQ-SRCH-002#criterion.current-entry-scan
-              - kind: satisfies
-                criterion: REQ-SRCH-002#criterion.authorized-assettext-projection
               - kind: satisfies
                 criterion: REQ-SRCH-002#criterion.missing-derived-fallback
               - kind: satisfies
@@ -63,42 +77,37 @@ features:
       - id: server
         role: operation
         facet: backend
-        responsibility: Expose the Search HTTP operations through the backend adapter; Space authorization remains the security requirement owned by the unmigrated Security domain.
+        responsibility: Expose the canonical EntryQuery collection reads through the backend adapter; Space authorization remains the security requirement owned by the unmigrated Security domain.
         targets:
-          - id: search-handler
+          - id: entry-query-handler
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: search_entries }
-          - id: query-handler
+            selector: { kind: symbol, name: query_entry_page }
+          - id: entry-query-count-handler
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: query_entries }
+            selector: { kind: symbol, name: count_entry_query }
       - id: server-implementation
         role: implementation
         facet: backend
-        responsibility: Implement the authenticated Search HTTP handler and delegate keyword results to the authorized service boundary.
+        responsibility: Implement the authenticated EntryQuery HTTP handlers and delegate text and filter reads to the authorized service boundary.
         targets:
-          - id: search-handler
+          - id: entry-query-handler
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: search_entries }
+            selector: { kind: symbol, name: query_entry_page }
             claims:
               - kind: satisfies
                 criterion: REQ-SRCH-001#criterion.keyword-search
               - kind: satisfies
                 criterion: REQ-SRCH-001#criterion.http-search-operation
+              - kind: satisfies
+                criterion: REQ-SRCH-006#criterion.query-operation
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep the shipped Search API, route, and advanced-query builder in the canonical Search feature artifact graph.
+        responsibility: Keep the shipped Search route preset and shared EntryBrowser on the canonical EntryQuery controller in the Search feature artifact graph.
         targets:
-          - id: search-api
-            adapter: typescript
-            path: frontend/src/lib/search-api.ts
-            selector: { kind: symbol, name: searchApi }
-            claims:
-              - kind: satisfies
-                criterion: REQ-SRCH-004#criterion.keyword-first-route
           - id: search-route
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/search.tsx
@@ -108,35 +117,31 @@ features:
                 criterion: REQ-SRCH-004#criterion.keyword-first-route
               - kind: satisfies
                 criterion: REQ-SRCH-005#criterion.structured-search-reuse
-          - id: advanced-query-builder
+          - id: entry-browser
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/search.tsx
-            selector: { kind: symbol, name: buildStructuredSearchCriteria }
+            path: frontend/src/components/EntryBrowser.tsx
+            selector: { kind: file }
             claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-005#criterion.structured-search-reuse
+          - id: entry-query-controller
+            adapter: typescript
+            path: frontend/src/lib/entry-query.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SRCH-004#criterion.keyword-first-route
               - kind: satisfies
                 criterion: REQ-SRCH-005#criterion.structured-search-reuse
       - id: service
         role: operation
         facet: service
-        responsibility: Keep the Search service operations connected to the canonical implementation and operator surfaces.
+        responsibility: Keep the canonical EntryQuery service operations connected to the implementation and operator surfaces.
         targets:
-          - id: keyword-service
+          - id: entry-query-service
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: search_entries }
-          - id: query-service
-            adapter: rust
-            path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: query_entries }
-      - id: cli
-        role: operation
-        facet: cli
-        responsibility: Expose keyword search and explicit derived-relation maintenance through the Ugoite CLI operator surface.
-        targets:
-          - id: keyword-command
-            adapter: rust
-            path: crates/ugoite-cli/src/commands/search.rs
-            selector: { kind: symbol, name: run }
+            selector: { kind: symbol, name: query_entry_page_authorized_for_principals }
       - id: cli-implementation
         role: implementation
         facet: cli
@@ -163,52 +168,50 @@ features:
       - id: contract
         role: contract-source
         facet: api
-        responsibility: Define the authoritative Search HTTP operation exposed by the Rust server.
+        responsibility: Define the authoritative EntryQuery collection-read HTTP operations exposed by the Rust server.
         owns:
           - id: openapi-source
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: file }
         targets:
-          - id: search-contract
+          - id: entry-query-contract
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
-            selector: { kind: operation, method: get, path: '/spaces/{space_id}/search' }
-          - id: query-contract
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/entries/query' }
+          - id: entry-query-count-contract
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
-            selector: { kind: operation, method: post, path: '/spaces/{space_id}/query' }
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/entries/query/count' }
     contracts:
       - id: keyword-search
         kind: http
-        source: FEAT-SRCH-001#binding.contract/target.search-contract
+        source: FEAT-SRCH-001#binding.contract/target.entry-query-contract
         participants:
-          - target: FEAT-SRCH-001#binding.core/target.search-entries
+          - target: FEAT-SRCH-001#binding.core/target.entry-query
             role: implementation
-          - target: FEAT-SRCH-001#binding.service/target.keyword-service
+          - target: FEAT-SRCH-001#binding.service/target.entry-query-service
             role: service
-          - target: FEAT-SRCH-001#binding.server/target.search-handler
+          - target: FEAT-SRCH-001#binding.server/target.entry-query-handler
             role: backend
-          - target: FEAT-SRCH-001#binding.server-implementation/target.search-handler
+          - target: FEAT-SRCH-001#binding.server-implementation/target.entry-query-handler
             role: backend
-          - target: FEAT-SRCH-001#binding.frontend/target.search-api
+          - target: FEAT-SRCH-001#binding.frontend/target.entry-query-controller
             role: client
           - target: FEAT-SRCH-001#binding.frontend/target.search-route
             role: route
-          - target: FEAT-SRCH-001#binding.cli/target.keyword-command
-            role: operator
         guarantees: [REQ-SRCH-001#criterion.keyword-search]
       - id: structured-query
         kind: http
-        source: FEAT-SRCH-001#binding.contract/target.query-contract
+        source: FEAT-SRCH-001#binding.contract/target.entry-query-contract
         participants:
-          - target: FEAT-SRCH-001#binding.core/target.query-index
+          - target: FEAT-SRCH-001#binding.core/target.entry-query
             role: implementation
-          - target: FEAT-SRCH-001#binding.service/target.query-service
+          - target: FEAT-SRCH-001#binding.service/target.entry-query-service
             role: service
-          - target: FEAT-SRCH-001#binding.server/target.query-handler
+          - target: FEAT-SRCH-001#binding.server/target.entry-query-handler
             role: backend
-          - target: FEAT-SRCH-001#binding.frontend/target.search-api
+          - target: FEAT-SRCH-001#binding.frontend/target.entry-query-controller
             role: client
         guarantees: [REQ-SRCH-006#criterion.query-operation]
       - id: local-index-rebuild

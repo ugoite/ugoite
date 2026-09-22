@@ -21,7 +21,7 @@ const QUIET_ACCENT_STYLES: clap::builder::Styles = clap::builder::Styles::styled
     name = "ugoite",
     about = "Ugoite CLI - Knowledge base management",
     version = env!("CARGO_PKG_VERSION"),
-    long_about = "Ugoite CLI - Knowledge base management\n\nQuick start:\n  mkdir knowledge\n  cd knowledge\n  ugoite config init\n  ugoite space create demo\n  ugoite entry list\n  ugoite search keyword planning\n\nSwitch contexts or select one for a single invocation:\n  ugoite context use work\n  ugoite --context research search keyword catalyst\n\nManage remote connections with `ugoite config connection` and pair a named credential with `ugoite auth login --connection NAME --credential NAME`.",
+    long_about = "Ugoite CLI - Knowledge base management\n\nQuick start:\n  mkdir knowledge\n  cd knowledge\n  ugoite config init\n  ugoite space create demo\n  ugoite entry list\n  ugoite entry list --text planning\n\nSwitch contexts or select one for a single invocation:\n  ugoite context use work\n  ugoite --context research entry list --text catalyst\n\nManage remote connections with `ugoite config connection` and pair a named credential with `ugoite auth login --connection NAME --credential NAME`.",
     styles = QUIET_ACCENT_STYLES
 )]
 struct Cli {
@@ -55,10 +55,6 @@ enum Commands {
     Form(commands::form::FormCmd),
     /// Asset management commands
     Asset(commands::asset::AssetCmd),
-    /// Search commands.
-    ///
-    /// Space-bound commands use the selected context by default (see `ugoite config current`).
-    Search(commands::search::SearchCmd),
     /// Space Change history and revert commands.
     ///
     /// Space-bound commands use the selected context by default (see `ugoite config current`).
@@ -120,9 +116,6 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Entry(cmd) => commands::entry::run(cmd, explicit_config, explicit_context).await,
         Commands::Form(cmd) => commands::form::run(cmd, explicit_config, explicit_context).await,
         Commands::Asset(cmd) => commands::asset::run(cmd, explicit_config, explicit_context).await,
-        Commands::Search(cmd) => {
-            commands::search::run(cmd, explicit_config, explicit_context).await
-        }
         Commands::Change(cmd) => {
             commands::change::run(cmd, explicit_config, explicit_context).await
         }

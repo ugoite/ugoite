@@ -22,7 +22,7 @@ Deno.test("capability projection tracks the portable operation manifests", async
   );
   const rustOperations = rustManifestOperations(rustSource);
   const tsOperations = typescriptManifestOperations(tsSource);
-  assertEquals(rustOperations.length, 68);
+  assertEquals(rustOperations.length, 65);
   assertEquals(tsOperations, rustOperations);
 });
 
@@ -92,7 +92,7 @@ Deno.test("CLI core service map covers the journey mutations", () => {
   assertEquals(SERVICE_METHOD_OPERATIONS["entry_history"], "entry.history");
   assertEquals(SERVICE_METHOD_OPERATIONS["entry_revision"], "entry.revision");
   assertEquals(SERVICE_METHOD_OPERATIONS["restore_entry"], "entry.restore");
-  assertEquals(SERVICE_METHOD_OPERATIONS["search_entries"], "search.keyword");
+  assertEquals(SERVICE_METHOD_OPERATIONS["query_entry_page"], "entry.query");
 });
 
 // Informational report: gaps are reported, never fail the build.

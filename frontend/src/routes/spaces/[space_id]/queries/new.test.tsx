@@ -140,7 +140,7 @@ describe("/spaces/:space_id/queries/new", () => {
         variables: [],
       });
     });
-    expect(navigateMock).toHaveBeenCalledWith("/spaces/default/search");
+    expect(navigateMock).toHaveBeenCalledWith("/spaces/default/sql");
   });
 
   it("normalizes template variables to the native SQL query placeholder", async () => {

@@ -65,29 +65,34 @@ describe("portable Ugoite API protocol WASM", () => {
     );
   });
 
-  it("REQ-API-001: encodes path segments and query values in Rust/WASM", async () => {
-    const request = await prepareApiRequest("search.keyword", {
+  it("REQ-API-001: encodes path segments for canonical entry reads", async () => {
+    const request = await prepareApiRequest("entry.get", {
       space_id: "team/東京",
-      q: "a & b#c",
+      entry_id: "entry-1",
     });
 
     expect(request).toMatchObject({
       method: "GET",
-      path: "/spaces/team%2F%E6%9D%B1%E4%BA%AC/search?q=a+%26+b%23c",
+      path: "/spaces/team%2F%E6%9D%B1%E4%BA%AC/entries/entry-1",
       body_kind: "none",
     });
   });
 
   it("REQ-API-001: encodes durable collection pagination arguments", async () => {
     await expect(
-      prepareApiRequest("search.keyword", {
-        space_id: "demo",
-        q: "alpha",
-        limit: 51,
-        offset: 50,
-      }),
+      prepareApiRequest(
+        "entry.query",
+        { space_id: "demo" },
+        {
+          query: { scope: { kind: "all" }, filters: [], sort: [] },
+          projection: { kind: "preview" },
+          limit: 51,
+        },
+      ),
     ).resolves.toMatchObject({
-      path: "/spaces/demo/search?q=alpha&limit=51&offset=50",
+      method: "POST",
+      path: "/spaces/demo/entries/query",
+      body_kind: "json",
     });
 
     await expect(
@@ -102,17 +107,29 @@ describe("portable Ugoite API protocol WASM", () => {
     });
   });
 
-  it("REQ-FE-065: sends row-reference lookups with the immutable Space UID", async () => {
-    const request = await prepareApiRequest("entry.options", {
-      space_id: "01900000-0000-7000-8000-000000000001",
-      form: "Project",
-      q: "alpha",
-      limit: 8,
-    });
+  it("REQ-FE-065: sends row-reference lookups through canonical entry.query", async () => {
+    const request = await prepareApiRequest(
+      "entry.query",
+      { space_id: "01900000-0000-7000-8000-000000000001" },
+      {
+        query: {
+          scope: {
+            kind: "form",
+            form_id: "01900000-0000-7000-8000-000000000002",
+          },
+          text: "alpha",
+          filters: [],
+          sort: [],
+        },
+        projection: { kind: "preview" },
+        limit: 8,
+      },
+    );
 
     expect(request.path).toBe(
-      "/spaces/01900000-0000-7000-8000-000000000001/entries/options?form=Project&limit=8&q=alpha",
+      "/spaces/01900000-0000-7000-8000-000000000001/entries/query",
     );
+    expect(request.body_kind).toBe("json");
   });
 
   it("REQ-API-001: serializes JSON bodies in the portable Rust layer", async () => {

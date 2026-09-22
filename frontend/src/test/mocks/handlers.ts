@@ -578,60 +578,61 @@ export const handlers = [
     return HttpResponse.json({ success: true });
   }),
 
-  // Query entries
-  testHttp.post("/spaces/:spaceId/query", async ({ params, request }) => {
+  // Canonical EntryQuery collection reads (v0.2 contract). Text, filters,
+  // and sort travel inside the POST body; the mock applies text matching
+  // against the stored index so EntryBrowser fixtures keep working.
+  testHttp.post("/spaces/:spaceId/entries/query", async ({ params, request }) => {
     const spaceId = params.spaceId as string;
     if (!mockSpaces.has(spaceId)) {
       return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
     }
 
     const body = (await request.json()) as {
-      filter?: Record<string, unknown>;
-      criteria?: Record<string, unknown>;
+      query?: { text?: string };
+      limit?: number;
     };
-    const entries = Array.from(mockEntryIndex.get(spaceId)?.values() || []);
-
-    if (body.criteria) {
-      return HttpResponse.json(entries);
-    }
-
-    // Simple filtering
-    const filtered = entries.filter((entry) => {
-      for (const [key, value] of Object.entries(body.filter || {})) {
-        if (key === "form" && entry.form !== value) return false;
-        if (entry.properties[key] !== value) return false;
-      }
-      return true;
-    });
-
-    return HttpResponse.json(filtered);
-  }),
-
-  // Search entries
-  testHttp.get("/spaces/:spaceId/search", ({ params, request }) => {
-    const spaceId = params.spaceId as string;
-    if (!mockSpaces.has(spaceId)) {
-      return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
-    }
-    const url = new URL(request.url);
-    const q = url.searchParams.get("q")?.toLowerCase() ?? "";
-    const entries = Array.from(mockEntries.get(spaceId)?.values() || []);
     const index = Array.from(mockEntryIndex.get(spaceId)?.values() || []);
-    const matches = index.filter((record) => {
-      const entryContent = entries.find((n) => n.id === record.id)?.content ??
-        "";
-      const haystack = `${record.id}\n${
-        JSON.stringify(record.properties)
-      }\n${entryContent}`.toLowerCase();
-      return haystack.includes(q);
+    const entries = Array.from(mockEntries.get(spaceId)?.values() || []);
+    const needle = body.query?.text?.toLowerCase().trim() ?? "";
+    const matches = needle
+      ? index.filter((record) => {
+        const entryContent = entries.find((n) => n.id === record.id)?.content ??
+          "";
+        const haystack = `${record.id}\n${
+          JSON.stringify(record.properties)
+        }\n${entryContent}`.toLowerCase();
+        return haystack.includes(needle);
+      })
+      : index;
+    const limit = body.limit ?? matches.length;
+    const rows = matches.slice(0, limit).map((record, position) => ({
+      id: record.id,
+      form_id: "00000000-0000-7000-8000-000000000000",
+      revision_id: `rev-${position}`,
+      created_at_micros: 1_000_000,
+      updated_at_micros: 1_000_000,
+      preview: record.id,
+      properties: record.properties,
+    }));
+    return HttpResponse.json({
+      rows,
+      has_more: rows.length < matches.length,
+      ...(rows.length < matches.length ? { next: "mock-cursor" } : {}),
     });
-    const limitValue = url.searchParams.get("limit");
-    const offset = Number(url.searchParams.get("offset") || 0);
-    const page = limitValue === null
-      ? matches.slice(offset)
-      : matches.slice(offset, offset + Number(limitValue));
-    return HttpResponse.json(page);
   }),
+
+  testHttp.post(
+    "/spaces/:spaceId/entries/query/count",
+    ({ params }) => {
+      const spaceId = params.spaceId as string;
+      if (!mockSpaces.has(spaceId)) {
+        return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
+      }
+      return HttpResponse.json({
+        count: mockEntryIndex.get(spaceId)?.size ?? 0,
+      });
+    },
+  ),
 
   // Upload asset
   testHttp.post("/spaces/:spaceId/assets", async ({ params }) => {

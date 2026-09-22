@@ -39,8 +39,8 @@ const CODE_KEYS: Record<string, TranslationKey> = {
 const OPERATION_KEYS: Partial<
   Record<UgoiteApiOperation | string, TranslationKey>
 > = {
-  "search.keyword": "errors.operation.search",
-  "search.query": "errors.operation.search",
+  "entry.query": "errors.operation.search",
+  "entry.query.count": "errors.operation.search",
   "space.list": "errors.operation.settings",
   "sql.list": "errors.operation.savedSql",
   "sql.get": "errors.operation.savedSql",

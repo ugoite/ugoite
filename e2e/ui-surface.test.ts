@@ -64,9 +64,8 @@ test.describe("Fixed surface palette", () => {
     );
     const navigation = page.getByRole("navigation", { name: "Search" });
     await expect(navigation).toBeVisible();
-    await expect(navigation.getByRole("button", { name: "Quick search" }))
-      .toBeVisible();
-    await expect(navigation.getByRole("button", { name: "Advanced search" }))
+    await expect(page.getByLabel("Search keywords")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Search entries" }))
       .toBeVisible();
     await expect(navigation.getByRole("link", { name: "Files" }))
       .toHaveAttribute("href", `/spaces/${spaceId}/assets`);

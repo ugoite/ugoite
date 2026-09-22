@@ -1155,7 +1155,6 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             "/spaces/{space_id}/entries/query/count",
             post(count_entry_query),
         )
-        .route("/spaces/{space_id}/entries/options", get(entry_options))
         .route(
             "/spaces/{space_id}/entries/{entry_id}",
             get(get_entry).put(update_entry).delete(delete_entry),
@@ -1187,8 +1186,6 @@ fn protected_routes(state: AppState) -> Router<AppState> {
         )
         .route("/spaces/{space_id}/forms/types", get(form_types))
         .route("/spaces/{space_id}/forms/{form_name}", get(get_form))
-        .route("/spaces/{space_id}/search", get(search_entries))
-        .route("/spaces/{space_id}/query", post(query_entries))
         .route("/spaces/{space_id}/sql", get(list_sql).post(create_sql))
         .route(
             "/spaces/{space_id}/sql/{sql_id}",
@@ -9553,38 +9550,6 @@ struct EntryListQuery {
     offset: Option<usize>,
 }
 
-#[derive(Deserialize)]
-struct EntryOptionsQuery {
-    form: Option<String>,
-    q: Option<String>,
-    limit: Option<usize>,
-}
-
-async fn entry_options(
-    State(state): State<AppState>,
-    Extension(identity): Extension<RequestIdentityContext>,
-    Path(space_id): Path<String>,
-    Query(query): Query<EntryOptionsQuery>,
-) -> ApiResult<Json<Value>> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
-    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
-    let principals = authorization_principal_ids(&identity, principal_id);
-    let options = state
-        .service
-        .list_entry_options_authorized_for_principals(
-            &space_id,
-            &principals,
-            query.form.as_deref(),
-            query.q.as_deref(),
-            query.limit.unwrap_or(8).min(20),
-        )
-        .await
-        .map_err(ApiError::from_core)?;
-    Ok(Json(
-        serde_json::to_value(options).map_err(|error| ApiError::from_core(error.into()))?,
-    ))
-}
-
 async fn get_entry(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
@@ -10080,13 +10045,6 @@ async fn upsert_form(
     Ok((StatusCode::CREATED, Json(payload)))
 }
 
-#[derive(Deserialize)]
-struct SearchQuery {
-    q: String,
-    limit: Option<usize>,
-    offset: Option<usize>,
-}
-
 fn validate_normal_read_limit(limit: usize, operation: &str) -> ApiResult<()> {
     if limit > ugoite_iceberg::MAX_NORMAL_READ_ROWS {
         return Err(ApiError::from_core(
@@ -10101,87 +10059,6 @@ fn validate_normal_read_limit(limit: usize, operation: &str) -> ApiResult<()> {
         ));
     }
     Ok(())
-}
-
-fn validate_keyword_search_query(query: &str) -> ApiResult<()> {
-    ugoite_core::query::validate_keyword_query(query)
-        .map_err(|error| ApiError::from_core(error.into()))?;
-    Ok(())
-}
-
-async fn search_entries(
-    State(state): State<AppState>,
-    Extension(identity): Extension<RequestIdentityContext>,
-    Path(space_id): Path<String>,
-    Query(query): Query<SearchQuery>,
-) -> ApiResult<Json<Value>> {
-    // This handler is the authorization boundary for the canonical Search HTTP operation.
-    let limit = query.limit.unwrap_or(100);
-    validate_normal_read_limit(limit, "search")?;
-    validate_keyword_search_query(&query.q)?;
-    // Pure request admission must precede permission/storage work. In
-    // particular, malformed or oversized input has a stable typed response
-    // even when the Space is unavailable to the caller.
-    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
-    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
-    let principals = authorization_principal_ids(&identity, principal_id);
-    Ok(Json(
-        serde_json::to_value(
-            state
-                .service
-                .search_entries_authorized_for_principals_page(
-                    &space_id,
-                    &principals,
-                    &query.q,
-                    limit,
-                    query.offset.unwrap_or(0),
-                )
-                .await
-                .map_err(ApiError::from_core)?,
-        )
-        .map_err(|error| ApiError::from_core(error.into()))?,
-    ))
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct QueryRequest {
-    criteria: ugoite_core::structured_search::StructuredSearch,
-}
-
-async fn query_entries(
-    State(state): State<AppState>,
-    Extension(identity): Extension<RequestIdentityContext>,
-    Path(space_id): Path<String>,
-    payload: Result<Json<QueryRequest>, JsonRejection>,
-) -> ApiResult<Json<Value>> {
-    let Json(request) = payload.map_err(|error| {
-        ApiError::new(
-            error.status(),
-            json!({
-                "code": "INVALID_INPUT",
-                "message": error.body_text(),
-            }),
-        )
-    })?;
-    // Deserialize and syntactically validate typed criteria before permission
-    // and principal reads. Form existence and field authorization remain in
-    // the service boundary so an unauthorized caller cannot infer them.
-    ugoite_core::structured_search::validate_structured_search_syntax(&request.criteria)
-        .map_err(|error| ApiError::from_core(error.into()))?;
-    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
-    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
-    let principals = authorization_principal_ids(&identity, principal_id);
-    // Criteria-only input. The v0.1 legacy `filter` passthrough and
-    // bare-payload queries were removed: unknown fields (including `filter`)
-    // and a missing `criteria` fail closed with INVALID_INPUT above.
-    Ok(Json(Value::Array(
-        state
-            .service
-            .search_structured_authorized_for_principals(&space_id, &principals, &request.criteria)
-            .await
-            .map_err(ApiError::from_core)?,
-    )))
 }
 
 async fn list_sql(
@@ -14648,103 +14525,6 @@ mod authentication_regression_tests {
                 )
             })
         );
-
-        let max_query = "x".repeat(ugoite_iceberg::derived_relation::MAX_ASSET_TEXT_QUERY_BYTES);
-        assert!(validate_keyword_search_query(&max_query).is_ok());
-        let oversized_query = format!("{max_query}x");
-        let error = validate_keyword_search_query(&oversized_query)
-            .expect_err("oversized keyword query must be rejected");
-        assert_eq!(error.status, StatusCode::UNPROCESSABLE_ENTITY);
-        assert_eq!(
-            error.detail,
-            json!({
-                "code": "INVALID_INPUT",
-                "message": "search query exceeds the configured byte limit"
-            })
-        );
-
-        for empty in ["", "   "] {
-            let error = validate_keyword_search_query(empty)
-                .expect_err("empty keyword query must be rejected before search");
-            assert_eq!(error.status, StatusCode::UNPROCESSABLE_ENTITY);
-            assert_eq!(
-                error.detail,
-                json!({
-                    "code": "SEARCH_QUERY_EMPTY",
-                    "message": "search query must not be empty"
-                })
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn issue_2746_search_limit_offset_slices_multi_result() -> anyhow::Result<()> {
-        let principal_id = Uuid::from_u128(27460);
-        let (client, space_id, _space_uid) =
-            production_rest_fixture("issue-2746-search-paging", principal_id, true).await?;
-
-        for (entry_id, title) in [
-            ("search-a", "Harvest Alpha"),
-            ("search-b", "Harvest Beta"),
-            ("search-c", "Harvest Gamma"),
-        ] {
-            let (status, body) = client
-                .json(
-                    Method::POST,
-                    &format!("/spaces/{space_id}/entries"),
-                    Some(json!({
-                        "id": entry_id,
-                        "form": "Entry",
-                        "fields": {"Body": format!("harvest {title}")}
-                    })),
-                )
-                .await?;
-            assert_eq!(status, StatusCode::CREATED, "{body}");
-        }
-
-        // The handler forwards limit/offset to the shared paged search; each
-        // page must slice the same multi-result set instead of repeating it.
-        let (full_status, full) = client
-            .json(
-                Method::GET,
-                &format!("/spaces/{space_id}/search?q=harvest&limit=10&offset=0"),
-                None,
-            )
-            .await?;
-        assert_eq!(full_status, StatusCode::OK, "{full}");
-        assert_eq!(full.as_array().map(Vec::len), Some(3), "{full}");
-
-        let (first_status, first) = client
-            .json(
-                Method::GET,
-                &format!("/spaces/{space_id}/search?q=harvest&limit=1&offset=0"),
-                None,
-            )
-            .await?;
-        assert_eq!(first_status, StatusCode::OK, "{first}");
-        let (second_status, second) = client
-            .json(
-                Method::GET,
-                &format!("/spaces/{space_id}/search?q=harvest&limit=1&offset=1"),
-                None,
-            )
-            .await?;
-        assert_eq!(second_status, StatusCode::OK, "{second}");
-        let (third_status, third) = client
-            .json(
-                Method::GET,
-                &format!("/spaces/{space_id}/search?q=harvest&limit=1&offset=2"),
-                None,
-            )
-            .await?;
-        assert_eq!(third_status, StatusCode::OK, "{third}");
-        assert_eq!(first.as_array().map(Vec::len), Some(1), "{first}");
-        assert_eq!(second.as_array().map(Vec::len), Some(1), "{second}");
-        assert_eq!(third.as_array().map(Vec::len), Some(1), "{third}");
-        assert_ne!(first, second, "offset must slice search results");
-        assert_ne!(second, third, "offset must slice search results");
-        assert_ne!(first, third, "offset must slice search results");
-        Ok(())
     }
 
     #[tokio::test]
@@ -15118,30 +14898,45 @@ mod authentication_regression_tests {
             )
             .await?;
         let space_uid = state.service.space_uid(&space_id).await?;
+        let text_page = |text: &str| {
+            Body::from(
+                json!({
+                    "query": {
+                        "scope": {"kind": "all"},
+                        "text": text,
+                    },
+                    "projection": {"kind": "preview"},
+                    "limit": 10
+                })
+                .to_string(),
+            )
+        };
 
         let owner_route = Router::new()
-            .route("/spaces/{space_id}/search", get(search_entries))
+            .route("/spaces/{space_id}/entries/query", post(query_entry_page))
             .layer(Extension(content_identity(owner, space_uid)))
             .with_state(state.clone());
         let response = owner_route
             .oneshot(
-                Request::get(format!("/spaces/{space_id}/search?q=secret&limit=10"))
-                    .body(Body::empty())?,
+                Request::post(format!("/spaces/{space_id}/entries/query"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(text_page("secret"))?,
             )
             .await?;
-        assert_eq!(response.status(), StatusCode::OK);
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
-        let results: Value = serde_json::from_slice(&body)?;
-        assert_eq!(results.as_array().map(Vec::len), Some(1));
-        assert_eq!(results[0]["id"], "authorized-entry");
+        let page: Value = serde_json::from_slice(&body)?;
+        assert_eq!(page["rows"].as_array().map(Vec::len), Some(1));
+        assert_eq!(page["rows"][0]["id"], "authorized-entry");
 
         let outsider_route = Router::new()
-            .route("/spaces/{space_id}/search", get(search_entries))
+            .route("/spaces/{space_id}/entries/query", post(query_entry_page))
             .layer(Extension(content_identity(outsider, space_uid)))
             .with_state(state);
         let response = outsider_route
             .oneshot(
-                Request::get(format!("/spaces/{space_id}/search?q=secret")).body(Body::empty())?,
+                Request::post(format!("/spaces/{space_id}/entries/query"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(text_page("secret"))?,
             )
             .await?;
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
@@ -15149,273 +14944,41 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
-    async fn search_admits_invalid_input_before_space_authorization() -> anyhow::Result<()> {
+    async fn entry_query_rejects_invalid_page_limit() -> anyhow::Result<()> {
+        // EntryQuery validation lives in the authorized service boundary:
+        // Space permission is checked first, then the page request is
+        // validated with a typed INVALID_INPUT failure.
         let state = AppState::new_for_tests("memory://server-search-admission-order")?;
-        let route = Router::new()
-            .route("/spaces/{space_id}/search", get(search_entries))
-            .layer(Extension(content_identity(
-                Uuid::from_u128(2116011),
-                Uuid::from_u128(2116012),
-            )))
-            .with_state(state);
-
-        let response = route
-            .oneshot(Request::get("/spaces/missing/search?q=%20").body(Body::empty())?)
-            .await?;
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
-        let error: Value = serde_json::from_slice(&body)?;
-        assert_eq!(error["code"], "SEARCH_QUERY_EMPTY");
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn structured_search_admits_malformed_criteria_before_space_authorization(
-    ) -> anyhow::Result<()> {
-        let state = AppState::new_for_tests("memory://server-structured-admission-order")?;
-        let route = Router::new()
-            .route("/spaces/{space_id}/query", post(query_entries))
-            .layer(Extension(content_identity(
-                Uuid::from_u128(2116021),
-                Uuid::from_u128(2116022),
-            )))
-            .with_state(state);
-        let response = route
-            .oneshot(
-                Request::post("/spaces/missing/query")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(
-                        json!({
-                            "criteria": {
-                                "form": "Missing",
-                                "sql": "SELECT * FROM hidden_backend_detail",
-                            }
-                        })
-                        .to_string(),
-                    ))?,
-            )
-            .await?;
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
-        let error: Value = serde_json::from_slice(&body)?;
-        assert_eq!(error["code"], "INVALID_INPUT");
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn structured_criteria_query_matches_core_and_preserves_errors() -> anyhow::Result<()> {
-        let state = AppState::new_for_tests("memory://server-structured-criteria-route")?;
-        let owner = Uuid::from_u128(2117001);
+        let owner = Uuid::from_u128(2116011);
         let space_id = state
             .service
-            .create_space_for_principal("structured-criteria-route", owner, "Search test")
+            .create_space_for_principal("search-admission-order", owner, "Search test")
             .await?
             .to_string();
-        state
-            .service
-            .upsert_form(
-                &space_id,
-                &json!({
-                    "name": "Entry",
-                    "fields": {"Body": {"type": "markdown"}},
-                    "allow_extra_attributes": "deny"
-                }),
-            )
-            .await?;
-        state
-            .service
-            .create_structured_entry_with_receipt(
-                &space_id,
-                "criteria-entry",
-                "Entry".to_string(),
-                Vec::new(),
-                BTreeMap::from([("Body".to_string(), json!("secret keyword"))]),
-                BTreeMap::new(),
-                &owner.to_string(),
-            )
-            .await?;
-        // Native core result for identical criteria.
-        let criteria: ugoite_core::structured_search::StructuredSearch =
-            serde_json::from_value(json!({
-                "form": "Entry",
-                "conditions": [
-                    {"field": "Body", "operator": "contains", "value": "secret"}
-                ],
-                "limit": 100
-            }))?;
-        let core_rows = state
-            .service
-            .search_structured(&space_id, &criteria)
-            .await?;
-        assert_eq!(core_rows.len(), 1);
-
         let space_uid = state.service.space_uid(&space_id).await?;
         let route = Router::new()
-            .route("/spaces/{space_id}/query", post(query_entries))
-            .layer(Extension(content_identity(owner, space_uid)))
-            .with_state(state.clone());
-        let response = route
-            .clone()
-            .oneshot(
-                Request::post(format!("/spaces/{space_id}/query"))
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(
-                        json!({
-                            "criteria": {
-                                "form": "Entry",
-                                "conditions": [
-                                    {"field": "Body", "operator": "contains", "value": "secret"}
-                                ],
-                                "limit": 100
-                            }
-                        })
-                        .to_string(),
-                    ))?,
-            )
-            .await?;
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
-        let rest_rows: Value = serde_json::from_slice(&body)?;
-        assert_eq!(rest_rows.as_array().map(Vec::len), Some(core_rows.len()));
-
-        // Unknown field: transport-independent error code.
-        let response = route
-            .clone()
-            .oneshot(
-                Request::post(format!("/spaces/{space_id}/query"))
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(
-                        json!({
-                            "criteria": {
-                                "form": "Entry",
-                                "conditions": [
-                                    {"field": "Missing", "operator": "equals", "value": "x"}
-                                ]
-                            }
-                        })
-                        .to_string(),
-                    ))?,
-            )
-            .await?;
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
-        let error: Value = serde_json::from_slice(&body)?;
-        assert_eq!(error["code"], "UNKNOWN_FORM_FIELDS");
-
-        // Backend implementation details are not part of the logical
-        // criteria protocol. Both the top-level criteria and nested
-        // conditions reject unknown keys before execution.
-        for criteria in [
-            json!({
-                "form": "Entry",
-                "relation": "form_backend_detail",
-                "conditions": []
-            }),
-            json!({
-                "form": "Entry",
-                "conditions": [{
-                    "field": "Body",
-                    "operator": "contains",
-                    "value": "secret",
-                    "sql_column": "field_100"
-                }]
-            }),
-        ] {
-            let response = route
-                .clone()
-                .oneshot(
-                    Request::post(format!("/spaces/{space_id}/query"))
-                        .header(header::CONTENT_TYPE, "application/json")
-                        .body(Body::from(json!({"criteria": criteria}).to_string()))?,
-                )
-                .await?;
-            assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-            let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
-            let error: Value = serde_json::from_slice(&body)?;
-            assert_eq!(error["code"], "INVALID_INPUT");
-        }
-
-        let response = route
-            .clone()
-            .oneshot(
-                Request::post(format!("/spaces/{space_id}/query"))
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(
-                        json!({
-                            "criteria": {
-                                "form": "Entry",
-                                "conditions": [{
-                                    "field": "Body",
-                                    "operator": "gte",
-                                    "value": "secret"
-                                }]
-                            }
-                        })
-                        .to_string(),
-                    ))?,
-            )
-            .await?;
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
-        let error: Value = serde_json::from_slice(&body)?;
-        assert_eq!(error["code"], "INVALID_INPUT");
-
-        let response = route
-            .clone()
-            .oneshot(
-                Request::post(format!("/spaces/{space_id}/query"))
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(
-                        json!({
-                            "criteria": {
-                                "form": "Missing",
-                                "conditions": []
-                            }
-                        })
-                        .to_string(),
-                    ))?,
-            )
-            .await?;
-        // Authorized Search does not reveal whether a requested Form exists.
-        // Unknown and known-but-inaccessible Forms have the same empty result.
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
-        let rows: Value = serde_json::from_slice(&body)?;
-        assert_eq!(rows, json!([]));
-
-        // The typed request rejects unknown fields, so the removed v0.1
-        // legacy `filter` cannot be combined with (or substituted for)
-        // `criteria`.
-        let response = route
-            .clone()
-            .oneshot(
-                Request::post(format!("/spaces/{space_id}/query"))
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(
-                        json!({
-                            "criteria": {"form": "Entry", "conditions": []},
-                            "filter": {"form": "Entry"}
-                        })
-                        .to_string(),
-                    ))?,
-            )
-            .await?;
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
-        let error: Value = serde_json::from_slice(&body)?;
-        assert_eq!(error["code"], "INVALID_INPUT");
-
-        // Legacy keyword path is unchanged.
-        let keyword_route = Router::new()
-            .route("/spaces/{space_id}/search", get(search_entries))
+            .route("/spaces/{space_id}/entries/query", post(query_entry_page))
             .layer(Extension(content_identity(owner, space_uid)))
             .with_state(state);
-        let response = keyword_route
+
+        let response = route
             .oneshot(
-                Request::get(format!("/spaces/{space_id}/search?q=secret")).body(Body::empty())?,
+                Request::post(format!("/spaces/{space_id}/entries/query"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "query": {"scope": {"kind": "all"}},
+                            "projection": {"kind": "preview"},
+                            "limit": 0
+                        })
+                        .to_string(),
+                    ))?,
             )
             .await?;
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        let error: Value = serde_json::from_slice(&body)?;
+        assert_eq!(error["code"], "INVALID_INPUT");
         Ok(())
     }
 

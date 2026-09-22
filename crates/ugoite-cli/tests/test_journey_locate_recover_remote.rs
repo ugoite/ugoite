@@ -317,28 +317,28 @@ async fn journey_cli_remote_locate_recover() {
         );
     }
 
-    // Keyword Search discovers the target.
+    // EntryQuery text search discovers the target.
     let results = stdout_json(
-        &run_cli(config_path, &["search", "keyword", "locate-task-a"]).await,
-        "keyword search discovers the target",
+        &run_cli(config_path, &["entry", "list", "--text", "locate-task-a"]).await,
+        "entry list --text discovers the target",
     );
     assert!(contains_string(&results, "locate-task-a"));
 
-    // Typed structured Search narrows to the intended Entry set.
+    // EntryQuery filters narrow to the intended Entry set.
     let results = stdout_json(
         &run_cli(
             config_path,
             &[
-                "search",
-                "query",
+                "entry",
+                "list",
                 "--form",
                 form_name,
-                "--eq",
+                "--filter",
                 "status=open",
             ],
         )
         .await,
-        "structured search narrows to open tasks",
+        "entry list --filter narrows to open tasks",
     );
     assert_eq!(search_ids(&results), vec!["locate-task-a".to_string()]);
 
@@ -397,7 +397,7 @@ async fn journey_cli_remote_locate_recover() {
         .to_string();
     assert_ne!(revert_id, update_change_id);
 
-    // Entry history grows append-only; current search reflects recovery.
+    // Entry history grows append-only; current EntryQuery reflects recovery.
     let history = stdout_json(
         &run_cli(config_path, &["entry", "history", "locate-task-a"]).await,
         "entry history after revert",
@@ -416,16 +416,16 @@ async fn journey_cli_remote_locate_recover() {
         &run_cli(
             config_path,
             &[
-                "search",
-                "query",
+                "entry",
+                "list",
                 "--form",
                 form_name,
-                "--eq",
+                "--filter",
                 "status=open",
             ],
         )
         .await,
-        "structured search reflects recovered state",
+        "entry list --filter reflects recovered state",
     );
     assert_eq!(search_ids(&results), vec!["locate-task-a".to_string()]);
 
@@ -436,8 +436,8 @@ async fn journey_cli_remote_locate_recover() {
     );
     assert_eq!(revision_ids(&history).len(), 3);
     let results = stdout_json(
-        &run_cli(config_path, &["search", "keyword", "locate-task-a"]).await,
-        "keyword search on reopen",
+        &run_cli(config_path, &["entry", "list", "--text", "locate-task-a"]).await,
+        "entry list --text on reopen",
     );
     assert!(contains_string(&results, "locate-task-a"));
 }
