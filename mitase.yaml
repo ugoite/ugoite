@@ -275,7 +275,6 @@ inventory:
             - docs/spec/ui/pages/space-entry-detail.yaml
             - docs/spec/ui/pages/space-entry-history.yaml
             - docs/spec/ui/pages/space-entry-new.yaml
-            - docs/spec/ui/pages/space-entry-restore.yaml
             - docs/spec/ui/pages/space-entry-revision.yaml
             - docs/spec/ui/pages/space-form-grid.yaml
             - docs/spec/ui/pages/space-form-types.yaml
