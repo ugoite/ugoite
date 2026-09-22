@@ -11,10 +11,8 @@ installed, or deployed.
 ## Read first
 
 - `docs/architecture/testing/ci-cd.md`
-- `docs/guide/deploy/docker-compose.md`
-- `docs/guide/start/container-quickstart.md`
-- `docs/guide/deploy/helm-chart.md`
-- `docs/guide/automate/cli.md`
+- `docs/operate/install-deploy.md`
+- `docs/reference/cli.md`
 - `packages/ugoite/README.md`
 - `.github/workflows/release-*.yml`
 - `.github/workflows/docker-*.yml`
@@ -28,7 +26,7 @@ installed, or deployed.
 - When changing packaging or install behavior, verify the published path and the
   source path separately.
 - If a release change affects quickstart or install docs, update the matching
-  guide in the same change.
+  doc in the same change.
 
 ## Validation
 

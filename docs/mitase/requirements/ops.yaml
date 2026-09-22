@@ -21,14 +21,14 @@ requirements:
         targets:
           - id: operations-guide
             adapter: declared
-            path: docs/guide/operate/server/operations.md
+            path: docs/operate/index.md
             selector: { kind: file }
             claims:
               - kind: evidences
                 anchor: REQ-OPS-001#criterion.local-run-guidance
           - id: container-quickstart
             adapter: declared
-            path: docs/guide/start/container-quickstart.md
+            path: docs/operate/install-deploy.md
             selector: { kind: file }
             claims:
               - kind: evidences

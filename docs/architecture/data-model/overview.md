@@ -14,7 +14,9 @@ export.
 
 ## Authority layers
 
-- **Authoring:** people and agents edit Markdown.
+- **Authoring:** people and agents author structured Entries through
+  Form-defined typed fields. A Markdown field is edited as a field value;
+  the Entry itself is never whole-Entry Markdown.
 - **Domain contract:** a Form defines the typed H2 fields accepted for an Entry.
 - **Persistence:** Catalog Head, its reachable immutable publication records,
   Iceberg metadata, and Iceberg revision tables are authoritative through the
