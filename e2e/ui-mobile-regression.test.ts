@@ -172,12 +172,15 @@ async function runMobileRegression(
     {
       name: "entries",
       path: `/spaces/${spaceId}/entries`,
-      ready: ".entriesList",
+      ready: ".entry-browser",
       assert: async () => {
         // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
         await expect(page.getByRole("heading", { name: "Entries" }))
           .toBeVisible();
-        await expect(page.getByLabel("Filter entries")).toBeVisible();
+        await expect(
+          page.getByRole("toolbar", { name: "Entry browser" }),
+        ).toBeVisible();
+        await expect(page.getByText("Filter", { exact: true })).toBeVisible();
         await expectMobileControlFontSize(page);
       },
     },

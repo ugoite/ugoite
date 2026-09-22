@@ -839,6 +839,7 @@ pub(crate) fn enrich_form_definition(form_def: &Value) -> Result<Value> {
             .get_mut("fields")
             .and_then(Value::as_object_mut)
             .context("Form definition missing 'fields' object")?;
+        let domain_form = to_domain_form(form_def)?;
         for field in fields.values_mut() {
             let field_id = FieldId::new(
                 field
@@ -855,7 +856,56 @@ pub(crate) fn enrich_form_definition(form_def: &Value) -> Result<Value> {
                     "sql_column".to_string(),
                     Value::String(sql_column_name(field_id)),
                 );
+            if let Some(capability) = domain_form
+                .fields
+                .iter()
+                .find(|definition| definition.id == field_id)
+                .map(ugoite_core::entry_query::entry_field_capability)
+            {
+                field
+                    .as_object_mut()
+                    .context("Form field definition must be an object")?
+                    .insert(
+                        "query_capability".to_string(),
+                        serde_json::to_value(capability)?,
+                    );
+            }
         }
     }
     Ok(enriched)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn enriches_form_fields_with_rust_owned_query_capabilities() {
+        let form = serde_json::json!({
+            "id": "00000000-0000-7000-8000-000000000001",
+            "name": "Notes",
+            "version": 1,
+            "template": "",
+            "fields": {
+                "title": {
+                    "id": 100,
+                    "type": "string",
+                    "required": false
+                }
+            }
+        });
+
+        let enriched = enrich_form_definition(&form).expect("form enrichment");
+        let capability = &enriched["fields"]["title"]["query_capability"];
+        assert_eq!(capability["field"]["kind"], "property");
+        assert_eq!(capability["field"]["field_id"], 100);
+        assert_eq!(capability["field_type"], "string");
+        assert_eq!(capability["filterable"], true);
+        assert_eq!(capability["sortable"], true);
+        assert_eq!(capability["projectable"], true);
+        assert_eq!(
+            capability["supported_operators"],
+            serde_json::json!(["equals", "contains"])
+        );
+    }
 }

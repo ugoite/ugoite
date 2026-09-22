@@ -1564,6 +1564,11 @@ textarea {
   box-shadow: var(--shadow);
   padding: 20px;
 }
+.ui-row-reference-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+}
 .ui-dialog.ui-dialog-form {
   width: min(880px, calc(100vw - 32px));
   min-height: min(620px, calc(100vh - 48px));

@@ -15,7 +15,7 @@ use std::fmt;
 use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId, SpaceId};
 use ugoite_domain::publication_ref::PublicationRef;
 
-use crate::structured_search::SearchOperator;
+use crate::structured_search::{SearchOperator, StructuredSearchFieldKind};
 
 pub const ENTRY_CURSOR_VERSION: u32 = 1;
 pub const MAX_ENTRY_QUERY_TEXT_BYTES: usize = 8 * 1024;
@@ -268,6 +268,34 @@ pub struct EntryQueryCapabilities {
     pub fields: Vec<EntryFieldCapability>,
 }
 
+/// Derive the query capability for one Form field from the Rust-owned field
+/// type. Adapters expose this descriptor; clients must not maintain a second
+/// operator/type truth table.
+pub fn entry_field_capability(field: &ugoite_domain::form::FormField) -> EntryFieldCapability {
+    let kind = StructuredSearchFieldKind::of(&field.field_type);
+    let supported_operators = [
+        SearchOperator::Equals,
+        SearchOperator::Contains,
+        SearchOperator::Lt,
+        SearchOperator::Lte,
+        SearchOperator::Gt,
+        SearchOperator::Gte,
+    ]
+    .into_iter()
+    .filter(|operator| kind.is_some_and(|kind| kind.supports(*operator)))
+    .collect();
+    let queryable = kind.is_some();
+    EntryFieldCapability {
+        field: EntryFieldRef::Property { field_id: field.id },
+        name: field.name.clone(),
+        field_type: field.field_type.as_str().to_string(),
+        filterable: queryable,
+        sortable: queryable,
+        projectable: true,
+        supported_operators,
+    }
+}
+
 /// Opaque, signed keyset continuation. The token carries its immutable
 /// publication coordinate and never acts as an authorization credential.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -455,6 +483,7 @@ impl std::error::Error for EntryCursorError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ugoite_domain::form::{FieldType, FormField};
     use ugoite_domain::space_key::SpaceUri;
     use uuid::Uuid;
 
@@ -531,6 +560,64 @@ mod tests {
             request.validate(),
             Err(EntryQueryError::PropertyRequiresFormScope)
         ));
+    }
+
+    #[test]
+    fn field_capability_comes_from_structured_search_field_kind() {
+        let title = FormField {
+            id: FieldId::new(100).expect("field id"),
+            name: "title".to_owned(),
+            field_type: FieldType::String,
+            required: false,
+            label: None,
+            description: None,
+            semantic_role: None,
+            reference_form: None,
+            list_item: None,
+            validation: None,
+            enum_values: Vec::new(),
+            deprecated: false,
+        };
+        let capability = entry_field_capability(&title);
+        assert!(capability.filterable);
+        assert!(capability.sortable);
+        assert!(capability.projectable);
+        assert_eq!(
+            capability.supported_operators,
+            vec![SearchOperator::Equals, SearchOperator::Contains]
+        );
+    }
+
+    #[test]
+    fn field_capability_preserves_typed_operator_boundaries() {
+        let priority = FormField {
+            id: FieldId::new(101).expect("field id"),
+            name: "priority".to_owned(),
+            field_type: FieldType::Integer,
+            required: false,
+            label: None,
+            description: None,
+            semantic_role: None,
+            reference_form: None,
+            list_item: None,
+            validation: None,
+            enum_values: Vec::new(),
+            deprecated: false,
+        };
+        let capability = entry_field_capability(&priority);
+        assert!(capability.filterable);
+        assert!(capability.sortable);
+        assert!(capability.projectable);
+        assert_eq!(
+            capability.supported_operators,
+            vec![
+                SearchOperator::Equals,
+                SearchOperator::Lt,
+                SearchOperator::Lte,
+                SearchOperator::Gt,
+                SearchOperator::Gte,
+            ]
+        );
     }
 
     #[test]

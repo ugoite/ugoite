@@ -984,6 +984,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         fieldId={fieldId}
         fieldName={fieldName}
         spaceId={props.spaceId()}
+        forms={props.forms?.()}
         multiline={fieldDef.type === "markdown"}
         invalid={invalid()}
         describedBy={invalid() ? describedBy() : undefined}

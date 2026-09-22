@@ -7,6 +7,12 @@ import type {
   EntryUpdatePayload,
   Form,
 } from "./types";
+import type {
+  EntryCount,
+  EntryCountRequest,
+  EntryPage,
+  EntryPageRequest,
+} from "./entry-query";
 import { normalizeEntryRecord, normalizeTimestamp } from "./date-format";
 import { buildStructuredEntryFields } from "./entry-input";
 import type { DraftFields } from "./draft-values";
@@ -40,6 +46,25 @@ const currentRevisionIdFromError = (
 
 /** Entry API client backed by the shared Rust/WASM protocol. */
 export const entryApi = {
+  async query(spaceId: string, request: EntryPageRequest): Promise<EntryPage> {
+    return await protocolFetch<EntryPage>(
+      "entry.query",
+      { space_id: spaceId },
+      request,
+    );
+  },
+
+  async count(
+    spaceId: string,
+    request: EntryCountRequest,
+  ): Promise<EntryCount> {
+    return await protocolFetch<EntryCount>(
+      "entry.query.count",
+      { space_id: spaceId },
+      request,
+    );
+  },
+
   async list(
     spaceId: string,
     limit?: number,
