@@ -550,15 +550,6 @@ features:
                 criterion: REQ-FE-040#criterion.registry-shape
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
-          - id: page-space-entry-restore
-            adapter: declared
-            path: docs/spec/ui/pages/space-entry-restore.yaml
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-040#criterion.registry-shape
-              - kind: satisfies
-                criterion: REQ-FE-040#criterion.route-coverage
           - id: page-space-entry-revision
             adapter: declared
             path: docs/spec/ui/pages/space-entry-revision.yaml
@@ -708,13 +699,6 @@ features:
           - id: route-entry-history-index
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.tsx
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-040#criterion.route-coverage
-          - id: route-entry-detail-restore
-            adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/restore.tsx
             selector: { kind: file }
             claims:
               - kind: satisfies

@@ -1545,7 +1545,7 @@ requirements:
     criteria:
       - id: form-grid
         kind: behavior
-        statement: The Forms route presents a list-only Form list without a same-screen Entry grid or nested view tabs; selecting a Form navigates to the form-scoped Entry list at the Entries route, and legacy /forms?form= URLs redirect there.
+        statement: The Forms route presents a list-only Form list without a same-screen Entry grid or nested view tabs; selecting a Form navigates to the form-scoped Entry list at the Entries route.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
       - id: form-scoped-entries
         kind: behavior
@@ -1591,15 +1591,6 @@ requirements:
                 criterion: REQ-FE-067#criterion.form-grid
                 covers: [FEAT-FE-010#binding.frontend/target.forms-workspace]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "navigates to the form-scoped Entry list on row click" } }
-          - id: form-legacy-redirect
-            adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
-            selector: { kind: test, name: "redirects legacy /forms?form= URLs to the Entry list" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-067#criterion.form-grid
-                covers: [FEAT-FE-010#binding.frontend/target.forms-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "redirects legacy /forms?form= URLs to the Entry list" } }
           - id: form-edit-workspace
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
@@ -1968,7 +1959,6 @@ requirements:
                   - FEAT-FE-013#binding.frontend/target.page-space-entry-detail
                   - FEAT-FE-013#binding.frontend/target.page-space-entry-history
                   - FEAT-FE-013#binding.frontend/target.page-space-entry-new
-                  - FEAT-FE-013#binding.frontend/target.page-space-entry-restore
                   - FEAT-FE-013#binding.frontend/target.page-space-entry-revision
                   - FEAT-FE-013#binding.frontend/target.page-space-form-grid
                   - FEAT-FE-013#binding.frontend/target.page-space-form-types
@@ -2013,7 +2003,6 @@ requirements:
                   - FEAT-FE-013#binding.frontend/target.page-space-entry-detail
                   - FEAT-FE-013#binding.frontend/target.page-space-entry-history
                   - FEAT-FE-013#binding.frontend/target.page-space-entry-new
-                  - FEAT-FE-013#binding.frontend/target.page-space-entry-restore
                   - FEAT-FE-013#binding.frontend/target.page-space-entry-revision
                   - FEAT-FE-013#binding.frontend/target.page-space-form-grid
                   - FEAT-FE-013#binding.frontend/target.page-space-form-types
@@ -2032,7 +2021,6 @@ requirements:
                   - FEAT-FE-013#binding.frontend/target.route-entry-history
                   - FEAT-FE-013#binding.frontend/target.route-entry-revision
                   - FEAT-FE-013#binding.frontend/target.route-entry-history-index
-                  - FEAT-FE-013#binding.frontend/target.route-entry-detail-restore
                   - FEAT-FE-013#binding.frontend/target.route-entry-index
                   - FEAT-FE-013#binding.frontend/target.route-entry-new
                   - FEAT-FE-013#binding.frontend/target.route-forms
