@@ -2,8 +2,8 @@ import { onMount } from "solid-js";
 import { getDocsiteHref } from "~/lib/docsite-links";
 
 export const aboutDocsHref = getDocsiteHref(
-  "/docs/guide/start",
-  "docs/guide/start/index.md",
+  "/docs/get-started",
+  "docs/get-started/index.md",
 );
 
 // The in-app About page was removed: documentation is the single authority

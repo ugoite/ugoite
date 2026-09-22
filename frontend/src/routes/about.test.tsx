@@ -5,7 +5,7 @@ import AboutRedirectRoute, { aboutDocsHref } from "./about";
 import { setLocale } from "~/lib/i18n";
 
 const docsHref =
-  "https://ugoite.github.io/ugoite/docs/guide/start";
+  "https://ugoite.github.io/ugoite/docs/get-started";
 
 describe("/about", () => {
   const originalLocation = window.location;

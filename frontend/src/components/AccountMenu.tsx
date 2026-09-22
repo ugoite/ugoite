@@ -5,8 +5,8 @@ import { getDocsiteHref } from "~/lib/docsite-links";
 import { t } from "~/lib/i18n";
 
 const docsHref = getDocsiteHref(
-  "/docs/guide/start",
-  "docs/guide/start/index.md",
+  "/docs/get-started",
+  "docs/get-started/index.md",
 );
 
 export function AccountMenu(props: { settingsHref?: string } = {}) {

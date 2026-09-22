@@ -497,7 +497,11 @@ fn docs_current_stack_check() -> Result<()> {
         "docs/architecture/contracts/stack.md",
         "docs/architecture/testing/ci-cd.md",
         "docs/architecture/testing/strategy.md",
-        "docs/guide",
+        "docs/get-started",
+        "docs/use",
+        "docs/operate",
+        "docs/reference",
+        "docs/develop",
         "docsite/src/pages/app",
     ] {
         let path = Path::new(root);

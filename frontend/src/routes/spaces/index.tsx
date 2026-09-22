@@ -15,12 +15,12 @@ import { formatUserFacingError } from "~/lib/user-facing-error";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 
 const localDevAuthGuideUrl = getDocsiteHref(
-  "/docs/guide/develop/local-dev-auth-login",
-  "docs/guide/develop/local-dev-auth-login.md",
+  "/docs/develop/development-setup",
+  "docs/develop/development-setup.md",
 );
 const browserWalkthroughUrl = getDocsiteHref(
-  "/docs/guide/start/browser-first-entry",
-  "docs/guide/start/browser-first-entry.md",
+  "/docs/get-started/quickstart",
+  "docs/get-started/quickstart.mdx",
 );
 
 const normalizeCreateError = (value: unknown): string => {

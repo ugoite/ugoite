@@ -51,7 +51,7 @@ test.describe("Public page stability", () => {
 		try {
 			const page = await context.newPage();
 			await page.route(
-				"https://ugoite.github.io/ugoite/docs/guide/start",
+				"https://ugoite.github.io/ugoite/docs/get-started",
 				(route) =>
 					route.fulfill({
 						status: 200,
@@ -62,7 +62,7 @@ test.describe("Public page stability", () => {
 
 			await page.goto("/about");
 			await page.waitForURL(
-				"https://ugoite.github.io/ugoite/docs/guide/start",
+				"https://ugoite.github.io/ugoite/docs/get-started",
 			);
 
 			await expect(page.locator("body")).toContainText("Docs");
@@ -129,7 +129,7 @@ test.describe("Public page stability", () => {
 				page.getByRole("link", { name: "Docs" }),
 			).toHaveAttribute(
 				"href",
-				"https://ugoite.github.io/ugoite/docs/guide/start",
+				"https://ugoite.github.io/ugoite/docs/get-started",
 			);
 			await expect(page.locator("body")).not.toContainText("Visit solidjs.com");
 			await expect(page.locator("body")).not.toContainText("About Page");

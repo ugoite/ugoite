@@ -806,11 +806,11 @@ async fn oauth_metadata_describes_device_and_dpop_surface() {
     assert_eq!(documentation_url.host_str(), Some("ugoite.github.io"));
     assert_eq!(
         documentation_url.path(),
-        "/ugoite/docs/guide/operate/auth/auth-overview/"
+        "/ugoite/docs/operate/identity-access/"
     );
     assert_eq!(
         documentation,
-        "https://ugoite.github.io/ugoite/docs/guide/operate/auth/auth-overview/"
+        "https://ugoite.github.io/ugoite/docs/operate/identity-access/"
     );
     let response = app
         .oneshot(

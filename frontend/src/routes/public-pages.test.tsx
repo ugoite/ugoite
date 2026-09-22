@@ -23,7 +23,7 @@ vi.mock(
 );
 
 const docsHref =
-  "https://ugoite.github.io/ugoite/docs/guide/start";
+  "https://ugoite.github.io/ugoite/docs/get-started";
 
 describe("concept public pages", () => {
   const originalLocation = window.location;

@@ -23,8 +23,8 @@ import { spaceRoute } from "~/lib/space-shell-route";
 export const route = spaceRoute({ navigation: "home" });
 
 const browserWalkthroughUrl = getDocsiteHref(
-  "/docs/guide/start/browser-first-entry",
-  "docs/guide/start/browser-first-entry.md",
+  "/docs/get-started/quickstart",
+  "docs/get-started/quickstart.mdx",
 );
 
 export default function SpaceDashboardRoute() {
