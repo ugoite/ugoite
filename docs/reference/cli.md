@@ -98,8 +98,8 @@ CLI documentation trees:
 - `entry`: create, read, update, list, history, restore, and delete Entries;
 - `asset`: upload and delete Space-owned file content in core and authenticated
   remote modes;
-- `search`, `sql`, and `query`: keyword, structured, saved-query, and
-  read-only SQL workflows;
+- `sql`: saved-query and read-only SQL workflows (lint, query, count, and
+  saved subcommands);
 - `change` and `run`: inspect the Space timeline and append inverse Changes for
   recovery;
 - `index`: rebuild derived local indexes; and
@@ -114,8 +114,8 @@ Start with the task page for the outcome, then use the matching command help:
 | Define a Form | [Create a Form](../use/forms.mdx) | `ugoite form --help` |
 | Create or edit an Entry | [Create and Edit Entries](../use/entries.mdx) | `ugoite entry --help` |
 | Add an Asset | [Add an Asset](../use/assets.mdx) | `ugoite asset --help` |
-| Search and structured filter | [Search and Filter](../use/search.mdx) | `ugoite search --help` |
-| Saved SQL and expert query | [Saved SQL and expert query](../use/sql.mdx) | `ugoite sql --help`, `ugoite query --help` |
+| Search and structured filter | [Search and Filter](../use/search.mdx) | `ugoite entry list --help` |
+| Saved SQL and expert query | [Saved SQL and expert query](../use/sql.mdx) | `ugoite sql --help` |
 | View history | [View History](../use/history.mdx) | `ugoite entry history --help`, `ugoite change --help` |
 | Restore or undo | [Restore and Undo](../use/restore.mdx) | `ugoite entry restore --help`, `ugoite change --help`, `ugoite run --help` |
 
