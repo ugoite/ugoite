@@ -140,7 +140,7 @@ pub fn datafusion_parameters(
                         .ok_or_else(|| anyhow!("SQL parameter {name} must be an Int32"))?;
                     datafusion::scalar::ScalarValue::Int32(Some(value))
                 }
-                ("int64", Value::Number(value)) => datafusion::scalar::ScalarValue::Int64(
+                ("int64" | "long", Value::Number(value)) => datafusion::scalar::ScalarValue::Int64(
                     value
                         .as_i64()
                         .ok_or_else(|| anyhow!("SQL parameter {name} must be an Int64"))?
@@ -160,13 +160,17 @@ pub fn datafusion_parameters(
                         .ok_or_else(|| anyhow!("SQL parameter {name} must be a finite Float32"))?;
                     datafusion::scalar::ScalarValue::Float32(Some(value))
                 }
-                ("float64", Value::Number(value)) => datafusion::scalar::ScalarValue::Float64(
-                    value
-                        .as_f64()
-                        .filter(|value| value.is_finite())
-                        .ok_or_else(|| anyhow!("SQL parameter {name} must be a finite Float64"))?
-                        .into(),
-                ),
+                ("float64" | "double", Value::Number(value)) => {
+                    datafusion::scalar::ScalarValue::Float64(
+                        value
+                            .as_f64()
+                            .filter(|value| value.is_finite())
+                            .ok_or_else(|| {
+                                anyhow!("SQL parameter {name} must be a finite Float64")
+                            })?
+                            .into(),
+                    )
+                }
                 ("timestamp", Value::String(value)) => {
                     let value = crate::parse_wall_timestamp_micros(value)
                         .or_else(|_| {
@@ -212,10 +216,12 @@ pub fn datafusion_parameters(
                 ("boolean", Value::Null) => datafusion::scalar::ScalarValue::Boolean(None),
                 ("integer", Value::Null) => datafusion::scalar::ScalarValue::Int64(None),
                 ("int32", Value::Null) => datafusion::scalar::ScalarValue::Int32(None),
-                ("int64", Value::Null) => datafusion::scalar::ScalarValue::Int64(None),
+                ("int64" | "long", Value::Null) => datafusion::scalar::ScalarValue::Int64(None),
                 ("float", Value::Null) => datafusion::scalar::ScalarValue::Float64(None),
                 ("float32", Value::Null) => datafusion::scalar::ScalarValue::Float32(None),
-                ("float64", Value::Null) => datafusion::scalar::ScalarValue::Float64(None),
+                ("float64" | "double", Value::Null) => {
+                    datafusion::scalar::ScalarValue::Float64(None)
+                }
                 ("timestamp", Value::Null) => {
                     datafusion::scalar::ScalarValue::TimestampMicrosecond(None, None)
                 }
@@ -236,9 +242,9 @@ pub fn datafusion_parameters(
                 }
                 ("date", Value::Null) => datafusion::scalar::ScalarValue::Date32(None),
                 (
-                    "string" | "boolean" | "integer" | "int32" | "int64" | "float" | "float32"
-                    | "float64" | "timestamp" | "timestamp_tz" | "timestamp_ns" | "timestamp_tz_ns"
-                    | "date",
+                    "string" | "boolean" | "integer" | "int32" | "int64" | "long" | "float"
+                    | "float32" | "float64" | "double" | "timestamp" | "timestamp_tz"
+                    | "timestamp_ns" | "timestamp_tz_ns" | "date",
                     _,
                 ) => {
                     return Err(anyhow!(
@@ -1309,10 +1315,10 @@ fn canonical_candidates_from_batches(
             let sort_values = sort_columns
                 .iter()
                 .map(|sort| {
-                    value
-                        .get(&sort.alias)
-                        .cloned()
-                        .context("Entry query candidate is missing sort value")
+                    // A SQL NULL sort value has no JSON encoding in the
+                    // candidate row: an absent key and an explicit null both
+                    // mean the same null sort value the cursor logic handles.
+                    Ok(value.get(&sort.alias).cloned().unwrap_or(Value::Null))
                 })
                 .collect::<Result<Vec<_>>>()?;
             Ok(CanonicalEntryCandidate {
