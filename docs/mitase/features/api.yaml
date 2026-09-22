@@ -340,6 +340,22 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-API-002#criterion.entry-lifecycle
+          - id: query-sql
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: query_sql }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.canonical-sql-page
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.ordered-pagination
+          - id: count-sql
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: count_sql }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.canonical-sql-count
       - id: frontend
         role: operation
         facet: frontend

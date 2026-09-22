@@ -86,6 +86,10 @@ When `has_more` is true, pass `next` back as `--continuation`. The
 continuation fixes the publication used by the query chain while the current
 authorization is checked again for every request.
 
+An explicit `ORDER BY` is required for a result that needs more than one page.
+An unordered result that exceeds `--limit` is rejected instead of silently
+discarding rows; a single-page unordered result remains valid.
+
 ```bash
 ugoite sql query \
   'SELECT field_<FieldId> FROM form_<FormId> ORDER BY _ugoite_id' \

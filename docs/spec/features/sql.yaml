@@ -5,7 +5,7 @@ apis:
 - id: sql.query
   method: POST
   status: implemented
-  description: Execute one read-only SQL SELECT page without persistent SQL execution state.
+  description: Execute one read-only SQL SELECT page without persistent SQL execution state. An explicit ORDER BY is required when the result exceeds the requested page limit.
   backend:
     path: /spaces/{space_id}/sql/query
     file: crates/ugoite-server/src/lib.rs

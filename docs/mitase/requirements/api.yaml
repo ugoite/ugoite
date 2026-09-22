@@ -560,6 +560,10 @@ requirements:
         kind: quality
         statement: Local and remote CLI SQL operations use the same canonical request and response DTOs.
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: ordered-pagination
+        kind: security
+        statement: A SQL page that exceeds its limit must have an explicit ORDER BY; unordered results are rejected instead of silently discarding rows or issuing an unsafe continuation.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
     bindings:
       - id: cli-verification
         role: verification
@@ -601,3 +605,25 @@ requirements:
                 criterion: REQ-API-015#criterion.canonical-sql-count
                 covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_cli_sql_query_and_count_use_stateless_local_contract } }
+      - id: backend-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that unordered SQL results exceeding a page limit are rejected instead of silently truncated.
+        targets:
+          - id: ordered-pagination
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::stateless_sql_query_pins_publication_and_separates_count }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.canonical-sql-page
+                covers: [FEAT-API-001#binding.backend-implementation/target.query-sql]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::stateless_sql_query_pins_publication_and_separates_count } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.canonical-sql-count
+                covers: [FEAT-API-001#binding.backend-implementation/target.count-sql]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::stateless_sql_query_pins_publication_and_separates_count } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.ordered-pagination
+                covers: [FEAT-API-001#binding.backend-implementation/target.query-sql]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::stateless_sql_query_pins_publication_and_separates_count } }

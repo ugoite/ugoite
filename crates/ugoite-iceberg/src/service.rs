@@ -4790,6 +4790,13 @@ impl UgoiteService {
                 checkpoint,
             )
             .await?;
+        if !has_order && rows.len() > request.limit {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "SQL pagination requires an explicit ORDER BY",
+            )
+            .into());
+        }
         let has_more = has_order && rows.len() > request.limit;
         rows.truncate(request.limit);
         let next = if has_more {
@@ -4964,6 +4971,13 @@ impl UgoiteService {
                 checkpoint,
             )
             .await?;
+        if !has_order && rows.len() > request.limit {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "SQL pagination requires an explicit ORDER BY",
+            )
+            .into());
+        }
         let has_more = has_order && rows.len() > request.limit;
         rows.truncate(request.limit);
         let next = if has_more {

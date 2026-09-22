@@ -1086,6 +1086,23 @@ fn test_cli_sql_query_and_count_use_stateless_local_contract() {
     assert!(next_page["next"].is_null());
     assert_ne!(next_page["rows"][0]["_ugoite_id"], first_id);
 
+    let unordered = run_cli(
+        &space.config_path,
+        &[
+            "sql",
+            "query",
+            &format!("SELECT _ugoite_id FROM \"{relation}\""),
+            "--limit",
+            "1",
+        ],
+    );
+    assert!(!unordered.status.success());
+    assert!(
+        String::from_utf8_lossy(&unordered.stderr).contains("ORDER BY"),
+        "unordered SQL pagination should fail clearly: {}",
+        String::from_utf8_lossy(&unordered.stderr)
+    );
+
     let count = stdout_json(
         &run_cli(&space.config_path, &["sql", "count", &sql]),
         "local stateless SQL count",
