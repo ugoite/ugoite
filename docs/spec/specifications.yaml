@@ -113,8 +113,6 @@
   - POL-014
   linked_requirements:
   - REQCAT-STORAGE
-- id: SPEC-DM-SQL-SESSIONS
-  source_file: ../architecture/data-model/sql-sessions.md
   linked_policies:
   - POL-001
   linked_requirements:

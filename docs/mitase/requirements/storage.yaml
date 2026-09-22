@@ -53,13 +53,13 @@ requirements:
 
   - id: REQ-STO-002
     title: Space bootstrap directory structure
-    description: Creating a Space writes its current metadata and settings, creates the forms, assets, and sql_sessions directories, and bootstraps the built-in Entry Form through the Iceberg-backed Form store.
+    description: Creating a Space writes its current metadata and settings, creates the forms and assets directories, and bootstraps the built-in Entry Form through the Iceberg-backed Form store.
     priority: high
     status: implemented
     criteria:
       - id: bootstrap-scaffold
         kind: behavior
-        statement: Space creation produces meta.json and settings.json, creates forms/, assets/, and sql_sessions/, and persists the built-in Entry Form with the current default settings.
+        statement: Space creation produces meta.json and settings.json, creates forms/ and assets/, and persists the built-in Entry Form with the current default settings.
         governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
     bindings:
       - id: bootstrap-verification
@@ -613,7 +613,8 @@ requirements:
       The machine-readable Space layout records the distinction between
       bootstrap scaffolding, lazily materialized paths, node-local control
       state, and Space-owned data. The current migration traces the
-      create_space scaffold plus response-signing and SQL-session paths; a
+      create_space scaffold plus response-signing paths; disposable SQL query
+      continuations are held by clients rather than materialized in the Space;
       complete executable parity check for every documented path remains an
       explicit evidence gap.
     priority: high
@@ -629,7 +630,7 @@ requirements:
         governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
       - id: lazy-path-boundary
         kind: behavior
-        statement: Response-signing material and SQL-session metadata are materialized under their documented lazy paths rather than being treated as bootstrap Space metadata.
+        statement: Response-signing material is materialized under its documented lazy path rather than being treated as bootstrap Space metadata; SQL query continuations are not Space files.
         governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-008#rule.governance, POL-014#rule.governance]
     bindings:
       - id: layout-verification

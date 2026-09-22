@@ -28,8 +28,6 @@ let mockAssets: Map<string, Map<string, AssetReference>> = new Map();
 let mockForms: Map<string, Map<string, Form>> = new Map();
 let mockSqlEntries: Map<string, Map<string, Record<string, unknown>>> =
   new Map();
-let mockSqlSessions: Map<string, Map<string, Record<string, unknown>>> =
-  new Map();
 let mockPreferences: UserPreferences = {
   selected_space_id: null,
   locale: null,
@@ -205,7 +203,6 @@ export const resetMockData = () => {
   mockAssets = new Map();
   mockForms = new Map();
   mockSqlEntries = new Map();
-  mockSqlSessions = new Map();
   mockPreferences = {
     selected_space_id: null,
     locale: null,
@@ -223,7 +220,6 @@ export const seedSpace = (space: Space) => {
   mockAssets.set(key, new Map());
   mockForms.set(key, new Map());
   mockSqlEntries.set(key, new Map());
-  mockSqlSessions.set(key, new Map());
 };
 
 export const seedEntry = (
@@ -250,14 +246,6 @@ export const seedSqlEntry = (
 ) => {
   if (!mockSqlEntries.has(spaceId)) mockSqlEntries.set(spaceId, new Map());
   mockSqlEntries.get(spaceId)?.set(entry.id, entry);
-};
-
-export const seedSqlSession = (
-  spaceId: string,
-  session: Record<string, unknown> & { id: string },
-) => {
-  if (!mockSqlSessions.has(spaceId)) mockSqlSessions.set(spaceId, new Map());
-  mockSqlSessions.get(spaceId)?.set(session.id, session);
 };
 
 export const seedPreferences = (preferences: Partial<UserPreferences>) => {
@@ -862,71 +850,6 @@ export const handlers = [
   testHttp.post(
     "/spaces/:spaceId/sql/query/count",
     () => HttpResponse.json({ count: 2 }),
-  ),
-
-  // SQL Sessions
-  testHttp.post(
-    "/spaces/:spaceId/sql-sessions",
-    async ({ params, request }) => {
-      const spaceId = params.spaceId as string;
-      const body = (await request.json()) as { sql: string };
-      if (typeof body.sql === "string" && /\bentries\b/i.test(body.sql)) {
-        return HttpResponse.json(
-          { detail: "Legacy SQL relations are unsupported" },
-          { status: 422 },
-        );
-      }
-      const id = crypto.randomUUID();
-      const session = {
-        id,
-        sql: body.sql,
-        status: "ready",
-        error: null,
-        created_at: new Date().toISOString(),
-      };
-      if (!mockSqlSessions.has(spaceId)) {
-        mockSqlSessions.set(
-          spaceId,
-          new Map(),
-        );
-      }
-      mockSqlSessions.get(spaceId)?.set(id, session);
-      return HttpResponse.json(session, { status: 201 });
-    },
-  ),
-  testHttp.get("/spaces/:spaceId/sql-sessions/:sessionId", ({ params }) => {
-    const spaceId = params.spaceId as string;
-    const sessionId = params.sessionId as string;
-    const session = mockSqlSessions.get(spaceId)?.get(sessionId);
-    if (!session) {
-      return HttpResponse.json({ detail: "Not found" }, { status: 404 });
-    }
-    return HttpResponse.json(session);
-  }),
-  testHttp.get(
-    "/spaces/:spaceId/sql-sessions/:sessionId/count",
-    ({ params }) => {
-      const spaceId = params.spaceId as string;
-      const sessionId = params.sessionId as string;
-      if (!mockSqlSessions.get(spaceId)?.has(sessionId)) {
-        return HttpResponse.json({ detail: "Not found" }, { status: 404 });
-      }
-      return HttpResponse.json({ count: 3 });
-    },
-  ),
-  testHttp.get(
-    "/spaces/:spaceId/sql-sessions/:sessionId/rows",
-    ({ params, request }) => {
-      const spaceId = params.spaceId as string;
-      const sessionId = params.sessionId as string;
-      if (!mockSqlSessions.get(spaceId)?.has(sessionId)) {
-        return HttpResponse.json({ detail: "Not found" }, { status: 404 });
-      }
-      const url = new URL(request.url);
-      const offset = Number(url.searchParams.get("offset") || 0);
-      const limit = Number(url.searchParams.get("limit") || 25);
-      return HttpResponse.json({ rows: [], offset, limit, total_count: 3 });
-    },
   ),
 
   // Space Members

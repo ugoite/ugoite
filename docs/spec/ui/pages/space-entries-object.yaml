@@ -17,10 +17,6 @@ components:
       type: list
       condition: form query parameter is present
       description: With a form query parameter the Entries route shows only that Form's Entries from a form-scoped server query, uses the Form name as heading, links back to Forms, opens New Entry with that Form preselected, and hides New Entry for reserved metadata Forms.
-    - id: sql-session-results
-      type: query-results
-      condition: session query parameter is present
-      description: Cross-Form SQL session results remain available at this route.
 responsive:
   desktop: border-separated-list
   mobile: stacked-border-separated-list

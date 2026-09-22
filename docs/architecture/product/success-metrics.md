@@ -35,7 +35,7 @@ browser-local North Star and must not treat planned features as shipped.
 
 ## Current performance metrics
 
-- Entry list, structured query, SQL session row/count, and keyword-scan latency
+- Entry list, structured query, SQL page/count, and keyword-scan latency
   at documented dataset sizes;
 - memory use and startup time of the single runtime image;
 - browser route responsiveness while server requests are pending.

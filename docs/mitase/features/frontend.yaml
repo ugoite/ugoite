@@ -309,14 +309,14 @@ features:
               - kind: satisfies
                 criterion: REQ-FE-031#criterion.inline-edit-selection
   - id: FEAT-FE-006
-    title: SQL editor and query session clients
-    summary: Connect the browser SQL editor, shared SQL rules, saved-query client, and SQL-session client to exact frontend verification evidence.
+    title: SQL editor and stateless query clients
+    summary: Connect the browser SQL editor, shared SQL rules, saved-query client, and stateless SQL query result flow to exact frontend verification evidence.
     status: implemented
     bindings:
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep SQL editing, shared lint and completion rules, saved-query lifecycle calls, and SQL-session result access connected to the shipped frontend artifacts.
+        responsibility: Keep SQL editing, shared lint and completion rules, saved-query lifecycle calls, and stateless SQL result access connected to the shipped frontend artifacts.
         targets:
           - id: sql-editor
             adapter: typescript
@@ -352,16 +352,6 @@ features:
                 criterion: REQ-FE-050#criterion.saved-query-lifecycle
               - kind: satisfies
                 criterion: REQ-FE-050#criterion.typed-errors
-          - id: sql-session-client
-            adapter: typescript
-            path: frontend/src/lib/sql-session-api.ts
-            selector: { kind: symbol, name: sqlSessionApi }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-051#criterion.session-lifecycle
-              - kind: satisfies
-                criterion: REQ-FE-051#criterion.typed-errors
-
   - id: FEAT-FE-007
     title: Saved SQL route workflows
     summary: Connect the saved SQL list, creation, and detail routes to exact frontend and browser verification for starter-query guidance, query metadata, and supported run actions.

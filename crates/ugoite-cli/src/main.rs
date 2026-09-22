@@ -77,18 +77,6 @@ enum Commands {
     Index(commands::index::IndexCmd),
     /// Start the Konase assistant
     Konase(commands::konase::KonaseCmd),
-    /// Query the selected context using SQL
-    ///
-    #[command(
-        long_about = "Query a Space with DataFusion SQL through the selected context. The backend returns a stable Form relation (form_<FormId>) and stable field columns (field_<FieldId>) alongside _ugoite_* metadata columns. Only authorized Form relations are resolvable."
-    )]
-    Query {
-        #[arg(
-            long,
-            help = "Read-only DataFusion SQL over authorized Iceberg Form relations. Use the backend-provided form_<FormId> relation and field_<FieldId> columns, plus _ugoite_* metadata columns.\n\nExample: \"SELECT _ugoite_id, field_100 FROM \\\"form_<FormId>\\\" LIMIT 10\""
-        )]
-        sql: String,
-    },
 }
 
 fn main() {
@@ -144,9 +132,6 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Index(cmd) => commands::index::run(cmd, explicit_config, explicit_context).await,
         Commands::Konase(cmd) => {
             commands::konase::run(cmd, explicit_config, explicit_context).await
-        }
-        Commands::Query { sql } => {
-            commands::index::query_cmd(&sql, explicit_config, explicit_context).await
         }
     }
 }

@@ -224,7 +224,6 @@ fn architecture_check() -> Result<()> {
             "~/lib/form-api",
             "~/lib/asset-api",
             "~/lib/sql-api",
-            "~/lib/sql-session-api",
             "./entry-api",
             "./space-api",
         ] {

@@ -14,7 +14,7 @@ cases in another runtime.
 ## ADR-002 — Space files are authoritative
 
 **Accepted.** A Space directory/prefix is the portable source of truth. Indexes,
-projections, and SQL sessions are derived. Backups operate on the complete Space
+projections, and SQL query continuations are disposable. Backups operate on the complete Space
 prefix; pre-release format migrations are unsupported. Node control state and
 the node secret are separate node-local recovery inputs.
 
@@ -104,7 +104,7 @@ relation has an independent `_ugoite/derived/relations/{relation_id}/head.json`
 published with OpenDAL conditional semantics. DerivedRelation updates never
 change the main Catalog Head, Form revision history, Form registry generation,
 or SpaceCheckpoint coordinates. AssetText is internal to trusted Quick Search
-and is not exposed to Saved SQL, SQL Sessions, or authorization.
+and is not exposed to Saved SQL, SQL queries, or authorization.
 
 The first producer uses replace-all full rebuilds. Persistent substring inverted
 indexes, cross-relation transactions, OCR, and a mandatory external job queue

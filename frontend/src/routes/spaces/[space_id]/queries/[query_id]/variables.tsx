@@ -69,7 +69,7 @@ export default function SpaceQueryVariablesRoute() {
         { state: { parameters, parameterTypes } },
       );
     } catch (err) {
-      setError(formatUserFacingError(err, "querySession.failed"));
+      setError(formatUserFacingError(err, "errors.operation.savedSql"));
     }
   };
 

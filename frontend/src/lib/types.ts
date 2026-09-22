@@ -410,44 +410,6 @@ export type SqlMetadata =
     generatedName: "untitled";
   };
 
-export interface SqlSession {
-  id: string;
-  space_id: string;
-  sql_id: string;
-  sql: string;
-  status: "ready" | "running" | "failed" | "expired";
-  created_at: string;
-  expires_at: string;
-  error?: string | null;
-  view: {
-    sql_id: string;
-    snapshot_id: number;
-    snapshot_at?: string;
-    schema_version?: number;
-  };
-  pagination: {
-    strategy: "offset";
-    order_by: string[];
-    default_limit: number;
-    max_limit: number;
-  };
-  count?: {
-    mode: "on_demand" | "cached";
-    cached_at?: string | null;
-    value?: number | null;
-  };
-}
-
-/** A row from an arbitrary SQL session projection. */
-export type SqlSessionRow = Record<string, unknown>;
-
-export interface SqlSessionRows {
-  rows: SqlSessionRow[];
-  offset: number;
-  limit: number;
-  totalCount: number;
-}
-
 /** API error response */
 export interface ApiError {
   detail: string;

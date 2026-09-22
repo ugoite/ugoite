@@ -11,7 +11,7 @@ features:
       - id: core
         role: implementation
         facet: core
-        responsibility: Implement saved SQL persistence and SQL-session evaluation at the canonical Iceberg boundary.
+        responsibility: Implement saved SQL persistence and stateless SQL query evaluation at the canonical Iceberg boundary.
         targets:
           - id: list-sql
             adapter: rust
@@ -58,44 +58,10 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
-          - id: create-sql-session
-            adapter: rust
-            path: crates/ugoite-iceberg/src/sql_session.rs
-            selector: { kind: symbol, name: create_sql_session_authorized_for_principals_by_form_with_parameters }
-            claims:
-              - kind: satisfies
-                criterion: REQ-API-008#criterion.fixed-publication-coordinate
-              - kind: satisfies
-                criterion: REQ-API-008#criterion.read-only-authorized-execution
-              - kind: satisfies
-                criterion: REQ-API-007#criterion.parameterized-execution
-              - kind: satisfies
-                criterion: REQ-STO-012#criterion.lazy-path-boundary
-          - id: get-sql-session-status
-            adapter: rust
-            path: crates/ugoite-iceberg/src/sql_session.rs
-            selector: { kind: symbol, name: get_sql_session_status_authorized }
-            claims:
-              - kind: satisfies
-                criterion: REQ-API-008#criterion.fixed-publication-coordinate
-          - id: count-sql-session
-            adapter: rust
-            path: crates/ugoite-iceberg/src/sql_session.rs
-            selector: { kind: symbol, name: get_sql_session_count_authorized_by_form }
-            claims:
-              - kind: satisfies
-                criterion: REQ-API-008#criterion.paged-session-results
-          - id: rows-sql-session
-            adapter: rust
-            path: crates/ugoite-iceberg/src/sql_session.rs
-            selector: { kind: symbol, name: get_sql_session_rows_authorized_by_form }
-            claims:
-              - kind: satisfies
-                criterion: REQ-API-008#criterion.paged-session-results
       - id: service
         role: operation
         facet: service
-        responsibility: Connect the canonical Iceberg service methods to saved SQL and SQL-session implementations.
+        responsibility: Connect the canonical Iceberg service methods to saved SQL and stateless SQL query implementations.
         targets:
           - id: create-entry
             adapter: rust
@@ -145,22 +111,6 @@ features:
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
             selector: { kind: symbol, name: delete_saved_sql }
-          - id: create-sql-session
-            adapter: rust
-            path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: create_sql_session_authorized_for_principals_with_parameters }
-          - id: get-sql-session
-            adapter: rust
-            path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: get_sql_session_authorized_for_principals }
-          - id: count-sql-session
-            adapter: rust
-            path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: get_sql_session_count_authorized_for_principals }
-          - id: rows-sql-session
-            adapter: rust
-            path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: get_sql_session_rows_authorized_for_principals }
       - id: space-service-implementation
         role: implementation
         facet: service
@@ -257,22 +207,6 @@ features:
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
             selector: { kind: symbol, name: patch_preferences }
-          - id: create-sql-session
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: create_sql_session }
-          - id: get-sql-session
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: get_sql_session }
-          - id: count-sql-session
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: get_sql_session_count }
-          - id: rows-sql-session
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: get_sql_session_rows }
           - id: list-sql
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
@@ -369,10 +303,6 @@ features:
             adapter: typescript
             path: frontend/src/lib/sql-api.ts
             selector: { kind: symbol, name: sqlApi }
-          - id: sql-session-api
-            adapter: typescript
-            path: frontend/src/lib/sql-session-api.ts
-            selector: { kind: symbol, name: sqlSessionApi }
       - id: frontend-implementation
         role: implementation
         facet: frontend
@@ -506,22 +436,6 @@ features:
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: patch, path: /preferences/me }
-          - id: create-sql-session
-            adapter: openapi
-            path: crates/ugoite-server/src/openapi.json
-            selector: { kind: operation, method: post, path: '/spaces/{space_id}/sql-sessions' }
-          - id: get-sql-session
-            adapter: openapi
-            path: crates/ugoite-server/src/openapi.json
-            selector: { kind: operation, method: get, path: '/spaces/{space_id}/sql-sessions/{session_id}' }
-          - id: count-sql-session
-            adapter: openapi
-            path: crates/ugoite-server/src/openapi.json
-            selector: { kind: operation, method: get, path: '/spaces/{space_id}/sql-sessions/{session_id}/count' }
-          - id: rows-sql-session
-            adapter: openapi
-            path: crates/ugoite-server/src/openapi.json
-            selector: { kind: operation, method: get, path: '/spaces/{space_id}/sql-sessions/{session_id}/rows' }
           - id: list-sql
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
@@ -751,47 +665,3 @@ features:
           - target: FEAT-API-001#binding.cli-implementation/target.sql-command
             role: operator
         guarantees: [REQ-API-006#criterion.saved-sql-lifecycle]
-      - id: create-sql-session
-        kind: http
-        source: FEAT-API-001#binding.contract/target.create-sql-session
-        participants:
-          - target: FEAT-API-001#binding.service/target.create-sql-session
-            role: service
-          - target: FEAT-API-001#binding.backend/target.create-sql-session
-            role: backend
-          - target: FEAT-API-001#binding.frontend/target.sql-session-api
-            role: client
-        guarantees: [REQ-API-007#criterion.parameterized-execution, REQ-API-008#criterion.fixed-publication-coordinate]
-      - id: get-sql-session
-        kind: http
-        source: FEAT-API-001#binding.contract/target.get-sql-session
-        participants:
-          - target: FEAT-API-001#binding.service/target.get-sql-session
-            role: service
-          - target: FEAT-API-001#binding.backend/target.get-sql-session
-            role: backend
-          - target: FEAT-API-001#binding.frontend/target.sql-session-api
-            role: client
-        guarantees: [REQ-API-008#criterion.paged-session-results]
-      - id: count-sql-session
-        kind: http
-        source: FEAT-API-001#binding.contract/target.count-sql-session
-        participants:
-          - target: FEAT-API-001#binding.service/target.count-sql-session
-            role: service
-          - target: FEAT-API-001#binding.backend/target.count-sql-session
-            role: backend
-          - target: FEAT-API-001#binding.frontend/target.sql-session-api
-            role: client
-        guarantees: [REQ-API-008#criterion.paged-session-results]
-      - id: rows-sql-session
-        kind: http
-        source: FEAT-API-001#binding.contract/target.rows-sql-session
-        participants:
-          - target: FEAT-API-001#binding.service/target.rows-sql-session
-            role: service
-          - target: FEAT-API-001#binding.backend/target.rows-sql-session
-            role: backend
-          - target: FEAT-API-001#binding.frontend/target.sql-session-api
-            role: client
-        guarantees: [REQ-API-008#criterion.paged-session-results]

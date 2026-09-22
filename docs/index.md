@@ -34,7 +34,7 @@ second system of record.
 ## What you can own
 
 Authoritative Entries, Forms, Assets, saved SQL, Changes, and portable history
-live in a Space. Search indexes, SQL sessions, and other acceleration structures
+live in a Space. Search indexes and other acceleration structures
 are derived data that can be rebuilt. Node accounts and sessions are separate
 node-local control state, not a replacement for Space ownership.
 

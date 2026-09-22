@@ -45,7 +45,7 @@ components:
         - field_conditions[]
       form_selection:
         required: true
-        reason: SQL sessions are scoped to one Form and expose only Form fields plus reserved system columns.
+        reason: EntryQuery uses an explicit Form scope for property fields and keeps system fields available by contract.
       field_conditions:
         item_fields:
           - field
@@ -58,7 +58,7 @@ components:
         id: run-advanced-search-button
         label: run-advanced-search
         execution:
-          mode: sql-session
+          mode: entry-query
           target_page: space-entries-object
           history: save-and-reuse
     - id: power-user-query-button

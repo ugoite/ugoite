@@ -56,11 +56,6 @@ policies:
             path: docs/spec/features/sql.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-001#rule.governance }]
-          - id: sql-sessions
-            adapter: declared
-            path: docs/architecture/data-model/sql-sessions.md
-            selector: { kind: file }
-            claims: [{ kind: documents, anchor: POL-001#rule.governance }]
   - id: POL-002
     title: Rust Core as Canonical Logic Layer
     summary: Concentrate durable business logic in ugoite-core and reuse it from adapters.

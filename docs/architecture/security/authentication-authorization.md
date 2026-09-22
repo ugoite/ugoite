@@ -140,7 +140,7 @@ Portable authorization is stored in
 `spaces/<space-id>/security/principals.json`; Node account bindings remain in
 the Node control store. At least one active human owner is mandatory.
 
-Entry, Asset, Form, Saved SQL, search, link candidates, history, SQL sessions,
+Entry, Asset, Form, Saved SQL, search, link candidates, history, SQL queries,
 counts, joins, aggregates, and MCP use the same core authorizer. Policies
 inherit the Space role by default and add explicit grants. There are no deny
 rules in this release. Typed Form references do not create an inferred ACL edge:

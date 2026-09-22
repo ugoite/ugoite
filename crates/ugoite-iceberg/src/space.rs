@@ -255,7 +255,7 @@ fn apply_local_space_permissions(op: &Operator, space_id: &str) -> Result<()> {
 
     set_owner_only_mode(spaces_root, 0o700)?;
     set_owner_only_mode(&space_dir, 0o700)?;
-    for dir in ["security", "forms", "assets", "sql_sessions"] {
+    for dir in ["security", "forms", "assets"] {
         set_owner_only_mode(&space_dir.join(dir), 0o700)?;
     }
     for file in ["meta.json", "settings.json"] {
@@ -286,7 +286,6 @@ fn validate_local_space_permissions(op: &Operator, space_id: &str) -> Result<()>
         (&space_dir.join("security"), 0o700),
         (&space_dir.join("forms"), 0o700),
         (&space_dir.join("assets"), 0o700),
-        (&space_dir.join("sql_sessions"), 0o700),
         (&space_dir.join("meta.json"), 0o600),
         (&space_dir.join("settings.json"), 0o600),
     ];
@@ -338,7 +337,7 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
 
     storage.create_dir(&format!("{ws_path}/")).await?;
 
-    for dir in ["security", "forms", "assets", "sql_sessions"] {
+    for dir in ["security", "forms", "assets"] {
         storage.create_dir(&format!("{ws_path}/{dir}/")).await?;
     }
 
@@ -513,7 +512,7 @@ async fn repair_space_scaffold(
     let storage = OpendalStorage::from_operator(op);
     let ws_path = format!("spaces/{directory_id}");
 
-    for directory in ["security", "forms", "assets", "sql_sessions"] {
+    for directory in ["security", "forms", "assets"] {
         storage
             .create_dir(&format!("{ws_path}/{directory}/"))
             .await?;
@@ -1349,7 +1348,7 @@ async fn validate_complete_bootstrap_locked(op: &Operator, space_id: &str) -> Re
     // Recovery may publish the journal's already-classified metadata; validate
     // the resulting identity before reading any Knowledge or scaffold state.
     ensure_space_identity(&storage, space_id).await?;
-    for directory in ["security", "forms", "assets", "sql_sessions"] {
+    for directory in ["security", "forms", "assets"] {
         let path = format!("spaces/{space_id}/{directory}/");
         if !storage.exists(&path).await? {
             return Err(anyhow!(

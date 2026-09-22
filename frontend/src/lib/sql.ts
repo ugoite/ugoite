@@ -6,8 +6,8 @@ import type { Form, SqlVariable } from "./types";
 
 export type SqlSchema = NonNullable<SQLConfig["schema"]>;
 
-export const SQL_SESSION_DEFAULT_LIMIT = 50;
-export const SQL_SESSION_ORDER = "ORDER BY _ugoite_updated_at DESC, _ugoite_id";
+export const SQL_QUERY_DEFAULT_LIMIT = 50;
+export const SQL_QUERY_ORDER = "ORDER BY _ugoite_updated_at DESC, _ugoite_id";
 
 const SQL_SYSTEM_COLUMNS = [
   "_ugoite_id",
@@ -38,7 +38,7 @@ function quoteSqlIdentifier(value: string): string {
 export function buildSqlStarterQuery(sqlRelation: string): string {
   return `SELECT * FROM ${
     quoteSqlIdentifier(sqlRelation)
-  } ${SQL_SESSION_ORDER} LIMIT ${SQL_SESSION_DEFAULT_LIMIT}`;
+  } ${SQL_QUERY_ORDER} LIMIT ${SQL_QUERY_DEFAULT_LIMIT}`;
 }
 
 const SQL_LITERAL_OR_COMMENT_NODES = new Set([

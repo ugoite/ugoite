@@ -34,7 +34,6 @@ spaces/{space_id}/
   _ugoite/derived/        # lazy, replaceable relation Heads and builds
   forms/                  # Iceberg-owned table locations
   assets/
-  sql_sessions/
 
 users/{sha256(user_id)}/
   preferences.json
@@ -154,13 +153,13 @@ Form, publication coordinate, ACL authority, or second history store.
 `ugoite index run --component asset-text` rebuild it by scanning current
 authoritative Entry references; object listing is not a source set.
 
-## Saved SQL and SQL sessions
+## Saved SQL and stateless SQL Query
 
-Saved SQL is represented through the reserved SQL metadata Form. A query session
-writes `sql_sessions/{session_id}/meta.json` with one reproducible
-`PublicationRef`; row and count requests resolve that coordinate and use bounded
-deterministic pagination. Session metadata remains derived state, not an
-alternate Catalog or result store. See [sql-sessions.md](sql-sessions.md).
+Saved SQL is represented through the reserved SQL metadata Form and is durable
+Knowledge. Executing `sql.query` or `sql.query.count` is disposable work: it
+reads a fixed `PublicationRef`, returns bounded rows or a count, and keeps any
+continuation only with the client. Query execution does not create a session,
+result relation, or metadata file in the Space.
 
 ## Assets and integrity
 

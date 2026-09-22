@@ -32,7 +32,7 @@ content.
 ## Client behavior
 
 - Treat 409 as a recoverable revision conflict and offer refresh/retry guidance.
-- Treat 410 SQL sessions as expired and create a new session.
+- Treat invalid or expired SQL continuations as disposable query state and start a fresh query.
 - Treat 501 as an intentionally unavailable capability rather than retrying
   indefinitely.
 - Preserve the current editor value while displaying save failures.

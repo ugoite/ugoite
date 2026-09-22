@@ -277,61 +277,6 @@ schemas:
         next_head_checksum: {type: string}
         next_head: {type: object}
         checksum: {type: string}
-  sql_session_meta:
-    description: SQL session metadata; count and rows are evaluated on demand.
-    path: spaces/{id}/sql_sessions/{session_id}/meta.json
-    schema:
-      type: object
-      required:
-      - id
-      - space_id
-      - sql_id
-      - sql
-      - status
-      - created_at
-      - expires_at
-      - publication
-      - query_policy
-      - pagination
-      - count
-      properties:
-        id:
-          type: string
-        space_id:
-          type: string
-        sql_id:
-          type: string
-        sql:
-          type: string
-        status:
-          type: string
-          enum:
-          - ready
-          - expired
-        created_at:
-          type: string
-          format: date-time
-        expires_at:
-          type: string
-          format: date-time
-        error:
-          type:
-          - string
-          - 'null'
-        publication:
-          type: object
-          required: [generation, publication_uri, publication_checksum]
-          properties:
-            generation: {type: integer}
-            publication_uri: {type: object}
-            publication_checksum: {type: string}
-        query_policy:
-          description: Derived publication-pinned single-Form, column, and sparse Entry-denial policy cache. It is never execution or Catalog authority; every use rebuilds and compares it from the immutable publication and current authorization state, and it does not list every readable Entry.
-          type: object
-        pagination:
-          type: object
-        count:
-          type: object
   entry_revision:
     description: Authoritative append-only Entry revision for one stable Form ID. Core writes this schema through ugoite-iceberg.
     path: ugoite://{space_uid}/forms/form_{form_id}

@@ -92,7 +92,7 @@ describe("sql helpers", () => {
     ).toBe(true);
   });
 
-  it("builds a starter query with the SQL session total order", () => {
+  it("builds a starter query with the stateless SQL query total order", () => {
     expect(buildSqlStarterQuery("form_entry")).toBe(
       'SELECT * FROM "form_entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50',
     );
