@@ -13087,8 +13087,7 @@
         ],
         "properties": {
           "id": {
-            "type": "string",
-            "format": "uuid"
+            "type": "string"
           },
           "form_id": {
             "type": "string",

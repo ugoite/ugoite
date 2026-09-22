@@ -54,6 +54,21 @@ parent conflicts instead of overwriting. `entry delete` appends a deletion
 tombstone; permanent removal is unavailable. Run `ugoite entry <command>
 --help` for exact flags.
 
+To browse the same canonical EntryQuery surface used by the Browser, use
+`entry list` with Form scope, text, typed filters, ordered sorts, projection,
+and a traversal goal:
+
+```bash
+ugoite entry list --form Meeting --text agenda \
+  --filter Status:eq=open --sort Updated:desc \
+  --columns Status,Notes --limit 100
+```
+
+Repeated `--filter` and `--sort` clauses retain their order. JSON output keeps
+stable Entry identity for scripts; human table output uses Form content or a
+bounded Preview rather than making a raw ID the primary label. Local and
+remote contexts use the same EntryQuery request semantics.
+
 Structured authoring (`--form` with `--field KEY=VALUE` or `--fields-file`)
 goes through the shared validation path. Supply each field once: a key in both
 structured fields and extra attributes (or an extra shadowing a real field

@@ -251,3 +251,54 @@ requirements:
                 criterion: REQ-ENTRY-011#criterion.legacy-read
                 covers: [FEAT-ENTRY-002#binding.core/target.titleless-model]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space_version_compat, test: frozen_space_01_fixture_opens_mutates_reopens_and_preserves_history } }
+  - id: REQ-ENTRY-012
+    title: CLI canonical EntryQuery list
+    description: The CLI Entry list command uses the canonical EntryQuery capability for local and remote Spaces, including Form scope, text, typed filters, ordered sorts, projection, and cursor traversal goals.
+    priority: high
+    status: implemented
+    criteria:
+      - id: canonical-query
+        kind: behavior
+        statement: CLI Entry list requests use the canonical entry query DTO and route to entry.query remotely or the same canonical query executor locally.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-005#rule.governance, POL-006#rule.governance, POL-013#rule.governance]
+      - id: typed-options
+        kind: behavior
+        statement: CLI form, text, repeated filter, repeated sort, columns, and limit options preserve EntryQuery scope, capability-approved types, ordered clauses, projection, and traversal semantics without a second query language.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-005#rule.governance, POL-006#rule.governance, POL-013#rule.governance]
+      - id: human-machine-output
+        kind: behavior
+        statement: Machine output retains stable Entry identity while human table output presents bounded Form content or Preview without using a raw Entry ID as the primary label.
+        governed_by: [POL-002#rule.governance, POL-005#rule.governance, POL-006#rule.governance]
+    bindings:
+      - id: cli-query-routing-test
+        role: verification
+        facet: verification
+        responsibility: Verify remote CLI Entry list routing and canonical request serialization through the exact endpoint-routing integration test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_entry_list_uses_canonical_entry_query_route_and_dto }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-012#criterion.canonical-query
+                covers: [FEAT-API-001#binding.cli-implementation/target.entry-query-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_entry_list_uses_canonical_entry_query_route_and_dto } }
+      - id: cli-query-options-test
+        role: verification
+        facet: verification
+        responsibility: Verify local CLI EntryQuery option translation, typed filtering, ordered sorting, projection, traversal goal, and human-readable output through the exact core journey test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_core.rs
+            selector: { kind: test, name: test_cli_entry_list_canonical_query_options }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-012#criterion.typed-options
+                covers: [FEAT-API-001#binding.cli-implementation/target.entry-query-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_cli_entry_list_canonical_query_options } }
+              - kind: verifies
+                criterion: REQ-ENTRY-012#criterion.human-machine-output
+                covers: [FEAT-API-001#binding.cli-implementation/target.entry-query-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_cli_entry_list_canonical_query_options } }

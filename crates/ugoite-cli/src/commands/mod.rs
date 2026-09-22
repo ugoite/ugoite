@@ -4,6 +4,7 @@ pub mod change;
 pub mod config;
 pub mod context;
 pub mod entry;
+pub mod entry_query;
 pub mod form;
 pub mod index;
 pub mod konase;

@@ -83,6 +83,10 @@ features:
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
             selector: { kind: symbol, name: list_entry_options }
+          - id: entry-query-page
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: query_entry_page }
           - id: get-entry
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
@@ -174,6 +178,10 @@ features:
             adapter: rust
             path: crates/ugoite-cli/src/commands/entry.rs
             selector: { kind: symbol, name: run }
+          - id: entry-query-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/entry_query.rs
+            selector: { kind: symbol, name: list }
       - id: contract
         role: contract-source
         facet: api
@@ -196,6 +204,10 @@ features:
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: get, path: '/spaces/{space_id}/entries/options' }
+          - id: query-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/entries/query' }
           - id: get-contract
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
@@ -258,6 +270,15 @@ features:
           - target: FEAT-ENTRY-001#binding.frontend/target.search-api
             role: client
         guarantees: [REQ-ENTRY-010#criterion.options-operation]
+      - id: query
+        kind: http
+        source: FEAT-ENTRY-001#binding.contract/target.query-contract
+        participants:
+          - target: FEAT-ENTRY-001#binding.service/target.entry-query-page
+            role: service
+          - target: FEAT-ENTRY-001#binding.cli/target.entry-query-command
+            role: operator
+        guarantees: [REQ-ENTRY-012#criterion.canonical-query]
       - id: get
         kind: http
         source: FEAT-ENTRY-001#binding.contract/target.get-contract
