@@ -159,7 +159,6 @@ describe("entry-validation", () => {
     ];
     for (const [field, value] of cases) {
       const result = await validateEntryDraftViaWasm(testForm(), {
-        title: "T",
         tags: [],
         fields: { Body: "hello", [field]: value },
       });
@@ -174,7 +173,6 @@ describe("entry-validation", () => {
 
   it("accepts a valid draft through the shared boundary", async () => {
     const result = await validateEntryDraftViaWasm(testForm(), {
-      title: "T",
       tags: [],
       fields: { Body: "hello", Done: "yes", Count: 3 },
     });
@@ -297,7 +295,6 @@ describe("lane1 parity fixture", () => {
     ];
     for (const { field, fields, code } of cases) {
       const result = await validateEntryDraftViaWasm(parityForm(), {
-        title: "T",
         tags: [],
         fields,
       });
@@ -312,14 +309,12 @@ describe("lane1 parity fixture", () => {
   it("accepts the fixture valid draft and reopens it unchanged", async () => {
     const fields = { ...fixtureFields };
     const first = await validateEntryDraftViaWasm(parityForm(), {
-      title: "Website",
       tags: ["inbox"],
       fields,
     });
     expect(first.ok).toBe(true);
     // Reopen resolves through the same boundary to the same outcome.
     const second = await validateEntryDraftViaWasm(parityForm(), {
-      title: "Website",
       tags: ["inbox"],
       fields,
     });

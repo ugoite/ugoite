@@ -162,7 +162,6 @@ describe("entryApi", () => {
             HttpResponse.json([
               {
                 id: "entry-1",
-                title: "Test Entry",
                 created_at: 1772960822.056,
                 updated_at: 1772960822.056,
                 properties: {},

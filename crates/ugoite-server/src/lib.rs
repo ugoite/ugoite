@@ -17602,7 +17602,7 @@ mod authentication_regression_tests {
         Ok(())
     }
 
-    fn knowledge_create_operation(id: &str, _title: &str, body: &str) -> Value {
+    fn knowledge_create_operation(id: &str, body: &str) -> Value {
         json!({
             "kind": "create",
             "id": id,
@@ -17613,12 +17613,7 @@ mod authentication_regression_tests {
         })
     }
 
-    fn knowledge_update_operation(
-        id: &str,
-        version_token: &str,
-        _title: &str,
-        body: &str,
-    ) -> Value {
+    fn knowledge_update_operation(id: &str, version_token: &str, body: &str) -> Value {
         json!({
             "kind": "update",
             "id": id,
@@ -17694,7 +17689,7 @@ mod authentication_regression_tests {
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
                 json!({
-                    "operations": [knowledge_create_operation("revert-entry", "Revert entry", "created")],
+                    "operations": [knowledge_create_operation("revert-entry", "created")],
                     "run_id": "run-2037-revert-create",
                     "message": "create before selective revert"
                 }),
@@ -17717,7 +17712,6 @@ mod authentication_regression_tests {
                     "operations": [knowledge_update_operation(
                         "revert-entry",
                         &create_revision,
-                        "Revert entry",
                         "target update",
                     )],
                     "run_id": "run-2037-revert-target",
@@ -17806,7 +17800,6 @@ mod authentication_regression_tests {
                     "operations": [knowledge_update_operation(
                         "revert-entry",
                         &inverse_revision,
-                        "Revert entry",
                         "changed later",
                     )],
                     "run_id": "run-2037-revert-later",
@@ -17868,7 +17861,7 @@ mod authentication_regression_tests {
                 Method::POST,
                 format!("/spaces/{space_id}/apply"),
                 json!({
-                    "operations": [knowledge_create_operation("undo-entry", "Undo entry", "created")],
+                    "operations": [knowledge_create_operation("undo-entry", "created")],
                     "run_id": "run-2037-undo",
                     "message": "run create"
                 }),
@@ -17890,7 +17883,6 @@ mod authentication_regression_tests {
                     "operations": [knowledge_update_operation(
                         "undo-entry",
                         &create_revision,
-                        "Undo entry",
                         "updated",
                     )],
                     "run_id": "run-2037-undo",
@@ -17985,8 +17977,8 @@ mod authentication_regression_tests {
                 format!("/spaces/{space_id}/apply"),
                 json!({
                     "operations": [
-                        knowledge_create_operation("partial-a", "Partial A", "original A"),
-                        knowledge_create_operation("partial-b", "Partial B", "original B")
+                        knowledge_create_operation("partial-a", "original A"),
+                        knowledge_create_operation("partial-b", "original B")
                     ],
                     "run_id": run_id,
                     "message": "partial run create"
@@ -18010,7 +18002,6 @@ mod authentication_regression_tests {
                     "operations": [knowledge_update_operation(
                         "partial-a",
                         &entry_a_revision,
-                        "Partial A",
                         "changed externally",
                     )],
                     "run_id": "run-2075-external",
@@ -18092,7 +18083,6 @@ mod authentication_regression_tests {
                     "operations": [knowledge_update_operation(
                         "partial-a",
                         &external_revision,
-                        "Partial A",
                         "original A",
                     )],
                     "run_id": "run-2075-conflict-resolution",
@@ -18178,7 +18168,6 @@ mod authentication_regression_tests {
                 json!({
                     "operations": [knowledge_create_operation(
                         "apply-crud-entry",
-                        "Apply CRUD",
                         "created",
                     )],
                     "run_id": "run-2037-apply-crud",
@@ -18245,7 +18234,6 @@ mod authentication_regression_tests {
                     "operations": [knowledge_update_operation(
                         "apply-crud-entry",
                         &create_revision,
-                        "Apply CRUD",
                         "updated",
                     )],
                     "run_id": "run-2037-apply-crud",
@@ -18431,7 +18419,6 @@ mod authentication_regression_tests {
                 json!({
                     "operations": [knowledge_create_operation(
                         "pinned-entry",
-                        "Pinned entry",
                         "before update",
                     )]
                 }),
@@ -18467,7 +18454,6 @@ mod authentication_regression_tests {
                     "operations": [knowledge_update_operation(
                         "pinned-entry",
                         &create_revision,
-                        "Pinned entry",
                         "after update",
                     )]
                 }),
@@ -18573,7 +18559,6 @@ mod authentication_regression_tests {
                 json!({
                     "operations": [knowledge_create_operation(
                         "diff-entry",
-                        "Diff entry",
                         "before update",
                     )]
                 }),
@@ -18607,7 +18592,6 @@ mod authentication_regression_tests {
                     "operations": [knowledge_update_operation(
                         "diff-entry",
                         &create_revision,
-                        "Diff entry",
                         "after update",
                     )]
                 }),
@@ -18691,7 +18675,6 @@ mod authentication_regression_tests {
                 json!({
                     "operations": [knowledge_create_operation(
                         "apply-entry",
-                        "Apply entry",
                         "created",
                     )],
                     "run_id": "run-2037",
@@ -18716,7 +18699,6 @@ mod authentication_regression_tests {
                     "operations": [knowledge_update_operation(
                         "apply-entry",
                         &version_token,
-                        "Apply entry",
                         "updated",
                     )],
                     "run_id": "run-2037"

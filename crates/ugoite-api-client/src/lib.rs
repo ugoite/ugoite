@@ -2045,7 +2045,6 @@ mod tests {
             Some(&json!({
                 "id": "entry-1",
                 "form": "Note",
-                "title": "Hello",
                 "tags": ["inbox"],
                 "fields": {"Body": "Hello"},
             })),
@@ -2058,7 +2057,6 @@ mod tests {
             json!({
                 "id": "entry-1",
                 "form": "Note",
-                "title": "Hello",
                 "tags": ["inbox"],
                 "fields": {"Body": "Hello"},
             })
@@ -2069,7 +2067,6 @@ mod tests {
             &json!({"space_id": "demo", "entry_id": "entry-1"}),
             Some(&json!({
                 "form": "Note",
-                "title": "Hello",
                 "fields": {"Body": "Edited"},
             })),
         )
