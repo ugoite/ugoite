@@ -98,9 +98,11 @@ ugoite sql query \
 ```
 
 The default JSON output preserves the complete page envelope. `--format
-table` renders rows for humans and writes a continuation hint to stderr when
-another page exists. `--format ndjson` writes one row per line and likewise
-keeps pagination metadata out of the row stream.
+table` renders rows for humans and prints only a generic pagination notice to
+stderr when another page exists. `--format ndjson` writes one row per line and
+keeps pagination metadata out of the row stream. Use JSON output when a
+continuation token is needed; opaque continuation values are never written to
+logs by table or NDJSON rendering.
 
 `sql count` returns a separate response:
 

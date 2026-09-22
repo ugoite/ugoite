@@ -505,8 +505,8 @@ fn print_sql_page(page: &SqlQueryPage, format: &Format) -> Result<()> {
             for row in &page.rows {
                 println!("{}", serde_json::to_string(row)?);
             }
-            if let Some(next) = &page.next {
-                eprintln!("next continuation: {next}");
+            if page.next.is_some() {
+                eprintln!("more results available; use --format json to retrieve the continuation");
             }
         }
         Format::Table => {
@@ -516,8 +516,8 @@ fn print_sql_page(page: &SqlQueryPage, format: &Format) -> Result<()> {
                 .map(|column| (column.as_str(), column.as_str()))
                 .collect::<Vec<_>>();
             print_json_table(&page.rows, &columns);
-            if let Some(next) = &page.next {
-                eprintln!("next continuation: {next}");
+            if page.next.is_some() {
+                eprintln!("more results available; use --format json to retrieve the continuation");
             }
         }
     }
