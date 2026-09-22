@@ -1426,6 +1426,10 @@ async fn validate_unsafe_origin(
 }
 
 pub fn app(state: AppState) -> Router {
+    app_with_static_dir(state, env::var("UGOITE_STATIC_DIR").ok())
+}
+
+fn app_with_static_dir(state: AppState, static_dir: Option<String>) -> Router {
     let metadata = Router::new()
         .route(
             "/.well-known/oauth-protected-resource",
@@ -1435,7 +1439,7 @@ pub fn app(state: AppState) -> Router {
             "/.well-known/oauth-authorization-server",
             get(oauth_authorization_server_metadata),
         );
-    let router = if let Ok(static_dir) = env::var("UGOITE_STATIC_DIR") {
+    let router = if let Some(static_dir) = static_dir {
         metadata
             .route("/health", get(|| async { Json(json!({"status": "ok"})) }))
             .route("/openapi.json", get(|| async { OPENAPI_JSON }))
@@ -1456,6 +1460,21 @@ pub fn app(state: AppState) -> Router {
             )
     };
     app_layers(router, state)
+}
+
+/// Build the DPoP `htu` from the externally visible request target.
+///
+/// Axum rewrites `request.uri()` while dispatching a nested `/api` router, but
+/// keeps the original public URI in `OriginalUri`. The proof must bind to the
+/// URI the client sent, so both the regular and static API paths use this same
+/// source before dropping the query component required by RFC 9449.
+fn canonical_dpop_htu(issuer: &str, request: &Request) -> String {
+    let uri = request
+        .extensions()
+        .get::<OriginalUri>()
+        .map(|OriginalUri(uri)| uri)
+        .unwrap_or_else(|| request.uri());
+    format!("{}{}", issuer.trim_end_matches('/'), uri.path())
 }
 
 async fn require_auth(
@@ -1596,7 +1615,7 @@ async fn require_auth(
         }
         // RFC 9449 `htu` is the scheme/authority/path only. Query parameters
         // are request data, not part of the DPoP URI binding.
-        let htu = format!("{}{}", issuer.trim_end_matches('/'), request.uri().path());
+        let htu = canonical_dpop_htu(&issuer, &request);
         let Ok(proof_claims) = oauth::verify_dpop_proof(
             proof,
             &proof_key,
@@ -12768,6 +12787,15 @@ mod authentication_regression_tests {
         principal_id: Uuid,
         seed_entry_form: bool,
     ) -> anyhow::Result<(ProductionRestClient, String, Uuid)> {
+        production_rest_fixture_with_static_dir(slug, principal_id, seed_entry_form, None).await
+    }
+
+    async fn production_rest_fixture_with_static_dir(
+        slug: &str,
+        principal_id: Uuid,
+        seed_entry_form: bool,
+        static_dir: Option<&str>,
+    ) -> anyhow::Result<(ProductionRestClient, String, Uuid)> {
         let state = AppState::new_for_tests(format!(
             "memory://server-issue-2075-production-auth-{}",
             Uuid::now_v7()
@@ -12853,7 +12881,7 @@ mod authentication_regression_tests {
         let token = state.identity.issue_access_credential(claims).await?;
         Ok((
             ProductionRestClient {
-                route: app(state),
+                route: app_with_static_dir(state, static_dir.map(str::to_owned)),
                 key: signing_key,
                 jwk,
                 token,
@@ -12862,6 +12890,67 @@ mod authentication_regression_tests {
             space_id,
             space_uid,
         ))
+    }
+
+    #[tokio::test]
+    async fn rest_dpop_binds_to_external_path_for_normal_and_static_get_and_post(
+    ) -> anyhow::Result<()> {
+        let static_dir = tempfile::tempdir()?;
+        std::fs::write(static_dir.path().join("index.html"), "<!doctype html>")?;
+
+        let (normal, normal_space_id, _) =
+            production_rest_fixture("dpop-normal-path", Uuid::from_u128(207601), true).await?;
+        let normal_forms_path = format!("/spaces/{normal_space_id}/forms");
+        let (status, _) = normal
+            .json(
+                Method::GET,
+                &format!("{normal_forms_path}?unused=query"),
+                None,
+            )
+            .await?;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _) = normal
+            .json(
+                Method::POST,
+                &normal_forms_path,
+                Some(json!({
+                    "name": "DpopNormal",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                })),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::CREATED);
+
+        let (static_client, static_space_id, _) = production_rest_fixture_with_static_dir(
+            "dpop-static-path",
+            Uuid::from_u128(207602),
+            true,
+            Some(static_dir.path().to_str().expect("UTF-8 temp path")),
+        )
+        .await?;
+        let static_forms_path = format!("/api/spaces/{static_space_id}/forms");
+        let (status, _) = static_client
+            .json(
+                Method::GET,
+                &format!("{static_forms_path}?unused=query"),
+                None,
+            )
+            .await?;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _) = static_client
+            .json(
+                Method::POST,
+                &static_forms_path,
+                Some(json!({
+                    "name": "DpopStatic",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                })),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::CREATED);
+        Ok(())
     }
 
     /// Step-up variant of the production fixture that also returns the
