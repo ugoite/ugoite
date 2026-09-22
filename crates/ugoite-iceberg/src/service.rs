@@ -30,7 +30,7 @@ use crate::{
 use crate::{CheckpointIntegrityError, CheckpointUnavailable, PublicationRef};
 use ugoite_core::entry_query::{
     EntryCount, EntryCountRequest, EntryCursor, EntryFieldRef, EntryPage, EntryPageRequest,
-    EntryProjection, EntryQueryError, EntryResult,
+    EntryProjection, EntryQueryError, EntryQueryScope, EntryResult,
 };
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind as AppErrorKind};
 use ugoite_core::query::EntryScope;
@@ -4383,6 +4383,117 @@ impl UgoiteService {
                 .await
             })
             .await
+    }
+
+    /// Executes the canonical EntryQuery for an operator-local Space.
+    ///
+    /// Operator-local Spaces intentionally have no application principal. The
+    /// local CLI is the trusted operator boundary, but it still uses the same
+    /// immutable-publication, DataFusion, projection, and signed keyset
+    /// execution path as the authorized server query. No query state or read
+    /// metadata is written to the Space.
+    pub async fn query_entry_page(
+        &self,
+        space_id: &str,
+        request: EntryPageRequest,
+    ) -> Result<EntryPage> {
+        const LOCAL_AUTHORIZATION_FINGERPRINT: &str = "local-operator";
+
+        request.validate().map_err(entry_query_contract_error)?;
+        self.validate_complete_space(space_id).await?;
+        let query_fingerprint = request
+            .query
+            .fingerprint()
+            .map_err(entry_query_contract_error)?;
+        let signing_key = self.sql_query_signing_key(space_id).await?;
+        let cursor = request
+            .after
+            .as_deref()
+            .map(|token| {
+                EntryCursor::decode(token, &signing_key).map_err(entry_cursor_contract_error)
+            })
+            .transpose()?;
+        let space_uid = self.space_uid(space_id).await?;
+        if let Some(cursor) = &cursor {
+            if cursor.space_id.as_uuid() != space_uid {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    "Entry cursor belongs to another Space",
+                )
+                .into());
+            }
+            if cursor.query_fingerprint != query_fingerprint {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    "Entry query does not match the continuation",
+                )
+                .into());
+            }
+            if cursor.authorization_fingerprint != LOCAL_AUTHORIZATION_FINGERPRINT {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    "Entry cursor belongs to another authorization boundary",
+                )
+                .into());
+            }
+        }
+
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let publication = cursor
+            .as_ref()
+            .map(|cursor| cursor.publication.clone())
+            .unwrap_or(workspace.current_publication().await?);
+        let checkpoint = workspace.resolve_publication(&publication).await?;
+        let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
+        let relation_scopes = forms
+            .iter()
+            .map(|form| (sql_relation_name(form.id), EntryScope::AllCurrent))
+            .collect::<BTreeMap<_, _>>();
+        let (rows, has_more) = index::query_entry_page_at_checkpoint(
+            &self.operator,
+            &self.workspace_path(space_id),
+            checkpoint,
+            &forms,
+            &relation_scopes,
+            &request.query,
+            &request.projection,
+            cursor.as_ref(),
+            request.limit,
+        )
+        .await?;
+        let results = rows
+            .iter()
+            .map(|row| canonical_entry_result(row, &request.projection, &forms))
+            .collect::<Result<Vec<_>>>()?;
+        let next = if has_more {
+            let last = rows
+                .last()
+                .context("Entry query reported more rows without a page row")?;
+            let cursor = EntryCursor::new(
+                space_uid.into(),
+                publication,
+                query_fingerprint,
+                LOCAL_AUTHORIZATION_FINGERPRINT.to_string(),
+                last.candidate.sort_values.clone(),
+                matches!(&request.query.scope, EntryQueryScope::All)
+                    .then_some(last.candidate.form_id),
+                parse_entry_id(&last.candidate.stable_id)?,
+            )
+            .map_err(entry_cursor_contract_error)?;
+            Some(
+                cursor
+                    .encode(&signing_key)
+                    .map_err(entry_cursor_contract_error)?,
+            )
+        } else {
+            None
+        };
+        Ok(EntryPage {
+            rows: results,
+            has_more,
+            next,
+        })
     }
 
     /// Executes one canonical EntryQuery page against a fixed publication.

@@ -4588,7 +4588,7 @@ fn scalar_predicate(column: Expr, expected: &Value, field_type: &str) -> Result<
 fn filter_literal(value: &Value, field_type: &str) -> Result<Expr> {
     let scalar = match (field_type, value) {
         ("boolean", Value::Bool(value)) => ScalarValue::Boolean(Some(*value)),
-        ("integer", Value::Number(value)) => ScalarValue::Int32(Some(
+        ("integer" | "int32", Value::Number(value)) => ScalarValue::Int32(Some(
             i32::try_from(
                 value
                     .as_i64()
@@ -4596,17 +4596,17 @@ fn filter_literal(value: &Value, field_type: &str) -> Result<Expr> {
             )
             .context("integer filter value is outside the Int32 range")?,
         )),
-        ("long", Value::Number(value)) => ScalarValue::Int64(Some(
+        ("long" | "int64", Value::Number(value)) => ScalarValue::Int64(Some(
             value
                 .as_i64()
                 .context("long filter value must be an integer")?,
         )),
-        ("float", Value::Number(value)) => ScalarValue::Float32(Some(
+        ("float" | "float32", Value::Number(value)) => ScalarValue::Float32(Some(
             value
                 .as_f64()
                 .context("float filter value must be a number")? as f32,
         )),
-        ("double", Value::Number(value)) => ScalarValue::Float64(Some(
+        ("double" | "float64", Value::Number(value)) => ScalarValue::Float64(Some(
             value
                 .as_f64()
                 .context("double filter value must be a number")?,

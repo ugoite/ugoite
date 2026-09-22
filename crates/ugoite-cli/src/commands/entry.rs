@@ -1,8 +1,9 @@
 use crate::cli_config::{resolve_command_target, SpaceTarget};
+use crate::commands::entry_query::EntryListOptions;
 use crate::http;
 use crate::output::{
-    effective_format, emit_success, print_json_table, render_receipt, stdout_style, Format,
-    MutationReceipt, UsageError,
+    effective_format, emit_success, render_receipt, stdout_style, Format, MutationReceipt,
+    UsageError,
 };
 use anyhow::Result;
 use clap::{Args, Subcommand};
@@ -21,7 +22,40 @@ pub struct EntryCmd {
 pub enum EntrySubCmd {
     /// List entries in a space
     #[command(long_about = "Use the selected context or --context NAME for this command.")]
-    List,
+    List {
+        #[arg(
+            long,
+            value_name = "FORM",
+            help = "Form scope for property-aware querying"
+        )]
+        form: Option<String>,
+        #[arg(long, value_name = "TEXT", help = "Keyword/text search")]
+        text: Option<String>,
+        #[arg(
+            long = "filter",
+            value_name = "FIELD[:OPERATOR]=VALUE",
+            help = "Logical filter; repeatable (for example status:eq=active)"
+        )]
+        filters: Vec<String>,
+        #[arg(
+            long = "sort",
+            value_name = "FIELD:DIRECTION",
+            help = "Logical sort; repeatable (for example priority:asc)"
+        )]
+        sorts: Vec<String>,
+        #[arg(
+            long,
+            value_name = "COLUMN,...",
+            help = "Projection columns; Form properties require --form"
+        )]
+        columns: Option<String>,
+        #[arg(
+            long,
+            value_name = "ROWS",
+            help = "Traversal goal; follows EntryQuery cursors"
+        )]
+        limit: Option<usize>,
+    },
     /// Get an entry by ID
     #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Get {
@@ -458,43 +492,28 @@ pub async fn run(
 ) -> Result<()> {
     let fmt = effective_format(cmd.format);
     match cmd.sub {
-        EntrySubCmd::List => {
+        EntrySubCmd::List {
+            form,
+            text,
+            filters,
+            sorts,
+            columns,
+            limit,
+        } => {
             let target = resolve_command_target(explicit_config, context_override, "entry list")?;
-            if let SpaceTarget::Remote { space_uid, .. } = &target {
-                let result = http::execute_for_target(
-                    &target,
-                    "entry.list",
-                    serde_json::json!({"space_id": space_uid}),
-                    None,
-                )
-                .await?;
-                if fmt != Format::Json {
-                    if let Some(arr) = result.as_array() {
-                        print_json_table(arr, &[("ID", "id")]);
-                        return Ok(());
-                    }
-                }
-                emit_success(&result, &fmt, None);
-                return Ok(());
-            }
-            let SpaceTarget::Core { root, space_id } = &target else {
-                anyhow::bail!("operation entry.list does not use the remote transport")
-            };
-            let service = UgoiteService::new_without_background_refresh(root)?;
-            let entries = service.list_entries(space_id).await?;
-            if fmt != Format::Json {
-                let rows: Vec<serde_json::Value> = entries
-                    .iter()
-                    .map(|e| {
-                        serde_json::json!({
-                            "id": e.get("id").and_then(|v| v.as_str()).unwrap_or(""),
-                        })
-                    })
-                    .collect();
-                print_json_table(&rows, &[("ID", "id")]);
-            } else {
-                emit_success(&entries, &fmt, None);
-            }
+            crate::commands::entry_query::list(
+                &target,
+                &fmt,
+                EntryListOptions {
+                    form,
+                    text,
+                    filters,
+                    sorts,
+                    columns,
+                    limit,
+                },
+            )
+            .await?;
         }
         EntrySubCmd::Get { entry_id } => {
             let target = resolve_command_target(explicit_config, context_override, "entry get")?;

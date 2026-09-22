@@ -423,6 +423,17 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
+          - id: entry-query-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/entry_query.rs
+            selector: { kind: symbol, name: list }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-012#criterion.canonical-query
+              - kind: satisfies
+                criterion: REQ-ENTRY-012#criterion.typed-options
+              - kind: satisfies
+                criterion: REQ-ENTRY-012#criterion.human-machine-output
       - id: contract
         role: contract-source
         facet: api

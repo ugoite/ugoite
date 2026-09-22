@@ -907,3 +907,97 @@ fn test_parity_core_delete_tombstone_keeps_history() {
         "delete must not shorten history"
     );
 }
+
+/// `entry list` translates CLI options into the canonical EntryQuery and
+/// keeps typed filters, ordered sorts, projection, and the traversal goal in
+/// the shared query boundary.
+#[test]
+fn test_cli_entry_list_canonical_query_options() {
+    let space = setup_parity_space(
+        r#"{"Status":{"type":"string"},"Priority":{"type":"long"},"Body":{"type":"markdown"}}"#,
+    );
+    for (entry_id, status, priority) in [
+        ("query-cli-open-high", "open", "3"),
+        ("query-cli-open-low", "open", "2"),
+        ("query-cli-closed-high", "closed", "4"),
+    ] {
+        let output = run_cli(
+            &space.config_path,
+            &[
+                "entry",
+                "create",
+                entry_id,
+                "--form",
+                space.form_name,
+                "--field",
+                &format!("Status={status}"),
+                "--field",
+                &format!("Priority={priority}"),
+                "--field",
+                "Body=canonical query text",
+            ],
+        );
+        assert!(
+            output.status.success(),
+            "entry create failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let listed = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "entry",
+                "list",
+                "--form",
+                space.form_name,
+                "--filter",
+                "Status:eq=open",
+                "--filter",
+                "Priority:gte=2",
+                "--sort",
+                "Priority:desc",
+                "--sort",
+                "Status:asc",
+                "--columns",
+                "Status,Priority",
+                "--limit",
+                "2",
+            ],
+        ),
+        "canonical entry list",
+    );
+    let rows = listed.as_array().expect("entry list returns rows");
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0]["properties"]["Status"], "open");
+    assert_eq!(rows[0]["properties"]["Priority"], 3);
+    assert_eq!(rows[1]["properties"]["Priority"], 2);
+    assert!(rows.iter().all(|row| {
+        row["properties"].get("Body").is_none()
+            && row.get("id").and_then(|id| id.as_str()).is_some()
+    }));
+
+    let table = run_cli(
+        &space.config_path,
+        &[
+            "entry",
+            "--format",
+            "table",
+            "list",
+            "--form",
+            space.form_name,
+        ],
+    );
+    assert!(
+        table.status.success(),
+        "table entry list failed: {}",
+        String::from_utf8_lossy(&table.stderr)
+    );
+    let table_stdout = String::from_utf8_lossy(&table.stdout);
+    assert!(table_stdout.contains("PREVIEW"), "{table_stdout}");
+    assert!(
+        !table_stdout.contains("query-cli-open-high"),
+        "human table must not use raw Entry ID as its primary display: {table_stdout}"
+    );
+}

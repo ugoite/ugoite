@@ -322,6 +322,56 @@ fn test_entry_create_req_api_002_routes_to_backend_post_entries() {
 }
 
 #[test]
+fn test_entry_list_uses_canonical_entry_query_route_and_dto() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let (base_url, request_rx, server) =
+        spawn_recording_server("HTTP/1.1 200 OK", r#"{"rows":[],"has_more":false}"#);
+    init_config(&config);
+    set_connection(&config, "backend", &base_url);
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+
+    let output = run(
+        &config,
+        &[
+            "entry",
+            "list",
+            "--text",
+            "planning",
+            "--sort",
+            "updated_at:desc",
+            "--columns",
+            "form",
+            "--limit",
+            "2",
+        ],
+    );
+    let request = request_rx.recv().unwrap();
+    server.join().unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        request.starts_with(
+            "POST /spaces/019f1234-5678-7abc-8def-0123456789ab/entries/query HTTP/1.1\r\n"
+        ),
+        "{request}"
+    );
+    let body = request_json_body(&request);
+    assert_eq!(body["query"]["scope"]["kind"], "all");
+    assert_eq!(body["query"]["text"], "planning");
+    assert_eq!(body["query"]["sort"][0]["field"]["kind"], "updated_at");
+    assert_eq!(body["query"]["sort"][0]["direction"], "desc");
+    assert_eq!(body["projection"]["kind"], "fields");
+    assert_eq!(body["projection"]["fields"][0]["kind"], "form");
+    assert_eq!(body["limit"], 2);
+    assert!(!body.as_object().unwrap().contains_key("after"));
+}
+
+#[test]
 fn test_saved_sql_create_req_api_006_uses_server_generated_id() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("config.toml");
