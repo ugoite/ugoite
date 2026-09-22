@@ -88,7 +88,7 @@ use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 
 pub const OPENAPI_JSON: &str = include_str!("openapi.json");
 const OAUTH_RESOURCE_DOCUMENTATION_URL: &str =
-    "https://ugoite.github.io/ugoite/docs/guide/operate/auth/auth-overview/";
+    "https://ugoite.github.io/ugoite/docs/operate/identity-access/";
 const SECURITY_HEADERS_CSP: &str = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; img-src 'self' blob: data:; frame-src 'self' blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'";
 const HSTS_VALUE: &str = "max-age=31536000; includeSubDomains";
 const MAX_SIGNED_RESPONSE_BYTES: usize = 8 * 1024 * 1024;

@@ -45,7 +45,7 @@ describe("root route", () => {
     );
     expect(screen.getByRole("link", { name: "Learn More" })).toHaveAttribute(
       "href",
-      "https://ugoite.github.io/ugoite/docs/guide/start",
+      "https://ugoite.github.io/ugoite/docs/get-started",
     );
     expect(
       screen.getByText(/\/spaces requires an authenticated browser session/),

@@ -168,7 +168,7 @@ describe("v5 space Home", () => {
     )
       .toHaveAttribute(
         "href",
-        "https://ugoite.github.io/ugoite/docs/guide/start/browser-first-entry",
+        "https://ugoite.github.io/ugoite/docs/get-started/quickstart",
       );
   });
   it("shows a loading state and keeps entry creation disabled until forms are ready", async () => {

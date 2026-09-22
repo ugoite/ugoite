@@ -24,7 +24,7 @@ Environment variable overrides:
 EOF
 }
 
-ROOT_PATH="${UGOITE_SEED_ROOT:-${UGOITE_ROOT:-./data}}"
+SEED_ROOT="${UGOITE_SEED_ROOT:-${UGOITE_ROOT:-./data}}"
 SPACE_ID="${UGOITE_SEED_SPACE_ID:-dev-seed}"
 SCENARIO="${UGOITE_SEED_SCENARIO:-renewable-ops}"
 ENTRY_COUNT="${UGOITE_SEED_ENTRY_COUNT:-50}"
@@ -34,7 +34,7 @@ CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target/rust}"
 while (($# > 0)); do
   case "$1" in
     --root)
-      ROOT_PATH="${2:?missing value for --root}"
+      SEED_ROOT="${2:?missing value for --root}"
       shift 2
       ;;
     --space-id)
@@ -116,7 +116,7 @@ space_path_for_slug() {
 
     if (matchingSpace) console.log(matchingSpace);
     else Deno.exit(1);
-  ' -- "$ROOT_PATH/spaces" "$SPACE_ID" "${1:-false}"
+  ' -- "$SEED_ROOT/spaces" "$SPACE_ID" "${1:-false}"
 }
 
 if existing_space="$(space_path_for_slug)"; then
@@ -126,7 +126,7 @@ if existing_space="$(space_path_for_slug)"; then
 fi
 
 echo "Seeding local sample data..." >&2
-echo "  root: $ROOT_PATH" >&2
+echo "  root: $SEED_ROOT" >&2
 echo "  space: $SPACE_ID" >&2
 echo "  scenario: $SCENARIO" >&2
 echo "  entry_count: $ENTRY_COUNT" >&2
@@ -146,7 +146,7 @@ command=(
   --
   seed
   --root
-  "$ROOT_PATH"
+  "$SEED_ROOT"
   --space-id
   "$SPACE_ID"
   --scenario
@@ -162,7 +162,7 @@ fi
 "${command[@]}"
 
 if ! created_space="$(space_path_for_slug true)"; then
-  echo "Seed command finished but no Space with slug '$SPACE_ID' was found below: $ROOT_PATH/spaces" >&2
+  echo "Seed command finished but no Space with slug '$SPACE_ID' was found below: $SEED_ROOT/spaces" >&2
   exit 1
 fi
 

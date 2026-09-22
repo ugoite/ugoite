@@ -2,8 +2,8 @@ import { GlobalShell } from "~/components/GlobalShell";
 import { getDocsiteHref } from "~/lib/docsite-links";
 
 const docsHref = getDocsiteHref(
-  "/docs/guide/start",
-  "docs/guide/start/index.md",
+  "/docs/get-started",
+  "docs/get-started/index.md",
 );
 
 export default function NotFound() {

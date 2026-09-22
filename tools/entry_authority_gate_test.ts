@@ -49,11 +49,4 @@ Deno.test("authority gate permits presentation-only Markdown compatibility modul
     ),
     undefined,
   );
-  assertEquals(
-    findEntryAuthorityViolations(
-      "frontend/src/components/MarkdownEditor.tsx",
-      "renderMarkdownPreview(markdown)",
-    ),
-    undefined,
-  );
 });

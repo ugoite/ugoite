@@ -12,9 +12,9 @@ import { authApi, spaceApi } from "~/lib/ugoite-client";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 
 const localDevAuthGuideUrl =
-  "https://ugoite.github.io/ugoite/docs/guide/develop/local-dev-auth-login";
+  "https://ugoite.github.io/ugoite/docs/develop/development-setup";
 const browserWalkthroughUrl =
-  "https://ugoite.github.io/ugoite/docs/guide/start/browser-first-entry";
+  "https://ugoite.github.io/ugoite/docs/get-started/quickstart";
 
 const navigateMock = vi.fn();
 
