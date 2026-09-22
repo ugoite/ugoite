@@ -376,7 +376,7 @@ fn protocol_kind(code: &str, fallback: &str) -> &'static str {
         | "ASSET_REFERENCED"
         | "CHECKPOINT_ALREADY_EXISTS"
         | "INVITATION_NOT_PENDING" => "conflict",
-        "INVITATION_EXPIRED" | "SQL_SESSION_EXPIRED" => "expired",
+        "INVITATION_EXPIRED" => "expired",
         "STORAGE_CONNECTION_FAILED" | "STORAGE_MUTATION_UNAVAILABLE" | "CHECKPOINT_UNAVAILABLE" => {
             "dependency_unavailable"
         }

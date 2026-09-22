@@ -80,10 +80,10 @@ human-readable ASCII `slug`: `name` may contain Unicode, while `slug` is
 restricted to the storage-safe identifier characters. The response also includes
 the immutable UUIDv7 `space_uid` used for remote Space identity and route
 addressing. The checked-in `/openapi.json` schema is authoritative for the exact
-request and response shape. The SQL-session endpoints and the CLI/core `query`
-path are read-only DataFusion execution surfaces: they resolve only authorized
-Form relations and reject DDL/DML. Syntax-only linting is a separate concern and
-does not authorize a statement to execute.
+request and response shape. The stateless SQL query endpoints and the CLI
+`sql query` path are read-only DataFusion execution surfaces: they resolve only
+authorized Form relations and reject DDL/DML. Syntax-only linting is a separate
+concern and does not authorize a statement to execute.
 `PUT /spaces/{space_id}/policies/{kind}/{resource_id}` updates grant-only ACLs
 for `entry` or `asset`. Entry list and keyword search responses use the normal
 current-entry read bound: the optional `limit` defaults to 100 and accepts at

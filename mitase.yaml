@@ -69,8 +69,6 @@ inventory:
             - frontend/src/lib/preferences-api.ts
             - frontend/src/lib/sql-api.ts
             - frontend/src/lib/sql-api.test.ts
-            - frontend/src/lib/sql-session-api.ts
-            - frontend/src/lib/sql-session-api.test.ts
             - frontend/src/lib/sql.ts
             - frontend/src/lib/sql.test.ts
             - frontend/src/lib/asset-api.ts
@@ -254,7 +252,6 @@ inventory:
             - shared/sql/ugoite-sql-rules.json
             - crates/ugoite-server/src/openapi.json
             - docs/architecture/data-model/overview.md
-            - docs/architecture/data-model/sql-sessions.md
             - docs/architecture/data-model/directory-structure.md
             - docs/architecture/data-model/directory-layout.yaml
             - docs/architecture/data-model/file-schemas.yaml

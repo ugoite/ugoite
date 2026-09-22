@@ -143,7 +143,7 @@ describe("/spaces/:space_id/queries/new", () => {
     expect(navigateMock).toHaveBeenCalledWith("/spaces/default/search");
   });
 
-  it("normalizes template variables to the native SQL session placeholder", async () => {
+  it("normalizes template variables to the native SQL query placeholder", async () => {
     render(() => <SpaceQueryCreateRoute />);
     const editor = await screen.findByRole("textbox", { name: "SQL" });
     await waitFor(() => {

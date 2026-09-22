@@ -50,7 +50,7 @@ rather than papering over one surface.
 
 ## No hidden authority
 
-Search indexes, SQL sessions, browser sessions, model context, agent memory, and
+Search indexes, browser sessions, model context, agent memory, and
 render caches are derived or disposable. Only the Space prefix, the Node
 control-store prefix, and the node secret together form a recovery set.
 

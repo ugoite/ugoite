@@ -25,8 +25,8 @@ while keeping ownership and authority in the Space.
 
 A Space directory or object-store prefix is the durable Knowledge boundary. It
 contains authoritative Forms, Entries, Assets, saved SQL, Changes, portable
-history, and the data required to recover them. Search indexes, SQL sessions,
-and other acceleration structures are derived and replaceable.
+history, and the data required to recover them. Search indexes, and other
+acceleration structures are derived and replaceable.
 
 A server can authenticate, authorize, and serve a Space, but it does not own a
 hidden catalog, relational database, or recovery index for that Space. A browser

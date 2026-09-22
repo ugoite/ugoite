@@ -235,15 +235,6 @@ requirements:
                 criterion: REQ-SRCH-006#criterion.core-query-execution
                 covers: [FEAT-SRCH-001#binding.core/target.query-index]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_index, test: test_index_req_idx_009_query_sql_joins } }
-          - id: cli-case
-            adapter: rust
-            path: crates/ugoite-cli/tests/test_indexer.rs
-            selector: { kind: test, name: test_query_index }
-            claims:
-              - kind: verifies
-                criterion: REQ-SRCH-006#criterion.query-operation
-                covers: [FEAT-SRCH-001#binding.cli-implementation/target.query-command]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_indexer, test: test_query_index } }
   - id: REQ-SRCH-007
     title: Derived relation maintenance
     description: The index operator surface rebuilds the current AssetText DerivedRelation from authoritative Entry references, while derived parsing and word-count helpers remain separate concerns.

@@ -245,50 +245,6 @@ fn test_extract_properties_precedence() {
     assert!(get_output.status.success());
 }
 
-/// REQ-SRCH-006: Query index returns matching entries.
-#[test]
-fn test_query_index() {
-    let dir = tempfile::tempdir().unwrap();
-    let (relation, config_path, _) = setup_space_with_entries(&dir);
-
-    let output = run_cli(
-        &config_path,
-        &[
-            "query",
-            "--sql",
-            &format!("SELECT * FROM \"{relation}\" LIMIT 10"),
-        ],
-    );
-
-    assert!(
-        output.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-/// REQ-SRCH-006: Query index filters by tag.
-#[test]
-fn test_query_index_by_tag() {
-    let dir = tempfile::tempdir().unwrap();
-    let (relation, config_path, _) = setup_space_with_entries(&dir);
-
-    let output = run_cli(
-        &config_path,
-        &[
-            "query",
-            "--sql",
-            &format!("SELECT * FROM \"{relation}\" LIMIT 10"),
-        ],
-    );
-
-    assert!(
-        output.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 /// REQ-FORM-011: Validate entry properties - missing required fields detected.
 #[test]
 fn test_validate_properties_missing_required() {

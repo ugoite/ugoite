@@ -49,7 +49,6 @@ describe("/spaces/:space_id/search", () => {
       updated_at: "2025-01-02T00:00:00Z",
     };
     let entryListCalls = 0;
-    let sqlSessionCalls = 0;
     server.use(
       http.get(
         testApiUrl("/spaces/default/search"),
@@ -60,16 +59,6 @@ describe("/spaces/:space_id/search", () => {
         () => {
           entryListCalls += 1;
           return HttpResponse.json([]);
-        },
-      ),
-      http.post(
-        testApiUrl("/spaces/default/sql-sessions"),
-        () => {
-          sqlSessionCalls += 1;
-          return HttpResponse.json(
-            { detail: "Quick search must not create a SQL session" },
-            { status: 500 },
-          );
         },
       ),
     );
@@ -85,7 +74,6 @@ describe("/spaces/:space_id/search", () => {
       .toBeInTheDocument();
     expect(screen.getByText("1 result")).toBeInTheDocument();
     expect(entryListCalls).toBe(0);
-    expect(sqlSessionCalls).toBe(0);
   });
 
   it("PR6: a no-result search offers a clear action that resets query and filters", async () => {
@@ -139,7 +127,6 @@ describe("/spaces/:space_id/search", () => {
         limit?: number;
       };
     } | null = null;
-    let sqlSessionCalls = 0;
     let savedSqlCalls = 0;
 
     server.use(
@@ -154,13 +141,6 @@ describe("/spaces/:space_id/search", () => {
             tags: [],
           },
         ]);
-      }),
-      http.post(testApiUrl("/spaces/default/sql-sessions"), () => {
-        sqlSessionCalls += 1;
-        return HttpResponse.json(
-          { detail: "Advanced search must not create a SQL session" },
-          { status: 500 },
-        );
       }),
       http.post(testApiUrl("/spaces/default/sql"), () => {
         savedSqlCalls += 1;
@@ -208,7 +188,6 @@ describe("/spaces/:space_id/search", () => {
     expect(JSON.stringify(queryBody)).not.toContain("SELECT");
     expect(JSON.stringify(queryBody)).not.toContain("field_100");
     expect(JSON.stringify(queryBody)).not.toContain("form_meeting");
-    expect(sqlSessionCalls).toBe(0);
     expect(savedSqlCalls).toBe(0);
 
     expect(await screen.findByRole("button", { name: /entry-1/ }))

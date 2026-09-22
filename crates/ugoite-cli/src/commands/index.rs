@@ -1,6 +1,5 @@
 use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::config::print_json;
-use crate::http;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
 use std::time::Duration;
@@ -71,50 +70,5 @@ pub async fn run(
             print_json(&stats);
         }
     }
-    Ok(())
-}
-
-pub async fn query_cmd(
-    sql: &str,
-    explicit_config: Option<&std::path::Path>,
-    context_override: Option<&str>,
-) -> Result<()> {
-    let target = resolve_command_target(explicit_config, context_override, "query")?;
-    if let SpaceTarget::Remote { space_uid, .. } = &target {
-        let session = http::execute_for_target(
-            &target,
-            "sql_session.create",
-            serde_json::json!({"space_id": space_uid}),
-            Some(serde_json::json!({"sql": sql})),
-        )
-        .await?;
-        let session_id = session
-            .get("id")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| anyhow::anyhow!("SQL session response did not include an id"))?;
-        let payload = http::execute_for_target(
-            &target,
-            "sql_session.rows",
-            serde_json::json!({
-                "space_id": space_uid,
-                "session_id": session_id,
-                "offset": 0,
-                "limit": 1000,
-            }),
-            None,
-        )
-        .await?;
-        // Fail loudly on protocol drift without changing valid stdout:
-        // the server envelope prints verbatim only after strict validation.
-        super::sql::decode_remote_rows(&payload, "sql_session.rows")?;
-        print_json(&payload);
-        return Ok(());
-    }
-    let SpaceTarget::Core { root, space_id } = &target else {
-        anyhow::bail!("operation sql_session.create does not use the remote transport")
-    };
-    let service = UgoiteService::new_without_background_refresh(root)?;
-    let results = service.execute_sql_query(space_id, sql).await?;
-    print_json(&results);
     Ok(())
 }

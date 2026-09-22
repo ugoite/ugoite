@@ -408,6 +408,4 @@ features:
             role: space-response-material
           - target: FEAT-INT-001#binding.storage/target.default-material
             role: node-response-material
-          - target: FEAT-API-001#binding.core/target.create-sql-session
-            role: sql-session-metadata
         guarantees: [REQ-STO-012#criterion.lazy-path-boundary]

@@ -57,8 +57,6 @@ space_layout:
       kind: directory
       notes:
       - Lazy, non-authoritative DerivedRelation roots; absence is recoverable.
-    - path: spaces/{space_id}/sql_sessions
-      kind: directory
     post_bootstrap:
     - logical_resource: Entry Form
       notes:
@@ -73,12 +71,6 @@ space_layout:
       - path: response_hmac/default.json
         kind: file
         schema: node_response_hmac
-    sql_session_creation:
-      operation: create_sql_session
-      entries:
-      - path: spaces/{space_id}/sql_sessions/{session_id}/meta.json
-        kind: file
-        schema: sql_session_meta
     asset_save:
       operation: save_asset
       entries:

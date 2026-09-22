@@ -25,7 +25,7 @@ use crate::{
         effective_actions_for_state, AuthorizationLease, AuthorizationState, Authorizer,
         ResourceKind, ResourceRef,
     },
-    entry, form, iceberg_store, index, preferences, saved_sql, search, space, sql_session,
+    entry, form, iceberg_store, index, preferences, saved_sql, search, space,
 };
 use crate::{CheckpointIntegrityError, CheckpointUnavailable, PublicationRef};
 use ugoite_core::entry_query::{
@@ -41,7 +41,7 @@ use ugoite_domain::change::{ChangeCommand, RunId};
 use ugoite_domain::form::{sql_relation_name, FormDefinition};
 use ugoite_domain::id::{
     validate_asset_id, validate_entry_id, validate_form_name, validate_revision_id,
-    validate_space_id, validate_sql_id, validate_sql_session_id, FormId,
+    validate_space_id, validate_sql_id, FormId,
 };
 use ugoite_domain::identity::Action;
 use ugoite_storage::{
@@ -442,11 +442,6 @@ pub struct UgoiteService {
     operator: Operator,
     root_uri: String,
     background_refresh: bool,
-}
-
-struct CurrentSqlSessionExecutionAuthorization {
-    policy_hash: String,
-    query_policy: index::SqlSessionQueryPolicy,
 }
 
 struct AssetTextRefreshWorker {
@@ -3695,12 +3690,6 @@ impl UgoiteService {
         .await
     }
 
-    pub async fn execute_sql_query(&self, space_id: &str, sql: &str) -> Result<Vec<Value>> {
-        index::validate_read_only_sql(sql)?;
-        self.validate_complete_space(space_id).await?;
-        index::execute_sql_query(&self.operator, &self.workspace_path(space_id), sql).await
-    }
-
     pub async fn require_resource_action(
         &self,
         space_id: &str,
@@ -4184,168 +4173,6 @@ impl UgoiteService {
             .await
     }
 
-    pub async fn create_sql_session_authorized_for_principals(
-        &self,
-        space_id: &str,
-        principal_ids: &[Uuid],
-        sql: &str,
-    ) -> Result<Value> {
-        self.create_sql_session_authorized_for_principals_with_parameters(
-            space_id,
-            principal_ids,
-            sql,
-            serde_json::Map::new(),
-            BTreeMap::new(),
-        )
-        .await
-    }
-
-    pub async fn create_sql_session_authorized_for_principals_with_parameters(
-        &self,
-        space_id: &str,
-        principal_ids: &[Uuid],
-        sql: &str,
-        parameters: serde_json::Map<String, Value>,
-        parameter_types: BTreeMap<String, String>,
-    ) -> Result<Value> {
-        // Shared read-only admission runs before session planning, checkpoint
-        // resolution, or mutation admission so write/DDL/multi-statement input
-        // fails with READ_ONLY_SQL_REQUIRED on every entry point.
-        index::validate_read_only_sql(sql)?;
-        let relation = index::sql_session_page_relation(sql).map_err(|error| {
-            AppError::invalid_input(
-                ugoite_core::error::ErrorCode::InvalidInput,
-                error.to_string(),
-            )
-        })?;
-        self.ensure_mutation_admitted(space_id).await?;
-        self.validate_complete_space(space_id).await?;
-        require_sql_session_principals(principal_ids)?;
-        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
-            .acquire_state_lease(space_id)
-            .await?;
-        for principal_id in principal_ids {
-            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
-                return Err(
-                    AppError::forbidden("principal is not authorized to read this Space").into(),
-                );
-            }
-        }
-        let workspace =
-            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
-        let publication = workspace.current_publication().await?;
-        let checkpoint = workspace.resolve_publication(&publication).await?;
-        let entry_scope = sql_session_entry_scope(&state, principal_ids)?;
-        let saved_sql_entry_scope = Self::saved_sql_entry_scope_for_state(&state, principal_ids)?;
-        let query_policy = index::sql_session_query_policy_at_checkpoint(
-            &self.operator,
-            &self.workspace_path(space_id),
-            &relation,
-            entry_scope,
-            &checkpoint,
-        )
-        .await?;
-        let authorization_policy_hash = sql_session_policy_hash(&state, principal_ids)?;
-        let authorization = sql_session::SqlSessionAuthorization {
-            principal_ids,
-            policy_hash: &authorization_policy_hash,
-        };
-        let bound_parameters = index::datafusion_parameters(&parameters, &parameter_types)
-            .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
-        sql_session::create_sql_session_authorized_for_principals_with_frozen_policy_and_saved_sql_scope(
-            &self.operator,
-            &self.workspace_path(space_id),
-            sql,
-            parameters,
-            parameter_types,
-            authorization,
-            bound_parameters,
-            publication,
-            checkpoint,
-            query_policy,
-            &saved_sql_entry_scope,
-        )
-        .await
-    }
-
-    pub async fn get_sql_session_authorized_for_principals(
-        &self,
-        space_id: &str,
-        session_id: &str,
-        principal_ids: &[Uuid],
-    ) -> Result<Value> {
-        require_nonempty_authorized_principals(principal_ids)?;
-        self.validate_complete_space(space_id).await?;
-        validate_storage_id(validate_sql_session_id(session_id))?;
-        let authorizer = Authorizer::new(self.operator.clone());
-        authorizer
-            .with_state_lock(space_id, |state| async move {
-                let current_authorization = self
-                    .sql_session_current_execution_authorization(
-                        space_id,
-                        session_id,
-                        principal_ids,
-                        &state,
-                    )
-                    .await?;
-                sql_session::get_sql_session_status_authorized(
-                    &self.operator,
-                    &self.workspace_path(space_id),
-                    session_id,
-                    sql_session::SqlSessionExecutionAuthorization {
-                        authorization: sql_session::SqlSessionAuthorization {
-                            principal_ids,
-                            policy_hash: &current_authorization.policy_hash,
-                        },
-                        query_policy: &current_authorization.query_policy,
-                    },
-                )
-                .await
-            })
-            .await
-    }
-
-    /// Rebuilds the execution policy from immutable publication metadata and
-    /// the current authorization state. Durable session policy JSON is only a
-    /// cache: every use compares it against this independently derived value.
-    async fn sql_session_current_execution_authorization(
-        &self,
-        space_id: &str,
-        session_id: &str,
-        principal_ids: &[Uuid],
-        state: &AuthorizationState,
-    ) -> Result<CurrentSqlSessionExecutionAuthorization> {
-        require_sql_session_principals(principal_ids)?;
-        let workspace_path = self.workspace_path(space_id);
-        let inputs =
-            sql_session::get_session_execution_inputs(&self.operator, &workspace_path, session_id)
-                .await
-                .map_err(sql_session_metadata_authorization_error)?;
-        let relation = index::sql_session_page_relation(&inputs.sql)
-            .map_err(sql_session_metadata_authorization_error)?;
-        let entry_scope = sql_session_entry_scope(state, principal_ids)?;
-        let workspace = iceberg_store::native_workspace(&self.operator, &workspace_path)
-            .await
-            .map_err(sql_session_metadata_authorization_error)?;
-        let checkpoint = workspace
-            .resolve_publication(&inputs.publication)
-            .await
-            .map_err(sql_session_metadata_authorization_error)?;
-        let query_policy = index::sql_session_query_policy_at_checkpoint(
-            &self.operator,
-            &workspace_path,
-            &relation,
-            entry_scope,
-            &checkpoint,
-        )
-        .await
-        .map_err(sql_session_metadata_authorization_error)?;
-        Ok(CurrentSqlSessionExecutionAuthorization {
-            policy_hash: sql_session_policy_hash(state, principal_ids)?,
-            query_policy,
-        })
-    }
-
     pub async fn search_entries_authorized(
         &self,
         space_id: &str,
@@ -4667,34 +4494,6 @@ impl UgoiteService {
         )
         .await?;
         Ok(EntryCount { count })
-    }
-
-    pub async fn execute_sql_query_authorized(
-        &self,
-        space_id: &str,
-        principal_id: Uuid,
-        sql: &str,
-    ) -> Result<Vec<Value>> {
-        // Reject writes and malformed SQL before storage discovery or
-        // authorization reads. This keeps the authorized service path on the
-        // same admission contract as direct SQL execution and SQL sessions.
-        index::validate_read_only_sql(sql)?;
-        self.validate_complete_space(space_id).await?;
-        let authorizer = Authorizer::new(self.operator.clone());
-        authorizer
-            .with_state_lock(space_id, |state| async move {
-                let scopes = self
-                    .authorized_form_entry_scopes_for_state(space_id, &state, &[principal_id])
-                    .await?;
-                index::execute_sql_query_authorized_by_form_scopes(
-                    &self.operator,
-                    &self.workspace_path(space_id),
-                    sql,
-                    &scopes,
-                )
-                .await
-            })
-            .await
     }
 
     /// Executes one stateless, read-only SQL page for the trusted local
@@ -5442,86 +5241,6 @@ impl UgoiteService {
         preferences::patch_user_preferences(&self.operator, user_id, patch).await
     }
 
-    pub async fn get_sql_session_count_authorized_for_principals(
-        &self,
-        space_id: &str,
-        session_id: &str,
-        principal_ids: &[Uuid],
-    ) -> Result<u64> {
-        require_nonempty_authorized_principals(principal_ids)?;
-        self.validate_complete_space(space_id).await?;
-        validate_storage_id(validate_sql_session_id(session_id))?;
-        let authorizer = Authorizer::new(self.operator.clone());
-        authorizer
-            .with_state_lock(space_id, |state| async move {
-                let current_authorization = self
-                    .sql_session_current_execution_authorization(
-                        space_id,
-                        session_id,
-                        principal_ids,
-                        &state,
-                    )
-                    .await?;
-                let authorization = sql_session::SqlSessionExecutionAuthorization {
-                    authorization: sql_session::SqlSessionAuthorization {
-                        principal_ids,
-                        policy_hash: &current_authorization.policy_hash,
-                    },
-                    query_policy: &current_authorization.query_policy,
-                };
-                sql_session::get_sql_session_count_authorized_by_form(
-                    &self.operator,
-                    &self.workspace_path(space_id),
-                    session_id,
-                    authorization,
-                )
-                .await
-            })
-            .await
-    }
-
-    pub async fn get_sql_session_rows_authorized_for_principals(
-        &self,
-        space_id: &str,
-        session_id: &str,
-        principal_ids: &[Uuid],
-        offset: usize,
-        limit: usize,
-    ) -> Result<Value> {
-        require_nonempty_authorized_principals(principal_ids)?;
-        self.validate_complete_space(space_id).await?;
-        validate_storage_id(validate_sql_session_id(session_id))?;
-        let authorizer = Authorizer::new(self.operator.clone());
-        authorizer
-            .with_state_lock(space_id, |state| async move {
-                let current_authorization = self
-                    .sql_session_current_execution_authorization(
-                        space_id,
-                        session_id,
-                        principal_ids,
-                        &state,
-                    )
-                    .await?;
-                let authorization = sql_session::SqlSessionExecutionAuthorization {
-                    authorization: sql_session::SqlSessionAuthorization {
-                        principal_ids,
-                        policy_hash: &current_authorization.policy_hash,
-                    },
-                    query_policy: &current_authorization.query_policy,
-                };
-                sql_session::get_sql_session_rows_authorized_by_form(
-                    &self.operator,
-                    &self.workspace_path(space_id),
-                    session_id,
-                    authorization,
-                    offset,
-                    limit,
-                )
-                .await
-            })
-            .await
-    }
-
     /// Lists Saved SQL without resource filtering for operator-local/admin
     /// tooling. Server-backed user requests use the authorized variant below.
     pub async fn list_saved_sql_operator_unscoped(&self, space_id: &str) -> Result<Vec<Value>> {
@@ -5693,13 +5412,29 @@ impl UgoiteService {
     }
 }
 
-fn require_sql_session_principals(principal_ids: &[Uuid]) -> Result<()> {
-    if principal_ids.is_empty() {
-        return Err(
-            AppError::forbidden("SQL session requires at least one authorized principal").into(),
-        );
-    }
-    Ok(())
+fn sql_query_authorization_fingerprint(
+    state: &AuthorizationState,
+    principal_ids: &[Uuid],
+) -> Result<String> {
+    require_nonempty_authorized_principals(principal_ids)?;
+    let principal_ids = principal_ids
+        .iter()
+        .map(Uuid::to_string)
+        .collect::<BTreeSet<_>>();
+    // AuthorizationState::revision is the durable monotonic revision for all
+    // ACL and membership changes. Rechecking the current state on every page
+    // remains mandatory; this fingerprint only detects that a continuation
+    // must be restarted rather than acting as an authorization credential.
+    let canonical = serde_json::to_vec(&json!({
+        "space_uid": state.space_uid,
+        "authorization_revision": state.revision,
+        "principal_ids": principal_ids,
+    }))?;
+    Ok(format!("sha256:{}", hex::encode(Sha256::digest(canonical))))
+}
+
+fn entry_query_contract_error(error: EntryQueryError) -> anyhow::Error {
+    AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()).into()
 }
 
 fn sql_query_contract_error(error: SqlQueryError) -> anyhow::Error {
@@ -5747,144 +5482,6 @@ fn require_nonempty_authorized_principals(principal_ids: &[Uuid]) -> Result<()> 
         );
     }
     Ok(())
-}
-
-fn sql_session_metadata_authorization_error(error: anyhow::Error) -> anyhow::Error {
-    if error.downcast_ref::<AppError>().is_some() {
-        error
-    } else {
-        AppError::forbidden("SQL session execution metadata is invalid").into()
-    }
-}
-
-/// Builds a sparse provider-side authorization predicate from the authoritative
-/// policy state. SQL sessions require every principal to have Space-level
-/// read, so only Entry policies that remove that inherited read need to be
-/// carried into the frozen checkpoint policy.
-fn sql_session_entry_scope(
-    state: &AuthorizationState,
-    principal_ids: &[Uuid],
-) -> Result<index::SqlSessionEntryScope> {
-    validate_sql_session_principal_access(state, principal_ids)?;
-    let mut denied_entry_ids = std::collections::BTreeSet::new();
-    for resource_key in state.policies.keys() {
-        let Some(entry_id) = resource_key.strip_prefix("entry:") else {
-            continue;
-        };
-        let resource = ResourceRef {
-            kind: ResourceKind::Entry,
-            id: entry_id.to_string(),
-            parent: None,
-        };
-        let mut readable_by_every_principal = true;
-        for principal_id in principal_ids {
-            if !effective_actions_for_state(state, *principal_id, Some(&resource))?
-                .contains(&Action::Read)
-            {
-                readable_by_every_principal = false;
-                break;
-            }
-        }
-        if !readable_by_every_principal {
-            if denied_entry_ids.len() == index::SQL_SESSION_MAX_AUTHORIZATION_SCOPE_IDS {
-                return Err(AppError::invalid_input(
-                    ugoite_core::error::ErrorCode::InvalidInput,
-                    "SQL session authorization scope exceeds the configured maximum",
-                )
-                .into());
-            }
-            denied_entry_ids.insert(entry_id.to_string());
-        }
-    }
-    Ok(index::SqlSessionEntryScope::AllExcept(denied_entry_ids))
-}
-
-fn validate_sql_session_principal_access(
-    state: &AuthorizationState,
-    principal_ids: &[Uuid],
-) -> Result<()> {
-    require_sql_session_principals(principal_ids)?;
-    for principal_id in principal_ids {
-        if !effective_actions_for_state(state, *principal_id, None)?.contains(&Action::Read) {
-            return Err(AppError::forbidden(
-                "principal is not currently allowed to read this Space",
-            )
-            .into());
-        }
-    }
-    Ok(())
-}
-
-fn sql_session_policy_hash(state: &AuthorizationState, principal_ids: &[Uuid]) -> Result<String> {
-    require_sql_session_principals(principal_ids)?;
-    let principal_ids = principal_ids
-        .iter()
-        .map(Uuid::to_string)
-        .collect::<std::collections::BTreeSet<_>>();
-    let membership_roles = principal_ids
-        .iter()
-        .map(|principal_id| {
-            let principal_id = Uuid::parse_str(principal_id)
-                .expect("principal IDs were serialized from UUID values");
-            (
-                principal_id.to_string(),
-                state
-                    .memberships
-                    .get(&principal_id)
-                    .map(|membership| membership.role.clone()),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    let agent_grants = principal_ids
-        .iter()
-        .map(|principal_id| {
-            let principal_id = Uuid::parse_str(principal_id)
-                .expect("principal IDs were serialized from UUID values");
-            (
-                principal_id.to_string(),
-                state.agent_grants.get(&principal_id).cloned(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    let entry_policies = state
-        .policies
-        .iter()
-        .filter(|(resource_key, _)| resource_key.starts_with("entry:"))
-        .map(|(resource_key, policy)| (resource_key.clone(), policy.clone()))
-        .collect::<BTreeMap<_, _>>();
-    let canonical = serde_json::to_vec(&json!({
-        "space_uid": state.space_uid,
-        "principal_ids": principal_ids,
-        "membership_roles": membership_roles,
-        "agent_grants": agent_grants,
-        "entry_policies": entry_policies,
-    }))?;
-    Ok(format!("sha256:{}", hex::encode(Sha256::digest(canonical))))
-}
-
-fn sql_query_authorization_fingerprint(
-    state: &AuthorizationState,
-    principal_ids: &[Uuid],
-) -> Result<String> {
-    require_sql_session_principals(principal_ids)?;
-    let principal_ids = principal_ids
-        .iter()
-        .map(Uuid::to_string)
-        .collect::<BTreeSet<_>>();
-    // AuthorizationState::revision is the durable monotonic revision for all
-    // ACL and membership changes. Rechecking the current state on every page
-    // remains mandatory; this fingerprint only detects that a continuation
-    // must be restarted rather than acting as an authorization credential.
-    let canonical = serde_json::to_vec(&json!({
-        "space_uid": state.space_uid,
-        "authorization_revision": state.revision,
-        "principal_ids": principal_ids,
-    }))?;
-    Ok(format!("sha256:{}", hex::encode(Sha256::digest(canonical))))
-}
-
-fn entry_query_contract_error(error: EntryQueryError) -> anyhow::Error {
-    AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()).into()
 }
 
 fn entry_cursor_contract_error(error: impl std::fmt::Display) -> anyhow::Error {
@@ -6593,28 +6190,6 @@ mod tests {
             )
             .await
             .expect_err("low-level audit writer must fail before any remote write"),
-        );
-        let principal_ids = [Uuid::now_v7()];
-        let readable_entries_by_form = BTreeMap::new();
-        let sql_authorization = crate::sql_session::SqlSessionCreateAuthorization {
-            authorization: crate::sql_session::SqlSessionAuthorization {
-                principal_ids: &principal_ids,
-                policy_hash: "policy",
-            },
-            readable_entries_by_form: &readable_entries_by_form,
-        };
-        assert_unavailable(
-            crate::sql_session::create_sql_session_authorized_for_principals_by_form_with_parameters(
-                service.operator(),
-                "spaces/remote-space",
-                "SELECT * FROM Entry",
-                serde_json::Map::new(),
-                BTreeMap::new(),
-                sql_authorization,
-                EntryScope::AllCurrent,
-            )
-            .await
-            .expect_err("low-level SQL-session writer must fail before any remote write"),
         );
         assert_unavailable(
             crate::preferences::patch_user_preferences(

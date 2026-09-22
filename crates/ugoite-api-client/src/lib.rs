@@ -72,10 +72,6 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "sql.delete",
     "sql.query",
     "sql.query.count",
-    "sql_session.create",
-    "sql_session.get",
-    "sql_session.count",
-    "sql_session.rows",
     "agent.list",
     "agent.create",
     "agent.revoke",
@@ -857,57 +853,6 @@ pub fn prepare_request(
                 vec![],
             ),
 
-            "sql_session.create" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to create SQL session"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "sql-sessions".into(),
-                ],
-                vec![],
-            ),
-            "sql_session.get" => (
-                OperationSpec::get("Failed to load SQL session"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "sql-sessions".into(),
-                    required_string(operation, args, "session_id")?,
-                ],
-                vec![],
-            ),
-            "sql_session.count" => (
-                OperationSpec::get("Failed to load SQL session count"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "sql-sessions".into(),
-                    required_string(operation, args, "session_id")?,
-                    "count".into(),
-                ],
-                vec![],
-            ),
-            "sql_session.rows" => (
-                OperationSpec::get("Failed to load SQL session rows"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "sql-sessions".into(),
-                    required_string(operation, args, "session_id")?,
-                    "rows".into(),
-                ],
-                vec![
-                    (
-                        "offset".into(),
-                        required_u64(operation, args, "offset")?.to_string(),
-                    ),
-                    (
-                        "limit".into(),
-                        required_u64(operation, args, "limit")?.to_string(),
-                    ),
-                ],
-            ),
-
             "agent.list" => (
                 OperationSpec::get("Failed to list agents"),
                 vec![
@@ -1594,26 +1539,6 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             HttpMethod::Post,
             "Failed to count SQL query rows",
             RequestBodyKind::Json,
-        ),
-        "sql_session.create" => (
-            HttpMethod::Post,
-            "Failed to create SQL session",
-            RequestBodyKind::Json,
-        ),
-        "sql_session.get" => (
-            HttpMethod::Get,
-            "Failed to load SQL session",
-            RequestBodyKind::None,
-        ),
-        "sql_session.count" => (
-            HttpMethod::Get,
-            "Failed to load SQL session count",
-            RequestBodyKind::None,
-        ),
-        "sql_session.rows" => (
-            HttpMethod::Get,
-            "Failed to load SQL session rows",
-            RequestBodyKind::None,
         ),
         "agent.list" => (
             HttpMethod::Get,
@@ -2582,7 +2507,6 @@ mod tests {
             || operation.starts_with("entry.")
             || operation.starts_with("search.")
             || operation.starts_with("sql.")
-            || operation.starts_with("sql_session.")
             || operation.starts_with("agent.")
             || operation.starts_with("approval.")
             || operation.starts_with("access.")
@@ -2645,16 +2569,6 @@ mod tests {
         }
         if matches!(operation, "sql.get" | "sql.update" | "sql.delete") {
             arguments.insert("sql_id".into(), json!("saved-1"));
-        }
-        if matches!(
-            operation,
-            "sql_session.get" | "sql_session.count" | "sql_session.rows"
-        ) {
-            arguments.insert("session_id".into(), json!("session-1"));
-        }
-        if operation == "sql_session.rows" {
-            arguments.insert("offset".into(), json!(0));
-            arguments.insert("limit".into(), json!(100));
         }
         if operation == "asset.delete" {
             arguments.insert("asset_id".into(), json!("asset-1"));

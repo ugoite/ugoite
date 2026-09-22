@@ -752,27 +752,6 @@ async fn listing_inventory_is_authoritative_for_one_operation() -> Result<()> {
 }
 
 #[tokio::test]
-async fn authorized_sql_rejects_non_read_only_input_before_space_lookup() -> Result<()> {
-    let service = UgoiteService::new("memory://authorized-sql-admission-order")?;
-    let error = service
-        .execute_sql_query_authorized(
-            "missing-space",
-            Uuid::from_u128(403),
-            "INSERT INTO hidden_table VALUES (1)",
-        )
-        .await
-        .expect_err("authorized SQL must reject writes before Space lookup");
-    let error = error
-        .downcast_ref::<ugoite_core::error::AppError>()
-        .expect("read-only SQL failure is typed");
-    assert_eq!(
-        error.code(),
-        ugoite_core::error::ErrorCode::ReadOnlySqlRequired
-    );
-    Ok(())
-}
-
-#[tokio::test]
 async fn authorized_structured_search_rejects_invalid_input_before_space_lookup() -> Result<()> {
     let service = UgoiteService::new("memory://authorized-structured-search-admission-order")?;
     let criteria = StructuredSearch {

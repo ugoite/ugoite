@@ -1,6 +1,5 @@
 import type { EntryRecord, KeywordSearchResult } from "./types";
 import { normalizeEntryRecord, normalizeTimestamp } from "./date-format";
-import { sqlSessionRowToEntryRecord } from "./sql-session-api";
 import { protocolFetch } from "./ugoite-client/protocol";
 
 export type EntrySummary = {
@@ -23,12 +22,8 @@ export type StructuredSearchCriteria = {
   offset?: number;
 };
 
-const normalizeSearchEntry = (entry: Record<string, unknown>): EntryRecord => {
-  if (typeof entry.id === "string") {
-    return normalizeEntryRecord(entry as EntryRecord);
-  }
-  return sqlSessionRowToEntryRecord(entry);
-};
+const normalizeSearchEntry = (entry: Record<string, unknown>): EntryRecord =>
+  normalizeEntryRecord(entry as EntryRecord);
 
 /** Search & query API client backed by the shared Rust/WASM protocol. */
 export const searchApi = {

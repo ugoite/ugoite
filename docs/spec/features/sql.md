@@ -2,47 +2,33 @@
 title: 'Ugoite SQL'
 ---
 
-Ugoite exposes two related surfaces:
+Ugoite separates SQL execution from Saved SQL persistence:
 
-1. **Saved SQL** under `/spaces/{space_id}/sql`, stored as versioned content in the Space.
-2. **SQL sessions** under `/spaces/{space_id}/sql-sessions`, which store expiring query metadata and rerun queries to return count/rows.
+1. **Saved SQL** under `/spaces/{space_id}/sql` is versioned Knowledge stored in
+   the Space.
+2. **SQL Query** under `/spaces/{space_id}/sql/query` is a stateless,
+   read-only execution surface. It does not create a session, result object, or
+   query metadata in the Space.
 
-The CLI `ugoite query --sql ...` executes directly in core mode or creates/reads a remote SQL session in backend/API mode. Run `ugoite query --help` for exact flags; the Space is resolved from the selected context, not a positional argument. Remote session metadata is admitted only after the server's authoritative storage boundary verifies the configured non-local operator; unsupported or unverified storage returns `STORAGE_MUTATION_UNAVAILABLE` before creating session state. SQL is parsed, planned, optimized, and executed by DataFusion over Iceberg Form providers. Each Form is exposed as the backend-provided `form_<FormId>` relation (the Form UUID without dashes) with stable `field_<FieldId>` columns plus the system columns `_ugoite_id`, `_ugoite_created_at`, and `_ugoite_updated_at`; there is no cross-Form aggregate relation. Entry identity is `_ugoite_id`; a human-readable label is available only through a normal Form-defined field.
+The CLI uses `ugoite sql query` and `ugoite sql count`. Both local Core and
+remote REST targets use the same request DTOs and semantics. `ugoite sql lint`
+is parser-only: syntax validity does not authorize execution or resolve a Form.
 
-`ugoite sql lint <sql>` is intentionally parser-only. Its `syntax_valid: true`
-result means that DataFusion accepted the SQL syntax and Ugoite template
-placeholders; it does not resolve a Form, check authorization, or authorize
-execution. `syntax_valid` is the only validity indicator. The `ugoite query`
-command and REST SQL-session endpoints then apply
-the execution contract below, so parser-valid DDL/DML (for example, `DROP TABLE
-entries`) is rejected as non-read-only and cannot mutate a Space. Browser lint
-feedback is advisory and the same server/core execution policy remains the
-authority when a query is saved or run.
-
-Only one read-only DataFusion statement is accepted. The query context exposes only
-authorized Form relations and explicitly allowlisted functions, then applies
-Iceberg/DataFusion projection, predicate, and limit pushdown. Unsupported
-relations, functions, and statement kinds fail without a compatibility fallback.
-
+SQL accepts exactly one read-only `SELECT` statement. The authorized query
+context exposes only permitted Form relations, columns, and functions, and
+executes through the fixed Space publication selected for the request chain.
 Parameters use DataFusion's native `$name` syntax and are bound as typed
-DataFusion scalar values before planning. Ugoite never substitutes parameter
-text into SQL.
+scalars before planning; parameter text is never substituted into SQL.
 
-SQL sessions do not become authoritative data. Their metadata is stored below
-`sql_sessions/`; result rows are regenerated from the session's fixed,
-publication-verified `PublicationRef`, never from the live Space Head. The
-initial pagination contract accepts only a simple single-Form `SELECT` whose
-explicit `ORDER BY` ends in `_ugoite_id`, which is the Form's stable unique tie
-breaker. Joins, aggregates, `DISTINCT`, subqueries, and queries without that
-total order are rejected rather than receiving an unstable cursor protocol.
+`sql.query` returns one bounded page and an opaque continuation when a
+deterministic `ORDER BY` allows pagination. The continuation carries the fixed
+publication, SQL and parameter fingerprints, pagination position, and
+authorization coordinate. It is client-held state, not an authorization token;
+each request rechecks current authorization. `sql.query.count` is explicit and
+separate from page retrieval. No total-cardinality ceiling or persistent SQL
+execution lifecycle is introduced.
 
-Each session stores the creating principal set, a canonical fingerprint of the
-Entry access policies, and a derived query policy beside (not inside) its
-publication. Session creation validates the SQL shape before it resolves the
-one requested Form at that publication. Its provider boundary carries sparse
-Entry denials rather than a Rust-collected list of every readable Entry. Every
-status, count, and page request revalidates the current non-empty principal
-contract and that fingerprint without rebuilding Entry scope or Form metadata
-from the live Head. A policy change requires a new session; an ordinary data
-write, Form evolution, or unrelated authorization activity does not move an
-existing session away from its publication.
+SQL results are not automatically materialized as Knowledge. A SELECT cannot
+write a publication, derived relation, or execution metadata. Future SQL DML
+must enter the existing Entry/Form/Change/Publication mutation boundary rather
+than updating Iceberg tables directly.

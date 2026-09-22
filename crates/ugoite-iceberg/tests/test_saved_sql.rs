@@ -12,7 +12,6 @@ use ugoite_iceberg::saved_sql::{
     self, SearchHistoryOperator, SqlGeneratedName, SqlKind, SqlMetadata, SqlPayload,
 };
 use ugoite_iceberg::space;
-use ugoite_iceberg::sql_session;
 
 const FORM_RELATION: &str = "form_00000000000000000000000000000001";
 
@@ -528,27 +527,5 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
         &integrity,
     )
     .await?;
-    let readable_entries_by_form = std::collections::BTreeMap::new();
-    let principal_ids = [uuid::Uuid::from_u128(1)];
-    let authorization = sql_session::SqlSessionAuthorization {
-        principal_ids: &principal_ids,
-        policy_hash: "sha256:test-authorization-policy",
-    };
-    let create_authorization = sql_session::SqlSessionCreateAuthorization {
-        authorization,
-        readable_entries_by_form: &readable_entries_by_form,
-    };
-    assert!(
-        sql_session::create_sql_session_authorized_for_principals_by_form(
-            &op,
-            ws_path,
-            &invalid_sql.sql,
-            create_authorization,
-            ugoite_core::query::EntryScope::AllCurrent,
-        )
-        .await
-        .is_err()
-    );
-
     Ok(())
 }

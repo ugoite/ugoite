@@ -22,7 +22,6 @@ policies:
   - SPEC-ARCH-OVERVIEW
   - SPEC-DM-OVERVIEW
   - SPEC-FEATURES-SQL
-  - SPEC-DM-SQL-SESSIONS
 - id: POL-002
   title: Rust Core as Canonical Logic Layer
   summary: Concentrate durable business logic in ugoite-core and reuse it from adapters.

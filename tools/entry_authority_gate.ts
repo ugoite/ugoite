@@ -55,7 +55,13 @@ export async function readEntryAuthorityViolations(
     .filter((path) => path.endsWith(".ts") || path.endsWith(".tsx"));
   const violations: AuthorityViolation[] = [];
   for (const path of paths) {
-    const source = await Deno.readTextFile(`${root}/${path}`);
+    let source: string;
+    try {
+      source = await Deno.readTextFile(`${root}/${path}`);
+    } catch (error) {
+      if (error instanceof Deno.errors.NotFound) continue;
+      throw error;
+    }
     const violation = findEntryAuthorityViolations(path, source);
     if (violation) violations.push(violation);
   }

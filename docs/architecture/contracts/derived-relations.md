@@ -88,7 +88,7 @@ last, and a small terminal tombstone prevents build-ID reuse after the
 disposable claim is reaped. Shared garbage-age decisions require backend
 timestamps rather than producer clocks.
 
-The internal DataFusion provider is not registered in Saved SQL, SQL Sessions,
+The internal DataFusion provider is not registered in Saved SQL or SQL queries,
 the public relation namespace, or SpaceCheckpoint-pinned query plans. Iceberg
 provides typed storage, snapshots, metadata pruning, portability, and a
 DataFusion provider; it is not a persistent substring full-text index. A future

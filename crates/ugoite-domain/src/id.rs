@@ -74,7 +74,6 @@ pub enum IdentifierKind {
     Form,
     Asset,
     Sql,
-    SqlSession,
     Revision,
 }
 
@@ -87,7 +86,6 @@ impl IdentifierKind {
             Self::Form => "form_name",
             Self::Asset => "asset_id",
             Self::Sql => "sql_id",
-            Self::SqlSession => "sql_session_id",
             Self::Revision => "revision_id",
         }
     }
@@ -176,10 +174,6 @@ pub fn validate_asset_id(value: &str) -> Result<(), IdentifierError> {
 
 pub fn validate_sql_id(value: &str) -> Result<(), IdentifierError> {
     validate_identifier(IdentifierKind::Sql, value)
-}
-
-pub fn validate_sql_session_id(value: &str) -> Result<(), IdentifierError> {
-    validate_identifier(IdentifierKind::SqlSession, value)
 }
 
 pub fn validate_revision_id(value: &str) -> Result<(), IdentifierError> {

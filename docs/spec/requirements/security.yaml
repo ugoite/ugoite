@@ -244,7 +244,7 @@ requirements:
   - ../architecture/data-model/overview.md#forms-and-entries
   - ../architecture/api/rest.md#endpoints
   - ../architecture/contracts/frontend-backend-interface.md#frontendserver-interface
-  - ../architecture/data-model/sql-sessions.md#saved-sql-and-materialized-view-metadata
+  - ../features/sql.md
   - stories/experimental.yaml
   priority: high
   status: implemented
