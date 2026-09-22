@@ -40,7 +40,7 @@ pub fn operator_for_path(path: &str) -> Result<opendal::Operator> {
             local_root
         }
     } else if path.contains("://") {
-        bail!("unsupported storage uri in core mode: {path}");
+        bail!("unsupported storage uri on a local core connection: {path}");
     } else if trimmed.is_empty() {
         "/"
     } else {
@@ -49,7 +49,7 @@ pub fn operator_for_path(path: &str) -> Result<opendal::Operator> {
     if root.contains('\0') {
         bail!("unsupported local path contains null byte: {path:?}");
     }
-    // Core-mode background jobs may update a status document while the CLI
+    // Local core connection background jobs may update a status document while the CLI
     // reads it. Keep OpenDAL's filesystem replacement writes on a proven
     // same-filesystem directory, including when a root-backed operator is
     // opened before `/spaces` exists.
@@ -116,29 +116,6 @@ fn set_owner_only_directory(_path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn normalize_space_root(root_path: &str) -> String {
-    let trimmed = if root_path == "/" {
-        "/"
-    } else {
-        root_path.trim_end_matches('/')
-    };
-    if let Some(parent) = trimmed.strip_suffix("/spaces") {
-        if parent.is_empty() {
-            return "/".to_string();
-        }
-        return parent.to_string();
-    }
-    trimmed.to_string()
-}
-
 pub fn validate_server_endpoint_url(url: &str, label: &str) -> Result<()> {
     crate::cli_config::model::validate_remote_url(url, label).map(|_| ())
 }
-
-/// Centralized output contract lives in `crate::output` (E0). These
-/// Re-exports keep existing command imports working while the presentation
-/// implementation lives under `crate::output`.
-pub use crate::output::{
-    effective_format, effective_format_for_stdout, emit_success, print_json, print_json_table,
-    print_list_table, project_error, CliError, ExitCode, Format, MutationReceipt,
-};

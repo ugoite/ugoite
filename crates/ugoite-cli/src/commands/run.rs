@@ -45,7 +45,7 @@ pub async fn run(
             if let SpaceTarget::Remote { space_uid, .. } = &target {
                 if author != "cli" {
                     return Err(UsageError(
-                        "run undo --author is only supported in core mode; backend/api derive author from the authenticated identity"
+                        "run undo --author is only supported on a local core connection; remote backend/api connections derive author from the authenticated identity"
                             .to_string(),
                     )
                     .into());

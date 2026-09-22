@@ -7394,9 +7394,12 @@ name = "xtask"
 version = "0.1.2"
 dependencies = [
  "anyhow",
+ "opendal",
  "serde",
  "serde_json",
  "serde_yaml",
+ "tokio",
+ "ugoite-iceberg",
 ]
 
 [[package]]

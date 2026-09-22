@@ -2,7 +2,7 @@ use crate::cli_config::{
     load_cli_config, mutate_write_target, normalize_core_root_to_absolute, resolve_cli_context,
     ConfigFile, ConnectionConfig,
 };
-use crate::config::print_json;
+use crate::output::print_json;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
 use std::path::{Path, PathBuf};
