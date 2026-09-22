@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fireEvent,
   render,
@@ -8,8 +8,10 @@ import {
   within,
 } from "@solidjs/testing-library";
 import {
+  chunkCsvDataRowsForExport,
   chunkCsvRowsForExport,
   encodeSpreadsheetCsvChunked,
+  encodeSpreadsheetCsvDataRowsChunked,
   FormTable,
 } from "./FormTable";
 import {
@@ -17,8 +19,76 @@ import {
   entryApi,
   spreadsheetCsvRequestBytes,
 } from "~/lib/ugoite-client";
-import { searchApi } from "~/lib/ugoite-client";
+import type { Form } from "~/lib/types";
+import type { EntryPage } from "~/lib/entry-query";
 import { setLocale } from "~/lib/i18n";
+
+type QueryTestEntry = {
+  id: string;
+  properties?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
+};
+
+function entryQueryPage(entries: readonly QueryTestEntry[]): EntryPage {
+  const toMicros = (value: string | undefined) => {
+    const parsed = Date.parse(value ?? "");
+    return Number.isFinite(parsed) ? parsed * 1_000 : 0;
+  };
+  return {
+    rows: entries.map((entry, index) => ({
+      id: entry.id,
+      form_id: "form-test",
+      revision_id: `revision-${index}`,
+      created_at_micros: toMicros(entry.created_at),
+      updated_at_micros: toMicros(entry.updated_at),
+      properties: entry.properties,
+    })),
+    has_more: false,
+  };
+}
+
+function mockEntryQuery(entries: readonly QueryTestEntry[]) {
+  return vi.spyOn(entryApi, "query").mockResolvedValue(entryQueryPage(entries));
+}
+
+const canonicalForms = new WeakMap<object, Form>();
+
+function canonicalForm(form: Record<string, any>): Form {
+  const cached = canonicalForms.get(form);
+  if (cached) return cached;
+  const canonical: Form = {
+    ...form,
+    id: form.id ?? `form-${form.name}`,
+    version: form.version ?? 1,
+    template: form.template ?? "",
+    fields: Object.fromEntries(
+      Object.entries(form.fields ?? {}).map(([name, rawField], index) => {
+        const field = rawField as Record<string, any>;
+        const fieldId = field.id ?? index + 1;
+        return [name, {
+          ...field,
+          type: field.type ?? "string",
+          required: field.required ?? false,
+          id: fieldId,
+          query_capability: field.query_capability ?? {
+            field: { kind: "property", field_id: fieldId },
+            name,
+            field_type: field.type === "number" ? "numeric" : "string",
+            filterable: true,
+            sortable: true,
+            projectable: true,
+            supported_operators: field.type === "number"
+              ? ["equals", "lt", "lte", "gt", "gte"]
+              : ["equals", "contains"],
+          },
+        }] as const;
+      }),
+    ),
+  };
+  canonicalForms.set(form, canonical);
+  return canonical;
+}
 
 function desktopTable() {
   const table = document.querySelector(".ui-table-desktop");
@@ -35,18 +105,19 @@ function mobileList() {
 describe("FormTable", () => {
   beforeEach(() => {
     setLocale("en");
+    vi.restoreAllMocks();
   });
 
   it("keeps the Form workspace available when its query fails", async () => {
     const entryForm = { name: "Entry", fields: {} } as any;
-    const query = vi.spyOn(searchApi, "query")
+    const query = vi.spyOn(entryApi, "query")
       .mockRejectedValueOnce(new Error("Internal server error"))
-      .mockResolvedValue([] as any);
+      .mockResolvedValue(entryQueryPage([]));
 
     const { getByRole, getByText, queryByRole } = render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
@@ -77,12 +148,12 @@ describe("FormTable", () => {
       },
     ];
 
-    const spy = vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+    const spy = mockEntryQuery(entries);
 
     render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
@@ -99,6 +170,81 @@ describe("FormTable", () => {
     spy.mockRestore();
   });
 
+  it("uses a form-scoped keyset page chain", async () => {
+    const entryForm = {
+      name: "Test",
+      fields: { status: { type: "string" } },
+    } as any;
+    const pages = new Map<string | undefined, EntryPage>([
+      [undefined, {
+        rows: [{
+          id: "entry-1",
+          form_id: "form-Test",
+          revision_id: "revision-1",
+          created_at_micros: 1,
+          updated_at_micros: 2,
+          properties: { status: "open" },
+        }],
+        has_more: true,
+        next: "cursor-1",
+      }],
+      ["cursor-1", {
+        rows: [{
+          id: "entry-2",
+          form_id: "form-Test",
+          revision_id: "revision-2",
+          created_at_micros: 3,
+          updated_at_micros: 4,
+          properties: { status: "closed" },
+        }],
+        has_more: false,
+      }],
+    ]);
+    const query = vi.spyOn(entryApi, "query").mockImplementation(
+      async (_spaceId, request) => pages.get(request.after)!,
+    );
+
+    const { getByRole } = render(() => (
+      <FormTable
+        spaceId="ws"
+        entryForm={canonicalForm(entryForm)}
+        onEntryClick={() => {}}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(desktopTable().getByText("entry-1"))
+        .toBeInTheDocument()
+    );
+    expect(query.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      query: expect.objectContaining({
+        scope: { kind: "form", form_id: "form-Test" },
+        filters: [],
+        sort: [],
+      }),
+      projection: expect.objectContaining({
+        kind: "fields",
+        fields: expect.arrayContaining([
+          { kind: "property", field_id: 1 },
+        ]),
+      }),
+    }));
+
+    fireEvent.click(getByRole("button", { name: "Next" }));
+    await waitFor(() =>
+      expect(desktopTable().getByText("entry-2"))
+        .toBeInTheDocument()
+    );
+    expect(query.mock.calls.at(-1)?.[1].after).toBe("cursor-1");
+
+    fireEvent.click(getByRole("button", { name: "Previous" }));
+    await waitFor(() =>
+      expect(desktopTable().getByText("entry-1"))
+        .toBeInTheDocument()
+    );
+    expect(query.mock.calls.at(-1)?.[1].after).toBeUndefined();
+  });
+
   it("formats structured fields safely and keeps them read-only", async () => {
     const entryForm = {
       name: "Test",
@@ -107,7 +253,7 @@ describe("FormTable", () => {
         metadata: { type: "object" },
       },
     } as any;
-    vi.spyOn(searchApi, "query").mockResolvedValue([{
+    mockEntryQuery([{
       id: "1",
       properties: {
         asset: {
@@ -125,7 +271,7 @@ describe("FormTable", () => {
     const { getByTitle } = render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
       />
     ));
@@ -141,29 +287,42 @@ describe("FormTable", () => {
     expect(document.body.textContent).not.toContain("[object Object]");
   });
 
-  it("REQ-FE-019: sorts entries when clicking headers", async () => {
+  it("REQ-FE-019: sends multi-column sort to EntryQuery", async () => {
     const entryForm = {
       name: "Test",
-      fields: { price: { type: "number" } },
+      fields: {
+        price: { type: "number" },
+        status: { type: "string" },
+      },
     } as any;
     const entries = [
       {
         id: "entry-b",
-        properties: { price: 20 },
+        properties: { price: 20, status: "open" },
         updated_at: "2026-01-01",
       },
       {
         id: "entry-a",
-        properties: { price: 10 },
+        properties: { price: 10, status: "closed" },
         updated_at: "2026-01-02",
       },
     ];
 
-    vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
-    const { getByText } = render(() => (
+    const query = vi.spyOn(entryApi, "query").mockImplementation(
+      async (_spaceId, request) => {
+        const direction = request.query.sort[0]?.direction;
+        const sorted = direction === "asc"
+          ? [entries[1], entries[0]]
+          : direction === "desc"
+          ? [entries[0], entries[1]]
+          : entries;
+        return entryQueryPage(sorted);
+      },
+    );
+    render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
@@ -173,30 +332,60 @@ describe("FormTable", () => {
       expect(desktopTable().getByText("entry-a")).toBeInTheDocument()
     );
 
-    // Initially might be in order returned by API. Click ID to sort.
-    const idHeader = desktopTable().getByText("ID");
-    fireEvent.click(idHeader); // Asc null -> asc
+    const priceHeader = desktopTable().getByText("price");
+    fireEvent.click(priceHeader); // Asc null -> asc
 
     await waitFor(() => {
-      const rows = document.querySelectorAll("tbody tr");
-      expect(rows[0]).toHaveTextContent("entry-a");
+      const request = query.mock.calls.at(-1)?.[1];
+      expect(request?.query.sort).toEqual([{
+        field: { kind: "property", field_id: 1 },
+        direction: "asc",
+      }]);
+      expect(desktopTable().getByText("entry-a")).toBeInTheDocument();
     });
 
-    fireEvent.click(idHeader); // Asc -> desc
+    fireEvent.click(desktopTable().getByText("status"));
     await waitFor(() => {
-      const rows = document.querySelectorAll("tbody tr");
-      expect(rows[0]).toHaveTextContent("entry-b");
+      expect(query.mock.calls.at(-1)?.[1].query.sort).toEqual([
+        {
+          field: { kind: "property", field_id: 1 },
+          direction: "asc",
+        },
+        {
+          field: { kind: "property", field_id: 2 },
+          direction: "asc",
+        },
+      ]);
     });
 
-    fireEvent.click(idHeader); // desc -> null (clear sort)
+    fireEvent.click(priceHeader); // Asc -> desc
     await waitFor(() => {
-      // Both entries still visible (sort cleared)
-      const rows = document.querySelectorAll("tbody tr");
-      expect(rows.length).toBe(2);
+      const request = query.mock.calls.at(-1)?.[1];
+      expect(request?.query.sort).toEqual([{
+        field: { kind: "property", field_id: 1 },
+        direction: "desc",
+      }, {
+        field: { kind: "property", field_id: 2 },
+        direction: "asc",
+      }]);
+    });
+
+    fireEvent.click(priceHeader); // desc -> remove, retaining the second key
+    await waitFor(() => {
+      expect(query.mock.calls.at(-1)?.[1].query.sort).toEqual([{
+        field: { kind: "property", field_id: 2 },
+        direction: "asc",
+      }]);
+    });
+
+    fireEvent.click(desktopTable().getByText("status"));
+    fireEvent.click(desktopTable().getByText("status"));
+    await waitFor(() => {
+      expect(query.mock.calls.at(-1)?.[1].query.sort).toEqual([]);
     });
   });
 
-  it("REQ-FE-020: filters entries globally", async () => {
+  it("REQ-FE-020: sends global text search to EntryQuery", async () => {
     const entryForm = {
       name: "Test",
       fields: { tag: { type: "string" } },
@@ -214,11 +403,20 @@ describe("FormTable", () => {
       },
     ];
 
-    vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+    const query = vi.spyOn(entryApi, "query").mockImplementation(
+      async (_spaceId, request) => {
+        const text = request.query.text ?? "";
+        return entryQueryPage(
+          entries.filter((entry) =>
+            String(entry.properties?.tag ?? "").includes(text)
+          ),
+        );
+      },
+    );
     const { getByPlaceholderText } = render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
@@ -229,9 +427,10 @@ describe("FormTable", () => {
     );
 
     const searchInput = getByPlaceholderText("Global Search...");
-    fireEvent.input(searchInput, { target: { value: "carrot" } });
+    fireEvent.input(searchInput, { target: { value: "veggie" } });
 
     await waitFor(() => {
+      expect(query.mock.calls.at(-1)?.[1].query.text).toBe("veggie");
       expect(desktopTable().getByText("entry-carrot")).toBeInTheDocument();
       expect(desktopTable().queryByText("entry-apple")).not.toBeInTheDocument();
     });
@@ -260,11 +459,22 @@ describe("FormTable", () => {
       },
     ];
 
-    vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+    const query = vi.spyOn(entryApi, "query").mockImplementation(
+      async (_spaceId, request) => {
+        const text = request.query.text ?? "";
+        const filtered = entries.filter((entry) =>
+          (!text || entry.id.includes(text)) &&
+          request.query.filters.every((filter) =>
+            String(entry.properties?.tag ?? "").includes(String(filter.value))
+          )
+        );
+        return entryQueryPage(filtered);
+      },
+    );
     const { getByPlaceholderText } = render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
@@ -278,9 +488,19 @@ describe("FormTable", () => {
       target: { value: "apple" },
     });
     const columnFilters = document.querySelectorAll("input.ui-table-filter");
-    fireEvent.input(columnFilters[1], { target: { value: "fruit" } });
+    fireEvent.input(columnFilters[0], { target: { value: "fruit" } });
 
     await waitFor(() => {
+      expect(query.mock.calls.at(-1)?.[1].query).toEqual({
+        scope: { kind: "form", form_id: "form-Test" },
+        text: "apple",
+        filters: [{
+          field: { kind: "property", field_id: 1 },
+          operator: "contains",
+          value: "fruit",
+        }],
+        sort: [],
+      });
       const rows = document.querySelectorAll("tbody tr");
       expect(rows.length).toBe(1);
       expect(rows[0]).toHaveTextContent("apple-1");
@@ -306,7 +526,14 @@ describe("FormTable", () => {
       },
     ];
 
-    vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+    vi.spyOn(entryApi, "query").mockImplementation(
+      async (_spaceId, request) =>
+        entryQueryPage(
+          request.query.text
+            ? entries.filter((entry) => entry.id.includes(request.query.text!))
+            : entries,
+        ),
+    );
 
     // Mock URL.createObjectURL/revokeObjectURL
     let exportedBlob: Blob | undefined;
@@ -332,7 +559,7 @@ describe("FormTable", () => {
     const { getByPlaceholderText, getByText } = render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
@@ -387,7 +614,7 @@ describe("FormTable", () => {
     ];
     const snapshot = JSON.parse(JSON.stringify(entries));
 
-    vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+    mockEntryQuery(entries);
 
     let exportedBlob: Blob | undefined;
     global.URL.createObjectURL = vi.fn().mockImplementation((blob: Blob) => {
@@ -415,7 +642,7 @@ describe("FormTable", () => {
     render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
@@ -462,6 +689,22 @@ describe("FormTable", () => {
     await expect(
       encodeSpreadsheetCsvChunked(headers, rows, singleRowBytes),
     ).resolves.toBe(await encodeSpreadsheetCsv([headers, ...rows]));
+  });
+
+  it("bounds data-only CSV pages without repeating the header", async () => {
+    const rows = [["a"], ["b"], ["c"]];
+    const limit = spreadsheetCsvRequestBytes([["a"]]);
+    const chunks = chunkCsvDataRowsForExport(rows, limit);
+
+    expect(chunks.flat()).toEqual(rows);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(spreadsheetCsvRequestBytes(chunk)).toBeLessThanOrEqual(limit);
+    }
+    await expect(encodeSpreadsheetCsvDataRowsChunked(rows, limit)).resolves
+      .toBe(
+        await encodeSpreadsheetCsv(rows),
+      );
   });
 
   it("measures the exact envelope near the ASCII boundary", () => {
@@ -528,15 +771,15 @@ describe("FormTable", () => {
       name: "Test",
       fields: { col: { type: "string" } },
     } as any;
-    const entries = [];
-    vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+    const entries: QueryTestEntry[] = [];
+    mockEntryQuery(entries);
     const onAddRow = vi.fn();
     const createSpy = vi.spyOn(entryApi, "create");
 
     const { getByTitle, getByText } = render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={onAddRow}
       />
@@ -566,7 +809,7 @@ describe("FormTable", () => {
         updated_at: "2026-01-01",
       },
     ];
-    vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+    mockEntryQuery(entries);
     const getSpy = vi.spyOn(entryApi, "get").mockResolvedValue({
       id: "1",
       form: "Test",
@@ -578,7 +821,7 @@ describe("FormTable", () => {
     const { getByTitle } = render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
@@ -626,13 +869,13 @@ describe("FormTable", () => {
         updated_at: "2026-01-01",
       },
     ];
-    vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+    mockEntryQuery(entries);
     const onEntryClick = vi.fn();
 
     render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={onEntryClick}
         onAddRow={() => {}}
       />
@@ -660,12 +903,12 @@ describe("FormTable", () => {
 
   it("should show restricted lock icon when not in edit mode and open lock icon when in edit mode", async () => {
     const entryForm = { name: "Test", fields: {} } as any;
-    vi.spyOn(searchApi, "query").mockResolvedValue([] as any);
+    mockEntryQuery([]);
 
     const { getByTitle, queryByTitle } = render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
@@ -699,14 +942,14 @@ describe("FormTable", () => {
         updated_at: new Date("2026-01-02").toISOString(),
       },
     ];
-    vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+    mockEntryQuery(entries);
     const writeTextSpy = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText: writeTextSpy } });
 
     const { getByText } = render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
@@ -731,14 +974,14 @@ describe("FormTable", () => {
 
   it("should not trigger custom copy when input is focused", async () => {
     const entryForm = { name: "Test", fields: {} } as any;
-    vi.spyOn(searchApi, "query").mockResolvedValue([] as any);
+    mockEntryQuery([]);
     const writeTextSpy = vi.fn();
     Object.assign(navigator, { clipboard: { writeText: writeTextSpy } });
 
     const { getByPlaceholderText } = render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
@@ -770,12 +1013,22 @@ describe("FormTable", () => {
         updated_at: "2026-01-01",
       },
     ];
-    vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+    const query = vi.spyOn(entryApi, "query").mockImplementation(
+      async (_spaceId, request) => {
+        const direction = request.query.sort[0]?.direction;
+        const sorted = direction === "asc"
+          ? [entries[1], entries[0]]
+          : direction === "desc"
+          ? [entries[0], entries[1]]
+          : entries;
+        return entryQueryPage(sorted);
+      },
+    );
 
     const { getByLabelText, getByText } = render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
@@ -787,11 +1040,13 @@ describe("FormTable", () => {
     fireEvent.click(getByLabelText("Sort menu"));
     // Change sort field via dropdown
     const sortFieldSelect = getByLabelText("Sort field");
-    fireEvent.change(sortFieldSelect, { target: { value: "id" } });
+    fireEvent.change(sortFieldSelect, { target: { value: "col" } });
 
     await waitFor(() => {
-      const rows = document.querySelectorAll("tbody tr");
-      expect(rows[0]).toHaveTextContent("entry-a");
+      expect(query.mock.calls.at(-1)?.[1].query.sort).toEqual([{
+        field: { kind: "property", field_id: 1 },
+        direction: "asc",
+      }]);
     });
 
     // Change to empty (clears sort)
@@ -815,12 +1070,23 @@ describe("FormTable", () => {
         updated_at: "2026-01-01",
       },
     ];
-    vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+    const query = vi.spyOn(entryApi, "query").mockImplementation(
+      async (_spaceId, request) => {
+        const filter = request.query.filters[0]?.value;
+        return entryQueryPage(
+          filter
+            ? entries.filter((entry) =>
+              String(entry.properties?.col).includes(String(filter))
+            )
+            : entries,
+        );
+      },
+    );
 
     render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
@@ -829,14 +1095,18 @@ describe("FormTable", () => {
     await waitFor(() => expect(document.querySelector("tbody")).toBeTruthy());
 
     // Column filters are visible (showColumnFilters starts true)
-    // Find the ID column filter (first filter input after headers)
+    // Find the canonical property filter.
     const filterInputs = document.querySelectorAll("input.ui-table-filter");
     expect(filterInputs.length).toBeGreaterThan(0);
 
-    // Filter by ID column
-    fireEvent.input(filterInputs[0], { target: { value: "apple-1" } });
+    fireEvent.input(filterInputs[0], { target: { value: "fruit" } });
 
     await waitFor(() => {
+      expect(query.mock.calls.at(-1)?.[1].query.filters).toEqual([{
+        field: { kind: "property", field_id: 1 },
+        operator: "contains",
+        value: "fruit",
+      }]);
       const rows = document.querySelectorAll("tbody tr");
       expect(rows.length).toBe(1);
     });
@@ -854,14 +1124,14 @@ describe("FormTable", () => {
         updated_at: new Date("2026-01-01").toISOString(),
       },
     ];
-    vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+    mockEntryQuery(entries);
     const writeTextSpy = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText: writeTextSpy } });
 
     const { getByText } = render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
@@ -897,7 +1167,7 @@ describe("FormTable", () => {
         updated_at: "2026-01-01",
       },
     ];
-    vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+    mockEntryQuery(entries);
     const getSpy = vi.spyOn(entryApi, "get").mockResolvedValue({
       id: "entry-1",
       content: "---\nform: Test\n---\n\n## col\nval",
@@ -908,7 +1178,7 @@ describe("FormTable", () => {
     const { getByText, getByTitle } = render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
@@ -945,7 +1215,7 @@ describe("FormTable", () => {
         notes: { type: "markdown" },
       },
     } as any;
-    vi.spyOn(searchApi, "query").mockResolvedValue([{
+    mockEntryQuery([{
       id: "entry-1",
       properties: {
         status: "Open",
@@ -960,7 +1230,7 @@ describe("FormTable", () => {
     render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={onEntryClick}
         onAddRow={() => {}}
       />
@@ -991,7 +1261,7 @@ describe("FormTable", () => {
         notes: { type: "string" },
       },
     } as any;
-    vi.spyOn(searchApi, "query").mockResolvedValue([{
+    mockEntryQuery([{
       id: "1",
       properties: {
         status: "Open",
@@ -1012,7 +1282,7 @@ describe("FormTable", () => {
     const { getByTitle } = render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
@@ -1046,12 +1316,12 @@ describe("FormTable", () => {
       name: "Test",
       fields: { col: { type: "string" } },
     } as any;
-    vi.spyOn(searchApi, "query").mockResolvedValue([] as any);
+    mockEntryQuery([]);
 
     const { getByRole, getAllByRole } = render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
@@ -1068,10 +1338,11 @@ describe("FormTable", () => {
       expect(document.getElementById(id)).not.toBeNull();
     }
 
-    expect(getByRole("textbox", { name: "Global Search..." })).toBeInTheDocument();
+    expect(getByRole("textbox", { name: "Global Search..." }))
+      .toBeInTheDocument();
     // Desktop header inputs and the mobile panel share accessible names.
-    expect(getAllByRole("textbox", { name: "ID Filter..." }).length).toBeGreaterThan(0);
-    expect(getAllByRole("textbox", { name: "col Filter..." }).length).toBeGreaterThan(0);
+    expect(getAllByRole("textbox", { name: "col Filter..." }).length)
+      .toBeGreaterThan(0);
   });
 
   it("restores focus to the filter toggle when panels close under focus", async () => {
@@ -1079,12 +1350,12 @@ describe("FormTable", () => {
       name: "Test",
       fields: { col: { type: "string" } },
     } as any;
-    vi.spyOn(searchApi, "query").mockResolvedValue([] as any);
+    mockEntryQuery([]);
 
     const { getByRole } = render(() => (
       <FormTable
         spaceId="ws"
-        entryForm={entryForm}
+        entryForm={canonicalForm(entryForm)}
         onEntryClick={() => {}}
         onAddRow={() => {}}
       />
