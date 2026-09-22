@@ -259,7 +259,6 @@ export interface EntryCreatePayload {
 /** Structured Entry update payload. */
 export interface EntryUpdatePayload {
   parent_revision_id: string;
-  frontmatter?: Record<string, unknown>;
   canvas_position?: CanvasPosition;
   form?: string;
   tags?: string[];

@@ -151,21 +151,6 @@ features:
                 criterion: REQ-FE-052#criterion.form-derived-guidance
               - kind: satisfies
                 criterion: REQ-FE-053#criterion.localized-guidance
-          - id: markdown-editor
-            adapter: typescript
-            path: frontend/src/components/MarkdownEditor.tsx
-            selector: { kind: symbol, name: MarkdownEditor }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-005#criterion.edit-preview-save
-              - kind: satisfies
-                criterion: REQ-FE-005#criterion.safe-preview
-              - kind: satisfies
-                criterion: REQ-FE-005A#criterion.missing-content
-              - kind: satisfies
-                criterion: REQ-FE-005A#criterion.new-entry-preview
-              - kind: satisfies
-                criterion: REQ-FE-009#criterion.conflict-guidance
           - id: markdown-utils
             adapter: typescript
             path: frontend/src/lib/markdown.ts
