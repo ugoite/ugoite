@@ -17,14 +17,16 @@ import { entryApi } from "~/lib/entry-api";
 import type { Form } from "~/lib/types";
 
 vi.mock("~/lib/entry-api", () => ({
-  entryApi: { query: vi.fn() },
+  entryApi: { query: vi.fn(), get: vi.fn() },
 }));
 
 const entryQueryMock = vi.mocked(entryApi.query);
+const entryGetMock = vi.mocked(entryApi.get);
 
 beforeEach(() => {
   vi.restoreAllMocks();
   entryQueryMock.mockReset();
+  entryGetMock.mockReset();
   setLocale("en");
 });
 
@@ -1025,6 +1027,15 @@ describe("CreateEntryDialog", () => {
         preview: "Project Alpha",
       }],
       has_more: false,
+    });
+    entryGetMock.mockResolvedValue({
+      id: "entry-project-1",
+      form: "Project",
+      content: "",
+      frontmatter: { Name: "Project Alpha" },
+      revision_id: "revision-1",
+      created_at: "2026-03-01T00:00:00Z",
+      updated_at: "2026-03-01T00:00:00Z",
     });
     const onSubmit = vi.fn();
     const forms: Form[] = [
