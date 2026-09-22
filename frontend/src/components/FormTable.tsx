@@ -393,11 +393,20 @@ export function FormTable(props: FormTableProps) {
       if (trimmed.toLowerCase() === "true") return true;
       if (trimmed.toLowerCase() === "false") return false;
     }
-    if (capability.field_type === "integer" && /^[+-]?\d+$/.test(trimmed)) {
+    if (
+      (capability.field_type === "integer" ||
+        capability.field_type === "long") &&
+      /^[+-]?\d+$/.test(trimmed)
+    ) {
       const parsed = Number(trimmed);
       if (Number.isSafeInteger(parsed)) return parsed;
     }
-    if (capability.field_type === "numeric") {
+    if (
+      capability.field_type === "numeric" ||
+      capability.field_type === "number" ||
+      capability.field_type === "float" ||
+      capability.field_type === "double"
+    ) {
       const parsed = Number(trimmed);
       if (trimmed !== "" && Number.isFinite(parsed)) return parsed;
     }

@@ -436,6 +436,75 @@ describe("FormTable", () => {
     });
   });
 
+  it("REQ-FE-020: preserves Rust-owned numeric filter types", async () => {
+    const entryForm = {
+      name: "Test",
+      fields: {
+        count: {
+          type: "long",
+          query_capability: {
+            field: { kind: "property", field_id: 1 },
+            name: "count",
+            field_type: "long",
+            filterable: true,
+            sortable: true,
+            projectable: true,
+            supported_operators: ["equals", "lt", "lte", "gt", "gte"],
+          },
+        },
+        ratio: {
+          type: "double",
+          query_capability: {
+            field: { kind: "property", field_id: 2 },
+            name: "ratio",
+            field_type: "double",
+            filterable: true,
+            sortable: true,
+            projectable: true,
+            supported_operators: ["equals", "lt", "lte", "gt", "gte"],
+          },
+        },
+      },
+    } as any;
+    const query = mockEntryQuery([{
+      id: "entry-1",
+      properties: { count: 42, ratio: 1.5 },
+      updated_at: "2026-01-01",
+    }]);
+
+    render(() => (
+      <FormTable
+        spaceId="ws"
+        entryForm={canonicalForm(entryForm)}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
+    ));
+
+    await waitFor(() => expect(document.querySelector("tbody")).toBeTruthy());
+    const filterInputs = document.querySelectorAll("input.ui-table-filter");
+    fireEvent.input(filterInputs[0], { target: { value: "42" } });
+    await waitFor(() => {
+      expect(query.mock.calls.at(-1)?.[1].query.filters[0]?.value).toBe(42);
+    });
+
+    fireEvent.input(filterInputs[1], { target: { value: "1.5" } });
+    await waitFor(() => {
+      expect(query.mock.calls.at(-1)?.[1].query.filters).toEqual([
+        {
+          field: { kind: "property", field_id: 1 },
+          operator: "equals",
+          value: 42,
+        },
+        {
+          field: { kind: "property", field_id: 2 },
+          operator: "equals",
+          value: 1.5,
+        },
+      ]);
+    });
+  });
+
   it("REQ-FE-020: combines global and column filters", async () => {
     const entryForm = {
       name: "Test",
