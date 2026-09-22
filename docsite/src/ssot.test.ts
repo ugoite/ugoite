@@ -49,18 +49,18 @@ describe("documentation single source of truth", () => {
   test("GitHub Markdown links become Starlight routes at build time", () => {
     expect(
       rewriteDocLink(
-        "../guide/automate/cli.md#core-mode",
+        "../use/entries.mdx#field-values",
         "/repo/docs/spec/index.md",
       ),
-    ).toBe("../guide/automate/cli/#core-mode");
+    ).toBe("../use/entries/#field-values");
     expect(
       rewriteDocLink("features/index.md", "/repo/docs/spec/index.md"),
     ).toBe("features/");
     expect(
       rewriteDocLink("https://example.com/file.md", "/repo/docs/index.md"),
     ).toBe("https://example.com/file.md");
-    expect(rewriteDocLink("guide/automate/cli.md", "/repo/docs/index.md")).toBe(
-      "docs/guide/automate/cli/",
+    expect(rewriteDocLink("use/entries.mdx", "/repo/docs/index.md")).toBe(
+      "docs/use/entries/",
     );
     expect(
       rewriteDocLink(
@@ -111,7 +111,7 @@ describe("documentation single source of truth", () => {
       },
     };
 
-    satteriDocLinks.link({ url: "guide/automate/cli.md" }, context);
+    satteriDocLinks.link({ url: "use/entries.mdx" }, context);
     satteriDocLinks.link({ url: "https://example.com/file.md" }, context);
     satteriDocLinks.link({ url: "index.md" }, {
       setProperty(_node: unknown, _key: string, value: string) {
@@ -119,7 +119,7 @@ describe("documentation single source of truth", () => {
       },
     });
 
-    expect(rewritten).toEqual(["docs/guide/automate/cli/", "../"]);
+    expect(rewritten).toEqual(["docs/use/entries/", "../"]);
   });
 
   test("all rendered Markdown pages declare Starlight metadata", async () => {

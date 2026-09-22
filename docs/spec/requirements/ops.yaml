@@ -21,7 +21,7 @@ requirements:
   description: Current English guides must cover root mise development, Docker Compose, CLI core/backend modes, and runtime prerequisites.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -35,7 +35,7 @@ requirements:
   description: The single runtime image must be built and smoke-tested by an automated release gate. Local `ci:release` validates release artifacts without rerunning merge or full E2E gates, the publish preflight smoke-tests the exact candidate image digest and records a separate verification receipt, and the post-publish gate verifies distribution identity and health.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: traced
@@ -52,7 +52,7 @@ requirements:
   description: Governance and specification YAML must remain parseable and free of dangling identifiers.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: traced
@@ -68,7 +68,7 @@ requirements:
   description: Version and milestone status must be represented under `docs/version` and distinguish implemented from planned work.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -82,7 +82,7 @@ requirements:
   description: Root checks must cover formatting, Rust/Deno linting, architecture/OpenAPI drift, and repository artifact hygiene where configured.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -96,7 +96,7 @@ requirements:
   description: Root local and CI gates must run workspace formatting, Clippy, checks, and tests with the pinned Rust toolchain.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: traced
@@ -113,7 +113,7 @@ requirements:
   description: Docsite type/build and behavior tests must run through Deno and the root check/test gates.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -127,7 +127,7 @@ requirements:
   description: Non-draft, non-Dependabot pull requests must contain Summary, Related Issue, and Testing sections with a closing issue link.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -141,7 +141,7 @@ requirements:
   description: An operator-selected verified candidate must keep canonical metadata and published installer paths synchronized with its exact source commit and artifact digests.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -155,7 +155,7 @@ requirements:
   description: The integrated developer launcher must start the Rust server and make the browser `/api` route usable before normal interaction.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: traced
@@ -171,7 +171,7 @@ requirements:
   description: Rust tasks must share the root `CARGO_TARGET_DIR` and use locked dependencies.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -185,7 +185,7 @@ requirements:
   description: A hosted workflow should build/smoke the devcontainer only when relevant paths change while always emitting a required result. No such workflow is present.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: planned
   verification: untraced
@@ -221,7 +221,7 @@ requirements:
   description: Required status names must be versioned and match the CI and CodeQL summary jobs.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -235,7 +235,7 @@ requirements:
   description: Documentation and automation must classify the CLI as Rust.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -250,7 +250,7 @@ requirements:
     as production. No product configuration may enable a fake identity or preconfigured credential.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: planned
   verification: traced
@@ -275,7 +275,7 @@ requirements:
   description: The root developer task `mise run seed` exposes the existing sample-data helper with configurable local root, Space slug, scenario, entry count, and seed inputs.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: traced
@@ -291,7 +291,7 @@ requirements:
   description: Promotion publishes the verified runtime image digest without rebuilding, smoke-tests the exact candidate digest before publication, and verifies health for the published versioned image.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: traced
@@ -308,7 +308,7 @@ requirements:
   description: Candidate generation verifies checksum-verified CLI archives for supported platforms, and buildless promotion publishes those exact archives after the exact candidate CLI preflight; post-publication checks verify installer availability.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: traced
@@ -326,7 +326,7 @@ requirements:
   description: All supported developer entrypoints must be declared in the root `mise.toml`; package-scoped mise tasks are not part of the current repository.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -340,7 +340,7 @@ requirements:
   description: '`ugoite-domain`, `ugoite-api-client`, and `ugoite-wasm` must compile for `wasm32-unknown-unknown` through the root check/release gates.'
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -354,7 +354,7 @@ requirements:
   description: The required hosted CI job runs the root frontend coverage task, whose Vitest V8 configuration hard-fails all coverage metrics at 100% for the portable Rust/WASM protocol boundary in `frontend/src/lib/ugoite-client/protocol.ts`; UI behavior remains covered by frontend behavior tests and E2E.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: traced
@@ -370,7 +370,7 @@ requirements:
   description: Hosted CI may select E2E tiers by changed paths while merge/push retains smoke coverage. Current CI uses fixed pull-request and merge gates.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: planned
   verification: untraced
@@ -403,7 +403,7 @@ requirements:
   description: The public `packages/ugoite` installer must remain separate from repository development tooling.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -417,7 +417,7 @@ requirements:
   description: "The canonical root and hosted web tasks run the normal docsite behavior/type suite. The separate docsite coverage task remains developer convenience: its Vitest V8 report covers authored source while excluding framework-only wiring and test files, without hard-failing coverage thresholds."
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: traced
@@ -433,7 +433,7 @@ requirements:
   description: Release automation verifies the published GitHub Release assets, npm/Helm registry identities, container health, CLI installer, and candidate verification receipt against the exact released version.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: traced
@@ -450,7 +450,7 @@ requirements:
   description: Each stable candidate must contain a non-empty versioned manual Markdown release note whose matching source bytes are published into the GitHub Release body after distribution verification. Historical beta and alpha changelog files may remain as records but are not active publish channels.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: traced
@@ -468,7 +468,7 @@ requirements:
   description: Rust commands must use `--locked` and Deno workflows must use the committed lockfile without silently changing dependency resolution.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -482,7 +482,7 @@ requirements:
   description: The Helm chart must deploy the single image, persistent `/data`, non-root defaults, and explicit auth secrets.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -496,7 +496,7 @@ requirements:
   description: A required hosted pre-merge release-like artifact test is desired; current merge CI runs builds and E2E smoke but not the full release quick start.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: planned
   verification: untraced
@@ -510,7 +510,7 @@ requirements:
   description: External GitHub Actions must be pinned to full commit SHAs.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -524,7 +524,7 @@ requirements:
   description: Historical mandatory local hook installation is superseded by explicit root mise commands and hosted required checks.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: superseded
   verification: untraced
@@ -538,7 +538,7 @@ requirements:
   description: Historical alternate-runtime test strictness is superseded by the Rust/Deno workspace gates.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: superseded
   verification: untraced
@@ -552,7 +552,7 @@ requirements:
   description: Direct-process E2E scripts must only stop processes they started and fail clearly on occupied ports.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -566,7 +566,7 @@ requirements:
   description: Container and Helm defaults must run as non-root, drop capabilities, and protect persistent storage.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -580,7 +580,7 @@ requirements:
   description: Contributor docs must explain architecture boundaries, spec updates, requirement traceability, and current root gates.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -594,7 +594,7 @@ requirements:
   description: The browser walkthrough must use Form terminology.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -608,7 +608,7 @@ requirements:
   description: The browser walkthrough must explain short structured fields versus longer Markdown fields.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -622,7 +622,7 @@ requirements:
   description: The browser walkthrough must explain Dashboard, Entries, Forms, Search, SQL, Assets, and Settings at a high level.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: implemented
   verification: untraced
@@ -636,7 +636,7 @@ requirements:
   description: A repository-owned script should validate a pull-request body before invoking GitHub tooling. No such script is present.
   related_spec:
   - ../architecture/testing/ci-cd.md
-  - ../../guide/operate/server/operations.md
+  - ../../operate/index.md
   priority: medium
   status: planned
   verification: untraced
