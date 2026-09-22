@@ -585,22 +585,26 @@ pub(crate) async fn query_entry_page_at_checkpoint(
             .iter()
             .find(|form| form.id == form_id)
             .with_context(|| format!("checkpoint is missing Form {form_id}"))?;
-        let form_value = form_values
-            .get(&form_id)
-            .with_context(|| format!("checkpoint is missing Form value {form_id}"))?;
         let relation = sql_relation_name(form.id);
+        let hydration = canonical_hydration_projection(form, projection)?;
         let ids = form_candidates
             .iter()
-            .map(|candidate| sql_string_literal(&candidate.external_id))
+            .map(|candidate| lit(candidate.external_id.as_str()))
             .collect::<Vec<_>>();
-        let sql = format!(
-            "SELECT * FROM {} WHERE {} IN ({})",
-            quote_identifier(&relation),
-            quote_identifier("_ugoite_id"),
-            ids.join(", ")
-        );
-        let batches = context.execute(&sql).await.map_err(map_sql_error)?;
-        let rows = entry_rows_from_batches(&form.name, form_value, &batches)?;
+        let batches = context
+            .execute_relation_plan(
+                &relation,
+                &[],
+                vec![col("_ugoite_id").in_list(ids, false)],
+                hydration,
+                Vec::new(),
+                false,
+                false,
+                form_candidates.len(),
+            )
+            .await
+            .map_err(map_sql_error)?;
+        let rows = canonical_hydrated_rows_from_batches(form, &batches)?;
         let mut by_external = rows
             .into_iter()
             .map(|row| (row.entry_id.clone(), row))
@@ -624,8 +628,158 @@ pub(crate) async fn query_entry_page_at_checkpoint(
             .position(|key| *key == (row.candidate.form_id, row.row.entry_id.as_str()))
             .unwrap_or(order.len())
     });
-    let _ = projection;
     Ok((hydrated, has_more))
+}
+
+/// Minimal identity and revision columns every canonical hydration must read.
+///
+/// The stable Entry identity itself arrives with the candidate; these columns
+/// join the hydrated payload back to that candidate and populate the
+/// machine-readable `EntryResult` envelope. Filter-only and sort-only fields
+/// are deliberately absent: they were already consumed by candidate selection.
+fn canonical_hydration_identity_columns() -> BTreeSet<String> {
+    BTreeSet::from([
+        "_ugoite_id".to_string(),
+        "_ugoite_revision_id".to_string(),
+        "_ugoite_created_at".to_string(),
+        "_ugoite_updated_at".to_string(),
+    ])
+}
+
+/// Computes the per-Form physical columns a canonical hydration must read.
+///
+/// The set is the projection-owned payload plus preview-required fields plus
+/// the minimal identity/revision envelope. Filter-only and sort-only fields
+/// are not re-read here, and identity/sort control columns never become
+/// response properties: `canonical_entry_result` in `service.rs` projects only
+/// the requested `EntryProjection` from the hydrated `fields` object.
+pub(crate) fn canonical_hydration_columns(
+    form: &FormDefinition,
+    projection: &EntryProjection,
+) -> Result<BTreeSet<String>> {
+    let mut columns = canonical_hydration_identity_columns();
+    match projection {
+        EntryProjection::Fields { fields } => {
+            for field in fields {
+                match field {
+                    EntryFieldRef::Property { field_id } => {
+                        let definition = form
+                            .fields
+                            .iter()
+                            .find(|field| field.id == *field_id)
+                            .with_context(|| {
+                                format!("Form {} does not define field {field_id:?}", form.name)
+                            })?;
+                        columns.insert(sql_column_name(definition.id));
+                    }
+                    EntryFieldRef::CreatedAt => {
+                        columns.insert("_ugoite_created_at".to_string());
+                    }
+                    EntryFieldRef::UpdatedAt => {
+                        columns.insert("_ugoite_updated_at".to_string());
+                    }
+                    EntryFieldRef::Form => {}
+                }
+            }
+        }
+        EntryProjection::Preview => {
+            for field in &form.fields {
+                columns.insert(sql_column_name(field.id));
+            }
+        }
+    }
+    Ok(columns)
+}
+
+/// Builds the pushed-down physical projection for one Form's hydration.
+///
+/// The returned expressions are the only columns the Iceberg scan
+/// materializes for this Form. Keeping the projection explicit preserves
+/// optimizer visibility and avoids a `SELECT *` hydration that would re-read
+/// filter/sort-only fields and unrelated payload.
+pub(crate) fn canonical_hydration_projection(
+    form: &FormDefinition,
+    projection: &EntryProjection,
+) -> Result<Vec<Expr>> {
+    canonical_hydration_columns(form, projection)?
+        .into_iter()
+        .map(|column| Ok(col(&column).alias(&column)))
+        .collect()
+}
+
+/// Reads one Form's projection-aware hydration batches without requiring the
+/// full payload.
+///
+/// Only columns present in the pushed-down projection are decoded; every other
+/// Form field decodes as `Null` so filter/sort-only values are never
+/// materialized in Rust. Identity and revision columns remain required because
+/// they join the payload to its candidate and populate the `EntryResult`
+/// envelope. Unclaimed physical columns are intentionally dropped instead of
+/// being collected as legacy values so identity/sort control data cannot leak
+/// into the response.
+fn canonical_hydrated_rows_from_batches(
+    form: &FormDefinition,
+    batches: &[arrow_array::RecordBatch],
+) -> Result<Vec<entry::EntryRow>> {
+    let mut rows = Vec::new();
+    for batch in batches {
+        for row in 0..batch.num_rows() {
+            let mut fields = Map::new();
+            for field in &form.fields {
+                let column = sql_column_name(field.id);
+                let Some(array) = batch.column_by_name(&column) else {
+                    continue;
+                };
+                let value = crate::field_value_at(
+                    array.as_ref(),
+                    row,
+                    &field.field_type,
+                    field.list_item.as_ref(),
+                )?
+                .unwrap_or(ugoite_domain::entry::FieldValue::Null);
+                fields.insert(
+                    field.name.clone(),
+                    serde_json::to_value(value).context("encode typed Entry field")?,
+                );
+            }
+            rows.push(entry::EntryRow {
+                entry_id: required_string_column(batch, row, "_ugoite_id", "external ID")?,
+                saved_query_name: String::new(),
+                form: form.name.clone(),
+                tags: Vec::new(),
+                created_at: required_timestamp_seconds_column(
+                    batch,
+                    row,
+                    "_ugoite_created_at",
+                    "created_at",
+                )?,
+                updated_at: required_timestamp_seconds_column(
+                    batch,
+                    row,
+                    "_ugoite_updated_at",
+                    "updated_at",
+                )?,
+                fields: Value::Object(fields),
+                extra_attributes: Value::Object(Map::new()),
+                revision_id: required_uuid_string_column(
+                    batch,
+                    row,
+                    "_ugoite_revision_id",
+                    "revision ID",
+                )?,
+                parent_revision_id: None,
+                integrity: entry::IntegrityPayload::default(),
+                deleted: false,
+                deleted_at: None,
+                author: String::new(),
+                updated_by: String::new(),
+                deleted_by: None,
+                entry_version: 1,
+                legacy_columns: BTreeMap::new(),
+            });
+        }
+    }
+    Ok(rows)
 }
 
 fn canonical_query_invalid(message: impl Into<String>) -> anyhow::Error {
@@ -4013,8 +4167,8 @@ async fn build_record(
 #[cfg(test)]
 mod tests {
     use super::{
-        asset_reference_projection, datafusion_parameters, filter_literal, map_sql_error,
-        validate_read_only_sql,
+        asset_reference_projection, canonical_hydration_columns, canonical_hydration_projection,
+        datafusion_parameters, filter_literal, map_sql_error, validate_read_only_sql,
     };
     use arrow_array::{ArrayRef, RecordBatch, StringArray};
     use arrow_schema::{DataType, Field, Schema};
@@ -4269,5 +4423,130 @@ mod tests {
             super::record_batches_to_values_bounded(&[batch], super::ASSET_TEXT_SEARCH_MAX_BYTES)
                 .expect_err("large candidate JSON conversion must be rejected");
         assert!(error.to_string().contains("byte limit"));
+    }
+
+    fn hydration_test_form() -> ugoite_domain::form::FormDefinition {
+        use ugoite_domain::form::{FieldType, FormField, FormVersion};
+        use ugoite_domain::id::{FieldId, FormId};
+        use uuid::Uuid;
+        let field = |id: i32, name: &str, field_type: FieldType| FormField {
+            id: FieldId::new(id).expect("field id"),
+            name: name.to_string(),
+            field_type,
+            required: false,
+            label: None,
+            description: None,
+            semantic_role: None,
+            reference_form: None,
+            list_item: None,
+            validation: None,
+            enum_values: Vec::new(),
+            deprecated: false,
+        };
+        ugoite_domain::form::FormDefinition {
+            id: FormId::from(Uuid::from_u128(900)),
+            version: FormVersion::new(1).expect("form version"),
+            name: "Tasks".to_string(),
+            description: None,
+            fields: vec![
+                field(100, "title", FieldType::String),
+                field(101, "status", FieldType::String),
+                field(102, "score", FieldType::Integer),
+            ],
+            allow_extra_attributes: false,
+            extension_metadata: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn canonical_hydration_prunes_filter_and_sort_only_fields() {
+        use ugoite_core::entry_query::{EntryFieldRef, EntryProjection};
+        use ugoite_domain::id::FieldId;
+        let form = hydration_test_form();
+        // The caller projects only `title`, while filtering/sorting on
+        // `status` and `score`. Hydration must not re-read those fields.
+        let projection = EntryProjection::Fields {
+            fields: vec![EntryFieldRef::Property {
+                field_id: FieldId::new(100).expect("field id"),
+            }],
+        };
+        let columns = canonical_hydration_columns(&form, &projection).expect("hydration columns");
+        assert!(columns.contains("_ugoite_id"));
+        assert!(columns.contains("_ugoite_revision_id"));
+        assert!(columns.contains("_ugoite_created_at"));
+        assert!(columns.contains("_ugoite_updated_at"));
+        assert!(columns.contains("field_100"));
+        assert!(!columns.contains("field_101"), "{columns:?}");
+        assert!(!columns.contains("field_102"), "{columns:?}");
+        for sidecar in [
+            "_ugoite_tags",
+            "_ugoite_extra_attributes",
+            "_ugoite_author",
+            "_ugoite_updated_by",
+            "_ugoite_deleted",
+            "_ugoite_integrity",
+            "_ugoite_entry_version",
+        ] {
+            assert!(!columns.contains(sidecar), "{columns:?}");
+        }
+    }
+
+    #[test]
+    fn canonical_hydration_preview_reads_all_form_fields_plus_identity() {
+        use ugoite_core::entry_query::EntryProjection;
+        let form = hydration_test_form();
+        let columns =
+            canonical_hydration_columns(&form, &EntryProjection::Preview).expect("preview columns");
+        for column in [
+            "_ugoite_id",
+            "_ugoite_revision_id",
+            "_ugoite_created_at",
+            "_ugoite_updated_at",
+            "field_100",
+            "field_101",
+            "field_102",
+        ] {
+            assert!(columns.contains(column), "{columns:?}");
+        }
+        assert!(!columns.contains("_ugoite_tags"), "{columns:?}");
+        assert!(!columns.contains("_ugoite_extra_attributes"), "{columns:?}");
+    }
+
+    #[test]
+    fn canonical_hydration_projection_pushes_only_needed_columns() {
+        use ugoite_core::entry_query::{EntryFieldRef, EntryProjection};
+        use ugoite_domain::id::FieldId;
+        let form = hydration_test_form();
+        let projection = EntryProjection::Fields {
+            fields: vec![
+                EntryFieldRef::Property {
+                    field_id: FieldId::new(100).expect("field id"),
+                },
+                EntryFieldRef::UpdatedAt,
+                EntryFieldRef::Form,
+            ],
+        };
+        let plan = canonical_hydration_projection(&form, &projection).expect("hydration plan");
+        let rendered = plan
+            .iter()
+            .map(|expression| format!("{expression:?}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for column in [
+            "_ugoite_id",
+            "_ugoite_revision_id",
+            "_ugoite_created_at",
+            "_ugoite_updated_at",
+            "field_100",
+        ] {
+            assert!(rendered.contains(column), "{rendered}");
+        }
+        assert!(!rendered.contains("field_101"), "{rendered}");
+        assert!(!rendered.contains("field_102"), "{rendered}");
+        // Identity and sort control columns are scan inputs only; the `Form`
+        // literal adds no physical column and must not appear as a payload
+        // field in the pushed projection.
+        assert!(!rendered.contains("_ugoite_tags"), "{rendered}");
+        assert!(!rendered.contains("__FORM_ID__"), "{rendered}");
     }
 }
