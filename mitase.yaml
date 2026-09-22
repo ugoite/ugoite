@@ -112,8 +112,6 @@ inventory:
             - frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
             - frontend/src/components/EntryDetailPane.tsx
             - frontend/src/components/EntryDetailPane.safety.test.tsx
-            - frontend/src/components/MarkdownEditor.tsx
-            - frontend/src/components/MarkdownEditor.test.tsx
             - frontend/src/components/SqlQueryEditor.tsx
             - frontend/src/components/SqlQueryEditor.test.tsx
             - frontend/src/lib/markdown.ts

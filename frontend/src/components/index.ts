@@ -8,7 +8,6 @@ export { UiIcon } from "./UiIcon";
 export { EntryList } from "./EntryList";
 export { EntryBrowser } from "./EntryBrowser";
 export { LocalBusyIndicator } from "./LocalBusyIndicator";
-export { MarkdownEditor } from "./MarkdownEditor";
 export { CanvasPlaceholder } from "./CanvasPlaceholder";
 export { SpaceSelector } from "./SpaceSelector";
 export { SearchBar } from "./SearchBar";

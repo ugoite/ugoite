@@ -357,44 +357,8 @@ requirements:
       - id: markdown-editor-verification
         role: verification
         facet: verification
-        responsibility: Verify Markdown editing, preview, save, keyboard save, and safe preview rendering through exact frontend tests.
+        responsibility: Verify safe preview rendering through the exact frontend test.
         targets:
-          - id: edit
-            adapter: typescript
-            path: frontend/src/components/MarkdownEditor.test.tsx
-            selector: { kind: test, name: "should call onChange when content is edited" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-005#criterion.edit-preview-save
-                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "should call onChange when content is edited" } }
-          - id: preview
-            adapter: typescript
-            path: frontend/src/components/MarkdownEditor.test.tsx
-            selector: { kind: test, name: "should render markdown preview when preview mode is enabled" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-005#criterion.edit-preview-save
-                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "should render markdown preview when preview mode is enabled" } }
-          - id: save
-            adapter: typescript
-            path: frontend/src/components/MarkdownEditor.test.tsx
-            selector: { kind: test, name: "should call onSave when save button is clicked" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-005#criterion.edit-preview-save
-                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "should call onSave when save button is clicked" } }
-          - id: keyboard-save
-            adapter: typescript
-            path: frontend/src/components/MarkdownEditor.test.tsx
-            selector: { kind: test, name: "should support keyboard shortcut for save" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-005#criterion.edit-preview-save
-                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "should support keyboard shortcut for save" } }
           - id: preview-safety
             adapter: typescript
             path: frontend/src/lib/markdown.test.ts
@@ -402,7 +366,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-FE-005#criterion.safe-preview
-                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor, FEAT-FE-003#binding.frontend/target.markdown-utils]
+                covers: [FEAT-FE-003#binding.frontend/target.markdown-utils]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/markdown.test.ts, test: "escapes raw HTML while keeping simple formatting" } }
   - id: REQ-FE-005A
     title: Editor Content Graceful Handling
@@ -418,48 +382,6 @@ requirements:
         kind: behavior
         statement: New-entry draft content is available without waiting for a persisted Entry resource, and preview mode remains renderable when content is missing.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
-    bindings:
-      - id: missing-content-verification
-        role: verification
-        facet: verification
-        responsibility: Verify missing-content normalization and preview safety through exact Markdown editor tests.
-        targets:
-          - id: undefined-content
-            adapter: typescript
-            path: frontend/src/components/MarkdownEditor.test.tsx
-            selector: { kind: test, name: "should handle undefined content gracefully" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-005A#criterion.missing-content
-                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "should handle undefined content gracefully" } }
-          - id: null-content
-            adapter: typescript
-            path: frontend/src/components/MarkdownEditor.test.tsx
-            selector: { kind: test, name: "should handle null content gracefully" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-005A#criterion.missing-content
-                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "should handle null content gracefully" } }
-          - id: preview-without-content
-            adapter: typescript
-            path: frontend/src/components/MarkdownEditor.test.tsx
-            selector: { kind: test, name: "should render preview with undefined content without crashing" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-005A#criterion.new-entry-preview
-                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "should render preview with undefined content without crashing" } }
-          - id: split-null-content
-            adapter: typescript
-            path: frontend/src/components/MarkdownEditor.test.tsx
-            selector: { kind: test, name: "renders split mode with null content" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-005A#criterion.missing-content
-                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "renders split mode with null content" } }
   - id: REQ-FE-006
     title: Optimistic Updates
     description: Supported frontend mutations may update the current UI optimistically while the same server-backed request completes; this does not introduce offline storage or background synchronization.
@@ -486,15 +408,6 @@ requirements:
         facet: verification
         responsibility: Verify conflict messaging and draft-preserving refresh guidance through exact frontend tests.
         targets:
-          - id: editor-conflict-message
-            adapter: typescript
-            path: frontend/src/components/MarkdownEditor.test.tsx
-            selector: { kind: test, name: "REQ-FE-009: should show conflict message when there is a conflict" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-009#criterion.conflict-guidance
-                covers: [FEAT-FE-003#binding.frontend/target.markdown-editor]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/MarkdownEditor.test.tsx, test: "REQ-FE-009: should show conflict message when there is a conflict" } }
           - id: structured-entry-conflict
             adapter: typescript
             path: frontend/src/components/EntryDetailPane.safety.test.tsx
