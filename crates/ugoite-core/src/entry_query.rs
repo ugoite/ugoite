@@ -222,7 +222,13 @@ impl EntryCountRequest {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EntryResult {
-    pub id: EntryId,
+    /// Stable storage identity as encoded by the Form table.
+    ///
+    /// Entry storage accepts validated string identities, not only UUID
+    /// literals. Keep the canonical query result lossless so a CLI/API
+    /// consumer can pass this value to the existing Entry mutation/read
+    /// operations without a lossy UUID normalization step.
+    pub id: String,
     pub form_id: FormId,
     pub revision_id: RevisionId,
     pub created_at_micros: i64,

@@ -970,6 +970,7 @@ fn test_cli_entry_list_canonical_query_options() {
     );
     let rows = listed.as_array().expect("entry list returns rows");
     assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0]["id"], "query-cli-open-high");
     assert_eq!(rows[0]["properties"]["Status"], "open");
     assert_eq!(rows[0]["properties"]["Priority"], 3);
     assert_eq!(rows[1]["properties"]["Priority"], 2);
@@ -977,6 +978,16 @@ fn test_cli_entry_list_canonical_query_options() {
         row["properties"].get("Body").is_none()
             && row.get("id").and_then(|id| id.as_str()).is_some()
     }));
+
+    let listed_id = rows[0]["id"].as_str().expect("stable entry id");
+    let fetched = stdout_json(
+        &run_cli(&space.config_path, &["entry", "get", listed_id]),
+        "entry get from canonical list identity",
+    );
+    assert!(
+        contains_string(&fetched, listed_id),
+        "canonical list identity must round-trip through entry get: {fetched}"
+    );
 
     let table = run_cli(
         &space.config_path,

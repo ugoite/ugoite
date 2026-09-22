@@ -5767,7 +5767,7 @@ fn canonical_entry_result(
         EntryProjection::Preview => (None, Some(entry_preview(&row.row, form))),
     };
     Ok(EntryResult {
-        id: parse_entry_id(&row.candidate.stable_id)?,
+        id: row.candidate.stable_id.clone(),
         form_id: row.candidate.form_id,
         revision_id: parse_revision_id(&row.row.revision_id)?,
         created_at_micros: micros_from_seconds(row.row.created_at, "created_at")?,
