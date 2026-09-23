@@ -359,7 +359,7 @@ async fn multi_column_sort_survives_page_boundaries() -> Result<()> {
 async fn row_status(service: &UgoiteService, space_id: &str, entry_id: &str) -> Result<String> {
     let entry = service.get_entry(space_id, entry_id).await?;
     entry
-        .pointer("/properties/Status")
+        .pointer("/fields/Status")
         .and_then(Value::as_str)
         .map(str::to_owned)
         .context("test entry is missing its Status")

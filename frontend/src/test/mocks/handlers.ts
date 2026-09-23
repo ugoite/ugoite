@@ -152,6 +152,7 @@ const validateMockSqlPayload = (
 const normalizeMockEntry = (entry: Entry): Entry => ({
   ...entry,
   fields: entry.fields ?? {},
+  extra_attributes: entry.extra_attributes ?? {},
 });
 
 const createTestApiPredicate = <Params extends PathParams = PathParams>(
@@ -445,8 +446,11 @@ export const handlers = [
     const now = new Date().toISOString();
 
     const tags = body.tags || [];
-    const properties: Record<string, string> = {};
     const rawFields = (body.fields || {}) as Record<string, unknown>;
+    const rawExtra = (body.extra_attributes || {}) as Record<string, unknown>;
+    // Search-index projection for the EntryQuery mock. Current-entry reads
+    // serve fields/extra_attributes on the entry itself.
+    const properties: Record<string, string> = {};
     for (const [key, value] of Object.entries(rawFields)) {
       properties[key] = typeof value === "string"
         ? value
@@ -458,8 +462,7 @@ export const handlers = [
       form: body.form,
       tags,
       fields: { ...rawFields },
-      extra_attributes: {},
-      properties,
+      extra_attributes: { ...rawExtra },
       revision_id: revisionId,
       created_at: now,
       updated_at: now,
@@ -531,9 +534,13 @@ export const handlers = [
           : JSON.stringify(value);
       }
 
-      // Update entry
+      // Update entry (current-entry reads serve fields/extra_attributes).
       entry.fields = { ...rawFields };
-      entry.properties = properties;
+      if (body.extra_attributes !== undefined) {
+        entry.extra_attributes = {
+          ...(body.extra_attributes as Record<string, unknown>),
+        };
+      }
       entry.revision_id = newRevisionId;
       entry.updated_at = now;
 

@@ -142,7 +142,7 @@ async fn v01_knowledge_fixture_is_semantically_recoverable() -> Result<()> {
         assert_eq!(entry["id"], expected.id);
         assert_eq!(entry["form"], fixture.space.form_name);
         assert_eq!(
-            entry["properties"][&fixture.space.form_field],
+            entry["fields"][&fixture.space.form_field],
             if is_updated {
                 fixture.space.update.body.as_str()
             } else {

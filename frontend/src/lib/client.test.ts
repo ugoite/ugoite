@@ -211,8 +211,11 @@ describe("entryApi", () => {
       const entries = await entryApi.list("test-ws");
       expect(entries).toHaveLength(1);
       expect(entries[0].id).toBe(result.id);
-      expect(entries[0].properties).toHaveProperty("Date");
-      expect(entries[0].properties).toHaveProperty("Attendees");
+
+      // Current-entry reads serve canonical fields/extra_attributes.
+      const fetched = await entryApi.get("test-ws", result.id);
+      expect(fetched.fields).toHaveProperty("Date");
+      expect(fetched.fields).toHaveProperty("Attendees");
     });
   });
 
@@ -272,11 +275,12 @@ describe("entryApi", () => {
 
       expect(updateResult.revision_id).not.toBe(createResult.revision_id);
 
-      // Verify index was updated
+      // Verify the current-entry read serves canonical fields.
       const entries = await entryApi.list("test-ws");
       const entry = entries.find((n) => n.id === createResult.id);
       expect(entry?.id).toBe(createResult.id);
-      expect(entry?.properties.Status).toBe("Published");
+      const fetched = await entryApi.get("test-ws", createResult.id);
+      expect(fetched.fields?.Status).toBe("Published");
     });
 
     it("should throw RevisionConflictError (409) on revision mismatch", async () => {

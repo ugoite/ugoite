@@ -189,10 +189,7 @@ async fn frozen_space_01_fixture_opens_mutates_reopens_and_preserves_history() -
             .find(|entry| entry["id"] == expected_entry.id)
             .expect("fixture entry remains readable after reopen");
         assert_eq!(entry["form"], expected.form.name);
-        assert_eq!(
-            entry["properties"][&expected.form.field],
-            expected_entry.body
-        );
+        assert_eq!(entry["fields"][&expected.form.field], expected_entry.body);
     }
 
     let history = reopened_service

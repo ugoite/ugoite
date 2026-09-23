@@ -202,7 +202,6 @@ export interface Entry {
   canvas_position?: CanvasPosition;
   fields?: Record<string, unknown>;
   extra_attributes?: Record<string, unknown>;
-  properties?: Record<string, unknown>;
   revision_id: string;
   entry_version?: number;
   created_at: string;

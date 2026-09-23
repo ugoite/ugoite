@@ -274,16 +274,6 @@ pub(crate) fn merge_entry_fields(fields: &Value, extra_attributes: &Value) -> Va
     Value::Object(merged)
 }
 
-fn row_properties(row: &EntryRow) -> Value {
-    let mut properties = merge_entry_fields(&row.fields, &row.extra_attributes);
-    if let Value::Object(values) = &mut properties {
-        for (name, value) in &row.legacy_columns {
-            values.entry(name.clone()).or_insert_with(|| value.clone());
-        }
-    }
-    properties
-}
-
 /// Canonical structured field map for current Entry reads: stored Form
 /// fields with legacy physical columns folded in losslessly. No column
 /// name (including `title`) receives special treatment.
@@ -1406,12 +1396,13 @@ fn list_entries_from_rows(rows: Vec<(String, EntryRow)>) -> Result<Vec<Value>> {
         if row.deleted {
             continue;
         }
-        let merged_fields = row_properties(&row);
+        let fields = canonical_fields(&row);
         entries.push(serde_json::json!({
             "id": row.entry_id,
             "form": form_name,
             "tags": row.tags,
-            "properties": merged_fields,
+            "fields": fields,
+            "extra_attributes": row.extra_attributes,
             "created_at": row.created_at,
             "updated_at": row.updated_at,
             "author": row.author,
@@ -1476,14 +1467,12 @@ pub async fn get_entry(op: &Operator, ws_path: &str, entry_id: &str) -> Result<V
     // into fields losslessly; whole-Entry Markdown projections
     // (content/frontmatter/sections) are not part of this contract.
     let fields = canonical_fields(&row);
-    let properties = row_properties(&row);
     Ok(serde_json::json!({
         "id": entry_id,
         "form": row.form,
         "tags": row.tags,
         "fields": fields,
         "extra_attributes": row.extra_attributes,
-        "properties": properties,
         "revision_id": row.revision_id,
         "entry_version": row.entry_version,
         "created_at": row.created_at,
@@ -1525,14 +1514,12 @@ pub async fn get_entry_authorized(
 
     // Canonical structured state; see get_entry.
     let fields = canonical_fields(&row);
-    let properties = row_properties(&row);
     Ok(serde_json::json!({
         "id": entry_id,
         "form": row.form,
         "tags": row.tags,
         "fields": fields,
         "extra_attributes": row.extra_attributes,
-        "properties": properties,
         "revision_id": row.revision_id,
         "entry_version": row.entry_version,
         "created_at": row.created_at,
@@ -1696,14 +1683,12 @@ fn entry_value_from_checkpoint_revision(
     let row = row.ok_or_else(|| entry_not_found(entry_id))?;
     // Canonical structured state; see get_entry.
     let fields = canonical_fields(&row);
-    let properties = row_properties(&row);
     Ok(json!({
         "id": entry_id,
         "form": row.form,
         "tags": row.tags,
         "fields": fields,
         "extra_attributes": row.extra_attributes,
-        "properties": properties,
         "revision_id": row.revision_id,
         "entry_version": row.entry_version,
         "created_at": row.created_at,

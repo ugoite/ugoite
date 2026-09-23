@@ -221,10 +221,15 @@ pub fn collect_asset_references(entries: &[Value]) -> Vec<Value> {
             .get("form")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        let Some(properties) = entry.get("properties").and_then(Value::as_object) else {
-            continue;
-        };
-        for (field, value) in properties {
+        let mut merged = serde_json::Map::new();
+        for source in [entry.get("fields"), entry.get("extra_attributes")] {
+            if let Some(map) = source.and_then(Value::as_object) {
+                for (field, value) in map {
+                    merged.insert(field.clone(), value.clone());
+                }
+            }
+        }
+        for (field, value) in &merged {
             for reference in asset_reference_values(value) {
                 items.push(serde_json::json!({
                     "asset_id": reference.get("asset_id"),

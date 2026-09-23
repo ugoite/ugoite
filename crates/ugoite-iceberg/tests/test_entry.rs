@@ -298,14 +298,14 @@ async fn restore_replays_historical_references_even_when_targets_are_unavailable
         .into_iter()
         .find(|entry| entry["id"] == "source-1")
         .expect("restored Entry");
-    assert_eq!(restored["properties"]["Target"], "target-1");
-    assert_eq!(restored["properties"]["Targets"][0], "target-1");
+    assert_eq!(restored["fields"]["Target"], "target-1");
+    assert_eq!(restored["fields"]["Targets"][0], "target-1");
     assert_eq!(
-        restored["properties"]["Attachment"]["asset_id"],
+        restored["fields"]["Attachment"]["asset_id"],
         reference.asset_id
     );
     assert_eq!(
-        restored["properties"]["Attachments"][0]["asset_id"],
+        restored["fields"]["Attachments"][0]["asset_id"],
         reference.asset_id
     );
     assert!(asset::read_asset(&op, ws_path, &reference.asset_id)
@@ -373,7 +373,7 @@ async fn test_entry_req_entry_001_create_entry_basic() -> anyhow::Result<()> {
         .find(|record| record["id"] == entry_id)
         .expect("created Entry");
     assert_eq!(record["id"], entry_id);
-    assert_eq!(record["properties"]["Title"], "My Entry");
+    assert_eq!(record["fields"]["Title"], "My Entry");
     assert!(record.get("title").is_none());
     let history = entry::get_entry_history(&op, ws_path, entry_id).await?;
     let revisions = history.get("revisions").and_then(|v| v.as_array()).unwrap();
@@ -665,8 +665,8 @@ async fn restore_after_form_field_rename_keeps_field_id_and_current_name() -> an
         .into_iter()
         .find(|entry| entry["id"] == "rename-entry")
         .expect("restored Entry");
-    assert_eq!(record["properties"]["new_name"], "historical value");
-    assert!(record["properties"].get("old_name").is_none());
+    assert_eq!(record["fields"]["new_name"], "historical value");
+    assert!(record["fields"].get("old_name").is_none());
 
     let history = entry::get_entry_history(&op, ws_path, "rename-entry").await?;
     let history_ids = history["revisions"]
@@ -689,8 +689,8 @@ async fn restore_after_form_field_rename_keeps_field_id_and_current_name() -> an
         .into_iter()
         .find(|value| value["id"] == "rename-entry")
         .expect("renamed Entry remains listed");
-    assert_eq!(renamed["properties"]["new_name"], "historical value");
-    assert!(renamed["properties"].get("old_name").is_none());
+    assert_eq!(renamed["fields"]["new_name"], "historical value");
+    assert!(renamed["fields"].get("old_name").is_none());
     Ok(())
 }
 
@@ -1998,11 +1998,18 @@ async fn test_entry_req_form_004_allow_extra_attributes() -> anyhow::Result<()> 
         assert!(content_info.markdown.contains("Value"));
 
         let list = entry::list_entries(&op, ws_path).await?;
-        let extra_prop = list
+        let listed = list
             .iter()
             .find(|entry| entry.get("id").and_then(|v| v.as_str()) == Some(entry_id.as_str()))
-            .and_then(|entry| entry.get("properties"))
-            .and_then(|props| props.get("Extra"));
+            .expect("created entry is listed");
+        let extra_prop = listed
+            .get("fields")
+            .and_then(|props| props.get("Extra"))
+            .or_else(|| {
+                listed
+                    .get("extra_attributes")
+                    .and_then(|props| props.get("Extra"))
+            });
         assert!(extra_prop.is_some());
     }
 

@@ -209,11 +209,11 @@ async fn typed_form_asset_references_round_trip_and_guard_deletion() -> anyhow::
 
     let entries = entry::list_entries(&op, ws_path).await?;
     assert_eq!(
-        entries[0]["properties"]["Attachment"]["asset_id"],
+        entries[0]["fields"]["Attachment"]["asset_id"],
         reference.asset_id
     );
     assert_eq!(
-        entries[0]["properties"]["Attachments"][0]["asset_id"],
+        entries[0]["fields"]["Attachments"][0]["asset_id"],
         reference.asset_id
     );
     let scalar_matches = index::query_index(
