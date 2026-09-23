@@ -13,7 +13,7 @@
  *   exactly when a canonical spec artifact changed.
  * - The repository-wide `mitase check .` readiness gate is not weakened
  *   (preset strict, target traceable).
- * - Mitase stays pinned to an immutable 0.1.x release (#2530 stays open;
+ * - Mitase stays pinned to an immutable 0.2.x release (canonical line;
  *   no HEAD pinning).
  *
  * Representative migrated criterion: REQ-FORM-002#preserve-physical-fields
@@ -224,9 +224,9 @@ Deno.test("PR11: migration ledger documents the changed-scope rule", async () =>
   );
 });
 
-Deno.test("PR11: Mitase pin stays on an immutable 0.1.x release", async () => {
+Deno.test("PR11: Mitase pin stays on an immutable 0.2.x release", async () => {
   const lock = await Deno.readTextFile("tools/mitase.lock.toml");
-  assert(lock.includes('version = "0.1.3"'), "lock stays on Mitase 0.1.3");
+  assert(lock.includes('version = "0.2.0"'), "lock stays on Mitase 0.2.0");
   for (
     const target of [
       "x86_64-unknown-linux-gnu",

@@ -146,7 +146,7 @@ suite runs.
 
 The canonical `mitase:check` task invokes `scripts/mitase check .`. The wrapper
 reads `tools/mitase.lock.toml`, selects the host target, downloads the exact
-Mitase `v0.1.3` release archive when it is not cached, verifies its SHA-256,
+Mitase `v0.2.0` release archive when it is not cached, verifies its SHA-256,
 checks the packaged binary version, and then execs it. The default path does not
 build Mitase from Git; `MITASE_BIN` remains available as an explicit local
 development override.
