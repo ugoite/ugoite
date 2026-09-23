@@ -1,8 +1,8 @@
 /**
- * Repository-owned Mitase 0.1.x release sync.
+ * Repository-owned Mitase 0.2.x release sync.
  *
  * Usage:
- *   deno task mitase:sync --version 0.1.N --sha256 <target>=<digest> [--sha256 ...]
+ *   deno task mitase:sync --version 0.2.N --sha256 <target>=<digest> [--sha256 ...]
  *
  * The tool performs exactly one deterministic operation:
  * 1. Fetches the official immutable release archives for the exact version
@@ -15,7 +15,7 @@
  *    version.
  * 4. Rewrites tools/mitase.lock.toml (version + digest pins) atomically.
  *
- * Only immutable 0.1.x releases are accepted. A Mitase update never absorbs
+ * Only immutable 0.2.x releases are accepted. A Mitase update never absorbs
  * Ugoite product-semantics, Space-version, or Knowledge-encoding changes:
  * those stay visible through the existing suites (mitase check, capability
  * projection, representative corpus), which this tool leaves runnable but
@@ -75,7 +75,7 @@ export function parseSyncArgs(
     }
   }
   if (!version) {
-    fail("missing required --version 0.1.N");
+    fail("missing required --version 0.2.N");
   }
   version = version.trim();
   validateSyncVersion(version);
@@ -114,15 +114,16 @@ function recordDigest(
 }
 
 /**
- * Only immutable 0.1.x releases may flow through this tool. Anything else
- * (HEAD, branches, other majors/minors) is rejected so a Mitase update can
- * never silently carry product-semantics drift into the repository.
+ * Only immutable 0.2.x releases may flow through this tool. Anything else
+ * (HEAD, branches, other majors/minors, and the retired 0.1.x line) is
+ * rejected so a Mitase update can never silently carry
+ * product-semantics drift into the repository.
  */
 export function validateSyncVersion(version: string): void {
   const match = VERSION_PATTERN.exec(version.trim());
-  if (!match || match[1] !== "0" || match[2] !== "1") {
+  if (!match || match[1] !== "0" || match[2] !== "2") {
     fail(
-      `refusing version ${JSON.stringify(version)}: only 0.1.N releases sync`,
+      `refusing version ${JSON.stringify(version)}: only 0.2.N releases sync`,
     );
   }
 }

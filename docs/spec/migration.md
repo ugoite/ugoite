@@ -21,7 +21,7 @@ Mitase configuration schema and is separate from specification authoring.
 Foundation, Policy, Search, Entry, Form, Indexer, API, Asset, Frontend, E2E,
 Integrity, and the Storage Space foundation, authenticated creation contract,
 plus connector/access/routing/preference slice are represented in the canonical
-Mitase records at `docs/mitase` for the current dogfood slice. These records are
+Mitase records at `docs/mitase` for the current canonical slice. These records are
 the semantic source of truth for the migrated domains; their corresponding
 legacy Foundation, Policy, Requirement, and Feature YAML are migration evidence
 only and cannot override the canonical representation. The API-specific legacy
@@ -86,6 +86,6 @@ repository delivery, or become a second Knowledge authority.
 - This policy does not weaken the repository-wide `mitase check .` readiness
   gate (`validation.preset: strict`, `validation.readiness.target: traceable`).
   The `changed` baseline stays `parent` with no exemption keys.
-- Mitase stays pinned to an immutable `0.1.x` release via
-  `tools/mitase.lock.toml` and `scripts/mitase` (`#2530` stays open). Migration
+- Mitase stays pinned to an immutable `0.2.x` release via
+  `tools/mitase.lock.toml` and `scripts/mitase`. Migration
   work never pins Mitase HEAD or a mutable branch.

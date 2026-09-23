@@ -16,7 +16,7 @@ const DIGEST_B = "1".repeat(64);
 const DIGEST_C = "2".repeat(64);
 const DIGEST_D = "3".repeat(64);
 
-function validArgs(version = "0.1.4"): string[] {
+function validArgs(version = "0.2.1"): string[] {
   return [
     "--version",
     version,
@@ -28,13 +28,13 @@ function validArgs(version = "0.1.4"): string[] {
   ];
 }
 
-function request(version = "0.1.4"): SyncRequest {
+function request(version = "0.2.1"): SyncRequest {
   return parseSyncArgs(validArgs(version), {}, "/tmp/mitase.lock.toml");
 }
 
-Deno.test("mitase sync accepts an exact 0.1.x version with four digests", () => {
-  const parsed = request("0.1.9");
-  assertEquals(parsed.version, "0.1.9");
+Deno.test("mitase sync accepts an exact 0.2.x version with four digests", () => {
+  const parsed = request("0.2.1");
+  assertEquals(parsed.version, "0.2.1");
   assertEquals(parsed.digests.size, 4);
   assertEquals(
     parsed.digests.get("x86_64-unknown-linux-gnu"),
@@ -42,16 +42,28 @@ Deno.test("mitase sync accepts an exact 0.1.x version with four digests", () => 
   );
   assertEquals(
     releaseArchiveUrl(parsed.baseUrl, parsed.version, "aarch64-apple-darwin"),
-    "https://github.com/ugoite/mitase/releases/download/v0.1.9/mitase-v0.1.9-aarch64-apple-darwin.tar.gz",
+    "https://github.com/ugoite/mitase/releases/download/v0.2.1/mitase-v0.2.1-aarch64-apple-darwin.tar.gz",
   );
   assertEquals(
-    archiveName("0.1.9", "x86_64-apple-darwin"),
-    "mitase-v0.1.9-x86_64-apple-darwin.tar.gz",
+    archiveName("0.2.1", "x86_64-apple-darwin"),
+    "mitase-v0.2.1-x86_64-apple-darwin.tar.gz",
   );
 });
 
-Deno.test("mitase sync rejects non-0.1 versions and mutable inputs", () => {
-  for (const bad of ["0.2.0", "1.0.0", "0.1", "latest", "main", "", "v0.1.4"]) {
+Deno.test("mitase sync rejects non-0.2 versions and mutable inputs", () => {
+  for (
+    const bad of [
+      "0.1.3",
+      "0.1.4",
+      "1.0.0",
+      "0.1",
+      "0.2",
+      "latest",
+      "main",
+      "",
+      "v0.2.1",
+    ]
+  ) {
     let threw = false;
     try {
       validateSyncVersion(bad);
@@ -60,12 +72,12 @@ Deno.test("mitase sync rejects non-0.1 versions and mutable inputs", () => {
     }
     assert(threw, `version must be rejected: ${JSON.stringify(bad)}`);
   }
-  validateSyncVersion("0.1.0");
+  validateSyncVersion("0.2.0");
 });
 
 Deno.test("mitase sync requires every target digest and rejects extras", () => {
   const cases: string[][] = [
-    ["--version", "0.1.4"],
+    ["--version", "0.2.1"],
     [...validArgs().slice(0, 3)],
     [...validArgs(), "--sha256", "riscv64-unknown-linux-gnu=" + DIGEST_A],
     [...validArgs(), "--sha256", "x86_64-unknown-linux-gnu=xyz"],
@@ -97,7 +109,7 @@ Deno.test("mitase lock rendering is deterministic", () => {
   assertEquals(first, second);
   assertEquals(
     first,
-    `version = "0.1.4"
+    `version = "0.2.1"
 
 [target.x86_64-unknown-linux-gnu]
 sha256 = "${DIGEST_A}"
@@ -141,7 +153,7 @@ Deno.test("mitase sync verifies shape and digest before writing anything", async
   const workDir = await Deno.makeTempDir({ prefix: "ugoite-mitase-verify." });
   try {
     const good = await fixtureArchive({
-      mitase: "#!/bin/sh\necho 'mitase 0.1.4'\n",
+      mitase: "#!/bin/sh\necho 'mitase 0.2.1'\n",
     });
     // Wrong digest fails with the repository left unchanged.
     let mismatch = false;
