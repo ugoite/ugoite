@@ -76,7 +76,7 @@ vi.mock("~/lib/ugoite-client", () => ({
   sqlApi: { create: sqlCreateMock },
 }));
 
-describe("/spaces/:space_id/queries/new", () => {
+describe("/spaces/:space_id/sql/new", () => {
   beforeEach(() => {
     navigateMock.mockReset();
     formApiListMock.mockResolvedValue([

@@ -3,7 +3,7 @@ updated: "2026-02-02"
 page:
   id: space-query-variables
   title: Query Variables
-  route: /spaces/{space_id}/queries/{query_id}/variables
+  route: /spaces/{space_id}/sql/{sql_id}/variables
   implementation: implemented
 components:
   shared:

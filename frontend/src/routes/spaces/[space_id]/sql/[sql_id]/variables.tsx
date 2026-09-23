@@ -15,14 +15,14 @@ export const route = spaceRoute({
 });
 
 export default function SpaceQueryVariablesRoute() {
-  const params = useParams<{ space_id: string; query_id: string }>();
+  const params = useParams<{ space_id: string; sql_id: string }>();
   const spaceId = () => params.space_id;
-  const queryId = () => params.query_id;
+  const sqlId = () => params.sql_id;
   const navigate = useNavigate();
   const [values, setValues] = createSignal<Record<string, string>>({});
   const [error, setError] = createSignal<string | null>(null);
 
-  const [entry] = createResource(async () => sqlApi.get(spaceId(), queryId()));
+  const [entry] = createResource(async () => sqlApi.get(spaceId(), sqlId()));
 
   const variables = createMemo(() => entry()?.variables || []);
 
@@ -64,7 +64,7 @@ export default function SpaceQueryVariablesRoute() {
       );
       navigate(
         `/spaces/${encodeURIComponent(spaceId())}/sql/${
-          encodeURIComponent(queryId())
+          encodeURIComponent(sqlId())
         }/run`,
         { state: { parameters, parameterTypes } },
       );
@@ -82,7 +82,7 @@ export default function SpaceQueryVariablesRoute() {
         </div>
         <BackLink
           href={`/spaces/${encodeURIComponent(spaceId())}/sql/${
-            encodeURIComponent(queryId())
+            encodeURIComponent(sqlId())
           }`}
           label={t("sqlPage.backToSavedSql")}
         />

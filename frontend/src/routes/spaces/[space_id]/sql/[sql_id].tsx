@@ -28,7 +28,7 @@ export default function SpaceSqlDetailRoute() {
   const [forms] = createResource(async () => formApi.list(spaceId()));
   const variableCount = createMemo(() => entry()?.variables.length ?? 0);
   const queryVariablesHref = () =>
-    `/spaces/${encodeURIComponent(spaceId())}/queries/${encodeURIComponent(sqlId())}/variables`;
+    `/spaces/${encodeURIComponent(spaceId())}/sql/${encodeURIComponent(sqlId())}/variables`;
 
   const handleRun = () => {
     const current = entry();

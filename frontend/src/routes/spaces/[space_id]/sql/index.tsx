@@ -38,7 +38,7 @@ export default function SpaceSqlIndexRoute() {
     if (runningQueryId() !== null) return;
     if (query.variables.length > 0) {
       navigate(
-        `/spaces/${encodeURIComponent(spaceId())}/queries/${
+        `/spaces/${encodeURIComponent(spaceId())}/sql/${
           encodeURIComponent(query.id)
         }/variables`,
       );
@@ -62,7 +62,7 @@ export default function SpaceSqlIndexRoute() {
         </div>
         <A
           class="btn primary"
-          href={`/spaces/${encodeURIComponent(spaceId())}/queries/new`}
+          href={`/spaces/${encodeURIComponent(spaceId())}/sql/new`}
         >
           {t("sqlPage.createQuery")}
         </A>
@@ -118,7 +118,7 @@ export default function SpaceSqlIndexRoute() {
                         primary={t("searchPage.variables")}
                         onActivate={() =>
                           navigate(
-                            `/spaces/${encodeURIComponent(spaceId())}/queries/${
+                            `/spaces/${encodeURIComponent(spaceId())}/sql/${
                               encodeURIComponent(query.id)
                             }/variables`,
                           )}

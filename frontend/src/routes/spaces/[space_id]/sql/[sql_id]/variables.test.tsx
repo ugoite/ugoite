@@ -26,14 +26,14 @@ vi.mock("@solidjs/router", () => ({
     </a>
   ),
   useNavigate: () => navigateMock,
-  useParams: () => ({ space_id: "default", query_id: "saved-vars" }),
+  useParams: () => ({ space_id: "default", sql_id: "saved-vars" }),
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
   sqlApi: { get: sqlGetMock },
 }));
 
-describe("/spaces/:space_id/queries/:query_id/variables", () => {
+describe("/spaces/:space_id/sql/:sql_id/variables", () => {
   beforeEach(() => {
     navigateMock.mockReset();
     sqlGetMock.mockResolvedValue({

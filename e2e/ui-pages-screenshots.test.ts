@@ -70,7 +70,6 @@ test.describe("UI page screenshot export @screenshot", () => {
       const targetPath = resolveRoute(spec.route, {
         space_id: spaceId,
         entry_id: entry.id,
-        query_id: sqlId,
         sql_id: sqlId,
         form_name: "Entry",
         revision_id: "latest",
