@@ -39,7 +39,7 @@ export function spaceBase(spaceId: string): string {
 
 /**
  * Join a subpath onto a Space base without double slashes.
- * `sub` may include query/hash (e.g. `entries?form=X`); only the Space
+ * `sub` may include query/hash (e.g. `entries/new?form=X`); only the Space
  * segment is encoded here, query values stay the caller's responsibility.
  */
 export function spacePath(spaceId: string, sub: string = ""): string {

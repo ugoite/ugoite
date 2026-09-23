@@ -27,6 +27,7 @@ import {
 } from "~/lib/asset-field-state";
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceFormEntriesPath, spaceFormsPath } from "~/lib/space-path";
 import {
   type DraftFields,
   type DraftValue,
@@ -480,8 +481,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   });
   const formWorkspaceHref = createMemo(() => {
     const formName = entry()?.form?.trim();
-    const base = `/spaces/${encodeURIComponent(props.spaceId())}/forms`;
-    return formName ? `${base}?form=${encodeURIComponent(formName)}` : base;
+    return formName
+      ? spaceFormEntriesPath(props.spaceId(), formName)
+      : spaceFormsPath(props.spaceId());
   });
 
   const editorGuidance = createMemo(() =>

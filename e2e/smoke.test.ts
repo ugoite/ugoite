@@ -75,7 +75,7 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
     await expect(page.getByRole("link", { name: "Back to Form" }))
       .toHaveAttribute(
         "href",
-        `/spaces/${spaceId}/forms?form=Entry`,
+        `/spaces/${spaceId}/forms/Entry/entries`,
       );
 
     await request.delete(
