@@ -299,11 +299,6 @@ pub fn project_error(error: &Error) -> CliError {
     }
 }
 
-/// Legacy human-only rendering kept for callers that format `stderr` text.
-pub fn format_cli_error(error: &Error) -> String {
-    project_error(error).human().replace("Error: ", "")
-}
-
 fn from_app_error(error: &AppError) -> CliError {
     let kind = error_kind_str(error.kind());
     CliError {
