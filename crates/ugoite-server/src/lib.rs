@@ -13501,9 +13501,7 @@ mod authentication_regression_tests {
         let entry_path = format!("/spaces/{space_id}/entries/production-auth-entry");
         let (status, current_entry) = client.json(Method::GET, &entry_path, None).await?;
         assert_eq!(status, StatusCode::OK, "{current_entry}");
-        assert!(current_entry["content"]
-            .as_str()
-            .is_some_and(|markdown| markdown.contains("updated")));
+        assert_eq!(current_entry["fields"]["Body"], "updated");
         let history_path = format!("{entry_path}/history");
         let (status, history) = client.json(Method::GET, &history_path, None).await?;
         assert_eq!(status, StatusCode::OK, "{history}");
@@ -15573,7 +15571,7 @@ mod authentication_regression_tests {
             .service
             .get_entry(&space_id, "structured-note")
             .await?;
-        assert_eq!(structured["sections"]["Body"], "hello");
+        assert_eq!(structured["fields"]["Body"], "hello");
 
         // Structured update replaces the complete field map.
         let current = state
@@ -15604,7 +15602,7 @@ mod authentication_regression_tests {
             .service
             .get_entry(&space_id, "structured-note")
             .await?;
-        assert_eq!(updated["sections"]["Body"], "edited");
+        assert_eq!(updated["fields"]["Body"], "edited");
         Ok(())
     }
 
@@ -17876,9 +17874,7 @@ mod authentication_regression_tests {
         )
         .await?;
         assert_eq!(status, StatusCode::OK, "{current_entry}");
-        assert!(current_entry["content"]
-            .as_str()
-            .is_some_and(|markdown| markdown.contains("created")));
+        assert_eq!(current_entry["fields"]["Body"], "created");
 
         let later_update = route_json(
             route.clone(),
@@ -18121,9 +18117,10 @@ mod authentication_regression_tests {
         )
         .await?;
         assert_eq!(status, StatusCode::OK, "{entry_a_after_failure}");
-        assert!(entry_a_after_failure["content"]
-            .as_str()
-            .is_some_and(|markdown| markdown.contains("changed externally")));
+        assert_eq!(
+            entry_a_after_failure["fields"]["Body"],
+            "changed externally"
+        );
         let (status, entry_b_after_failure) = route_json(
             route.clone(),
             Request::get(format!("/spaces/{space_id}/entries/partial-b")).body(Body::empty())?,
@@ -18283,9 +18280,7 @@ mod authentication_regression_tests {
         )
         .await?;
         assert_eq!(status, StatusCode::OK, "{created_entry}");
-        assert!(created_entry["content"]
-            .as_str()
-            .is_some_and(|markdown| markdown.contains("created")));
+        assert_eq!(created_entry["fields"]["Body"], "created");
         assert_eq!(created_entry["revision_id"], create_revision);
         let (status, created_history) = route_json(
             route.clone(),
@@ -18349,9 +18344,7 @@ mod authentication_regression_tests {
         )
         .await?;
         assert_eq!(status, StatusCode::OK, "{updated_entry}");
-        assert!(updated_entry["content"]
-            .as_str()
-            .is_some_and(|markdown| markdown.contains("updated")));
+        assert_eq!(updated_entry["fields"]["Body"], "updated");
         assert_eq!(updated_entry["revision_id"], update_revision);
         let (status, updated_history) = route_json(
             route.clone(),
@@ -18569,9 +18562,7 @@ mod authentication_regression_tests {
         )
         .await?;
         assert_eq!(status, StatusCode::OK, "{current}");
-        assert!(current["content"]
-            .as_str()
-            .is_some_and(|markdown| markdown.contains("after update")));
+        assert_eq!(current["fields"]["Body"], "after update");
         let (status, pinned) = route_json(
             route.clone(),
             Request::get(format!(
@@ -18581,9 +18572,7 @@ mod authentication_regression_tests {
         )
         .await?;
         assert_eq!(status, StatusCode::OK, "{pinned}");
-        assert!(pinned["content"]
-            .as_str()
-            .is_some_and(|markdown| markdown.contains("before update")));
+        assert_eq!(pinned["fields"]["Body"], "before update");
 
         let (status, deleted) = route_json(
             route.clone(),

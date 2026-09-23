@@ -29,6 +29,7 @@ import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import {
   type DraftFields,
+  type DraftValue,
   draftValueToDisplayString,
   readAssetReferences,
   toTransportFields,
@@ -231,13 +232,9 @@ async function fetchWithTimeout<T>(
 }
 
 export function EntryDetailPane(props: EntryDetailPaneProps) {
-  const [editorContent, setEditorContent] = createSignal("");
-  // Structured draft is the only mutation authority in this pane. The stored
-  // representation is retained only for read-only compatibility and asset
-  // previews; it is never edited or sent back as a mutation payload.
+  // Structured draft is the only mutation authority in this pane.
   const [draftFields, setDraftFields] = createSignal<DraftFields>({});
   const [draftTags, setDraftTags] = createSignal<string[]>([]);
-  const [lastSavedContent, setLastSavedContent] = createSignal("");
   const [isDirty, setIsDirty] = createSignal(false);
   const [isSaving, setIsSaving] = createSignal(false);
   // Transient save confirmation for the detail view (PR4): the permanent
@@ -373,7 +370,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       return {
         id: created.id,
         form: props.createForm?.()?.name,
-        content: editorContent(),
+        fields: {},
         revision_id: created.revision_id,
         created_at: "",
         updated_at: "",
@@ -384,7 +381,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     return {
       id: "__new__",
       form: form.name,
-      content: "",
+      fields: {},
       revision_id: `draft:${form.name}`,
       created_at: "",
       updated_at: "",
@@ -525,7 +522,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     draftValueToDisplayString(draftFields()[fieldName]);
 
   const persistedFieldValue = (fieldName: string) =>
-    entry()?.sections?.[fieldName] ?? "";
+    entry()?.fields?.[fieldName] ?? entry()?.properties?.[fieldName] ?? "";
 
   const fieldIssue = (fieldName: string) =>
     editorGuidance().typeIssues.find((issue) =>
@@ -568,10 +565,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     const saved = isCreateMode()
       ? draftSession.restore(loadedEntry.form ?? "")
       : undefined;
-    const content = loadedEntry.content ?? "";
-    const draft = saved
-      ? { fields: saved.fields }
-      : { fields: loadedEntry.sections ?? {} };
+    const draft = saved ? { fields: saved.fields } : {
+      fields:
+        (loadedEntry.fields ?? loadedEntry.properties ?? {}) as DraftFields,
+    };
     const tags = saved?.tags ?? loadedEntry.tags ?? [];
     setLastLoadedEntryId(entryId);
     setLastLoadedResourceRevisionId(revisionId);
@@ -581,8 +578,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setAssetEditorGeneration((generation) => generation + 1);
     setDraftFields(draft.fields);
     setDraftTags(tags);
-    setEditorContent(content);
-    setLastSavedContent(isCreateMode() ? "" : content);
     setHasUserEdited(saved?.dirty ?? false);
     setIsDirty(isCreateMode() ? true : false);
     setConflictMessage(null);
@@ -1280,7 +1275,13 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                                 when={currentForm()}
                                 fallback={
                                   <p class="text-sm whitespace-pre-wrap">
-                                    {editorContent()}
+                                    {Object.entries(draftFields()).map((
+                                      [name, value],
+                                    ) =>
+                                      `${name}: ${
+                                        draftValueToDisplayString(value)
+                                      }`
+                                    ).join("\n")}
                                   </p>
                                 }
                               >
@@ -1307,10 +1308,16 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                               </h3>
                               <FieldValuesView
                                 fields={Object.keys(
-                                  latest().sections ?? {},
+                                  latest()?.fields ??
+                                    latest()?.properties ?? {},
                                 ).map((name) => ({ name }))}
                                 getValue={(name) =>
-                                  latest().sections?.[name] ?? ""}
+                                  draftValueToDisplayString(
+                                    ((latest()?.fields ??
+                                      latest()?.properties ?? {})[
+                                        name
+                                      ]) as DraftValue,
+                                  )}
                               />
                             </section>
                           </div>

@@ -1430,22 +1430,20 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
     );
     assert_eq!(entry["form"], "ParityRemote");
     assert_eq!(
-        entry["sections"]["Headline"],
+        entry["fields"]["Headline"],
         acceptance_fixture["expected"]["values"]["100"]
     );
-    assert_eq!(entry["sections"]["Ref"], "parity-task-01");
+    assert_eq!(entry["fields"]["Ref"], "parity-task-01");
     assert_eq!(
-        entry["sections"]["At"],
+        entry["fields"]["At"],
         acceptance_fixture["expected"]["values"]["106"]
     );
     assert_eq!(
-        entry["sections"]["AtNs"],
+        entry["fields"]["AtNs"],
         acceptance_fixture["expected"]["values"]["112"]
     );
-    let at_tz = entry["sections"]["AtTz"].as_str().expect("timestamp_tz");
-    let at_tz_ns = entry["sections"]["AtTzNs"]
-        .as_str()
-        .expect("timestamp_tz_ns");
+    let at_tz = entry["fields"]["AtTz"].as_str().expect("timestamp_tz");
+    let at_tz_ns = entry["fields"]["AtTzNs"].as_str().expect("timestamp_tz_ns");
     assert_eq!(
         chrono::DateTime::parse_from_rfc3339(at_tz)
             .expect("valid timestamp_tz")
@@ -1462,25 +1460,12 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
             .expect("valid expected timestamp_tz_ns")
             .timestamp_nanos_opt()
     );
-    assert_eq!(entry["sections"]["Labels"], "- alpha\n- beta");
-    assert!(!entry["sections"]["Rows"]
-        .as_str()
-        .unwrap_or_default()
-        .is_empty());
-    let parsed_file: serde_json::Value = serde_json::from_str(
-        entry["sections"]["File"]
-            .as_str()
-            .expect("asset section is serialized JSON"),
-    )
-    .expect("asset section JSON");
-    assert_eq!(parsed_file["asset_id"], asset["asset_id"]);
-    let parsed_files: serde_json::Value = serde_json::from_str(
-        entry["sections"]["Files"]
-            .as_str()
-            .expect("asset list section is serialized JSON"),
-    )
-    .expect("asset list section JSON");
-    assert_eq!(parsed_files[0]["asset_id"], asset["asset_id"]);
+    assert_eq!(entry["fields"]["Labels"], json!(["alpha", "beta"]));
+    assert!(entry["fields"]["Rows"]
+        .as_array()
+        .is_some_and(|rows| !rows.is_empty()));
+    assert_eq!(entry["fields"]["File"]["asset_id"], asset["asset_id"]);
+    assert_eq!(entry["fields"]["Files"][0]["asset_id"], asset["asset_id"]);
 
     let history = stdout_json(
         &run_cli(
@@ -1505,22 +1490,16 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         "Labels", "Rows", "Ref",
     ] {
         assert_eq!(
-            rev1_json["sections"][name], entry["sections"][name],
+            rev1_json["fields"][name], entry["fields"][name],
             "durable field {name}"
         );
     }
-    let revision_rows: serde_json::Value = serde_json::from_str(
-        rev1_json["sections"]["Rows"]
-            .as_str()
-            .expect("revision object list section"),
-    )
-    .expect("revision object list JSON");
     assert_eq!(
-        revision_rows,
+        rev1_json["fields"]["Rows"],
         acceptance_fixture["expected"]["values"]["108"]
     );
-    assert_eq!(rev1_json["sections"]["File"], entry["sections"]["File"]);
-    assert_eq!(rev1_json["sections"]["Files"], entry["sections"]["Files"]);
+    assert_eq!(rev1_json["fields"]["File"], entry["fields"]["File"]);
+    assert_eq!(rev1_json["fields"]["Files"], entry["fields"]["Files"]);
 
     let mut updated_fields = acceptance_fixture["update"]["fields"]
         .as_object()
@@ -1587,10 +1566,10 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         .await,
         "remote parity reopen",
     );
-    assert_eq!(reopened["sections"]["Count"], "43");
-    assert!(reopened["sections"].get("Notes").is_none());
-    assert!(reopened["sections"].get("Labels").is_none());
-    assert!(reopened["sections"].get("Files").is_none());
+    assert_eq!(reopened["fields"]["Count"], 43);
+    assert!(reopened["fields"].get("Notes").is_none());
+    assert!(reopened["fields"].get("Labels").is_none());
+    assert!(reopened["fields"].get("Files").is_none());
 
     let invalid = run_cli(
         &fixture.config_path,

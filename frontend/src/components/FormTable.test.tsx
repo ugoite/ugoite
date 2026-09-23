@@ -882,7 +882,7 @@ describe("FormTable", () => {
     const getSpy = vi.spyOn(entryApi, "get").mockResolvedValue({
       id: "1",
       form: "Test",
-      sections: { col: "val" },
+      fields: { col: "val" },
       revision_id: "rev1",
     } as any);
     const updateSpy = vi.spyOn(entryApi, "update").mockResolvedValue({} as any);
@@ -1239,7 +1239,7 @@ describe("FormTable", () => {
     mockEntryQuery(entries);
     const getSpy = vi.spyOn(entryApi, "get").mockResolvedValue({
       id: "entry-1",
-      content: "---\nform: Test\n---\n\n## col\nval",
+      fields: { col: "val" },
       revision_id: "rev1",
     } as any);
     const updateSpy = vi.spyOn(entryApi, "update").mockResolvedValue({} as any);
@@ -1343,7 +1343,7 @@ describe("FormTable", () => {
     vi.spyOn(entryApi, "get").mockResolvedValue({
       id: "1",
       form: "Test",
-      sections: { notes: "Old" },
+      fields: { notes: "Old" },
       revision_id: "rev1",
     } as any);
     const updateSpy = vi.spyOn(entryApi, "update").mockResolvedValue({} as any);

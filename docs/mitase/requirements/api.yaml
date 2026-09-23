@@ -214,12 +214,12 @@ requirements:
           - id: get-entry
             adapter: typescript
             path: frontend/src/lib/client.test.ts
-            selector: { kind: test, name: "should return full entry content" }
+            selector: { kind: test, name: "should return full entry fields" }
             claims:
               - kind: verifies
                 criterion: REQ-API-002#criterion.entry-lifecycle
                 covers: [FEAT-API-001#binding.frontend-implementation/target.entry-api]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should return full entry content" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should return full entry fields" } }
           - id: update-entry
             adapter: typescript
             path: frontend/src/lib/client.test.ts

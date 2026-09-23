@@ -54,7 +54,7 @@ describe("buildRowReferencePreview", () => {
     expect(Array.from(preview).length).toBe(rowReferencePreviewCharLimit);
   });
 
-  it("returns an empty preview for non-object frontmatter", () => {
+  it("returns an empty preview for non-object fields", () => {
     expect(buildRowReferencePreview(null, projectForm)).toBe("");
     expect(buildRowReferencePreview("Title: Alpha", projectForm)).toBe("");
     expect(buildRowReferencePreview(undefined, projectForm)).toBe("");

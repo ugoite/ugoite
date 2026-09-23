@@ -1,9 +1,5 @@
 import { useNavigate, useParams } from "@solidjs/router";
-import {
-  createMemo,
-  createSignal,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { ConfirmDestructiveAction } from "~/components/ConfirmDestructiveAction";
@@ -104,10 +100,10 @@ export default function SpaceEntryRevisionRoute() {
       : null
   );
 
-  // Revision fields are read-only structured values; the stored Markdown is
-  // retained for the revision's integrity representation only.
+  // Revision fields are read-only structured values from the canonical
+  // revision state.
   const revisionFieldRows = createMemo(() =>
-    Object.keys(revision()?.sections ?? {}).map((name) => ({ name }))
+    Object.keys(revision()?.fields ?? {}).map((name) => ({ name }))
   );
 
   const copyText = async (value: string) => {
@@ -181,7 +177,7 @@ export default function SpaceEntryRevisionRoute() {
           </p>
           <FieldValuesView
             fields={revisionFieldRows()}
-            getValue={(name) => revision()?.sections?.[name] ?? ""}
+            getValue={(name) => revision()?.fields?.[name] ?? ""}
           />
 
           <div class="revision-restore-row">

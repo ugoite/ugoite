@@ -114,13 +114,14 @@ pub struct EntryContent {
     pub updated_by: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deleted_by: Option<String>,
+    /// Explicit historical Markdown representation. Integrity and exact
+    /// revision inspection only; never an authoring surface.
     pub markdown: String,
+    /// Canonical structured state at this revision.
     #[serde(default)]
-    pub frontmatter: Value,
+    pub fields: Value,
     #[serde(default)]
-    pub sections: Value,
-    #[serde(default)]
-    pub computed: Value,
+    pub extra_attributes: Value,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -283,6 +284,22 @@ fn row_properties(row: &EntryRow) -> Value {
     properties
 }
 
+/// Canonical structured field map for current Entry reads: stored Form
+/// fields with legacy physical columns folded in losslessly. No column
+/// name (including `title`) receives special treatment.
+fn canonical_fields(row: &EntryRow) -> Value {
+    let mut fields = Map::new();
+    if let Some(map) = row.fields.as_object() {
+        for (key, value) in map {
+            fields.insert(key.clone(), value.clone());
+        }
+    }
+    for (name, value) in &row.legacy_columns {
+        fields.entry(name.clone()).or_insert_with(|| value.clone());
+    }
+    Value::Object(fields)
+}
+
 fn form_field_names(form_def: &Value) -> Vec<String> {
     let mut names = Vec::new();
     if let Some(fields) = form_def.get("fields") {
@@ -312,10 +329,6 @@ pub(crate) fn render_markdown(
     field_order: &[String],
 ) -> String {
     core_entry::render_markdown(form_name, tags, fields, field_order)
-}
-
-fn sections_from_fields(fields: &Value) -> Value {
-    core_entry::fields_to_sections(fields)
 }
 
 pub(crate) fn render_markdown_for_form(
@@ -1459,31 +1472,20 @@ pub async fn get_entry(op: &Operator, ws_path: &str, entry_id: &str) -> Result<V
         return Err(entry_not_found(entry_id).into());
     }
 
-    let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-    let field_order = form_field_names(&form_def);
-    let merged_fields = merge_entry_fields(&row.fields, &row.extra_attributes);
+    // Canonical structured state. Legacy physical columns are folded
+    // into fields losslessly; whole-Entry Markdown projections
+    // (content/frontmatter/sections) are not part of this contract.
+    let fields = canonical_fields(&row);
     let properties = row_properties(&row);
-    let markdown = render_markdown(&form_name, &row.tags, &merged_fields, &field_order);
-    let frontmatter = serde_json::json!({
-        "form": form_name,
-        "tags": row.tags,
-    });
-    let sections = sections_from_fields(&merged_fields);
-
     Ok(serde_json::json!({
         "id": entry_id,
-        "revision_id": row.revision_id,
-        "content": markdown,
-        "frontmatter": frontmatter,
-        "sections": sections,
-        "computed": Value::Object(Map::new()),
-        "properties": properties,
         "form": row.form,
         "tags": row.tags,
-        // Preserve non-editable structured metadata for lossless CLI
-        // read-modify-write updates. Content and sections remain presentation
-        // projections.
+        "fields": fields,
         "extra_attributes": row.extra_attributes,
+        "properties": properties,
+        "revision_id": row.revision_id,
+        "entry_version": row.entry_version,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
         "author": row.author,
@@ -1516,33 +1518,23 @@ pub async fn get_entry_authorized(
             Err(error) => return Err(error),
         }
     }
-    let (form_name, row) = selected.ok_or_else(|| entry_not_found(entry_id))?;
+    let (_form_name, row) = selected.ok_or_else(|| entry_not_found(entry_id))?;
     if row.deleted {
         return Err(entry_not_found(entry_id).into());
     }
 
-    let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-    let field_order = form_field_names(&form_def);
-    let merged_fields = merge_entry_fields(&row.fields, &row.extra_attributes);
+    // Canonical structured state; see get_entry.
+    let fields = canonical_fields(&row);
     let properties = row_properties(&row);
-    let markdown = render_markdown(&form_name, &row.tags, &merged_fields, &field_order);
-    let frontmatter = serde_json::json!({
-        "form": form_name,
-        "tags": row.tags,
-    });
-    let sections = sections_from_fields(&merged_fields);
-
     Ok(serde_json::json!({
         "id": entry_id,
-        "revision_id": row.revision_id,
-        "content": markdown,
-        "frontmatter": frontmatter,
-        "sections": sections,
-        "computed": Value::Object(Map::new()),
-        "properties": properties,
         "form": row.form,
         "tags": row.tags,
+        "fields": fields,
         "extra_attributes": row.extra_attributes,
+        "properties": properties,
+        "revision_id": row.revision_id,
+        "entry_version": row.entry_version,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
         "author": row.author,
@@ -1565,6 +1557,7 @@ pub async fn get_entry_content(
     let field_order = form_field_names(&form_def);
     let merged_fields = merge_entry_fields(&row.fields, &row.extra_attributes);
     let markdown = render_markdown(&form_name, &row.tags, &merged_fields, &field_order);
+    let fields = canonical_fields(&row);
     Ok(EntryContent {
         revision_id: row.revision_id,
         parent_revision_id: row.parent_revision_id,
@@ -1577,12 +1570,8 @@ pub async fn get_entry_content(
         updated_by: row.updated_by,
         deleted_by: row.deleted_by,
         markdown,
-        frontmatter: serde_json::json!({
-            "form": form_name,
-            "tags": row.tags,
-        }),
-        sections: sections_from_fields(&merged_fields),
-        computed: Value::Object(Map::new()),
+        fields,
+        extra_attributes: row.extra_attributes,
     })
 }
 
@@ -1631,12 +1620,8 @@ pub async fn get_entry_revision_content(
         updated_by: revision.updated_by,
         deleted_by: revision.deleted_by,
         markdown,
-        frontmatter: serde_json::json!({
-            "form": form_name,
-            "tags": revision_tags,
-        }),
-        sections: sections_from_fields(&merged_fields),
-        computed: Value::Object(Map::new()),
+        fields: revision.fields.clone(),
+        extra_attributes: revision.extra_attributes.clone(),
     })
 }
 
@@ -1707,25 +1692,20 @@ fn entry_value_from_checkpoint_revision(
     if revision.entry.deleted || revision.operation == EntryOperation::Delete {
         return Err(entry_not_found(entry_id).into());
     }
-    let form_def = form::from_domain_form(form);
     let row = revision_row_from_domain(revision, &form.name, form)?.state;
     let row = row.ok_or_else(|| entry_not_found(entry_id))?;
-    let merged_fields = merge_entry_fields(&row.fields, &row.extra_attributes);
-    let markdown = render_markdown(
-        &form.name,
-        &row.tags,
-        &merged_fields,
-        &form_field_names(&form_def),
-    );
+    // Canonical structured state; see get_entry.
+    let fields = canonical_fields(&row);
+    let properties = row_properties(&row);
     Ok(json!({
         "id": entry_id,
-        "revision_id": row.revision_id,
-        "content": markdown,
-        "frontmatter": {"form": form.name, "tags": row.tags},
-        "sections": sections_from_fields(&merged_fields),
-        "computed": Value::Object(Map::new()),
         "form": row.form,
         "tags": row.tags,
+        "fields": fields,
+        "extra_attributes": row.extra_attributes,
+        "properties": properties,
+        "revision_id": row.revision_id,
+        "entry_version": row.entry_version,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
         "author": row.author,
@@ -1924,14 +1904,14 @@ pub(crate) async fn get_entry_revision_at_checkpoint(
     let row = revision_row_from_domain(revision, &form.name, revision_form)?
         .state
         .ok_or_else(|| revision_not_found(entry_id, revision_id))?;
-    let form_def = form::from_domain_form(revision_form);
     let form_name = form.name;
-    let merged_fields = merge_entry_fields(&row.fields, &row.extra_attributes);
+    let fields = canonical_fields(&row);
+    let extra_attributes = row.extra_attributes.clone();
     let markdown = render_markdown(
         &form_name,
         &row.tags,
-        &merged_fields,
-        &form_field_names(&form_def),
+        &merge_entry_fields(&fields, &extra_attributes),
+        &form_field_names(&form::from_domain_form(revision_form)),
     );
     Ok(serde_json::to_value(EntryContent {
         revision_id: row.revision_id,
@@ -1945,9 +1925,8 @@ pub(crate) async fn get_entry_revision_at_checkpoint(
         updated_by: row.updated_by,
         deleted_by: row.deleted_by,
         markdown,
-        frontmatter: json!({"form": form_name, "tags": row.tags}),
-        sections: sections_from_fields(&merged_fields),
-        computed: Value::Object(Map::new()),
+        fields,
+        extra_attributes,
     })?)
 }
 

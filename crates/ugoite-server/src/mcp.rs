@@ -946,9 +946,39 @@ fn resource_result(uri: &str, projection: Value) -> Value {
     json!({"resultType":"complete","contents":[{"uri":uri,"mimeType":"application/json","text":serde_json::to_string(&projection).unwrap_or_else(|_| "{}".to_string())}],"ttlMs":5000,"cacheScope":"private"})
 }
 
+fn structured_field_text(value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        Value::String(text) => text.clone(),
+        Value::Number(number) => number.to_string(),
+        Value::Bool(flag) => flag.to_string(),
+        Value::Array(items) => items
+            .iter()
+            .map(structured_field_text)
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Value::Object(_) => serde_json::to_string(value).unwrap_or_default(),
+    }
+}
+
 fn entry_projection(entry: &Value) -> Value {
     let id = entry.get("id").and_then(Value::as_str).unwrap_or_default();
-    json!({"id":id,"form":entry.get("form").and_then(Value::as_str),"tags":entry.get("tags").and_then(Value::as_array).map(|v| v.iter().filter_map(Value::as_str).map(sanitize_mcp_string).collect::<Vec<_>>()).unwrap_or_default(),"content":sanitize_mcp_string(entry.get("content").and_then(Value::as_str).unwrap_or_default()),"created_at":unix_millis(entry.get("created_at")),"updated_at":unix_millis(entry.get("updated_at")),"uri":format!("ugoite://entry/{id}"),"_untrusted_content":true})
+    // Structured-only read: derive the resource text from canonical fields
+    // instead of a whole-Entry Markdown projection. Field headings keep the
+    // existing resource text shape; values stay sanitized as untrusted.
+    let mut parts = Vec::new();
+    if let Some(map) = entry.get("fields").and_then(Value::as_object) {
+        let mut names: Vec<&String> = map.keys().collect();
+        names.sort();
+        for name in names {
+            let text = structured_field_text(&map[name]);
+            if !text.is_empty() {
+                parts.push(format!("## {name}"));
+                parts.push(text);
+            }
+        }
+    }
+    json!({"id":id,"form":entry.get("form").and_then(Value::as_str),"tags":entry.get("tags").and_then(Value::as_array).map(|v| v.iter().filter_map(Value::as_str).map(sanitize_mcp_string).collect::<Vec<_>>()).unwrap_or_default(),"content":sanitize_mcp_string(&parts.join("\n")),"created_at":unix_millis(entry.get("created_at")),"updated_at":unix_millis(entry.get("updated_at")),"uri":format!("ugoite://entry/{id}"),"_untrusted_content":true})
 }
 fn unix_millis(value: Option<&Value>) -> i64 {
     value
