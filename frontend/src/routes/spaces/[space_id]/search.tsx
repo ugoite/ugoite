@@ -1,12 +1,22 @@
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
-import { createEffect, createMemo } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  onMount,
+  untrack,
+} from "solid-js";
 import { A } from "@solidjs/router";
 import { EntryBrowser } from "~/components/EntryBrowser";
 import {
   createEntryQueryController,
   systemEntryCapabilities,
 } from "~/lib/entry-query";
-import { spaceAssetsPath, spaceEntryPath, spaceSqlPath } from "~/lib/space-path";
+import {
+  spaceAssetsPath,
+  spaceEntryPath,
+  spaceSqlPath,
+} from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 import { t } from "~/lib/i18n";
 
@@ -33,6 +43,11 @@ export default function SpaceSearchRoute() {
 
   const scope = createMemo(() => ({ kind: "all" as const }));
   const capabilities = createMemo(() => systemEntryCapabilities(scope()));
+  // Draft/commit separation: the text field owns a raw draft signal while
+  // typing. Only submit commits the normalized value into EntryQuery.
+  // `?q=` is an initialization/explicit-navigation input only; committed
+  // query state never flows back into the draft.
+  const [draftText, setDraftText] = createSignal(initialText());
   const controller = createEntryQueryController(
     spaceId,
     {
@@ -44,11 +59,25 @@ export default function SpaceSearchRoute() {
     { kind: "preview" },
   );
 
-  createEffect(() => {
-    const text = initialText();
-    const current = controller.query().text ?? "";
-    if (text !== current) controller.setText(text);
+  let lastUrlText = initialText();
+  onMount(() => {
+    // A deep link carries the first search condition; run it once instead
+    // of waiting for an explicit submit. Empty mounts stay idle so the
+    // initial guidance remains visible until the user searches.
+    if (lastUrlText) void controller.load();
   });
+  createEffect(() => {
+    const urlText = initialText();
+    if (urlText === lastUrlText) return;
+    lastUrlText = urlText;
+    setDraftText(urlText);
+    const committed = untrack(() => controller.query().text ?? "");
+    if (urlText !== committed) controller.setText(urlText);
+  });
+
+  const commitDraft = () => {
+    controller.setText(draftText());
+  };
 
   return (
     <div class="searchWorkspace">
@@ -66,10 +95,7 @@ export default function SpaceSearchRoute() {
           class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center"
           onSubmit={(event) => {
             event.preventDefault();
-            const input = event.currentTarget.querySelector(
-              "#search-keywords",
-            ) as HTMLInputElement | null;
-            controller.setText(input?.value ?? "");
+            commitDraft();
           }}
         >
           <div class="flex-1">
@@ -81,9 +107,8 @@ export default function SpaceSearchRoute() {
                 id="search-keywords"
                 type="text"
                 placeholder={t("searchPage.keywordPlaceholder")}
-                value={controller.query().text ?? ""}
-                onInput={(event) =>
-                  controller.setText(event.currentTarget.value)}
+                value={draftText()}
+                onInput={(event) => setDraftText(event.currentTarget.value)}
               />
             </div>
           </div>
