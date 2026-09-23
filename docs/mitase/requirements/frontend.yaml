@@ -1394,16 +1394,16 @@ requirements:
           - id: browser-list
             adapter: typescript
             path: e2e/saved-sql-route.test.ts
-            selector: { kind: test, name: "REQ-FE-061: saved SQL route explains its empty state and keeps current navigation" }
+            selector: { kind: test, name: "REQ-FE-061: saved SQL route shows its empty state and keeps current navigation" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-061#criterion.list-and-create-action
                 covers: [FEAT-FE-007#binding.frontend/target.sql-index-route]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-061: saved SQL route explains its empty state and keeps current navigation" } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-061: saved SQL route shows its empty state and keeps current navigation" } }
               - kind: verifies
                 criterion: REQ-FE-061#criterion.empty-state
                 covers: [FEAT-FE-007#binding.frontend/target.sql-index-route]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-061: saved SQL route explains its empty state and keeps current navigation" } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-061: saved SQL route shows its empty state and keeps current navigation" } }
 
   - id: REQ-FE-062
     title: Saved SQL Detail Route Actions

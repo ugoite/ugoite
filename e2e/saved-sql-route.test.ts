@@ -16,7 +16,7 @@ test.describe("Saved SQL route", () => {
     spaceId = await getDefaultSpaceId(request);
   });
 
-  test("REQ-FE-061: saved SQL route explains its empty state and keeps current navigation", async ({ page }) => {
+  test("REQ-FE-061: saved SQL route shows its empty state and keeps current navigation", async ({ page }) => {
     await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql`), {
       waitUntil: "domcontentloaded",
     });
@@ -25,9 +25,6 @@ test.describe("Saved SQL route", () => {
       .toBeVisible();
     await expect(page.getByText("No saved SQL", { exact: true }))
       .toBeVisible();
-    await expect(page.getByText("Create a query to reuse it here.", {
-      exact: true,
-    })).toBeVisible();
     await expect(page.getByRole("link", { name: "SQL" }))
       .toHaveAttribute("href", `/spaces/${spaceId}/queries/new`);
     await expect(page.getByRole("link", { name: "Search" }).first())

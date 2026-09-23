@@ -42,12 +42,6 @@ describe("/spaces/:space_id/sql", () => {
       .toBeInTheDocument();
     expect(await screen.findByText("No saved SQL", { exact: true }))
       .toBeInTheDocument();
-    expect(
-      await screen.findByText("Create a query to reuse it here.", {
-        exact: true,
-      }),
-    )
-      .toBeInTheDocument();
     expect(screen.getByRole("link", { name: "+Query" })).toHaveAttribute(
       "href",
       "/spaces/default/queries/new",

@@ -93,7 +93,6 @@ export default function SpaceSearchRoute() {
         {" · "}
         <A href={spaceSqlPath(spaceId())}>{t("searchPage.nav.saved")}</A>
       </nav>
-      <p class="text-sm ui-muted">{t("searchPage.savedSqlHint")}</p>
       <section class="searchControls" aria-labelledby="search-page-title">
         <form
           class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center"
