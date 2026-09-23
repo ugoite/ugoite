@@ -524,7 +524,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     draftValueToDisplayString(draftFields()[fieldName]);
 
   const persistedFieldValue = (fieldName: string) =>
-    entry()?.fields?.[fieldName] ?? entry()?.properties?.[fieldName] ?? "";
+    entry()?.fields?.[fieldName] ?? "";
 
   const fieldIssue = (fieldName: string) =>
     editorGuidance().typeIssues.find((issue) =>
@@ -568,8 +568,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       ? draftSession.restore(loadedEntry.form ?? "")
       : undefined;
     const draft = saved ? { fields: saved.fields } : {
-      fields:
-        (loadedEntry.fields ?? loadedEntry.properties ?? {}) as DraftFields,
+      fields: (loadedEntry.fields ?? {}) as DraftFields,
     };
     const tags = saved?.tags ?? loadedEntry.tags ?? [];
     setLastLoadedEntryId(entryId);
@@ -1310,15 +1309,13 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                               </h3>
                               <FieldValuesView
                                 fields={Object.keys(
-                                  latest()?.fields ??
-                                    latest()?.properties ?? {},
+                                  latest()?.fields ?? {},
                                 ).map((name) => ({ name }))}
                                 getValue={(name) =>
                                   draftValueToDisplayString(
-                                    ((latest()?.fields ??
-                                      latest()?.properties ?? {})[
-                                        name
-                                      ]) as DraftValue,
+                                    ((latest()?.fields ?? {})[
+                                      name
+                                    ]) as DraftValue,
                                   )}
                               />
                             </section>
