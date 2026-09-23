@@ -76,7 +76,11 @@ export default function SpaceSearchRoute() {
   });
 
   const commitDraft = () => {
-    controller.setText(draftText());
+    // Commit boundary: normalize once so the field and the committed
+    // query agree after submit.
+    const committed = draftText().trim();
+    setDraftText(committed);
+    controller.setText(committed);
   };
 
   return (
