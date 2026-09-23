@@ -83,10 +83,12 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
     );
   });
 
-  test("plain Entries list stays on the Entries route", async ({ page }) => {
-    await page.goto(`/spaces/${spaceId}/entries`);
-    await expect(page).toHaveURL(`/spaces/${spaceId}/entries`);
-    await expect(page.getByRole("heading", { name: "Entries" })).toBeVisible();
+  test("Form workspace lists the Form's Entries", async ({ page }) => {
+    await page.goto(`/spaces/${spaceId}/forms/Entry/entries`);
+    await expect(page).toHaveURL(`/spaces/${spaceId}/forms/Entry/entries`);
+    await expect(page.getByRole("heading", { name: "Entry" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Back to Forms" }))
+      .toHaveAttribute("href", `/spaces/${spaceId}/forms`);
   });
 
   test("GET /about returns HTML", async ({ page }) => {

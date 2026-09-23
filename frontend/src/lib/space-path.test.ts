@@ -6,6 +6,7 @@ import {
   spaceDashboardPath,
   spaceEntriesPath,
   spaceEntryPath,
+  spaceFormEntriesPath,
   spaceHistoryPath,
   spacePath,
   spaceSearchPath,
@@ -42,6 +43,19 @@ describe("space-path segment helper (#2849)", () => {
     expect(spaceSearchPath("default")).toBe("/spaces/default/search");
     expect(spaceHistoryPath("default")).toBe("/spaces/default/history");
     expect(spaceSettingsPath("default")).toBe("/spaces/default/settings");
+  });
+
+  it("addresses a Form's Entries through the canonical Form workspace path", () => {
+    expect(spaceFormEntriesPath("default", "Notes")).toBe(
+      "/spaces/default/forms/Notes/entries",
+    );
+    expect(spaceFormEntriesPath("default", "My Form")).toBe(
+      "/spaces/default/forms/My%20Form/entries",
+    );
+    const spaceId = "space/with space";
+    expect(spaceFormEntriesPath(spaceId, "Notes")).toBe(
+      `/spaces/${ENCODED_FIXTURE}/forms/Notes/entries`,
+    );
   });
 
   it("builds encoded sibling routes from one helper", () => {

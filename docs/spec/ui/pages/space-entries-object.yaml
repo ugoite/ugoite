@@ -1,22 +1,10 @@
 version: "0.2"
-updated: "2026-07-17"
+updated: "2026-09-23"
 page:
   id: space-entries-object
   title: Entries Compatibility Route
   route: /spaces/{space_id}/entries
-  implementation: implemented
+  implementation: unimplemented
 components:
-  body:
-    - id: entry-list-toolbar
-      type: toolbar
-      description: Provides local ID/Form filtering and updated-or-ID sorting for the loaded Entry list; Entry identity is the stable entry ID and any human-readable field is Form-defined.
-    - id: plain-entry-list
-      type: list
-      description: The plain Entries route loads the Space's Entry list as border-separated rows, exposes local filtering and sorting, and keeps the first-entry flow without redirecting to Forms.
-    - id: form-scoped-entry-list
-      type: list
-      condition: form query parameter is present
-      description: With a form query parameter the Entries route shows only that Form's Entries from a form-scoped server query, uses the Form name as heading, links back to Forms, opens New Entry with that Form preselected, and hides New Entry for reserved metadata Forms.
-responsive:
-  desktop: border-separated-list
-  mobile: stacked-border-separated-list
+  body: []
+notes: The Space exposes no standalone Entries destination. Forms are the entry point to Entries; each Form's current Entries live in its Form Entries workspace.

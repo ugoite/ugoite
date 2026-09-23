@@ -211,7 +211,7 @@ test.describe("Entries CRUD", () => {
 		);
 	});
 
-	test("REQ-FE-037: entries route opens the starter entry flow for new spaces", async ({
+	test("REQ-FE-037: form workspace opens the starter entry flow for new spaces", async ({
 		page,
 		request,
 	}) => {
@@ -240,9 +240,25 @@ test.describe("Entries CRUD", () => {
 		}
 		expect(spaceId).not.toBe(spaceName);
 
-		await page.goto(getFrontendUrl(`/spaces/${spaceId}/entries`), {
-			waitUntil: "domcontentloaded",
-		});
+		const ensureEntryForm = await request.post(
+			getBackendUrl(`/spaces/${spaceId}/forms`),
+			{
+				data: {
+					name: "Entry",
+					version: 1,
+					template: "# Entry\n\n## Body\n",
+					fields: { Body: { type: "markdown", required: false } },
+				},
+			},
+		);
+		expect([200, 201, 409]).toContain(ensureEntryForm.status());
+
+		await page.goto(
+			getFrontendUrl(`/spaces/${spaceId}/forms/Entry/entries`),
+			{
+				waitUntil: "domcontentloaded",
+			},
+		);
 		await expect(page.locator("body")).toBeVisible();
 		await settleUiLoading(page);
 
@@ -253,7 +269,7 @@ test.describe("Entries CRUD", () => {
 
 		await page.getByRole("button", { name: "+ Entry" }).click();
 		await expect(page).toHaveURL(
-			new RegExp(`/spaces/${spaceId}/entries/new$`),
+			new RegExp(`/spaces/${spaceId}/entries/new(\\?|$)`),
 			{ timeout: 10_000 },
 		);
 		await expect(
@@ -461,9 +477,12 @@ test.describe("Entries CRUD", () => {
 		});
 		expect(createBetaProject.status()).toBe(201);
 
-		await page.goto(getFrontendUrl(`/spaces/${spaceId}/entries`), {
-			waitUntil: "domcontentloaded",
-		});
+		await page.goto(
+			getFrontendUrl(`/spaces/${spaceId}/forms/Project/entries`),
+			{
+				waitUntil: "domcontentloaded",
+			},
+		);
 		await expect(page.locator("body")).toBeVisible();
 		await settleUiLoading(page);
 		await page.waitForLoadState("networkidle");
@@ -472,7 +491,7 @@ test.describe("Entries CRUD", () => {
 		await expect(newEntryButton).toBeEnabled();
 		await newEntryButton.click();
 		await expect(page).toHaveURL(
-			new RegExp(`/spaces/${spaceId}/entries/new$`),
+			new RegExp(`/spaces/${spaceId}/entries/new(\\?|$)`),
 		);
 		await expect(
 			page.getByRole("heading", { name: "Create New Entry" }),

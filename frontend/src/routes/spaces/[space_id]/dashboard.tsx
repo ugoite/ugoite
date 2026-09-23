@@ -14,6 +14,7 @@ import type { FormCreatePayload } from "~/lib/types";
 import {
   spaceEntriesPath,
   spaceEntryPath,
+  spaceFormEntriesPath,
   spaceFormsPath,
   spaceSearchPath,
   spaceSqlPath,
@@ -225,10 +226,7 @@ export default function SpaceDashboardRoute() {
             {(form) => (
               <A
                 class="pinItem"
-                href={spaceFormsPath(
-                  spaceId(),
-                  `?form=${encodeURIComponent(form.name)}`,
-                )}
+                href={spaceFormEntriesPath(spaceId(), form.name)}
               >
                 <span class="glyph">{form.name.slice(0, 1).toUpperCase()}</span>
                 <span>

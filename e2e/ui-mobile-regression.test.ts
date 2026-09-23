@@ -171,11 +171,11 @@ async function runMobileRegression(
     },
     {
       name: "entries",
-      path: `/spaces/${spaceId}/entries`,
+      path: `/spaces/${spaceId}/forms/Entry/entries`,
       ready: ".entry-browser",
       assert: async () => {
         // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
-        await expect(page.getByRole("heading", { name: "Entries" }))
+        await expect(page.getByRole("heading", { name: "Entry" }))
           .toBeVisible();
         await expect(
           page.getByRole("toolbar", { name: "Entry browser" }),

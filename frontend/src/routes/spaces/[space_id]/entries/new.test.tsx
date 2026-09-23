@@ -154,7 +154,7 @@ describe("NewEntryRoute", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Save entry" }));
 
     expect(navigate).toHaveBeenCalledWith(
-      "/spaces/default/forms?form=Meeting",
+      "/spaces/default/forms/Meeting/entries",
       { replace: true },
     );
   });

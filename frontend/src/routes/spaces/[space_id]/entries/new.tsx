@@ -6,7 +6,11 @@ import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi, spaceApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
-import { spaceEntryPath, spaceFormsPath } from "~/lib/space-path";
+import {
+  spaceEntryPath,
+  spaceFormEntriesPath,
+  spaceFormsPath,
+} from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "forms", title: "newEntry" });
@@ -54,8 +58,9 @@ export default function NewEntryRoute() {
   const returnToForms = () => searchParams.returnTo === "forms";
   const formsHref = () => {
     const formName = selectedFormName() ?? selectedForm()?.name;
-    const query = formName ? `?form=${encodeURIComponent(formName)}` : "";
-    return spaceFormsPath(spaceId(), query);
+    return formName
+      ? spaceFormEntriesPath(spaceId(), formName)
+      : spaceFormsPath(spaceId());
   };
 
   return (

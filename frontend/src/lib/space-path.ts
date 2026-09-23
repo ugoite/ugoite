@@ -56,6 +56,13 @@ export const spaceEntryPath = (spaceId: string, entryId: string) =>
   `${spaceBase(spaceId)}/entries/${encodeURIComponent(entryId)}`;
 export const spaceFormsPath = (spaceId: string, query = "") =>
   spacePath(spaceId, query ? `forms${query}` : "forms");
+/**
+ * Canonical Form-scoped Entry workspace. Forms are addressed by their
+ * canonical name (matching `form.get`), encoded as a single path segment.
+ * There is no unscoped Entries list surface.
+ */
+export const spaceFormEntriesPath = (spaceId: string, formRef: string) =>
+  `${spaceBase(spaceId)}/forms/${encodeURIComponent(formRef)}/entries`;
 export const spaceAssetsPath = (spaceId: string) =>
   spacePath(spaceId, "assets");
 export const spaceSearchPath = (spaceId: string) =>

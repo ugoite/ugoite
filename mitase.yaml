@@ -104,10 +104,10 @@ inventory:
         - frontend/src/routes/public-pages.test.tsx
         - frontend/src/routes/spaces/index.tsx
         - frontend/src/routes/spaces/index.test.tsx
-        - frontend/src/routes/spaces/[space_id]/entries/index.tsx
-        - frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
         - frontend/src/routes/spaces/[space_id]/forms/index.tsx
         - frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
+        - frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.tsx
+        - frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx
         - frontend/src/components/EntryDetailPane.tsx
         - frontend/src/components/EntryDetailPane.safety.test.tsx
         - frontend/src/components/SqlQueryEditor.tsx
@@ -273,6 +273,7 @@ inventory:
         - docs/spec/ui/pages/space-entry-new.yaml
         - docs/spec/ui/pages/space-entry-revision.yaml
         - docs/spec/ui/pages/space-form-grid.yaml
+        - docs/spec/ui/pages/space-form-entries.yaml
         - docs/spec/ui/pages/space-form-types.yaml
         - docs/spec/ui/pages/space-home.yaml
         - docs/spec/ui/pages/space-query-create.yaml
