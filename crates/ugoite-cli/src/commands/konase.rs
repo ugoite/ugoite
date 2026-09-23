@@ -4,7 +4,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use clap::Args;
 use rmcp::{
-    model::{ClientInfo, *},
+    model::{ClientConfig, *},
     transport::{streamable_http_client::StreamableHttpClientTransportConfig, *},
     ClientLifecycleMode, ClientServiceExt, RoleClient,
 };
@@ -498,7 +498,7 @@ fn chat_message(message: ModelMessage) -> ChatMessage {
     }
 }
 
-type McpClient = rmcp::service::RunningService<RoleClient, ClientInfo>;
+type McpClient = rmcp::service::RunningService<RoleClient, ClientConfig>;
 
 struct RmcpMcpHost {
     client: McpClient,
@@ -568,7 +568,7 @@ impl RmcpMcpHost {
             StreamableHttpClientTransportConfig::with_uri(target.endpoint)
                 .auth_header(session.access_token),
         );
-        let client = ClientInfo::default()
+        let client = ClientConfig::default()
             .serve_with_lifecycle(
                 transport,
                 ClientLifecycleMode::Discover {
@@ -1861,7 +1861,7 @@ mod tests {
         let transport = StreamableHttpClientTransport::from_config(
             StreamableHttpClientTransportConfig::with_uri(endpoint),
         );
-        let client = ClientInfo::default()
+        let client = ClientConfig::default()
             .serve_with_lifecycle(
                 transport,
                 ClientLifecycleMode::Discover {
