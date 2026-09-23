@@ -120,7 +120,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     expect(screen.getByRole("link", { name: "Open Variables" }))
       .toHaveAttribute(
         "href",
-        "/spaces/default/queries/saved-query/variables",
+        "/spaces/default/sql/saved-query/variables",
       );
     expect(screen.getByRole("link", { name: "Back to Saved SQL" }))
       .toHaveAttribute(

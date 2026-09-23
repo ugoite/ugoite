@@ -120,8 +120,7 @@ export function inferSpaceNavigation(pathname: string): SpaceNavigation {
   if (pathname.includes("/settings")) return "settings";
   if (pathname.includes("/history")) return "history";
   if (
-    pathname.includes("/search") || pathname.includes("/sql") ||
-    pathname.includes("/queries")
+    pathname.includes("/search") || pathname.includes("/sql")
   ) return "search";
   if (pathname.includes("/assets")) return "assets";
   if (pathname.includes("/forms")) return "forms";

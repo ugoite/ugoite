@@ -3,7 +3,7 @@ updated: "2026-02-02"
 page:
   id: space-query-create
   title: Query Create
-  route: /spaces/{space_id}/queries/new
+  route: /spaces/{space_id}/sql/new
   implementation: implemented
 components:
   shared:

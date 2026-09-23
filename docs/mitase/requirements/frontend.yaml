@@ -1224,17 +1224,17 @@ requirements:
         targets:
           - id: create-route
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/queries/new.test.tsx
+            path: frontend/src/routes/spaces/[space_id]/sql/new.test.tsx
             selector: { kind: test, name: "REQ-FE-063: uses a runnable Form relation starter with session ordering" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-063#criterion.starter-query
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/queries/new.test.tsx", test: "REQ-FE-063: uses a runnable Form relation starter with session ordering" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "REQ-FE-063: uses a runnable Form relation starter with session ordering" } }
               - kind: verifies
                 criterion: REQ-FE-063#criterion.explicit-save-and-run
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/queries/new.test.tsx", test: "REQ-FE-063: uses a runnable Form relation starter with session ordering" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "REQ-FE-063: uses a runnable Form relation starter with session ordering" } }
           - id: browser-create
             adapter: typescript
             path: e2e/saved-sql-route.test.ts

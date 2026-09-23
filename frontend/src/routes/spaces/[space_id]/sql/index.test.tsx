@@ -44,7 +44,7 @@ describe("/spaces/:space_id/sql", () => {
       .toBeInTheDocument();
     expect(screen.getByRole("link", { name: "+Query" })).toHaveAttribute(
       "href",
-      "/spaces/default/queries/new",
+      "/spaces/default/sql/new",
     );
   });
 
@@ -200,7 +200,7 @@ describe("/spaces/:space_id/sql", () => {
       }),
     );
     expect(navigateMock).toHaveBeenCalledWith(
-      "/spaces/default/queries/history-with-variables/variables",
+      "/spaces/default/sql/history-with-variables/variables",
     );
   });
 });

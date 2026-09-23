@@ -367,7 +367,7 @@ features:
                 criterion: REQ-FE-062#criterion.supported-actions
           - id: sql-create-route
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/queries/new.tsx
+            path: frontend/src/routes/spaces/[space_id]/sql/new.tsx
             selector: { kind: symbol, name: SpaceQueryCreateRoute }
             claims:
               - kind: satisfies
@@ -754,14 +754,14 @@ features:
                 criterion: REQ-FE-040#criterion.route-coverage
           - id: route-query-variables
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/queries/[query_id]/variables.tsx
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/variables.tsx
             selector: { kind: file }
             claims:
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
           - id: route-query-create
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/queries/new.tsx
+            path: frontend/src/routes/spaces/[space_id]/sql/new.tsx
             selector: { kind: file }
             claims:
               - kind: satisfies

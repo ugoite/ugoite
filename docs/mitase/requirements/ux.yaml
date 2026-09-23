@@ -74,22 +74,22 @@ requirements:
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "PR6: reaches space history from Settings and backs to Settings only" } }
           - id: sql-new-single-back
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/queries/new.test.tsx
+            path: frontend/src/routes/spaces/[space_id]/sql/new.test.tsx
             selector: { kind: test, name: "PR6: backs to Saved SQL once and reports diagnostics with line and column" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
                 covers: [FEAT-UX-007#binding.back-control-implementation/target.back-link-control]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/queries/new.test.tsx", test: "PR6: backs to Saved SQL once and reports diagnostics with line and column" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "PR6: backs to Saved SQL once and reports diagnostics with line and column" } }
           - id: sql-variables-single-back
             adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/queries/[query_id]/variables.test.tsx"
+            path: "frontend/src/routes/spaces/[space_id]/sql/[sql_id]/variables.test.tsx"
             selector: { kind: test, name: "PR6: backs to the saved query once with typed variable inputs" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
                 covers: [FEAT-UX-007#binding.back-control-implementation/target.back-link-control]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/queries/[query_id]/variables.test.tsx", test: "PR6: backs to the saved query once with typed variable inputs" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/variables.test.tsx", test: "PR6: backs to the saved query once with typed variable inputs" } }
           - id: info-single-back
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/info.test.tsx

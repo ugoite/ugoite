@@ -26,7 +26,7 @@ test.describe("Saved SQL route", () => {
     await expect(page.getByText("No saved SQL", { exact: true }))
       .toBeVisible();
     await expect(page.getByRole("link", { name: "SQL" }))
-      .toHaveAttribute("href", `/spaces/${spaceId}/queries/new`);
+      .toHaveAttribute("href", `/spaces/${spaceId}/sql/new`);
     await expect(page.getByRole("link", { name: "Search" }).first())
       .toHaveAttribute("href", `/spaces/${spaceId}/search`);
     await expect(page.getByRole("link", { name: "Forms" }).first())
@@ -81,7 +81,7 @@ test.describe("Saved SQL route", () => {
     let savedSqlId: string | undefined;
 
     try {
-      await page.goto(getFrontendUrl(`/spaces/${spaceId}/queries/new`), {
+      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
         waitUntil: "domcontentloaded",
       });
 
