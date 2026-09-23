@@ -13,8 +13,7 @@ WORK_ROOT_INPUT="${UGOITE_QUICKSTART_WORKDIR:-}"
 KEEP_WORK_ROOT="${UGOITE_QUICKSTART_KEEP_WORKDIR:-0}"
 QUICKSTART_HOME_INPUT="${UGOITE_QUICKSTART_HOME:-}"
 INSTALL_DIR_INPUT="${UGOITE_INSTALL_DIR:-}"
-SPACE_ID="${UGOITE_SPACE_ID:-demo}"
-SPACE_ROOT="./data/spaces"
+SPACE_SLUG="${UGOITE_SPACE_SLUG:-${UGOITE_SPACE_ID:-demo}}"
 
 log() {
   printf '%s\n' "$*" >&2
@@ -186,16 +185,12 @@ try {
   console.error(`space create output: command output was not valid JSON: ${error.message}: ${actualRaw}`);
   Deno.exit(1);
 }
-if (actual?.created !== true) {
-  console.error(`space create output: expected created=true but got ${JSON.stringify(actual)}`);
+if (actual?.space?.slug !== expectedSlug) {
+  console.error(`space create output: expected slug ${expectedSlug} but got ${JSON.stringify(actual?.space?.slug)}`);
   Deno.exit(1);
 }
-if (actual?.slug !== expectedSlug) {
-  console.error(`space create output: expected slug ${expectedSlug} but got ${JSON.stringify(actual.slug)}`);
-  Deno.exit(1);
-}
-if (typeof actual?.id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(actual.id)) {
-  console.error(`space create output: expected a UUID id but got ${JSON.stringify(actual.id)}`);
+if (typeof actual?.space?.space_uid !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(actual.space.space_uid)) {
+  console.error(`space create output: expected a UUID space_uid but got ${JSON.stringify(actual?.space?.space_uid)}`);
   Deno.exit(1);
 }
 '
@@ -330,29 +325,39 @@ if [ "$version_output" != "$expected_version_output" ]; then
 fi
 log "Verified: ugoite reports version ${VERSION_INPUT#v}"
 
-mkdir -p "$WORK_DIR/data/spaces"
+mkdir -p "$WORK_DIR"
+
+# v0.2 CLI model: a named connection selects the workspace root, and the
+# selected context identifies the Space. `config init` already provisions
+# the `local` core connection rooted at the workdir; no path positionals
+# remain on space commands.
+(
+  cd "$WORK_DIR" &&
+    "$INSTALLED_BINARY" config init
+)
+log "Verified: local connection configured"
 
 list_before_output="$(
   cd "$WORK_DIR" &&
-    "$INSTALLED_BINARY" space list "$SPACE_ROOT"
+    "$INSTALLED_BINARY" space list
 )"
 assert_json_equals "initial space list" '[]' "$list_before_output"
 log "Verified: space list starts empty"
 
 create_output="$(
   cd "$WORK_DIR" &&
-    "$INSTALLED_BINARY" space create "${SPACE_ROOT}/${SPACE_ID}"
+    "$INSTALLED_BINARY" space create "$SPACE_SLUG"
 )"
-assert_space_create_output "$SPACE_ID" "$create_output"
+assert_space_create_output "$SPACE_SLUG" "$create_output"
 created_space_id="$(
   ACTUAL_JSON="$create_output" \
-    deno eval 'console.log(JSON.parse(Deno.env.get("ACTUAL_JSON")!).id)'
+    deno eval 'console.log(JSON.parse(Deno.env.get("ACTUAL_JSON")!).space.space_uid)'
 )"
 log "Verified: space create creates the expected demo space"
 
 list_after_output="$(
   cd "$WORK_DIR" &&
-    "$INSTALLED_BINARY" space list "$SPACE_ROOT"
+    "$INSTALLED_BINARY" space list
 )"
 assert_space_list_contains_id "$created_space_id" "$list_after_output"
 log "Verified: final space list contains the created space"
