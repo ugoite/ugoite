@@ -750,7 +750,7 @@ fn canonical_hydrated_rows_from_batches(
             }
             rows.push(entry::EntryRow {
                 entry_id: required_string_column(batch, row, "_ugoite_id", "external ID")?,
-                saved_query_name: String::new(),
+                legacy_saved_query_name: String::new(),
                 form: form.name.clone(),
                 tags: Vec::new(),
                 created_at: required_timestamp_seconds_column(
@@ -2132,7 +2132,7 @@ fn entry_row_from_batch(
     let legacy_columns = unclaimed_columns_from_batch(form, batch, row)?;
     Ok(entry::EntryRow {
         entry_id: required_string_column(batch, row, "_ugoite_id", "external ID")?,
-        saved_query_name: String::new(),
+        legacy_saved_query_name: String::new(),
         form: form_name.to_string(),
         tags: required_string_list_column(batch, row, "_ugoite_tags", "tags")?,
         created_at: required_timestamp_seconds_column(

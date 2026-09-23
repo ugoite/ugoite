@@ -157,8 +157,12 @@ pub struct EntryMeta {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EntryRow {
     pub entry_id: String,
-    #[serde(default)]
-    pub saved_query_name: String,
+    /// Legacy saved-query name carrier. NOT authority: the canonical SQL
+    /// Form `fields["name"]` is the single authority. Kept only so old
+    /// persisted bytes with the `saved_query_name` column still decode;
+    /// always written as empty for new rows.
+    #[serde(default, alias = "saved_query_name")]
+    pub legacy_saved_query_name: String,
     pub form: String,
     #[serde(default)]
     pub tags: Vec<String>,
@@ -597,7 +601,7 @@ fn revision_row_from_domain(
         } else {
             revision.entry.external_id.clone()
         },
-        saved_query_name: String::new(),
+        legacy_saved_query_name: String::new(),
         form: form_name.to_string(),
         tags: revision.entry.tags.clone(),
         created_at: from_timestamp_micros(revision.entry.created_at_micros),
@@ -1288,7 +1292,7 @@ async fn prepare_entry_from_draft<I: IntegrityProvider>(
 
     let entry_row = EntryRow {
         entry_id: entry_id.to_string(),
-        saved_query_name: String::new(),
+        legacy_saved_query_name: String::new(),
         form: form_name.clone(),
         tags,
         created_at: timestamp,
