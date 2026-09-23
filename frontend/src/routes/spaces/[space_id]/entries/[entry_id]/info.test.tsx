@@ -45,7 +45,6 @@ describe("entry info route", () => {
       id: "entry-1",
       title: "Test Entry",
       form: "Meeting",
-      content: "# Test Entry",
       revision_id: "rev-9",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-02-02T00:00:00Z",
