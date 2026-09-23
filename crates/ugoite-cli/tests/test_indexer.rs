@@ -182,7 +182,7 @@ fn test_extract_properties_h2_sections() {
     let form_file = dir.path().join("form.json");
     std::fs::write(
         &form_file,
-        r#"{"name":"Entry","fields":{"Body":{"type":"markdown"},"Summary":{"type":"markdown"},"Status":{"type":"text"}}}"#,
+        r#"{"name":"Entry","fields":{"Body":{"type":"markdown"},"Summary":{"type":"markdown"},"Status":{"type":"string"}}}"#,
     )
     .unwrap();
 

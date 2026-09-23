@@ -77,10 +77,9 @@ export const toRustFormDefinition = (
   const entries = Object.entries(form.fields || {});
   const policy: FormExtraAttributesPolicy = form.allow_extra_attributes ??
     "deny";
-  // Legacy frontend "number" maps to the Rust "double" contract; Rust has no
-  // bare "number" variant and would otherwise reject the form shape instead
-  // of producing field-level diagnostics.
-  const toRustFieldType = (type: string) => type === "number" ? "double" : type;
+  // Canonical-on-write: field types pass through verbatim so Rust rejects
+  // legacy aliases (`number`, `text`) instead of silently coercing them.
+  const toRustFieldType = (type: string) => type;
   const formId = requireFormId(form);
   const forms = [form, ...knownForms.filter((known) => known !== form)];
   return {

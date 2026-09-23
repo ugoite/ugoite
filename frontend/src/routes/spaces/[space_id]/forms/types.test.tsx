@@ -33,7 +33,7 @@ describe("form types route", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     setLocale("en");
-    vi.mocked(formApi.listTypes).mockResolvedValue(["string", "number"]);
+    vi.mocked(formApi.listTypes).mockResolvedValue(["string", "double"]);
   });
 
   it("REQ-UX-NAV-001: exposes exactly one back control to forms", async () => {

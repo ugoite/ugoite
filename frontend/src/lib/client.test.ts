@@ -812,7 +812,7 @@ describe("error paths", () => {
     const formDef = {
       name: "Task",
       template: "# Task\n\n## Status\n",
-      fields: { Status: { type: "text" } },
+      fields: { Status: { type: "string" } },
     };
     const result = await entryApi.createFromWebform(
       "ws-wf",
@@ -834,7 +834,7 @@ describe("error paths", () => {
     const formDef = {
       name: "Task",
       template: "# Task\n\n## Status\n",
-      fields: { Status: { type: "text" } },
+      fields: { Status: { type: "string" } },
     };
     const result = await entryApi.createFromChat(
       "ws-chat",
@@ -857,7 +857,7 @@ describe("error paths", () => {
       name: "Task",
       template: "# Task\n\n## Status\n",
       fields: {
-        Status: { type: "text" },
+        Status: { type: "string" },
         Zoned: { type: "timestamp_tz" },
         Row: { type: "row_reference" },
         File: { type: "asset_reference" },

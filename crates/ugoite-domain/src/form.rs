@@ -26,6 +26,9 @@ impl FormVersion {
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FieldType {
+    // Space 0.1 reader: `text` still decodes persisted pre-cut Spaces.
+    // Serialization always emits the canonical `string`.
+    #[serde(alias = "text")]
     String,
     Markdown,
     Sql,
@@ -33,6 +36,9 @@ pub enum FieldType {
     Integer,
     Long,
     Float,
+    // Space 0.1 reader: `number` still decodes persisted pre-cut Spaces.
+    // Serialization always emits the canonical `double`.
+    #[serde(alias = "number")]
     Double,
     Date,
     Time,

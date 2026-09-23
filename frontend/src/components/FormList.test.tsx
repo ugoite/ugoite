@@ -7,7 +7,7 @@ import type { Form } from "~/lib/types";
 
 const forms: Form[] = [
   { name: "Meeting", fields: { Date: { type: "date" } } },
-  { name: "Task", fields: { Status: { type: "text" } } },
+  { name: "Task", fields: { Status: { type: "string" } } },
 ];
 
 describe("FormList", () => {

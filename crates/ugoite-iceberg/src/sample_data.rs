@@ -326,7 +326,7 @@ fn renewable_ops_forms() -> Vec<Value> {
             "fields": {
                 "Region": {"type": "string", "required": true},
                 "PrimarySource": {"type": "string", "required": true},
-                "CapacityMW": {"type": "number", "required": true},
+                "CapacityMW": {"type": "double", "required": true},
                 "CommissionedOn": {"type": "date", "required": true},
                 "Status": {"type": "string", "required": true}
             }
@@ -338,8 +338,8 @@ fn renewable_ops_forms() -> Vec<Value> {
             "fields": {
                 "SiteId": {"type": "string", "required": true},
                 "ArrayType": {"type": "string", "required": true},
-                "CapacityKW": {"type": "number", "required": true},
-                "TiltDegrees": {"type": "number", "required": false},
+                "CapacityKW": {"type": "double", "required": true},
+                "TiltDegrees": {"type": "double", "required": false},
                 "InstalledOn": {"type": "date", "required": true}
             }
         }),
@@ -350,7 +350,7 @@ fn renewable_ops_forms() -> Vec<Value> {
             "fields": {
                 "SiteId": {"type": "string", "required": true},
                 "InspectionDate": {"type": "date", "required": true},
-                "ConditionScore": {"type": "number", "required": true},
+                "ConditionScore": {"type": "double", "required": true},
                 "RiskLevel": {"type": "string", "required": true},
                 "Findings": {"type": "markdown", "required": false}
             }
@@ -375,8 +375,8 @@ fn renewable_ops_forms() -> Vec<Value> {
             "fields": {
                 "SiteId": {"type": "string", "required": true},
                 "ReportDate": {"type": "date", "required": true},
-                "OutputMWh": {"type": "number", "required": true},
-                "DowntimeHours": {"type": "number", "required": false},
+                "OutputMWh": {"type": "double", "required": true},
+                "DowntimeHours": {"type": "double", "required": false},
                 "WeatherNotes": {"type": "string", "required": false}
             }
         }),
@@ -391,7 +391,7 @@ fn supply_chain_forms() -> Vec<Value> {
             "allow_extra_attributes": "deny",
             "fields": {
                 "Region": {"type": "string", "required": true},
-                "CapacityPallets": {"type": "number", "required": true},
+                "CapacityPallets": {"type": "double", "required": true},
                 "ClimateZone": {"type": "string", "required": true},
                 "OpenedOn": {"type": "date", "required": true},
                 "Status": {"type": "string", "required": true}
@@ -407,7 +407,7 @@ fn supply_chain_forms() -> Vec<Value> {
                 "Mode": {"type": "string", "required": true},
                 "DispatchDate": {"type": "date", "required": true},
                 "ArrivalDate": {"type": "date", "required": true},
-                "OnTimeRate": {"type": "number", "required": true}
+                "OnTimeRate": {"type": "double", "required": true}
             }
         }),
         json!({
@@ -417,8 +417,8 @@ fn supply_chain_forms() -> Vec<Value> {
             "fields": {
                 "WarehouseId": {"type": "string", "required": true},
                 "CheckDate": {"type": "date", "required": true},
-                "SKUCount": {"type": "number", "required": true},
-                "AccuracyPct": {"type": "number", "required": true},
+                "SKUCount": {"type": "double", "required": true},
+                "AccuracyPct": {"type": "double", "required": true},
                 "Notes": {"type": "markdown", "required": false}
             }
         }),
@@ -429,8 +429,8 @@ fn supply_chain_forms() -> Vec<Value> {
             "fields": {
                 "SupplierId": {"type": "string", "required": true},
                 "ReviewDate": {"type": "date", "required": true},
-                "OnTimePct": {"type": "number", "required": true},
-                "QualityScore": {"type": "number", "required": true},
+                "OnTimePct": {"type": "double", "required": true},
+                "QualityScore": {"type": "double", "required": true},
                 "RiskLevel": {"type": "string", "required": true}
             }
         }),
@@ -441,8 +441,8 @@ fn supply_chain_forms() -> Vec<Value> {
             "fields": {
                 "SupplierId": {"type": "string", "required": true},
                 "OrderDate": {"type": "date", "required": true},
-                "TotalUnits": {"type": "number", "required": true},
-                "LeadTimeDays": {"type": "number", "required": true},
+                "TotalUnits": {"type": "double", "required": true},
+                "LeadTimeDays": {"type": "double", "required": true},
                 "Status": {"type": "string", "required": true}
             }
         }),
@@ -460,7 +460,7 @@ fn municipal_infra_forms() -> Vec<Value> {
                 "District": {"type": "string", "required": true},
                 "InstalledOn": {"type": "date", "required": true},
                 "Status": {"type": "string", "required": true},
-                "ConditionScore": {"type": "number", "required": true}
+                "ConditionScore": {"type": "double", "required": true}
             }
         }),
         json!({
@@ -472,7 +472,7 @@ fn municipal_infra_forms() -> Vec<Value> {
                 "InspectionDate": {"type": "date", "required": true},
                 "InspectorNotes": {"type": "markdown", "required": false},
                 "RiskLevel": {"type": "string", "required": true},
-                "ConditionScore": {"type": "number", "required": true}
+                "ConditionScore": {"type": "double", "required": true}
             }
         }),
         json!({
@@ -494,9 +494,9 @@ fn municipal_infra_forms() -> Vec<Value> {
             "fields": {
                 "AssetId": {"type": "string", "required": true},
                 "ReportDate": {"type": "date", "required": true},
-                "DowntimeHours": {"type": "number", "required": false},
-                "CostUSD": {"type": "number", "required": true},
-                "CrewSize": {"type": "number", "required": true}
+                "DowntimeHours": {"type": "double", "required": false},
+                "CostUSD": {"type": "double", "required": true},
+                "CrewSize": {"type": "double", "required": true}
             }
         }),
     ]
@@ -512,7 +512,7 @@ fn fleet_ops_forms() -> Vec<Value> {
                 "VehicleType": {"type": "string", "required": true},
                 "Region": {"type": "string", "required": true},
                 "CommissionedOn": {"type": "date", "required": true},
-                "OdometerKm": {"type": "number", "required": true},
+                "OdometerKm": {"type": "double", "required": true},
                 "Status": {"type": "string", "required": true}
             }
         }),
@@ -523,9 +523,9 @@ fn fleet_ops_forms() -> Vec<Value> {
             "fields": {
                 "VehicleId": {"type": "string", "required": true},
                 "RouteDate": {"type": "date", "required": true},
-                "DistanceKm": {"type": "number", "required": true},
-                "Stops": {"type": "number", "required": true},
-                "OnTimeRate": {"type": "number", "required": true}
+                "DistanceKm": {"type": "double", "required": true},
+                "Stops": {"type": "double", "required": true},
+                "OnTimeRate": {"type": "double", "required": true}
             }
         }),
         json!({
@@ -547,9 +547,9 @@ fn fleet_ops_forms() -> Vec<Value> {
             "fields": {
                 "VehicleId": {"type": "string", "required": true},
                 "ReportDate": {"type": "date", "required": true},
-                "FuelLiters": {"type": "number", "required": true},
-                "CostUSD": {"type": "number", "required": true},
-                "Efficiency": {"type": "number", "required": true}
+                "FuelLiters": {"type": "double", "required": true},
+                "CostUSD": {"type": "double", "required": true},
+                "Efficiency": {"type": "double", "required": true}
             }
         }),
     ]
@@ -564,9 +564,9 @@ fn lab_qa_forms() -> Vec<Value> {
             "fields": {
                 "ProductLine": {"type": "string", "required": true},
                 "ProducedOn": {"type": "date", "required": true},
-                "BatchSize": {"type": "number", "required": true},
+                "BatchSize": {"type": "double", "required": true},
                 "Status": {"type": "string", "required": true},
-                "YieldPct": {"type": "number", "required": true}
+                "YieldPct": {"type": "double", "required": true}
             }
         }),
         json!({
@@ -577,7 +577,7 @@ fn lab_qa_forms() -> Vec<Value> {
                 "BatchId": {"type": "string", "required": true},
                 "TestDate": {"type": "date", "required": true},
                 "Result": {"type": "string", "required": true},
-                "DefectRate": {"type": "number", "required": true},
+                "DefectRate": {"type": "double", "required": true},
                 "Notes": {"type": "markdown", "required": false}
             }
         }),
@@ -618,7 +618,7 @@ fn retail_ops_forms() -> Vec<Value> {
                 "Region": {"type": "string", "required": true},
                 "Format": {"type": "string", "required": true},
                 "OpenedOn": {"type": "date", "required": true},
-                "FloorAreaSqm": {"type": "number", "required": true},
+                "FloorAreaSqm": {"type": "double", "required": true},
                 "Status": {"type": "string", "required": true}
             }
         }),
@@ -641,8 +641,8 @@ fn retail_ops_forms() -> Vec<Value> {
             "fields": {
                 "StoreId": {"type": "string", "required": true},
                 "AuditDate": {"type": "date", "required": true},
-                "ItemsChecked": {"type": "number", "required": true},
-                "MismatchRate": {"type": "number", "required": true},
+                "ItemsChecked": {"type": "double", "required": true},
+                "MismatchRate": {"type": "double", "required": true},
                 "Notes": {"type": "string", "required": false}
             }
         }),
@@ -653,9 +653,9 @@ fn retail_ops_forms() -> Vec<Value> {
             "fields": {
                 "StoreId": {"type": "string", "required": true},
                 "SalesDate": {"type": "date", "required": true},
-                "Transactions": {"type": "number", "required": true},
-                "RevenueUSD": {"type": "number", "required": true},
-                "ReturnRate": {"type": "number", "required": true}
+                "Transactions": {"type": "double", "required": true},
+                "RevenueUSD": {"type": "double", "required": true},
+                "ReturnRate": {"type": "double", "required": true}
             }
         }),
         json!({
@@ -666,7 +666,7 @@ fn retail_ops_forms() -> Vec<Value> {
                 "StoreId": {"type": "string", "required": true},
                 "DeliveryDate": {"type": "date", "required": true},
                 "Vendor": {"type": "string", "required": true},
-                "UnitsReceived": {"type": "number", "required": true},
+                "UnitsReceived": {"type": "double", "required": true},
                 "OnTime": {"type": "string", "required": true}
             }
         }),

@@ -11,7 +11,7 @@ const projectForm = {
   name: "Project",
   fields: {
     Title: { type: "string" },
-    Budget: { type: "number" },
+    Budget: { type: "double" },
     Active: { type: "boolean" },
     Tags: { type: "list" },
     Meta: { type: "object_list" },
