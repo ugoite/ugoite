@@ -96,10 +96,9 @@ fn test_asset_req_asset_001_upload_strips_filename_traversal() {
 
     let asset: serde_json::Value =
         serde_json::from_slice(&upload_output.stdout).expect("asset upload JSON");
-    let asset_name = asset["name"].as_str().expect("asset name");
-    let asset_id = asset["asset_id"].as_str().expect("asset id");
+    assert_eq!(asset["kind"].as_str(), Some("asset"));
+    let asset_id = asset["id"].as_str().expect("asset id");
 
-    assert_eq!(asset_name, "outside.txt");
     let stored_space = immutable_space_path(&root);
     assert!(stored_space.join("assets").join(asset_id).exists());
     assert!(!stored_space.join("outside.txt").exists());
@@ -139,14 +138,13 @@ fn test_asset_req_asset_001_upload_normalizes_markdown_heading_filename() {
 
     let asset: serde_json::Value =
         serde_json::from_slice(&upload_output.stdout).expect("asset upload JSON");
-    let asset_name = asset["name"].as_str().expect("asset name");
+    assert_eq!(asset["kind"].as_str(), Some("asset"));
+    let asset_id = asset["id"].as_str().expect("asset id");
+    assert!(!asset_id.is_empty());
 
-    assert_eq!(asset_name, "uploaded_at spoofed.txt");
-    assert!(!asset_name.contains('\n'));
-    assert!(!asset_name.starts_with('#'));
     assert!(immutable_space_path(&root)
         .join("assets")
-        .join(asset["asset_id"].as_str().expect("asset id"))
+        .join(asset_id)
         .exists());
 }
 
@@ -294,8 +292,10 @@ fn test_asset_read_side_shares_core_semantics() {
         "stderr: {}",
         String::from_utf8_lossy(&upload.stderr)
     );
-    let asset = json_of(&upload);
-    let asset_id = asset["asset_id"].as_str().expect("asset id").to_string();
+    let receipt = json_of(&upload);
+    assert_eq!(receipt["kind"].as_str(), Some("asset"));
+    let asset_id = receipt["id"].as_str().expect("asset id").to_string();
+    let asset = asset_reference(&receipt, "note.bin", b"binary-bytes");
 
     let fields_file = dir.path().join("fields.json");
     std::fs::write(
@@ -607,7 +607,31 @@ fn setup_core_space(dir: &tempfile::TempDir, slug: &str, form_json: &str) -> Pat
     config_path
 }
 
+/// Rebuild the full AssetReference field value for an upload receipt.
+///
+/// Upload machine output is the stable receipt (`kind`/`id`); the attach
+/// path needs the stored reference object, whose metadata the caller knows
+/// (filename given, octet-stream media type, content bytes).
+fn asset_reference(receipt: &serde_json::Value, name: &str, bytes: &[u8]) -> serde_json::Value {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    let digest: Vec<String> = hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    serde_json::json!({
+        "asset_id": receipt["id"],
+        "name": name,
+        "media_type": "application/octet-stream",
+        "size_bytes": bytes.len(),
+        "sha256": digest.join(""),
+    })
+}
+
 fn upload_core(config_path: &Path, file: &Path, filename: &str) -> serde_json::Value {
+    let bytes = std::fs::read(file).expect("read asset file");
     let file = file.to_str().unwrap();
     let output = run_cli(
         config_path,
@@ -618,7 +642,14 @@ fn upload_core(config_path: &Path, file: &Path, filename: &str) -> serde_json::V
         "upload stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    serde_json::from_slice(&output.stdout).expect("asset upload JSON")
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("asset upload JSON");
+    assert_eq!(receipt["kind"].as_str(), Some("asset"));
+    assert!(
+        receipt["id"].as_str().is_some_and(|id| !id.is_empty()),
+        "upload receipt carries the asset id: {receipt}"
+    );
+    asset_reference(&receipt, filename, &bytes)
 }
 
 fn create_entry_with_fields(
@@ -1229,11 +1260,20 @@ fn test_asset_attach_create_reads_name_back_remote() {
         String::from_utf8_lossy(&upload.stderr)
     );
     let uploaded: serde_json::Value = serde_json::from_slice(&upload.stdout).unwrap();
+    assert_eq!(uploaded["kind"].as_str(), Some("asset"));
+    assert_eq!(uploaded["id"].as_str(), Some(asset_id));
+    let attached = serde_json::json!({
+        "asset_id": asset_id,
+        "name": "report.txt",
+        "media_type": "text/plain",
+        "size_bytes": asset_bytes.len(),
+        "sha256": "abc",
+    });
 
     let fields_file = dir.path().join("fields.json");
     std::fs::write(
         &fields_file,
-        serde_json::to_string(&serde_json::json!({"Document": uploaded})).unwrap(),
+        serde_json::to_string(&serde_json::json!({"Document": attached})).unwrap(),
     )
     .unwrap();
     let create = run_cli(

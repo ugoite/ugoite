@@ -1,6 +1,9 @@
 use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::http;
-use crate::output::{effective_format, emit_success, print_json_table, Format, UsageError};
+use crate::output::{
+    effective_format, emit_mutation, emit_success, print_json_table, Format, MutationReceipt,
+    UsageError,
+};
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use ugoite_iceberg::service::UgoiteService;
@@ -144,11 +147,13 @@ pub async fn run(
                     Some(serde_json::json!({})),
                 )
                 .await?;
-                let human = result
+                let new_change_id = result
                     .get("change_id")
                     .and_then(|value| value.as_str())
-                    .map(|id| format!("reverted as change {id}"));
-                emit_success(&result, &fmt, human);
+                    .unwrap_or_default()
+                    .to_string();
+                let human = Some(format!("reverted as change {new_change_id}"));
+                emit_mutation(&MutationReceipt::change(new_change_id), &fmt, human);
                 return Ok(());
             }
             let SpaceTarget::Core { root, space_id } = &target else {
@@ -158,11 +163,13 @@ pub async fn run(
             let result = service
                 .revert_change(space_id, &change_id, &author, None, None)
                 .await?;
-            let human = result
+            let new_change_id = result
                 .get("change_id")
                 .and_then(|value| value.as_str())
-                .map(|id| format!("reverted as change {id}"));
-            emit_success(&result, &fmt, human);
+                .unwrap_or_default()
+                .to_string();
+            let human = Some(format!("reverted as change {new_change_id}"));
+            emit_mutation(&MutationReceipt::change(new_change_id), &fmt, human);
         }
     }
     Ok(())

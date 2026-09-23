@@ -1,6 +1,9 @@
 use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::http;
-use crate::output::{print_json, print_json_table, Format, UsageError};
+use crate::output::{
+    effective_format, emit_mutation, print_json, print_json_table, Format, MutationReceipt,
+    UsageError,
+};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use ugoite_core::sql_query::{SqlQueryCountRequest, SqlQueryPage, SqlQueryRequest};
@@ -164,6 +167,13 @@ fn parse_sql_bindings(
         parameter_types.insert(name.clone(), kind.to_string());
     }
     Ok((parameters, parameter_types))
+}
+
+fn opt_str(value: &serde_json::Value, key: &str) -> Option<String> {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
 }
 
 fn target_space_id(target: &SpaceTarget) -> &str {
@@ -357,6 +367,7 @@ pub async fn run(
         } => {
             let target =
                 resolve_command_target(explicit_config, context_override, "sql saved-create")?;
+            let fmt = effective_format(None);
             let vars: serde_json::Value = variables
                 .map(|v| serde_json::from_str(&v))
                 .transpose()?
@@ -369,7 +380,12 @@ pub async fn run(
                     Some(serde_json::json!({"name": name, "kind": "user-query", "sql": sql, "variables": vars})),
                 )
                 .await?;
-                print_json(&result);
+                let receipt = MutationReceipt::sql(
+                    opt_str(&result, "id").unwrap_or_default(),
+                    opt_str(&result, "revision_id"),
+                    opt_str(&result, "change_id"),
+                );
+                emit_mutation(&receipt, &fmt, None);
                 return Ok(());
             }
             let SpaceTarget::Core { root, space_id } = &target else {
@@ -387,7 +403,12 @@ pub async fn run(
             let result = service
                 .create_saved_sql(space_id, &sql_id, &payload, "cli")
                 .await?;
-            print_json(&result);
+            let receipt = MutationReceipt::sql(
+                sql_id,
+                opt_str(&result, "revision_id"),
+                opt_str(&result, "change_id"),
+            );
+            emit_mutation(&receipt, &fmt, None);
         }
         SqlSubCmd::SavedUpdate {
             sql_id,
@@ -398,6 +419,7 @@ pub async fn run(
         } => {
             let target =
                 resolve_command_target(explicit_config, context_override, "sql saved-update")?;
+            let fmt = effective_format(None);
             let vars: serde_json::Value = variables
                 .map(|v| serde_json::from_str(&v))
                 .transpose()?
@@ -417,7 +439,12 @@ pub async fn run(
                     Some(body),
                 )
                 .await?;
-                print_json(&result);
+                let receipt = MutationReceipt::sql(
+                    sql_id,
+                    opt_str(&result, "revision_id"),
+                    opt_str(&result, "change_id"),
+                );
+                emit_mutation(&receipt, &fmt, None);
                 return Ok(());
             }
             let SpaceTarget::Core { root, space_id } = &target else {
@@ -434,7 +461,12 @@ pub async fn run(
             let result = service
                 .update_saved_sql(space_id, &sql_id, &payload, &parent_revision_id, "cli")
                 .await?;
-            print_json(&result);
+            let receipt = MutationReceipt::sql(
+                sql_id,
+                opt_str(&result, "revision_id"),
+                opt_str(&result, "change_id"),
+            );
+            emit_mutation(&receipt, &fmt, None);
         }
         SqlSubCmd::SavedDelete {
             sql_id,
@@ -442,17 +474,19 @@ pub async fn run(
         } => {
             let target =
                 resolve_command_target(explicit_config, context_override, "sql saved-delete")?;
+            let fmt = effective_format(None);
             let human_approval =
                 human_approval.or_else(|| std::env::var("UGOITE_HUMAN_APPROVAL").ok());
             if let SpaceTarget::Remote { space_uid, .. } = &target {
-                let result = http::execute_for_target(
+                let _result = http::execute_for_target(
                     &target,
                     "sql.delete",
                     serde_json::json!({"space_id": space_uid, "sql_id": sql_id, "human_approval": human_approval}),
                     None,
                 )
                 .await?;
-                print_json(&result);
+                let receipt = MutationReceipt::sql(sql_id.clone(), None, None);
+                emit_mutation(&receipt, &fmt, Some(format!("deleted sql {sql_id}")));
                 return Ok(());
             }
             if human_approval.is_some() {
@@ -465,7 +499,8 @@ pub async fn run(
             };
             let service = UgoiteService::new_without_background_refresh(root)?;
             service.delete_saved_sql(space_id, &sql_id, "cli").await?;
-            print_json(&serde_json::json!({"deleted": true}));
+            let receipt = MutationReceipt::sql(sql_id.clone(), None, None);
+            emit_mutation(&receipt, &fmt, Some(format!("deleted sql {sql_id}")));
         }
     }
     Ok(())

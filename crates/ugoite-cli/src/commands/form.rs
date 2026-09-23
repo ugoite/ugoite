@@ -1,12 +1,15 @@
 use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::http;
-use crate::output::print_json;
+use crate::output::{effective_format, emit_mutation, print_json, Format, MutationReceipt};
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use ugoite_iceberg::service::UgoiteService;
 
 #[derive(Args)]
 pub struct FormCmd {
+    /// Output format (default: table when TTY, json when piped)
+    #[arg(short = 'o', long, value_enum, global = true)]
+    pub format: Option<Format>,
     #[command(subcommand)]
     pub sub: FormSubCmd,
 }
@@ -37,6 +40,7 @@ pub async fn run(
     explicit_config: Option<&std::path::Path>,
     context_override: Option<&str>,
 ) -> Result<()> {
+    let fmt = effective_format(cmd.format);
     match cmd.sub {
         FormSubCmd::List => {
             let target = resolve_command_target(explicit_config, context_override, "form list")?;
@@ -82,15 +86,22 @@ pub async fn run(
             let target = resolve_command_target(explicit_config, context_override, "form update")?;
             let form_text = std::fs::read_to_string(&form_file)?;
             let form_def: serde_json::Value = serde_json::from_str(&form_text)?;
+            let form_name = form_def
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let receipt = MutationReceipt::form(form_name.clone());
+            let human = Some(format!("updated form {form_name}"));
             if let SpaceTarget::Remote { space_uid, .. } = &target {
-                let result = http::execute_for_target(
+                let _result = http::execute_for_target(
                     &target,
                     "form.upsert",
                     serde_json::json!({"space_id": space_uid}),
                     Some(form_def),
                 )
                 .await?;
-                print_json(&result);
+                emit_mutation(&receipt, &fmt, human);
                 return Ok(());
             }
             let SpaceTarget::Core { root, space_id } = &target else {
@@ -98,7 +109,7 @@ pub async fn run(
             };
             let service = UgoiteService::new_without_background_refresh(root)?;
             service.upsert_form(space_id, &form_def).await?;
-            print_json(&serde_json::json!({"updated": true}));
+            emit_mutation(&receipt, &fmt, human);
         }
         FormSubCmd::ListTypes => {
             let types = ugoite_iceberg::form::list_column_types().await?;

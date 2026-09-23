@@ -1,6 +1,8 @@
 use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::http;
-use crate::output::{effective_format, print_json, print_json_table, Format};
+use crate::output::{
+    effective_format, emit_mutation, print_json, print_json_table, Format, MutationReceipt,
+};
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use std::io::Write as IoWrite;
@@ -111,7 +113,13 @@ pub async fn run(
                     data,
                 )
                 .await?;
-                print_json(&result);
+                let asset_id = result
+                    .get("asset_id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                let receipt = MutationReceipt::asset(asset_id.clone());
+                emit_mutation(&receipt, &fmt, Some(format!("uploaded asset {asset_id}")));
                 return Ok(());
             }
             let SpaceTarget::Core { root, space_id } = &target else {
@@ -119,7 +127,12 @@ pub async fn run(
             };
             let service = UgoiteService::new_without_background_refresh(root)?;
             let asset = service.save_asset(space_id, &name, &data).await?;
-            print_json(&asset);
+            let receipt = MutationReceipt::asset(asset.asset_id.clone());
+            emit_mutation(
+                &receipt,
+                &fmt,
+                Some(format!("uploaded asset {}", asset.asset_id)),
+            );
         }
         AssetSubCmd::Delete {
             asset_id,
@@ -129,14 +142,15 @@ pub async fn run(
             let human_approval =
                 human_approval.or_else(|| std::env::var("UGOITE_HUMAN_APPROVAL").ok());
             if let SpaceTarget::Remote { space_uid, .. } = &target {
-                let result = http::execute_for_target(
+                let _result = http::execute_for_target(
                     &target,
                     "asset.delete",
                     serde_json::json!({"space_id": space_uid, "asset_id": asset_id, "human_approval": human_approval}),
                     None,
                 )
                 .await?;
-                print_json(&result);
+                let receipt = MutationReceipt::asset(asset_id.clone());
+                emit_mutation(&receipt, &fmt, Some(format!("deleted asset {asset_id}")));
                 return Ok(());
             }
             if human_approval.is_some() {
@@ -149,7 +163,8 @@ pub async fn run(
             };
             let service = UgoiteService::new_without_background_refresh(root)?;
             service.delete_asset(space_id, &asset_id).await?;
-            print_json(&serde_json::json!({"deleted": true}));
+            let receipt = MutationReceipt::asset(asset_id.clone());
+            emit_mutation(&receipt, &fmt, Some(format!("deleted asset {asset_id}")));
         }
         AssetSubCmd::List => {
             let target = resolve_command_target(explicit_config, context_override, "asset list")?;

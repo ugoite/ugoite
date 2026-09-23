@@ -2,8 +2,8 @@ use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::commands::entry_query::EntryListOptions;
 use crate::http;
 use crate::output::{
-    effective_format, emit_success, render_receipt, stdout_style, Format, MutationReceipt,
-    UsageError,
+    effective_format, emit_mutation, emit_success, render_receipt, stdout_style, Format,
+    MutationReceipt, UsageError,
 };
 use anyhow::Result;
 use clap::{Args, Subcommand};
@@ -323,8 +323,8 @@ async fn create_structured_entry(
                 .and_then(|value| value.as_str())
                 .map(str::to_string),
         );
-        emit_success(
-            &result,
+        emit_mutation(
+            &receipt,
             fmt,
             Some(render_receipt(&receipt, &stdout_style())),
         );
@@ -355,7 +355,11 @@ async fn create_structured_entry(
             .and_then(|value| value.as_str())
             .map(str::to_string),
     );
-    emit_success(&meta, fmt, Some(render_receipt(&receipt, &stdout_style())));
+    emit_mutation(
+        &receipt,
+        fmt,
+        Some(render_receipt(&receipt, &stdout_style())),
+    );
     Ok(())
 }
 
@@ -431,8 +435,8 @@ async fn update_structured_entry(
                 .and_then(|value| value.as_str())
                 .map(str::to_string),
         );
-        emit_success(
-            &result,
+        emit_mutation(
+            &receipt,
             fmt,
             Some(render_receipt(&receipt, &stdout_style())),
         );
@@ -477,8 +481,8 @@ async fn update_structured_entry(
             .and_then(|value| value.as_str())
             .map(str::to_string),
     );
-    emit_success(
-        &result,
+    emit_mutation(
+        &receipt,
         fmt,
         Some(render_receipt(&receipt, &stdout_style())),
     );
@@ -605,8 +609,8 @@ pub async fn run(
                         .and_then(|value| value.as_str())
                         .map(str::to_string),
                 );
-                emit_success(
-                    &result,
+                emit_mutation(
+                    &receipt,
                     &fmt,
                     Some(render_receipt(&receipt, &stdout_style())),
                 );
@@ -638,8 +642,8 @@ pub async fn run(
                     .and_then(|value| value.as_str())
                     .map(str::to_string),
             );
-            emit_success(
-                &result,
+            emit_mutation(
+                &receipt,
                 &fmt,
                 Some(render_receipt(&receipt, &stdout_style())),
             );
@@ -728,8 +732,8 @@ pub async fn run(
                         .and_then(|value| value.as_str())
                         .map(str::to_string),
                 );
-                emit_success(
-                    &result,
+                emit_mutation(
+                    &receipt,
                     &fmt,
                     Some(render_receipt(&receipt, &stdout_style())),
                 );
@@ -754,8 +758,8 @@ pub async fn run(
                     .and_then(|value| value.as_str())
                     .map(str::to_string),
             );
-            emit_success(
-                &result,
+            emit_mutation(
+                &receipt,
                 &fmt,
                 Some(render_receipt(&receipt, &stdout_style())),
             );

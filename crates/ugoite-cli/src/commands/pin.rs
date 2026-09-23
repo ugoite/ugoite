@@ -1,7 +1,8 @@
 use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::http;
 use crate::output::{
-    effective_format, emit_success, print_json, print_json_table, Format, UsageError,
+    effective_format, emit_mutation, emit_success, print_json, print_json_table, Format,
+    MutationReceipt, UsageError,
 };
 use crate::step_up;
 use anyhow::Result;
@@ -98,7 +99,7 @@ pub async fn run(
             }
             let target = resolve_command_target(explicit_config, context_override, "pin create")?;
             if let SpaceTarget::Remote { space_uid, .. } = &target {
-                let result = step_up::execute_with_step_up_for_target(
+                let _result = step_up::execute_with_step_up_for_target(
                     &target,
                     "pin.create",
                     serde_json::json!({"space_id": space_uid}),
@@ -106,17 +107,25 @@ pub async fn run(
                     Some(space_uid.as_str()),
                 )
                 .await?;
-                emit_success(&result, &fmt, Some(format!("created pin {name}")));
+                emit_mutation(
+                    &MutationReceipt::pin(name.clone()),
+                    &fmt,
+                    Some(format!("created pin {name}")),
+                );
                 return Ok(());
             }
             let SpaceTarget::Core { root, space_id } = &target else {
                 anyhow::bail!("operation pin.create does not use the remote transport")
             };
             let service = UgoiteService::new_without_background_refresh(root)?;
-            let pin = service
+            let _pin = service
                 .create_pin(space_id, &name, "cli", &uuid::Uuid::now_v7().to_string())
                 .await?;
-            emit_success(&pin, &fmt, Some(format!("created pin {name}")));
+            emit_mutation(
+                &MutationReceipt::pin(name.clone()),
+                &fmt,
+                Some(format!("created pin {name}")),
+            );
         }
         PinSubCmd::List => {
             let target = resolve_command_target(explicit_config, context_override, "pin list")?;
@@ -198,7 +207,7 @@ pub async fn run(
         PinSubCmd::Delete { name } => {
             let target = resolve_command_target(explicit_config, context_override, "pin delete")?;
             if let SpaceTarget::Remote { space_uid, .. } = &target {
-                let result = step_up::execute_with_step_up_for_target(
+                let _result = step_up::execute_with_step_up_for_target(
                     &target,
                     "pin.delete",
                     serde_json::json!({"space_id": space_uid, "pin_name": name}),
@@ -206,7 +215,11 @@ pub async fn run(
                     Some(space_uid.as_str()),
                 )
                 .await?;
-                emit_success(&result, &fmt, Some(format!("deleted pin {name}")));
+                emit_mutation(
+                    &MutationReceipt::pin(name.clone()),
+                    &fmt,
+                    Some(format!("deleted pin {name}")),
+                );
                 return Ok(());
             }
             let SpaceTarget::Core { root, space_id } = &target else {
@@ -216,8 +229,8 @@ pub async fn run(
             service
                 .delete_pin(space_id, &name, &uuid::Uuid::now_v7().to_string())
                 .await?;
-            emit_success(
-                &serde_json::json!({"name": name, "status": "deleted"}),
+            emit_mutation(
+                &MutationReceipt::pin(name.clone()),
                 &fmt,
                 Some(format!("deleted pin {name}")),
             );

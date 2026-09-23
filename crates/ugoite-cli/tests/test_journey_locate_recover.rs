@@ -268,10 +268,11 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
         &run_cli(&config_path, &["change", "revert", &update_change_id]),
         "change revert",
     );
+    assert_eq!(reverted["kind"].as_str(), Some("change"));
     let revert_id = reverted
-        .get("change_id")
+        .get("id")
         .and_then(|id| id.as_str())
-        .expect("revert returns the appended change_id")
+        .expect("revert returns the appended change id")
         .to_string();
     assert_ne!(revert_id, update_change_id);
 
