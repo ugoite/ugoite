@@ -11,7 +11,7 @@ import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceEntryPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "entries", title: "entryInfo" });
+export const route = spaceRoute({ navigation: "forms", title: "entryInfo" });
 
 export default function SpaceEntryInfoRoute() {
   const params = useParams<{ space_id: string; entry_id: string }>();

@@ -37,8 +37,8 @@ describe("v5 SpaceShell", () => {
   beforeEach(() => {
     setLocale("en");
   });
-  it("renders the Knowledge-first destinations with zero desktop/mobile gap", () => {
-    render(() => (
+  it("reaches the Forms workspace from desktop and mobile primary navigation", () => {
+    const { container } = render(() => (
       <SpaceShell spaceId="my-space-uid" activeNavigation="home">
         <p>Content</p>
       </SpaceShell>
@@ -46,7 +46,6 @@ describe("v5 SpaceShell", () => {
     expect(screen.getByText("Content")).toBeInTheDocument();
     const expected: Array<[string, string]> = [
       ["Home", "/spaces/my-space-uid/dashboard"],
-      ["Entries", "/spaces/my-space-uid/entries"],
       ["Assets", "/spaces/my-space-uid/assets"],
       ["Forms", "/spaces/my-space-uid/forms"],
       ["Search", "/spaces/my-space-uid/search"],
@@ -60,6 +59,16 @@ describe("v5 SpaceShell", () => {
         expect(link).toHaveAttribute("href", href);
       }
     }
+    // Forms is a primary destination: desktop sidebar plus the mobile
+    // bottom navigation each link to the Forms workspace.
+    const bottomNav = container.querySelector(".bottomNav");
+    expect(bottomNav).toBeInTheDocument();
+    const primaryLabels = [...bottomNav!.querySelectorAll("a")].map((link) =>
+      link.textContent
+    );
+    expect(primaryLabels).toEqual(
+      expect.arrayContaining(["Home", "Forms", "Search", "History"]),
+    );
     // Desktop groups Knowledge/Explore/Recovery; mobile More holds the rest.
     expect(screen.getByText("Knowledge")).toBeInTheDocument();
     expect(screen.getByText("Explore")).toBeInTheDocument();
@@ -68,11 +77,11 @@ describe("v5 SpaceShell", () => {
   });
   it("marks the selected destination in desktop and mobile navigation", () => {
     render(() => (
-      <SpaceShell spaceId="my-space-uid" activeNavigation="entries">
+      <SpaceShell spaceId="my-space-uid" activeNavigation="forms">
         <p>Content</p>
       </SpaceShell>
     ));
-    for (const link of screen.getAllByRole("link", { name: "Entries" })) {
+    for (const link of screen.getAllByRole("link", { name: "Forms" })) {
       expect(link).toHaveClass("active");
     }
   });
@@ -83,11 +92,11 @@ describe("v5 SpaceShell", () => {
       </SpaceShell>
     ));
     for (
-      const link of screen.getAllByRole("link", { name: "Entries" })
+      const link of screen.getAllByRole("link", { name: "Forms" })
     ) {
       expect(link).toHaveAttribute(
         "href",
-        "/spaces/space%2Fwith%20space/entries",
+        "/spaces/space%2Fwith%20space/forms",
       );
     }
     for (const link of screen.getAllByRole("link", { name: "History" })) {

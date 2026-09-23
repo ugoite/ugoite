@@ -9,7 +9,7 @@ import { t } from "~/lib/i18n";
 import { spaceEntryPath, spaceFormsPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "entries", title: "newEntry" });
+export const route = spaceRoute({ navigation: "forms", title: "newEntry" });
 
 export default function NewEntryRoute() {
   const params = useParams<{ space_id: string }>();

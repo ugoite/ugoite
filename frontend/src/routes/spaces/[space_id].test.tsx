@@ -25,7 +25,7 @@ vi.mock("~/lib/space-store", () => ({
 
 const formsRoute = spaceRoute({ navigation: "forms" });
 const dashboardRoute = spaceRoute({ navigation: "home" });
-const newEntryRoute = spaceRoute({ navigation: "entries", title: "newEntry" });
+const newEntryRoute = spaceRoute({ navigation: "forms", title: "newEntry" });
 const historyRoute = spaceRoute({
   navigation: "history",
   title: "spaceHistory",
@@ -118,10 +118,10 @@ describe("/spaces/:space_id persistent layout", () => {
         "New Entry",
       );
       expect(loadSpacesMock).toHaveBeenCalledOnce();
-      // Entry creation lives under Entries (shortest path preserved).
-      expect(screen.getAllByRole("link", { name: "Entries" })[0])
+      // Entry creation lives under Forms (shortest path preserved).
+      expect(screen.getAllByRole("link", { name: "Forms" })[0])
         .toHaveClass("active");
-      expect(screen.getAllByRole("link", { name: "Entries" })[0])
+      expect(screen.getAllByRole("link", { name: "Forms" })[0])
         .toHaveAttribute("aria-current", "page");
       expectNotCurrent("Spaces");
     });
