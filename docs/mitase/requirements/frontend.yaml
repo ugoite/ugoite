@@ -283,19 +283,15 @@ requirements:
                 criterion: REQ-FE-004#criterion.display
                 covers: [FEAT-FE-002#binding.frontend/target.list-panel]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "should render entries list" } }
-          - id: entries-route
+          - id: form-entries-route
             adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/entries/index.test.tsx"
-            selector: { kind: test, name: "mounts the shared EntryBrowser for the canonical All Forms surface" }
+            path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx"
+            selector: { kind: test, name: "selects a row to open its Entry" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-004#criterion.display
-                covers: [FEAT-FE-002#binding.frontend/target.entries-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "mounts the shared EntryBrowser for the canonical All Forms surface" } }
-              - kind: verifies
-                criterion: REQ-FE-067#criterion.plain-entry-workspace
-                covers: [FEAT-FE-002#binding.frontend/target.entries-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "mounts the shared EntryBrowser for the canonical All Forms surface" } }
+                covers: [FEAT-FE-002#binding.frontend/target.form-entries-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx", test: "selects a row to open its Entry" } }
   - id: REQ-FE-008
     title: Entry Selection and Highlight
     description: The frontend highlights the selected Entry and lets the user select an Entry to load its detail view.
@@ -1539,21 +1535,17 @@ requirements:
 
   - id: REQ-FE-067
     title: Form List Navigation and Form-Scoped Entries
-    description: The Forms route presents a list-only Form list where selecting a Form navigates to its form-scoped EntryBrowser, the plain Entries route uses the canonical EntryQuery surface without redirecting to Forms, and Form/Entry dialogs retain usable action layout and visible icon affordances.
+    description: The Forms route presents a list-only Form list where selecting a Form navigates to its form-scoped EntryBrowser, the Form's Entries workspace shows that Form's current Entries with creation and selection beside the browser, and Form/Entry dialogs retain usable action layout and visible icon affordances.
     priority: high
     status: implemented
     criteria:
       - id: form-grid
         kind: behavior
-        statement: The Forms route presents a list-only Form list without a same-screen Entry grid or nested view tabs; selecting a Form navigates to the form-scoped Entry list at the Entries route.
+        statement: The Forms route presents a list-only Form list without a same-screen Entry grid or nested view tabs; selecting a Form navigates to the Form's Entries workspace at the canonical Form entries path.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
       - id: form-scoped-entries
         kind: behavior
-        statement: The Entries route with a form query parameter shows that Form's Entries through a form-scoped EntryQuery, links back to Forms, keeps New Entry adjacent to the EntryBrowser, and does not expose the browser for an unknown Form.
-        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
-      - id: plain-entry-workspace
-        kind: behavior
-        statement: The plain Space Entries route mounts the shared EntryBrowser and loads Entries through the canonical EntryQuery without redirecting to Forms.
+        statement: The Form's Entries workspace shows that Form's Entries through a form-scoped EntryQuery, links back to Forms, keeps New Entry adjacent to the EntryBrowser, and does not expose the browser for an unknown Form.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
       - id: dialog-workspace
         kind: quality
@@ -1602,13 +1594,13 @@ requirements:
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "keeps edit on a small per-row button that does not navigate" } }
           - id: form-scoped-entries
             adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/entries/index.test.tsx"
+            path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx"
             selector: { kind: test, name: "uses Form scope capabilities and keeps create beside the browser" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-067#criterion.form-scoped-entries
-                covers: [FEAT-FE-002#binding.frontend/target.entries-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "uses Form scope capabilities and keeps create beside the browser" } }
+                covers: [FEAT-FE-002#binding.frontend/target.form-entries-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx", test: "uses Form scope capabilities and keeps create beside the browser" } }
           - id: dialog-action-layout
             adapter: typescript
             path: frontend/src/components/create-dialogs.test.tsx
@@ -1961,6 +1953,7 @@ requirements:
                   - FEAT-FE-013#binding.frontend/target.page-space-entry-new
                   - FEAT-FE-013#binding.frontend/target.page-space-entry-revision
                   - FEAT-FE-013#binding.frontend/target.page-space-form-grid
+                  - FEAT-FE-013#binding.frontend/target.page-space-form-entries
                   - FEAT-FE-013#binding.frontend/target.page-space-form-types
                   - FEAT-FE-013#binding.frontend/target.page-space-query-create
                   - FEAT-FE-013#binding.frontend/target.page-space-query-variables
@@ -2005,6 +1998,7 @@ requirements:
                   - FEAT-FE-013#binding.frontend/target.page-space-entry-new
                   - FEAT-FE-013#binding.frontend/target.page-space-entry-revision
                   - FEAT-FE-013#binding.frontend/target.page-space-form-grid
+                  - FEAT-FE-013#binding.frontend/target.page-space-form-entries
                   - FEAT-FE-013#binding.frontend/target.page-space-form-types
                   - FEAT-FE-013#binding.frontend/target.page-space-query-create
                   - FEAT-FE-013#binding.frontend/target.page-space-query-variables
@@ -2021,7 +2015,7 @@ requirements:
                   - FEAT-FE-013#binding.frontend/target.route-entry-history
                   - FEAT-FE-013#binding.frontend/target.route-entry-revision
                   - FEAT-FE-013#binding.frontend/target.route-entry-history-index
-                  - FEAT-FE-013#binding.frontend/target.route-entry-index
+                  - FEAT-FE-013#binding.frontend/target.route-form-entries
                   - FEAT-FE-013#binding.frontend/target.route-entry-new
                   - FEAT-FE-013#binding.frontend/target.route-forms
                   - FEAT-FE-013#binding.frontend/target.route-forms-index

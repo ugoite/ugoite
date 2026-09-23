@@ -11,7 +11,7 @@ import {
 } from "~/lib/metadata-forms";
 import { formApi } from "~/lib/ugoite-client";
 import type { Form, FormCreatePayload } from "~/lib/types";
-import { spaceEntriesPath } from "~/lib/space-path";
+import { spaceFormEntriesPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "forms" });
@@ -36,12 +36,7 @@ export default function SpaceFormsIndexPane() {
     await formApi.create(ctx.spaceId(), payload);
     setShowFormDialog(false);
     await ctx.refetchForms();
-    navigate(
-      spaceEntriesPath(
-        ctx.spaceId(),
-        `?form=${encodeURIComponent(payload.name)}`,
-      ),
-    );
+    navigate(spaceFormEntriesPath(ctx.spaceId(), payload.name));
   };
   const updateForm = async (payload: FormCreatePayload) => {
     await formApi.create(ctx.spaceId(), payload);
@@ -117,10 +112,7 @@ export default function SpaceFormsIndexPane() {
                       <RowListButton
                         onActivate={() =>
                           navigate(
-                            spaceEntriesPath(
-                              ctx.spaceId(),
-                              `?form=${encodeURIComponent(form.name)}`,
-                            ),
+                            spaceFormEntriesPath(ctx.spaceId(), form.name),
                           )}
                         primary={
                           <>

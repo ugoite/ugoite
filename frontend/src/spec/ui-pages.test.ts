@@ -323,7 +323,7 @@ describe("UI spec YAML registry", () => {
     const pages = loadPages();
     const forms = pages.find(({ spec }) => spec.page?.id === "space-form-grid");
     const entries = pages.find(({ spec }) =>
-      spec.page?.id === "space-entries-object"
+      spec.page?.id === "space-form-entries"
     );
     expect(
       forms?.spec.components?.body?.some((component) =>
@@ -332,10 +332,14 @@ describe("UI spec YAML registry", () => {
     ).toBe(false);
     expect(
       entries?.spec.components?.body?.find((component) =>
-        component.id === "plain-entry-list"
+        component.id === "form-entry-list"
       ),
     ).toMatchObject({
       type: "list",
     });
+    const compat = pages.find(({ spec }) =>
+      spec.page?.id === "space-entries-object"
+    );
+    expect(compat?.spec.page?.implementation).not.toBe("implemented");
   });
 });

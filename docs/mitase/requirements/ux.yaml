@@ -216,13 +216,13 @@ requirements:
         targets:
           - id: entry-scoped-back-create
             adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/entries/index.test.tsx"
+            path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx"
             selector: { kind: test, name: "REQ-UX-ENTRY-001: renders form-scoped entries with a positional back link and list-adjacent create action" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-ENTRY-001#criterion.no-decorative-cards
-                covers: [FEAT-UX-008#binding.row-list-implementation/target.entries-index-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "REQ-UX-ENTRY-001: renders form-scoped entries with a positional back link and list-adjacent create action" } }
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.form-entries-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx", test: "REQ-UX-ENTRY-001: renders form-scoped entries with a positional back link and list-adjacent create action" } }
       - id: entry-save-state-verification
         role: verification
         facet: verification
@@ -336,13 +336,13 @@ requirements:
                 runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/index.test.tsx, test: "REQ-UX-LIST-001: opens spaces through full-row links with an unboxed secondary settings action" } }
           - id: entry-rows-compact
             adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/entries/index.test.tsx"
+            path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx"
             selector: { kind: test, name: "REQ-UX-LIST-001: renders entry rows without type chips and with compact right-meta dates" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
-                covers: [FEAT-UX-008#binding.row-list-implementation/target.entries-index-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/index.test.tsx", test: "REQ-UX-LIST-001: renders entry rows without type chips and with compact right-meta dates" } }
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.form-entries-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx", test: "REQ-UX-LIST-001: renders entry rows without type chips and with compact right-meta dates" } }
       - id: history-row-verification
         role: verification
         facet: verification

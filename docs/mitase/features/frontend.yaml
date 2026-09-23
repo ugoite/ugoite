@@ -111,15 +111,13 @@ features:
                 criterion: REQ-FE-008#criterion.selection
               - kind: satisfies
                 criterion: REQ-FE-044#criterion.dictionary-localization
-          - id: entries-route
+          - id: form-entries-route
             adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/entries/index.tsx"
+            path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.tsx"
             selector: { kind: file }
             claims:
               - kind: satisfies
                 criterion: REQ-FE-004#criterion.display
-              - kind: satisfies
-                criterion: REQ-FE-067#criterion.plain-entry-workspace
               - kind: satisfies
                 criterion: REQ-FE-067#criterion.form-scoped-entries
   - id: FEAT-FE-003
@@ -568,6 +566,15 @@ features:
                 criterion: REQ-FE-040#criterion.registry-shape
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-form-entries
+            adapter: declared
+            path: docs/spec/ui/pages/space-form-entries.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
           - id: page-space-form-types
             adapter: declared
             path: docs/spec/ui/pages/space-form-types.yaml
@@ -703,9 +710,9 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
-          - id: route-entry-index
+          - id: route-form-entries
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/entries/index.tsx
+            path: frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.tsx
             selector: { kind: file }
             claims:
               - kind: satisfies

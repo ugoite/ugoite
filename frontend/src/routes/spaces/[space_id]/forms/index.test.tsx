@@ -124,21 +124,21 @@ describe("Forms list", () => {
     renderPage([noteForm]);
     fireEvent.click(document.querySelector(".rowListMain")!);
     expect(navigate).toHaveBeenCalledWith(
-      "/spaces/default/entries?form=Notes",
+      "/spaces/default/forms/Notes/entries",
     );
   });
   it("encodes Form names in the entries navigation target", () => {
     renderPage([spacedForm]);
     fireEvent.click(document.querySelector(".rowListMain")!);
     expect(navigate).toHaveBeenCalledWith(
-      "/spaces/default/entries?form=My%20Form",
+      "/spaces/default/forms/My%20Form/entries",
     );
   });
   it("encodes Space path segments when navigating to the Entry list", () => {
     renderPage([noteForm], undefined, "space/with space");
     fireEvent.click(document.querySelector(".rowListMain")!);
     expect(navigate).toHaveBeenCalledWith(
-      "/spaces/space%2Fwith%20space/entries?form=Notes",
+      "/spaces/space%2Fwith%20space/forms/Notes/entries",
     );
   });
   it("passes the logical Space ID to the API after an encoded navigation", async () => {
@@ -153,7 +153,7 @@ describe("Forms list", () => {
     );
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith(
-        "/spaces/space%2Fwith%20space/entries?form=Projects",
+        "/spaces/space%2Fwith%20space/forms/Projects/entries",
       )
     );
   });
@@ -228,7 +228,7 @@ describe("Forms list", () => {
     );
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith(
-        "/spaces/default/entries?form=Projects",
+        "/spaces/default/forms/Projects/entries",
       )
     );
   });

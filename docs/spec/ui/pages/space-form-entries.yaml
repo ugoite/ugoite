@@ -1,0 +1,27 @@
+version: "0.2"
+updated: "2026-09-23"
+page:
+  id: space-form-entries
+  title: Form Entries
+  route: /spaces/{space_id}/forms/{form_ref}/entries
+  implementation: implemented
+components:
+  shared:
+    - id: space-shell
+      type: persistent-workspace-navigation
+      reference: ../components/space-shell.yaml
+  body:
+    - id: form-entries-header
+      type: page-header
+      description: The Form name is the heading with a positional back link to the Forms list.
+    - id: form-entry-list
+      type: list
+      description: The Form's Entries workspace loads that Form's current Entries from a form-scoped server query as border-separated rows, keeps New Entry adjacent to the list, opens Entry creation with that Form preselected, selects a row to open its Entry, and hides the browser for unknown or reserved metadata Forms.
+      items:
+        - form-field-values
+      actions:
+        - create-entry
+        - open-entry
+responsive:
+  desktop: border-separated-list
+  mobile: stacked-border-separated-list

@@ -324,9 +324,9 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-LIST-001#criterion.full-row-activation
-          - id: entries-index-route
+          - id: form-entries-route
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/entries/index.tsx
+            path: frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.tsx
             selector: { kind: file }
             claims:
               - kind: satisfies
