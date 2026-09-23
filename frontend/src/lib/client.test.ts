@@ -217,15 +217,15 @@ describe("entryApi", () => {
   });
 
   describe("get", () => {
-    it("should return full entry content", async () => {
-      const content = "# Full Entry\n\nWith body content";
+    it("should return full entry fields", async () => {
+      const fields = { Body: "With body content" };
       server.use(
         http.get(
           testApiUrl("/spaces/test-ws/entries/entry-get"),
           () =>
             HttpResponse.json({
               id: "entry-get",
-              content,
+              fields,
               revision_id: "rev-get",
               created_at: "2025-01-01T00:00:00Z",
               updated_at: "2025-01-01T00:00:00Z",
@@ -236,7 +236,7 @@ describe("entryApi", () => {
           () =>
             HttpResponse.json({
               id: "entry-empty",
-              content: "",
+              fields: {},
               revision_id: "rev-empty",
               created_at: "2025-01-01T00:00:00Z",
               updated_at: "2025-01-01T00:00:00Z",
@@ -245,11 +245,11 @@ describe("entryApi", () => {
       );
 
       const fetched = await entryApi.get("test-ws", "entry-get");
-      expect(fetched.content).toBe(content);
+      expect(fetched.fields).toEqual(fields);
       expect(fetched.revision_id).toBe("rev-get");
 
       const emptyFetched = await entryApi.get("test-ws", "entry-empty");
-      expect(emptyFetched.content).toBe("");
+      expect(emptyFetched.fields).toEqual({});
     });
 
     it("should throw error for non-existent entry", async () => {

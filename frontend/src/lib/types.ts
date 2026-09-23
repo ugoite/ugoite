@@ -197,13 +197,14 @@ export interface CanvasPosition {
 /** Full entry content */
 export interface Entry {
   id: string;
-  frontmatter?: Record<string, unknown>;
-  sections?: Record<string, string>;
   form?: string;
   tags?: string[];
   canvas_position?: CanvasPosition;
-  content: string;
+  fields?: Record<string, unknown>;
+  extra_attributes?: Record<string, unknown>;
+  properties?: Record<string, unknown>;
   revision_id: string;
+  entry_version?: number;
   created_at: string;
   updated_at: string;
   author?: string;
@@ -224,8 +225,8 @@ export interface EntryRevisionContent {
   updated_by?: string;
   deleted_by?: string | null;
   markdown: string;
-  frontmatter?: Record<string, unknown>;
-  sections?: Record<string, string>;
+  fields?: Record<string, unknown>;
+  extra_attributes?: Record<string, unknown>;
 }
 
 /** Entry history entry */

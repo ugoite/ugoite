@@ -151,7 +151,7 @@ const validateMockSqlPayload = (
 
 const normalizeMockEntry = (entry: Entry): Entry => ({
   ...entry,
-  content: entry.content ?? "",
+  fields: entry.fields ?? {},
 });
 
 const createTestApiPredicate = <Params extends PathParams = PathParams>(
@@ -432,9 +432,7 @@ export const handlers = [
     return HttpResponse.json(page);
   }),
 
-  // Create entry through the structured payload contract. The mock keeps a
-  // rendered representation only so existing read/search fixtures can inspect
-  // the same stored values.
+  // Create entry through the structured payload contract.
   testHttp.post("/spaces/:spaceId/entries", async ({ params, request }) => {
     const spaceId = params.spaceId as string;
     if (!mockSpaces.has(spaceId)) {
@@ -454,15 +452,14 @@ export const handlers = [
         ? value
         : JSON.stringify(value);
     }
-    const frontmatter = body.form ? `---\nform: ${body.form}\n---\n` : "";
-    const sections = Object.entries(properties)
-      .map(([key, value]) => `## ${key}\n${value}\n`)
-      .join("\n");
-    const markdown = `${frontmatter}${sections}`.trimEnd();
 
     const entry: Entry = normalizeMockEntry({
       id: entryId,
-      content: markdown,
+      form: body.form,
+      tags,
+      fields: { ...rawFields },
+      extra_attributes: {},
+      properties,
       revision_id: revisionId,
       created_at: now,
       updated_at: now,
@@ -533,15 +530,10 @@ export const handlers = [
           ? value
           : JSON.stringify(value);
       }
-      const formName = body.form || "";
-      const frontmatter = formName ? `---\nform: ${formName}\n---\n` : "";
-      const sections = Object.entries(properties)
-        .map(([key, value]) => `## ${key}\n${value}\n`)
-        .join("\n");
-      const markdown = `${frontmatter}${sections}`.trimEnd();
 
       // Update entry
-      entry.content = markdown;
+      entry.fields = { ...rawFields };
+      entry.properties = properties;
       entry.revision_id = newRevisionId;
       entry.updated_at = now;
 
@@ -581,52 +573,59 @@ export const handlers = [
   // Canonical EntryQuery collection reads (v0.2 contract). Text, filters,
   // and sort travel inside the POST body; the mock applies text matching
   // against the stored index so EntryBrowser fixtures keep working.
-  testHttp.post("/spaces/:spaceId/entries/query", async ({ params, request }) => {
-    const spaceId = params.spaceId as string;
-    if (!mockSpaces.has(spaceId)) {
-      return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
-    }
+  testHttp.post(
+    "/spaces/:spaceId/entries/query",
+    async ({ params, request }) => {
+      const spaceId = params.spaceId as string;
+      if (!mockSpaces.has(spaceId)) {
+        return HttpResponse.json({ detail: "Space not found" }, {
+          status: 404,
+        });
+      }
 
-    const body = (await request.json()) as {
-      query?: { text?: string };
-      limit?: number;
-    };
-    const index = Array.from(mockEntryIndex.get(spaceId)?.values() || []);
-    const entries = Array.from(mockEntries.get(spaceId)?.values() || []);
-    const needle = body.query?.text?.toLowerCase().trim() ?? "";
-    const matches = needle
-      ? index.filter((record) => {
-        const entryContent = entries.find((n) => n.id === record.id)?.content ??
-          "";
-        const haystack = `${record.id}\n${
-          JSON.stringify(record.properties)
-        }\n${entryContent}`.toLowerCase();
-        return haystack.includes(needle);
-      })
-      : index;
-    const limit = body.limit ?? matches.length;
-    const rows = matches.slice(0, limit).map((record, position) => ({
-      id: record.id,
-      form_id: "00000000-0000-7000-8000-000000000000",
-      revision_id: `rev-${position}`,
-      created_at_micros: 1_000_000,
-      updated_at_micros: 1_000_000,
-      preview: record.id,
-      properties: record.properties,
-    }));
-    return HttpResponse.json({
-      rows,
-      has_more: rows.length < matches.length,
-      ...(rows.length < matches.length ? { next: "mock-cursor" } : {}),
-    });
-  }),
+      const body = (await request.json()) as {
+        query?: { text?: string };
+        limit?: number;
+      };
+      const index = Array.from(mockEntryIndex.get(spaceId)?.values() || []);
+      const entries = Array.from(mockEntries.get(spaceId)?.values() || []);
+      const needle = body.query?.text?.toLowerCase().trim() ?? "";
+      const matches = needle
+        ? index.filter((record) => {
+          const entryFields = entries.find((n) => n.id === record.id)?.fields ??
+            {};
+          const haystack = `${record.id}\n${
+            JSON.stringify(record.properties)
+          }\n${JSON.stringify(entryFields)}`.toLowerCase();
+          return haystack.includes(needle);
+        })
+        : index;
+      const limit = body.limit ?? matches.length;
+      const rows = matches.slice(0, limit).map((record, position) => ({
+        id: record.id,
+        form_id: "00000000-0000-7000-8000-000000000000",
+        revision_id: `rev-${position}`,
+        created_at_micros: 1_000_000,
+        updated_at_micros: 1_000_000,
+        preview: record.id,
+        properties: record.properties,
+      }));
+      return HttpResponse.json({
+        rows,
+        has_more: rows.length < matches.length,
+        ...(rows.length < matches.length ? { next: "mock-cursor" } : {}),
+      });
+    },
+  ),
 
   testHttp.post(
     "/spaces/:spaceId/entries/query/count",
     ({ params }) => {
       const spaceId = params.spaceId as string;
       if (!mockSpaces.has(spaceId)) {
-        return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
+        return HttpResponse.json({ detail: "Space not found" }, {
+          status: 404,
+        });
       }
       return HttpResponse.json({
         count: mockEntryIndex.get(spaceId)?.size ?? 0,

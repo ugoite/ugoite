@@ -377,9 +377,11 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 		);
 		expect(entryResponse.ok()).toBeTruthy();
-		const entry = (await entryResponse.json()) as { content: string };
-		expect(entry.content).toContain("## test number\n0");
-		expect(entry.content).toContain("## ts\n2026-08-21T10:48:00");
+		const entry = (await entryResponse.json()) as {
+			fields: Record<string, unknown>;
+		};
+		expect(entry.fields["test number"]).toBe(0);
+		expect(entry.fields["ts"]).toBe("2026-08-21T10:48:00");
 
 		await request.delete(
 			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
@@ -509,10 +511,11 @@ test.describe("Entries CRUD", () => {
 
 		const entryResponse = await request.get(getBackendUrl(`/spaces/${spaceId}/entries/${createdTaskId}`));
 		expect(entryResponse.ok()).toBeTruthy();
-		const entry = (await entryResponse.json()) as { content: string };
-		expect(entry.content).toContain("## Project");
-		expect(entry.content).toContain(projectAlphaId);
-		expect(entry.content).not.toContain(projectBetaId);
+		const entry = (await entryResponse.json()) as {
+			fields: Record<string, unknown>;
+		};
+		expect(entry.fields["Project"]).toBe(projectAlphaId);
+		expect(entry.fields["Project"]).not.toBe(projectBetaId);
 	});
 
 	test("REQ-FE-1877: unrelated Forms own independently named scalar and list Assets", { tag: "@asset-owned" }, async ({
@@ -629,10 +632,17 @@ test.describe("Entries CRUD", () => {
 				mediaEntryResponse = await request.get(mediaEntryUrl);
 			}
 			expect(mediaEntryResponse.ok()).toBeTruthy();
-			let mediaEntry = await mediaEntryResponse.json() as { content: string };
-			expect(mediaEntry.content).toContain('"name":"thumbnail.txt"');
-			expect(mediaEntry.content).toContain('"name":"microscope-a.txt"');
-			expect(mediaEntry.content).toContain('"name":"microscope-b.txt"');
+			let mediaEntry = await mediaEntryResponse.json() as {
+				fields: Record<string, unknown>;
+			};
+			expect(
+				(mediaEntry.fields["thumbnail"] as { name?: string })?.name,
+			).toBe("thumbnail.txt");
+			expect(
+				((mediaEntry.fields["microscope_images"] as Array<
+					{ name?: string }
+				>) ?? []).map((image) => image.name),
+			).toEqual(["microscope-a.txt", "microscope-b.txt"]);
 
 		await page.reload({ waitUntil: "domcontentloaded" });
 		await expect(
@@ -715,11 +725,17 @@ test.describe("Entries CRUD", () => {
 			mediaEntryResponse = await request.get(
 				getBackendUrl(`/spaces/${spaceId}/entries/${mediaEntryId}`),
 			);
-			mediaEntry = await mediaEntryResponse.json() as { content: string };
-			expect(mediaEntry.content).toContain('"name":"thumbnail-replaced.txt"');
+			mediaEntry = await mediaEntryResponse.json() as {
+				fields: Record<string, unknown>;
+			};
 			expect(
-				mediaEntry.content.indexOf('"name":"microscope-b.txt"'),
-			).toBeLessThan(mediaEntry.content.indexOf('"name":"microscope-a.txt"'));
+				(mediaEntry.fields["thumbnail"] as { name?: string })?.name,
+			).toBe("thumbnail-replaced.txt");
+			expect(
+				((mediaEntry.fields["microscope_images"] as Array<
+					{ name?: string }
+				>) ?? []).map((image) => image.name),
+			).toEqual(["microscope-b.txt", "microscope-a.txt"]);
 
 		const removeMicroscopeB = orderedList
 			.locator(".ui-asset-item", {
@@ -744,11 +760,13 @@ test.describe("Entries CRUD", () => {
 				{ timeout: 15_000 },
 			);
 			const removedMediaEntry = await removedMediaEntryResponse.json() as {
-				content: string;
+				fields: Record<string, unknown>;
 			};
-			expect(removedMediaEntry.content).not.toContain(
-				'"name":"microscope-b.txt"',
-			);
+			expect(
+				((removedMediaEntry.fields["microscope_images"] as Array<
+					{ name?: string }
+				>) ?? []).map((image) => image.name),
+			).not.toContain("microscope-b.txt");
 
 			await page.goto(
 				getFrontendUrl(
@@ -799,9 +817,17 @@ test.describe("Entries CRUD", () => {
 				contractsEntryResponse = await request.get(contractsEntryUrl);
 			}
 			expect(contractsEntryResponse.ok()).toBeTruthy();
-			const contractsEntry = await contractsEntryResponse.json() as { content: string };
-			expect(contractsEntry.content).toContain('"name":"contract.pdf"');
-			expect(contractsEntry.content).toContain('"name":"raw-data.csv"');
+			const contractsEntry = await contractsEntryResponse.json() as {
+				fields: Record<string, unknown>;
+			};
+			expect(
+				(contractsEntry.fields["contract"] as { name?: string })?.name,
+			).toBe("contract.pdf");
+			expect(
+				((contractsEntry.fields["raw_data"] as Array<
+					{ name?: string }
+				>) ?? []).map((file) => file.name),
+			).toEqual(["raw-data.csv"]);
 		} finally {
 			for (const entryId of entryIds) {
 				await request.delete(

@@ -48,8 +48,7 @@ describe("entry revision review route", () => {
       id: "entry-1",
       title: "Current title",
       form: "Task",
-      content: "# Current title\n\n## Body\nCurrent",
-      sections: { Body: "Current" },
+      fields: { Body: "Current" },
       revision_id: "rev-current",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
@@ -64,7 +63,7 @@ describe("entry revision review route", () => {
       author: "creator",
       updated_by: "creator",
       markdown: "# Historical title\n\n## Body\nOriginal",
-      sections: { Body: "Original" },
+      fields: { Body: "Original" },
     });
     vi.mocked(entryApi.restore).mockResolvedValue({
       id: "entry-1",

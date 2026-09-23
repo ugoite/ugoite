@@ -75,16 +75,16 @@ export const displayableRowReferenceValue = (value: unknown): string => {
  * Derive the human Preview for a point-read Entry, mirroring the backend
  * `entry_preview`: target-Form field order, `name: value` parts joined
  * with " · ", truncated to the backend char budget. Reads the structured
- * fields from the Entry frontmatter object; non-object frontmatter yields
+ * fields from the Entry fields object; non-object fields yields
  * an empty Preview (callers fall back to a safe generic label, never the
  * raw entry id).
  */
 export const buildRowReferencePreview = (
-  frontmatter: unknown,
+  fields: unknown,
   form: RowReferencePreviewForm,
 ): string => {
-  if (frontmatter === null || typeof frontmatter !== "object") return "";
-  const values = frontmatter as Record<string, unknown>;
+  if (fields === null || typeof fields !== "object") return "";
+  const values = fields as Record<string, unknown>;
   const parts: string[] = [];
   for (const name of Object.keys(form.fields ?? {})) {
     const value = values[name];

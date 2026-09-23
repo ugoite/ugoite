@@ -25,8 +25,7 @@ const projectForms = [{
 const projectEntry = (overrides?: Partial<Entry>): Entry => ({
   id: "entry-off-page",
   form: "Project",
-  content: "",
-  frontmatter: { Title: "Off-page project" },
+  fields: { Title: "Off-page project" },
   revision_id: "rev-1",
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-02T00:00:00Z",

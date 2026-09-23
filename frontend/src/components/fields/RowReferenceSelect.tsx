@@ -125,7 +125,7 @@ function CanonicalRowReferenceSelect(props: RowReferenceSelectProps) {
     }
     return {
       kind: "ready",
-      preview: buildRowReferencePreview(entry.frontmatter, target),
+      preview: buildRowReferencePreview(entry.fields ?? {}, target),
     };
   };
 

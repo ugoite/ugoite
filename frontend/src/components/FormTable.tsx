@@ -588,7 +588,7 @@ export function FormTable(props: FormTableProps) {
       );
       if (currentValue === value) return;
       /* v8 ignore stop */
-      const fields = { ...(entry.sections ?? {}), [field]: value };
+      const fields = { ...(entry.fields ?? {}), [field]: value };
 
       const updatedEntry = await entryApi.update(props.spaceId, entryId, {
         form: entry.form,

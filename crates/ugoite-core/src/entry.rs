@@ -14,7 +14,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 use ugoite_domain::entry::FieldValue;
 use ugoite_domain::form::{FieldType, FormDefinition, ListItemDefinition};
 use ugoite_domain::id::FieldId;
@@ -457,19 +457,6 @@ pub fn render_markdown(
     }
 
     markdown.trim_end().to_string()
-}
-
-/// Render field values into the section object used by the existing Entry
-/// response contract. The string conversion is the same compatibility
-/// representation used by [`render_markdown`].
-pub fn fields_to_sections(fields: &Value) -> Value {
-    let mut sections = Map::new();
-    if let Some(map) = fields.as_object() {
-        for (key, value) in map {
-            sections.insert(key.clone(), Value::String(section_value_to_string(value)));
-        }
-    }
-    Value::Object(sections)
 }
 
 // ---------------------------------------------------------------------------
