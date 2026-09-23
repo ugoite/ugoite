@@ -304,7 +304,7 @@ async fn saved_sql_evolves_legacy_form_without_rewriting_entries() -> anyhow::Re
     )
     .await?;
     let current_entry = entry::get_entry(&op, ws_path, "current-sql").await?;
-    assert_eq!(current_entry["sections"]["name"], json!("Current SQL"));
+    assert_eq!(current_entry["fields"]["name"], json!("Current SQL"));
 
     Ok(())
 }
