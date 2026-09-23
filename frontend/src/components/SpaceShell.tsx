@@ -9,14 +9,14 @@ import { createSpaceStore } from "~/lib/space-store";
 import { spaceUid } from "~/lib/space-list";
 import { spacePath, spaceSettingsPath } from "~/lib/space-path";
 
-// PR-07 Knowledge-first navigation (#2915):
-// Desktop: Home / Knowledge(Entries, Assets, Forms) / Explore(Search)
+// Form-first navigation: Forms is the entry point to a Form's Entries.
+// Desktop: Home / Knowledge(Assets, Forms) / Explore(Search)
 //   / Recovery(History) / Settings.
-// Mobile bottom nav: Home, Entries, Search, History, More — More contains
-// Assets, Forms, Settings. Both surfaces expose the same seven destinations.
+// Mobile bottom nav: Home, Forms, Search, History, More — More contains
+// Assets, Settings. Both surfaces expose the same six destinations;
+// Entries is not an independent destination.
 export type SpaceNavigation =
   | "home"
-  | "entries"
   | "assets"
   | "forms"
   | "search"
@@ -45,12 +45,6 @@ export const SPACE_NAV_ITEMS: SpaceNavItem[] = [
     icon: "home",
     path: "dashboard",
     labelKey: "spaceShell.nav.home",
-  },
-  {
-    id: "entries",
-    icon: "entry",
-    path: "entries",
-    labelKey: "spaceShell.nav.entries",
   },
   {
     id: "assets",
@@ -86,14 +80,13 @@ export const SPACE_NAV_ITEMS: SpaceNavItem[] = [
 
 export const MOBILE_PRIMARY_NAV: SpaceNavigation[] = [
   "home",
-  "entries",
+  "forms",
   "search",
   "history",
 ];
 
 export const MOBILE_MORE_NAV: SpaceNavigation[] = [
   "assets",
-  "forms",
   "settings",
 ];
 
@@ -106,7 +99,7 @@ export const DESKTOP_NAV_GROUPS: SpaceNavGroup[] = [
   { labelKey: null, items: ["home"] },
   {
     labelKey: "spaceShell.nav.knowledge",
-    items: ["entries", "assets", "forms"],
+    items: ["assets", "forms"],
   },
   { labelKey: "spaceShell.nav.explore", items: ["search"] },
   { labelKey: "spaceShell.nav.recovery", items: ["history"] },
@@ -132,7 +125,9 @@ export function inferSpaceNavigation(pathname: string): SpaceNavigation {
   ) return "search";
   if (pathname.includes("/assets")) return "assets";
   if (pathname.includes("/forms")) return "forms";
-  if (pathname.includes("/entries")) return "entries";
+  // Entry detail, creation, and history routes live under Forms: Forms is
+  // the entry point to a Form's Entries.
+  if (pathname.includes("/entries")) return "forms";
   return "home";
 }
 

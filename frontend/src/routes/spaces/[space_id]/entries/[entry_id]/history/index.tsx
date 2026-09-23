@@ -20,7 +20,7 @@ import { pageFromArray } from "~/lib/pagination";
 import type { EntryRevision } from "~/lib/types";
 
 export const route = spaceRoute({
-  navigation: "entries",
+  navigation: "forms",
   title: "entryHistory",
 });
 

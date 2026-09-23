@@ -7,7 +7,7 @@ import { t } from "~/lib/i18n";
 import { spaceFormsPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "entries" });
+export const route = spaceRoute({ navigation: "forms" });
 
 export default function SpaceEntryDetailRoute() {
   const navigate = useNavigate();

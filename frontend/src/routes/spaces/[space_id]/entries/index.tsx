@@ -25,7 +25,7 @@ import {
 } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "entries" });
+export const route = spaceRoute({ navigation: "forms" });
 
 const fieldProjection = (
   capabilities: EntryQueryCapabilities,
