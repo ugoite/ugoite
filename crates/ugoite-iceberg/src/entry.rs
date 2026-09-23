@@ -374,7 +374,7 @@ async fn append_revision_rows_to_workspace_authorized_with_change(
     if rows.is_empty() {
         return Err(anyhow!("revision batch must not be empty"));
     }
-    let domain_form = form::to_domain_form(form_def)?;
+    let domain_form = form::to_domain_form_from_storage(form_def)?;
     if let Some(scopes) = relation_scopes {
         if !scopes.contains_key(&domain_form.name.to_ascii_lowercase()) {
             return Err(AppError::forbidden("Form is not readable").into());
@@ -1039,7 +1039,7 @@ pub async fn create_draft_entries_with_scopes_and_change_with_receipts<I: Integr
     let domain_batches = batches
         .values()
         .map(|(form_def, revisions)| {
-            let form = form::to_domain_form(form_def)?;
+            let form = form::to_domain_form_from_storage(form_def)?;
             let revisions = revisions
                 .iter()
                 .map(|revision| revision_row_to_domain(revision, &form))
@@ -1051,7 +1051,7 @@ pub async fn create_draft_entries_with_scopes_and_change_with_receipts<I: Integr
         })
         .collect::<Result<Vec<_>>>()?;
     for ((form_def, _), (_, revisions)) in batches.values().zip(&domain_batches) {
-        let form = form::to_domain_form(form_def)?;
+        let form = form::to_domain_form_from_storage(form_def)?;
         validate_asset_references_exist(op, ws_path, &form, revisions).await?;
     }
     workspace
@@ -1168,7 +1168,9 @@ fn reject_cross_form_forward_references(
     let pending = batches
         .values()
         .flat_map(|(form_def, revisions)| {
-            let form_id = form::to_domain_form(form_def).ok().map(|form| form.id);
+            let form_id = form::to_domain_form_from_storage(form_def)
+                .ok()
+                .map(|form| form.id);
             revisions.iter().flat_map(move |revision| {
                 form_id
                     .into_iter()
@@ -1178,7 +1180,7 @@ fn reject_cross_form_forward_references(
         .collect::<BTreeSet<_>>();
 
     for (source_form_def, revisions) in batches.values() {
-        let source_form = form::to_domain_form(source_form_def)?;
+        let source_form = form::to_domain_form_from_storage(source_form_def)?;
         for revision in revisions {
             for field in &source_form.fields {
                 let Some(value) = revision
@@ -1250,7 +1252,7 @@ async fn prepare_entry_from_draft<I: IntegrityProvider>(
         .clone()
         .ok_or_else(|| invalid_entry_input("Form is required for entry creation"))?;
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-    let domain_form = form::to_domain_form(&form_def)?;
+    let domain_form = form::to_domain_form_from_storage(&form_def)?;
     let normalized = core_entry::normalize_and_validate_draft(&domain_form, &draft)
         .map_err(anyhow::Error::from)?;
 
@@ -1951,7 +1953,7 @@ async fn restore_entry_from_resolved_authorized<I: IntegrityProvider>(
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-    let current_form = form::to_domain_form(&form_def)?;
+    let current_form = form::to_domain_form_from_storage(&form_def)?;
     let scope = checkpoint_scope_for_form(current_form.id, form_scopes);
     if matches!(scope, EntryScope::Only(ref ids) if ids.is_empty()) {
         return Err(AppError::forbidden("Form is not readable").into());
@@ -2204,7 +2206,7 @@ async fn apply_update_from_draft<I: IntegrityProvider>(
     }
 
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-    let domain_form = form::to_domain_form(&form_def)?;
+    let domain_form = form::to_domain_form_from_storage(&form_def)?;
     let normalized = core_entry::normalize_and_validate_draft(&domain_form, &draft)
         .map_err(anyhow::Error::from)?;
     let mut fields = Map::new();
@@ -2594,7 +2596,7 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
     }
     let (form_def, form_history, revisions) =
         revision_rows_for_form(op, ws_path, &form_name).await?;
-    let current_form = form::to_domain_form(&form_def)?;
+    let current_form = form::to_domain_form_from_storage(&form_def)?;
     let revision = revisions
         .into_iter()
         .find(|rev| rev.entry_id == entry_id && rev.revision_id == revision_id)

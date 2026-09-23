@@ -159,7 +159,6 @@ async fn test_form_req_form_001_list_column_types() -> anyhow::Result<()> {
     let types = form::list_column_types().await?;
     assert!(types.contains(&"string".to_string()));
     assert!(types.contains(&"markdown".to_string()));
-    assert!(types.contains(&"number".to_string()));
     assert!(types.contains(&"double".to_string()));
     assert!(types.contains(&"float".to_string()));
     assert!(types.contains(&"integer".to_string()));

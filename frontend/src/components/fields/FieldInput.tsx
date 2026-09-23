@@ -53,7 +53,6 @@ export interface FieldInputProps {
 const NUMERIC_FIELD_TYPES = new Set([
   "integer",
   "long",
-  "number",
   "double",
   "float",
 ]);

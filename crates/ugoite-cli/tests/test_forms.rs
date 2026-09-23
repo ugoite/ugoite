@@ -144,7 +144,7 @@ fn test_form_update_applies_column_change() {
     let form_file2 = dir.path().join("entry-form2.json");
     std::fs::write(
         &form_file2,
-        r#"{"name":"Entry","fields":{"Body":{"type":"markdown"},"Status":{"type":"text"}}}"#,
+        r#"{"name":"Entry","fields":{"Body":{"type":"markdown"},"Status":{"type":"string"}}}"#,
     )
     .unwrap();
 

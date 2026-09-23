@@ -403,7 +403,6 @@ export function FormTable(props: FormTableProps) {
     }
     if (
       capability.field_type === "numeric" ||
-      capability.field_type === "number" ||
       capability.field_type === "float" ||
       capability.field_type === "double"
     ) {

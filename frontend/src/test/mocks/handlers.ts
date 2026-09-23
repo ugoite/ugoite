@@ -330,8 +330,7 @@ export const handlers = [
     }
     return HttpResponse.json([
       "date",
-      "text",
-      "number",
+      "string",
       "boolean",
       "row_reference",
     ]);

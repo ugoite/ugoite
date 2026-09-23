@@ -31,7 +31,7 @@ beforeEach(() => {
 });
 
 describe("CreateFormDialog", () => {
-  const columnTypes = ["string", "number", "boolean"];
+  const columnTypes = ["string", "double", "boolean"];
 
   it("#2876: renders the no-columns empty state as plain FieldStack-adjacent text without card chrome", () => {
     const { container } = render(() => (
@@ -1683,7 +1683,7 @@ describe("CreateEntryDialog", () => {
 });
 
 describe("EditFormDialog", () => {
-  const columnTypes = ["string", "number", "boolean", "row_reference"];
+  const columnTypes = ["string", "double", "boolean", "row_reference"];
   const mockForm: Form = {
     name: "ExistingForm",
     version: 1,

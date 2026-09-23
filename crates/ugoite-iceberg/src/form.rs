@@ -62,7 +62,6 @@ pub async fn list_column_types() -> Result<Vec<String>> {
         "string".to_string(),
         "sql".to_string(),
         "markdown".to_string(),
-        "number".to_string(),
         "double".to_string(),
         "float".to_string(),
         "integer".to_string(),
@@ -268,7 +267,7 @@ pub(crate) async fn upsert_metadata_form(
     {
         if let Ok(existing) = iceberg_store::load_form_definition(op, ws_path, &form_name).await {
             preserve_stable_identities(&mut normalized, &existing)?;
-            let current_domain = to_domain_form(&existing)?;
+            let current_domain = to_domain_form_from_storage(&existing)?;
             let desired_domain = to_domain_form(&normalized)?;
             let changes = form_changes(&current_domain, &desired_domain)?;
             if changes.is_empty() {
@@ -301,6 +300,20 @@ fn normalize_form_definition(form_def: &Value) -> Result<Value> {
 }
 
 pub(crate) fn to_domain_form(form_def: &Value) -> Result<FormDefinition> {
+    to_domain_form_inner(form_def, domain_field_type)
+}
+
+/// Space 0.1 reader: decodes persisted Form definitions that may still
+/// spell field types with the pre-cut aliases (`number`/`text`).
+/// Authoring input must go through [`to_domain_form`], which rejects them.
+pub(crate) fn to_domain_form_from_storage(form_def: &Value) -> Result<FormDefinition> {
+    to_domain_form_inner(form_def, legacy_storage_field_type)
+}
+
+fn to_domain_form_inner(
+    form_def: &Value,
+    parse_field_type: fn(&str) -> Result<FieldType>,
+) -> Result<FormDefinition> {
     let id = FormId::from(Uuid::parse_str(
         form_def
             .get("id")
@@ -324,7 +337,7 @@ pub(crate) fn to_domain_form(form_def: &Value) -> Result<FormDefinition> {
                     .and_then(|value| i32::try_from(value).ok())
                     .context("Form field missing stable id")?,
             )?;
-            let field_type = domain_field_type(
+            let field_type = parse_field_type(
                 definition
                     .get("type")
                     .and_then(Value::as_str)
@@ -342,7 +355,7 @@ pub(crate) fn to_domain_form(form_def: &Value) -> Result<FormDefinition> {
                         .and_then(Value::as_str)
                         .context("Form list items missing type")?;
                     Ok(ListItemDefinition {
-                        field_type: domain_field_type(item_type)?,
+                        field_type: parse_field_type(item_type)?,
                         reference_form: items
                             .get("target_form")
                             .and_then(Value::as_str)
@@ -426,6 +439,35 @@ pub(crate) fn to_domain_form(form_def: &Value) -> Result<FormDefinition> {
 }
 
 fn domain_field_type(value: &str) -> Result<FieldType> {
+    Ok(match value {
+        "string" => FieldType::String,
+        "markdown" => FieldType::Markdown,
+        "sql" => FieldType::Sql,
+        "boolean" => FieldType::Boolean,
+        "integer" => FieldType::Integer,
+        "long" => FieldType::Long,
+        "float" => FieldType::Float,
+        "double" => FieldType::Double,
+        "date" => FieldType::Date,
+        "time" => FieldType::Time,
+        "timestamp" => FieldType::Timestamp,
+        "timestamp_tz" => FieldType::TimestampTz,
+        "timestamp_ns" => FieldType::TimestampNs,
+        "timestamp_tz_ns" => FieldType::TimestampTzNs,
+        "uuid" => FieldType::Uuid,
+        "binary" => FieldType::Binary,
+        "list" => FieldType::List,
+        "object_list" => FieldType::ObjectList,
+        "row_reference" => FieldType::RowReference,
+        "asset_reference" => FieldType::AssetReference,
+        other => return Err(anyhow!("unsupported Form field type: {other}")),
+    })
+}
+
+// Space 0.1 reader: maps the pre-cut aliases (`number` -> Double,
+// `text` -> String) so persisted Space bytes still decode. Never use this
+// for authoring input; `domain_field_type` rejects the aliases.
+fn legacy_storage_field_type(value: &str) -> Result<FieldType> {
     Ok(match value {
         "text" => FieldType::String,
         "string" => FieldType::String,
@@ -839,7 +881,7 @@ pub(crate) fn enrich_form_definition(form_def: &Value) -> Result<Value> {
             .get_mut("fields")
             .and_then(Value::as_object_mut)
             .context("Form definition missing 'fields' object")?;
-        let domain_form = to_domain_form(form_def)?;
+        let domain_form = to_domain_form_from_storage(form_def)?;
         for field in fields.values_mut() {
             let field_id = FieldId::new(
                 field

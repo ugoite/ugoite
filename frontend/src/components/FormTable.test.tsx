@@ -74,11 +74,11 @@ function canonicalForm(form: Record<string, any>): Form {
           query_capability: field.query_capability ?? {
             field: { kind: "property", field_id: fieldId },
             name,
-            field_type: field.type === "number" ? "numeric" : "string",
+            field_type: field.type === "double" ? "numeric" : "string",
             filterable: true,
             sortable: true,
             projectable: true,
-            supported_operators: field.type === "number"
+            supported_operators: field.type === "double"
               ? ["equals", "lt", "lte", "gt", "gte"]
               : ["equals", "contains"],
           },
@@ -291,7 +291,7 @@ describe("FormTable", () => {
     const entryForm = {
       name: "Test",
       fields: {
-        price: { type: "number" },
+        price: { type: "double" },
         status: { type: "string" },
       },
     } as any;
@@ -580,7 +580,7 @@ describe("FormTable", () => {
   it("REQ-FE-021: exports filtered data to CSV", async () => {
     const entryForm = {
       name: "Test",
-      fields: { price: { type: "number" } },
+      fields: { price: { type: "double" } },
     } as any;
     const entries = [
       {

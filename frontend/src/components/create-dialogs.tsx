@@ -31,7 +31,6 @@ const fieldTypeDescriptionKey = (type: string) => {
   if (type === "string") return "createDialog.form.fieldType.string";
   if (type === "sql") return "createDialog.form.fieldType.sql";
   if (type === "markdown") return "createDialog.form.fieldType.markdown";
-  if (type === "number") return "createDialog.form.fieldType.number";
   if (type === "double") return "createDialog.form.fieldType.double";
   if (type === "float") return "createDialog.form.fieldType.float";
   if (type === "integer") return "createDialog.form.fieldType.integer";
@@ -321,7 +320,6 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     switch (field.type) {
       case "integer":
       case "long":
-      case "number":
       case "double":
       case "float":
         return "0";
