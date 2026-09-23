@@ -94,19 +94,10 @@ pub fn emit_success<T: Serialize>(data: &T, format: &Format, human: Option<Strin
 ///
 /// Machine mode (Json|Ndjson) prints the CLI-owned stable receipt JSON.
 /// Human mode (Table|Plain) prints the human rendering when one is supplied,
-/// otherwise falls back to receipt JSON so no data is lost (mirrors
-/// [`emit_success`] fallback semantics).
+/// otherwise falls back to receipt JSON so no data is lost. Delegates to
+/// [`emit_success`] so all stdout sinks stay in one place.
 pub fn emit_mutation(receipt: &MutationReceipt, format: &Format, human: Option<String>) {
-    match format {
-        Format::Json | Format::Ndjson => print_json(&receipt.value()),
-        Format::Table | Format::Plain => {
-            if let Some(rendered) = human {
-                println!("{rendered}");
-            } else {
-                print_json(&receipt.value());
-            }
-        }
-    }
+    emit_success(&receipt.value(), format, human)
 }
 
 /// Emit human-oriented text through the shared stdout path.
