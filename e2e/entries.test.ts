@@ -824,8 +824,10 @@ test.describe("Entries CRUD", () => {
 				(contractsEntry.fields["contract"] as { name?: string })?.name,
 			).toBe("contract.pdf");
 			expect(
-				(contractsEntry.fields["raw_data"] as { name?: string })?.name,
-			).toBe("raw-data.csv");
+				((contractsEntry.fields["raw_data"] as Array<
+					{ name?: string }
+				>) ?? []).map((file) => file.name),
+			).toEqual(["raw-data.csv"]);
 		} finally {
 			for (const entryId of entryIds) {
 				await request.delete(
