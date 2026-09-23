@@ -162,7 +162,6 @@ export default function SpaceSettingsRoute() {
                       <RowListLink
                         href={spaceHistoryPath(spaceId())}
                         primary={label(section)}
-                        secondary={t("settings.historyDescription")}
                         chevron
                       />
                     )
@@ -447,7 +446,6 @@ export default function SpaceSettingsRoute() {
           <Show when={active() === "history"}>
             <section class="settingsMain surface">
               <h2>{t("settings.section.history")}</h2>
-              <p class="ui-muted">{t("settings.historyDescription")}</p>
               <a
                 class="btn primary"
                 href={spaceHistoryPath(spaceId())}

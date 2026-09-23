@@ -242,7 +242,6 @@ export default function SpaceDashboardRoute() {
             </span>
             <span>
               <b>{t("sqlPage.savedSql")}</b>
-              <small>{t("dashboard.savedSqlHint")}</small>
             </span>
           </A>
         </div>

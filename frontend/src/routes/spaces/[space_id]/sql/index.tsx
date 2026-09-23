@@ -90,7 +90,6 @@ export default function SpaceSqlIndexRoute() {
                 </span>
                 <span>
                   <b>{t("sqlPage.noSavedSql")}</b>
-                  <small>{t("sqlPage.createDescription")}</small>
                 </span>
               </div>
             </Show>
@@ -154,9 +153,6 @@ export default function SpaceSqlIndexRoute() {
               <h2 id="sql-history-title" class="text-lg font-semibold">
                 {t("searchPage.searchHistory")}
               </h2>
-              <p class="mt-1 text-sm ui-muted">
-                {t("searchPage.searchHistoryDescription")}
-              </p>
             </div>
           </div>
           <div
