@@ -390,10 +390,11 @@ async fn journey_cli_remote_locate_recover() {
         &run_cli(config_path, &["change", "revert", &update_change_id]).await,
         "change revert",
     );
+    assert_eq!(reverted["kind"].as_str(), Some("change"));
     let revert_id = reverted
-        .get("change_id")
+        .get("id")
         .and_then(|id| id.as_str())
-        .expect("revert returns the appended change_id")
+        .expect("revert returns the appended change id")
         .to_string();
     assert_ne!(revert_id, update_change_id);
 

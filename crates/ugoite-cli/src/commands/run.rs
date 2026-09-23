@@ -1,6 +1,6 @@
 use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::http;
-use crate::output::{effective_format, emit_success, Format, UsageError};
+use crate::output::{effective_format, emit_mutation, Format, MutationReceipt, UsageError};
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use ugoite_iceberg::service::UgoiteService;
@@ -61,7 +61,7 @@ pub async fn run(
                     .get("reverted_change_count")
                     .and_then(|value| value.as_u64())
                     .map(|count| format!("undid {count} change(s) for this run"));
-                emit_success(&result, &fmt, human);
+                emit_mutation(&MutationReceipt::run(run_id.clone()), &fmt, human);
                 return Ok(());
             }
             let SpaceTarget::Core { root, space_id } = &target else {
@@ -73,7 +73,7 @@ pub async fn run(
                 .get("reverted_change_count")
                 .and_then(|value| value.as_u64())
                 .map(|count| format!("undid {count} change(s) for this run"));
-            emit_success(&result, &fmt, human);
+            emit_mutation(&MutationReceipt::run(run_id.clone()), &fmt, human);
         }
     }
     Ok(())

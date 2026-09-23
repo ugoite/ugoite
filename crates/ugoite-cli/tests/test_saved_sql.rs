@@ -90,6 +90,7 @@ fn test_saved_sql_req_api_006_crud() {
     );
     let created: serde_json::Value = serde_json::from_slice(&create_output.stdout)
         .expect("local create should return the generated SQL id");
+    assert_eq!(created["kind"].as_str(), Some("sql"));
     let created_id = created["id"]
         .as_str()
         .filter(|id| !id.is_empty())
@@ -147,9 +148,22 @@ fn test_saved_sql_req_api_006_crud() {
     );
     let updated: serde_json::Value =
         serde_json::from_slice(&update_output.stdout).expect("update should return JSON");
+    assert_eq!(updated["kind"].as_str(), Some("sql"));
     assert_eq!(updated["id"].as_str(), Some(created_id));
-    assert_eq!(updated["name"].as_str(), Some("updated-query"));
-    assert_eq!(updated["sql"].as_str(), Some("SELECT * FROM updated_sql"));
+    // The receipt carries the new revision; read back for content.
+    let get_updated_output = run_cli(&config_path, &["sql", "saved-get", created_id]);
+    assert!(
+        get_updated_output.status.success(),
+        "get after update stderr: {}",
+        String::from_utf8_lossy(&get_updated_output.stderr)
+    );
+    let fetched_updated: serde_json::Value = serde_json::from_slice(&get_updated_output.stdout)
+        .expect("get after update should return JSON");
+    assert_eq!(fetched_updated["name"].as_str(), Some("updated-query"));
+    assert_eq!(
+        fetched_updated["sql"].as_str(),
+        Some("SELECT * FROM updated_sql")
+    );
 
     let delete_output = run_cli(&config_path, &["sql", "saved-delete", created_id]);
     assert!(
@@ -159,7 +173,8 @@ fn test_saved_sql_req_api_006_crud() {
     );
     let deleted: serde_json::Value =
         serde_json::from_slice(&delete_output.stdout).expect("delete should return JSON");
-    assert_eq!(deleted["deleted"].as_bool(), Some(true));
+    assert_eq!(deleted["kind"].as_str(), Some("sql"));
+    assert_eq!(deleted["id"].as_str(), Some(created_id));
 
     let final_list_output = run_cli(&config_path, &["sql", "saved-list"]);
     assert!(

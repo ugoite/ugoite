@@ -12,6 +12,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::Utc;
 use p256::{ecdsa::SigningKey, elliptic_curve::rand_core::OsRng, pkcs8::EncodePrivateKey};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use std::process::Output;
 use std::time::Duration;
 use tempfile::tempdir;
@@ -1146,13 +1147,11 @@ async fn test_remote_asset_upload_returns_reference() {
     )
     .await;
     let asset = stdout_json(&output, "remote asset upload");
-    for key in ["asset_id", "name", "media_type", "size_bytes", "sha256"] {
-        assert!(
-            asset.get(key).is_some(),
-            "reference is missing {key}: {asset}"
-        );
-    }
-    assert_eq!(asset["name"], "remote-note.txt");
+    assert_eq!(asset["kind"].as_str(), Some("asset"));
+    assert!(
+        asset["id"].as_str().is_some_and(|id| !id.is_empty()),
+        "upload returns the asset id: {asset}"
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         !stdout.contains(dir.path().to_str().unwrap_or("\0")),
@@ -1185,8 +1184,9 @@ async fn test_remote_asset_second_upload_returns_reference() {
         .await,
         "second remote asset upload",
     );
-    assert_ne!(first_asset["asset_id"], second_asset["asset_id"]);
-    assert_eq!(second_asset["name"], "remote-second.txt");
+    assert_eq!(first_asset["kind"].as_str(), Some("asset"));
+    assert_eq!(second_asset["kind"].as_str(), Some("asset"));
+    assert_ne!(first_asset["id"], second_asset["id"]);
 }
 
 /// Remote asset upload strips traversal from explicit filenames.
@@ -1210,7 +1210,11 @@ async fn test_remote_asset_upload_strips_filename_traversal() {
         .await,
         "remote traversal asset upload",
     );
-    assert_eq!(asset["name"], "outside.txt");
+    assert_eq!(asset["kind"].as_str(), Some("asset"));
+    assert!(
+        asset["id"].as_str().is_some_and(|id| !id.is_empty()),
+        "upload returns the asset id: {asset}"
+    );
 }
 
 /// Remote asset upload fails closed past the size limit.
@@ -1380,7 +1384,7 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
 
     let asset_file = staging.path().join("spec.pdf");
     std::fs::write(&asset_file, b"spec-bytes").expect("write parity asset");
-    let asset = stdout_json(
+    let receipt = stdout_json(
         &run_cli(
             &fixture.config_path,
             &["asset", "upload", asset_file.to_str().expect("asset path")],
@@ -1388,6 +1392,27 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         .await,
         "upload parity asset",
     );
+    assert_eq!(receipt["kind"].as_str(), Some("asset"));
+    let asset_id = receipt["id"]
+        .as_str()
+        .expect("upload returns asset id")
+        .to_string();
+    // Upload machine output is the stable receipt; the attach path needs the
+    // stored reference object, rebuilt here from the known upload metadata.
+    let mut hasher = Sha256::new();
+    hasher.update(b"spec-bytes");
+    let digest: Vec<String> = hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let asset = json!({
+        "asset_id": asset_id,
+        "name": "spec.pdf",
+        "media_type": "application/octet-stream",
+        "size_bytes": 10,
+        "sha256": digest.join(""),
+    });
     let mut fields = acceptance_fixture["structured"]["fields"]
         .as_object()
         .expect("fixture structured fields")

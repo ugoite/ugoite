@@ -89,6 +89,26 @@ pub fn emit_success<T: Serialize>(data: &T, format: &Format, human: Option<Strin
     }
 }
 
+/// Emit a mutation receipt to `stdout` (single emitter for all mutation
+/// success paths).
+///
+/// Machine mode (Json|Ndjson) prints the CLI-owned stable receipt JSON.
+/// Human mode (Table|Plain) prints the human rendering when one is supplied,
+/// otherwise falls back to receipt JSON so no data is lost (mirrors
+/// [`emit_success`] fallback semantics).
+pub fn emit_mutation(receipt: &MutationReceipt, format: &Format, human: Option<String>) {
+    match format {
+        Format::Json | Format::Ndjson => print_json(&receipt.value()),
+        Format::Table | Format::Plain => {
+            if let Some(rendered) = human {
+                println!("{rendered}");
+            } else {
+                print_json(&receipt.value());
+            }
+        }
+    }
+}
+
 /// Emit human-oriented text through the shared stdout path.
 pub fn emit_text(text: impl AsRef<str>) {
     println!("{}", text.as_ref());
@@ -465,6 +485,66 @@ impl MutationReceipt {
             revision_id,
             change_id,
             run_id: None,
+        }
+    }
+
+    pub fn form(name: String) -> Self {
+        Self {
+            kind: "form".to_string(),
+            id: name,
+            revision_id: None,
+            change_id: None,
+            run_id: None,
+        }
+    }
+
+    pub fn sql(id: String, revision_id: Option<String>, change_id: Option<String>) -> Self {
+        Self {
+            kind: "sql".to_string(),
+            id,
+            revision_id,
+            change_id,
+            run_id: None,
+        }
+    }
+
+    pub fn asset(id: String) -> Self {
+        Self {
+            kind: "asset".to_string(),
+            id,
+            revision_id: None,
+            change_id: None,
+            run_id: None,
+        }
+    }
+
+    pub fn change(change_id: String) -> Self {
+        Self {
+            kind: "change".to_string(),
+            id: change_id.clone(),
+            revision_id: None,
+            change_id: Some(change_id),
+            run_id: None,
+        }
+    }
+
+    pub fn pin(name: String) -> Self {
+        Self {
+            kind: "pin".to_string(),
+            id: name,
+            revision_id: None,
+            change_id: None,
+            run_id: None,
+        }
+    }
+
+    pub fn run(run_id: String) -> Self {
+        Self {
+            kind: "run".to_string(),
+            id: run_id.clone(),
+            revision_id: None,
+            change_id: None,
+            run_id: Some(run_id),
         }
     }
 
