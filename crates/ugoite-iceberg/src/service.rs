@@ -18,6 +18,12 @@ use tokio::sync::{Mutex as AsyncMutex, Notify};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
+fn canonical_entry_id(requested_id: Option<&str>) -> String {
+    requested_id
+        .map(str::to_owned)
+        .unwrap_or_else(|| Uuid::new_v4().to_string())
+}
+
 use crate::integrity::RealIntegrityProvider;
 use crate::{
     asset,
@@ -2472,9 +2478,38 @@ impl UgoiteService {
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
+        self.create_structured_entry_authorized_for_principals_with_optional_id(
+            space_id,
+            Some(entry_id),
+            form_name,
+            tags,
+            fields,
+            extra_attributes,
+            author,
+            principal_ids,
+        )
+        .await
+    }
+
+    /// Canonical Form-backed Entry create use case. The application boundary
+    /// owns identity generation so adapters can submit the same create intent
+    /// with or without an advanced caller-supplied ID.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_structured_entry_authorized_for_principals_with_optional_id(
+        &self,
+        space_id: &str,
+        entry_id: Option<&str>,
+        form_name: String,
+        tags: Vec<String>,
+        fields: std::collections::BTreeMap<String, Value>,
+        extra_attributes: std::collections::BTreeMap<String, Value>,
+        author: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        let entry_id = canonical_entry_id(entry_id);
         self.create_structured_entry_authorized_for_principals_with_change(
             space_id,
-            entry_id,
+            &entry_id,
             form_name,
             tags,
             fields,
@@ -2552,15 +2587,41 @@ impl UgoiteService {
         extra_attributes: std::collections::BTreeMap<String, Value>,
         author: &str,
     ) -> Result<(Value, crate::CommitReceipt)> {
+        self.create_structured_entry_with_optional_id_and_receipt(
+            space_id,
+            Some(entry_id),
+            form_name,
+            tags,
+            fields,
+            extra_attributes,
+            author,
+        )
+        .await
+    }
+
+    /// Local counterpart of the authorized canonical create use case. The
+    /// returned Entry contains the authoritative generated or supplied ID.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_structured_entry_with_optional_id_and_receipt(
+        &self,
+        space_id: &str,
+        entry_id: Option<&str>,
+        form_name: String,
+        tags: Vec<String>,
+        fields: std::collections::BTreeMap<String, Value>,
+        extra_attributes: std::collections::BTreeMap<String, Value>,
+        author: &str,
+    ) -> Result<(Value, crate::CommitReceipt)> {
+        let entry_id = canonical_entry_id(entry_id);
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
-        validate_storage_id(validate_entry_id(entry_id))?;
+        validate_storage_id(validate_entry_id(&entry_id))?;
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
         let workspace = self.workspace_path(space_id);
         let (_, receipt) = entry::create_structured_entry_with_scopes_and_change_with_receipt(
             &self.operator,
             &workspace,
-            entry_id,
+            &entry_id,
             form_name,
             tags,
             fields,
@@ -2572,11 +2633,11 @@ impl UgoiteService {
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
-        let mut result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
+        let mut result = entry::get_entry(&self.operator, &workspace, &entry_id).await?;
         result["change_id"] = json!(receipt.command_id);
         self.record_committed_entry_revision(
             space_id,
-            entry_id,
+            &entry_id,
             crate::mutation_audit::ENTRY_CREATED_ACTION,
             &[],
             author,

@@ -120,7 +120,6 @@ fn test_journey_cli_core_local_durable_outcome() {
     let space_id = "journey-core-space";
     let form_name = "JourneyCoreForm";
     let needle = "journey-core-needle";
-    let entry_id = "journey-core-entry";
 
     // Space create: a durable Space comes into existence.
     let output = run_cli(&config_path, &["space", "create", space_id]);
@@ -173,7 +172,6 @@ fn test_journey_cli_core_local_durable_outcome() {
             &[
                 "entry",
                 "create",
-                entry_id,
                 "--form",
                 form_name,
                 "--field",
@@ -184,6 +182,9 @@ fn test_journey_cli_core_local_durable_outcome() {
         ),
         "entry create",
     );
+    let entry_id = created["id"]
+        .as_str()
+        .expect("create returns the canonical Entry ID");
     assert!(contains_string(&created, entry_id));
     let create_change_id = created
         .get("change_id")
@@ -343,6 +344,34 @@ fn test_journey_cli_core_local_durable_outcome() {
     assert!(contains_string(&results, entry_id));
 }
 
+#[test]
+fn test_cli_core_entry_create_supports_advanced_id_override() {
+    let space = setup_parity_space(r#"{"Body":{"type":"markdown"}}"#);
+    let created = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "entry",
+                "create",
+                "--id",
+                "imported-entry-001",
+                "--form",
+                space.form_name,
+                "--field",
+                "Body=Imported",
+            ],
+        ),
+        "entry create with explicit identity",
+    );
+
+    assert_eq!(created["id"], "imported-entry-001");
+    let imported = stdout_json(
+        &run_cli(&space.config_path, &["entry", "get", "imported-entry-001"]),
+        "entry get imported identity",
+    );
+    assert_eq!(imported["id"], "imported-entry-001");
+}
+
 /// The CLI supplies the current revision when the caller omits a parent for
 /// structured updates. Explicit parents use the same write path, and a stale
 /// parent remains a canonical conflict.
@@ -356,6 +385,7 @@ fn test_cli_core_entry_update_parent_revision_matrix() {
             &[
                 "entry",
                 "create",
+                "--id",
                 "parent-matrix-structured",
                 "--form",
                 space.form_name,
@@ -461,6 +491,7 @@ fn test_cli_core_entry_update_parent_revision_matrix() {
             &[
                 "entry",
                 "create",
+                "--id",
                 "parent-matrix-canonical",
                 "--form",
                 space.form_name,
@@ -641,6 +672,7 @@ fn test_parity_core_invalid_field_rejected_without_mutation() {
         &[
             "entry",
             "create",
+            "--id",
             "parity-invalid",
             "--form",
             space.form_name,
@@ -673,6 +705,7 @@ fn test_parity_core_missing_required_rejected_without_mutation() {
         &[
             "entry",
             "create",
+            "--id",
             "parity-missing",
             "--form",
             space.form_name,
@@ -705,6 +738,7 @@ fn test_parity_core_stale_revision_conflicts_without_mutation() {
             &[
                 "entry",
                 "create",
+                "--id",
                 "parity-stale",
                 "--form",
                 space.form_name,
@@ -773,6 +807,7 @@ fn test_parity_core_restore_unknown_revision_rejected_without_mutation() {
             &[
                 "entry",
                 "create",
+                "--id",
                 "parity-restore",
                 "--form",
                 space.form_name,
@@ -818,6 +853,7 @@ fn test_parity_core_missing_form_rejected_without_mutation() {
         &[
             "entry",
             "create",
+            "--id",
             "parity-noform",
             "--form",
             "NoSuchFormParity",
@@ -849,6 +885,7 @@ fn test_parity_core_delete_tombstone_keeps_history() {
             &[
                 "entry",
                 "create",
+                "--id",
                 "parity-delete",
                 "--form",
                 space.form_name,
@@ -926,6 +963,7 @@ fn test_cli_entry_list_canonical_query_options() {
             &[
                 "entry",
                 "create",
+                "--id",
                 entry_id,
                 "--form",
                 space.form_name,
@@ -1029,6 +1067,7 @@ fn test_cli_sql_query_and_count_use_stateless_local_contract() {
         &[
             "entry",
             "create",
+            "--id",
             "sql-local-entry",
             "--form",
             space.form_name,
@@ -1042,6 +1081,7 @@ fn test_cli_sql_query_and_count_use_stateless_local_contract() {
         &[
             "entry",
             "create",
+            "--id",
             "sql-local-entry-2",
             "--form",
             space.form_name,

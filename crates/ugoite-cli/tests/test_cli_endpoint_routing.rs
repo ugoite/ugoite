@@ -296,6 +296,7 @@ fn test_entry_create_req_api_002_routes_to_backend_post_entries() {
         &[
             "entry",
             "create",
+            "--id",
             "entry-1",
             "--form",
             "Task",
@@ -558,6 +559,7 @@ fn test_entry_create_structured_routes_form_fields_without_markdown() {
             "test",
             "entry",
             "create",
+            "--id",
             "entry-1",
             "--form",
             "Task",
@@ -703,7 +705,7 @@ fn test_entry_create_req_ops_006_help_leads_with_structured_fields() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     for needle in [
-        "ENTRY_ID",
+        "--id <ENTRY_ID>",
         "--form <FORM>",
         "--field <KEY=VALUE>",
         "--fields-file <PATH>",

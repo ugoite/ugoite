@@ -97,13 +97,15 @@ version.
 <TabItem label="CLI">
 
 ```bash
-ugoite entry create meeting-2026-09-12 \
+ugoite entry create \
   --form Meeting --field Notes=Agenda
-ugoite entry get meeting-2026-09-12
+ENTRY_ID="<id returned by create>"
+ugoite entry get "$ENTRY_ID"
 ugoite entry list
 ```
 
-Entry IDs are user-chosen slugs with ASCII letters, digits, `-`, and `_`.
+The create receipt returns the generated Entry ID. Add a Form field when you
+need a human-readable name for the Knowledge.
 
 </TabItem>
 </Tabs>

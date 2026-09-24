@@ -169,6 +169,7 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
             &[
                 "entry",
                 "create",
+                "--id",
                 entry_id,
                 "--form",
                 "Task",

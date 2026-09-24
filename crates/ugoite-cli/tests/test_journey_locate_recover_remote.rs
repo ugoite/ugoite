@@ -300,13 +300,14 @@ async fn journey_cli_remote_locate_recover() {
             &[
                 "entry",
                 "create",
+                "--id",
+                entry_id,
                 "--form",
                 form_name,
                 "--field",
                 &status_field,
                 "--field",
                 &priority_field,
-                entry_id,
             ],
         )
         .await;

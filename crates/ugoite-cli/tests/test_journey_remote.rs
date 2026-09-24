@@ -257,7 +257,6 @@ async fn journey_cli_remote() {
     // tracked separately and is not represented as journey evidence here.
     let form_name = "JourneyRemoteForm";
     let needle = "journey-remote-needle";
-    let entry_id = "journey-remote-entry";
 
     // Space create is intentionally not driven remotely (see above): prove
     // the provisioned Space is durable and reopenable through remote reads.
@@ -311,7 +310,6 @@ async fn journey_cli_remote() {
             &[
                 "entry",
                 "create",
-                entry_id,
                 "--form",
                 form_name,
                 "--field",
@@ -323,6 +321,9 @@ async fn journey_cli_remote() {
         .await,
         "entry create",
     );
+    let entry_id = created["id"]
+        .as_str()
+        .expect("create returns the canonical Entry ID");
     assert!(contains_string(&created, entry_id));
     let create_change_id = created
         .get("change_id")
@@ -502,6 +503,7 @@ async fn test_cli_remote_entry_update_parent_revision_matrix() {
             &[
                 "entry",
                 "create",
+                "--id",
                 "parent-matrix-structured",
                 "--form",
                 "ParentMatrixRemoteForm",
@@ -620,6 +622,7 @@ async fn test_cli_remote_entry_update_parent_revision_matrix() {
             &[
                 "entry",
                 "create",
+                "--id",
                 "parent-matrix-canonical",
                 "--form",
                 "ParentMatrixRemoteForm",
@@ -851,6 +854,7 @@ async fn test_parity_remote_invalid_field_rejected_without_mutation() {
         &[
             "entry",
             "create",
+            "--id",
             "parity-invalid",
             "--form",
             "ParityRemoteForm",
@@ -889,6 +893,7 @@ async fn test_parity_remote_missing_required_rejected_without_mutation() {
         &[
             "entry",
             "create",
+            "--id",
             "parity-missing",
             "--form",
             "ParityRemoteForm",
@@ -1016,6 +1021,7 @@ async fn test_parity_remote_missing_form_rejected_without_mutation() {
         &[
             "entry",
             "create",
+            "--id",
             "parity-noform",
             "--form",
             "NoSuchFormParity",
@@ -1358,6 +1364,7 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         &[
             "entry",
             "create",
+            "--id",
             "parity-task-01",
             "--form",
             "ParityTask",
@@ -1372,6 +1379,7 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         &[
             "entry",
             "create",
+            "--id",
             "parity-task-02",
             "--form",
             "ParityTask",
@@ -1433,6 +1441,7 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
             &[
                 "entry",
                 "create",
+                "--id",
                 "parity-remote-entry",
                 "--form",
                 "ParityRemote",
@@ -1601,6 +1610,7 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         &[
             "entry",
             "create",
+            "--id",
             "parity-remote-invalid",
             "--form",
             "ParityRemote",

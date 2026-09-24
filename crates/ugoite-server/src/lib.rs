@@ -9069,8 +9069,9 @@ async fn create_entry(
     Path(space_id): Path<String>,
     Json(payload): Json<EntryCreate>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    let entry_id = payload.id.unwrap_or_else(|| Uuid::new_v4().to_string());
-    validate_id(&entry_id, "entry_id")?;
+    if let Some(entry_id) = payload.id.as_deref() {
+        validate_id(entry_id, "entry_id")?;
+    }
     let Some(form) = payload.form.clone() else {
         return Err(ApiError::new(
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -9080,7 +9081,7 @@ async fn create_entry(
     let tags = payload.tags.clone().unwrap_or_default();
     let fields = payload.fields.clone().unwrap_or_default();
     let extra = payload.extra_attributes.clone().unwrap_or_default();
-    let entry_id_for_write = entry_id.clone();
+    let entry_id_for_write = payload.id.clone();
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
     let created = with_authorized_service_mutation(
@@ -9091,9 +9092,9 @@ async fn create_entry(
         None,
         |principal_id, principals| async move {
             service
-                .create_structured_entry_authorized_for_principals(
+                .create_structured_entry_authorized_for_principals_with_optional_id(
                     &space_id_for_write,
-                    &entry_id_for_write,
+                    entry_id_for_write.as_deref(),
                     form.clone(),
                     tags.clone(),
                     fields.clone(),
@@ -9109,7 +9110,7 @@ async fn create_entry(
     Ok((
         StatusCode::CREATED,
         Json(json!({
-            "id": entry_id,
+            "id": created["id"],
             "revision_id": created["revision_id"],
             "change_id": created["change_id"],
         })),
