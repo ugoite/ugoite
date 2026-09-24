@@ -5,6 +5,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { SpaceShell } from "./SpaceShell";
 
+const spaceStoreState = vi.hoisted(() => ({
+  initialSpaces: [] as Array<{
+    space_uid: string;
+    name: string;
+    created_at: string;
+  }>,
+  loadSpaces: vi.fn(),
+}));
+
 vi.mock("@solidjs/router", () => ({
   A: (props: Record<string, unknown>) => {
     const { children, ...rest } = props;
@@ -15,27 +24,30 @@ vi.mock("@solidjs/router", () => ({
 }));
 
 vi.mock("~/lib/space-store", () => ({
-  createSpaceStore: () => ({
-    spaces: () => [
-      {
-        space_uid: "my-space-uid",
-        name: "My Space",
-        created_at: "",
+  createSpaceStore: () => {
+    const [spaces, setSpaces] = createSignal(spaceStoreState.initialSpaces);
+    return {
+      spaces,
+      loadSpaces: async () => {
+        const loaded = await spaceStoreState.loadSpaces();
+        if (Array.isArray(loaded)) setSpaces(loaded);
+        return "my-space-uid";
       },
-      {
-        space_uid: "other-space-uid",
-        name: "Other Space",
-        created_at: "",
-      },
-    ],
-    loadSpaces: vi.fn().mockResolvedValue("my-space-uid"),
-    selectSpace: vi.fn(),
-  }),
+      selectSpace: vi.fn(),
+    };
+  },
 }));
 
 describe("v5 SpaceShell", () => {
   beforeEach(() => {
     setLocale("en");
+    spaceStoreState.initialSpaces = [
+      { space_uid: "my-space-uid", name: "My Space", created_at: "" },
+      { space_uid: "other-space-uid", name: "Other Space", created_at: "" },
+    ];
+    spaceStoreState.loadSpaces.mockResolvedValue(
+      spaceStoreState.initialSpaces,
+    );
   });
   it("reaches the Forms workspace from desktop and mobile primary navigation", () => {
     const { container } = render(() => (
@@ -121,12 +133,30 @@ describe("v5 SpaceShell", () => {
         "/spaces/my-space-uid/settings?section=credentials",
       );
   });
-  it("offers the other available spaces in the workspace selector", () => {
+  it("REQ-FE-058: keeps Space identity available while Spaces load", async () => {
+    let resolveSpaces!: (
+      spaces: typeof spaceStoreState.initialSpaces,
+    ) => void;
+    spaceStoreState.initialSpaces = [];
+    spaceStoreState.loadSpaces.mockImplementation(
+      () => new Promise((resolve) => resolveSpaces = resolve),
+    );
+
     render(() => (
       <SpaceShell spaceId="my-space-uid" activeNavigation="home">
         <p>Content</p>
       </SpaceShell>
     ));
+
+    expect(screen.getByRole("option", { name: "my-space-uid" })).toHaveValue(
+      "my-space-uid",
+    );
+    resolveSpaces([
+      { space_uid: "my-space-uid", name: "My Space", created_at: "" },
+      { space_uid: "other-space-uid", name: "Other Space", created_at: "" },
+    ]);
+    expect(await screen.findByRole("option", { name: "My Space" }))
+      .toHaveValue("my-space-uid");
     expect(screen.getByRole("option", { name: "My Space" })).toHaveValue(
       "my-space-uid",
     );
