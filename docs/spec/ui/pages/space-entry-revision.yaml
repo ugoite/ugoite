@@ -12,5 +12,11 @@ components:
       reference: ../components/space-shell.yaml
   body:
     - id: revision-content
-      type: markdown-editor
-      title: Revision content
+      type: list
+      title: Revision
+      mode: read-only field values
+      metadata:
+        - read-only state
+        - timestamp
+      technical-identifiers: advanced-details
+      restore: confirmed append-only action

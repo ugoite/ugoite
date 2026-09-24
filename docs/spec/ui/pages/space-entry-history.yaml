@@ -13,4 +13,6 @@ components:
   body:
     - id: revision-list
       type: list
-      title: Entry revisions
+      title: Entry history
+      accessible_name_source: entry-history-title
+      navigation: Back to Entry

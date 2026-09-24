@@ -141,7 +141,6 @@ export default function SpaceEntryRevisionRoute() {
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow">{t("entryRevision.eyebrow")}</div>
           <h1>{t("entryRevision.title")}</h1>
           <Show when={revision()}>
             {(selected) => (

@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, within } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { formatDateTimeLabel } from "~/lib/date-format";
@@ -52,24 +52,31 @@ describe("entry info route", () => {
 
     render(() => <SpaceEntryInfoRoute />);
 
-    expect(await screen.findByText("entry-1")).toBeInTheDocument();
-    expect(screen.getByText("Meeting")).toBeInTheDocument();
+    expect(await screen.findByText("Meeting")).toBeInTheDocument();
     expect(
       screen.getByText(formatDateTimeLabel("2026-02-02T00:00:00Z")),
     ).toBeInTheDocument();
     expect(
       screen.getByText(formatDateTimeLabel("2026-01-01T00:00:00Z")),
     ).toBeInTheDocument();
-    expect(screen.getByText("rev-9")).toBeInTheDocument();
     const backLink = screen.getByRole("link", { name: "Back to Entry" });
     expect(backLink)
       .toHaveAttribute("href", "/spaces/default/entries/entry-1");
     expect(backLink).toHaveAttribute("title", "Back to Entry");
     expect(screen.getAllByRole("link", { name: "Back to Entry" }))
       .toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Copy entry-1" }))
+    const advancedDetails = screen.getByText("Advanced details").closest(
+      "details",
+    )!;
+    fireEvent.click(within(advancedDetails).getByText("Advanced details"));
+    expect(within(advancedDetails).getByText("entry-1"))
       .toBeInTheDocument();
-    expect(document.querySelector(".eyebrow")).toHaveClass("break-all");
+    expect(within(advancedDetails).getByText("rev-9"))
+      .toBeInTheDocument();
+    expect(
+      within(advancedDetails).getByRole("button", { name: "Copy entry-1" }),
+    )
+      .toBeInTheDocument();
     // Info action on the detail page targets this route.
     expect(screen.queryByText(/Markdown/)).not.toBeInTheDocument();
   });
