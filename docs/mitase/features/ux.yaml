@@ -277,7 +277,7 @@ features:
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
           - id: sql-detail-route
             adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx"
+            path: "frontend/src/routes/spaces/[space_id]/sql/[sql_id]/index.tsx"
             selector: { kind: file }
             claims:
               - kind: satisfies

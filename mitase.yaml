@@ -138,7 +138,7 @@ inventory:
         - frontend/src/routes/spaces/[space_id]/forms.tsx
         - frontend/src/routes/spaces/[space_id]/sql/index.tsx
         - frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
-        - frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx
+        - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/index.tsx
         - frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
         - frontend/src/routes/spaces/[space_id]/sql/new.tsx
         - frontend/src/routes/spaces/[space_id]/sql/new.test.tsx

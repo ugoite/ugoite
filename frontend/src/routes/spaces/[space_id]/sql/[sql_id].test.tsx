@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@solidjs/testing-library";
-import SpaceSqlDetailRoute from "./[sql_id]";
+import SpaceSqlDetailRoute from "./[sql_id]/index";
 import { formatDateLabel } from "~/lib/date-format";
 import {
   resetMockData,
