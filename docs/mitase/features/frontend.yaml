@@ -326,7 +326,7 @@ features:
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep saved SQL list and creation actions, detail navigation, read-only query review, stateless variable-free result navigation, and variable-input actions connected to the shipped routes.
+        responsibility: Keep saved SQL list and creation actions, detail navigation, editable user-query content, read-only search-history review, stateless variable-free result navigation, and variable-input actions connected to the shipped routes.
         targets:
           - id: sql-index-route
             adapter: typescript
@@ -348,6 +348,12 @@ features:
                 criterion: REQ-FE-062#criterion.detail-summary
               - kind: satisfies
                 criterion: REQ-FE-062#criterion.supported-actions
+              - kind: satisfies
+                criterion: REQ-FE-062#criterion.revision-aware-save
+              - kind: satisfies
+                criterion: REQ-FE-062#criterion.delete
+              - kind: satisfies
+                criterion: REQ-FE-062#criterion.search-history-read-only
           - id: sql-create-route
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/new.tsx

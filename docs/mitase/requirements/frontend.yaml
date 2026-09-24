@@ -1413,31 +1413,74 @@ requirements:
     criteria:
       - id: detail-summary
         kind: behavior
-        statement: The saved SQL detail route displays the saved query name, timestamps, variables, and read-only query text instead of placeholder content.
+        statement: The saved SQL detail route displays the saved query name, timestamps, variables, and query text. For user-query entries it allows the saved query name and SQL body to be edited; search-history entries remain read-only.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
       - id: supported-actions
         kind: behavior
         statement: A variable-free saved query uses the canonical stateless SQL query API and routes to SQL results, while a query with variables links to the existing variable-input flow.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: revision-aware-save
+        kind: behavior
+        statement: Saving a user-query edit derives variables from the SQL body and uses the currently loaded revision as the optimistic concurrency base, then uses the returned revision for subsequent saves. Search-history entries remain read-only.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: delete
+        kind: behavior
+        statement: The saved SQL detail route requires the shared destructive confirmation before deleting a user-query entry and returns to the Saved SQL list after a successful deletion. Search-history entries remain read-only.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: search-history-read-only
+        kind: behavior
+        statement: Search-history entries remain read-only in the Saved SQL detail route, which retains their derived display label and does not expose saved-query editing or deletion actions.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
     bindings:
       - id: saved-sql-detail-verification
         role: verification
         facet: verification
-        responsibility: Verify saved SQL detail rendering, read-only query review, variable-input navigation, stateless variable-free execution, and the browser journey through exact frontend tests.
+        responsibility: Verify saved SQL detail rendering, editable and revision-aware saves, delete confirmation and navigation, variable-input navigation, stateless variable-free execution, and the browser journey through exact frontend tests.
         targets:
           - id: detail-summary
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
-            selector: { kind: test, name: "REQ-FE-062: saved SQL detail renders a read-only query summary and supported actions" }
+            selector: { kind: test, name: "REQ-FE-062: saved SQL detail renders an editable query workspace and supported actions" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-062#criterion.detail-summary
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail renders a read-only query summary and supported actions" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail renders an editable query workspace and supported actions" } }
               - kind: verifies
                 criterion: REQ-FE-062#criterion.supported-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail renders a read-only query summary and supported actions" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail renders an editable query workspace and supported actions" } }
+          - id: revision-aware-save
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
+            selector: { kind: test, name: "normalizes SQL variables and uses the returned revision for the next save" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.revision-aware-save
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "normalizes SQL variables and uses the returned revision for the next save" } }
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.detail-summary
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "normalizes SQL variables and uses the returned revision for the next save" } }
+          - id: delete
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
+            selector: { kind: test, name: "deletes only after shared confirmation and returns to the Saved SQL list" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.delete
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "deletes only after shared confirmation and returns to the Saved SQL list" } }
+          - id: search-history-read-only
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
+            selector: { kind: test, name: "keeps search-history detail read-only and retains its derived label" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.search-history-read-only
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "keeps search-history detail read-only and retains its derived label" } }
           - id: detail-run
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
@@ -1452,10 +1495,6 @@ requirements:
             path: e2e/saved-sql-route.test.ts
             selector: { kind: test, name: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to stateless results" }
             claims:
-              - kind: verifies
-                criterion: REQ-FE-062#criterion.detail-summary
-                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to stateless results" } }
               - kind: verifies
                 criterion: REQ-FE-062#criterion.supported-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]

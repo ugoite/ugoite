@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import SpaceSqlDetailRoute from "./[sql_id]/index";
 import { formatDateLabel } from "~/lib/date-format";
 import {
@@ -10,6 +10,7 @@ import {
   seedSqlEntry,
 } from "~/test/mocks/handlers";
 import type { Space } from "~/lib/types";
+import { sqlApi } from "~/lib/ugoite-client";
 
 const navigateMock = vi.fn();
 const entryRelation = "form_00000000000000000000000000000001";
@@ -36,13 +37,21 @@ vi.mock("@solidjs/router", () => ({
 }));
 
 vi.mock("~/components", () => ({
-  SqlQueryEditor: (props: { value: string; disabled?: boolean }) => (
-    <pre
+  SqlQueryEditor: (props: {
+    id?: string;
+    value: string;
+    disabled?: boolean;
+    onChange: (value: string) => void;
+  }) => (
+    <textarea
+      id={props.id}
       data-testid="sql-editor"
       data-disabled={String(Boolean(props.disabled))}
-    >
-			{props.value}
-    </pre>
+      aria-label="SQL"
+      value={props.value}
+      disabled={props.disabled}
+      onInput={(event) => props.onChange(event.currentTarget.value)}
+    />
   ),
 }));
 
@@ -63,8 +72,9 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     seedSqlEntry("default", {
       id: "saved-query",
       name: "Recent Search",
+      kind: "user-query",
       sql:
-        `SELECT * FROM "${entryRelation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
+        `SELECT * FROM "${entryRelation}" WHERE owner = {{owner}} ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
       variables: [],
       created_at: "2025-03-01T00:00:00Z",
       updated_at: "2025-03-02T00:00:00Z",
@@ -84,12 +94,13 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       .not.toBeInTheDocument();
   });
 
-  it("REQ-FE-062: saved SQL detail renders a read-only query summary and supported actions", async () => {
+  it("REQ-FE-062: saved SQL detail renders an editable query workspace and supported actions", async () => {
     seedSqlEntry("default", {
       id: "saved-query",
       name: "Recent Search",
+      kind: "user-query",
       sql:
-        `SELECT * FROM "${entryRelation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
+        `SELECT * FROM "${entryRelation}" WHERE owner = {{owner}} ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
       variables: [{
         name: "owner",
         type: "string",
@@ -110,12 +121,11 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       .toBeInTheDocument();
     expect(screen.getByTestId("sql-editor")).toHaveAttribute(
       "data-disabled",
-      "true",
+      "false",
     );
-    expect(screen.getByText(
-      `SELECT * FROM "${entryRelation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
-    ))
-      .toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "SQL" })).toHaveValue(
+      `SELECT * FROM "${entryRelation}" WHERE owner = {{owner}} ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
+    );
     expect(screen.getByRole("link", { name: "Open Variables" }))
       .toHaveAttribute(
         "href",
@@ -144,6 +154,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     seedSqlEntry("default", {
       id: "saved-query",
       name: "Runnable Query",
+      kind: "user-query",
       sql:
         `SELECT * FROM "${entryRelation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 1`,
       variables: [],
@@ -157,5 +168,145 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     expect(navigateMock).toHaveBeenCalledWith(
       "/spaces/default/sql/saved-query/run",
     );
+  });
+
+  it("normalizes SQL variables and uses the returned revision for the next save", async () => {
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "Planning",
+      kind: "user-query",
+      sql: "SELECT 1",
+      variables: [],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+    const update = vi.spyOn(sqlApi, "update")
+      .mockResolvedValueOnce({ id: "saved-query", revisionId: "rev-2" })
+      .mockResolvedValueOnce({ id: "saved-query", revisionId: "rev-3" });
+
+    render(() => <SpaceSqlDetailRoute />);
+    const name = await screen.findByRole("textbox", { name: "Query name" });
+    const editor = screen.getByRole("textbox", { name: "SQL" });
+    fireEvent.input(name, { target: { value: "  Planning v2  " } });
+    fireEvent.input(editor, {
+      target: { value: "SELECT * FROM records WHERE title = {{title}}" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update).toHaveBeenNthCalledWith(1, "default", "saved-query", {
+      name: "Planning v2",
+      kind: "user-query",
+      metadata: undefined,
+      sql: "SELECT * FROM records WHERE title = $title",
+      variables: [{ type: "string", name: "title", description: "" }],
+      parent_revision_id: "rev-1",
+    });
+
+    fireEvent.input(editor, {
+      target: { value: "SELECT * FROM records WHERE title = {{title}} LIMIT 2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+    expect(update).toHaveBeenNthCalledWith(
+      2,
+      "default",
+      "saved-query",
+      expect.objectContaining({ parent_revision_id: "rev-2" }),
+    );
+    update.mockRestore();
+  });
+
+  it("saves a blank name with Untitled metadata and surfaces stale conflicts", async () => {
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "Planning",
+      kind: "user-query",
+      sql: "SELECT 1",
+      variables: [],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+    const conflict = Object.assign(new Error("Revision conflict"), {
+      status: 409,
+      code: "REVISION_CONFLICT",
+    });
+    const update = vi.spyOn(sqlApi, "update").mockRejectedValue(conflict);
+
+    render(() => <SpaceSqlDetailRoute />);
+    const name = await screen.findByRole("textbox", { name: "Query name" });
+    fireEvent.input(name, { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(update).toHaveBeenCalledWith(
+      "default",
+      "saved-query",
+      expect.objectContaining({
+        name: null,
+        metadata: { generatedName: "untitled" },
+        parent_revision_id: "rev-1",
+      }),
+    ));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(name).toHaveValue("   ");
+    update.mockRestore();
+  });
+
+  it("deletes only after shared confirmation and returns to the Saved SQL list", async () => {
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "Planning",
+      kind: "user-query",
+      sql: "SELECT 1",
+      variables: [],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+    const remove = vi.spyOn(sqlApi, "delete").mockResolvedValue(undefined);
+
+    render(() => <SpaceSqlDetailRoute />);
+    fireEvent.click(await screen.findByRole("button", { name: "Delete query" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete query" });
+    expect(remove).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete query" }));
+
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("default", "saved-query"));
+    expect(navigateMock).toHaveBeenCalledWith("/spaces/default/sql");
+    remove.mockRestore();
+  });
+
+  it("keeps search-history detail read-only and retains its derived label", async () => {
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: null,
+      kind: "search-history",
+      metadata: {
+        searchCriteria: {
+          formName: "Entry",
+          tags: [],
+          updatedFrom: "",
+          updatedTo: "",
+          fieldConditions: [],
+        },
+      },
+      sql: "SELECT 1",
+      variables: [],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+
+    render(() => <SpaceSqlDetailRoute />);
+
+    expect(await screen.findByRole("heading", { name: /Advanced search/ }))
+      .toBeInTheDocument();
+    expect(screen.getByTestId("sql-editor")).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Save" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete query" }))
+      .not.toBeInTheDocument();
   });
 });
