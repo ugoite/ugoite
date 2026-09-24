@@ -83,12 +83,15 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
     );
   });
 
-  test("Form workspace lists the Form's Entries", async ({ page }) => {
+  test("Form workspace starts an Entry with that Form selected", async ({ page }) => {
     await page.goto(`/spaces/${spaceId}/forms/Entry/entries`);
     await expect(page).toHaveURL(`/spaces/${spaceId}/forms/Entry/entries`);
     await expect(page.getByRole("heading", { name: "Entry" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Back to Forms" }))
-      .toHaveAttribute("href", `/spaces/${spaceId}/forms`);
+    await page.getByRole("button", { name: "New Entry" }).click();
+    await expect(page).toHaveURL(
+      `/spaces/${spaceId}/entries/new?form=Entry`,
+    );
+    await expect(page.getByLabel("Form")).toHaveValue("Entry");
   });
 
   test("GET /about returns HTML", async ({ page }) => {
@@ -124,9 +127,13 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
 
   test("GET /spaces includes the resolved fixture Space", async ({ request }) => {
     const res = await request.get(getBackendUrl("/spaces"));
-    const spaces = (await res.json()) as Array<{ space_uid: string; name: string }>;
+    const spaces = (await res.json()) as Array<
+      { space_uid: string; name: string }
+    >;
     expect(
-      spaces.some((space) => space.space_uid === spaceId && space.name === "default"),
+      spaces.some((space) =>
+        space.space_uid === spaceId && space.name === "default"
+      ),
     )
       .toBe(true);
   });
