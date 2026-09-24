@@ -6,6 +6,7 @@ import type {
 } from "@playwright/test";
 import {
   classifyNavigationFailure,
+  isEnvironmentFailure,
   type DocumentProbe,
 } from "./security-context.ts";
 
@@ -192,12 +193,17 @@ export async function gotoPageWithOneEnvironmentRetry(
 ): Promise<{ retried: boolean }> {
   const label = options.label ?? url;
   const assetErrors: string[] = [];
+  let observingNavigation = false;
   page.on("requestfailed", (request) => {
+    if (!observingNavigation) return;
+    const pathname = new URL(request.url()).pathname;
+    const isFrontendAsset =
+      (pathname.startsWith("/_build/") && /\.(?:m?js|css)$/.test(pathname)) ||
+      pathname.endsWith("/ugoite-manifest.js");
     const failure = request.failure()?.errorText ?? "requestfailed";
-    assetErrors.push(`${request.url()} :: ${failure}`);
-  });
-  page.on("console", (message) => {
-    if (message.type() === "error") assetErrors.push(message.text());
+    if (isFrontendAsset && isEnvironmentFailure(failure)) {
+      assetErrors.push(`${request.url()} :: ${failure}`);
+    }
   });
 
   const probe = async (status?: number) => ({
@@ -206,13 +212,19 @@ export async function gotoPageWithOneEnvironmentRetry(
     assetError: assetErrors.join(" | ").slice(0, 2000),
   });
   const waitForReady = async () => {
-    await options.waitForReady?.(page);
+    try {
+      await options.waitForReady?.(page);
+    } finally {
+      observingNavigation = false;
+    }
   };
 
   let status: number | undefined;
+  observingNavigation = true;
   try {
     status = (await page.goto(url, options.gotoOptions))?.status();
   } catch (error) {
+    observingNavigation = false;
     if (classifyNavigationFailure(error) !== "retry") throw error;
     const reason = error instanceof Error ? error.message : String(error);
     console.log(
@@ -220,6 +232,8 @@ export async function gotoPageWithOneEnvironmentRetry(
         reason.slice(0, 500)
       }`,
     );
+    assetErrors.length = 0;
+    observingNavigation = true;
     status = (await page.goto(url, options.gotoOptions))?.status();
     await waitForReady();
     return { retried: true };
@@ -229,7 +243,11 @@ export async function gotoPageWithOneEnvironmentRetry(
     await waitForReady();
     return { retried: false };
   } catch (error) {
-    if (classifyNavigationFailure(error, await probe(status)) !== "retry") {
+    const navigationProbe = await probe(status);
+    if (
+      classifyNavigationFailure("readiness check failed", navigationProbe) !==
+        "retry"
+    ) {
       throw error;
     }
     const reason = error instanceof Error ? error.message : String(error);
@@ -238,6 +256,8 @@ export async function gotoPageWithOneEnvironmentRetry(
         reason.slice(0, 500)
       }`,
     );
+    assetErrors.length = 0;
+    observingNavigation = true;
     status = (await page.goto(url, options.gotoOptions))?.status();
     await waitForReady();
     return { retried: true };

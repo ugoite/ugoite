@@ -335,3 +335,46 @@ Deno.test(
     assert.equal(calls, 1);
   },
 );
+
+Deno.test(
+  "gotoPageWithOneEnvironmentRetry: ignores failed API requests and stale browser errors",
+  async () => {
+    let calls = 0;
+    const listeners: Record<string, Array<(value: unknown) => void>> = {};
+    const page = {
+      on(event: string, listener: (value: unknown) => void) {
+        (listeners[event] ??= []).push(listener);
+      },
+      async goto(): Promise<{ status(): number }> {
+        calls++;
+        for (const listener of listeners.requestfailed ?? []) {
+          listener({
+            url: () => "http://localhost/api/auth/session",
+            failure: () => ({ errorText: "net::ERR_NETWORK_CHANGED" }),
+          });
+        }
+        return { status: () => 200 };
+      },
+      async content() {
+        return "<html><body>Unexpected error</body></html>";
+      },
+    } as unknown as Page;
+
+    await assert.rejects(
+      () =>
+        gotoPageWithOneEnvironmentRetry(
+          page,
+          "http://localhost/settings/security",
+          {
+            waitForReady: async () => {
+              throw new Error(
+                "account recovery settings did not become visible; browserErrors=ERR_NETWORK_CHANGED",
+              );
+            },
+          },
+        ),
+      /browserErrors=ERR_NETWORK_CHANGED/,
+    );
+    assert.equal(calls, 1);
+  },
+);
