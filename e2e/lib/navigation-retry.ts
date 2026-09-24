@@ -258,7 +258,7 @@ export async function gotoPageWithOneEnvironmentRetry(
     );
     assetErrors.length = 0;
     observingNavigation = true;
-    status = (await page.goto(url, options.gotoOptions))?.status();
+    await page.goto(url, options.gotoOptions);
     await waitForReady();
     return { retried: true };
   }
