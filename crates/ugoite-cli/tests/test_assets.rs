@@ -274,12 +274,11 @@ fn test_asset_read_side_shares_core_semantics() {
         r#"{"name":"Doc","fields":{"Document":{"type":"asset_reference"}}}"#,
     )
     .unwrap();
-    assert!(run_cli(
-        &config_path,
-        &["form", "update", form_file.to_str().unwrap()]
-    )
-    .status
-    .success());
+    assert!(
+        run_cli(&config_path, &["form", "save", form_file.to_str().unwrap()])
+            .status
+            .success()
+    );
 
     let asset_file = dir.path().join("note.bin");
     std::fs::write(&asset_file, b"binary-bytes").unwrap();
@@ -596,10 +595,7 @@ fn setup_core_space(dir: &tempfile::TempDir, slug: &str, form_json: &str) -> Pat
         .success());
     let form_file = dir.path().join("form.json");
     std::fs::write(&form_file, form_json).unwrap();
-    let updated = run_cli(
-        &config_path,
-        &["form", "update", form_file.to_str().unwrap()],
-    );
+    let updated = run_cli(&config_path, &["form", "save", form_file.to_str().unwrap()]);
     assert!(
         updated.status.success(),
         "stderr: {}",

@@ -571,7 +571,7 @@ describe("formApi", () => {
   });
 
   it("creates and gets a form", async () => {
-    await formApi.create("form-ws", {
+    await formApi.save("form-ws", {
       name: "Meeting",
       version: 1,
       template: "# Meeting\n\n## Date\n",
@@ -1090,7 +1090,7 @@ describe("error paths", () => {
     );
   });
 
-  it("formApi.create throws on failure", async () => {
+  it("formApi.save throws on failure", async () => {
     server.use(
       http.post(
         testApiUrl("/spaces/ws-form-err/forms"),
@@ -1098,7 +1098,7 @@ describe("error paths", () => {
       ),
     );
     await expect(
-      formApi.create("ws-form-err", {
+      formApi.save("ws-form-err", {
         name: "Bad",
         version: 1,
         template: "",

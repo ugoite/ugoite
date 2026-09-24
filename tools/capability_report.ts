@@ -27,13 +27,12 @@ const ROOT = new URL("../", import.meta.url);
 
 export const JOURNEY_ID = "JOURNEY-KNOWLEDGE-001";
 
-/** Projection states. Never collapse alias and absence into one value. */
+/** Projection states describe reachability and declared evidence. */
 export const CAPABILITY_STATES = [
   "verified",
   "evidence-gap",
   "surface-gap",
   "semantic-drift",
-  "implemented-undiscoverable",
   "intentionally-not-required",
 ] as const;
 
@@ -51,8 +50,6 @@ export interface JourneyCapability {
   /** Informational pointer to the normative Mitase criterion, not a copy. */
   requirement: string;
   outcome: string;
-  /** Set when every surface can reach the outcome but one surface hides it. */
-  alias?: string;
   e2eEvidence: E2ePointer[];
 }
 
@@ -102,10 +99,9 @@ export const JOURNEY_CAPABILITIES: JourneyCapability[] = [
     id: "form-establish",
     checkpoint: "Form",
     operations: ["form.upsert", "form.list", "form.get"],
-    requirement: "REQ-FORM-010#criterion.upsert-operation",
+    requirement: "REQ-JOURNEY-001#criterion.form-establish",
     outcome:
       "The user can establish a Form defining the schema used by a subsequent Entry, with equivalent schema semantics regardless of surface.",
-    alias: "CLI reaches form.upsert via `form update`",
     e2eEvidence: [
       { file: "e2e/forms.test.ts", fragment: "Create and List Forms" },
     ],
@@ -268,10 +264,7 @@ function repoRelative(pathname: string): string {
 
 /**
  * Classify one capability. Priority is deliberate and documented:
- * semantic-drift > surface-gap > implemented-undiscoverable >
- * evidence-gap > verified. An aliased-but-present surface (CLI `form
- * update` fulfilling form.upsert) must read as a discoverability finding,
- * never as a missing capability.
+ * semantic-drift > surface-gap > evidence-gap > verified.
  */
 export function classify(
   operationsPresent: {
@@ -280,7 +273,6 @@ export function classify(
     cliRemote: boolean;
   },
   sharedSemantics: boolean,
-  alias: string | undefined,
   e2eMissing: string[],
   mitaseFound: string[],
 ): { state: CapabilityState; note: string } {
@@ -298,15 +290,6 @@ export function classify(
     return {
       state: "surface-gap",
       note: `Missing on: ${missing.join(", ")}.`,
-    };
-  }
-  if (alias) {
-    const evidence = mitaseFound.length === 0
-      ? " Mitase verification claim is still missing."
-      : "";
-    return {
-      state: "implemented-undiscoverable",
-      note: `${alias}.${evidence}`,
     };
   }
   if (e2eMissing.length > 0 || mitaseFound.length === 0) {
@@ -438,7 +421,6 @@ export async function buildReport(): Promise<CapabilityReport> {
     const { state, note } = classify(
       { frontend, cliCore, cliRemote },
       sharedSemantics,
-      capability.alias,
       e2eEvidenceMissing,
       mitaseEvidenceFound,
     );

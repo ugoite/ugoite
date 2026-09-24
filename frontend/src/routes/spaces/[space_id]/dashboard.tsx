@@ -68,7 +68,7 @@ export default function SpaceDashboardRoute() {
   });
 
   const createForm = async (payload: FormCreatePayload) => {
-    await formApi.create(spaceId(), payload);
+    await formApi.save(spaceId(), payload);
     setShowFormDialog(false);
     await refetchForms();
   };

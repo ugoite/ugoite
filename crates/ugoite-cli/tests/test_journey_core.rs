@@ -5,7 +5,7 @@
 //! -> Entry create -> Entry edit -> Search -> History -> Restore -> Reopen)
 //! and asserts the same durable postconditions through canonical reads.
 //! CLI stdout wording is never compared; only exit status and the returned
-//! durable state matter. Form establish intentionally drives `form update`,
+//! durable state matter. Form establish intentionally drives `form save`,
 //! which is the upsert path behind a weaker name.
 
 use std::process::Command;
@@ -129,7 +129,7 @@ fn test_journey_cli_core_local_durable_outcome() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // Form establish via `form update`: the upsert path behind a weaker name.
+    // Form establish via `form save`: the upsert path behind a weaker name.
     let form_file = dir.path().join("journey-core-form.json");
     std::fs::write(
         &form_file,
@@ -138,10 +138,7 @@ fn test_journey_cli_core_local_durable_outcome() {
         ),
     )
     .unwrap();
-    let output = run_cli(
-        &config_path,
-        &["form", "update", form_file.to_str().unwrap()],
-    );
+    let output = run_cli(&config_path, &["form", "save", form_file.to_str().unwrap()]);
     assert!(
         output.status.success(),
         "form establish failed: {}",
@@ -636,10 +633,7 @@ fn setup_parity_space(form_fields: &str) -> ParitySpace {
         ),
     )
     .unwrap();
-    let output = run_cli(
-        &config_path,
-        &["form", "update", form_file.to_str().unwrap()],
-    );
+    let output = run_cli(&config_path, &["form", "save", form_file.to_str().unwrap()]);
     assert!(
         output.status.success(),
         "parity setup form establish failed: {}",

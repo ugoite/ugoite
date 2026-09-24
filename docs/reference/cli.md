@@ -94,7 +94,7 @@ The command families map to Knowledge tasks rather than separate Browser and
 CLI documentation trees:
 
 - `space`: create, inspect, and list Spaces;
-- `form`: list, inspect, and update Form definitions;
+- `form`: list, inspect, and save Form definitions;
 - `entry`: create, read, update, list, history, restore, and delete Entries;
 - `asset`: upload and delete Space-owned file content in core and authenticated
   remote modes;

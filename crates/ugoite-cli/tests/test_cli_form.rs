@@ -36,9 +36,9 @@ fn test_cli_list_types() {
     assert!(!stdout.trim().is_empty());
 }
 
-/// REQ-FORM-002: CLI form update writes the canonical Form definition.
+/// REQ-FORM-002: CLI form save writes the canonical Form definition.
 #[test]
-fn test_cli_form_update() {
+fn test_cli_form_save() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_string_lossy().to_string();
     let config_path = dir.path().join("cli-config.json");
@@ -88,7 +88,7 @@ fn test_cli_form_update() {
         String::from_utf8_lossy(&create.stdout),
         String::from_utf8_lossy(&create.stderr)
     );
-    // Create the form via form update
+    // Create the form via form save
     let form_file = dir.path().join("entry-form.json");
     std::fs::write(
         &form_file,
@@ -101,7 +101,7 @@ fn test_cli_form_update() {
             "--config",
             config_path.to_str().unwrap(),
             "form",
-            "update",
+            "save",
             form_file.to_str().unwrap(),
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)

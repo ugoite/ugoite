@@ -18,7 +18,7 @@ export const formApi = {
     });
   },
 
-  async create(spaceId: string, payload: FormCreatePayload): Promise<Form> {
+  async save(spaceId: string, payload: FormCreatePayload): Promise<Form> {
     return await protocolFetch<Form>("form.upsert", { space_id: spaceId }, payload);
   },
 };

@@ -76,12 +76,12 @@ fn upsert_entry_form(config_path: &std::path::Path, dir: &std::path::Path) {
             "--config",
             config_path.to_str().unwrap(),
             "form",
-            "update",
+            "save",
             form_file.to_str().unwrap(),
         ])
         .env("UGOITE_CLI_CONFIG_PATH", config_path)
         .output()
-        .expect("form update");
+        .expect("form save");
     assert!(output.status.success());
 }
 

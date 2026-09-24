@@ -25,9 +25,9 @@ pub enum FormSubCmd {
         #[arg(value_name = "FORM_NAME")]
         form_name: String,
     },
-    /// Upsert a form from a JSON file
+    /// Save a form from a JSON file
     #[command(long_about = "Use the selected context or --context NAME for this command.")]
-    Update {
+    Save {
         #[arg(value_name = "FORM_FILE")]
         form_file: String,
     },
@@ -82,8 +82,8 @@ pub async fn run(
             let form = service.get_form(space_id, &form_name).await?;
             print_json(&form);
         }
-        FormSubCmd::Update { form_file } => {
-            let target = resolve_command_target(explicit_config, context_override, "form update")?;
+        FormSubCmd::Save { form_file } => {
+            let target = resolve_command_target(explicit_config, context_override, "form save")?;
             let form_text = std::fs::read_to_string(&form_file)?;
             let form_def: serde_json::Value = serde_json::from_str(&form_text)?;
             let form_name = form_def
@@ -92,7 +92,7 @@ pub async fn run(
                 .unwrap_or_default()
                 .to_string();
             let receipt = MutationReceipt::form(form_name.clone());
-            let human = Some(format!("updated form {form_name}"));
+            let human = Some(format!("saved form {form_name}"));
             if let SpaceTarget::Remote { space_uid, .. } = &target {
                 let _result = http::execute_for_target(
                     &target,

@@ -11,10 +11,8 @@ its Rust mirror `SUPPORTED_OPERATIONS`.
 
 Parity means reaching the same durable Knowledge outcome from different
 surfaces, not building the same screen or the same command twice. The
-Frontend may use a Create dialog while the CLI uses `form update` (an
-upsert); parity passes when the persisted Form carries equivalent schema
-semantics. Weak discoverability is recorded separately and never blocks a
-durability verdict.
+Frontend may use Create and Edit dialogs while the CLI uses `form save`;
+parity passes when the persisted Form carries equivalent schema semantics.
 
 ## Golden journey
 
@@ -57,15 +55,11 @@ Row states:
 - `evidence-gap`: reachable, but e2e or Mitase evidence is missing.
 - `surface-gap`: at least one surface cannot reach the outcome.
 - `semantic-drift`: adapters disagree on inventory or shared encoding.
-- `implemented-undiscoverable`: reachable everywhere, but hidden behind
-  an alias (for example CLI `form update` fulfilling `form.upsert`).
 - `intentionally-not-required`: reserved for obligations scoped to fewer
   surfaces (for example Frontend-only UX polish). No journey row uses it.
 
-Classification priority is
-semantic-drift > surface-gap > implemented-undiscoverable >
-evidence-gap > verified, so an aliased capability reads as a
-discoverability finding rather than a missing capability or a missing test.
+Classification priority is semantic-drift > surface-gap > evidence-gap >
+verified, so missing reachability remains distinct from missing evidence.
 
 ## Status and next steps
 

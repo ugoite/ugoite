@@ -79,7 +79,7 @@ fn setup_space_with_form(
     .unwrap();
 
     Command::new(ugoite_bin())
-        .args(["form", "update", form_file.to_str().unwrap()])
+        .args(["form", "save", form_file.to_str().unwrap()])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create form");
@@ -153,7 +153,7 @@ fn test_form_update_applies_column_change() {
             "--config",
             config_path.to_str().unwrap(),
             "form",
-            "update",
+            "save",
             form_file2.to_str().unwrap(),
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
