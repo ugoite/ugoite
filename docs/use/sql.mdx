@@ -41,9 +41,20 @@ read-only; saving the definition is the explicit Knowledge operation.
 
 ```bash
 # Durable SQL definition
-ugoite sql saved-create \
+ugoite sql saved create \
   --name planning \
   --sql 'SELECT field_<FieldId> FROM form_<FormId> ORDER BY _ugoite_id'
+
+# Or leave the name unset to create an Untitled Saved SQL.
+ugoite sql saved create \
+  --sql query.sql
+
+# Update only SQL; the current name, variables, and revision base are loaded automatically.
+ugoite sql saved update <SQL_ID> --sql updated-query.sql
+
+# Rename or explicitly choose the untitled name.
+ugoite sql saved update <SQL_ID> --name planning-v2
+ugoite sql saved update <SQL_ID> --untitled
 
 # Stateless page query
 ugoite sql query \
@@ -61,10 +72,15 @@ ugoite sql count \
   'SELECT field_<FieldId> FROM form_<FormId> WHERE field_<StatusId> = $status'
 ```
 
-`sql saved-*` manages durable definitions. `sql query` and `sql count` accept
-only one read-only `SELECT` statement and reject DDL, DML, and multiple
-statements before execution. Use `ugoite sql --help` for the complete option
-grammar.
+`sql saved list`, `get`, `create`, `update`, and `delete` manage durable
+definitions. Saved SQL `--sql` options accept SQL text or a file path. Create
+accepts an optional `--name`; omitting it creates an Untitled Saved SQL. Update
+keeps omitted name and variables, and loads the current revision automatically
+unless `--parent-revision-id` is supplied. An explicit stale revision still
+returns a conflict. Use `--untitled` to clear a name; it cannot be combined
+with `--name`. `sql query` and `sql count` accept only one read-only `SELECT`
+statement and reject DDL, DML, and multiple statements before execution. Use
+`ugoite sql --help` for the complete option grammar.
 
 </TabItem>
 </Tabs>
@@ -129,8 +145,8 @@ materialize a result relation, or create persistent execution state.
 
 ## Saved SQL versus query execution
 
-- Saved SQL is Knowledge and is managed with `sql saved-list`, `saved-create`,
-  `saved-get`, `saved-update`, and `saved-delete`.
+- Saved SQL is Knowledge and is managed with `sql saved list`, `sql saved get`,
+  `sql saved create`, `sql saved update`, and `sql saved delete`.
 - `sql query` is a stateless page read with an opaque client-held
   continuation.
 - `sql count` is a separate explicit read.
