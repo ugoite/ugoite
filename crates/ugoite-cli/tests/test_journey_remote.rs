@@ -263,7 +263,7 @@ async fn journey_cli_remote() {
     let space = stdout_json(&run_cli(config_path, &["space", "get"]).await, "space get");
     assert!(contains_string(&space, space_id));
 
-    // Form establish via `form update`: the upsert path behind a weaker name.
+    // Establish the Form through the CLI's canonical save operation.
     let form_file = config_path
         .parent()
         .expect("config parent")
@@ -275,11 +275,7 @@ async fn journey_cli_remote() {
         ),
     )
     .expect("write journey form");
-    let output = run_cli(
-        config_path,
-        &["form", "update", form_file.to_str().unwrap()],
-    )
-    .await;
+    let output = run_cli(config_path, &["form", "save", form_file.to_str().unwrap()]).await;
     assert!(
         output.status.success(),
         "form establish failed: {}",
@@ -780,7 +776,7 @@ async fn setup_parity_form(fixture: &RemoteFixture, form_fields: &str, form_name
     .expect("write parity form");
     let output = run_cli(
         &fixture.config_path,
-        &["form", "update", form_file.to_str().unwrap()],
+        &["form", "save", form_file.to_str().unwrap()],
     )
     .await;
     assert!(
@@ -1271,7 +1267,7 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         &fixture.config_path,
         &[
             "form",
-            "update",
+            "save",
             task_form_file.to_str().expect("task form path"),
         ],
     )
@@ -1320,14 +1316,14 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         &fixture.config_path,
         &[
             "form",
-            "update",
+            "save",
             parity_form_file.to_str().expect("parity form path"),
         ],
     )
     .await;
     assert!(
         form_update.status.success(),
-        "parity form update failed: {}",
+        "parity form save failed: {}",
         String::from_utf8_lossy(&form_update.stderr)
     );
     let parity_form_read = stdout_json(

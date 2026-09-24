@@ -48,28 +48,25 @@ Deno.test("capability seed covers JOURNEY-KNOWLEDGE-001 checkpoints", () => {
   }
 });
 
-// State vocabulary keeps alias and absence distinct by construction.
-Deno.test("capability states distinguish discoverability from absence", () => {
+// State vocabulary distinguishes verified reachability from gaps.
+Deno.test("capability states distinguish evidence and surface gaps", () => {
   assertEquals([...CAPABILITY_STATES], [
     "verified",
     "evidence-gap",
     "surface-gap",
     "semantic-drift",
-    "implemented-undiscoverable",
     "intentionally-not-required",
   ]);
-  const aliased = classify(
+  const verified = classify(
     { frontend: true, cliCore: true, cliRemote: true },
     true,
-    "CLI reaches form.upsert via `form update`",
     [],
-    ["docs/mitase/requirements/forms.yaml verifies REQ-FORM-010#criterion.upsert-operation"],
+    ["docs/mitase/requirements/journey.yaml verifies REQ-JOURNEY-001#criterion.form-establish"],
   );
-  assertEquals(aliased.state, "implemented-undiscoverable");
+  assertEquals(verified.state, "verified");
   const missing = classify(
     { frontend: true, cliCore: false, cliRemote: true },
     true,
-    undefined,
     [],
     ["some claim"],
   );
@@ -77,7 +74,6 @@ Deno.test("capability states distinguish discoverability from absence", () => {
   const drift = classify(
     { frontend: true, cliCore: true, cliRemote: true },
     false,
-    undefined,
     [],
     ["some claim"],
   );
@@ -114,14 +110,12 @@ Deno.test("capability report projects every journey capability", async () => {
     );
   }
   const byId = new Map(report.capabilities.map((row) => [row.id, row]));
-  // Form establish is reachable everywhere but hides behind `form update`.
+  // Form establish is reachable through each surface's normal save flow and
+  // uses the journey criterion that declares its cross-surface evidence.
   assertEquals(byId.get("form-establish")?.frontend, true);
   assertEquals(byId.get("form-establish")?.cliCore, true);
   assertEquals(byId.get("form-establish")?.cliRemote, true);
-  assertEquals(
-    byId.get("form-establish")?.state,
-    "implemented-undiscoverable",
-  );
+  assertEquals(byId.get("form-establish")?.state, "verified");
   // Restore keeps its history semantics with exact journey evidence wired.
   assertEquals(byId.get("entry-restore")?.state, "verified");
   const markdown = renderMarkdown(report);

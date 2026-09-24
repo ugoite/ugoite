@@ -93,10 +93,7 @@ fn setup_cli_sql_space() -> CliSqlSpace {
                 ),
     )
     .unwrap();
-    let output = run_cli(
-        &config_path,
-        &["form", "update", form_file.to_str().unwrap()],
-    );
+    let output = run_cli(&config_path, &["form", "save", form_file.to_str().unwrap()]);
     assert!(
         output.status.success(),
         "form establish failed: {}",

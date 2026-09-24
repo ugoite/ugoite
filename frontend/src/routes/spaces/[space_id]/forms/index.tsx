@@ -33,13 +33,13 @@ export default function SpaceFormsIndexPane() {
   );
 
   const createForm = async (payload: FormCreatePayload) => {
-    await formApi.create(ctx.spaceId(), payload);
+    await formApi.save(ctx.spaceId(), payload);
     setShowFormDialog(false);
     await ctx.refetchForms();
     navigate(spaceFormEntriesPath(ctx.spaceId(), payload.name));
   };
   const updateForm = async (payload: FormCreatePayload) => {
-    await formApi.create(ctx.spaceId(), payload);
+    await formApi.save(ctx.spaceId(), payload);
     setEditingForm(null);
     await ctx.refetchForms();
   };

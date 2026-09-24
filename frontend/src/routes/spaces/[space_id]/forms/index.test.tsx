@@ -61,7 +61,7 @@ vi.mock(
   "~/lib/ugoite-client",
   () => ({
     assetApi: { list: vi.fn().mockResolvedValue([]) },
-    formApi: { create: vi.fn() },
+    formApi: { save: vi.fn() },
   }),
 );
 
@@ -108,7 +108,7 @@ describe("Forms list", () => {
     setLocale("en");
     navigate.mockReset();
     refetchForms.mockReset();
-    vi.mocked(formApi.create).mockReset();
+    vi.mocked(formApi.save).mockReset();
   });
   it("renders Forms and exposes the create action accessibly", () => {
     renderPage([noteForm]);
@@ -141,12 +141,12 @@ describe("Forms list", () => {
     );
   });
   it("passes the logical Space ID to the API after an encoded navigation", async () => {
-    vi.mocked(formApi.create).mockResolvedValue(noteForm);
+    vi.mocked(formApi.save).mockResolvedValue(noteForm);
     renderPage([noteForm], undefined, "space/with space");
     fireEvent.click(screen.getByRole("button", { name: "New Form" }));
     fireEvent.click(screen.getByRole("button", { name: "Submit new form" }));
     await waitFor(() =>
-      expect(formApi.create).toHaveBeenCalledWith("space/with space", {
+      expect(formApi.save).toHaveBeenCalledWith("space/with space", {
         name: "Projects",
       })
     );
@@ -202,7 +202,7 @@ describe("Forms list", () => {
     expect(edit.getAttribute("aria-label")).toBe("Edit Notes");
   });
   it("keeps edit on a small per-row button that does not navigate", async () => {
-    vi.mocked(formApi.create).mockResolvedValue(noteForm);
+    vi.mocked(formApi.save).mockResolvedValue(noteForm);
     renderPage([noteForm]);
     const row = document.querySelector(".rowListMain")!;
     expect(
@@ -211,16 +211,16 @@ describe("Forms list", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit Notes" }));
     expect(navigate).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Submit form edit" }));
-    await waitFor(() => expect(formApi.create).toHaveBeenCalled());
+    await waitFor(() => expect(formApi.save).toHaveBeenCalled());
     expect(refetchForms).toHaveBeenCalled();
   });
   it("creates a Form and navigates to its Entry list", async () => {
-    vi.mocked(formApi.create).mockResolvedValue(noteForm);
+    vi.mocked(formApi.save).mockResolvedValue(noteForm);
     renderPage([noteForm]);
     fireEvent.click(screen.getByRole("button", { name: "New Form" }));
     fireEvent.click(screen.getByRole("button", { name: "Submit new form" }));
     await waitFor(() =>
-      expect(formApi.create).toHaveBeenCalledWith("default", {
+      expect(formApi.save).toHaveBeenCalledWith("default", {
         name: "Projects",
       })
     );

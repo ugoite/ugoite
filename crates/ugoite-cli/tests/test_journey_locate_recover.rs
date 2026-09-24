@@ -149,10 +149,7 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
         "{\"name\":\"Task\",\"version\":1,\"template\":\"# Task\\n\\n## status\\n\\n## priority\\n\",\"fields\":{\"status\":{\"type\":\"string\",\"required\":true},\"priority\":{\"type\":\"integer\",\"required\":false}}}",
     )
     .unwrap();
-    let output = run_cli(
-        &config_path,
-        &["form", "update", form_file.to_str().unwrap()],
-    );
+    let output = run_cli(&config_path, &["form", "save", form_file.to_str().unwrap()]);
     assert!(
         output.status.success(),
         "form establish failed: {}",

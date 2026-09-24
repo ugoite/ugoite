@@ -100,13 +100,10 @@ fn setup_space_with_entries(dir: &tempfile::TempDir) -> (String, std::path::Path
     )
     .unwrap();
 
-    let updated = run_cli(
-        &config_path,
-        &["form", "update", form_file.to_str().unwrap()],
-    );
+    let updated = run_cli(&config_path, &["form", "save", form_file.to_str().unwrap()]);
     assert!(
         updated.status.success(),
-        "form update failed: {}",
+        "form save failed: {}",
         String::from_utf8_lossy(&updated.stderr)
     );
     let form_output = run_cli(&config_path, &["form", "get", "Entry"]);
@@ -187,12 +184,11 @@ fn test_extract_properties_h2_sections() {
     )
     .unwrap();
 
-    assert!(run_cli(
-        &config_path,
-        &["form", "update", form_file.to_str().unwrap()]
-    )
-    .status
-    .success());
+    assert!(
+        run_cli(&config_path, &["form", "save", form_file.to_str().unwrap()])
+            .status
+            .success()
+    );
 
     assert!(create_structured_entry(
         &config_path,
@@ -225,12 +221,11 @@ fn test_extract_properties_precedence() {
     )
     .unwrap();
 
-    assert!(run_cli(
-        &config_path,
-        &["form", "update", form_file.to_str().unwrap()]
-    )
-    .status
-    .success());
+    assert!(
+        run_cli(&config_path, &["form", "save", form_file.to_str().unwrap()])
+            .status
+            .success()
+    );
 
     assert!(create_structured_entry(
         &config_path,
@@ -259,12 +254,11 @@ fn test_validate_properties_missing_required() {
     )
     .unwrap();
 
-    assert!(run_cli(
-        &config_path,
-        &["form", "update", form_file.to_str().unwrap()]
-    )
-    .status
-    .success());
+    assert!(
+        run_cli(&config_path, &["form", "save", form_file.to_str().unwrap()])
+            .status
+            .success()
+    );
 
     assert!(create_structured_entry(
         &config_path,
@@ -294,12 +288,11 @@ fn test_validate_properties_valid() {
     )
     .unwrap();
 
-    assert!(run_cli(
-        &config_path,
-        &["form", "update", form_file.to_str().unwrap()]
-    )
-    .status
-    .success());
+    assert!(
+        run_cli(&config_path, &["form", "save", form_file.to_str().unwrap()])
+            .status
+            .success()
+    );
 
     assert!(create_structured_entry(
         &config_path,
