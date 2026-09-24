@@ -91,7 +91,7 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
     await expect(page).toHaveURL(
       `/spaces/${spaceId}/entries/new?form=Entry`,
     );
-    await expect(page.getByLabel("Form")).toHaveValue("Entry");
+    await expect(page.getByLabel("Form", { exact: true })).toHaveValue("Entry");
   });
 
   test("GET /about returns HTML", async ({ page }) => {
