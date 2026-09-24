@@ -262,8 +262,18 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
     assert!(before_ids.len() >= 3);
 
     // 7. Change revert appends its inverse; the reverted Change is kept.
+    let revert_message = "Revert incorrect status edit";
     let reverted = stdout_json(
-        &run_cli(&config_path, &["change", "revert", &update_change_id]),
+        &run_cli(
+            &config_path,
+            &[
+                "change",
+                "revert",
+                &update_change_id,
+                "--message",
+                revert_message,
+            ],
+        ),
         "change revert",
     );
     assert_eq!(reverted["kind"].as_str(), Some("change"));
@@ -290,6 +300,17 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
     assert!(after_ids.contains(&update_change_id));
     assert!(after_ids.contains(&revert_id));
     assert_eq!(after_ids.len(), before_ids.len() + 1);
+    let reverted_change = changes
+        .as_array()
+        .expect("change list after revert is an array")
+        .iter()
+        .find(|change| change["change_id"] == revert_id)
+        .expect("appended revert Change is listed");
+    assert_eq!(
+        reverted_change["change"]["reverts_change_id"],
+        update_change_id
+    );
+    assert_eq!(reverted_change["change"]["message"], revert_message);
 
     // 9. Current EntryQuery results reflect the recovered state.
     let results = stdout_json(
