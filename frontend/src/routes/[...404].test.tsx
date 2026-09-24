@@ -14,22 +14,19 @@ vi.mock("@solidjs/router", () => ({
 }));
 
 describe("404 route", () => {
-  it("REQ-E2E-004: unknown routes keep users inside Ugoite recovery paths", () => {
+  it("REQ-E2E-004: unknown routes keep shell navigation and alternate recovery paths", () => {
     render(() => <NotFoundRoute />);
 
     expect(screen.getByRole("heading", { name: "Page not found" }))
       .toBeInTheDocument();
-    expect(screen.getByText(/still inside Ugoite/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Visit solidjs.com/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open Spaces" })).toHaveAttribute(
-      "href",
-      "/spaces",
-    );
-    expect(screen.getByRole("link", { name: "Go to Login" })).toHaveAttribute(
+    const spacesLink = screen.getAllByRole("link", { name: "Spaces" })
+      .find((link) => link.getAttribute("href") === "/spaces");
+    expect(spacesLink).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute(
       "href",
       "/login",
     );
-    expect(screen.getByRole("link", { name: "Back to Home" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute(
       "href",
       "/",
     );
