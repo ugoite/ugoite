@@ -26,7 +26,6 @@ export default function SecuritySettingsRoute() {
     <GlobalShell>
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow">Ugoite</div>
           <h1>{t("securityPage.title")}</h1>
         </div>
       </div>
@@ -73,11 +72,13 @@ export function CredentialSettings() {
   );
   return (
     <>
-      <h2>{t("securityPage.credentials")}</h2>
+      <h2 id="credential-settings-heading">
+        {t("securityPage.credentials")}
+      </h2>
       <div
         class="tabs"
         role="tablist"
-        aria-label={t("securityPage.credentialSettings")}
+        aria-labelledby="credential-settings-heading"
       >
         <For each={credentialTabs}>
           {([id, label]) => (
@@ -268,7 +269,6 @@ export function CredentialSettings() {
           class="ui-card ui-stack-sm"
         >
           <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold">{t("securityPage.passkeys")}</h2>
             <button
               type="button"
               class="ui-button ui-button-primary"
@@ -319,9 +319,6 @@ export function CredentialSettings() {
           aria-labelledby="credential-tab-sessions"
           class="ui-card ui-stack-sm"
         >
-          <h2 class="text-lg font-semibold">
-            {t("securityPage.browserSessions")}
-          </h2>
           <Show when={credentials()}>
             {(value) => (
               <For each={value().sessions}>
@@ -365,7 +362,6 @@ export function CredentialSettings() {
           aria-labelledby="credential-tab-audit"
           class="ui-card ui-stack-sm"
         >
-          <h2 class="text-lg font-semibold">{t("securityPage.auditLog")}</h2>
           <NodeAuditLogViewer />
         </section>
       </Show>

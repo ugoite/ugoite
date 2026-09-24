@@ -72,7 +72,7 @@ describe("SecuritySettingsRoute", () => {
     render(() => <SecuritySettingsRoute />);
 
     const tablist = await screen.findByRole("tablist", {
-      name: "Credential settings",
+      name: "Credentials",
     });
     expect(tablist).toBeInTheDocument();
     for (const name of ["Passkeys", "Sessions", "Audit Log"]) {
