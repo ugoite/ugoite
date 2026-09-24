@@ -184,12 +184,34 @@ export async function gotoWithOneEnvironmentRetry(
 export async function gotoPageWithOneEnvironmentRetry(
   page: Page,
   url: string,
-  options: { label?: string; gotoOptions?: Parameters<Page["goto"]>[1] } = {},
+  options: {
+    label?: string;
+    gotoOptions?: Parameters<Page["goto"]>[1];
+    waitForReady?: (page: Page) => Promise<void>;
+  } = {},
 ): Promise<{ retried: boolean }> {
   const label = options.label ?? url;
+  const assetErrors: string[] = [];
+  page.on("requestfailed", (request) => {
+    const failure = request.failure()?.errorText ?? "requestfailed";
+    assetErrors.push(`${request.url()} :: ${failure}`);
+  });
+  page.on("console", (message) => {
+    if (message.type() === "error") assetErrors.push(message.text());
+  });
+
+  const probe = async (status?: number) => ({
+    status,
+    bodySnippet: await page.content().then((html) => html.slice(0, 2000), () => ""),
+    assetError: assetErrors.join(" | ").slice(0, 2000),
+  });
+  const waitForReady = async () => {
+    await options.waitForReady?.(page);
+  };
+
+  let status: number | undefined;
   try {
-    await page.goto(url, options.gotoOptions);
-    return { retried: false };
+    status = (await page.goto(url, options.gotoOptions))?.status();
   } catch (error) {
     if (classifyNavigationFailure(error) !== "retry") throw error;
     const reason = error instanceof Error ? error.message : String(error);
@@ -198,8 +220,26 @@ export async function gotoPageWithOneEnvironmentRetry(
         reason.slice(0, 500)
       }`,
     );
-    // Exactly one retry; the second attempt throws through.
-    await page.goto(url, options.gotoOptions);
+    status = (await page.goto(url, options.gotoOptions))?.status();
+    await waitForReady();
+    return { retried: true };
+  }
+
+  try {
+    await waitForReady();
+    return { retried: false };
+  } catch (error) {
+    if (classifyNavigationFailure(error, await probe(status)) !== "retry") {
+      throw error;
+    }
+    const reason = error instanceof Error ? error.message : String(error);
+    console.log(
+      `[environment] ${label}: ready check hit a failed frontend asset; retrying once on the same page: ${
+        reason.slice(0, 500)
+      }`,
+    );
+    status = (await page.goto(url, options.gotoOptions))?.status();
+    await waitForReady();
     return { retried: true };
   }
 }

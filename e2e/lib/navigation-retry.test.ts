@@ -228,6 +228,7 @@ Deno.test("gotoWithOneEnvironmentRetry: ceremony failure does not retry", async 
 Deno.test("gotoPageWithOneEnvironmentRetry: same-page retry policy", async () => {
   let calls = 0;
   const page = {
+    on() {},
     async goto(): Promise<null> {
       calls++;
       if (calls === 1) throw NETWORK_CHANGED;
@@ -242,6 +243,7 @@ Deno.test("gotoPageWithOneEnvironmentRetry: same-page retry policy", async () =>
   assert.equal(calls, 2);
 
   const forbiddenPage = {
+    on() {},
     async goto(): Promise<null> {
       throw new Error("Request failed with status 403");
     },
@@ -255,3 +257,81 @@ Deno.test("gotoPageWithOneEnvironmentRetry: same-page retry policy", async () =>
     /403/,
   );
 });
+
+Deno.test(
+  "gotoPageWithOneEnvironmentRetry: retries one failed lazy route asset after document load",
+  async () => {
+    let calls = 0;
+    let readyChecks = 0;
+    const listeners: Record<string, Array<(value: unknown) => void>> = {};
+    const page = {
+      on(event: string, listener: (value: unknown) => void) {
+        (listeners[event] ??= []).push(listener);
+      },
+      async goto(): Promise<{ status(): number }> {
+        calls++;
+        if (calls === 1) {
+          for (const listener of listeners.requestfailed ?? []) {
+            listener({
+              url: () => "http://localhost/_build/assets/security.js",
+              failure: () => ({ errorText: "net::ERR_NETWORK_CHANGED" }),
+            });
+          }
+        }
+        return { status: () => 200 };
+      },
+      async content() {
+        return "<html><body>This page could not be displayed</body></html>";
+      },
+    } as unknown as Page;
+
+    const result = await gotoPageWithOneEnvironmentRetry(
+      page,
+      "http://localhost/settings/security",
+      {
+        waitForReady: async () => {
+          readyChecks++;
+          if (readyChecks === 1) {
+            throw new Error("account recovery settings did not become visible");
+          }
+        },
+      },
+    );
+
+    assert.equal(result.retried, true);
+    assert.equal(calls, 2);
+    assert.equal(readyChecks, 2);
+  },
+);
+
+Deno.test(
+  "gotoPageWithOneEnvironmentRetry: application readiness failure does not retry",
+  async () => {
+    let calls = 0;
+    const page = {
+      async goto(): Promise<{ status(): number }> {
+        calls++;
+        return { status: () => 200 };
+      },
+      async content() {
+        return "<html><body>Unexpected error</body></html>";
+      },
+      on() {},
+    } as unknown as Page;
+
+    await assert.rejects(
+      () =>
+        gotoPageWithOneEnvironmentRetry(
+          page,
+          "http://localhost/settings/security",
+          {
+            waitForReady: async () => {
+              throw new Error("account recovery settings did not become visible");
+            },
+          },
+        ),
+      /account recovery settings did not become visible/,
+    );
+    assert.equal(calls, 1);
+  },
+);
