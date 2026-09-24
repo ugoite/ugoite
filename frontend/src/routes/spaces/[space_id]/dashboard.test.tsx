@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createMemo, createSignal, Show } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
-import { formApi, spaceApi } from "~/lib/ugoite-client";
+import { formApi } from "~/lib/ugoite-client";
 import SpaceDashboardRoute from "./dashboard";
 
 const navigate = vi.fn();
@@ -38,7 +38,6 @@ vi.mock(
   "~/lib/ugoite-client",
   () => ({
     formApi: { list: vi.fn(), listTypes: vi.fn(), create: vi.fn() },
-    spaceApi: { get: vi.fn() },
   }),
 );
 
@@ -49,11 +48,6 @@ describe("v5 space Home", () => {
     entryStoreMock.entries.mockReturnValue([]);
     entryStoreMock.loadEntries.mockResolvedValue(undefined);
     entryStoreMock.error.mockReturnValue(null);
-    vi.mocked(spaceApi.get).mockResolvedValue({
-      space_uid: "default",
-      name: "Local Knowledge",
-      created_at: "2026-01-01",
-    });
     vi.mocked(formApi.listTypes).mockResolvedValue([]);
   });
   it("renders Continue, Pinned and Recent without metric cards", async () => {
@@ -70,77 +64,10 @@ describe("v5 space Home", () => {
       .toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Pinned" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Recent" })).toBeInTheDocument();
-    expect(screen.getByText("Forms / Entries")).toBeInTheDocument();
     expect(screen.queryByText(/forms available/i)).not.toBeInTheDocument();
     expect(document.querySelector(".continueGrid")).toBeInTheDocument();
     expect(document.querySelector(".continueGrid .card")).toBeNull();
     expect(document.querySelector(".pinGrid")).toBeInTheDocument();
-  });
-  it("PR4: keeps only the space name and new-entry action above Continue", async () => {
-    vi.mocked(formApi.list).mockResolvedValue([{
-      name: "Notes",
-      version: 1,
-      template: "",
-      fields: { body: { type: "markdown", required: false } },
-    }]);
-    render(() => <SpaceDashboardRoute />);
-    await screen.findByRole("heading", { name: "Continue" });
-    expect(document.querySelector(".homehead")).toBeInTheDocument();
-    expect(document.querySelector(".dashboardIntro")).toBeNull();
-    expect(document.querySelector(".workInline")).toBeNull();
-    expect(screen.queryByText("Knowledge space")).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(/Stable Knowledge, quiet surfaces/),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText(/Konase is available/)).not.toBeInTheDocument();
-  });
-
-  it("REQ-UX-NAV-001: states the Space context once without a competing header", async () => {
-    vi.mocked(formApi.list).mockResolvedValue([{
-      name: "Notes",
-      version: 1,
-      template: "",
-      fields: { body: { type: "markdown", required: false } },
-    }]);
-
-    render(() => <SpaceDashboardRoute />);
-
-    await screen.findByText("Local Knowledge", { selector: ".eyebrow" });
-    expect(screen.getAllByText("Local Knowledge", { selector: ".eyebrow" }))
-      .toHaveLength(1);
-    expect(screen.queryByText("Knowledge space")).not.toBeInTheDocument();
-  });
-  it("REQ-FE-058: keeps the dashboard title calm while space metadata resolves", async () => {
-    let resolveSpace: (
-      space: { id: string; name: string; created_at: string },
-    ) => void;
-    vi.mocked(spaceApi.get).mockReturnValue(
-      new Promise((resolve) => {
-        resolveSpace = resolve;
-      }),
-    );
-    vi.mocked(formApi.list).mockResolvedValue([{
-      name: "Notes",
-      version: 1,
-      template: "",
-      fields: {},
-    }]);
-
-    render(() => <SpaceDashboardRoute />);
-
-    expect(screen.getByText("default", { selector: ".eyebrow" }))
-      .toBeInTheDocument();
-    expect(screen.queryByText(/loading space/i)).not.toBeInTheDocument();
-
-    resolveSpace!({
-      space_uid: "default",
-      name: "Local Knowledge",
-      created_at: "2026-01-01",
-    });
-    await waitFor(() => {
-      expect(screen.getByText("Local Knowledge", { selector: ".eyebrow" }))
-        .toBeInTheDocument();
-    });
   });
   it("starts the dedicated New Entry route when a creatable Form exists", async () => {
     vi.mocked(formApi.list).mockResolvedValue([{

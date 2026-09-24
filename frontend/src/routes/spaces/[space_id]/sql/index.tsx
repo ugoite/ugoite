@@ -57,7 +57,6 @@ export default function SpaceSqlIndexRoute() {
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow">{t("searchPage.title")}</div>
           <h1>{t("sqlPage.savedSql")}</h1>
         </div>
         <A

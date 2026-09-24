@@ -125,7 +125,9 @@ describe("SpaceSettingsRoute", () => {
     const { container } = render(() => <SpaceSettingsRoute />);
     await screen.findByRole("heading", { name: "General" });
 
-    const nav = container.querySelector('nav[aria-label="Settings"]');
+    const nav = container.querySelector(
+      'nav[aria-labelledby="settings-page-title"]',
+    );
     expect(nav).not.toBeNull();
     expect(nav!.querySelector(".rowList")).not.toBeNull();
     expect(container.querySelector(".settingsNav")).toBeNull();
@@ -146,7 +148,9 @@ describe("SpaceSettingsRoute", () => {
 
     // One category list only: desktop sidebar and mobile drawer share it.
     expect(
-      container.querySelectorAll('nav[aria-label="Settings"]'),
+      container.querySelectorAll(
+        'nav[aria-labelledby="settings-page-title"]',
+      ),
     ).toHaveLength(1);
     const menuButton = screen.getByRole("button", {
       name: "Settings menu: General",

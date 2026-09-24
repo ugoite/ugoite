@@ -41,9 +41,13 @@ const isForbiddenError = (value: unknown): boolean =>
   value instanceof UgoiteApiError &&
   (value.status === 403 || value.code === "FORBIDDEN");
 
-function SpaceTable(props: { label: string; spaces: readonly Space[] }) {
+function SpaceTable(props: {
+  label: string;
+  labelledBy: string;
+  spaces: readonly Space[];
+}) {
   return (
-    <RowList label={props.label}>
+    <RowList label={props.label} labelledBy={props.labelledBy}>
       <For each={props.spaces}>
         {(space) => {
           const uid = spaceUid(space);
@@ -199,7 +203,9 @@ export default function SpacesIndexRoute() {
       <div class="ui-stack">
         <div class="screenHead">
           <div class="screenTitle">
-            <h1>{t("spacesPage.title")}</h1>
+            <h1 class="ui-sr-only" id="spaces-page-title">
+              {t("spacesPage.title")}
+            </h1>
           </div>
           <div class="actions">
             <A
@@ -212,6 +218,7 @@ export default function SpacesIndexRoute() {
               <button
                 type="button"
                 class="ui-button ui-button-primary text-sm"
+                aria-label={t("spacesPage.newSpaceAria")}
                 onClick={openCreateForm}
               >
                 {t("spacesPage.createShort")}
@@ -225,7 +232,7 @@ export default function SpacesIndexRoute() {
           aria-busy={spaces.loading || undefined}
         >
           <h2 class="text-lg font-semibold mb-3">
-            {t("spacesPage.available")}
+            {t("spacesPage.availableShort")}
           </h2>
           <Show when={showCreateForm()}>
             <form class="ui-card ui-stack-sm mb-4" onSubmit={handleCreateSpace}>
@@ -335,6 +342,7 @@ export default function SpacesIndexRoute() {
                 <button
                   type="button"
                   class="ui-button ui-button-primary text-sm"
+                  aria-label={t("spacesPage.newSpaceAria")}
                   onClick={openCreateForm}
                 >
                   {t("spacesPage.createShort")}
@@ -351,7 +359,11 @@ export default function SpacesIndexRoute() {
             </div>
           </Show>
           <Show when={listedSpaces().length > 0}>
-            <SpaceTable label={t("spacesPage.title")} spaces={listedSpaces()} />
+            <SpaceTable
+              label={t("spacesPage.title")}
+              labelledBy="spaces-page-title"
+              spaces={listedSpaces()}
+            />
           </Show>
         </section>
       </div>

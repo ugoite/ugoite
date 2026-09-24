@@ -62,7 +62,6 @@ describe("UX PR-5 legacy strings", () => {
       );
     }
     expect(uiDictionary.ja["spacesPage.join"]).toBe("招待コード");
-    expect(uiDictionary.ja["spacesPage.createShort"]).toBe("+ スペース");
     expect(uiDictionary.ja["account.docs"]).toBe("ドキュメント");
 
     setLocale("ja");
@@ -96,7 +95,7 @@ describe("UX PR-5 legacy strings", () => {
       expect(screen.getByRole("link", { name: "招待コード" }))
         .toHaveAttribute("href", "/spaces/join")
     );
-    expect(screen.getByRole("button", { name: "+ スペース" }))
+    expect(screen.getByRole("button", { name: "新しいスペース" }))
       .toBeInTheDocument();
     for (const literal of legacyLiterals) {
       expect(

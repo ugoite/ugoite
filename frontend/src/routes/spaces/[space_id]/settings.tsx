@@ -139,10 +139,9 @@ export default function SpaceSettingsRoute() {
         <nav
           id="settings-nav"
           class="settingsNavPanel"
-          aria-label={t("settings.title")}
+          aria-labelledby="settings-page-title"
         >
           <div class="settingsNavHead">
-            <span class="text-sm font-semibold">{t("settings.title")}</span>
             <button
               ref={drawerCloseRef}
               type="button"
@@ -153,7 +152,10 @@ export default function SpaceSettingsRoute() {
               <UiIcon name="close" />
             </button>
           </div>
-          <RowList label={t("settings.title")}>
+          <RowList
+            label={t("settings.title")}
+            labelledBy="settings-page-title"
+          >
             <For each={settingsSections}>
               {(section) => (
                 <RowListItem
@@ -187,7 +189,9 @@ export default function SpaceSettingsRoute() {
           />
         </Show>
         <main>
-          <h1 class="ui-sr-only">{t("settings.title")}</h1>
+          <h1 class="ui-sr-only" id="settings-page-title">
+            {t("settings.title")}
+          </h1>
           <div class="settingsMenuRow">
             <button
               ref={menuButtonRef}

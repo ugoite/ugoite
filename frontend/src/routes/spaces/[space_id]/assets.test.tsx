@@ -62,9 +62,6 @@ describe("/spaces/:space_id/assets", () => {
       );
     expect(assetApi.list).toHaveBeenCalledWith("default");
     expect(screen.getByText(/application\/pdf/)).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "All current Entry asset references are shown.",
-    );
     // RowList rows: full-row activation, no raw IDs in rows.
     expect(container.querySelector(".rowList")).toBeInTheDocument();
     expect(container.querySelector(".spaceAssetRow")).toBeNull();
@@ -81,7 +78,7 @@ describe("/spaces/:space_id/assets", () => {
       .toBeInTheDocument();
     expect(screen.getByRole("link", { name: "+Upload" }))
       .toHaveAttribute("href", "/spaces/default/forms");
-    expect(screen.getByText(/never creates a second asset catalog/))
+    expect(screen.getByText(/Upload an asset in a Form-owned asset field/))
       .toBeInTheDocument();
   });
 

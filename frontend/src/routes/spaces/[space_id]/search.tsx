@@ -7,16 +7,13 @@ import {
   untrack,
 } from "solid-js";
 import { A } from "@solidjs/router";
+import { UiIcon } from "~/components/UiIcon";
 import { EntryBrowser } from "~/components/EntryBrowser";
 import {
   createEntryQueryController,
   systemEntryCapabilities,
 } from "~/lib/entry-query";
-import {
-  spaceAssetsPath,
-  spaceEntryPath,
-  spaceSqlPath,
-} from "~/lib/space-path";
+import { spaceEntryPath, spaceSqlPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 import { t } from "~/lib/i18n";
 
@@ -88,11 +85,9 @@ export default function SpaceSearchRoute() {
       <h1 class="ui-sr-only" id="search-page-title">
         {t("searchPage.title")}
       </h1>
-      <nav class="ui-muted" aria-label={t("searchPage.title")}>
-        <A href={spaceAssetsPath(spaceId())}>{t("searchPage.nav.files")}</A>
-        {" · "}
+      <div class="ui-muted">
         <A href={spaceSqlPath(spaceId())}>{t("searchPage.nav.saved")}</A>
-      </nav>
+      </div>
       <section class="searchControls" aria-labelledby="search-page-title">
         <form
           class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center"
@@ -116,8 +111,12 @@ export default function SpaceSearchRoute() {
             </div>
           </div>
           <div class="sm:self-end queryLane">
-            <button type="submit" class="ui-button ui-button-primary text-sm">
-              {t("searchPage.searchEntries")}
+            <button
+              type="submit"
+              class="ui-button ui-button-primary text-sm"
+              aria-label={t("searchPage.searchEntries")}
+            >
+              <UiIcon name="search" />
             </button>
           </div>
         </form>

@@ -110,11 +110,10 @@ describe("Forms list", () => {
     refetchForms.mockReset();
     vi.mocked(formApi.create).mockReset();
   });
-  it("renders a list-only heading with a create action", () => {
+  it("renders Forms and exposes the create action accessibly", () => {
     renderPage([noteForm]);
-    expect(screen.getByRole("heading", { name: "Forms" }))
+    expect(screen.getByRole("button", { name: "New Form" }))
       .toBeInTheDocument();
-    expect(screen.getByText("New form")).toBeInTheDocument();
     expect(
       screen.getByRole("list", { name: "Forms" }),
     ).toBeInTheDocument();
@@ -144,7 +143,7 @@ describe("Forms list", () => {
   it("passes the logical Space ID to the API after an encoded navigation", async () => {
     vi.mocked(formApi.create).mockResolvedValue(noteForm);
     renderPage([noteForm], undefined, "space/with space");
-    fireEvent.click(screen.getByRole("button", { name: "Form" }));
+    fireEvent.click(screen.getByRole("button", { name: "New Form" }));
     fireEvent.click(screen.getByRole("button", { name: "Submit new form" }));
     await waitFor(() =>
       expect(formApi.create).toHaveBeenCalledWith("space/with space", {
@@ -167,7 +166,7 @@ describe("Forms list", () => {
   });
   it("filters the list with the shared search field", () => {
     renderPage([noteForm, { ...noteForm, name: "Projects" }]);
-    fireEvent.input(screen.getByPlaceholderText("Find a Form"), {
+    fireEvent.input(screen.getByRole("searchbox", { name: "Find a Form" }), {
       target: { value: "Proj" },
     });
     expect(screen.queryByText("Notes")).not.toBeInTheDocument();
@@ -176,7 +175,7 @@ describe("Forms list", () => {
         node.textContent
       ),
     ).toEqual(["Projects"]);
-    fireEvent.input(screen.getByPlaceholderText("Find a Form"), {
+    fireEvent.input(screen.getByRole("searchbox", { name: "Find a Form" }), {
       target: { value: "missing" },
     });
     expect(screen.getByText("No Forms yet")).toBeInTheDocument();
@@ -193,7 +192,6 @@ describe("Forms list", () => {
       ),
     ).toBe(true);
     expect(screen.getByLabelText("System form")).toBeInTheDocument();
-    expect(screen.queryByText("System")).not.toBeInTheDocument();
   });
   it("REQ-UX-RESP-001: keeps icon-only row actions named with tooltips", () => {
     renderPage([noteForm]);
@@ -219,7 +217,7 @@ describe("Forms list", () => {
   it("creates a Form and navigates to its Entry list", async () => {
     vi.mocked(formApi.create).mockResolvedValue(noteForm);
     renderPage([noteForm]);
-    fireEvent.click(screen.getByRole("button", { name: "Form" }));
+    fireEvent.click(screen.getByRole("button", { name: "New Form" }));
     fireEvent.click(screen.getByRole("button", { name: "Submit new form" }));
     await waitFor(() =>
       expect(formApi.create).toHaveBeenCalledWith("default", {

@@ -88,7 +88,7 @@ export function SpaceSettings(props: SpaceSettingsProps) {
         when={section() === "general"}
         fallback={
           <div class="settingsSection ui-stack-sm">
-            <h2>{t("spaceSettings.storage")}</h2>
+            <h2 class="ui-sr-only">{t("spaceSettings.storage")}</h2>
             <p class="ui-muted">{storageSummary().description}</p>
             <p>
               <span class="ui-pill">{storageSummary().label}</span>
@@ -151,7 +151,7 @@ export function SpaceSettings(props: SpaceSettingsProps) {
         }
       >
         <div class="settingsSection">
-          <h2>{t("spaceSettings.general")}</h2>
+          <h2 class="ui-sr-only">{t("spaceSettings.general")}</h2>
           <div class="settingsGrid">
             <label>
               {t("spaceSettings.spaceName")}
