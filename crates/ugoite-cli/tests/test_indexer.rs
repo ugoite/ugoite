@@ -69,6 +69,7 @@ fn create_structured_entry(
     let mut args = vec![
         "entry".to_string(),
         "create".to_string(),
+        "--id".to_string(),
         entry_id.to_string(),
         "--form".to_string(),
         form.to_string(),
