@@ -36,12 +36,13 @@ Change, or Run ID to recover.
 
 ```bash
 ugoite entry restore meeting-2026-09-12 <revision-id>
-ugoite change revert <change-id>
+ugoite change revert <change-id> [--message "Revert incorrect status edit"]
 ugoite run undo <run-id>
 ```
 
 `entry restore` replays one revision as a new revision. `change revert`
-appends the inverse of one Change. `run undo` appends one inverse Change per
+appends the inverse of one Change and can record an optional `--message` on
+that appended Change. `run undo` appends one inverse Change per
 Change correlated to the Run, in reverse publication order. Editing with a
 stale `--parent-revision-id` conflicts instead of overwriting. Take IDs from
 `entry history` and `change list` output; they are never inferred. Run

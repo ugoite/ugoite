@@ -27,6 +27,8 @@ pub enum ChangeSubCmd {
     Revert {
         #[arg(value_name = "CHANGE_ID")]
         change_id: String,
+        #[arg(long, value_name = "MESSAGE")]
+        message: Option<String>,
         #[arg(
             long,
             default_value = "cli",
@@ -126,7 +128,11 @@ pub async fn run(
                 emit_success(&changes, &fmt, None);
             }
         }
-        ChangeSubCmd::Revert { change_id, author } => {
+        ChangeSubCmd::Revert {
+            change_id,
+            message,
+            author,
+        } => {
             if change_id.trim().is_empty() {
                 return Err(UsageError("CHANGE_ID must not be blank".to_string()).into());
             }
@@ -144,7 +150,7 @@ pub async fn run(
                     &target,
                     "change.revert",
                     serde_json::json!({"space_id": space_uid, "change_id": change_id}),
-                    Some(serde_json::json!({})),
+                    Some(serde_json::json!({"message": message})),
                 )
                 .await?;
                 let new_change_id = result
@@ -161,7 +167,7 @@ pub async fn run(
             };
             let service = UgoiteService::new_without_background_refresh(root)?;
             let result = service
-                .revert_change(space_id, &change_id, &author, None, None)
+                .revert_change(space_id, &change_id, &author, None, message.as_deref())
                 .await?;
             let new_change_id = result
                 .get("change_id")

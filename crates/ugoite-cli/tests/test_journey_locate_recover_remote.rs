@@ -383,8 +383,19 @@ async fn journey_cli_remote_locate_recover() {
     assert!(before_ids.contains(&update_change_id));
 
     // Change revert appends its inverse; the reverted Change is kept.
+    let revert_message = "Revert incorrect status edit";
     let reverted = stdout_json(
-        &run_cli(config_path, &["change", "revert", &update_change_id]).await,
+        &run_cli(
+            config_path,
+            &[
+                "change",
+                "revert",
+                &update_change_id,
+                "--message",
+                revert_message,
+            ],
+        )
+        .await,
         "change revert",
     );
     assert_eq!(reverted["kind"].as_str(), Some("change"));
@@ -410,6 +421,17 @@ async fn journey_cli_remote_locate_recover() {
     let after_ids = change_ids(&changes);
     assert!(after_ids.contains(&update_change_id));
     assert!(after_ids.contains(&revert_id));
+    let reverted_change = changes
+        .as_array()
+        .expect("change list after revert is an array")
+        .iter()
+        .find(|change| change["change_id"] == revert_id)
+        .expect("appended revert Change is listed");
+    assert_eq!(
+        reverted_change["change"]["reverts_change_id"],
+        update_change_id
+    );
+    assert_eq!(reverted_change["change"]["message"], revert_message);
     let results = stdout_json(
         &run_cli(
             config_path,
