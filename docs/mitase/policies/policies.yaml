@@ -749,14 +749,14 @@ policies:
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-UI-001#rule.governance }]
   - id: POL-UI-002
-    title: No Duplicate Context Headers
-    summary: A surface states its context once and does not repeat the same Space, Form, or Entry identity in competing headers.
-    description: Context identity appears once per surface so assistive and visual traversal encounter a single authoritative heading rather than duplicated Space, Form, or Entry titles.
+    title: Single Semantic Owner Per Surface
+    summary: Each piece of information has one visible owner on a surface.
+    description: A surface gives each piece of information one visible owner. Context already established by shell navigation, a heading, selected object, or field label is not restated through another heading, eyebrow, explanation, placeholder, action label, or shortcut. A second presentation is appropriate only when it communicates a distinct operation, state, or subject.
     rules:
       - id: governance
         level: must
-        statement: A surface states its Space, Form, or Entry context once and does not repeat the same identity in a competing header or subtitle on the same surface.
-        governed_by: [PHIL-INTERACTION-001#principle.structure-before-explanation, PHIL-INTERACTION-001#principle.single-control]
+        statement: Each piece of information on a surface has one visible owner. Context established by shell navigation, a heading, a selected object, or a field label is not restated by another heading, eyebrow, explanation, placeholder, action label, or shortcut; a second presentation is permitted only when it communicates a distinct operation, state, or subject.
+        governed_by: [PHIL-INTERACTION-001#principle.structure-before-explanation, PHIL-INTERACTION-001#principle.single-control, PHIL-INTERACTION-001#principle.no-decoration]
     bindings:
       - id: context-evidence
         role: evidence

@@ -7,9 +7,9 @@ page:
   implementation: implemented
 components:
   shared:
-    - id: global-sidebar
-      type: sidebar
-      target_component: space-shell-shared
+    - id: space-shell
+      type: persistent-workspace-navigation
+      reference: ../components/space-shell.yaml
   body:
     - id: entry-editor
       type: two-column-workspace

@@ -7,9 +7,9 @@ page:
   implementation: implemented
 components:
   shared:
-    - id: top-tabs
-      type: tab-bar
-      position: top-center-floating
+    - id: space-shell
+      type: persistent-workspace-navigation
+      reference: ../components/space-shell.yaml
   body:
     - id: change-timeline
       type: list

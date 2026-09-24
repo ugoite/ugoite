@@ -1,5 +1,5 @@
 version: "0.2"
-updated: "2026-07-17"
+updated: "2026-09-24"
 page:
   id: space-settings
   title: Space Settings
@@ -7,16 +7,9 @@ page:
   implementation: implemented
 components:
   shared:
-    - id: top-tabs
-      type: tab-bar
-      position: top-center-floating
-      tabs:
-        - id: dashboard
-          label: dashboard
-          target_page: space-dashboard
-        - id: search
-          label: search
-          target_page: space-search
+    - id: space-shell
+      type: persistent-workspace-navigation
+      reference: ../components/space-shell.yaml
   body:
     - id: settings-panel
       type: settings-panel

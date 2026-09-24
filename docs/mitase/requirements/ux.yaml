@@ -15,7 +15,7 @@ requirements:
         governed_by: [POL-UI-001#rule.governance]
       - id: no-duplicate-context
         kind: behavior
-        statement: A surface states its Space, Form, or Entry context once and does not repeat the same identity in a competing header or subtitle on the same surface.
+        statement: Each piece of information on a surface has one visible owner. Context established by shell navigation, a heading, a selected object, or a field label is not restated by another heading, eyebrow, explanation, placeholder, action label, or shortcut; a second presentation is appropriate only when it communicates a distinct operation, state, or subject.
         governed_by: [POL-UI-002#rule.governance]
       - id: single-shell-ownership
         kind: behavior

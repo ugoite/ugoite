@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-02-14"
+updated: "2026-09-24"
 page:
   id: space-entry-history
   title: Space Entry History
@@ -7,9 +7,9 @@ page:
   implementation: implemented
 components:
   shared:
-    - id: top-tabs
-      type: tab-bar
-      position: top-center-floating
+    - id: space-shell
+      type: persistent-workspace-navigation
+      reference: ../components/space-shell.yaml
   body:
     - id: revision-list
       type: list
