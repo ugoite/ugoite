@@ -11,12 +11,12 @@ components:
       type: persistent-workspace-navigation
       reference: ../components/space-shell.yaml
   body:
-    - id: form-entries-header
+    - id: form-entries-object-heading
       type: page-header
-      description: The Form name is the heading with a positional back link to the Forms list.
+      description: The selected Form name is the sole page identity; Forms navigation remains owned by the persistent shell.
     - id: form-entry-list
       type: list
-      description: The Form's Entries workspace loads that Form's current Entries from a form-scoped server query as border-separated rows, keeps New Entry adjacent to the list, opens Entry creation with that Form preselected, selects a row to open its Entry, and hides the browser for unknown or reserved metadata Forms.
+      description: The Form's Entries workspace loads that Form's current Entries from a form-scoped server query as border-separated rows, offers a compact Entry creation action with a clear accessible name, opens Entry creation with that Form preselected, selects a row to open its Entry, and hides the browser for unknown or reserved metadata Forms.
       items:
         - form-field-values
       actions:

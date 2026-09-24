@@ -102,20 +102,16 @@ describe("/spaces/:space_id/forms/:form_ref/entries", () => {
     renderRoute([noteForm], "default", true);
 
     expect(screen.getByRole("heading", { name: "Notes" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back to Forms" }))
-      .toHaveAttribute("href", "/spaces/default/forms");
     const toolbar = screen.getByRole("toolbar", { name: "Entry browser" });
     expect(toolbar.textContent).toContain("title");
-    const create = screen.getByRole("button", { name: "+ Entry" });
-    expect(create).toBeInTheDocument();
-    expect(document.querySelector(".entriesHeader")!.contains(create))
-      .toBe(false);
+    expect(screen.getByRole("button", { name: "New Entry" }))
+      .toBeInTheDocument();
   });
 
   it("opens Entry creation for the current Form", () => {
     renderRoute([noteForm]);
 
-    fireEvent.click(screen.getByRole("button", { name: "+ Entry" }));
+    fireEvent.click(screen.getByRole("button", { name: "New Entry" }));
     expect(navigate).toHaveBeenCalledWith(
       "/spaces/default/entries/new?form=Notes",
     );
@@ -154,18 +150,13 @@ describe("/spaces/:space_id/forms/:form_ref/entries", () => {
       .not.toBeInTheDocument();
   });
 
-  it("REQ-UX-ENTRY-001: renders form-scoped entries with a positional back link and list-adjacent create action", () => {
+  it("opens creation with the current Form selected", () => {
     renderRoute([noteForm]);
 
-    const header = document.querySelector(".entriesHeader")!;
-    const backLink = screen.getByRole("link", { name: "Back to Forms" });
-    expect(header.contains(backLink)).toBe(true);
-    const body = document.querySelector(".entriesBody")!;
-    const create = screen.getByRole("button", { name: "+ Entry" });
-    expect(body.contains(create)).toBe(true);
-    expect(
-      body.contains(screen.getByRole("toolbar", { name: "Entry browser" })),
-    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "New Entry" }));
+    expect(navigate).toHaveBeenCalledWith(
+      "/spaces/default/entries/new?form=Notes",
+    );
   });
 
   it("REQ-UX-LIST-001: renders entry rows without type chips and with compact right-meta dates", async () => {

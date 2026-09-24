@@ -108,15 +108,6 @@ requirements:
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
                 covers: [FEAT-UX-007#binding.back-control-implementation/target.sql-detail-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-UX-NAV-001: exposes exactly one back control to saved SQL" } }
-          - id: form-types-single-back
-            adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/forms/types.test.tsx
-            selector: { kind: test, name: "REQ-UX-NAV-001: exposes exactly one back control to forms" }
-            claims:
-              - kind: verifies
-                criterion: REQ-UX-NAV-001#criterion.single-back-control
-                covers: [FEAT-UX-007#binding.back-control-implementation/target.form-types-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/types.test.tsx", test: "REQ-UX-NAV-001: exposes exactly one back control to forms" } }
       - id: single-context-verification
         role: verification
         facet: verification
@@ -140,15 +131,6 @@ requirements:
                 criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
                 covers: [FEAT-UX-009#binding.auth-form-implementation/target.setup-surface]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/routes/setup.test.tsx, test: "REQ-UX-NAV-001: states the setup task once with a one-line onboarding note" } }
-          - id: form-types-single-context
-            adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/forms/types.test.tsx
-            selector: { kind: test, name: "REQ-UX-NAV-001: states the form context once without a competing header" }
-            claims:
-              - kind: verifies
-                criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
-                covers: [FEAT-UX-007#binding.back-control-implementation/target.form-types-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/types.test.tsx", test: "REQ-UX-NAV-001: states the form context once without a competing header" } }
           - id: dashboard-single-context
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
@@ -209,20 +191,6 @@ requirements:
         statement: Editor guidance derives from the active Form fields and explains unstructured Forms without fabricating field headings or examples.
         governed_by: [POL-UI-010#rule.guidance]
     bindings:
-      - id: entry-list-slice-verification
-        role: verification
-        facet: verification
-        responsibility: Verify the Entry list first slice (positional back link with list-adjacent create action) through exact Vitest cases.
-        targets:
-          - id: entry-scoped-back-create
-            adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx"
-            selector: { kind: test, name: "REQ-UX-ENTRY-001: renders form-scoped entries with a positional back link and list-adjacent create action" }
-            claims:
-              - kind: verifies
-                criterion: REQ-UX-ENTRY-001#criterion.no-decorative-cards
-                covers: [FEAT-UX-008#binding.row-list-implementation/target.form-entries-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx", test: "REQ-UX-ENTRY-001: renders form-scoped entries with a positional back link and list-adjacent create action" } }
       - id: entry-save-state-verification
         role: verification
         facet: verification

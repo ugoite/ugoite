@@ -1,6 +1,5 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { createEffect, createMemo, Show } from "solid-js";
-import { BackLink } from "~/components/BackLink";
 import { EntryBrowser } from "~/components/EntryBrowser";
 import {
   createEntryQueryController,
@@ -19,7 +18,6 @@ import {
   decodeSpaceSegment,
   spaceEntriesPath,
   spaceEntryPath,
-  spaceFormsPath,
 } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
@@ -108,15 +106,7 @@ export default function SpaceFormEntriesPane() {
   return (
     <div class="mx-auto max-w-6xl entriesPage">
       <div class="flex flex-wrap items-center justify-between gap-3 entriesHeader">
-        <div>
-          <h1 class="ui-page-title">
-            {formRef()}
-          </h1>
-          <BackLink
-            href={spaceFormsPath(spaceId())}
-            label={t("entriesPage.formBack")}
-          />
-        </div>
+        <h1 class="ui-page-title">{formRef()}</h1>
       </div>
 
       <div class="mt-6 entriesBody">
@@ -138,6 +128,7 @@ export default function SpaceFormEntriesPane() {
                     `/new?form=${encodeURIComponent(formRef())}`,
                   ),
                 )}
+              aria-label={t("entryPage.new")}
             >
               {t("entriesPage.newShort")}
             </button>
