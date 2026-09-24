@@ -61,20 +61,21 @@ export default function SetupRoute() {
 
   return (
     <main class="publicShell">
-      <section class="publicCard ui-stack">
-        <h1 class="ui-page-title">Initialize this Ugoite node</h1>
-        <Show when={!hasInitialPasskey()}>
-          <p class="ui-muted">
-            Set up this node by creating its first administrator Passkey.
-          </p>
-        </Show>
+      <section
+        class="publicCard ui-stack"
+        aria-labelledby="setup-title"
+      >
+        <h1 id="setup-title" class="ui-page-title">
+          {hasInitialPasskey()
+            ? strengthComplete() ? "Setup complete" : "Complete setup"
+            : "Initialize this Ugoite node"}
+        </h1>
         <Show
           when={!hasInitialPasskey()}
           fallback={
             <div class="ui-stack-sm">
               <Show
                 when={recoveryCodes().length > 0}
-                fallback={<p>Resume setup by registering a second Passkey.</p>}
               >
                 <p>
                   Save these bootstrap-only recovery codes now. They are not
@@ -94,7 +95,6 @@ export default function SetupRoute() {
                 when={strengthComplete()}
                 fallback={
                   <div class="ui-stack-sm">
-                    <p>Complete setup by registering a second Passkey.</p>
                     <button
                       type="button"
                       class="ui-button ui-button-primary"

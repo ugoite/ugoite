@@ -62,7 +62,7 @@ export default function LoginRoute() {
           <strong>Ugoite</strong>
         </a>
         <div class="loginCopy">
-          <h1>Sign in to your space</h1>
+          <h1>Sign in</h1>
           <p>
             Use a passkey registered with this Ugoite node.
           </p>
