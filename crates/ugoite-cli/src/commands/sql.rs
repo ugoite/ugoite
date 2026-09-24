@@ -10,7 +10,7 @@ use ugoite_core::sql_query::{SqlQueryCountRequest, SqlQueryPage, SqlQueryRequest
 use ugoite_iceberg::service::UgoiteService;
 use ugoite_iceberg::{
     index::validate_sql_syntax,
-    saved_sql::{SqlKind, SqlPayload},
+    saved_sql::{SqlGeneratedName, SqlKind, SqlMetadata, SqlPayload},
 };
 
 #[derive(Args)]
@@ -47,42 +47,51 @@ pub enum SqlSubCmd {
         #[arg(long = "param-type", value_name = "NAME=TYPE")]
         parameter_types: Vec<String>,
     },
+    /// Manage durable saved SQL queries
+    #[command(subcommand)]
+    Saved(SavedSqlSubCmd),
+}
+
+#[derive(Subcommand)]
+pub enum SavedSqlSubCmd {
     /// List saved SQL queries
     #[command(long_about = "Use the selected context or --context NAME for this command.")]
-    SavedList,
+    List,
     /// Get a saved SQL query
     #[command(long_about = "Use the selected context or --context NAME for this command.")]
-    SavedGet {
+    Get {
         #[arg(value_name = "SQL_ID")]
         sql_id: String,
     },
     /// Create a saved SQL query
     #[command(long_about = "Use the selected context or --context NAME for this command.")]
-    SavedCreate {
+    Create {
         #[arg(long)]
-        name: String,
-        #[arg(long)]
+        name: Option<String>,
+        #[arg(long, value_name = "SQL_OR_FILE")]
         sql: String,
         #[arg(long)]
         variables: Option<String>,
     },
     /// Update a saved SQL query
     #[command(long_about = "Use the selected context or --context NAME for this command.")]
-    SavedUpdate {
+    Update {
         #[arg(value_name = "SQL_ID")]
         sql_id: String,
+        #[arg(long, conflicts_with = "untitled")]
+        name: Option<String>,
         #[arg(long)]
-        name: String,
-        #[arg(long)]
-        sql: String,
+        untitled: bool,
+        #[arg(long, value_name = "SQL_OR_FILE")]
+        sql: Option<String>,
         #[arg(long)]
         variables: Option<String>,
         #[arg(long)]
-        parent_revision_id: String,
+        parent_revision_id: Option<String>,
     },
     /// Delete a saved SQL query
     #[command(long_about = "Use the selected context or --context NAME for this command.")]
-    SavedDelete {
+    Delete {
         #[arg(value_name = "SQL_ID")]
         sql_id: String,
         #[arg(long)]
@@ -182,6 +191,27 @@ fn target_space_id(target: &SpaceTarget) -> &str {
             space_uid: space_id,
             ..
         } => space_id,
+    }
+}
+
+async fn get_saved_sql(target: &SpaceTarget, sql_id: &str) -> Result<serde_json::Value> {
+    let space_id = target_space_id(target);
+    match target {
+        SpaceTarget::Remote { .. } => {
+            let result = http::execute_for_target(
+                target,
+                "sql.get",
+                serde_json::json!({"space_id": space_id, "sql_id": sql_id}),
+                None,
+            )
+            .await?;
+            Ok(result)
+        }
+        SpaceTarget::Core { root, .. } => {
+            UgoiteService::new_without_background_refresh(root)?
+                .get_saved_sql(space_id, sql_id)
+                .await
+        }
     }
 }
 
@@ -317,9 +347,9 @@ pub async fn run(
             .await?;
             print_json(&result);
         }
-        SqlSubCmd::SavedList => {
+        SqlSubCmd::Saved(SavedSqlSubCmd::List) => {
             let target =
-                resolve_command_target(explicit_config, context_override, "sql saved-list")?;
+                resolve_command_target(explicit_config, context_override, "sql saved list")?;
             if let SpaceTarget::Remote { space_uid, .. } = &target {
                 let result = http::execute_for_target(
                     &target,
@@ -338,69 +368,53 @@ pub async fn run(
             let sqls = service.list_saved_sql_operator_unscoped(space_id).await?;
             print_json(&sqls);
         }
-        SqlSubCmd::SavedGet { sql_id } => {
+        SqlSubCmd::Saved(SavedSqlSubCmd::Get { sql_id }) => {
             let target =
-                resolve_command_target(explicit_config, context_override, "sql saved-get")?;
-            if let SpaceTarget::Remote { space_uid, .. } = &target {
-                let result = http::execute_for_target(
-                    &target,
-                    "sql.get",
-                    serde_json::json!({"space_id": space_uid, "sql_id": sql_id}),
-                    None,
-                )
-                .await?;
-                print_json(&result);
-                return Ok(());
-            }
-            let SpaceTarget::Core { root, space_id } = &target else {
-                anyhow::bail!("operation sql.get does not use the remote transport")
-            };
-            let service = UgoiteService::new_without_background_refresh(root)?;
-            let sql = service.get_saved_sql(space_id, &sql_id).await?;
-            print_json(&sql);
+                resolve_command_target(explicit_config, context_override, "sql saved get")?;
+            print_json(&get_saved_sql(&target, &sql_id).await?);
         }
-        SqlSubCmd::SavedCreate {
+        SqlSubCmd::Saved(SavedSqlSubCmd::Create {
             name,
             sql,
             variables,
-        } => {
+        }) => {
             let target =
-                resolve_command_target(explicit_config, context_override, "sql saved-create")?;
+                resolve_command_target(explicit_config, context_override, "sql saved create")?;
             let fmt = effective_format(None);
             let vars: serde_json::Value = variables
                 .map(|v| serde_json::from_str(&v))
                 .transpose()?
                 .unwrap_or(serde_json::json!([]));
-            if let SpaceTarget::Remote { space_uid, .. } = &target {
-                let result = http::execute_for_target(
-                    &target,
-                    "sql.create",
-                    serde_json::json!({"space_id": space_uid}),
-                    Some(serde_json::json!({"name": name, "kind": "user-query", "sql": sql, "variables": vars})),
-                )
-                .await?;
-                let receipt = MutationReceipt::sql(
-                    opt_str(&result, "id").context("sql.create returned no id")?,
-                    opt_str(&result, "revision_id"),
-                    opt_str(&result, "change_id"),
-                );
-                emit_mutation(&receipt, &fmt, None);
-                return Ok(());
-            }
-            let SpaceTarget::Core { root, space_id } = &target else {
-                anyhow::bail!("operation sql.create does not use the remote transport")
-            };
             let payload = SqlPayload {
-                name: Some(name),
+                metadata: if name.is_none() {
+                    Some(SqlMetadata {
+                        search_criteria: None,
+                        generated_name: Some(SqlGeneratedName::Untitled),
+                    })
+                } else {
+                    None
+                },
+                name,
                 kind: SqlKind::UserQuery,
-                metadata: None,
-                sql,
+                sql: sql_text_from_argument(&sql)?,
                 variables: vars,
             };
-            let service = UgoiteService::new_without_background_refresh(root)?;
-            let result = service
-                .create_saved_sql(space_id, None, &payload, "cli")
-                .await?;
+            let result = match &target {
+                SpaceTarget::Remote { space_uid, .. } => {
+                    http::execute_for_target(
+                        &target,
+                        "sql.create",
+                        serde_json::json!({"space_id": space_uid}),
+                        Some(serde_json::to_value(payload)?),
+                    )
+                    .await?
+                }
+                SpaceTarget::Core { root, space_id } => {
+                    UgoiteService::new_without_background_refresh(root)?
+                        .create_saved_sql(space_id, None, &payload, "cli")
+                        .await?
+                }
+            };
             let receipt = MutationReceipt::sql(
                 opt_str(&result, "id").context("sql.create returned no id")?,
                 opt_str(&result, "revision_id"),
@@ -408,57 +422,105 @@ pub async fn run(
             );
             emit_mutation(&receipt, &fmt, None);
         }
-        SqlSubCmd::SavedUpdate {
+        SqlSubCmd::Saved(SavedSqlSubCmd::Update {
             sql_id,
             name,
+            untitled,
             sql,
             variables,
             parent_revision_id,
-        } => {
-            let target =
-                resolve_command_target(explicit_config, context_override, "sql saved-update")?;
-            let fmt = effective_format(None);
-            let vars: serde_json::Value = variables
-                .map(|v| serde_json::from_str(&v))
-                .transpose()?
-                .unwrap_or(serde_json::json!([]));
-            if let SpaceTarget::Remote { space_uid, .. } = &target {
-                let mut body = serde_json::json!({
-                    "name": name,
-                    "kind": "user-query",
-                    "sql": sql,
-                    "variables": vars,
-                });
-                body["parent_revision_id"] = serde_json::json!(parent_revision_id);
-                let result = http::execute_for_target(
-                    &target,
-                    "sql.update",
-                    serde_json::json!({"space_id": space_uid, "sql_id": sql_id}),
-                    Some(body),
-                )
-                .await?;
-                let receipt = MutationReceipt::sql(
-                    sql_id,
-                    opt_str(&result, "revision_id"),
-                    opt_str(&result, "change_id"),
+        }) => {
+            if name.is_some() && untitled {
+                return Err(
+                    UsageError("--name and --untitled are mutually exclusive".into()).into(),
                 );
-                emit_mutation(&receipt, &fmt, None);
-                return Ok(());
             }
-            let SpaceTarget::Core { root, space_id } = &target else {
-                anyhow::bail!("operation sql.update does not use the remote transport")
+            if name.is_none() && !untitled && sql.is_none() && variables.is_none() {
+                return Err(UsageError(
+                    "provide at least one of --name, --untitled, --sql, or --variables".into(),
+                )
+                .into());
+            }
+
+            let target =
+                resolve_command_target(explicit_config, context_override, "sql saved update")?;
+            let current = get_saved_sql(&target, &sql_id).await?;
+            let current_revision_id = current
+                .get("revision_id")
+                .and_then(serde_json::Value::as_str)
+                .context("sql.get returned no revision_id")?;
+            let current_name = current
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned);
+            let current_metadata = if current
+                .get("metadata")
+                .is_some_and(|value| !value.is_null())
+            {
+                Some(serde_json::from_value::<SqlMetadata>(
+                    current["metadata"].clone(),
+                )?)
+            } else {
+                None
             };
+            let rename_requested = name.is_some();
+            let merged_name = if untitled {
+                None
+            } else {
+                name.or(current_name)
+            };
+            let metadata = if untitled {
+                Some(SqlMetadata {
+                    search_criteria: None,
+                    generated_name: Some(SqlGeneratedName::Untitled),
+                })
+            } else if rename_requested {
+                None
+            } else {
+                current_metadata
+            };
+            let merged_sql = sql
+                .map(|value| sql_text_from_argument(&value))
+                .transpose()?
+                .or_else(|| {
+                    current
+                        .get("sql")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_owned)
+                })
+                .context("sql.get returned no SQL text")?;
+            let merged_variables = variables
+                .map(|value| serde_json::from_str(&value))
+                .transpose()?
+                .or_else(|| current.get("variables").cloned())
+                .context("sql.get returned no variables")?;
             let payload = SqlPayload {
-                name: Some(name),
+                name: merged_name,
                 kind: SqlKind::UserQuery,
-                metadata: None,
-                sql,
-                variables: vars,
+                metadata,
+                sql: merged_sql,
+                variables: merged_variables,
             };
-            let service = UgoiteService::new_without_background_refresh(root)?;
-            let result = service
-                .update_saved_sql(space_id, &sql_id, &payload, &parent_revision_id, "cli")
-                .await?;
+            let revision_id = parent_revision_id.unwrap_or_else(|| current_revision_id.to_owned());
+            let fmt = effective_format(None);
+            let result = match &target {
+                SpaceTarget::Remote { space_uid, .. } => {
+                    let mut body = serde_json::to_value(payload)?;
+                    body["parent_revision_id"] = serde_json::json!(revision_id);
+                    http::execute_for_target(
+                        &target,
+                        "sql.update",
+                        serde_json::json!({"space_id": space_uid, "sql_id": sql_id}),
+                        Some(body),
+                    )
+                    .await?
+                }
+                SpaceTarget::Core { root, space_id } => {
+                    UgoiteService::new_without_background_refresh(root)?
+                        .update_saved_sql(space_id, &sql_id, &payload, &revision_id, "cli")
+                        .await?
+                }
+            };
             let receipt = MutationReceipt::sql(
                 sql_id,
                 opt_str(&result, "revision_id"),
@@ -466,12 +528,12 @@ pub async fn run(
             );
             emit_mutation(&receipt, &fmt, None);
         }
-        SqlSubCmd::SavedDelete {
+        SqlSubCmd::Saved(SavedSqlSubCmd::Delete {
             sql_id,
             human_approval,
-        } => {
+        }) => {
             let target =
-                resolve_command_target(explicit_config, context_override, "sql saved-delete")?;
+                resolve_command_target(explicit_config, context_override, "sql saved delete")?;
             let fmt = effective_format(None);
             let human_approval =
                 human_approval.or_else(|| std::env::var("UGOITE_HUMAN_APPROVAL").ok());

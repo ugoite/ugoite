@@ -83,79 +83,87 @@ fn spawn_recording_server(
     status_line: &'static str,
     body: &'static str,
 ) -> (String, mpsc::Receiver<String>, thread::JoinHandle<()>) {
+    spawn_recording_server_responses(vec![(status_line, body)])
+}
+
+fn spawn_recording_server_responses(
+    responses: Vec<(&'static str, &'static str)>,
+) -> (String, mpsc::Receiver<String>, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let addr = listener.local_addr().unwrap();
     let (tx, rx) = mpsc::channel();
     let handle = thread::spawn(move || {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        let (mut stream, _) = loop {
-            match listener.accept() {
-                Ok(connection) => break connection,
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    assert!(
-                        Instant::now() < deadline,
-                        "timed out waiting for CLI request"
-                    );
-                    thread::sleep(Duration::from_millis(10));
+        for (status_line, body) in responses {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let (mut stream, _) = loop {
+                match listener.accept() {
+                    Ok(connection) => break connection,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(
+                            Instant::now() < deadline,
+                            "timed out waiting for CLI request"
+                        );
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) => panic!("failed to accept test request: {error}"),
                 }
-                Err(error) => panic!("failed to accept test request: {error}"),
-            }
-        };
-        stream
-            .set_read_timeout(Some(Duration::from_secs(2)))
-            .unwrap();
-        let mut request = Vec::new();
-        let mut content_length = 0usize;
-        let mut header_end = None;
-        loop {
-            let mut buffer = [0u8; 4096];
-            let read = match stream.read(&mut buffer) {
-                Ok(read) => read,
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        std::io::ErrorKind::TimedOut
-                            | std::io::ErrorKind::Interrupted
-                            | std::io::ErrorKind::WouldBlock
-                    ) =>
-                {
-                    assert!(Instant::now() < deadline, "timed out reading CLI request");
-                    continue;
-                }
-                Err(error) => panic!("failed to read test request: {error}"),
             };
-            if read == 0 {
-                break;
-            }
-            request.extend_from_slice(&buffer[..read]);
-            if header_end.is_none() {
-                if let Some(pos) = request.windows(4).position(|window| window == b"\r\n\r\n") {
-                    let end = pos + 4;
-                    header_end = Some(end);
-                    let headers = String::from_utf8_lossy(&request[..end]);
-                    for line in headers.lines() {
-                        if let Some((name, value)) = line.split_once(':') {
-                            if name.eq_ignore_ascii_case("content-length") {
-                                content_length = value.trim().parse().unwrap_or_default();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut request = Vec::new();
+            let mut content_length = 0usize;
+            let mut header_end = None;
+            loop {
+                let mut buffer = [0u8; 4096];
+                let read = match stream.read(&mut buffer) {
+                    Ok(read) => read,
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::TimedOut
+                                | std::io::ErrorKind::Interrupted
+                                | std::io::ErrorKind::WouldBlock
+                        ) =>
+                    {
+                        assert!(Instant::now() < deadline, "timed out reading CLI request");
+                        continue;
+                    }
+                    Err(error) => panic!("failed to read test request: {error}"),
+                };
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..read]);
+                if header_end.is_none() {
+                    if let Some(pos) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+                        let end = pos + 4;
+                        header_end = Some(end);
+                        let headers = String::from_utf8_lossy(&request[..end]);
+                        for line in headers.lines() {
+                            if let Some((name, value)) = line.split_once(':') {
+                                if name.eq_ignore_ascii_case("content-length") {
+                                    content_length = value.trim().parse().unwrap_or_default();
+                                }
                             }
                         }
                     }
                 }
-            }
-            if let Some(end) = header_end {
-                if request.len() >= end + content_length {
-                    break;
+                if let Some(end) = header_end {
+                    if request.len() >= end + content_length {
+                        break;
+                    }
                 }
             }
+            tx.send(String::from_utf8_lossy(&request).into_owned())
+                .unwrap();
+            let response = format!(
+                "{status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).unwrap();
         }
-        tx.send(String::from_utf8_lossy(&request).into_owned())
-            .unwrap();
-        let response = format!(
-            "{status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        stream.write_all(response.as_bytes()).unwrap();
     });
     (format!("http://{addr}"), rx, handle)
 }
@@ -458,26 +466,35 @@ fn test_sql_query_count_uses_separate_stateless_route() {
 fn test_saved_sql_create_req_api_006_uses_server_generated_id() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("config.toml");
-    let (base_url, request_rx, server) = spawn_recording_server(
-        "HTTP/1.1 201 Created",
-        r#"{"id":"remote-sql-1","revision_id":"rev-1"}"#,
-    );
+    let (base_url, request_rx, server) = spawn_recording_server_responses(vec![
+        (
+            "HTTP/1.1 201 Created",
+            r#"{"id":"remote-sql-1","revision_id":"rev-1"}"#,
+        ),
+        (
+            "HTTP/1.1 201 Created",
+            r#"{"id":"remote-sql-2","revision_id":"rev-2"}"#,
+        ),
+    ]);
     init_config(&config);
     set_connection(&config, "backend", &base_url);
     add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
 
-    let output = run(
+    let output = run(&config, &["sql", "saved", "create", "--sql", "SELECT 1"]);
+    let unnamed_request = request_rx.recv().unwrap();
+    let named_output = run(
         &config,
         &[
             "sql",
-            "saved-create",
+            "saved",
+            "create",
             "--name",
             "Remote query",
             "--sql",
-            "SELECT 1",
+            "SELECT 2",
         ],
     );
-    let request = request_rx.recv().unwrap();
+    let named_request = request_rx.recv().unwrap();
     server.join().unwrap();
 
     assert!(
@@ -486,23 +503,42 @@ fn test_saved_sql_create_req_api_006_uses_server_generated_id() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        request.starts_with("POST /spaces/019f1234-5678-7abc-8def-0123456789ab/sql HTTP/1.1\r\n"),
-        "{request}"
+        unnamed_request
+            .starts_with("POST /spaces/019f1234-5678-7abc-8def-0123456789ab/sql HTTP/1.1\r\n"),
+        "{unnamed_request}"
     );
-    let body = request_json_body(&request);
-    assert_eq!(body["name"], "Remote query");
-    assert_eq!(body["sql"], "SELECT 1");
-    assert!(!body.as_object().unwrap().contains_key("id"));
+    assert!(
+        named_output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&named_output.stderr)
+    );
+    let unnamed_body = request_json_body(&unnamed_request);
+    assert!(unnamed_body["name"].is_null());
+    assert_eq!(unnamed_body["metadata"]["generatedName"], "untitled");
+    assert_eq!(unnamed_body["sql"], "SELECT 1");
+    assert!(!unnamed_body.as_object().unwrap().contains_key("id"));
+
+    let named_body = request_json_body(&named_request);
+    assert_eq!(named_body["name"], "Remote query");
+    assert_eq!(named_body["sql"], "SELECT 2");
+    assert!(named_body["metadata"].is_null());
+    assert!(!named_body.as_object().unwrap().contains_key("id"));
 }
 
 #[test]
 fn test_saved_sql_update_req_api_006_sends_parent_revision_without_author() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("config.toml");
-    let (base_url, request_rx, server) = spawn_recording_server(
-        "HTTP/1.1 200 OK",
-        r#"{"id":"remote-sql-1","revision_id":"rev-2"}"#,
-    );
+    let (base_url, request_rx, server) = spawn_recording_server_responses(vec![
+        (
+            "HTTP/1.1 200 OK",
+            r#"{"id":"remote-sql-1","name":"Remote query","kind":"user-query","metadata":null,"sql":"SELECT 1","variables":[],"revision_id":"rev-current"}"#,
+        ),
+        (
+            "HTTP/1.1 200 OK",
+            r#"{"id":"remote-sql-1","revision_id":"rev-2"}"#,
+        ),
+    ]);
     init_config(&config);
     set_connection(&config, "backend", &base_url);
     add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
@@ -511,16 +547,16 @@ fn test_saved_sql_update_req_api_006_sends_parent_revision_without_author() {
         &config,
         &[
             "sql",
-            "saved-update",
+            "saved",
+            "update",
             "remote-sql-1",
-            "--name",
-            "Remote query",
             "--sql",
             "SELECT 2",
             "--parent-revision-id",
             "rev-1",
         ],
     );
+    let get_request = request_rx.recv().unwrap();
     let request = request_rx.recv().unwrap();
     server.join().unwrap();
 
@@ -528,6 +564,12 @@ fn test_saved_sql_update_req_api_006_sends_parent_revision_without_author() {
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        get_request.starts_with(
+            "GET /spaces/019f1234-5678-7abc-8def-0123456789ab/sql/remote-sql-1 HTTP/1.1\r\n"
+        ),
+        "{get_request}"
     );
     assert!(
         request.starts_with(
@@ -537,7 +579,59 @@ fn test_saved_sql_update_req_api_006_sends_parent_revision_without_author() {
     );
     let body = request_json_body(&request);
     assert_eq!(body["parent_revision_id"], "rev-1");
+    assert_eq!(body["name"], "Remote query");
+    assert_eq!(body["sql"], "SELECT 2");
+    assert_eq!(body["variables"], serde_json::json!([]));
     assert!(!body.as_object().unwrap().contains_key("author"));
+}
+
+#[test]
+fn test_saved_sql_update_defaults_to_current_revision() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let (base_url, request_rx, server) = spawn_recording_server_responses(vec![
+        (
+            "HTTP/1.1 200 OK",
+            r#"{"id":"remote-sql-1","name":"Remote query","kind":"user-query","metadata":null,"sql":"SELECT 1","variables":[],"revision_id":"rev-current"}"#,
+        ),
+        (
+            "HTTP/1.1 200 OK",
+            r#"{"id":"remote-sql-1","revision_id":"rev-2"}"#,
+        ),
+    ]);
+    init_config(&config);
+    set_connection(&config, "backend", &base_url);
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+
+    let output = run(
+        &config,
+        &[
+            "sql",
+            "saved",
+            "update",
+            "remote-sql-1",
+            "--sql",
+            "SELECT 3",
+        ],
+    );
+    let get_request = request_rx.recv().unwrap();
+    let update_request = request_rx.recv().unwrap();
+    server.join().unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(get_request.starts_with("GET /spaces/"), "{get_request}");
+    assert!(
+        update_request.starts_with("PUT /spaces/"),
+        "{update_request}"
+    );
+    let body = request_json_body(&update_request);
+    assert_eq!(body["parent_revision_id"], "rev-current");
+    assert_eq!(body["name"], "Remote query");
+    assert_eq!(body["sql"], "SELECT 3");
 }
 
 #[test]

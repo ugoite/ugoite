@@ -70,16 +70,20 @@ fn test_saved_sql_req_api_006_crud() {
         .status
         .success());
 
-    // Create a saved query
+    let sql_path = dir.path().join("query.sql");
+    std::fs::write(&sql_path, "SELECT $status").unwrap();
+
+    // Create an unnamed saved query from a SQL file.
     let create_output = run_cli(
         &config_path,
         &[
             "sql",
-            "saved-create",
-            "--name",
-            "my-query",
+            "saved",
+            "create",
             "--sql",
-            "SELECT * FROM sql",
+            sql_path.to_str().unwrap(),
+            "--variables",
+            r#"[{"name":"status","type":"string","description":"status"}]"#,
         ],
     );
 
@@ -96,7 +100,7 @@ fn test_saved_sql_req_api_006_crud() {
         .filter(|id| !id.is_empty())
         .expect("local create response should contain a non-empty id");
 
-    let get_output = run_cli(&config_path, &["sql", "saved-get", created_id]);
+    let get_output = run_cli(&config_path, &["sql", "saved", "get", created_id]);
     assert!(
         get_output.status.success(),
         "get stderr: {}",
@@ -105,9 +109,11 @@ fn test_saved_sql_req_api_006_crud() {
     let fetched: serde_json::Value =
         serde_json::from_slice(&get_output.stdout).expect("get should return JSON");
     assert_eq!(fetched["id"].as_str(), Some(created_id));
+    assert!(fetched["name"].is_null());
+    assert_eq!(fetched["metadata"]["generatedName"], "untitled");
 
     // List saved queries
-    let list_output = run_cli(&config_path, &["sql", "saved-list"]);
+    let list_output = run_cli(&config_path, &["sql", "saved", "list"]);
 
     assert!(
         list_output.status.success(),
@@ -123,22 +129,21 @@ fn test_saved_sql_req_api_006_crud() {
         "created saved SQL should be present in list: {listed}"
     );
 
-    let parent_revision_id = created["revision_id"]
-        .as_str()
-        .filter(|revision| !revision.is_empty())
-        .expect("local create response should contain a revision id");
+    let updated_sql_path = dir.path().join("updated.sql");
+    std::fs::write(
+        &updated_sql_path,
+        "SELECT $status WHERE $status IS NOT NULL",
+    )
+    .unwrap();
     let update_output = run_cli(
         &config_path,
         &[
             "sql",
-            "saved-update",
+            "saved",
+            "update",
             created_id,
-            "--name",
-            "updated-query",
             "--sql",
-            "SELECT * FROM updated_sql",
-            "--parent-revision-id",
-            parent_revision_id,
+            updated_sql_path.to_str().unwrap(),
         ],
     );
     assert!(
@@ -151,7 +156,7 @@ fn test_saved_sql_req_api_006_crud() {
     assert_eq!(updated["kind"].as_str(), Some("sql"));
     assert_eq!(updated["id"].as_str(), Some(created_id));
     // The receipt carries the new revision; read back for content.
-    let get_updated_output = run_cli(&config_path, &["sql", "saved-get", created_id]);
+    let get_updated_output = run_cli(&config_path, &["sql", "saved", "get", created_id]);
     assert!(
         get_updated_output.status.success(),
         "get after update stderr: {}",
@@ -159,13 +164,69 @@ fn test_saved_sql_req_api_006_crud() {
     );
     let fetched_updated: serde_json::Value = serde_json::from_slice(&get_updated_output.stdout)
         .expect("get after update should return JSON");
-    assert_eq!(fetched_updated["name"].as_str(), Some("updated-query"));
+    assert!(fetched_updated["name"].is_null());
+    assert_eq!(fetched_updated["metadata"]["generatedName"], "untitled");
     assert_eq!(
         fetched_updated["sql"].as_str(),
-        Some("SELECT * FROM updated_sql")
+        Some("SELECT $status WHERE $status IS NOT NULL")
+    );
+    assert_eq!(fetched_updated["variables"][0]["name"], "status");
+
+    let stale_revision_id = created["revision_id"]
+        .as_str()
+        .filter(|revision| !revision.is_empty())
+        .expect("create receipt should include the initial revision id");
+    let stale_update = run_cli(
+        &config_path,
+        &[
+            "sql",
+            "saved",
+            "update",
+            created_id,
+            "--sql",
+            "SELECT 'stale'",
+            "--parent-revision-id",
+            stale_revision_id,
+        ],
+    );
+    assert!(!stale_update.status.success(), "stale update must conflict");
+    let after_stale_output = run_cli(&config_path, &["sql", "saved", "get", created_id]);
+    let after_stale: serde_json::Value =
+        serde_json::from_slice(&after_stale_output.stdout).unwrap();
+    assert_eq!(
+        after_stale["sql"],
+        "SELECT $status WHERE $status IS NOT NULL"
     );
 
-    let delete_output = run_cli(&config_path, &["sql", "saved-delete", created_id]);
+    let rename_output = run_cli(
+        &config_path,
+        &["sql", "saved", "update", created_id, "--name", "Planning"],
+    );
+    assert!(
+        rename_output.status.success(),
+        "rename stderr: {}",
+        String::from_utf8_lossy(&rename_output.stderr)
+    );
+    let renamed_output = run_cli(&config_path, &["sql", "saved", "get", created_id]);
+    let renamed: serde_json::Value = serde_json::from_slice(&renamed_output.stdout).unwrap();
+    assert_eq!(renamed["name"], "Planning");
+    assert!(renamed["metadata"].is_null());
+
+    let untitled_output = run_cli(
+        &config_path,
+        &["sql", "saved", "update", created_id, "--untitled"],
+    );
+    assert!(
+        untitled_output.status.success(),
+        "untitled stderr: {}",
+        String::from_utf8_lossy(&untitled_output.stderr)
+    );
+    let untitled_get = run_cli(&config_path, &["sql", "saved", "get", created_id]);
+    let untitled: serde_json::Value = serde_json::from_slice(&untitled_get.stdout).unwrap();
+    assert!(untitled["name"].is_null());
+    assert_eq!(untitled["metadata"]["generatedName"], "untitled");
+
+    let delete_output = run_cli(&config_path, &["sql", "saved", "delete", created_id]);
     assert!(
         delete_output.status.success(),
         "delete stderr: {}",
@@ -176,7 +237,7 @@ fn test_saved_sql_req_api_006_crud() {
     assert_eq!(deleted["kind"].as_str(), Some("sql"));
     assert_eq!(deleted["id"].as_str(), Some(created_id));
 
-    let final_list_output = run_cli(&config_path, &["sql", "saved-list"]);
+    let final_list_output = run_cli(&config_path, &["sql", "saved", "list"]);
     assert!(
         final_list_output.status.success(),
         "final list stderr: {}",
@@ -206,7 +267,8 @@ fn test_saved_sql_req_api_007_validation() {
         &config_path,
         &[
             "sql",
-            "saved-create",
+            "saved",
+            "create",
             "--name",
             "bad-query",
             "--sql",

@@ -47,7 +47,7 @@ apis:
     file: crates/ugoite-iceberg/src/service.rs
     function: list_saved_sql
   ugoite_cli:
-    command: ugoite sql saved-list
+    command: ugoite sql saved list
     file: crates/ugoite-cli/src/commands/sql.rs
     function: run
 - id: sql.create
@@ -65,7 +65,7 @@ apis:
     file: crates/ugoite-iceberg/src/service.rs
     function: create_saved_sql
   ugoite_cli:
-    command: ugoite sql saved-create
+    command: ugoite sql saved create
     file: crates/ugoite-cli/src/commands/sql.rs
     function: run
 - id: sql.get
@@ -83,7 +83,7 @@ apis:
     file: crates/ugoite-iceberg/src/service.rs
     function: get_saved_sql
   ugoite_cli:
-    command: ugoite sql saved-get
+    command: ugoite sql saved get
     file: crates/ugoite-cli/src/commands/sql.rs
     function: run
 - id: sql.update
@@ -101,7 +101,7 @@ apis:
     file: crates/ugoite-iceberg/src/service.rs
     function: update_saved_sql
   ugoite_cli:
-    command: ugoite sql saved-update
+    command: ugoite sql saved update
     file: crates/ugoite-cli/src/commands/sql.rs
     function: run
 - id: sql.delete
@@ -119,6 +119,6 @@ apis:
     file: crates/ugoite-iceberg/src/service.rs
     function: delete_saved_sql
   ugoite_cli:
-    command: ugoite sql saved-delete
+    command: ugoite sql saved delete
     file: crates/ugoite-cli/src/commands/sql.rs
     function: run
