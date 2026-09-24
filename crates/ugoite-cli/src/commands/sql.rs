@@ -12,7 +12,6 @@ use ugoite_iceberg::{
     index::validate_sql_syntax,
     saved_sql::{SqlKind, SqlPayload},
 };
-use uuid::Uuid;
 
 #[derive(Args)]
 pub struct SqlCmd {
@@ -381,7 +380,7 @@ pub async fn run(
                 )
                 .await?;
                 let receipt = MutationReceipt::sql(
-                    opt_str(&result, "id").unwrap_or_default(),
+                    opt_str(&result, "id").context("sql.create returned no id")?,
                     opt_str(&result, "revision_id"),
                     opt_str(&result, "change_id"),
                 );
@@ -391,7 +390,6 @@ pub async fn run(
             let SpaceTarget::Core { root, space_id } = &target else {
                 anyhow::bail!("operation sql.create does not use the remote transport")
             };
-            let sql_id = Uuid::now_v7().to_string();
             let payload = SqlPayload {
                 name: Some(name),
                 kind: SqlKind::UserQuery,
@@ -401,10 +399,10 @@ pub async fn run(
             };
             let service = UgoiteService::new_without_background_refresh(root)?;
             let result = service
-                .create_saved_sql(space_id, &sql_id, &payload, "cli")
+                .create_saved_sql(space_id, None, &payload, "cli")
                 .await?;
             let receipt = MutationReceipt::sql(
-                sql_id,
+                opt_str(&result, "id").context("sql.create returned no id")?,
                 opt_str(&result, "revision_id"),
                 opt_str(&result, "change_id"),
             );

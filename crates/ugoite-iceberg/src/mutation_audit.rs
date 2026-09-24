@@ -1212,7 +1212,7 @@ mod tests {
             variables: serde_json::json!([]),
         };
         let created = service
-            .create_saved_sql(&space_id, "sql-1", &payload, "author")
+            .create_saved_sql(&space_id, Some("sql-1"), &payload, "author")
             .await?;
         let revision_id = created
             .get("revision_id")
