@@ -38,12 +38,15 @@ export default function AccountRecoveryRoute() {
   return (
     <main class="publicShell">
       <section class="publicCard ui-stack">
-        <h1 class="ui-page-title">Recover your account</h1>
+        <h1 id="recovery-title" class="ui-page-title">
+          {recoveryCodes().length === 0
+            ? "Recover your account"
+            : "Save your new recovery codes"}
+        </h1>
         <Show
           when={recoveryCodes().length === 0}
           fallback={
-            <section class="ui-stack-sm" aria-label="New recovery codes">
-              <h2>Save your new recovery codes</h2>
+            <section class="ui-stack-sm" aria-labelledby="recovery-title">
               <p class="ui-muted">
                 These codes are shown only once. Store them offline before
                 continuing.
@@ -62,10 +65,6 @@ export default function AccountRecoveryRoute() {
             </section>
           }
         >
-          <p class="ui-muted">
-            Enter your Account ID, one recovery code, and your recovery
-            authenticator code to register a new Passkey.
-          </p>
           <form class="ui-stack-sm" onSubmit={submit}>
             <label class="ui-stack-sm">
               <span>Account ID</span>
