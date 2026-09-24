@@ -36,6 +36,11 @@ Business rules (validation, error classification, concurrency, history)
 live in the shared Rust boundary. Fixtures supply values and observe
 canonical representations; they never re-implement validation.
 
+Entry creation uses the identity returned in its mutation receipt for later
+operations. Form save and `sql saved` are CLI input models for the same durable
+Form and Saved SQL outcomes; their command spelling does not define separate
+business semantics.
+
 ## Capability projection (generated, not authoritative)
 
 `tools/capability_report.ts` projects the journey from existing authorities:

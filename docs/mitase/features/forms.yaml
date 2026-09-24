@@ -103,7 +103,7 @@ features:
       - id: cli
         role: operation
         facet: cli
-        responsibility: Keep Form list, creation, type discovery, and retrieval workflows available through the Ugoite CLI operator surface.
+        responsibility: Keep Form list, save/upsert, type discovery, and retrieval workflows available through the Ugoite CLI operator surface; Form save and frontend saves reach the same persisted upsert semantics.
         targets:
           - id: form-command
             adapter: rust

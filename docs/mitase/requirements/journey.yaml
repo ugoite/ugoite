@@ -45,7 +45,7 @@ requirements:
       - id: journey-frontend-verification
         role: verification
         facet: verification
-        responsibility: Verify every journey postcondition through the exact server-backed browser journey cases. CLI core and CLI remote evidence attach to the same criteria in later workstream steps without duplicating them.
+        responsibility: Verify every journey postcondition through the exact server-backed browser journey cases. CLI core and CLI remote evidence verify the same criteria in their own bindings without duplicating the criteria.
         targets:
           - id: space-case
             adapter: typescript
