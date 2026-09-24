@@ -183,19 +183,22 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     // Product verdicts (4xx/5xx, validation, ceremony failures) never retry.
     // A context rebuild would drop the fresh session, so the retry stays on
     // the same page.
-    await gotoPageWithOneEnvironmentRetry(
-      page,
-      new URL("/settings/security", baseURL).toString(),
-      { label: "global setup /settings/security" },
-    );
     const setupRecoveryAuthenticator = page.getByRole("button", {
       name: "Set up or replace recovery authenticator",
     });
-    await waitForSetupState(
+    await gotoPageWithOneEnvironmentRetry(
       page,
-      setupRecoveryAuthenticator,
-      "account recovery settings",
-      browserErrors,
+      new URL("/settings/security", baseURL).toString(),
+      {
+        label: "global setup /settings/security",
+        waitForReady: () =>
+          waitForSetupState(
+            page,
+            setupRecoveryAuthenticator,
+            "account recovery settings",
+            browserErrors,
+          ),
+      },
     );
     await setupRecoveryAuthenticator.click();
     const recoverySecret = await page.getByTestId("recovery-secret")

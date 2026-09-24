@@ -34,7 +34,9 @@ export default function RecoverRoute() {
   return (
     <main class="publicShell">
       <section class="publicCard ui-stack">
-        <h1 class="ui-page-title">Recover Space access</h1>
+        <h1 id="recovery-title" class="ui-page-title">
+          {result() ? "Save your new recovery codes" : "Recover Space access"}
+        </h1>
         <Show when={!result()}>
           <p class="ui-muted">
             Paste the one-time recovery token provided by the Space Owner. You
@@ -61,8 +63,7 @@ export default function RecoverRoute() {
         </Show>
         <Show when={result()}>
           {(completed) => (
-            <section class="ui-stack-sm" aria-label="New recovery codes">
-              <h2>Save your new recovery codes</h2>
+            <section class="ui-stack-sm" aria-labelledby="recovery-title">
               <p class="ui-muted">
                 These codes belong to the newly created HumanAccount and are
                 shown only once. Audit delivery is {completed().audit_status}.

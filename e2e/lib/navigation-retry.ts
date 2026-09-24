@@ -6,6 +6,7 @@ import type {
 } from "@playwright/test";
 import {
   classifyNavigationFailure,
+  isEnvironmentFailure,
   type DocumentProbe,
 } from "./security-context.ts";
 
@@ -184,13 +185,46 @@ export async function gotoWithOneEnvironmentRetry(
 export async function gotoPageWithOneEnvironmentRetry(
   page: Page,
   url: string,
-  options: { label?: string; gotoOptions?: Parameters<Page["goto"]>[1] } = {},
+  options: {
+    label?: string;
+    gotoOptions?: Parameters<Page["goto"]>[1];
+    waitForReady?: (page: Page) => Promise<void>;
+  } = {},
 ): Promise<{ retried: boolean }> {
   const label = options.label ?? url;
+  const assetErrors: string[] = [];
+  let observingNavigation = false;
+  page.on("requestfailed", (request) => {
+    if (!observingNavigation) return;
+    const pathname = new URL(request.url()).pathname;
+    const isFrontendAsset =
+      (pathname.startsWith("/_build/") && /\.(?:m?js|css)$/.test(pathname)) ||
+      pathname.endsWith("/ugoite-manifest.js");
+    const failure = request.failure()?.errorText ?? "requestfailed";
+    if (isFrontendAsset && isEnvironmentFailure(failure)) {
+      assetErrors.push(`${request.url()} :: ${failure}`);
+    }
+  });
+
+  const probe = async (status?: number) => ({
+    status,
+    bodySnippet: await page.content().then((html) => html.slice(0, 2000), () => ""),
+    assetError: assetErrors.join(" | ").slice(0, 2000),
+  });
+  const waitForReady = async () => {
+    try {
+      await options.waitForReady?.(page);
+    } finally {
+      observingNavigation = false;
+    }
+  };
+
+  let status: number | undefined;
+  observingNavigation = true;
   try {
-    await page.goto(url, options.gotoOptions);
-    return { retried: false };
+    status = (await page.goto(url, options.gotoOptions))?.status();
   } catch (error) {
+    observingNavigation = false;
     if (classifyNavigationFailure(error) !== "retry") throw error;
     const reason = error instanceof Error ? error.message : String(error);
     console.log(
@@ -198,8 +232,34 @@ export async function gotoPageWithOneEnvironmentRetry(
         reason.slice(0, 500)
       }`,
     );
-    // Exactly one retry; the second attempt throws through.
+    assetErrors.length = 0;
+    observingNavigation = true;
     await page.goto(url, options.gotoOptions);
+    await waitForReady();
+    return { retried: true };
+  }
+
+  try {
+    await waitForReady();
+    return { retried: false };
+  } catch (error) {
+    const navigationProbe = await probe(status);
+    if (
+      classifyNavigationFailure("readiness check failed", navigationProbe) !==
+        "retry"
+    ) {
+      throw error;
+    }
+    const reason = error instanceof Error ? error.message : String(error);
+    console.log(
+      `[environment] ${label}: ready check hit a failed frontend asset; retrying once on the same page: ${
+        reason.slice(0, 500)
+      }`,
+    );
+    assetErrors.length = 0;
+    observingNavigation = true;
+    await page.goto(url, options.gotoOptions);
+    await waitForReady();
     return { retried: true };
   }
 }
