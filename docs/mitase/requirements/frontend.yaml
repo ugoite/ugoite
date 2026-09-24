@@ -1413,7 +1413,7 @@ requirements:
     criteria:
       - id: detail-summary
         kind: behavior
-        statement: The saved SQL detail route displays the saved query name, timestamps, variables, and query text, and allows the saved query name and SQL body to be edited.
+        statement: The saved SQL detail route displays the saved query name, timestamps, variables, and query text. For user-query entries it allows the saved query name and SQL body to be edited; search-history entries remain read-only.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
       - id: supported-actions
         kind: behavior
@@ -1421,11 +1421,11 @@ requirements:
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
       - id: revision-aware-save
         kind: behavior
-        statement: Saving a saved SQL edit derives variables from the SQL body and uses the currently loaded revision as the optimistic concurrency base, then uses the returned revision for subsequent saves.
+        statement: Saving a user-query edit derives variables from the SQL body and uses the currently loaded revision as the optimistic concurrency base, then uses the returned revision for subsequent saves. Search-history entries remain read-only.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
       - id: delete
         kind: behavior
-        statement: The saved SQL detail route requires the shared destructive confirmation before deleting a saved query and returns to the Saved SQL list after a successful deletion.
+        statement: The saved SQL detail route requires the shared destructive confirmation before deleting a user-query entry and returns to the Saved SQL list after a successful deletion. Search-history entries remain read-only.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
     bindings:
       - id: saved-sql-detail-verification
@@ -1455,6 +1455,10 @@ requirements:
                 criterion: REQ-FE-062#criterion.revision-aware-save
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "normalizes SQL variables and uses the returned revision for the next save" } }
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.detail-summary
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "normalizes SQL variables and uses the returned revision for the next save" } }
           - id: delete
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
@@ -1478,10 +1482,6 @@ requirements:
             path: e2e/saved-sql-route.test.ts
             selector: { kind: test, name: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to stateless results" }
             claims:
-              - kind: verifies
-                criterion: REQ-FE-062#criterion.detail-summary
-                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to stateless results" } }
               - kind: verifies
                 criterion: REQ-FE-062#criterion.supported-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
