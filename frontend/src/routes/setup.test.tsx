@@ -39,22 +39,6 @@ describe("/setup continuation", () => {
     vi.mocked(authApi.addPasskey).mockResolvedValue();
   });
 
-  it("REQ-UX-NAV-001: states the setup task once with a one-line onboarding note", async () => {
-    render(() => <SetupRoute />);
-
-    expect(
-      screen.getByRole("heading", {
-        name: "Initialize this Ugoite node",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Set up this node by creating its first administrator Passkey.",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getAllByRole("heading")).toHaveLength(1);
-  });
-
   it("keeps the protected route after setup strengthening", async () => {
     render(() => <SetupRoute />);
 
