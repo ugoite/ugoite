@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-09-17"
+updated: "2026-09-24"
 page:
   id: space-asset-detail
   title: Asset Detail
@@ -13,8 +13,7 @@ components:
   body:
     - id: asset-detail-header
       type: page-header
-      description: Names the asset with type/size meta and exposes the single Back control to the asset inventory.
-      target_page: space-assets
+      description: Names the selected asset with type/size meta while the persistent shell owns the Assets workspace context.
     - id: asset-download-delete-actions
       type: toolbar
       description: Offers Download and Delete Asset as one-row actions with busy states; delete returns to the inventory after the server confirms.
@@ -23,6 +22,7 @@ components:
       type: list
       description: Lists every current Entry referencing the asset as full-row links to entry detail; the exact asset ID stays in advanced disclosure.
       source: asset.list
+      accessible_name_source: asset-references-title
 responsive:
   desktop: border-separated-list
   mobile: stacked-border-separated-list

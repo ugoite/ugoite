@@ -76,11 +76,6 @@ describe("/spaces/:space_id/assets/:asset_id", () => {
     expect(await screen.findByRole("heading", { name: "report.pdf" }))
       .toBeInTheDocument();
     expect(screen.getByText(/application\/pdf/)).toBeInTheDocument();
-    // Single back control to the inventory.
-    const back = screen.getByRole("link", { name: "Back to Assets" });
-    expect(back).toHaveAttribute("href", "/spaces/default/assets");
-    expect(screen.getAllByRole("link", { name: "Back to Assets" }))
-      .toHaveLength(1);
     // Download/delete action bar. Delete is BLOCKED while visible Entry
     // references exist: disabled, naming the referencing Entry+field.
     const blockedDelete = screen.getByRole("button", {
