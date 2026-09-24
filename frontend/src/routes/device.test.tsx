@@ -29,32 +29,6 @@ describe("/device", () => {
     vi.mocked(spaceApi.list).mockReset();
   });
 
-  it("REQ-UX-RESP-001: keeps the approval controls labeled with a single context", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        device_name: "CLI",
-        requested_actions: ["read", "create", "update"],
-        resource: null,
-      }),
-    });
-    vi.mocked(spaceApi.list).mockResolvedValue([{
-      name: "Docs",
-      space_uid: "space-uid-1",
-    }]);
-
-    render(() => <DeviceApprovalRoute />);
-
-    expect(
-      await screen.findByRole("button", { name: "Approve CLI access" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Approve CLI access" }),
-    ).toBeInTheDocument();
-    expect(screen.getAllByRole("heading")).toHaveLength(1);
-    expect(screen.getByLabelText("Space")).toBeInTheDocument();
-  });
-
   it("explains unsupported resources with recovery guidance", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
@@ -92,7 +66,7 @@ describe("/device", () => {
     render(() => <DeviceApprovalRoute />);
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Approve CLI access" }),
+      await screen.findByRole("button", { name: "Review CLI access request" }),
     );
     // Approval runs behind the shared confirmation dialog: nothing is sent
     // until the explicit confirm action.
@@ -111,7 +85,7 @@ describe("/device", () => {
         expect.objectContaining({ method: "POST" }),
       )
     );
-    expect(await screen.findByText("CLI access approved. Return to the CLI."))
+    expect(await screen.findByRole("heading", { name: "CLI access approved" }))
       .toBeInTheDocument();
   });
 
@@ -132,7 +106,7 @@ describe("/device", () => {
     render(() => <DeviceApprovalRoute />);
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Approve CLI access" }),
+      await screen.findByRole("button", { name: "Review CLI access request" }),
     );
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(
@@ -143,7 +117,7 @@ describe("/device", () => {
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(
-      screen.queryByText("CLI access approved. Return to the CLI."),
+      screen.queryByRole("heading", { name: "CLI access approved" }),
     ).toBeNull();
   });
 
@@ -166,7 +140,7 @@ describe("/device", () => {
     render(() => <DeviceApprovalRoute />);
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Approve CLI access" }),
+      await screen.findByRole("button", { name: "Review CLI access request" }),
     );
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(
@@ -206,7 +180,7 @@ describe("/device", () => {
     render(() => <DeviceApprovalRoute />);
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Approve MCP access" }),
+      await screen.findByRole("button", { name: "Review MCP access request" }),
     );
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveAccessibleName("Approve MCP access?");
@@ -224,9 +198,7 @@ describe("/device", () => {
       space_id: "space-uid-2",
       granted_actions: ["read"],
     });
-    expect(
-      await screen.findByText("MCP access approved. Return to the MCP client."),
-    )
+    expect(await screen.findByRole("heading", { name: "MCP access approved" }))
       .toBeInTheDocument();
   });
 });

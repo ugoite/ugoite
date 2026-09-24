@@ -151,15 +151,19 @@ export default function DeviceApprovalRoute() {
           }
         >
           <h1 class="ui-page-title">
-            {pending()?.resource ? "Approve MCP access" : "Approve CLI access"}
+            {done()
+              ? `${pending()?.resource ? "MCP" : "CLI"} access approved`
+              : pending()
+              ? `Approve ${pending()?.resource ? "MCP" : "CLI"} access`
+              : "Device authorization"}
           </h1>
           <Show
             when={!done()}
             fallback={
               <p class="ui-alert">
                 {pending()?.resource
-                  ? "MCP access approved. Return to the MCP client."
-                  : "CLI access approved. Return to the CLI."}
+                  ? "Return to the MCP client."
+                  : "Return to the CLI."}
               </p>
             }
           >
@@ -170,7 +174,7 @@ export default function DeviceApprovalRoute() {
               {(request) => (
                 <form class="ui-stack-sm" onSubmit={requestApproval}>
                   <p>
-                    Approve <strong>{request().device_name}</strong> for{" "}
+                    <strong>{request().device_name}</strong> requested{" "}
                     {request().resource ? "MCP" : "CLI"} actions:{" "}
                     {request().requested_actions.join(", ")}.
                   </p>
@@ -196,11 +200,12 @@ export default function DeviceApprovalRoute() {
                   <button
                     type="submit"
                     class="ui-button ui-button-primary"
+                    aria-label={`Review ${
+                      request().resource ? "MCP" : "CLI"
+                    } access request`}
                     disabled={!spaceUidValue()}
                   >
-                    {request().resource
-                      ? "Approve MCP access"
-                      : "Approve CLI access"}
+                    Review request
                   </button>
                   <ConfirmDestructiveAction
                     open={approveConfirmOpen()}
