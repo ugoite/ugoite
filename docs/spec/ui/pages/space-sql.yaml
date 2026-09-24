@@ -2,7 +2,7 @@ version: "0.1"
 updated: "2026-09-04"
 page:
   id: space-sql
-  title: Space SQL
+  title: Saved SQL
   route: /spaces/{space_id}/sql
   implementation: implemented
 components:
@@ -11,13 +11,27 @@ components:
       type: persistent-workspace-navigation
       reference: ../components/space-shell.yaml
   body:
-    - id: sql-empty-state
+    - id: saved-sql-heading
       type: heading
       title: Saved SQL
+      ownership: subordinate-workspace
     - id: sql-create-action
       type: button
-      title: SQL
+      label: New SQL query
+      visible_label: "+"
       target_page: space-query-create
+      accessible_name: New SQL query
+    - id: saved-query-list
+      type: list
+      labelled_by: saved-sql-heading
+      source: saved user queries
+    - id: search-history-list
+      type: list
+      labelled_by: search-history-heading
+      source: search history
+    - id: search-history-heading
+      type: heading
+      title: Search History
     - id: sql-empty-state-explanation
       type: list
       title: Create a query to reuse it here.

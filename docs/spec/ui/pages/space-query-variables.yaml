@@ -2,7 +2,7 @@ version: "0.1"
 updated: "2026-09-24"
 page:
   id: space-query-variables
-  title: Query Variables
+  title: Saved query variables
   route: /spaces/{space_id}/sql/{sql_id}/variables
   implementation: implemented
 components:
@@ -11,6 +11,13 @@ components:
       type: persistent-workspace-navigation
       reference: ../components/space-shell.yaml
   body:
+    - id: query-identity-heading
+      type: heading
+      title: Saved query name
+      ownership: object-identity
+    - id: variables-section-heading
+      type: heading
+      title: Variables
     - id: variables-form
       type: form
       fields:
@@ -21,4 +28,8 @@ components:
       type: button
       variant: primary
       label: "Run"
-      target_page: space-entries-object
+      target_page: space-sql-results
+    - id: saved-query-detail-action
+      type: navigation-link
+      label: Back to Saved SQL
+      target_page: space-sql-detail

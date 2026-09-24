@@ -1,10 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SpaceSqlRoute from "./index";
 import { formatDateLabel } from "~/lib/date-format";
@@ -42,7 +37,7 @@ describe("/spaces/:space_id/sql", () => {
       .toBeInTheDocument();
     expect(await screen.findByText("No saved SQL", { exact: true }))
       .toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "+Query" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "New SQL query" })).toHaveAttribute(
       "href",
       "/spaces/default/sql/new",
     );

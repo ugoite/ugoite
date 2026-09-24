@@ -57,13 +57,14 @@ export default function SpaceSqlIndexRoute() {
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <h1>{t("sqlPage.savedSql")}</h1>
+          <h1 id="saved-sql-title">{t("sqlPage.savedSql")}</h1>
         </div>
         <A
           class="btn primary"
           href={`/spaces/${encodeURIComponent(spaceId())}/sql/new`}
         >
-          {t("sqlPage.createQuery")}
+          <span aria-hidden="true">+</span>
+          <span class="ui-sr-only">{t("sqlPage.createQuery")}</span>
         </A>
       </div>
       {/* Panel-local spinner: saved rows stay mounted during refetch. */}
@@ -94,7 +95,7 @@ export default function SpaceSqlIndexRoute() {
             </Show>
           }
         >
-          <RowList label={t("sqlPage.savedSql")}>
+          <RowList label={t("sqlPage.savedSql")} labelledBy="saved-sql-title">
             <For each={savedQueries()}>
               {(query) => (
                 <RowListItem
@@ -157,7 +158,7 @@ export default function SpaceSqlIndexRoute() {
           <div
             class="rowList sqlHistoryRows"
             role="list"
-            aria-label={t("searchPage.searchHistory")}
+            aria-labelledby="sql-history-title"
           >
             <For
               each={searchHistory()}
