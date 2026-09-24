@@ -36,6 +36,7 @@ const allowedComponentTypes = new Set([
   "text-input",
   "sql-editor",
   "button",
+  "link",
   "form",
   "markdown-editor",
   "toolbar",

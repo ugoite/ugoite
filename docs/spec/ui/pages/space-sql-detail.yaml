@@ -28,6 +28,6 @@ components:
       type: button
       title: Run Query or Open Variables
     - id: saved-sql-index-action
-      type: navigation-link
+      type: link
       title: Back to Saved SQL
       target_page: space-sql

@@ -30,6 +30,6 @@ components:
       label: "Run"
       target_page: space-sql-results
     - id: saved-query-detail-action
-      type: navigation-link
+      type: link
       label: Back to Saved SQL
       target_page: space-sql-detail

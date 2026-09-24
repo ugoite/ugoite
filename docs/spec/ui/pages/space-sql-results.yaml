@@ -29,6 +29,6 @@ components:
       source: sql.query.count
       description: Explicit action; page loading does not issue a count request.
     - id: saved-query-detail-action
-      type: navigation-link
+      type: link
       title: Back to Saved SQL
       target_page: space-sql-detail

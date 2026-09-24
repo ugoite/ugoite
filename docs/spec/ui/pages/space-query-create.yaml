@@ -30,6 +30,6 @@ components:
       label: "Save"
       target_page: space-sql
     - id: saved-sql-parent-action
-      type: navigation-link
+      type: link
       label: Back to Saved SQL
       target_page: space-sql
