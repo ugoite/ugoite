@@ -560,10 +560,10 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
         variables: json!([]),
     };
     service
-        .create_saved_sql(&space_id, "visible", &payload("Visible"), "owner")
+        .create_saved_sql(&space_id, Some("visible"), &payload("Visible"), "owner")
         .await?;
     service
-        .create_saved_sql(&space_id, "hidden", &payload("Hidden"), "owner")
+        .create_saved_sql(&space_id, Some("hidden"), &payload("Hidden"), "owner")
         .await?;
     service
         .authorized_saved_sql_entry_scope_for_principals(&space_id, &[])
@@ -615,6 +615,37 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
         .await?;
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0]["id"], "visible");
+    Ok(())
+}
+
+#[tokio::test]
+async fn saved_sql_identity_is_generated_by_the_shared_service() -> Result<()> {
+    let service = UgoiteService::new("memory://saved-sql-generated-id")?;
+    let owner = Uuid::from_u128(303);
+    let space_id = service
+        .create_space_for_principal("saved-sql-generated-id", owner, "Owner")
+        .await?
+        .to_string();
+    let created = service
+        .create_saved_sql(
+            &space_id,
+            None,
+            &SqlPayload {
+                name: Some("Generated identity".to_string()),
+                kind: SqlKind::UserQuery,
+                metadata: None,
+                sql: "SELECT 1".to_string(),
+                variables: json!([]),
+            },
+            &owner.to_string(),
+        )
+        .await?;
+    let sql_id = created["id"].as_str().expect("create returns SQL id");
+    assert_eq!(Uuid::parse_str(sql_id)?.get_version_num(), 4);
+    assert_eq!(
+        service.get_saved_sql(&space_id, sql_id).await?["id"],
+        sql_id
+    );
     Ok(())
 }
 

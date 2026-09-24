@@ -10103,8 +10103,6 @@ async fn create_sql(
     Path(space_id): Path<String>,
     Json(payload): Json<saved_sql::SqlPayload>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    let id = Uuid::new_v4().to_string();
-    let id_for_write = id.clone();
     let payload_for_write = payload.clone();
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
@@ -10118,7 +10116,7 @@ async fn create_sql(
             service
                 .create_saved_sql(
                     &space_id_for_write,
-                    &id_for_write,
+                    None,
                     &payload_for_write,
                     &principal_id.to_string(),
                 )
@@ -10129,7 +10127,7 @@ async fn create_sql(
     .await?;
     Ok((
         StatusCode::CREATED,
-        Json(json!({"id": id, "revision_id": value["revision_id"]})),
+        Json(json!({"id": value["id"], "revision_id": value["revision_id"]})),
     ))
 }
 
@@ -16864,7 +16862,7 @@ mod authentication_regression_tests {
             .service
             .create_saved_sql(
                 &space_id,
-                &sql_id,
+                Some(&sql_id),
                 &saved_sql::SqlPayload {
                     name: Some("Deleted query".to_string()),
                     kind: saved_sql::SqlKind::UserQuery,

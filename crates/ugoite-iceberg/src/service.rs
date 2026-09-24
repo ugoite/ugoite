@@ -5016,18 +5016,21 @@ impl UgoiteService {
     pub async fn create_saved_sql(
         &self,
         space_id: &str,
-        sql_id: &str,
+        requested_sql_id: Option<&str>,
         payload: &saved_sql::SqlPayload,
         author: &str,
     ) -> Result<Value> {
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
-        validate_storage_id(validate_sql_id(sql_id))?;
+        let sql_id = requested_sql_id
+            .map(str::to_owned)
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+        validate_storage_id(validate_sql_id(&sql_id))?;
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
         let created = saved_sql::create_sql(
             &self.operator,
             &self.workspace_path(space_id),
-            sql_id,
+            &sql_id,
             payload,
             author,
             &integrity,
@@ -5041,7 +5044,7 @@ impl UgoiteService {
             self.record_saved_sql_audit(
                 space_id,
                 crate::mutation_audit::SAVED_SQL_CREATED_ACTION,
-                sql_id,
+                &sql_id,
                 &revision_id,
                 &[],
                 author,
