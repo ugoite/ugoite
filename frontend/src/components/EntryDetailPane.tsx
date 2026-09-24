@@ -1049,19 +1049,15 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                   href={formWorkspaceHref()}
                   label={t("entryDetail.back")}
                 />
-                <Show when={isCreateMode()}>
-                  <h2 class="ui-page-subtitle mt-2">
-                    {t("createDialog.entry.heading")}
-                  </h2>
-                </Show>
                 <div class="mt-2 flex flex-wrap items-center gap-2">
                   <h1 class="ui-page-title truncate">
-                    {currentEntry().id}
+                    {isCreateMode()
+                      ? t("entryPage.new")
+                      : t("entryDetail.heading")}
                   </h1>
                   <Show
-                    when={currentEntry().form &&
-                      !(isCreateMode() && props.forms &&
-                        props.onCreateFormChange)}
+                    when={!isCreateMode() && currentEntry().form &&
+                      currentEntry().form !== "Entry"}
                   >
                     <span class="ui-pill">{currentEntry().form}</span>
                   </Show>
