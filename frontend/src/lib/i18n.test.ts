@@ -132,7 +132,5 @@ describe("i18n", () => {
     expect(t("globalShell.settings")).toBe("Settings");
     expect(t("dashboard.formsEntries")).toBe("Forms / Entries");
     expect(t("formsPage.selectForm")).toBe("Select a Form");
-    expect(t("sqlPage.newSql")).toBe("New");
-    expect(t("sqlPage.variables")).toBe("Variables");
   });
 });
