@@ -142,12 +142,14 @@ describe("v5 SpaceShell", () => {
       () => new Promise((resolve) => resolveSpaces = resolve),
     );
 
-    render(() => (
+    const { container } = render(() => (
       <SpaceShell spaceId="my-space-uid" activeNavigation="home">
         <p>Content</p>
       </SpaceShell>
     ));
 
+    expect(container.querySelector(".loadingBar")).toBeNull();
+    expect(container.querySelector(".ui-loading-bar")).toBeNull();
     expect(screen.getByRole("option", { name: "my-space-uid" })).toHaveValue(
       "my-space-uid",
     );
