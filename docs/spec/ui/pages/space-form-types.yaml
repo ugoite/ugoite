@@ -2,7 +2,7 @@ version: "0.1"
 updated: "2026-09-24"
 page:
   id: space-form-types
-  title: Space Form Types
+  title: Field Types
   route: /spaces/{space_id}/forms/types
   implementation: implemented
 components:
@@ -13,4 +13,4 @@ components:
   body:
     - id: form-type-list
       type: list
-      title: Column types
+      title: Field types
