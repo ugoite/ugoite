@@ -26,7 +26,6 @@ export type SpaceNavigation =
 interface SpaceShellProps {
   spaceId: string;
   activeNavigation: SpaceNavigation;
-  title?: string;
   showBottomTabs?: boolean;
   bottomTabHrefSuffix?: string;
   children: JSX.Element;
@@ -148,11 +147,6 @@ export function SpaceShell(props: SpaceShellProps) {
   const activePath = createMemo(() =>
     navItemById.get(active())?.path ?? "dashboard"
   );
-  const activeLabelKey = createMemo<TranslationKey>(() =>
-    navItemById.get(active())?.labelKey ?? "spaceShell.nav.home"
-  );
-  const crumb = createMemo(() => props.title ?? t(activeLabelKey()));
-
   const switchSpace = (spaceId: string) => {
     if (!spaceId || spaceId === props.spaceId) return;
     spaceStore.selectSpace(spaceId);
@@ -239,7 +233,6 @@ export function SpaceShell(props: SpaceShellProps) {
             <UiIcon name="menu" />
           </button>
           <div class="topbarTools">
-            <div class="crumbTop ui-sr-only">{crumb()}</div>
             <button
               class="pill iconpill"
               type="button"

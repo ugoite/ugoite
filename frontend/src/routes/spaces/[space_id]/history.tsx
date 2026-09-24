@@ -19,7 +19,6 @@ import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({
   navigation: "history",
-  title: "spaceHistory",
 });
 
 const changeKind = (change: SpaceChange): string =>

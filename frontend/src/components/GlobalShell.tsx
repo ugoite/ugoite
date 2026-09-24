@@ -6,7 +6,6 @@ import { t } from "~/lib/i18n";
 
 export function GlobalShell(
   props: {
-    title: string;
     children: JSX.Element;
     active?: "spaces";
     authenticated?: boolean;
@@ -48,7 +47,6 @@ export function GlobalShell(
             <UiIcon name="menu" />
           </a>
           <div class="topbarTools">
-            <div class="crumbTop ui-sr-only">{props.title}</div>
             <span class="pill iconpill">
               <span class="assistantDot" aria-hidden="true" />
               <span class="ui-sr-only">{t("konase.title")}</span>

@@ -13,7 +13,6 @@ import type { SqlQueryPage } from "~/lib/types";
 
 export const route = spaceRoute({
   navigation: "search",
-  title: "sqlResults",
 });
 
 type SqlRunState = {

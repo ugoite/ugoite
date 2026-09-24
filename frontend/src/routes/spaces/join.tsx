@@ -105,7 +105,6 @@ export default function SpaceInvitationJoinRoute() {
   };
   return (
     <GlobalShell
-      title="Join a Space"
       authenticated={session()?.authenticated ?? false}
     >
       <div class="screenHead">

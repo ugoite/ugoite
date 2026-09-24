@@ -14,7 +14,7 @@ describe("GlobalShell router navigation", () => {
         <Route
           path="/spaces"
           component={() => (
-            <GlobalShell title="Spaces" active="spaces">
+            <GlobalShell active="spaces">
               <p>Content</p>
             </GlobalShell>
           )}

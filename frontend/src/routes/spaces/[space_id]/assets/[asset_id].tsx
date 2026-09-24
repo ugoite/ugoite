@@ -12,7 +12,7 @@ import { assetApi, type AssetListItem } from "~/lib/ugoite-client";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "assets", title: "asset" });
+export const route = spaceRoute({ navigation: "assets" });
 
 const groupOccurrences = (
   items: AssetListItem[],

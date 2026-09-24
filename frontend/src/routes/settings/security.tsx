@@ -23,9 +23,7 @@ const credentialTabFromSearch = (value: unknown): CredentialTab =>
 
 export default function SecuritySettingsRoute() {
   return (
-    <GlobalShell
-      title={`${t("securityPage.title")} / ${t("securityPage.credentials")}`}
-    >
+    <GlobalShell>
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">Ugoite</div>

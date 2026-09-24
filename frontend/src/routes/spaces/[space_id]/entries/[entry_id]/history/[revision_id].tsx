@@ -20,7 +20,7 @@ import { createResource } from "~/lib/recoverable-resource";
 import { spaceEntryPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "forms", title: "revision" });
+export const route = spaceRoute({ navigation: "forms" });
 
 /** Revision subtitle: shared locale-aware date plus a localized marker. */
 export function formatRevisionSubtitle(

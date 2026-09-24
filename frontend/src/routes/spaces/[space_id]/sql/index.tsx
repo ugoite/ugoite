@@ -18,7 +18,7 @@ import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 import type { SqlEntry } from "~/lib/types";
 
-export const route = spaceRoute({ navigation: "search", title: "savedSql" });
+export const route = spaceRoute({ navigation: "search" });
 
 export default function SpaceSqlIndexRoute() {
   const params = useParams<{ space_id: string }>();
