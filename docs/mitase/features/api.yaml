@@ -370,6 +370,8 @@ features:
               - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
               - kind: satisfies
+                criterion: REQ-API-006#criterion.saved-sql-name-field
+              - kind: satisfies
                 criterion: REQ-API-015#criterion.canonical-sql-page
               - kind: satisfies
                 criterion: REQ-API-015#criterion.canonical-sql-count

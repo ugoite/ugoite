@@ -356,6 +356,10 @@ requirements:
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
                 covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_saved_sql, test: test_saved_sql_req_api_006_crud } }
+              - kind: verifies
+                criterion: REQ-API-006#criterion.saved-sql-name-field
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_saved_sql, test: test_saved_sql_req_api_006_crud } }
           - id: remote-create
             adapter: rust
             path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
