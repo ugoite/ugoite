@@ -108,6 +108,44 @@ CLI documentation trees:
 
 Start with the task page for the outcome, then use the matching command help:
 
+## Common Knowledge commands
+
+The primary authoring and recovery commands are:
+
+```bash
+ugoite form save <FILE>
+ugoite entry create --form <FORM> [--field KEY=VALUE ...]
+ugoite entry create --id <ENTRY_ID> --form <FORM> ...  # advanced import/reconciliation
+ugoite entry update <ENTRY_ID> --field KEY=VALUE ...
+ugoite entry history <ENTRY_ID>
+ugoite entry restore <ENTRY_ID> <REVISION_ID>
+ugoite sql saved list
+ugoite sql saved get <SQL_ID>
+ugoite sql saved create --sql <SQL_OR_FILE> [--name <NAME>]
+ugoite sql saved update <SQL_ID> [--name <NAME> | --untitled] [--sql <SQL_OR_FILE>]
+ugoite sql saved delete <SQL_ID>
+ugoite sql lint <SQL>
+ugoite sql query <SQL_OR_FILE>
+ugoite sql count <SQL_OR_FILE>
+ugoite change list
+ugoite change revert <CHANGE_ID> [--message <MESSAGE>]
+ugoite run undo <RUN_ID>
+ugoite pin create <NAME>
+ugoite pin list
+ugoite pin read <NAME>
+ugoite pin diff --from <NAME> --to <NAME>
+ugoite pin delete <NAME>
+```
+
+Entry creation returns the generated Entry ID in its mutation receipt. Use that
+returned ID for later reads, updates, history, and restore commands. The
+optional `--id` is an advanced override for imports and reconciliation. Saved
+SQL commands are grouped under `sql saved`; names are optional, and a blank
+name represents an untitled query. An omitted Saved SQL update revision uses
+the current revision read by the CLI; `--parent-revision-id` remains available
+when an automation needs an explicit concurrency precondition. Pins capture
+local operator snapshots and are managed with the `pin` command family.
+
 | Outcome | Task page | Command authority |
 | --- | --- | --- |
 | Open or create a Space | [Spaces](../use/spaces.mdx) | `ugoite space --help` |
