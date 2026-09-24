@@ -308,6 +308,7 @@ fn test_asset_read_side_shares_core_semantics() {
         &[
             "entry",
             "create",
+            "--id",
             "doc-1",
             "--form",
             "Doc",
@@ -665,6 +666,7 @@ fn create_entry_with_fields(
         &[
             "entry",
             "create",
+            "--id",
             entry_id,
             "--form",
             form,
@@ -1281,6 +1283,7 @@ fn test_asset_attach_create_reads_name_back_remote() {
         &[
             "entry",
             "create",
+            "--id",
             "doc-1",
             "--form",
             "Doc",
@@ -1465,6 +1468,7 @@ fn test_asset_multi_attachment_full_update_preserves_both_remote() {
         &[
             "entry",
             "create",
+            "--id",
             "doc-1",
             "--form",
             "Doc",
@@ -1637,6 +1641,7 @@ fn test_asset_acceptance_matrix_core_remote_parity() {
         &[
             "entry",
             "create",
+            "--id",
             "m-1",
             "--form",
             "Doc",

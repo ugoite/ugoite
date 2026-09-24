@@ -136,6 +136,7 @@ fn test_integrity_provider_invalid_hmac_key() {
             config_path.to_str().unwrap(),
             "entry",
             "create",
+            "--id",
             "hmac-entry",
             "--form",
             "Entry",

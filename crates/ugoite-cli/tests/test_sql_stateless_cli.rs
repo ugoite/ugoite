@@ -112,6 +112,7 @@ fn setup_cli_sql_space() -> CliSqlSpace {
             &[
                 "entry",
                 "create",
+                "--id",
                 entry_id,
                 "--form",
                 form_name,

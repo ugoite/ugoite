@@ -65,8 +65,12 @@ pub enum EntrySubCmd {
     /// Create an entry
     #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Create {
-        #[arg(value_name = "ENTRY_ID")]
-        entry_id: String,
+        #[arg(
+            long,
+            value_name = "ENTRY_ID",
+            help = "Advanced identity override for imports and reconciliation"
+        )]
+        id: Option<String>,
         #[arg(long, value_name = "FORM", help = "Form name for structured authoring")]
         form: Option<String>,
         #[arg(
@@ -280,7 +284,7 @@ fn merge_structured_fields(
 async fn create_structured_entry(
     target: &SpaceTarget,
     fmt: &Format,
-    entry_id: String,
+    entry_id: Option<String>,
     form: Option<String>,
     fields: Vec<String>,
     fields_files: Vec<String>,
@@ -300,11 +304,13 @@ async fn create_structured_entry(
             )
             .into());
         }
-        let body = serde_json::json!({
-            "id": entry_id,
+        let mut body = serde_json::json!({
             "form": form_name,
             "fields": merged,
         });
+        if let Some(entry_id) = entry_id {
+            body["id"] = serde_json::json!(entry_id);
+        }
         let result = http::execute_for_target(
             target,
             "entry.create",
@@ -312,8 +318,13 @@ async fn create_structured_entry(
             Some(body),
         )
         .await?;
+        let created_id = result
+            .get("id")
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| anyhow::anyhow!("entry.create response is missing id"))?
+            .to_owned();
         let receipt = entry_receipt(
-            entry_id,
+            created_id,
             result
                 .get("revision_id")
                 .and_then(|value| value.as_str())
@@ -336,9 +347,9 @@ async fn create_structured_entry(
     let author = author.unwrap_or_else(|| "cli".to_string());
     let service = UgoiteService::new_without_background_refresh(root)?;
     let (meta, _commit_receipt) = service
-        .create_structured_entry_with_receipt(
+        .create_structured_entry_with_optional_id_and_receipt(
             space_id,
-            &entry_id,
+            entry_id.as_deref(),
             form_name,
             Vec::new(),
             merged,
@@ -347,7 +358,10 @@ async fn create_structured_entry(
         )
         .await?;
     let receipt = entry_receipt(
-        entry_id,
+        meta.get("id")
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| anyhow::anyhow!("entry.create result is missing id"))?
+            .to_owned(),
         meta.get("revision_id")
             .and_then(|value| value.as_str())
             .map(str::to_string),
@@ -540,15 +554,14 @@ pub async fn run(
             emit_success(&entry, &fmt, None);
         }
         EntrySubCmd::Create {
-            entry_id,
+            id,
             form,
             fields,
             fields_files,
             author,
         } => {
             let target = resolve_command_target(explicit_config, context_override, "entry create")?;
-            create_structured_entry(&target, &fmt, entry_id, form, fields, fields_files, author)
-                .await?;
+            create_structured_entry(&target, &fmt, id, form, fields, fields_files, author).await?;
         }
         EntrySubCmd::Update {
             entry_id,
