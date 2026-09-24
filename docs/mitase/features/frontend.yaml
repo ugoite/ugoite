@@ -341,7 +341,7 @@ features:
                 criterion: REQ-FE-061#criterion.load-error
           - id: sql-detail-route
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/index.tsx
             selector: { kind: symbol, name: SpaceSqlDetailRoute }
             claims:
               - kind: satisfies
@@ -774,7 +774,7 @@ features:
                 criterion: REQ-FE-040#criterion.route-coverage
           - id: route-sql-detail
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/index.tsx
             selector: { kind: file }
             claims:
               - kind: satisfies
