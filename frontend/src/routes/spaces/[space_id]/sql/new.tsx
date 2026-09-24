@@ -87,7 +87,6 @@ export default function SpaceQueryCreateRoute() {
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow">{t("sqlPage.searchSavedSql")}</div>
           <h1>{t("sqlPage.newSql")}</h1>
         </div>
         <BackLink

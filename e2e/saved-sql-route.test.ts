@@ -25,7 +25,7 @@ test.describe("Saved SQL route", () => {
       .toBeVisible();
     await expect(page.getByText("No saved SQL", { exact: true }))
       .toBeVisible();
-    await expect(page.getByRole("link", { name: "SQL" }))
+    await expect(page.getByRole("link", { name: "New SQL query" }))
       .toHaveAttribute("href", `/spaces/${spaceId}/sql/new`);
     await expect(page.getByRole("link", { name: "Search" }).first())
       .toHaveAttribute("href", `/spaces/${spaceId}/search`);

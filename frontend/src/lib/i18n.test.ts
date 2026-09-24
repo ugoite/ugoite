@@ -100,12 +100,14 @@ describe("i18n", () => {
         count: true as never,
       }),
     ).not.toContain("[object Object]");
-    for (const value of [
-      { value: "hidden" },
-      { outer: { inner: "hidden" } },
-      [{ value: "hidden" }],
-      { entry_id: "entry-1", title: "Alpha" },
-    ]) {
+    for (
+      const value of [
+        { value: "hidden" },
+        { outer: { inner: "hidden" } },
+        [{ value: "hidden" }],
+        { entry_id: "entry-1", title: "Alpha" },
+      ]
+    ) {
       expect(
         t("dashboard.section.createEntry.formsAvailable", {
           count: value as never,
@@ -130,7 +132,5 @@ describe("i18n", () => {
     expect(t("globalShell.settings")).toBe("Settings");
     expect(t("dashboard.formsEntries")).toBe("Forms / Entries");
     expect(t("formsPage.selectForm")).toBe("Select a Form");
-    expect(t("sqlPage.createTitle")).toBe("SQL / New");
-    expect(t("sqlPage.variablesTitle")).toBe("SQL / Variables");
   });
 });

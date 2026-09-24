@@ -2,7 +2,7 @@ version: "0.1"
 updated: "2026-09-22"
 page:
   id: space-sql-results
-  title: Space SQL Results
+  title: Saved query results
   route: /spaces/{space_id}/sql/{sql_id}/run
   implementation: implemented
 components:
@@ -11,9 +11,12 @@ components:
       type: persistent-workspace-navigation
       reference: ../components/space-shell.yaml
   body:
+    - id: query-identity-heading
+      type: heading
+      title: Saved query name
+      ownership: object-identity
     - id: sql-results-table
       type: query-results
-      title: SQL results
       source: sql.query
       description: Renders arbitrary SQL columns and rows without creating persistent execution state.
     - id: sql-results-pagination
@@ -25,3 +28,7 @@ components:
       title: Count rows
       source: sql.query.count
       description: Explicit action; page loading does not issue a count request.
+    - id: saved-query-detail-action
+      type: link
+      title: Back to Saved SQL
+      target_page: space-sql-detail

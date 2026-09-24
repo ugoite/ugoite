@@ -2,7 +2,7 @@ version: "0.1"
 updated: "2026-09-24"
 page:
   id: space-query-create
-  title: Query Create
+  title: New
   route: /spaces/{space_id}/sql/new
   implementation: implemented
 components:
@@ -11,6 +11,9 @@ components:
       type: persistent-workspace-navigation
       reference: ../components/space-shell.yaml
   body:
+    - id: query-create-heading
+      type: heading
+      title: New
     - id: query-title-input
       type: text-input
       label: "Query name"
@@ -25,4 +28,8 @@ components:
       type: button
       variant: primary
       label: "Save"
-      target_page: space-search
+      target_page: space-sql
+    - id: saved-sql-parent-action
+      type: link
+      label: Back to Saved SQL
+      target_page: space-sql

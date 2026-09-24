@@ -27,7 +27,9 @@ export default function SpaceSqlDetailRoute() {
   const [forms] = createResource(async () => formApi.list(spaceId()));
   const variableCount = createMemo(() => entry()?.variables.length ?? 0);
   const queryVariablesHref = () =>
-    `/spaces/${encodeURIComponent(spaceId())}/sql/${encodeURIComponent(sqlId())}/variables`;
+    `/spaces/${encodeURIComponent(spaceId())}/sql/${
+      encodeURIComponent(sqlId())
+    }/variables`;
 
   const handleRun = () => {
     const current = entry();
@@ -46,19 +48,11 @@ export default function SpaceSqlDetailRoute() {
     <>
       <div class="screenHead">
         <div class="ui-stack-sm">
-          <p class="eyebrow">{t("sqlPage.searchSavedSql")}</p>
           <Show
             when={entry()}
             fallback={<h1>{t("sqlPage.detail")}</h1>}
           >
-            {(data) => (
-              <>
-                <h1>{displaySqlName(data())}</h1>
-                <p class="ui-page-subtitle max-w-2xl">
-                  {t("sqlPage.reviewDescription")}
-                </p>
-              </>
-            )}
+            {(data) => <h1>{displaySqlName(data())}</h1>}
           </Show>
         </div>
       </div>
@@ -159,7 +153,6 @@ export default function SpaceSqlDetailRoute() {
                     </ul>
                   </Show>
                 </div>
-
               </>
             )}
           </Match>

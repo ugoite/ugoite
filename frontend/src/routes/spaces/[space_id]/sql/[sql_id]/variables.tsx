@@ -76,8 +76,7 @@ export default function SpaceQueryVariablesRoute() {
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow">{t("sqlPage.searchSavedSql")}</div>
-          <h1>{t("sqlPage.queryVariables")}</h1>
+          <h1>{entry() ? displaySqlName(entry()!) : t("sqlPage.detail")}</h1>
         </div>
         <BackLink
           href={`/spaces/${encodeURIComponent(spaceId())}/sql/${
@@ -100,9 +99,9 @@ export default function SpaceQueryVariablesRoute() {
         </p>
       </Show>
       <Show when={entry()}>
-        {(data) => (
+        {() => (
           <div class="settingsMain surface">
-            <p class="text-sm ui-muted">{displaySqlName(data())}</p>
+            <h2 class="text-lg font-semibold">{t("sqlPage.variables")}</h2>
             <div class="ui-stack-sm">
               <For each={variables()}>
                 {(variable, index) => {

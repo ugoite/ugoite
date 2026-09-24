@@ -26,10 +26,12 @@ const runState = (value: unknown): SqlRunState => {
   const parameters = state.parameters;
   const parameterTypes = state.parameterTypes;
   return {
-    ...(parameters && typeof parameters === "object" && !Array.isArray(parameters)
+    ...(parameters && typeof parameters === "object" &&
+        !Array.isArray(parameters)
       ? { parameters: parameters as Record<string, unknown> }
       : {}),
-    ...(parameterTypes && typeof parameterTypes === "object" && !Array.isArray(parameterTypes)
+    ...(parameterTypes && typeof parameterTypes === "object" &&
+        !Array.isArray(parameterTypes)
       ? { parameterTypes: parameterTypes as Record<string, string> }
       : {}),
   };
@@ -85,7 +87,10 @@ export default function SpaceSqlRunRoute() {
       ...(continuation() ? { continuation: continuation() } : {}),
     };
   });
-  const [page] = createResource<ReturnType<typeof request>, SqlQueryPage | undefined>(
+  const [page] = createResource<
+    ReturnType<typeof request>,
+    SqlQueryPage | undefined
+  >(
     request,
     async (value) => value ? await sqlApi.query(spaceId(), value) : undefined,
   );
@@ -118,11 +123,13 @@ export default function SpaceSqlRunRoute() {
     setCounting(true);
     try {
       const currentState = state();
-      setCount(await sqlApi.count(spaceId(), {
-        sql: normalizeSqlVariables(current.sql).sql,
-        parameters: currentState.parameters ?? {},
-        parameter_types: currentState.parameterTypes ?? {},
-      }));
+      setCount(
+        await sqlApi.count(spaceId(), {
+          sql: normalizeSqlVariables(current.sql).sql,
+          parameters: currentState.parameters ?? {},
+          parameter_types: currentState.parameterTypes ?? {},
+        }),
+      );
     } catch (error) {
       setCountError(formatUserFacingError(error, "sqlPage.failedCount"));
     } finally {
@@ -136,17 +143,21 @@ export default function SpaceSqlRunRoute() {
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow">{t("sqlPage.searchSavedSql")}</div>
           <h1>{entry() ? displaySqlName(entry()!) : t("sqlPage.results")}</h1>
           <p class="ui-page-subtitle">{t("sqlPage.resultsDescription")}</p>
         </div>
         <BackLink
-          href={`/spaces/${encodeURIComponent(spaceId())}/sql/${encodeURIComponent(sqlId())}`}
+          href={`/spaces/${encodeURIComponent(spaceId())}/sql/${
+            encodeURIComponent(sqlId())
+          }`}
           label={t("sqlPage.backToSavedSql")}
         />
       </div>
 
-      <section class="settingsMain surface" aria-busy={entry.loading || page.loading || undefined}>
+      <section
+        class="settingsMain surface"
+        aria-busy={entry.loading || page.loading || undefined}
+      >
         <Show when={entry.loading || page.loading}>
           <LocalBusyIndicator label={t("sqlPage.loadingResults")} />
         </Show>
@@ -160,7 +171,9 @@ export default function SpaceSqlRunRoute() {
             <>
               <div class="flex flex-wrap items-center justify-between gap-3">
                 <p class="text-sm ui-muted">
-                  {t("sqlPage.pageNumber", { page: continuationStack().length + 1 })}
+                  {t("sqlPage.pageNumber", {
+                    page: continuationStack().length + 1,
+                  })}
                 </p>
                 <div class="flex flex-wrap items-center gap-2">
                   <Show when={count() !== null}>
@@ -175,14 +188,18 @@ export default function SpaceSqlRunRoute() {
                     aria-busy={counting() || undefined}
                     onClick={() => void handleCount()}
                   >
-                    {counting() ? t("sqlPage.counting") : t("sqlPage.loadCount")}
+                    {counting()
+                      ? t("sqlPage.counting")
+                      : t("sqlPage.loadCount")}
                   </button>
                 </div>
               </div>
 
               <Show
                 when={result().rows.length > 0}
-                fallback={<p class="mt-4 text-sm ui-muted">{t("sqlPage.noResults")}</p>}
+                fallback={
+                  <p class="mt-4 text-sm ui-muted">{t("sqlPage.noResults")}</p>
+                }
               >
                 <div class="ui-table-wrapper mt-4 overflow-x-auto">
                   <table class="ui-table">
@@ -199,7 +216,9 @@ export default function SpaceSqlRunRoute() {
                           <tr>
                             <For each={result().columns}>
                               {(column, index) => (
-                                <td>{formatCell(rowCell(row, column, index()))}</td>
+                                <td>
+                                  {formatCell(rowCell(row, column, index()))}
+                                </td>
                               )}
                             </For>
                           </tr>
@@ -225,7 +244,8 @@ export default function SpaceSqlRunRoute() {
                 <button
                   type="button"
                   class="ui-button ui-button-secondary"
-                  disabled={!result().has_more || !result().next || page.loading}
+                  disabled={!result().has_more || !result().next ||
+                    page.loading}
                   onClick={handleNext}
                 >
                   {t("common.next")}
@@ -238,7 +258,8 @@ export default function SpaceSqlRunRoute() {
           <button
             type="button"
             class="ui-button ui-button-secondary mt-4"
-            onClick={() => navigate(`/spaces/${encodeURIComponent(spaceId())}/sql`)}
+            onClick={() =>
+              navigate(`/spaces/${encodeURIComponent(spaceId())}/sql`)}
           >
             {t("sqlPage.backToSavedSql")}
           </button>

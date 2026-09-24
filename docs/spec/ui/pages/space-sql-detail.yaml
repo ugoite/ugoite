@@ -1,8 +1,8 @@
-version: '0.1'
-updated: '2026-09-24'
+version: "0.1"
+updated: "2026-09-24"
 page:
   id: space-sql-detail
-  title: Space SQL Detail
+  title: Saved query
   route: /spaces/{space_id}/sql/{sql_id}
   implementation: implemented
 components:
@@ -11,27 +11,23 @@ components:
       type: persistent-workspace-navigation
       reference: ../components/space-shell.yaml
   body:
-  - id: sql-detail-heading
-    type: heading
-    title: Saved SQL detail
-  - id: sql-detail-metadata
-    type: list
-    title: Query metadata
-  - id: sql-detail-editor
-    type: sql-editor
-    title: Saved SQL text
-  - id: sql-detail-variables
-    type: list
-    title: Query variables
-  - id: sql-detail-primary-action
-    type: button
-    title: Run query or open variables
-  - id: saved-sql-index-action
-    type: button
-    title: Back to saved SQL
-  - id: search-recovery-action
-    type: button
-    title: Open search
-  - id: dashboard-recovery-action
-    type: button
-    title: Back to dashboard
+    - id: sql-detail-heading
+      type: heading
+      title: Saved query name
+      ownership: object-identity
+    - id: sql-detail-metadata
+      type: list
+      title: Query metadata
+    - id: sql-detail-editor
+      type: sql-editor
+      title: SQL
+    - id: sql-detail-variables
+      type: list
+      title: Variables
+    - id: sql-detail-primary-action
+      type: button
+      title: Run Query or Open Variables
+    - id: saved-sql-index-action
+      type: link
+      title: Back to Saved SQL
+      target_page: space-sql
