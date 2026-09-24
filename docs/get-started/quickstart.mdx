@@ -125,7 +125,8 @@ need a human-readable name for the Knowledge.
 Edit through the normal mutation path, then inspect history:
 
 ```bash
-ugoite entry history meeting-2026-09-12
+ugoite entry update "$ENTRY_ID" --field Notes=Updated
+ugoite entry history "$ENTRY_ID"
 ```
 
 Updates accept `--parent-revision-id` for optimistic conflict checks. A stale
@@ -169,9 +170,9 @@ on both surfaces.
 <TabItem label="CLI">
 
 ```bash
-ugoite entry history meeting-2026-09-12
-ugoite entry restore meeting-2026-09-12 <revision-id>
-ugoite entry history meeting-2026-09-12
+ugoite entry history "$ENTRY_ID"
+ugoite entry restore "$ENTRY_ID" <revision-id>
+ugoite entry history "$ENTRY_ID"
 ```
 
 Take `<revision-id>` from the first `entry history` output. Restore appends
