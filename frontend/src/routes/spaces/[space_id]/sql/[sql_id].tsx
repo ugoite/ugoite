@@ -15,7 +15,6 @@ import type { Form } from "~/lib/types";
 
 export const route = spaceRoute({
   navigation: "search",
-  title: "savedSqlDetail",
 });
 
 export default function SpaceSqlDetailRoute() {

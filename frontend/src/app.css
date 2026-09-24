@@ -448,15 +448,6 @@ code {
   width: 13px;
   height: 13px;
 }
-.crumbTop {
-  position: absolute;
-  color: var(--muted);
-  font-size: 13px;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .avatar {
   margin-left: auto;
   width: 34px;
@@ -1825,9 +1816,6 @@ textarea {
   }
   .topbar .mobileMenu {
     display: grid;
-  }
-  .crumbTop {
-    display: none;
   }
   .content, .ui-content {
     padding: 20px 14px 92px;

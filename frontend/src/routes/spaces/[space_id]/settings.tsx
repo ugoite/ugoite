@@ -27,7 +27,7 @@ import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceHistoryPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "settings", title: "settings" });
+export const route = spaceRoute({ navigation: "settings" });
 
 type Section = SettingsSectionId;
 const managedRoles = ["owner", "editor", "viewer"] as const;

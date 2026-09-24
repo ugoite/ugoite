@@ -21,7 +21,6 @@ import type { EntryRevision } from "~/lib/types";
 
 export const route = spaceRoute({
   navigation: "forms",
-  title: "entryHistory",
 });
 
 const HISTORY_PAGE_SIZE = 50;

@@ -68,7 +68,7 @@ describe("UX PR-5 legacy strings", () => {
     setLocale("ja");
 
     render(() => (
-      <GlobalShell title="Spaces">
+      <GlobalShell>
         <p>内容</p>
       </GlobalShell>
     ));

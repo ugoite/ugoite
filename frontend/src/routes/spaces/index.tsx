@@ -195,7 +195,7 @@ export default function SpacesIndexRoute() {
   };
 
   return (
-    <GlobalShell title={t("spacesPage.title")} active="spaces">
+    <GlobalShell active="spaces">
       <div class="ui-stack">
         <div class="screenHead">
           <div class="screenTitle">

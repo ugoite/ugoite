@@ -13,7 +13,7 @@ import {
 } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "forms", title: "newEntry" });
+export const route = spaceRoute({ navigation: "forms" });
 
 export default function NewEntryRoute() {
   const params = useParams<{ space_id: string }>();

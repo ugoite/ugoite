@@ -11,7 +11,6 @@ import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({
   navigation: "search",
-  title: "sqlVariables",
 });
 
 export default function SpaceQueryVariablesRoute() {

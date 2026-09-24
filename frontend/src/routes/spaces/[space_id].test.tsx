@@ -25,16 +25,10 @@ vi.mock("~/lib/space-store", () => ({
 
 const formsRoute = spaceRoute({ navigation: "forms" });
 const dashboardRoute = spaceRoute({ navigation: "home" });
-const newEntryRoute = spaceRoute({ navigation: "forms", title: "newEntry" });
-const historyRoute = spaceRoute({
-  navigation: "history",
-  title: "spaceHistory",
-});
-const settingsRoute = spaceRoute({ navigation: "settings", title: "settings" });
-const testConnectionRoute = spaceRoute({
-  navigation: "settings",
-  title: "settingsStorage",
-});
+const newEntryRoute = spaceRoute({ navigation: "forms" });
+const historyRoute = spaceRoute({ navigation: "history" });
+const settingsRoute = spaceRoute({ navigation: "settings" });
+const testConnectionRoute = spaceRoute({ navigation: "settings" });
 
 function FormsPage() {
   return (
@@ -109,14 +103,10 @@ describe("/spaces/:space_id persistent layout", () => {
     renderAt("/spaces/demo/forms");
     const shell = screen.getByRole("main");
 
-    expect(document.querySelector(".crumbTop")).toHaveTextContent("Forms");
     fireEvent.click(screen.getByRole("link", { name: "New Entry" }));
 
     await waitFor(() => {
       expect(screen.getByText("New Entry route")).toBeInTheDocument();
-      expect(document.querySelector(".crumbTop")).toHaveTextContent(
-        "New Entry",
-      );
       expect(loadSpacesMock).toHaveBeenCalledOnce();
       // Entry creation lives under Forms (shortest path preserved).
       expect(screen.getAllByRole("link", { name: "Forms" })[0])
@@ -148,48 +138,26 @@ describe("/spaces/:space_id persistent layout", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Dashboard route")).toBeInTheDocument();
-      expect(document.querySelector(".crumbTop")).toHaveTextContent("Home");
     });
 
     expectNotCurrent("Spaces");
   });
 
-  it("derives Settings navigation from the matched route metadata", async () => {
+  it("derives Settings navigation from the matched route metadata", () => {
     renderAt("/spaces/demo/test-connection");
 
-    await waitFor(() => {
-      expect(document.querySelector(".crumbTop")).toHaveTextContent(
-        "Settings / Storage",
-      );
-    });
     expect(screen.getAllByRole("link", { name: "Settings" })[0])
       .toHaveClass("active");
     expect(screen.getAllByRole("link", { name: "Home" })[0])
       .not.toHaveClass("active");
   });
 
-  it("localizes the settings breadcrumb from shared route metadata", async () => {
-    renderAt("/spaces/demo/settings?section=storage");
-
-    await waitFor(() => {
-      expect(document.querySelector(".crumbTop")).toHaveTextContent(
-        "Settings / Storage",
-      );
-    });
-
-    setLocale("ja");
-    await waitFor(() => {
-      expect(document.querySelector(".crumbTop")).toHaveTextContent(
-        "設定 / ストレージ",
-      );
-    });
-  });
-
-  it("keeps Forms localized when the shell uses the route fallback title", () => {
+  it("keeps Forms navigation localized", () => {
     setLocale("ja");
     renderAt("/spaces/demo/forms");
 
-    expect(document.querySelector(".crumbTop")).toHaveTextContent("フォーム");
+    expect(screen.getAllByRole("link", { name: "フォーム" })[0])
+      .toHaveAttribute("aria-current", "page");
   });
 
   it("uses route metadata when the space id contains navigation names", () => {

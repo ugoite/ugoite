@@ -1,27 +1,7 @@
 import type { RouteDefinition } from "@solidjs/router";
 import type { SpaceNavigation } from "~/components/SpaceShell";
 
-export type SpaceShellTitle =
-  | "asset"
-  | "assets"
-  | "entryHistory"
-  | "entryInfo"
-  | "newEntry"
-  | "restore"
-  | "revision"
-  | "savedSql"
-  | "savedSqlDetail"
-  | "settings"
-  | "settingsStorage"
-  | "spaceHistory"
-  | "sqlNew"
-  | "sqlVariables"
-  | "formTypes";
-
-export type SpaceShellRouteInfo = {
-  navigation: SpaceNavigation;
-  title?: SpaceShellTitle;
-};
+export type SpaceShellRouteInfo = { navigation: SpaceNavigation };
 
 export const spaceRoute = (
   info: SpaceShellRouteInfo,

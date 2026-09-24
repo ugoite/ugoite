@@ -79,7 +79,7 @@ describe("#2842 automated accessibility contract", () => {
 
   it("keeps aria-label off generic spans", () => {
     const { container } = render(() => (
-      <GlobalShell title="Spaces" authenticated={false}>
+      <GlobalShell authenticated={false}>
         <p>content</p>
       </GlobalShell>
     ));

@@ -6,7 +6,7 @@ import type { StorageConnectionConfig } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "settings", title: "settingsStorage" });
+export const route = spaceRoute({ navigation: "settings" });
 
 export default function SpaceTestConnectionRoute() {
   const params = useParams<{ space_id: string }>();

@@ -8,7 +8,7 @@ const docsHref = getDocsiteHref(
 
 export default function NotFound() {
   return (
-    <GlobalShell title="404" authenticated={false}>
+    <GlobalShell authenticated={false}>
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">404</div>

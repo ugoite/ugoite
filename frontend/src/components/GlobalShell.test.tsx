@@ -31,7 +31,7 @@ describe("GlobalShell account menu", () => {
 
   it("does not sign out when the avatar is opened", () => {
     render(() => (
-      <GlobalShell title="Spaces">
+      <GlobalShell>
         <p>Content</p>
       </GlobalShell>
     ));
@@ -47,7 +47,7 @@ describe("GlobalShell account menu", () => {
 
   it("offers Settings, Docs, and Logout without a menu heading", () => {
     render(() => (
-      <GlobalShell title="Spaces">
+      <GlobalShell>
         <p>Content</p>
       </GlobalShell>
     ));
@@ -73,7 +73,7 @@ describe("GlobalShell account menu", () => {
   it("signs out only from the explicit menu action", async () => {
     vi.mocked(authApi.clearSession).mockResolvedValue(undefined);
     render(() => (
-      <GlobalShell title="Spaces">
+      <GlobalShell>
         <p>Content</p>
       </GlobalShell>
     ));
@@ -86,7 +86,7 @@ describe("GlobalShell account menu", () => {
 
   it("shows a sign-in link when used for a public route", () => {
     render(() => (
-      <GlobalShell title="Spaces" authenticated={false}>
+      <GlobalShell authenticated={false}>
         <p>Content</p>
       </GlobalShell>
     ));
@@ -100,7 +100,7 @@ describe("GlobalShell account menu", () => {
 
   it("REQ-UX-NAV-001: keeps global navigation limited to Spaces without an About entry", () => {
     render(() => (
-      <GlobalShell title="Spaces">
+      <GlobalShell>
         <p>Content</p>
       </GlobalShell>
     ));

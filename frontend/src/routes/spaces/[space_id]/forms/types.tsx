@@ -7,7 +7,7 @@ import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "forms", title: "formTypes" });
+export const route = spaceRoute({ navigation: "forms" });
 
 export default function SpaceFormTypesRoute() {
   const params = useParams<{ space_id: string }>();
