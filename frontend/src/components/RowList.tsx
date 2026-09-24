@@ -5,6 +5,8 @@ import type { JSX } from "solid-js";
 interface RowListProps {
   /** Accessible name for the list (e.g. the section heading). */
   label: string;
+  /** Reference an existing heading instead of repeating its text. */
+  labelledBy?: string;
   children: JSX.Element;
 }
 
@@ -17,7 +19,12 @@ interface RowListProps {
  */
 export function RowList(props: RowListProps) {
   return (
-    <div class="rowList" role="list" aria-label={props.label}>
+    <div
+      class="rowList"
+      role="list"
+      aria-label={props.labelledBy ? undefined : props.label}
+      aria-labelledby={props.labelledBy}
+    >
       {props.children}
     </div>
   );

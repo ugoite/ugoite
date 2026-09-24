@@ -63,7 +63,6 @@ describe("space history route", () => {
 
     render(() => <SpaceHistoryRoute />);
 
-    expect(await screen.findByText("Space history")).toBeInTheDocument();
     // Revert rows are labeled; the reverted Change is kept, not rewritten.
     expect(await screen.findByRole("columnheader", { name: "Change" }))
       .toBeInTheDocument();
@@ -85,17 +84,6 @@ describe("space history route", () => {
     expect(document.querySelector(".historyTable")).toBeInTheDocument();
     expect(document.querySelector(".historyTable.ui-card")).toBeNull();
     expect(changeApi.list).toHaveBeenCalledWith("default");
-  });
-
-  it("PR7: history is top-level with a back link to the Space home", async () => {
-    vi.mocked(changeApi.list).mockResolvedValue([]);
-
-    render(() => <SpaceHistoryRoute />);
-
-    const back = await screen.findByRole("link", { name: "Back to Space" });
-    expect(back).toHaveAttribute("href", "/spaces/default/dashboard");
-    expect(screen.queryByRole("link", { name: "Back to Settings" }))
-      .not.toBeInTheDocument();
   });
 
   it("PR6: resolves actor IDs to member display names without raw UUIDs in rows", async () => {

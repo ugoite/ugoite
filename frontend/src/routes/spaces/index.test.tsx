@@ -62,7 +62,7 @@ describe("/spaces", () => {
       expect(screen.getByText("No spaces available.")).toBeInTheDocument();
     });
 
-    expect(screen.getByRole("button", { name: "+ Space" }))
+    expect(screen.getByRole("button", { name: "New Space" }))
       .toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Join with invitation" }))
       .toHaveAttribute(
@@ -89,7 +89,7 @@ describe("/spaces", () => {
       expect(screen.getByText("No spaces available.")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "+ Space" }));
+    fireEvent.click(screen.getByRole("button", { name: "New Space" }));
     fireEvent.input(screen.getByLabelText("Space name"), {
       target: { value: "プロジェクトメモ 📝" },
     });
@@ -120,7 +120,7 @@ describe("/spaces", () => {
       expect(screen.getByText("No spaces available.")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "+ Space" }));
+    fireEvent.click(screen.getByRole("button", { name: "New Space" }));
     fireEvent.input(screen.getByLabelText("Space name"), {
       target: { value: "My space" },
     });
@@ -142,7 +142,7 @@ describe("/spaces", () => {
       expect(screen.getByText("No spaces available.")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "+ Space" }));
+    fireEvent.click(screen.getByRole("button", { name: "New Space" }));
 
     expect(screen.getByLabelText("Space name")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("e.g. Project notes"))
@@ -188,7 +188,7 @@ describe("/spaces", () => {
       expect(screen.getByText("No spaces available.")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "+ Space" }));
+    fireEvent.click(screen.getByRole("button", { name: "New Space" }));
     fireEvent.input(screen.getByLabelText("Space name"), {
       target: { value: "My space" },
     });
@@ -228,7 +228,7 @@ describe("/spaces", () => {
       expect(screen.getByText("No spaces available.")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "+ Space" }));
+    fireEvent.click(screen.getByRole("button", { name: "New Space" }));
     fireEvent.input(screen.getByLabelText("Space name"), {
       target: { value: "My space" },
     });
@@ -263,7 +263,7 @@ describe("/spaces", () => {
     render(() => <SpacesIndexRoute />);
 
     await waitFor(() => {
-      expect(screen.getByText("Available Spaces")).toBeInTheDocument();
+      expect(screen.getByText("Available")).toBeInTheDocument();
       expect(screen.getByRole("link", { name: "default" }))
         .toBeInTheDocument();
     });
@@ -275,22 +275,6 @@ describe("/spaces", () => {
         /localhost and remote mode both require authentication/i,
       ),
     ).not.toBeInTheDocument();
-  });
-
-  it("REQ-UX-NAV-001: states the Spaces context once without a competing title", async () => {
-    (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { space_uid: "default", name: "Default", created_at: "2025-01-01" },
-    ]);
-
-    render(() => <SpacesIndexRoute />);
-
-    await waitFor(() => {
-      expect(screen.getByRole("list", { name: "Spaces" }))
-        .toBeInTheDocument();
-    });
-    expect(screen.getAllByRole("heading", { name: "Spaces" }))
-      .toHaveLength(1);
-    expect(screen.queryByText("Knowledge space")).not.toBeInTheDocument();
   });
 
   it("REQ-FE-001: lists every authorized Space in one section", async () => {

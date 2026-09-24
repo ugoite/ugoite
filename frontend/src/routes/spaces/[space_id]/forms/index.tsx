@@ -62,15 +62,17 @@ export default function SpaceFormsIndexPane() {
         }
       >
         <div class="mx-auto max-w-6xl formsPage">
-          <div class="flex flex-wrap items-center justify-between gap-3 entriesHeader">
-            <h1 class="ui-page-title">{t("formsPage.heading")}</h1>
+          <h1 class="ui-sr-only" id="forms-page-title">
+            {t("formsPage.heading")}
+          </h1>
+          <div class="flex flex-wrap items-center justify-end gap-3 entriesHeader">
             <button
               class="ui-button ui-button-primary text-sm"
               type="button"
               aria-label={t("formsPage.newFormAria")}
               onClick={() => setShowFormDialog(true)}
             >
-              {t("formsPage.newButton")}
+              <UiIcon name="plus" />
             </button>
           </div>
 
@@ -85,15 +87,16 @@ export default function SpaceFormsIndexPane() {
                   type="search"
                   aria-label={t("formsPage.find")}
                   class="ui-input"
-                  placeholder={t("formsPage.find")}
+                  placeholder={t("formsPage.searchPlaceholder")}
                   value={query()}
                   onInput={(event) => setQuery(event.currentTarget.value)}
                 />
               </label>
               <label class="formVisibilityToggle">
-                <span>{t("formsPage.showMetadata")}</span>
+                <span>{t("formsPage.showMetadataShort")}</span>
                 <input
                   type="checkbox"
+                  aria-label={t("formsPage.showMetadata")}
                   checked={showMetadata()}
                   onChange={(event) =>
                     setShowMetadata(event.currentTarget.checked)}
@@ -104,7 +107,10 @@ export default function SpaceFormsIndexPane() {
             <Show when={filteredForms().length === 0}>
               <p class="text-sm ui-muted">{t("formsPage.noForms")}</p>
             </Show>
-            <RowList label={t("formsPage.heading")}>
+            <RowList
+              label={t("formsPage.heading")}
+              labelledBy="forms-page-title"
+            >
               <For each={filteredForms()}>
                 {(form) => (
                   <RowListItem

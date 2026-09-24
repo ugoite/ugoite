@@ -100,7 +100,7 @@ test.describe("Smoke Tests", { tag: "@smoke" }, () => {
 
   test("REQ-OPS-015: Passkey login produces only an opaque HttpOnly session cookie", async ({ page, context }) => {
     await page.goto("/spaces");
-    await expect(page.getByText("Available Spaces")).toBeVisible();
+    await expect(page.getByText("Available")).toBeVisible();
     const cookies = await context.cookies();
     const session = cookies.find((cookie) => cookie.name === "ugoite_session");
     expect(session).toBeDefined();

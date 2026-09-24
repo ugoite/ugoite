@@ -9,15 +9,12 @@ import { getDocsiteHref } from "~/lib/docsite-links";
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
-import { formApi, spaceApi } from "~/lib/ugoite-client";
+import { formApi } from "~/lib/ugoite-client";
 import type { FormCreatePayload } from "~/lib/types";
 import {
   spaceEntriesPath,
   spaceEntryPath,
   spaceFormEntriesPath,
-  spaceFormsPath,
-  spaceSearchPath,
-  spaceSqlPath,
 } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
@@ -35,7 +32,6 @@ export default function SpaceDashboardRoute() {
   const entryStore = createEntryStore(spaceId);
   const [showFormDialog, setShowFormDialog] = createSignal(false);
   const [entriesLoaded, setEntriesLoaded] = createSignal(false);
-  const [space] = createResource(spaceId, spaceApi.get);
   const [forms, { refetch: refetchForms }] = createResource(
     spaceId,
     formApi.list,
@@ -52,7 +48,6 @@ export default function SpaceDashboardRoute() {
   const formsAvailable = () =>
     formReadiness() === "ready" ||
     formReadiness() === "empty";
-  const spaceName = () => space()?.name || spaceId();
   const storeEntries = () => {
     const value = entryStore.entries as unknown;
     return typeof value === "function"
@@ -89,10 +84,7 @@ export default function SpaceDashboardRoute() {
   return (
     <>
       <h1 class="ui-sr-only">{t("dashboard.home")}</h1>
-      <div class="homehead">
-        <div class="actionLead">
-          <span class="eyebrow">{spaceName()}</span>
-        </div>
+      <div class="homehead justify-end">
         <button
           class="btn primary"
           type="button"
@@ -194,26 +186,6 @@ export default function SpaceDashboardRoute() {
               </A>
             )}
           </Show>
-          <A class="continueItem" href={spaceFormsPath(spaceId())}>
-            <span class="glyph">
-              {entryForms()[0]?.name?.slice(0, 1).toUpperCase() || "F"}
-            </span>
-            <span>
-              <b>{entryForms()[0]?.name || t("dashboard.forms")}</b>
-              <small>{t("dashboard.formsEntries")}</small>
-            </span>
-            <span class="chev">›</span>
-          </A>
-          <A class="continueItem" href={spaceSearchPath(spaceId())}>
-            <span class="glyph">
-              <UiIcon name="search" />
-            </span>
-            <span>
-              <b>{t("dashboard.search")}</b>
-              <small>{t("dashboard.searchMeta")}</small>
-            </span>
-            <span class="chev">›</span>
-          </A>
         </div>
       </section>
 
@@ -236,14 +208,6 @@ export default function SpaceDashboardRoute() {
               </A>
             )}
           </For>
-          <A class="pinItem" href={spaceSqlPath(spaceId())}>
-            <span class="glyph">
-              <UiIcon name="sql" />
-            </span>
-            <span>
-              <b>{t("sqlPage.savedSql")}</b>
-            </span>
-          </A>
         </div>
       </section>
 

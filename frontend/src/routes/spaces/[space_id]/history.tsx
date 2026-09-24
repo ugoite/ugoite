@@ -1,6 +1,5 @@
 import { useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
-import { BackLink } from "~/components/BackLink";
 import { ConfirmDestructiveAction } from "~/components/ConfirmDestructiveAction";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
@@ -14,7 +13,6 @@ import type { SpaceMember } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
-import { spaceDashboardPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({
@@ -121,16 +119,7 @@ export default function SpaceHistoryRoute() {
 
   return (
     <>
-      <div class="screenHead">
-        <div class="screenTitle">
-          <h1>{t("spaceHistory.title")}</h1>
-        </div>
-        <BackLink
-          href={spaceDashboardPath(spaceId())}
-          label={t("spaceHistory.backToSpace")}
-        />
-      </div>
-      <p class="ui-muted">{t("spaceHistory.description")}</p>
+      <h1 class="ui-sr-only">{t("spaceHistory.title")}</h1>
       {/* Panel-local spinner: existing rows stay mounted during refetch. */}
       <Show when={history.loading}>
         <LocalBusyIndicator label={t("spaceHistory.loading")} />

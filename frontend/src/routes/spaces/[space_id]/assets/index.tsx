@@ -49,11 +49,10 @@ export default function SpaceAssetsIndexRoute() {
 
   return (
     <div class="assetInventory" aria-busy={items.loading || undefined}>
+      <h1 class="ui-sr-only" id="assets-files-title">
+        {t("assetsPage.filesHeading")}
+      </h1>
       <div class="screenHead">
-        <div class="screenTitle">
-          <div class="eyebrow">{t("assetsPage.eyebrow")}</div>
-          <h1>{t("assetsPage.filesHeading")}</h1>
-        </div>
         <A
           class="btn primary"
           href={`/spaces/${encodeURIComponent(spaceId())}/forms`}
@@ -61,10 +60,6 @@ export default function SpaceAssetsIndexRoute() {
           {t("assetsPage.upload")}
         </A>
       </div>
-
-      <p class="mb-6 max-w-3xl text-sm ui-muted">
-        {t("assetsPage.uploadDescription")}
-      </p>
 
       {/* Panel-local spinner alongside the list: rows stay mounted. */}
       <Show when={items.loading}>
@@ -87,11 +82,6 @@ export default function SpaceAssetsIndexRoute() {
       </Show>
 
       <Show when={!items.error}>
-        <Show when={!items.loading}>
-          <p role="status" class="mb-4 text-sm ui-muted">
-            {t("assetsPage.complete")}
-          </p>
-        </Show>
         <Show
           when={assetGroups().length > 0}
           fallback={
@@ -101,19 +91,14 @@ export default function SpaceAssetsIndexRoute() {
                 <p class="text-sm ui-muted">
                   {t("assetsPage.emptyDescription")}
                 </p>
-                <div>
-                  <A
-                    class="ui-button ui-button-secondary inline-flex items-center gap-2 text-sm"
-                    href={`/spaces/${encodeURIComponent(spaceId())}/forms`}
-                  >
-                    {t("assetsPage.openForms")}
-                  </A>
-                </div>
               </div>
             </Show>
           }
         >
-          <RowList label={t("assetsPage.filesHeading")}>
+          <RowList
+            label={t("assetsPage.filesHeading")}
+            labelledBy="assets-files-title"
+          >
             <For each={assetGroups()}>
               {(asset) => (
                 <RowListItem

@@ -1564,16 +1564,16 @@ requirements:
           - id: form-workspace
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
-            selector: { kind: test, name: "renders a list-only heading with a create action" }
+            selector: { kind: test, name: "renders Forms and exposes the create action accessibly" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-067#criterion.form-grid
                 covers: [FEAT-FE-010#binding.frontend/target.forms-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "renders a list-only heading with a create action" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "renders Forms and exposes the create action accessibly" } }
               - kind: verifies
                 criterion: REQ-FE-067#criterion.icon-actions
                 covers: [FEAT-FE-010#binding.frontend/target.forms-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "renders a list-only heading with a create action" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "renders Forms and exposes the create action accessibly" } }
           - id: form-navigation
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
@@ -1786,17 +1786,17 @@ requirements:
       - id: calm-dashboard-verification
         role: verification
         facet: verification
-        responsibility: Verify the dashboard identifier fallback and resolved Space title transition through the exact frontend test.
+        responsibility: Verify the Space selector identifier fallback and resolved Space name transition through the exact frontend test.
         targets:
           - id: metadata-fallback
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
-            selector: { kind: test, name: "REQ-FE-058: keeps the dashboard title calm while space metadata resolves" }
+            path: frontend/src/components/SpaceShell.test.tsx
+            selector: { kind: test, name: "REQ-FE-058: keeps Space identity available while Spaces load" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-058#criterion.calm-loading
-                covers: [FEAT-FE-012#binding.frontend/target.dashboard-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/dashboard.test.tsx", test: "REQ-FE-058: keeps the dashboard title calm while space metadata resolves" } }
+                covers: [FEAT-FE-009#binding.frontend/target.space-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/SpaceShell.test.tsx", test: "REQ-FE-058: keeps Space identity available while Spaces load" } }
   - id: REQ-FE-017
     title: Space Storage Configuration
     description: Space settings save storage connector metadata independently from the current topology and provide an explicit connection-validation action before treating a proposed connector as usable.
