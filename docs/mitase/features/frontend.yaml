@@ -348,6 +348,10 @@ features:
                 criterion: REQ-FE-062#criterion.detail-summary
               - kind: satisfies
                 criterion: REQ-FE-062#criterion.supported-actions
+              - kind: satisfies
+                criterion: REQ-FE-062#criterion.revision-aware-save
+              - kind: satisfies
+                criterion: REQ-FE-062#criterion.delete
           - id: sql-create-route
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/new.tsx
