@@ -16,6 +16,7 @@ components:
       reference: ./space-entry-detail.yaml
       mode: create
       behavior:
+        - Use New Entry as the single visible task identity.
         - Select an available Form before editing.
         - Start with the form-first Fields tab when structured fields exist.
         - Allow Preview and Source editing through the same tabs as Entry Detail.

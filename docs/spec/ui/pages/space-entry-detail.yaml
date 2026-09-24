@@ -19,8 +19,8 @@ components:
           target_page: space-form-grid
         - id: entry-label
           type: heading
-          text: "{entry_label}"
-          description: Stable entry ID label. A Form-defined Title or Name renders as a normal field with no Entry-level semantics. No Untitled canonical label.
+          text: Entry
+          description: Entry is the task identity; the selected Form name may appear once as secondary context when useful. A Form-defined Title or Name remains a normal field. Stable Entry IDs belong in advanced Info details.
         - id: save-status
           type: status
           values:

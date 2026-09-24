@@ -60,13 +60,13 @@ features:
                 criterion: REQ-UX-NAV-001#criterion.single-shell-ownership
   - id: FEAT-UX-002
     title: Entry workspace baseline
-    summary: Record the shipped entry workspace and list panel surfaces satisfying the decoration, async-state, and guidance criteria without changing UI behavior.
+    summary: Record the shared Entry workspace and list surfaces, including the Entry task identity, ordinary Form-defined fields, decoration rules, async states, and form-derived guidance.
     status: planned
     bindings:
       - id: entry-baseline
         role: implementation
         facet: frontend
-        responsibility: Keep the entry workspace baseline connected to the shipped detail and list surfaces plus the route inventory record.
+        responsibility: Keep the current Entry detail and list surfaces connected to the route inventory, with Form-defined values remaining ordinary fields rather than Entry identities.
         targets:
           - id: entry-detail-surface
             adapter: typescript
