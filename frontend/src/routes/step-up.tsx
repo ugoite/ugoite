@@ -114,7 +114,7 @@ export default function StepUpApprovalRoute() {
   return (
     <main class="publicShell">
       <section class="publicCard ui-stack">
-        <h1 class="ui-page-title">Approve step-up request</h1>
+        <h1 class="ui-page-title">Review CLI operation</h1>
         <Show
           when={view() !== "missing"}
           fallback={
