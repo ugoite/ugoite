@@ -265,7 +265,7 @@ async fn journey_cli_remote_locate_recover() {
     // Bare Space IDs select the remote transport in every command below.
     let form_name = "LocateTask";
 
-    // Form establish via `form save`: the upsert path behind a weaker name.
+    // Establish the Form through the CLI's canonical save operation.
     let form_file = config_path
         .parent()
         .expect("config parent")

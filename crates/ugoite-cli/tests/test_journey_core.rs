@@ -6,7 +6,7 @@
 //! and asserts the same durable postconditions through canonical reads.
 //! CLI stdout wording is never compared; only exit status and the returned
 //! durable state matter. Form establish intentionally drives `form save`,
-//! which is the upsert path behind a weaker name.
+//! which uses the canonical save operation.
 
 use std::process::Command;
 use std::process::Output;
@@ -129,7 +129,7 @@ fn test_journey_cli_core_local_durable_outcome() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // Form establish via `form save`: the upsert path behind a weaker name.
+    // Establish the Form through the CLI's canonical save operation.
     let form_file = dir.path().join("journey-core-form.json");
     std::fs::write(
         &form_file,
