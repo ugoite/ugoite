@@ -110,7 +110,7 @@ export default function SpaceEntryHistoryRoute() {
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <h1>{t("entryHistory.title")}</h1>
+          <h1 id="entry-history-title">{t("entryHistory.title")}</h1>
         </div>
         <BackLink
           href={entryHref()}
@@ -147,7 +147,10 @@ export default function SpaceEntryHistoryRoute() {
             */
             }
             <div aria-busy={history.loading || undefined}>
-              <RowList label={t("entryHistory.title")}>
+              <RowList
+                labelledBy="entry-history-title"
+                label={t("entryHistory.title")}
+              >
                 <For each={revisions()}>
                   {(revision) => {
                     const operation = () => revisionOperationLabel(revision);

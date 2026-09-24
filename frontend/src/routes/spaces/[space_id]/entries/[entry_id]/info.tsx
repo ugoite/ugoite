@@ -42,18 +42,6 @@ export default function SpaceEntryInfoRoute() {
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow break-all">
-            {entryId()}
-            <button
-              type="button"
-              class="ui-button ui-button-secondary ui-button-sm ml-2"
-              aria-label={`${t("common.copy")} ${entryId()}`}
-              title={t("common.copy")}
-              onClick={() => void copyEntryId()}
-            >
-              {t("common.copy")}
-            </button>
-          </div>
           <h1>{t("entryInfo.title")}</h1>
         </div>
         <BackLink href={entryPath()} label={t("entryInfo.backToEntry")} />
@@ -75,10 +63,6 @@ export default function SpaceEntryInfoRoute() {
             aria-busy={entry.loading || undefined}
           >
             <div>
-              <dt>{t("entryInfo.entryId")}</dt>
-              <dd class="font-mono break-all">{loaded().id}</dd>
-            </div>
-            <div>
               <dt>{t("entryInfo.form")}</dt>
               <dd>{loaded().form || t("entryInfo.unknownForm")}</dd>
             </div>
@@ -92,13 +76,37 @@ export default function SpaceEntryInfoRoute() {
                 <dd>{formatDateTimeLabel(loaded().created_at)}</dd>
               </div>
             </Show>
-            <Show when={loaded().revision_id}>
-              <div>
-                <dt>{t("entryInfo.revisionId")}</dt>
-                <dd class="font-mono break-all">{loaded().revision_id}</dd>
-              </div>
-            </Show>
           </dl>
+        )}
+      </Show>
+      <Show when={entry()}>
+        {(loaded) => (
+          <details class="entry-info-advanced-details">
+            <summary>{t("settings.advancedDetails")}</summary>
+            <dl class="ui-entry-detail-list">
+              <div>
+                <dt>{t("entryInfo.entryId")}</dt>
+                <dd class="font-mono break-all">
+                  {loaded().id}
+                  <button
+                    type="button"
+                    class="ui-button ui-button-secondary ui-button-sm ml-2"
+                    aria-label={`${t("common.copy")} ${loaded().id}`}
+                    title={t("common.copy")}
+                    onClick={() => void copyEntryId()}
+                  >
+                    {t("common.copy")}
+                  </button>
+                </dd>
+              </div>
+              <Show when={loaded().revision_id}>
+                <div>
+                  <dt>{t("entryInfo.revisionId")}</dt>
+                  <dd class="font-mono break-all">{loaded().revision_id}</dd>
+                </div>
+              </Show>
+            </dl>
+          </details>
         )}
       </Show>
       <Show when={entry()}>

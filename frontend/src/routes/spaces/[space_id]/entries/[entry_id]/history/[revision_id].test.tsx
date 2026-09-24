@@ -112,10 +112,6 @@ describe("entry revision review route", () => {
       main.textContent?.replace(details.textContent ?? "", ""),
     ).not.toContain("rev-old");
 
-    // Destructive-restore warning stays visible as an alert.
-    expect(await screen.findByText(/Restore appends a new current revision/))
-      .toBeInTheDocument();
-
     // Primary action is restore only (plus copy helpers in details).
     const restore = await screen.findByRole("button", {
       name: "Restore this revision",

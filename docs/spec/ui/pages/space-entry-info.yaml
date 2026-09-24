@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-09-16"
+updated: "2026-09-24"
 page:
   id: space-entry-info
   title: Entry Info
@@ -23,10 +23,14 @@ components:
     - id: entry-info-metadata
       type: list
       items:
-        - entry_id
         - form
         - updated_at
         - created_at
+    - id: entry-info-advanced-details
+      type: list
+      title: Advanced details
+      items:
+        - entry_id
         - current_revision_id
     - id: entry-info-sharing
       type: settings-panel

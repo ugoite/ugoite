@@ -141,7 +141,6 @@ export default function SpaceEntryRevisionRoute() {
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow">{t("entryRevision.eyebrow")}</div>
           <h1>{t("entryRevision.title")}</h1>
           <Show when={revision()}>
             {(selected) => (
@@ -166,9 +165,6 @@ export default function SpaceEntryRevisionRoute() {
       </Show>
       <Show when={revision()}>
         <div class="settingsMain" aria-busy={revision.loading || undefined}>
-          <p class="ui-alert ui-alert-warning">
-            {t("entryRevision.restoreNotice")}
-          </p>
           <p class="text-sm ui-muted">
             {t("entryRevision.operation")}:{" "}
             {revisionOperationLabel(revision()!)}
