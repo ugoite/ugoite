@@ -5,7 +5,7 @@ category: Golden Knowledge Journey surface bindings
 features:
   - id: FEAT-JOURNEY-001
     title: Golden Knowledge Journey across surfaces
-    summary: Carry JOURNEY-KNOWLEDGE-001 from the portable operation inventory through the server-backed Frontend path to exact Playwright journey evidence. CLI core and CLI remote bindings attach to the same criteria in later workstream steps without duplicating them.
+    summary: Carry JOURNEY-KNOWLEDGE-001 from the portable operation inventory through the server-backed Frontend path and both CLI transports to exact journey evidence, keeping outcome criteria single-sourced.
     status: implemented
     bindings:
       - id: frontend
@@ -124,7 +124,7 @@ features:
       - id: cli-core
         role: implementation
         facet: cli
-        responsibility: Implement the local/core CLI Form and Search paths exercised by the journey core evidence. Entry and Space command ownership stays with their capability features; the same journey criteria gather those bindings without duplicating them.
+        responsibility: Implement the local/core CLI Form save and Search paths exercised by the journey core evidence. Form save reaches shared upsert semantics; Entry and Space command ownership stays with their capability features, and the same journey criteria gather those bindings without duplication.
         targets:
           - id: form-command
             adapter: rust

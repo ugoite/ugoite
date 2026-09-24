@@ -1,11 +1,11 @@
 version: '0.2'
-updated: '2026-06-23'
+updated: '2026-09-25'
 kind: sql
 apis:
 - id: sql.query
   method: POST
   status: implemented
-  description: Execute one read-only SQL SELECT page without persistent SQL execution state. An explicit ORDER BY is required when the result exceeds the requested page limit.
+  description: Execute one read-only SQL SELECT page without persistent SQL execution state. CLI accepts SQL text or a SQL file; an explicit ORDER BY is required when the result exceeds the requested page limit.
   backend:
     path: /spaces/{space_id}/sql/query
     file: crates/ugoite-server/src/lib.rs
@@ -14,13 +14,13 @@ apis:
     file: crates/ugoite-iceberg/src/service.rs
     function: query_sql
   ugoite_cli:
-    command: ugoite sql query
+    command: ugoite sql query <SQL_OR_FILE>
     file: crates/ugoite-cli/src/commands/sql.rs
     function: run
 - id: sql.query.count
   method: POST
   status: implemented
-  description: Explicitly count rows for one read-only SQL SELECT without coupling count to page retrieval.
+  description: Explicitly count rows for one read-only SQL SELECT without coupling count to page retrieval. CLI accepts SQL text or a SQL file.
   backend:
     path: /spaces/{space_id}/sql/query/count
     file: crates/ugoite-server/src/lib.rs
@@ -29,12 +29,13 @@ apis:
     file: crates/ugoite-iceberg/src/service.rs
     function: count_sql
   ugoite_cli:
-    command: ugoite sql count
+    command: ugoite sql count <SQL_OR_FILE>
     file: crates/ugoite-cli/src/commands/sql.rs
     function: run
 - id: sql.list
   method: GET
   status: implemented
+  description: List the current Space's durable Saved SQL queries.
   backend:
     path: /spaces/{space_id}/sql
     file: crates/ugoite-server/src/lib.rs
@@ -53,6 +54,7 @@ apis:
 - id: sql.create
   method: POST
   status: implemented
+  description: Create a durable Saved SQL query. The name is optional; an unnamed query uses name null and metadata.generatedName untitled. The shared application boundary generates SQL identity.
   backend:
     path: /spaces/{space_id}/sql
     file: crates/ugoite-server/src/lib.rs
@@ -65,12 +67,13 @@ apis:
     file: crates/ugoite-iceberg/src/service.rs
     function: create_saved_sql
   ugoite_cli:
-    command: ugoite sql saved create
+    command: ugoite sql saved create --sql <SQL_OR_FILE> [--name <NAME>] [--variables <JSON>]
     file: crates/ugoite-cli/src/commands/sql.rs
     function: run
 - id: sql.get
   method: GET
   status: implemented
+  description: Retrieve a Saved SQL query and its current revision.
   backend:
     path: /spaces/{space_id}/sql/{sql_id}
     file: crates/ugoite-server/src/lib.rs
@@ -83,12 +86,13 @@ apis:
     file: crates/ugoite-iceberg/src/service.rs
     function: get_saved_sql
   ugoite_cli:
-    command: ugoite sql saved get
+    command: ugoite sql saved get <SQL_ID>
     file: crates/ugoite-cli/src/commands/sql.rs
     function: run
 - id: sql.update
   method: PUT
   status: implemented
+  description: Update Saved SQL using the required parent revision. The CLI reads the current query and revision when no --parent-revision-id is given, merges supplied name, SQL, and variable edits, and keeps omitted fields.
   backend:
     path: /spaces/{space_id}/sql/{sql_id}
     file: crates/ugoite-server/src/lib.rs
@@ -101,12 +105,13 @@ apis:
     file: crates/ugoite-iceberg/src/service.rs
     function: update_saved_sql
   ugoite_cli:
-    command: ugoite sql saved update
+    command: ugoite sql saved update <SQL_ID> [--name <NAME> | --untitled] [--sql <SQL_OR_FILE>] [--variables <JSON>] [--parent-revision-id <REVISION_ID>]
     file: crates/ugoite-cli/src/commands/sql.rs
     function: run
 - id: sql.delete
   method: DELETE
   status: implemented
+  description: Delete a Saved SQL query from the current Space.
   backend:
     path: /spaces/{space_id}/sql/{sql_id}
     file: crates/ugoite-server/src/lib.rs
@@ -119,6 +124,6 @@ apis:
     file: crates/ugoite-iceberg/src/service.rs
     function: delete_saved_sql
   ugoite_cli:
-    command: ugoite sql saved delete
+    command: ugoite sql saved delete <SQL_ID>
     file: crates/ugoite-cli/src/commands/sql.rs
     function: run

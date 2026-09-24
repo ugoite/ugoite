@@ -288,7 +288,7 @@ requirements:
 
   - id: REQ-API-006
     title: Saved SQL CRUD
-    description: The API exposes CRUD operations for saved SQL entries, including validation of SQL variable objects.
+    description: Saved SQL is durable Knowledge with list, create, read, update, and delete operations across the supported API and CLI surfaces, including validation of SQL variable objects.
     priority: high
     status: implemented
     criteria:
@@ -302,13 +302,13 @@ requirements:
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
       - id: saved-sql-name-field
         kind: behavior
-        statement: The saved-SQL display name is a normal optional Form field; nameless historical records remain valid without a table rewrite.
+        statement: A Saved SQL display name is optional human-readable metadata distinct from SQL identity; unnamed queries use the untitled representation.
         governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-007#rule.governance]
     bindings:
       - id: saved-sql-verification
         role: verification
         facet: verification
-        responsibility: Verify saved SQL CRUD through the exact Iceberg integration case; CLI and adapter coverage remains a separate migration slice.
+        responsibility: Verify Saved SQL persistence, generated identity, content updates, and delete behavior at the shared Iceberg boundary.
         targets:
           - id: iceberg-case
             adapter: rust
@@ -345,7 +345,7 @@ requirements:
       - id: cli-verification
         role: verification
         facet: verification
-        responsibility: Verify the CLI saved SQL lifecycle and remote request contracts through exact integration cases.
+        responsibility: Verify the nested Saved SQL CLI lifecycle, including optional names, current-revision update defaults, explicit stale-revision conflicts, and remote request contracts through exact integration cases.
         targets:
           - id: lifecycle
             adapter: rust
@@ -354,6 +354,10 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_saved_sql, test: test_saved_sql_req_api_006_crud } }
+              - kind: verifies
+                criterion: REQ-API-006#criterion.saved-sql-name-field
                 covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_saved_sql, test: test_saved_sql_req_api_006_crud } }
           - id: remote-create
