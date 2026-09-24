@@ -15,11 +15,11 @@ components:
     position: left-fixed
     width: 228px
     items: [Home, Forms, Search, Settings]
-    notes: Space-scoped workspace navigation. Hidden below 900px and replaced by the Space bottom navigation.
+    notes: Owns the active Space section context on Space-scoped routes. Pages must not restate the active section identity. Hidden below 900px and replaced by the Space bottom navigation, which keeps the same context ownership.
   - id: workspace-topbar
     type: top-bar
     height: 58px
-    notes: Contains quiet Konase utility access and the account entry point. The route context is expressed by the page itself to avoid duplicate headings.
+    notes: Contains quiet Konase utility access and the account entry point. It does not own page identity; nested object or task identity is expressed by the page.
   - id: mobile-bottom-navigation
     type: bottom-navigation
     height: 66px
