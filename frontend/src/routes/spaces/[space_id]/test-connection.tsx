@@ -1,6 +1,8 @@
-import { A, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
 import { createSignal, Show } from "solid-js";
+import { BackLink } from "~/components/BackLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import { t } from "~/lib/i18n";
 import { spaceApi } from "~/lib/ugoite-client";
 import type { StorageConnectionConfig } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
@@ -56,12 +58,14 @@ export default function SpaceTestConnectionRoute() {
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow">Settings / Storage</div>
-          <h1>Test Connection</h1>
+          <h1>{t("spaceSettings.testConnection")}</h1>
         </div>
-        <A href={`/spaces/${encodeURIComponent(spaceId())}/settings?section=storage`} class="btn">
-          Back to Settings
-        </A>
+        <BackLink
+          href={`/spaces/${
+            encodeURIComponent(spaceId())
+          }/settings?section=storage`}
+          label={t("spaceSettings.backToStorage")}
+        />
       </div>
 
       {/* Panel-local spinner: the form stays mounted during load. */}
@@ -100,10 +104,11 @@ export default function SpaceTestConnectionRoute() {
         <button
           type="button"
           class="btn primary"
+          aria-label={t("spaceSettings.testConnection")}
           onClick={handleTest}
           disabled={isTesting() || !uri().trim()}
         >
-          {isTesting() ? "Testing..." : "Test Connection"}
+          {isTesting() ? "Testing..." : t("spaceSettings.test")}
         </button>
         <Show when={status()}>
           <p class="ui-alert ui-alert-success">

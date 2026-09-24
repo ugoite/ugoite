@@ -2,7 +2,7 @@ version: "0.1"
 updated: "2026-09-24"
 page:
   id: space-test-connection
-  title: Space Test Connection
+  title: Test Connection
   route: /spaces/{space_id}/test-connection
   implementation: implemented
 components:
@@ -11,6 +11,21 @@ components:
       type: persistent-workspace-navigation
       reference: ../components/space-shell.yaml
   body:
+    - id: test-connection-heading
+      type: heading
+      title: Test Connection
     - id: connection-form
       type: form
-      title: Connection test
+      fields:
+        - storage-uri
+        - storage-endpoint
+    - id: test-connection-action
+      type: button
+      label: Test
+      accessible_name: Test Connection
+    - id: storage-settings-parent
+      type: link
+      label: Back
+      accessible_name: Back to Storage settings
+      target_page: space-settings
+      section: storage
