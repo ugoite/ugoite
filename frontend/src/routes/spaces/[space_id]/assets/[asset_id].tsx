@@ -1,7 +1,6 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { ActionIconBar } from "~/components/ActionIconBar";
-import { BackLink } from "~/components/BackLink";
 import { ConfirmDestructiveAction } from "~/components/ConfirmDestructiveAction";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { RowList, RowListItem, RowListLink } from "~/components/RowList";
@@ -111,7 +110,6 @@ export default function SpaceAssetDetailRoute() {
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow">{t("assetsPage.eyebrow")}</div>
           <Show
             when={head()}
             fallback={<h1>{t("assetDetail.heading")}</h1>}
@@ -119,10 +117,6 @@ export default function SpaceAssetDetailRoute() {
             {(asset) => <h1>{asset().name}</h1>}
           </Show>
         </div>
-        <BackLink
-          href={`/spaces/${encodeURIComponent(spaceId())}/assets`}
-          label={t("assetDetail.backToAssets")}
-        />
       </div>
 
       <Show when={items.loading && !head()}>
@@ -261,7 +255,10 @@ export default function SpaceAssetDetailRoute() {
                   </p>
                 }
               >
-                <RowList label={t("assetDetail.references")}>
+                <RowList
+                  labelledBy="asset-references-title"
+                  label={t("assetDetail.references")}
+                >
                   <For each={occurrences()}>
                     {(occurrence) => (
                       <RowListItem
