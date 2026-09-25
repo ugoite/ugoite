@@ -36,16 +36,14 @@ Create an Entry in [Create and Edit Entries](entries.mdx).
 <TabItem label="CLI">
 
 ```bash
-ugoite search keyword planning
-ugoite search query \
-  --form Meeting --eq status=planning --limit 20
+ugoite entry list --text planning
+ugoite entry list \
+  --form Meeting --filter status:eq=planning --limit 20
 ```
 
-`search query` sends typed field conditions (`--eq`, `--contains`,
-`--lt`, `--lte`, `--gt`, `--gte`) through the shared structured Search
-path, so the browser and the CLI narrow to the same Entry set. Complex
-machine input belongs in `--criteria-file` JSON instead of flags.
-For saved definitions and read-only SQL, use
+`entry list --filter` accepts repeatable `FIELD[:OPERATOR]=VALUE` conditions
+through the shared structured Search path, so the browser and CLI narrow to the
+same Entry set. For saved definitions and read-only SQL, use
 [Saved SQL and expert query](sql.mdx).
 
 </TabItem>
@@ -64,8 +62,7 @@ Nothing new. Search indexes are derived and replaceable.
 
 - Search missing the change: confirm the Entry saved, then rerun the keyword
   search.
-- Structured filter rejected: check the Form name and logical field names;
-  complex machine input belongs in `--criteria-file` JSON.
+- Structured filter rejected: check the Form name and logical field names.
 
 ## Related concepts
 
@@ -75,5 +72,5 @@ Nothing new. Search indexes are derived and replaceable.
 
 ## Reference
 
-- `ugoite search --help` and `ugoite search query --help` are the command
+- `ugoite entry list --help` and `ugoite sql --help` are the command
   authorities.

@@ -51,6 +51,12 @@ required status-check context. The three quality lanes run only
 GitHub Actions. The artifact lane runs only `mise run ci:artifacts` and owns
 Playwright/BuildKit setup plus verified artifact upload.
 
+Pull requests also run a separate `ci-pr-context-report` job. It checks out
+the exact PR base and head commits, writes Mitase PR-context JSON and Markdown
+reports, and uploads both as an artifact. This report job is an additional
+PR-only lane; `ci-required` still requires the four quality/artifact lanes and
+accepts the report lane when successful (or skipped for non-PR events).
+
 The required Rust suite covers the memory and filesystem implementations. The
 optional `crates/ugoite-storage/tests/s3_contract.rs` integration test runs only
 when both `UGOITE_S3_TEST_ENDPOINT` and `UGOITE_S3_TEST_BUCKET` are configured;
@@ -148,7 +154,7 @@ suite runs.
 
 The canonical `mitase:check` task invokes `scripts/mitase check .`. The wrapper
 reads `tools/mitase.lock.toml`, selects the host target, downloads the exact
-Mitase `v0.2.0` release archive when it is not cached, verifies its SHA-256,
+Mitase `v0.2.1` release archive when it is not cached, verifies its SHA-256,
 checks the packaged binary version, and then execs it. The default path does not
 build Mitase from Git; `MITASE_BIN` remains available as an explicit local
 development override.
