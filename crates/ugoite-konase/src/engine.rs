@@ -52,10 +52,10 @@ pub enum KnowledgeOutcome {
 
 impl KnowledgeOutcome {
     fn record_write(self, success: bool) -> Self {
-        if !success || self == Self::WriteFailed {
-            Self::WriteFailed
-        } else {
+        if success || self == Self::Saved {
             Self::Saved
+        } else {
+            Self::WriteFailed
         }
     }
 }
@@ -1879,7 +1879,7 @@ mod tests {
         assert_eq!(host_failed.state.knowledge, KnowledgeOutcome::Saved);
 
         let failed_waiting = step(
-            saved.state,
+            saved.state.clone(),
             KonaseEvent::AgentProgress(AgentProgress {
                 job_id: "job-1".into(),
                 strategy_summary: None,
@@ -1905,7 +1905,16 @@ mod tests {
                 error: Some("storage unavailable".into()),
             }),
         );
-        assert_eq!(failed.state.knowledge, KnowledgeOutcome::WriteFailed);
+        assert_eq!(failed.state.knowledge, KnowledgeOutcome::Saved);
+
+        assert_eq!(
+            KnowledgeOutcome::Unchanged.record_write(false),
+            KnowledgeOutcome::WriteFailed
+        );
+        assert_eq!(
+            KnowledgeOutcome::WriteFailed.record_write(true),
+            KnowledgeOutcome::Saved
+        );
     }
 
     #[test]
