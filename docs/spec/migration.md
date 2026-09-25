@@ -65,6 +65,26 @@ unmigrated domains are retired, their corresponding `docs/spec` records may be
 removed after the equivalent canonical records, evidence, and scoped ownership
 rules have been reviewed.
 
+## Cross-surface preflight authority map
+
+For the v0.3 preflight, authority is assigned by the behavior slice rather than
+by a whole directory name:
+
+| Domain | Canonical semantic source | Remaining or supporting source | Status for the preflight |
+| --- | --- | --- | --- |
+| Search and EntryQuery | `docs/mitase/requirements/search.yaml` and `docs/mitase/features/search.yaml` | Retired legacy Search registry is not authoritative. | Canonical for the current structured query and count criteria. Browser cancellation and request-generation behavior remain implementation follow-ups under #3120. |
+| API and stateless SQL | `docs/mitase/requirements/api.yaml` and `docs/mitase/features/api.yaml` | `crates/ugoite-server` and `/openapi.json` define the REST implementation and contract. | Canonical for declared API and SQL outcomes. The portable operation registry remains `ugoite-api-client`; the preflight does not restate SQL semantics. |
+| Forms | `docs/mitase/requirements/forms.yaml` and `docs/mitase/features/forms.yaml` | `docs/version/v0.2/product-ux.yaml` is a release UX tracker, not a behavior authority. | Canonical for Form schema and operations. The read-only MCP Form resource is a separate surface observation, not an upsert path. |
+| Frontend behavior | `docs/mitase/requirements/frontend.yaml` and `docs/mitase/features/frontend.yaml` | `docs/mitase/requirements/ux.yaml` and `docs/mitase/features/ux.yaml` own their explicit interaction criteria. `docs/spec/ui/ux-route-inventory.md` is an inventory aid. | Canonical only for migrated requirements and explicit UX criteria; tracker completion remains unverified where its acceptance evidence is absent. |
+| Journey and mutation outcomes | `docs/mitase/requirements/journey.yaml`, `docs/mitase/features/journey.yaml`, plus API and Entry records for their respective slices. | Runtime behavior is implemented in shared Rust/core and adapter surfaces. | Canonical for linked journey outcomes. Receipts, ACL, conflict, append-only history and Restore must be traced to their own claims and tests; source presence alone is not proof. |
+| Storage | `docs/mitase/requirements/storage.yaml` and `docs/mitase/features/storage.yaml` for the migrated Space, creation, connector/access/routing/preference slices. | `docs/spec/requirements/storage.yaml` remains semantic authority for unmigrated Storage requirements. | Partial migration; do not treat all Storage behavior as migrated. |
+| Operations | `docs/mitase/requirements/ops.yaml` and `docs/mitase/features/ops.yaml` for `REQ-OPS-001`–`REQ-OPS-024`, `REQ-OPS-043`, and `REQ-OPS-044`. | `docs/spec/requirements/ops.yaml` remains semantic authority for later, unmigrated Operations records. | Partial migration; later records remain legacy-authoritative until reviewed and migrated. |
+| Konase Host confirmation | Existing outcome criteria apply to the mutation they host; `docs/architecture/boundaries/konase.md` describes the current boundary. | `docs/mitase` has no dedicated Konase Host confirmation Requirement/Criterion or Feature binding at this baseline. | Explicit evidence gap. Do not infer that an engine confirmation type proves Browser Host approval UX. Follow-up is #3124. |
+
+This map adds no new Requirement or Criterion. Missing Konase Host criteria and
+unverified v0.2 UX outcomes remain gaps until an observable outcome and its
+owner are settled. The v0.2 release tracker is not a second semantic source.
+
 ## Migration changed-scope rule (PR11 #2422)
 
 Source of truth: `AGENTS.md` Specification contract. Mitase validates declared

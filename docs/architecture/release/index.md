@@ -22,6 +22,8 @@ a product or support claim is safe to make.
   compare-before-delete procedure for an orphaned planner branch ref.
 - [Versioning overview](versioning.md) explains the current v0.1 and v0.2
   release streams.
+- [v0.3 preflight](v0.3-preflight.md) maps current authority, surfaces, and
+  verification evidence without claiming that static source discovery ran tests.
 - [v0.1 Foundation release](v0.1.md) records the frozen Knowledge boundary and
   supported release scope.
 - [v0.1 Knowledge compatibility floor](v0.1-knowledge-compatibility.md) defines
