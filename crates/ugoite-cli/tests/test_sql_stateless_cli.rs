@@ -191,6 +191,23 @@ fn cli_sql_export_writes_complete_ndjson_atomically() {
     let summary: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(summary["rows_exported"], 3);
     assert_eq!(summary["pages_fetched"], 2);
+
+    let streamed = run_cli(
+        &space.config_path,
+        &["sql", "export", &sql, "--max-rows", "3", "--page-size", "2"],
+    );
+    assert!(
+        streamed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&streamed.stderr)
+    );
+    assert!(streamed.stderr.is_empty());
+    let lines = String::from_utf8_lossy(&streamed.stdout)
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(lines.len(), 3);
+    assert!(lines.iter().all(serde_json::Value::is_object));
 }
 
 #[test]
