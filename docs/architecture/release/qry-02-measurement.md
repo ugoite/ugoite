@@ -1,3 +1,7 @@
+---
+title: "QRY-02 visible-row measurement"
+---
+
 # QRY-02 visible-row measurement
 
 ## Synthetic 1,000-row browser fixture
