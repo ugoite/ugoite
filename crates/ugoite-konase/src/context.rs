@@ -172,14 +172,14 @@ fn compact_form_projection(
             compact_fields.clone(),
             omitted,
             false,
-            false,
+            omitted > 0,
         );
         if serialized_chars(&candidate)? > MAX_SELECTED_RESOURCE_CONTENT_CHARS {
             compact_fields.remove(field_name);
             omitted = omitted.saturating_add(1);
         }
     }
-    let include_description = description.is_some();
+    let mut include_description = description.is_some();
     let mut truncated = omitted > 0;
     let mut compact = form_context_value(
         id,
@@ -190,6 +190,19 @@ fn compact_form_projection(
         include_description,
         truncated,
     );
+    if serialized_chars(&compact)? > MAX_SELECTED_RESOURCE_CONTENT_CHARS && include_description {
+        include_description = false;
+        truncated = true;
+        compact = form_context_value(
+            id,
+            name,
+            description,
+            compact_fields.clone(),
+            omitted,
+            false,
+            true,
+        );
+    }
     while serialized_chars(&compact)? > MAX_SELECTED_RESOURCE_CONTENT_CHARS
         && !compact_fields.is_empty()
     {
@@ -210,10 +223,6 @@ fn compact_form_projection(
             include_description,
             true,
         );
-    }
-    if serialized_chars(&compact)? > MAX_SELECTED_RESOURCE_CONTENT_CHARS && include_description {
-        truncated = true;
-        compact = form_context_value(id, name, description, compact_fields, omitted, false, true);
     }
     serialize_compact_projection(compact, truncated)
 }
@@ -647,6 +656,10 @@ mod tests {
             let value: Value = serde_json::from_str(&resource.content).unwrap();
             assert_eq!(value["_untrusted_content"], true);
             assert_eq!(value["_ugoite_context"]["truncated"], true);
+            if resource.uri.starts_with("ugoite://form/") {
+                assert!(!value["fields"].as_object().unwrap().is_empty());
+                assert_eq!(value["_ugoite_context"]["omitted_description"], true);
+            }
         }
         assert_eq!(admissions[0].status, ResourceAdmissionStatus::Truncated);
         assert_eq!(admissions[1].status, ResourceAdmissionStatus::Truncated);
