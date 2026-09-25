@@ -1,5 +1,12 @@
 import { useLocation, useNavigate, useParams } from "@solidjs/router";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { sqlApi } from "~/lib/ugoite-client";
@@ -18,6 +25,12 @@ export const route = spaceRoute({
 type SqlRunState = {
   parameters?: Record<string, unknown>;
   parameterTypes?: Record<string, string>;
+};
+
+type DisplaySqlQueryPage = SqlQueryPage & {
+  pageNumber: number;
+  pageIdentity: string;
+  queryIdentity: string;
 };
 
 const runState = (value: unknown): SqlRunState => {
@@ -69,11 +82,19 @@ export default function SpaceSqlRunRoute() {
   const [count, setCount] = createSignal<number | null>(null);
   const [counting, setCounting] = createSignal(false);
   const [countError, setCountError] = createSignal<string | null>(null);
+  const [page, setPage] = createSignal<DisplaySqlQueryPage>();
+  const [pageLoading, setPageLoading] = createSignal(false);
+  const [pageError, setPageError] = createSignal<unknown>(null);
+  const [pageRetry, setPageRetry] = createSignal(0);
+  const [countResultIdentity, setCountResultIdentity] = createSignal("");
   const state = createMemo(() => runState(location.state));
 
   const [entry] = createResource(
-    () => sqlId(),
-    (id) => sqlApi.get(spaceId(), id),
+    () => `${spaceId()}\u0000${sqlId()}`,
+    (key) => {
+      const [requestedSpace, requestedSql] = key.split("\u0000");
+      return sqlApi.get(requestedSpace, requestedSql);
+    },
   );
   const request = createMemo(() => {
     const current = entry();
@@ -87,13 +108,110 @@ export default function SpaceSqlRunRoute() {
       ...(continuation() ? { continuation: continuation() } : {}),
     };
   });
-  const [page] = createResource<
-    ReturnType<typeof request>,
-    SqlQueryPage | undefined
-  >(
-    request,
-    async (value) => value ? await sqlApi.query(spaceId(), value) : undefined,
-  );
+  const makeQueryIdentity = (
+    requestedSpace: string,
+    requestedSql: string,
+    value: ReturnType<typeof request>,
+  ) =>
+    JSON.stringify({
+      spaceId: requestedSpace,
+      sqlId: requestedSql,
+      sql: value?.sql,
+      parameters: value?.parameters,
+      parameter_types: value?.parameter_types,
+    });
+  const visiblePage = () =>
+    page()?.queryIdentity === makeQueryIdentity(spaceId(), sqlId(), request())
+      ? page()
+      : undefined;
+  let pageGeneration = 0;
+  let countGeneration = 0;
+  let pageController: AbortController | undefined;
+  let countController: AbortController | undefined;
+  let previousQueryIdentity = "";
+
+  createEffect(() => {
+    const requestedSpace = spaceId();
+    const requestedSql = sqlId();
+    const value = request();
+    pageRetry();
+    const currentQueryIdentity = makeQueryIdentity(
+      requestedSpace,
+      requestedSql,
+      value,
+    );
+    if (currentQueryIdentity !== previousQueryIdentity) {
+      previousQueryIdentity = currentQueryIdentity;
+      setPage(undefined);
+      setCount(null);
+      setCountError(null);
+      setCountResultIdentity("");
+      setContinuation(undefined);
+      setContinuationStack([]);
+      countGeneration += 1;
+      countController?.abort();
+      countController = undefined;
+      setCounting(false);
+      if (value?.continuation) {
+        pageGeneration += 1;
+        pageController?.abort();
+        pageController = undefined;
+        setContinuation(undefined);
+        return;
+      }
+    }
+    const generation = ++pageGeneration;
+    pageController?.abort();
+    pageController = undefined;
+    if (!value || entry.loading) {
+      setPage(undefined);
+      setPageError(null);
+      setPageLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    pageController = controller;
+    setPageError(null);
+    setPageLoading(true);
+    void sqlApi.query(requestedSpace, value, controller.signal).then(
+      (result) => {
+        if (generation === pageGeneration && !controller.signal.aborted) {
+          setPage({
+            ...result,
+            pageNumber: continuationStack().length + 1,
+            pageIdentity: JSON.stringify({
+              queryIdentity: currentQueryIdentity,
+              continuation: value.continuation,
+            }),
+            queryIdentity: currentQueryIdentity,
+          });
+        }
+      },
+      (error: unknown) => {
+        if (
+          generation === pageGeneration && !controller.signal.aborted &&
+          !(error && typeof error === "object" &&
+            (error as { name?: unknown }).name === "AbortError")
+        ) {
+          setPageError(error);
+        }
+      },
+    ).finally(() => {
+      if (generation === pageGeneration) {
+        if (pageController === controller) pageController = undefined;
+        setPageLoading(false);
+      }
+    });
+  });
+
+  onCleanup(() => {
+    pageGeneration += 1;
+    countGeneration += 1;
+    pageController?.abort();
+    countController?.abort();
+    pageController = undefined;
+    countController = undefined;
+  });
 
   createEffect(() => {
     sqlId();
@@ -104,13 +222,14 @@ export default function SpaceSqlRunRoute() {
   });
 
   const handleNext = () => {
-    const next = page()?.next;
-    if (!next) return;
+    const next = visiblePage()?.next;
+    if (!next || pageLoading()) return;
     setContinuationStack((stack) => [...stack, next]);
     setContinuation(next);
   };
 
   const handlePrevious = () => {
+    if (pageLoading()) return;
     const previous = continuationStack().slice(0, -1);
     setContinuationStack(previous);
     setContinuation(previous.at(-1));
@@ -118,32 +237,61 @@ export default function SpaceSqlRunRoute() {
 
   const handleCount = async () => {
     const current = entry();
-    if (!current || counting()) return;
+    if (!current || counting() || entry.loading) return;
+    countController?.abort();
+    const controller = new AbortController();
+    countController = controller;
+    const generation = ++countGeneration;
+    const requestedSpace = spaceId();
+    const requestedSql = sqlId();
+    const value = request();
+    if (!value) return;
+    const requestedIdentity = makeQueryIdentity(
+      requestedSpace,
+      requestedSql,
+      value,
+    );
     setCountError(null);
     setCounting(true);
     try {
-      const currentState = state();
-      setCount(
-        await sqlApi.count(spaceId(), {
-          sql: normalizeSqlVariables(current.sql).sql,
-          parameters: currentState.parameters ?? {},
-          parameter_types: currentState.parameterTypes ?? {},
-        }),
-      );
+      const result = await sqlApi.count(requestedSpace, {
+        sql: value.sql,
+        parameters: value.parameters,
+        parameter_types: value.parameter_types,
+      }, controller.signal);
+      if (
+        generation !== countGeneration || requestedIdentity !==
+          makeQueryIdentity(spaceId(), sqlId(), request())
+      ) return;
+      setCount(result);
+      setCountResultIdentity(requestedIdentity);
     } catch (error) {
-      setCountError(formatUserFacingError(error, "sqlPage.failedCount"));
+      if (
+        generation === countGeneration && requestedIdentity ===
+          makeQueryIdentity(spaceId(), sqlId(), request()) &&
+        !controller.signal.aborted &&
+        !(error && typeof error === "object" &&
+          (error as { name?: unknown }).name === "AbortError")
+      ) {
+        setCountError(formatUserFacingError(error, "sqlPage.failedCount"));
+        setCountResultIdentity(requestedIdentity);
+      }
     } finally {
-      setCounting(false);
+      if (generation === countGeneration) setCounting(false);
     }
   };
 
-  const resultError = () => entry.error || page.error;
+  const resultError = () => entry.error || pageError();
 
   return (
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <h1>{entry() ? displaySqlName(entry()!) : t("sqlPage.results")}</h1>
+          <h1>
+            {!entry.loading && entry()
+              ? displaySqlName(entry()!)
+              : t("sqlPage.results")}
+          </h1>
           <p class="ui-page-subtitle">{t("sqlPage.resultsDescription")}</p>
         </div>
         <BackLink
@@ -156,27 +304,44 @@ export default function SpaceSqlRunRoute() {
 
       <section
         class="settingsMain surface"
-        aria-busy={entry.loading || page.loading || undefined}
+        aria-busy={entry.loading || pageLoading() || undefined}
       >
-        <Show when={entry.loading || page.loading}>
+        <Show when={entry.loading || pageLoading()}>
           <LocalBusyIndicator label={t("sqlPage.loadingResults")} />
+        </Show>
+        <Show when={pageError() && !entry.error}>
+          <button
+            type="button"
+            class="ui-button ui-button-secondary mt-4"
+            disabled={pageLoading()}
+            onClick={() => setPageRetry((value) => value + 1)}
+          >
+            {t("common.retry")}
+          </button>
         </Show>
         <Show when={resultError()}>
           <p class="text-sm ui-text-danger">
             {formatUserFacingError(resultError(), "sqlPage.failedQuery")}
           </p>
         </Show>
-        <Show when={page()}>
+        <Show when={visiblePage()}>
           {(result) => (
             <>
               <div class="flex flex-wrap items-center justify-between gap-3">
                 <p class="text-sm ui-muted">
                   {t("sqlPage.pageNumber", {
-                    page: continuationStack().length + 1,
+                    page: result().pageNumber,
                   })}
                 </p>
                 <div class="flex flex-wrap items-center gap-2">
-                  <Show when={count() !== null}>
+                  <Show
+                    when={count() !== null &&
+                      countResultIdentity() === makeQueryIdentity(
+                          spaceId(),
+                          sqlId(),
+                          request(),
+                        )}
+                  >
                     <span class="text-sm ui-muted">
                       {t("sqlPage.resultCount", { count: count()! })}
                     </span>
@@ -229,14 +394,22 @@ export default function SpaceSqlRunRoute() {
                 </div>
               </Show>
 
-              <Show when={countError()}>
+              <Show
+                when={countError() &&
+                  countResultIdentity() === makeQueryIdentity(
+                      spaceId(),
+                      sqlId(),
+                      request(),
+                    )}
+              >
                 <p class="mt-4 text-sm ui-text-danger">{countError()}</p>
               </Show>
               <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
                 <button
                   type="button"
                   class="ui-button ui-button-secondary"
-                  disabled={continuationStack().length === 0 || page.loading}
+                  disabled={continuationStack().length === 0 || pageLoading() ||
+                    !!pageError()}
                   onClick={handlePrevious}
                 >
                   {t("common.previous")}
@@ -245,7 +418,7 @@ export default function SpaceSqlRunRoute() {
                   type="button"
                   class="ui-button ui-button-secondary"
                   disabled={!result().has_more || !result().next ||
-                    page.loading}
+                    pageLoading() || !!pageError()}
                   onClick={handleNext}
                 >
                   {t("common.next")}
@@ -254,7 +427,7 @@ export default function SpaceSqlRunRoute() {
             </>
           )}
         </Show>
-        <Show when={entry.error && !page.error}>
+        <Show when={entry.error && !pageError()}>
           <button
             type="button"
             class="ui-button ui-button-secondary mt-4"
