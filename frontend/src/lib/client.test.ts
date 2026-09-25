@@ -1,6 +1,6 @@
 // REQ-API-001: Space CRUD
 // REQ-API-002: Entry CRUD
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { assetApi } from "./ugoite-client";
 import { formApi } from "./ugoite-client";
@@ -1141,10 +1141,7 @@ describe("error paths", () => {
       projection: { kind: "preview" },
       limit: 50,
     }, controller.signal);
-    for (let attempt = 0; !observedSignal && attempt < 20; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    expect(observedSignal).toBeDefined();
+    await vi.waitFor(() => expect(observedSignal).toBeDefined());
     controller.abort();
     await expect(page).rejects.toMatchObject({ name: "AbortError" });
     expect(observedSignal?.aborted).toBe(true);
@@ -1180,10 +1177,7 @@ describe("error paths", () => {
     const count = entryApi.count("ws-search-cancel", {
       query: { scope: { kind: "all" }, filters: [], sort: [] },
     }, controller.signal);
-    for (let attempt = 0; !observedSignal && attempt < 20; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    expect(observedSignal).toBeDefined();
+    await vi.waitFor(() => expect(observedSignal).toBeDefined());
     controller.abort();
     await expect(count).rejects.toMatchObject({ name: "AbortError" });
     expect(observedSignal?.aborted).toBe(true);
