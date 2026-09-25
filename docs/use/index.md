@@ -22,6 +22,7 @@ page. No separate Browser, CLI, or REST hierarchy is maintained here.
 - [Restore and Undo](restore.mdx): restore, revert, and undo.
 - [Revisions and Recovery](revisions.mdx): history, conflicts, and restore
   overview linking the two focused pages above.
+- [Konase](konase.mdx): ask about explicitly selected Form and Entry resources.
 - Auth, device, and step-up: [Identity and Access](../operate/identity-access.md).
 - Storage config and test: [Configure](../operate/configure.md) and
   [Storage and Recovery](../operate/storage-recovery.md).

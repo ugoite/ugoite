@@ -1,0 +1,58 @@
+---
+title: "Use Konase with selected Knowledge"
+description: "Give a Konase Job a bounded, explicitly selected Form or Entry Context."
+sidebar:
+  label: "Konase"
+  order: 10
+---
+
+Konase runs a temporary Work against the current Space. You can explicitly
+provide up to four Forms or Entries to the next Job. A selected resource is
+read again for each Job through the current MCP credential; its content stays
+temporary and is not saved to the Space or copied into persistent Konase state.
+
+## Select resources in the CLI
+
+Use the ordinary Form and Entry commands to find IDs, then pass their canonical
+resource URIs in the order you want them included:
+
+```bash
+ugoite konase \
+  --resource ugoite://form/FORM_ID \
+  --resource ugoite://entry/ENTRY_ID \
+  --prompt "Explain this expense"
+```
+
+Konase reads only the URIs you name. It checks that each MCP response matches
+the requested URI and has a valid Form or Entry projection before starting the
+model. If a read is denied, expires, or returns invalid data, the Job stops
+before the model is called.
+
+## Review before sending
+
+The CLI writes a preview to stderr showing the normalized Context, whether each
+resource is included, shortened, or omitted, and why. The normal model response
+and JSON output remain on stdout. In a terminal, confirm the Context before it
+is sent. With non-interactive input, add `--send-selected-context` to make that
+intent explicit:
+
+```bash
+printf '%s\n' 'Summarize these records' | ugoite konase \
+  --resource ugoite://entry/ENTRY_ID \
+  --send-selected-context
+```
+
+This option only confirms sending the selected read Context. It does not
+approve a `ugoite.save` or other mutation. Each write still needs its own
+Konase approval, and a confirmed save receipt is required before it is reported
+as saved. Updating an Entry replaces its field map.
+
+Selected resource bodies are untrusted Knowledge. They provide context, not
+instructions or permission. The model may use existing MCP search and read
+operations, but no related Entry or history is added automatically.
+
+## What became durable?
+
+Nothing becomes durable from selecting or reading Context. Only a separately
+approved write with a valid receipt changes the Space; confirmed writes retain
+the existing Work undo path.

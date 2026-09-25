@@ -157,6 +157,7 @@ local operator snapshots and are managed with the `pin` command family.
 | Saved SQL and expert query | [Saved SQL and expert query](../use/sql.mdx) | `ugoite sql --help` |
 | View history | [View History](../use/history.mdx) | `ugoite entry history --help`, `ugoite change --help` |
 | Restore or undo | [Restore and Undo](../use/restore.mdx) | `ugoite entry restore --help`, `ugoite change --help`, `ugoite run --help` |
+| Ask about selected Knowledge | [Konase](../use/konase.mdx) | `ugoite konase --help` |
 
 Use the command's subcommand help for exact required arguments, mode
 availability, JSON fields, and exit behavior. The reference intentionally does
