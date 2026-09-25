@@ -389,3 +389,15 @@ verification:
     deno-test-file:
       executable: deno
       arguments: [test, -A, --filter, "{test}", "{file}"]
+review:
+  always:
+    - id: frontend-review
+      paths: ["frontend/src/**"]
+      items: [POL-006, PHIL-INTERACTION-001]
+    - id: knowledge-compatibility-review
+      paths:
+        - "docs/architecture/release/v0.1-knowledge-compatibility.md"
+        - "docs/architecture/contracts/space-catalog.md"
+        - "crates/ugoite-iceberg/**"
+        - "tools/knowledge_compatibility.ts"
+      items: [POL-016, POL-017]

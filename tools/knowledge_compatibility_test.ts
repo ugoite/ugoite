@@ -129,6 +129,28 @@ Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
     "template placeholder",
     "compatibility contract",
   );
+  requireText(ciWorkflow, "  pr-context-report:", "PR Context Report CI job");
+  requireText(
+    ciWorkflow,
+    "ref: ${{ github.event.pull_request.head.sha }}",
+    "PR Context Report head checkout",
+  );
+  requireText(
+    ciWorkflow,
+    '--base "$BASE_SHA" --head "$HEAD_SHA"',
+    "PR Context Report revisions",
+  );
+  requireText(ciWorkflow, "--format json", "PR Context Report JSON output");
+  requireText(
+    ciWorkflow,
+    "--format markdown",
+    "PR Context Report Markdown output",
+  );
+  requireText(
+    ciWorkflow,
+    "name: pr-context-report",
+    "PR Context Report artifact",
+  );
   const webJobStart = ciWorkflow.indexOf("  web:\n");
   const artifactsJobStart = ciWorkflow.indexOf("  artifacts:\n", webJobStart);
   assertEquals(webJobStart >= 0, true, "CI web job must exist");
