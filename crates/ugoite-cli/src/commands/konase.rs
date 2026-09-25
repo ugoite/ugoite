@@ -1057,6 +1057,7 @@ async fn run_turn_with_interrupts<M: ModelHost, C: McpHost, I: ModelInterruptSou
             safety_hints: vec![
                 "Use Ugoite MCP for requested reads and writes; the Host binds writes to this Work and supports undo".into(),
             ],
+            selected_resource_contents: Vec::new(),
             expected_response_schema: None,
         }),
     );

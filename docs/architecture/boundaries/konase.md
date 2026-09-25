@@ -42,7 +42,7 @@ UserSubmitted event creates StartJob, the builder receives the remaining byte
 budget of the complete StepResult, keeping the portable effect boundary
 independent of host/provider payload limits.
 
-ugoite-wasm exposes the same semantics through konase.version (protocol v2), konase.new,
+ugoite-wasm exposes the same semantics through konase.version (protocol v3), konase.new,
 konase.step, and konase.context. The WASM adapter does not perform network
 I/O; browser JavaScript remains responsible for fetch and other host effects.
 Capability metadata includes a bounded, provider-neutral JSON input schema. Host
@@ -50,6 +50,15 @@ adapters preserve the MCP tool contract through this boundary; synthetic host
 capabilities such as `resources/read` provide an explicit schema as well. The
 protocol version advances when this portable state schema changes; pre-v1
 internal Konase state is rejected rather than migrated.
+
+`UserSubmitted.selected_resource_contents` is empty by default and accepts at
+most four explicit canonical Form or Entry resource projections. Rust validates
+their untrusted JSON projections, keeps the first occurrence of duplicate
+URIs, and compacts large projections into valid JSON with a visible omission
+marker. `StartJob.resource_admission` reports included, compacted, and omitted
+resources with the byte or model-prompt limit that applied. The normalized
+Context and the Rig initial prompt are both bounded before a host can call a
+model; selected data is not copied into persistent Konase state.
 
 ## Durability boundary
 

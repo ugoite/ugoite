@@ -598,7 +598,7 @@ mod tests {
             serde_json::from_str::<Value>(&super::invoke_json(r#"{"action":"konase.version"}"#))
                 .unwrap();
         assert_eq!(version_response["ok"], true);
-        assert_eq!(version_response["value"]["protocol_version"], 2);
+        assert_eq!(version_response["value"]["protocol_version"], 3);
 
         let new_response =
             serde_json::from_str::<Value>(&super::invoke_json(r#"{"action":"konase.new"}"#))
@@ -619,7 +619,11 @@ mod tests {
                             "name": "ugoite.search",
                             "description": "search knowledge"
                         }],
-                        "safety_hints": ["save only after confirmation"]
+                        "safety_hints": ["save only after confirmation"],
+                        "selected_resource_contents": [{
+                            "uri": "ugoite://form/00000000-0000-0000-0000-0000000000a1",
+                            "content": "{\"id\":\"00000000-0000-0000-0000-0000000000a1\",\"name\":\"Expense\",\"fields\":{\"amount\":{\"type\":\"number\",\"required\":true}},\"_untrusted_content\":true}"
+                        }]
                     }
                 }
             }
@@ -634,6 +638,11 @@ mod tests {
         assert_eq!(
             response["value"]["effects"][0]["start_job"]["job"]["id"],
             "job-1"
+        );
+        assert_eq!(
+            response["value"]["effects"][0]["start_job"]["context"]["selected_resource_contents"]
+                [0]["uri"],
+            "ugoite://form/00000000-0000-0000-0000-0000000000a1"
         );
     }
 

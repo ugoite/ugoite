@@ -1,4 +1,7 @@
-use crate::{AgentAction, ContextBuilder, ModelMessage, ModelRequest, ModelTool, ModelToolCall};
+use crate::{
+    normalize_selected_resource_contents, AgentAction, ContextBuilder, ModelMessage, ModelRequest,
+    ModelTool, ModelToolCall, ResourceAdmission, ResourceAdmissionReason, ResourceAdmissionStatus,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -168,6 +171,8 @@ pub struct UserRequest {
     #[serde(default)]
     pub safety_hints: Vec<String>,
     #[serde(default)]
+    pub selected_resource_contents: Vec<ResourceContent>,
+    #[serde(default)]
     pub expected_response_schema: Option<Value>,
 }
 
@@ -254,6 +259,8 @@ pub enum KonaseEffect {
 pub struct JobRequest {
     pub job: JobSpec,
     pub context: ContextCapsule,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resource_admission: Vec<ResourceAdmission>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -458,6 +465,7 @@ fn submit(
         1
     };
     let expected_response_schema = request.expected_response_schema.clone();
+    let selected_resource_contents = request.selected_resource_contents;
     let work = Work {
         id: request.work_id.clone(),
         goal: request.goal.clone(),
@@ -490,17 +498,70 @@ fn submit(
 
     let context_request = crate::ContextBuildRequest {
         work_goal,
-        job_goal,
+        job_goal: job_goal.clone(),
         current_strategy_summary: None,
         observations: state.observations.clone(),
         available_capabilities: request.available_capabilities,
-        selected_resource_contents: vec![],
+        selected_resource_contents: selected_resource_contents.clone(),
         safety_hints: request.safety_hints,
         expected_response_schema,
         limits: None,
     };
-    let context_budget = start_job_context_budget(state, &job.spec, &output)?;
-    let context = ContextBuilder::default().build_with_byte_budget(context_request, context_budget);
+    let mut resource_admission = selected_resource_contents
+        .iter()
+        .map(|resource| {
+            let truncated = resource.content.contains("\"_ugoite_context\"");
+            ResourceAdmission {
+                uri: resource.uri.clone(),
+                status: if truncated {
+                    ResourceAdmissionStatus::Truncated
+                } else {
+                    ResourceAdmissionStatus::Included
+                },
+                reason: truncated.then_some(ResourceAdmissionReason::ProjectionCompacted),
+            }
+        })
+        .collect::<Vec<_>>();
+    let context_budget =
+        start_job_context_budget(state, &job.spec, &output, &selected_resource_contents)?;
+    let mut context =
+        ContextBuilder::default().build_with_byte_budget(context_request, context_budget);
+    for admission in &mut resource_admission {
+        if !context
+            .selected_resource_contents
+            .iter()
+            .any(|resource| resource.uri == admission.uri)
+        {
+            admission.status = ResourceAdmissionStatus::Omitted;
+            admission.reason = Some(ResourceAdmissionReason::ContextByteBudget);
+        }
+    }
+    for admission in &mut resource_admission {
+        if admission.status == ResourceAdmissionStatus::Included
+            && selected_resource_contents
+                .iter()
+                .find(|resource| resource.uri == admission.uri)
+                .is_some_and(|resource| resource.content.contains("\"_ugoite_context\""))
+        {
+            admission.status = ResourceAdmissionStatus::Truncated;
+            admission.reason = Some(ResourceAdmissionReason::ProjectionCompacted);
+        }
+    }
+    while model_prompt_char_count(&job_goal, &context)? > MAX_MODEL_CONTENT_CHARS {
+        let Some(omitted) = context.selected_resource_contents.pop() else {
+            return Err(KonaseError::new(
+                "model_prompt_too_large",
+                "Job goal and normalized Context exceed the model prompt character limit",
+            ));
+        };
+        if let Some(admission) = resource_admission
+            .iter_mut()
+            .find(|admission| admission.uri == omitted.uri)
+        {
+            admission.status = ResourceAdmissionStatus::Omitted;
+            admission.reason = Some(ResourceAdmissionReason::ModelPromptCharacterLimit);
+        }
+    }
     let context_size =
         serialized_size(&context).map_err(|error| KonaseError::new("serialization", error))?;
     if context_size > context_budget {
@@ -512,6 +573,7 @@ fn submit(
     effects.push(KonaseEffect::StartJob(Box::new(JobRequest {
         job: job.spec,
         context,
+        resource_admission,
     })));
     effects.push(KonaseEffect::Emit(output));
     Ok(())
@@ -521,6 +583,7 @@ fn start_job_context_budget(
     state: &KonaseState,
     job: &JobSpec,
     output: &KonaseOutput,
+    selected_resources: &[ResourceContent],
 ) -> Result<usize, KonaseError> {
     let empty_context = ContextCapsule {
         work_goal: String::new(),
@@ -540,6 +603,14 @@ fn start_job_context_budget(
             KonaseEffect::StartJob(Box::new(JobRequest {
                 job: job.clone(),
                 context: empty_context,
+                resource_admission: selected_resources
+                    .iter()
+                    .map(|resource| ResourceAdmission {
+                        uri: resource.uri.clone(),
+                        status: ResourceAdmissionStatus::Omitted,
+                        reason: Some(ResourceAdmissionReason::ModelPromptCharacterLimit),
+                    })
+                    .collect(),
             })),
             KonaseEffect::Emit(output.clone()),
         ],
@@ -995,6 +1066,8 @@ fn validate_event(event: &KonaseEvent) -> Result<(), KonaseError> {
             validate_text("goal", &request.goal, MAX_GOAL_CHARS)?;
             validate_capabilities(&request.available_capabilities)?;
             validate_hints(&request.safety_hints)?;
+            normalize_selected_resource_contents(request.selected_resource_contents.clone())
+                .map_err(|message| KonaseError::new("invalid_input", message))?;
             validate_schema(&request.expected_response_schema, "response schema")?;
         }
         KonaseEvent::AgentProgress(progress) => {
@@ -1306,11 +1379,19 @@ fn serialized_size<T: Serialize>(value: &T) -> Result<usize, String> {
         .map_err(|error| error.to_string())
 }
 
+fn model_prompt_char_count(goal: &str, context: &ContextCapsule) -> Result<usize, KonaseError> {
+    let context = serde_json::to_string(context)
+        .map_err(|error| KonaseError::new("serialization", error.to_string()))?;
+    Ok(format!("Job goal: {goal}\nContext: {context}")
+        .chars()
+        .count())
+}
+
 fn normalize_event(event: KonaseEvent) -> Result<KonaseEvent, KonaseError> {
     validate_event(&event)?;
     Ok(match event {
         KonaseEvent::UserSubmitted(request) => {
-            KonaseEvent::UserSubmitted(normalize_user_request(request))
+            KonaseEvent::UserSubmitted(normalize_user_request(request)?)
         }
         KonaseEvent::AgentProgress(progress) => {
             KonaseEvent::AgentProgress(normalize_agent_progress(progress))
@@ -1331,7 +1412,7 @@ fn normalize_event(event: KonaseEvent) -> Result<KonaseEvent, KonaseError> {
     })
 }
 
-fn normalize_user_request(mut request: UserRequest) -> UserRequest {
+fn normalize_user_request(mut request: UserRequest) -> Result<UserRequest, KonaseError> {
     request.work_id = bound(request.work_id, MAX_IDENTIFIER_CHARS);
     request.job_id = bound(request.job_id, MAX_IDENTIFIER_CHARS);
     request.goal = bound(request.goal, MAX_GOAL_CHARS);
@@ -1342,9 +1423,13 @@ fn normalize_user_request(mut request: UserRequest) -> UserRequest {
         .take(32)
         .collect();
     request.safety_hints = bound_vec(request.safety_hints, 8, MAX_STATE_SUMMARY_CHARS);
+    request.selected_resource_contents =
+        normalize_selected_resource_contents(request.selected_resource_contents)
+            .map_err(|message| KonaseError::new("invalid_input", message))?
+            .0;
     request.expected_response_schema =
         bound_value(request.expected_response_schema, MAX_SCHEMA_BYTES);
-    request
+    Ok(request)
 }
 
 fn normalize_agent_progress(mut progress: AgentProgress) -> AgentProgress {
@@ -1676,6 +1761,7 @@ mod tests {
                 effect: Some(CapabilityEffect::Read),
             }],
             safety_hints: vec!["save only with confirmation".into()],
+            selected_resource_contents: Vec::new(),
             expected_response_schema: None,
         }
     }
@@ -1690,6 +1776,34 @@ mod tests {
                 uri: "ugoite://entry/1".into(),
                 label: Some("Note".into()),
             }],
+        }
+    }
+
+    fn selected_form() -> ResourceContent {
+        ResourceContent {
+            uri: "ugoite://form/00000000-0000-0000-0000-0000000000a1".into(),
+            content: serde_json::json!({
+                "id": "00000000-0000-0000-0000-0000000000a1",
+                "name": "Expense",
+                "description": "Travel costs",
+                "fields": {"amount": {"type": "number", "required": true}},
+                "_untrusted_content": true
+            })
+            .to_string(),
+        }
+    }
+
+    fn selected_entry(id: &str, body: &str) -> ResourceContent {
+        ResourceContent {
+            uri: format!("ugoite://entry/{id}"),
+            content: serde_json::json!({
+                "id": id,
+                "uri": format!("ugoite://entry/{id}"),
+                "form": "Expense",
+                "content": body,
+                "_untrusted_content": true
+            })
+            .to_string(),
         }
     }
 
@@ -1713,7 +1827,124 @@ mod tests {
     }
 
     #[test]
-    fn submitted_start_job_stays_within_the_transition_budget() {
+    fn selected_resources_are_normalized_into_start_context_only() {
+        let mut request = request();
+        request.selected_resource_contents = vec![
+            selected_form(),
+            selected_entry("00000000-0000-0000-0000-0000000000b2", "receipt details"),
+        ];
+        let result = step(KonaseState::default(), KonaseEvent::UserSubmitted(request));
+        assert!(result.error.is_none(), "{:?}", result.error);
+        let Some(KonaseEffect::StartJob(job)) = result.effects.first() else {
+            panic!("expected StartJob effect");
+        };
+        assert_eq!(
+            job.context
+                .selected_resource_contents
+                .iter()
+                .map(|resource| resource.uri.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "ugoite://form/00000000-0000-0000-0000-0000000000a1",
+                "ugoite://entry/00000000-0000-0000-0000-0000000000b2"
+            ]
+        );
+        assert_eq!(job.resource_admission.len(), 2);
+        assert!(job.context.selected_resource_contents[0]
+            .content
+            .contains("\"_untrusted_content\":true"));
+        assert!(!serde_json::to_string(&result.state)
+            .unwrap()
+            .contains("receipt details"));
+    }
+
+    #[test]
+    fn selected_resources_keep_first_duplicate_and_enforce_limit() {
+        let first = selected_entry("00000000-0000-0000-0000-0000000000b2", "first");
+        let mut submitted = request();
+        submitted.selected_resource_contents = vec![first.clone(), first.clone()];
+        let result = step(
+            KonaseState::default(),
+            KonaseEvent::UserSubmitted(submitted),
+        );
+        let Some(KonaseEffect::StartJob(job)) = result.effects.first() else {
+            panic!("expected StartJob effect");
+        };
+        assert_eq!(job.context.selected_resource_contents.len(), 1);
+        assert!(job.context.selected_resource_contents[0]
+            .content
+            .contains("first"));
+
+        let mut request = request();
+        request.selected_resource_contents = (0..5)
+            .map(|index| {
+                selected_entry(
+                    &format!("00000000-0000-0000-0000-0000000000{:02x}", index + 1),
+                    "body",
+                )
+            })
+            .collect();
+        let result = step(KonaseState::default(), KonaseEvent::UserSubmitted(request));
+        assert_eq!(
+            result.error.as_ref().map(|error| error.kind.as_str()),
+            Some("invalid_input")
+        );
+        assert!(result.effects.is_empty());
+    }
+
+    #[test]
+    fn model_prompt_limit_reports_selected_resources_that_do_not_fit() {
+        let id = "00000000-0000-0000-0000-0000000000b2";
+        let resource = selected_entry(id, &"説明🙂".repeat(300));
+        let mut found_omission = false;
+        for goal_length in (3_000..=MAX_GOAL_CHARS).step_by(10) {
+            let mut submitted = request();
+            submitted.goal = "g".repeat(goal_length);
+            submitted.selected_resource_contents = vec![resource.clone()];
+            submitted.expected_response_schema = Some(serde_json::json!({
+                "type": "object",
+                "description": "schema🙂".repeat(180)
+            }));
+            let result = step(
+                KonaseState::default(),
+                KonaseEvent::UserSubmitted(submitted),
+            );
+            let Some(KonaseEffect::StartJob(job)) = result.effects.first() else {
+                continue;
+            };
+            if job.resource_admission.first().is_some_and(|admission| {
+                admission.status == ResourceAdmissionStatus::Omitted
+                    && admission.reason == Some(ResourceAdmissionReason::ModelPromptCharacterLimit)
+            }) {
+                assert!(job.context.selected_resource_contents.is_empty());
+                found_omission = true;
+                break;
+            }
+        }
+        assert!(
+            found_omission,
+            "expected a goal length where selected content is omitted"
+        );
+    }
+
+    #[test]
+    fn legacy_request_without_selected_resources_keeps_empty_context() {
+        let mut value = serde_json::to_value(request()).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("selected_resource_contents");
+        let legacy: UserRequest = serde_json::from_value(value).unwrap();
+        let result = step(KonaseState::default(), KonaseEvent::UserSubmitted(legacy));
+        let Some(KonaseEffect::StartJob(job)) = result.effects.first() else {
+            panic!("expected StartJob effect");
+        };
+        assert!(job.context.selected_resource_contents.is_empty());
+        assert!(job.resource_admission.is_empty());
+    }
+
+    #[test]
+    fn oversized_model_prompt_is_rejected_before_start_job() {
         let schema = serde_json::json!({
             "type": "object",
             "description": "x".repeat(7_000),
@@ -1729,26 +1960,12 @@ mod tests {
             .collect();
 
         let result = step(KonaseState::default(), KonaseEvent::UserSubmitted(request));
-        assert!(
-            result.error.is_none(),
-            "unexpected error: {:?}",
-            result.error
+        assert_eq!(
+            result.error.as_ref().map(|error| error.kind.as_str()),
+            Some("model_prompt_too_large")
         );
+        assert!(result.effects.is_empty());
         assert!(serde_json::to_vec(&result).unwrap().len() <= MAX_STATE_JSON_BYTES);
-
-        let Some(KonaseEffect::StartJob(job_request)) = result.effects.first() else {
-            panic!("expected a StartJob effect");
-        };
-        assert!(
-            serde_json::to_vec(&job_request.context).unwrap().len()
-                <= crate::MAX_CONTEXT_JSON_BYTES
-        );
-        assert!(job_request.context.available_capabilities.len() < 32);
-        assert!(job_request
-            .context
-            .available_capabilities
-            .iter()
-            .all(|capability| capability.input_schema.is_some()));
     }
 
     #[test]
