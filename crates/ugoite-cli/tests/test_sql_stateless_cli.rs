@@ -149,6 +149,166 @@ fn base_sql(space: &CliSqlSpace) -> String {
     )
 }
 
+#[test]
+fn cli_sql_export_writes_complete_ndjson_atomically() {
+    let space = setup_cli_sql_space();
+    let sql = base_sql(&space);
+    let sql_file = space._dir.path().join("query.sql");
+    std::fs::write(&sql_file, &sql).unwrap();
+    let path = space._dir.path().join("export.ndjson");
+    let output = run_cli(
+        &space.config_path,
+        &[
+            "sql",
+            "export",
+            sql_file.to_str().unwrap(),
+            "--max-rows",
+            "3",
+            "--page-size",
+            "2",
+            "--output",
+            path.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let rows = std::fs::read_to_string(&path).unwrap();
+    let rows = rows
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(rows.len(), 3);
+    assert_eq!(
+        rows.iter()
+            .map(|row| row["_ugoite_id"].as_str().unwrap())
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        3
+    );
+    let summary: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(summary["rows_exported"], 3);
+    assert_eq!(summary["pages_fetched"], 2);
+
+    let streamed = run_cli(
+        &space.config_path,
+        &["sql", "export", &sql, "--max-rows", "3", "--page-size", "2"],
+    );
+    assert!(
+        streamed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&streamed.stderr)
+    );
+    assert!(streamed.stderr.is_empty());
+    let lines = String::from_utf8_lossy(&streamed.stdout)
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(lines.len(), 3);
+    assert!(lines.iter().all(serde_json::Value::is_object));
+}
+
+#[test]
+fn cli_sql_export_publishes_empty_result() {
+    let space = setup_cli_sql_space();
+    let sql = format!(
+        "SELECT _ugoite_id FROM \"{}\" WHERE {} = $status ORDER BY _ugoite_id",
+        space.relation, space.status_column
+    );
+    let path = space._dir.path().join("empty.ndjson");
+    let output = run_cli(
+        &space.config_path,
+        &[
+            "sql",
+            "export",
+            &sql,
+            "--param",
+            "status=null",
+            "--param-type",
+            "status=string",
+            "--max-rows",
+            "5",
+            "--output",
+            path.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "");
+    let summary: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(summary["rows_exported"], 0);
+    assert_eq!(summary["pages_fetched"], 1);
+}
+
+#[test]
+fn cli_sql_export_never_overwrites_existing_output() {
+    let space = setup_cli_sql_space();
+    let sql = base_sql(&space);
+    let path = space._dir.path().join("already-exists.ndjson");
+    std::fs::write(&path, "original\n").unwrap();
+    let output = run_cli(
+        &space.config_path,
+        &[
+            "sql",
+            "export",
+            &sql,
+            "--max-rows",
+            "5",
+            "--output",
+            path.to_str().unwrap(),
+        ],
+    );
+    assert!(!output.status.success());
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "original\n");
+}
+
+#[test]
+fn cli_sql_export_max_rows_does_not_publish_partial_file() {
+    let space = setup_cli_sql_space();
+    let sql = base_sql(&space);
+    let path = space._dir.path().join("incomplete.ndjson");
+    std::fs::write(&path, "preserve me\n").unwrap();
+    let output = run_cli(
+        &space.config_path,
+        &[
+            "sql",
+            "export",
+            &sql,
+            "--max-rows",
+            "2",
+            "--page-size",
+            "2",
+            "--output",
+            path.to_str().unwrap(),
+        ],
+    );
+    assert!(!output.status.success());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "preserve me\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("max-rows"), "{stderr}");
+    assert!(stderr.contains("rows_exported"), "{stderr}");
+    assert!(std::fs::read_dir(space._dir.path()).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".ugoite-export-")
+    }));
+
+    let streamed = run_cli(
+        &space.config_path,
+        &["sql", "export", &sql, "--max-rows", "2", "--page-size", "2"],
+    );
+    assert!(!streamed.status.success());
+    assert_eq!(String::from_utf8_lossy(&streamed.stdout).lines().count(), 2);
+    assert!(String::from_utf8_lossy(&streamed.stderr).contains("rows_exported"));
+}
+
 /// Table, JSON, and NDJSON render the same page; the opaque continuation is
 /// carried only by JSON and stays hidden in table/NDJSON output.
 #[test]

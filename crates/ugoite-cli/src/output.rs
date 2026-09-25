@@ -1,13 +1,17 @@
 //! Single CLI output/error contract (E0/E1).
 //!
-//! - `stdout` carries success data only; `stderr` carries diagnostics/errors.
+//! - `stdout` carries success data only for ordinary commands; `stderr` carries diagnostics/errors.
+//! - `sql export` is the explicit streaming exception: an error after one or more
+//!   rows can leave partial NDJSON on stdout, and its error detail reports
+//!   `rows_exported`. Use the nonzero exit status to reject that stream.
 //! - Piped output or explicit `--format json` is the machine schema (JSON).
 //! - TTY output without an explicit format is the human rendering.
 //! - Business semantics stay in the shared Rust boundary; the CLI only
 //!   projects `AppError` and `ApiProtocolError` into one error shape. The CLI
 //!   owns no validation taxonomy.
 //!
-//! Machine error envelope on `stderr` (exit code mapped, `stdout` empty):
+//! Machine error envelope on `stderr` (exit code mapped; stdout is empty
+//! except for already-streamed `sql export` rows):
 //!
 //! ```json
 //! {"error": {"code": "REVISION_CONFLICT", "kind": "conflict",
@@ -275,8 +279,53 @@ impl std::fmt::Display for UsageError {
 
 impl std::error::Error for UsageError {}
 
+/// Adds the irreversible progress of a streamed SQL export while preserving
+/// the underlying application or protocol error classification.
+#[derive(Debug)]
+pub struct ExportProgressError {
+    pub rows_exported: usize,
+    pub source: Error,
+}
+
+impl std::fmt::Display for ExportProgressError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{} ({} rows exported)",
+            self.source, self.rows_exported
+        )
+    }
+}
+
+impl std::error::Error for ExportProgressError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.source.as_ref())
+    }
+}
+
 /// Project any CLI failure into the shared error shape.
 pub fn project_error(error: &Error) -> CliError {
+    if let Some(progress) = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<ExportProgressError>())
+    {
+        let mut projected = project_error(&progress.source);
+        let mut detail = projected
+            .detail
+            .take()
+            .unwrap_or_else(|| serde_json::json!({}));
+        if !detail.is_object() {
+            detail = serde_json::json!({"cause_detail": detail});
+        }
+        if let Some(object) = detail.as_object_mut() {
+            object.insert(
+                "rows_exported".to_string(),
+                Value::from(progress.rows_exported),
+            );
+        }
+        projected.detail = Some(detail);
+        return projected;
+    }
     if let Some(usage) = error
         .chain()
         .find_map(|cause| cause.downcast_ref::<UsageError>())

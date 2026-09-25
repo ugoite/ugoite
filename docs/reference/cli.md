@@ -127,6 +127,7 @@ ugoite sql saved delete <SQL_ID>
 ugoite sql lint <SQL>
 ugoite sql query <SQL_OR_FILE>
 ugoite sql count <SQL_OR_FILE>
+ugoite sql export <SQL_OR_FILE> --max-rows <N> [--page-size <N>] [--output <PATH>]
 ugoite change list
 ugoite change revert <CHANGE_ID> [--message <MESSAGE>]
 ugoite run undo <RUN_ID>

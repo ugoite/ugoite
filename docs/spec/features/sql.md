@@ -10,9 +10,12 @@ Ugoite separates SQL execution from Saved SQL persistence:
    read-only execution surface. It does not create a session, result object, or
    query metadata in the Space.
 
-The CLI uses `ugoite sql query` and `ugoite sql count`. Both local Core and
-remote REST targets use the same request DTOs and semantics. `ugoite sql lint`
-is parser-only: syntax validity does not authorize execution or resolve a Form.
+The CLI uses `ugoite sql query`, `ugoite sql count`, and bounded
+`ugoite sql export`. Export repeatedly calls the existing `sql.query` operation
+and streams complete results as NDJSON; it is CLI orchestration, not another
+REST operation. Local Core and remote REST targets use the same request DTOs
+and semantics. `ugoite sql lint` is parser-only: syntax validity does not
+authorize execution or resolve a Form.
 
 SQL accepts exactly one read-only `SELECT` statement. The authorized query
 context exposes only permitted Form relations, columns, and functions, and

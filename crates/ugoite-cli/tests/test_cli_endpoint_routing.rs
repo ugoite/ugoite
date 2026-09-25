@@ -430,6 +430,104 @@ fn test_sql_query_uses_stateless_route_and_dto() {
 }
 
 #[test]
+fn test_sql_export_reuses_stateless_route_and_continuation() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let first =
+        r#"{"columns":["id"],"rows":[{"id":"a"},{"id":"b"}],"has_more":true,"next":"opaque-1"}"#;
+    let last = r#"{"columns":["id"],"rows":[{"id":"c"}],"has_more":false,"next":null}"#;
+    let (base_url, request_rx, server) = spawn_recording_server_responses(vec![
+        ("HTTP/1.1 200 OK", first),
+        ("HTTP/1.1 200 OK", last),
+    ]);
+    init_config(&config);
+    set_connection(&config, "backend", &base_url);
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    let path = dir.path().join("remote.ndjson");
+
+    let output = run(
+        &config,
+        &[
+            "sql",
+            "export",
+            "SELECT id FROM things ORDER BY id",
+            "--max-rows",
+            "3",
+            "--page-size",
+            "2",
+            "--output",
+            path.to_str().unwrap(),
+        ],
+    );
+    let requests = [request_rx.recv().unwrap(), request_rx.recv().unwrap()];
+    server.join().unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(requests.iter().all(|request| request
+        .starts_with("POST /spaces/019f1234-5678-7abc-8def-0123456789ab/sql/query HTTP/1.1\r\n")));
+    let first_body = request_json_body(&requests[0]);
+    let second_body = request_json_body(&requests[1]);
+    assert_eq!(first_body["limit"], 2);
+    assert!(first_body["continuation"].is_null());
+    assert_eq!(second_body["limit"], 1);
+    assert_eq!(second_body["continuation"], "opaque-1");
+    assert_eq!(std::fs::read_to_string(path).unwrap().lines().count(), 3);
+}
+
+#[test]
+fn test_sql_export_discards_file_after_remote_failure_without_leaking_token() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let first = r#"{"columns":["id"],"rows":[{"id":"a"}],"has_more":true,"next":"secret-token"}"#;
+    let denied = r#"{"code":"FORBIDDEN","kind":"forbidden","message":"Access revoked"}"#;
+    let (base_url, request_rx, server) = spawn_recording_server_responses(vec![
+        ("HTTP/1.1 200 OK", first),
+        ("HTTP/1.1 403 Forbidden", denied),
+    ]);
+    init_config(&config);
+    set_connection(&config, "backend", &base_url);
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    let path = dir.path().join("revoked.ndjson");
+
+    let output = run(
+        &config,
+        &[
+            "sql",
+            "export",
+            "SELECT id FROM things ORDER BY id",
+            "--max-rows",
+            "3",
+            "--page-size",
+            "1",
+            "--output",
+            path.to_str().unwrap(),
+        ],
+    );
+    let _ = request_rx.recv().unwrap();
+    let second_request = request_rx.recv().unwrap();
+    server.join().unwrap();
+
+    assert!(!output.status.success());
+    assert!(second_request.contains("secret-token"));
+    assert!(!path.exists());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("FORBIDDEN"), "{stderr}");
+    assert!(stderr.contains("rows_exported"), "{stderr}");
+    assert!(!stderr.contains("secret-token"), "{stderr}");
+    assert!(std::fs::read_dir(dir.path()).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".ugoite-export-")
+    }));
+}
+
+#[test]
 fn test_sql_query_count_uses_separate_stateless_route() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("config.toml");

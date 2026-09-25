@@ -216,9 +216,14 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
       "REQ-API-015#criterion.canonical-sql-page",
       "REQ-API-015#criterion.canonical-sql-count",
       "REQ-API-015#criterion.local-remote-parity",
+      "REQ-API-016#criterion.bounded-complete-export",
+      "REQ-API-016#criterion.stateless-query-only",
+      "REQ-API-016#criterion.partial-output-is-failure",
+      "REQ-API-016#criterion.local-remote-parity",
     ],
     feature_binding_refs: [
       "FEAT-API-001#binding.frontend/target.sql-api",
+      "FEAT-API-001#binding.cli-implementation/target.sql-command",
     ],
     artifact_paths: [
       "crates/ugoite-api-client/src/lib.rs",
@@ -227,6 +232,7 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
       "crates/ugoite-cli/src/commands/sql.rs",
       "crates/ugoite-cli/src/http.rs",
       "crates/ugoite-cli/tests/test_cli_endpoint_routing.rs",
+      "crates/ugoite-cli/tests/test_sql_stateless_cli.rs",
     ],
     surface_expectations: [
       {
@@ -254,6 +260,10 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
     verification_claim_refs: [
       "docs/mitase/requirements/api.yaml#REQ-API-015/binding.cli-verification/remote-page",
       "docs/mitase/requirements/api.yaml#REQ-API-015/binding.cli-verification/remote-count",
+      "docs/mitase/requirements/api.yaml#REQ-API-016/binding.cli-export-verification/local-complete",
+      "docs/mitase/requirements/api.yaml#REQ-API-016/binding.cli-export-verification/local-limit-failure",
+      "docs/mitase/requirements/api.yaml#REQ-API-016/binding.cli-export-verification/remote-continuation",
+      "docs/mitase/requirements/api.yaml#REQ-API-016/binding.cli-export-verification/remote-failure",
     ],
     test_selectors: [
       {
@@ -264,10 +274,27 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
         path: "crates/ugoite-cli/tests/test_cli_endpoint_routing.rs",
         selector: "test_sql_query_count_uses_separate_stateless_route",
       },
+      {
+        path: "crates/ugoite-cli/tests/test_cli_endpoint_routing.rs",
+        selector: "test_sql_export_reuses_stateless_route_and_continuation",
+      },
+      {
+        path: "crates/ugoite-cli/tests/test_cli_endpoint_routing.rs",
+        selector:
+          "test_sql_export_discards_file_after_remote_failure_without_leaking_token",
+      },
+      {
+        path: "crates/ugoite-cli/tests/test_sql_stateless_cli.rs",
+        selector: "cli_sql_export_writes_complete_ndjson_atomically",
+      },
+      {
+        path: "crates/ugoite-cli/tests/test_sql_stateless_cli.rs",
+        selector: "cli_sql_export_max_rows_does_not_publish_partial_file",
+      },
     ],
     availability: "existing-needs-surface-work",
     reason:
-      "Read-only limits, ORDER BY, continuation and explicit count are separate semantics. Multi-page CLI export is not implemented.",
+      "Bounded multi-page CLI export now streams the canonical SQL page operation. This static projection does not establish browser cancellation or generation-safe retry, which remain separate work.",
     follow_up_issue: "#3130",
   },
   {

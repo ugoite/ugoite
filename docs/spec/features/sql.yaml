@@ -5,7 +5,7 @@ apis:
 - id: sql.query
   method: POST
   status: implemented
-  description: Execute one read-only SQL SELECT page without persistent SQL execution state. CLI accepts SQL text or a SQL file; an explicit ORDER BY is required when the result exceeds the requested page limit.
+  description: Execute one read-only SQL SELECT page without persistent SQL execution state. CLI query and bounded export accept SQL text or a SQL file and use this same operation; an explicit ORDER BY is required when the result exceeds the requested page limit. Export is CLI orchestration, not a separate REST operation.
   backend:
     path: /spaces/{space_id}/sql/query
     file: crates/ugoite-server/src/lib.rs

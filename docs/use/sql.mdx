@@ -128,6 +128,38 @@ logs by table or NDJSON rendering.
 
 It is an explicit operation and is not executed automatically for each page.
 
+## Export a complete result
+
+`sql export` follows the same stateless page route repeatedly and writes each
+row as one NDJSON line. It requires an explicit `--max-rows` from 1 through
+1,000,000; `--page-size` defaults to 100 and accepts 1 through 1,000. The last
+request is reduced to the remaining row budget. If more rows remain at the
+limit, the export fails as incomplete.
+
+```bash
+ugoite sql export query.sql --max-rows 10000 --page-size 500 \
+  --output ./expenses.ndjson
+
+ugoite sql export query.sql --param status=open --param-type status=string \
+  --max-rows 5000 > ./open-items.ndjson.tmp
+```
+
+The SQL must use an explicit `ORDER BY` when more than one page is needed. For
+repeatable ordering, include a unique tie-breaker such as
+`ORDER BY updated_at, _ugoite_id`. A fixed publication does not define the
+relative order of rows tied on every sort key. Export accepts SQL text or a
+SQL file; a Saved SQL ID is not an executable input.
+
+With `--output PATH`, rows are written to a temporary file beside the target,
+then synced and published only after the final page and flush succeed. The
+command never replaces an existing path. On success it prints a summary with
+the path, rows exported, and pages fetched. Without `--output`, stdout contains
+only NDJSON rows. A later page, authorization, transport, write, or row-limit
+failure can leave partial stdout; the command exits nonzero and reports
+`rows_exported` on stderr. In shell pipelines, use `set -o pipefail` and check
+the exit code before treating the stream as complete. Export does not call
+`sql count`, save continuation state, or create Knowledge.
+
 ## Parameters
 
 Repeat `--param NAME=VALUE` for each named parameter. Scalar JSON values are
