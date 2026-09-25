@@ -343,7 +343,7 @@ export class KonaseHost {
           action = runtime.resumeModel(response);
         } catch (cause) {
           if (this.isCurrent(generation)) {
-            state = await this.hostFailed(
+            await this.hostFailed(
               state,
               action.request.request_id,
               "model_request_failed",
@@ -394,7 +394,7 @@ export class KonaseHost {
           action = runtime.resumeMcp(mcpResult);
         } catch (cause) {
           if (this.isCurrent(generation)) {
-            state = await this.hostFailed(
+            await this.hostFailed(
               state,
               action.request.request_id,
               "mcp_request_failed",
